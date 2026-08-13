@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "candidate": "6c300fdd044839fe200c2ebc9ebf0907438569d7",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-561e1f",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast",
+    "ssh_user": "nckrtl",
+    "ssh_address": "192.168.6.20",
+    "gateway_instance": "orbit-e2e-dev-561e1f-gateway",
+    "target_instance": "orbit-e2e-dev-561e1f-dev",
+    "target_node": "app-dev-1"
+  },
+  "expected": "A stopped orbit-caddy container produces proxy.route_probe_failed as blocked inspection and proxy.caddy_container_down as genuine drift, with no inferred route-missing, route-mismatch, or TLS issue. Restarting Caddy returns a healthy proxy report.",
+  "observed": {
+    "stopped_caddy": {
+      "healthy": false,
+      "issue_count": 2,
+      "issues": [
+        {
+          "key": "proxy.route_probe_failed",
+          "kind": "unverifiable",
+          "disposition": "blocked_inspection",
+          "restorable": false,
+          "status": "runtime_unavailable"
+        },
+        {
+          "key": "proxy.caddy_container_down",
+          "kind": "divergent",
+          "disposition": "genuine_drift",
+          "restorable": true
+        }
+      ],
+      "forbidden_issue_keys_present": []
+    },
+    "restarted_caddy": {
+      "healthy": true,
+      "issue_count": 0
+    },
+    "cleanup": {
+      "temporary_route_removed": true,
+      "remaining_routes_on_target": 0,
+      "orbit_caddy_running": true
+    }
+  },
+  "result": "passed"
+}

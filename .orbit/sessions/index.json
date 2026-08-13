@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 308,
-    "unique_candidate_commit_count": 204,
+    "record_count": 309,
+    "unique_candidate_commit_count": 205,
     "orphan_count": 0,
     "records": [
         {
@@ -8170,6 +8170,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "2cfed577078d242cd2306d67ebd115f3ae4f5ca2",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-105919-fix-proxy-route-probe-unverifiable",
+            "slug": "fix-proxy-route-probe-unverifiable",
+            "timestamp": "2026-08-13-105919",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6c300fdd044839fe200c2ebc9ebf0907438569d7",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

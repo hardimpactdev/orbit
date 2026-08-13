@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T08:59:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-proxy-route-probe-unverifiable/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-105919-fix-proxy-route-probe-unverifiable",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/proxy-route-probe-fail-closed-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T085439Z-45b1371fe300.json"
+    ],
+    "entry_digests": {
+        "evidence/proxy-route-probe-fail-closed-retained-incus.json": "00c08c9bfc4d88256dc5f4684c17085c4eb0a0daa9968d50c02218c87f07be59",
+        "loop.md": "3de31aa752d301926bcf59e41f6317c47194b792e67f417b9cdf2f27dd960c4a",
+        "quality-gates/quality-check-2026-08-13T085439Z-45b1371fe300.json": "dc8d1b69449d23b7eb1fc42a978dd986a3328951613908c9041d74331ae90694"
+    },
+    "slug": "fix-proxy-route-probe-unverifiable",
+    "requested_slug": "fix-proxy-route-probe-unverifiable",
+    "compatible_slugs": [
+        "fix-proxy-route-probe-unverifiable"
+    ],
+    "branch": "fix/proxy-route-probe-unverifiable",
+    "candidate_commit": "6c300fdd044839fe200c2ebc9ebf0907438569d7",
+    "accepted_feature_tip": "6c300fdd044839fe200c2ebc9ebf0907438569d7",
+    "accepted_main_tip": "29d7f3e1288601a8ff62420a0ec0c5ff1d39c233",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
