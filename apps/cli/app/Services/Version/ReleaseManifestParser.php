@@ -32,4 +32,30 @@ final readonly class ReleaseManifestParser
             ) ?? $this->timestamps->parseTopologyCandidateBuildId($manifest),
         ];
     }
+
+    /**
+     * @param  array<mixed>  $manifest
+     * @return array{url: string, sha256: string}|null
+     */
+    public function parseCliArtifact(array $manifest, string $platform): ?array
+    {
+        $url = data_get($manifest, "cli_artifacts.{$platform}.url");
+        $sha256 = data_get($manifest, "cli_artifacts.{$platform}.sha256");
+
+        if (! is_string($url) || ! is_string($sha256)) {
+            return null;
+        }
+
+        $url = trim($url);
+        $sha256 = trim($sha256);
+
+        if ($url === '' || preg_match('/^[a-f0-9]{64}$/i', $sha256) !== 1) {
+            return null;
+        }
+
+        return [
+            'url' => $url,
+            'sha256' => strtolower($sha256),
+        ];
+    }
 }

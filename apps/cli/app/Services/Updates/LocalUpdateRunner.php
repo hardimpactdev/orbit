@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
+use App\Services\Version\VersionInfo;
 use App\Services\Version\VersionInfoResolver;
 use Orbit\Core\Progress\StreamedStepTree;
 
@@ -79,6 +80,12 @@ final readonly class LocalUpdateRunner
         }
 
         if (! version_compare($latest, $local, '>')) {
+            $installation = $this->updater->verifyCurrentInstallation($local);
+
+            if (! $installation['successful']) {
+                return $this->repairUnavailableInstallation($onStep, $local, $latest, $info);
+            }
+
             // Still refresh shell integrations so existing installs receive the
             // zsh noglob alias without waiting for a newer binary release.
             $shell = $this->updater->ensureShellIntegrations();
@@ -132,6 +139,37 @@ final readonly class LocalUpdateRunner
     /**
      * @param  callable(string, string, ?string): void|null  $onStep
      */
+    private function repairUnavailableInstallation(
+        ?callable $onStep,
+        string $local,
+        string $latest,
+        VersionInfo $info,
+    ): LocalUpdateResult {
+        $sourceVersion = $info->releaseSourceVersion;
+
+        if ($sourceVersion === null || ! version_compare($sourceVersion, $local, operator: '==')) {
+            $availableVersion = $sourceVersion ?? 'no version';
+            $message = "Installed Orbit {$local} cannot be verified, and the release source provides {$availableVersion}.";
+            $this->emit($onStep, self::STEP_CHECK, 'fail', $message);
+
+            return new LocalUpdateResult(
+                status: LocalUpdateResult::STATUS_FAILED,
+                stepResults: [self::STEP_CHECK => 'failed'],
+                failedStep: self::STEP_CHECK,
+                output: $message,
+                fromVersion: $local,
+                latestVersion: $local,
+            );
+        }
+
+        $this->emit($onStep, self::STEP_CHECK, 'done', "Repair required: {$local} launcher is unavailable");
+
+        return $this->applyUpdate($onStep, $local, $latest, $info->releasedAt);
+    }
+
+    /**
+     * @param  callable(string, string, ?string): void|null  $onStep
+     */
     private function applyUpdate(
         ?callable $onStep,
         string $local,
@@ -141,7 +179,7 @@ final readonly class LocalUpdateRunner
         $stepResults = [self::STEP_CHECK => 'completed'];
 
         $this->emit($onStep, self::STEP_DOWNLOAD, 'progress', "Downloading {$latest}");
-        $download = $this->updater->downloadBinary();
+        $download = $this->updater->downloadBinary($latest);
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             $stepResults[self::STEP_DOWNLOAD] = 'failed';

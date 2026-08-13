@@ -60,6 +60,22 @@ final readonly class ReleaseManifestResolver
         return $url === null ? null : $this->releaseManifest($url);
     }
 
+    /**
+     * @return array{url: string, sha256: string}|null
+     */
+    public function configuredCliArtifact(string $platform): ?array
+    {
+        $url = $this->configuredUrl();
+
+        if ($url === null) {
+            return null;
+        }
+
+        $manifest = $this->releaseManifestBody($url);
+
+        return $manifest === null ? null : $this->parser->parseCliArtifact($manifest, $platform);
+    }
+
     private function configuredUrl(): ?string
     {
         $value = getenv('ORBIT_RELEASE_MANIFEST_URL');
@@ -78,6 +94,16 @@ final readonly class ReleaseManifestResolver
      */
     private function releaseManifest(string $url): ?array
     {
+        $body = $this->releaseManifestBody($url);
+
+        return $body === null ? null : $this->parser->parse($body);
+    }
+
+    /**
+     * @return array<mixed>|null
+     */
+    private function releaseManifestBody(string $url): ?array
+    {
         try {
             $response = Http::acceptJson()
                 ->timeout(2)
@@ -92,6 +118,6 @@ final readonly class ReleaseManifestResolver
 
         $body = $response->json();
 
-        return is_array($body) ? $this->parser->parse($body) : null;
+        return is_array($body) ? $body : null;
     }
 }

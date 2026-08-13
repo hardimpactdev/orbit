@@ -43,24 +43,27 @@ final class FleetUpdateNodeCliLauncher
         }
 
         $images = [];
+        $caddyImage = $plan->runtimeRoleImage('orbit-caddy');
+        $frankenPhpImage = $plan->runtimeRoleImage('orbit-frankenphp');
+        $webSocketImage = $plan->runtimeRoleImage('orbit-websocket');
 
-        if ($roles->nodeHostsOrbitCaddy($node) && is_string($plan->role_images['orbit-caddy'] ?? null)) {
-            $images[] = $plan->role_images['orbit-caddy'];
+        if ($roles->nodeHostsOrbitCaddy($node) && $caddyImage !== null) {
+            $images[] = $caddyImage;
         }
 
         if (
             ($roles->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)
             || $roles->nodeHasActiveRole($node, NodeRoleName::AppProduction->value))
-            && is_string($plan->role_images['orbit-frankenphp'] ?? null)
+            && $frankenPhpImage !== null
         ) {
-            $images[] = $plan->role_images['orbit-frankenphp'];
+            $images[] = $frankenPhpImage;
         }
 
         if (
             $roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
-            && is_string($plan->role_images['orbit-websocket'] ?? null)
+            && $webSocketImage !== null
         ) {
-            $images[] = $plan->role_images['orbit-websocket'];
+            $images[] = $webSocketImage;
         }
 
         return array_values(array_unique($images));

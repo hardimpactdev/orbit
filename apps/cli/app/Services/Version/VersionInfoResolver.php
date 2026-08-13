@@ -42,9 +42,9 @@ final readonly class VersionInfoResolver
         return new VersionInfo(
             version: $version,
             latestVersion: $latestVersion,
-            updateAvailable: $latestVersion !== null && version_compare($latestVersion, $version, operator: '>'),
             releasedAt: $releasedAt,
             installedAt: $this->installMetadata->installedAtFor($version),
+            releaseSourceVersion: $latestRelease['version'] ?? null,
         );
     }
 
@@ -55,9 +55,9 @@ final readonly class VersionInfoResolver
         return new VersionInfo(
             version: $version,
             latestVersion: null,
-            updateAvailable: false,
             releasedAt: null,
             installedAt: $this->installMetadata->installedAtFor($version),
+            releaseSourceVersion: null,
         );
     }
 

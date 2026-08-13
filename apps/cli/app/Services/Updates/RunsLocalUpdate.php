@@ -24,11 +24,13 @@ interface RunsLocalUpdate
      * to `--version`. The resolved version is read back from the verify output.
      *
      * On success, `staged_path` is the verified, staged binary and `version` is
-     * the version it reported. On failure, `staged_path`/`version` are `null`.
+     * the version it reported. When `$expectedVersion` is non-empty, a
+     * different reported version fails before replacement. On failure,
+     * `staged_path`/`version` are `null`.
      *
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
      */
-    public function downloadBinary(): array;
+    public function downloadBinary(string $expectedVersion = ''): array;
 
     /**
      * Move the verified staged binary to
@@ -77,6 +79,15 @@ interface RunsLocalUpdate
      * @return array{successful: bool, exit_code: int, output: string}
      */
     public function ensureShellIntegrations(): array;
+
+    /**
+     * Verify that the configured host launcher exists, is executable, and
+     * reports the expected version through the structured local version
+     * contract.
+     *
+     * @return array{successful: bool, exit_code: int, output: string}
+     */
+    public function verifyCurrentInstallation(string $expectedVersion): array;
 
     /**
      * Run Orbit database migrations inside orbit-gateway.

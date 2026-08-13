@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Updates;
 
 use App\Services\Version\InstallMetadataStore;
+use App\Services\Version\ReleaseManifestResolver;
 use App\Services\Version\VersionOutputParser;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
@@ -45,6 +46,8 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     private readonly VersionOutputParser $versionOutputParser;
 
+    private readonly ReleaseManifestResolver $releaseManifests;
+
     private readonly ZshShellIntegration $zshShellIntegration;
 
     public function __construct(
@@ -52,10 +55,12 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         ?InstallMetadataStore $installMetadata = null,
         ?VersionOutputParser $versionOutputParser = null,
         ?ZshShellIntegration $zshShellIntegration = null,
+        ?ReleaseManifestResolver $releaseManifests = null,
     ) {
         $this->installMetadata = $installMetadata ?? new InstallMetadataStore;
         $this->versionOutputParser = $versionOutputParser ?? new VersionOutputParser;
         $this->zshShellIntegration = $zshShellIntegration ?? new ZshShellIntegration;
+        $this->releaseManifests = $releaseManifests ?? new ReleaseManifestResolver;
     }
 
     /**
@@ -89,23 +94,26 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
     /**
      * Download the prebuilt Orbit CLI binary for this host OS/arch to a staged
-     * path, make it executable, and verify it responds to `--version`. The
-     * staged copy lives next to the install root binary so the move in
-     * {@see self::replaceBinary()} stays on the same filesystem.
+     * path, verify its declared checksum when present, make it executable, and
+     * verify it responds to `--version`. The staged copy lives next to the
+     * install root binary so the move in {@see self::replaceBinary()} stays on
+     * the same filesystem.
      *
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
      */
-    public function downloadBinary(): array
+    public function downloadBinary(string $expectedVersion = ''): array
     {
         $installRoot = $this->checkoutPathResolver->resolve();
         $legacyBinaryPath = $installRoot.'/bin/orbit-binary';
         $stagedBinary = $this->stagedBinaryPath($legacyBinaryPath);
 
-        $binaryUrl = $this->resolveBinaryUrl();
+        $binaryArtifact = $this->resolveBinaryArtifact();
 
-        if ($binaryUrl === null) {
+        if ($binaryArtifact === null) {
             return $this->failedDownload(
-                'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.',
+                $this->configuredManifestUrl() === null
+                    ? 'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.'
+                    : 'Configured release manifest does not contain a valid CLI artifact for this platform.',
                 1,
             );
         }
@@ -120,13 +128,19 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             '2',
             '-o',
             $stagedBinary,
-            $binaryUrl,
+            $binaryArtifact['url'],
         ], 120);
 
         if (! $downloadResult->successful()) {
             $this->discard($stagedBinary);
 
             return $this->failedDownloadFrom($downloadResult);
+        }
+
+        if ($binaryArtifact['sha256'] !== null && hash_file('sha256', $stagedBinary) !== $binaryArtifact['sha256']) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownload('CLI artifact checksum verification failed.', 1);
         }
 
         $chmodResult = $this->runCommand(['chmod', '0755', $stagedBinary], 10);
@@ -152,6 +166,15 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
             return $this->failedDownload(
                 'CLI version verification failed: version output was not structured JSON.',
+                1,
+            );
+        }
+
+        if ($expectedVersion !== '' && ! version_compare($version, $expectedVersion, operator: '==')) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownload(
+                "Downloaded Orbit CLI reports {$version}; expected {$expectedVersion}.",
                 1,
             );
         }
@@ -291,6 +314,50 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     }
 
     /**
+     * @return array{successful: bool, exit_code: int, output: string}
+     */
+    public function verifyCurrentInstallation(string $expectedVersion): array
+    {
+        $linkPath = $this->resolveLinkPath();
+
+        if (! is_file($linkPath) || ! is_executable($linkPath)) {
+            return [
+                'successful' => false,
+                'exit_code' => 1,
+                'output' => "Configured Orbit launcher is missing or not executable: {$linkPath}",
+            ];
+        }
+
+        $verifyResult = $this->runCommand([$linkPath, '--version', '--local', '--json'], 30);
+
+        if (! $verifyResult->successful()) {
+            return [
+                'successful' => false,
+                'exit_code' => $verifyResult->exitCode() ?? 1,
+                'output' => $this->resultOutput($verifyResult),
+            ];
+        }
+
+        $verifiedVersion = $this->requireVersionFromOutput($verifyResult->output());
+
+        if ($verifiedVersion !== $expectedVersion) {
+            $actualVersion = $verifiedVersion ?? 'unparseable';
+
+            return [
+                'successful' => false,
+                'exit_code' => 1,
+                'output' => "Configured Orbit launcher reports {$actualVersion}; expected {$expectedVersion}.",
+            ];
+        }
+
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => trim($verifyResult->output()),
+        ];
+    }
+
+    /**
      * Run `orbit doctor --self --json` through the relinked launcher and return
      * the reported issue count. The doctor verify is non-fatal: any failure to
      * resolve the count yields `null` (unknown). The summary issue count lives
@@ -386,7 +453,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     private function failedDownloadFrom(ProcessResult $result): array
     {
         return $this->failedDownload(
-            trim($result->errorOutput() ?: $result->output()),
+            $this->resultOutput($result),
             $result->exitCode() ?? 1,
         );
     }
@@ -399,7 +466,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         return [
             'successful' => false,
             'exit_code' => $result->exitCode() ?? 1,
-            'output' => trim($result->errorOutput() ?: $result->output()),
+            'output' => $this->resultOutput($result),
             'skipped' => false,
         ];
     }
@@ -496,7 +563,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         return [
             'successful' => $result->successful(),
             'exit_code' => $result->exitCode() ?? 1,
-            'output' => trim($result->errorOutput() ?: $result->output()),
+            'output' => $this->resultOutput($result),
         ];
     }
 
@@ -514,27 +581,49 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         return [
             'successful' => $result->successful(),
             'exit_code' => $result->exitCode() ?? 1,
-            'output' => trim($result->errorOutput() ?: $result->output()),
+            'output' => $this->resultOutput($result),
         ];
     }
 
+    private function resultOutput(ProcessResult $result): string
+    {
+        $errorOutput = $result->errorOutput();
+
+        return trim($errorOutput !== '' ? $errorOutput : $result->output());
+    }
+
     /**
-     * Resolve the download URL for the CLI binary.
+     * Resolve the CLI binary artifact for this host.
      *
      * Priority:
-     * 1. `ORBIT_BINARY_URL` — full override (local file path with `file://`
-     *    scheme, mirror URL, or specific release tag URL).
-     * 2. `ORBIT_BINARY_BASE_URL/<asset>` — base URL override with detected asset.
-     * 3. Default GitHub Releases URL with detected asset.
+     * 1. `ORBIT_BINARY_URL` with an optional `ORBIT_BINARY_SHA256`.
+     * 2. The configured release manifest artifact and checksum.
+     * 3. `ORBIT_BINARY_BASE_URL/<asset>`.
+     * 4. The default GitHub Releases URL.
      *
-     * Returns `null` when the host OS/arch is not a supported binary target.
+     * @return array{url: string, sha256: string|null}|null
      */
-    private function resolveBinaryUrl(): ?string
+    private function resolveBinaryArtifact(): ?array
     {
         $override = getenv('ORBIT_BINARY_URL');
 
         if (is_string($override) && $override !== '') {
-            return $override;
+            $configuredSha256 = getenv('ORBIT_BINARY_SHA256');
+            $sha256 = is_string($configuredSha256) && $configuredSha256 !== ''
+                ? trim($configuredSha256)
+                : null;
+
+            if ($sha256 !== null && preg_match('/^[a-f0-9]{64}$/i', $sha256) !== 1) {
+                return null;
+            }
+
+            return ['url' => $override, 'sha256' => $sha256 === null ? null : strtolower($sha256)];
+        }
+
+        if ($this->configuredManifestUrl() !== null) {
+            $platform = $this->detectCliPlatform();
+
+            return $platform === null ? null : $this->releaseManifests->configuredCliArtifact($platform);
         }
 
         $asset = $this->detectBinaryAsset();
@@ -549,7 +638,34 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             $baseUrl = self::DEFAULT_BINARY_BASE_URL;
         }
 
-        return rtrim($baseUrl, '/').'/'.$asset;
+        return ['url' => rtrim($baseUrl, '/').'/'.$asset, 'sha256' => null];
+    }
+
+    private function configuredManifestUrl(): ?string
+    {
+        $url = getenv('ORBIT_RELEASE_MANIFEST_URL');
+
+        if (! is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        return trim($url);
+    }
+
+    private function detectCliPlatform(): ?string
+    {
+        $os = php_uname('s');
+        $machine = php_uname('m');
+
+        if (str_starts_with($os, 'Darwin') && $machine === 'arm64') {
+            return 'darwin-arm64';
+        }
+
+        if (str_starts_with($os, 'Linux') && $machine === 'x86_64') {
+            return 'linux-amd64';
+        }
+
+        return null;
     }
 
     /**

@@ -265,7 +265,9 @@ The expected target shape per calling context:
 - For `topology-candidate` manifests, the caller-local and workload binary
   update paths compare the desired CLI hash rather than semantic version alone.
   This lets a new same-version candidate build update the fleet while preventing
-  repeated installs of the exact same candidate artifact.
+  repeated installs of the exact same candidate artifact. The gateway terminal
+  result carries the caller-local artifact URL and SHA-256 from the immutable
+  plan; the CLI verifies that hash and the target version before replacement.
 - Each updated installation emits per-node sub-stages through the operation
   journal: `Downloading <v>` → `Replacing cli binary` → `Running doctor` → `Done`
   for local/workload nodes; `Downloading <v> assets` → `Updating gateway app` →
@@ -336,14 +338,15 @@ The expected target shape per calling context:
 - When that snapshot provides a hash-addressed archive for a required role
   image, each selected Linux role host downloads and verifies the archive,
   loads it into the local Docker image store, and confirms the digest-free local
-  tag. Orbit then checks the exact digest-pinned reference and attempts a
-  registry pull only when that reference is absent; a failed pull preserves the
-  verified local artifact. Because some Docker storage drivers restore the
-  candidate tag without the registry manifest-list digest, Orbit resolves the
-  exact local image ID from the digest-free reference and aliases that ID to the
-  stable runtime reference. Final verification inspects the stable alias. This
-  lets candidate channels verify private role images without distributing
-  registry credentials to workload nodes.
+  tag. That verified local tag is the runtime reference; Orbit does not require
+  a private-registry pull for the same image. The gateway deploys its operations
+  Reverb service with registry resolution disabled, then verifies the expected
+  tag and one healthy replica so a Swarm rollback cannot pass as convergence.
+  Workload verification also inspects the local tag. When a candidate
+  FrankenPHP image needs the stable runtime name, Orbit resolves the exact local
+  image ID and aliases that ID to the stable reference before final
+  verification. This lets candidate channels verify private role images without
+  distributing registry credentials to nodes.
 - For each remote update, the gateway authorizes a typed Orbit Agent request
   and pushes it over WireGuard to the selected Agent-eligible node.
   `update:all` never selects SSH, and the gateway does not target operator

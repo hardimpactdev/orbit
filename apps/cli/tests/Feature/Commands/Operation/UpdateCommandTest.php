@@ -37,7 +37,7 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
-    public function downloadBinary(): array
+    public function downloadBinary(string $expectedVersion = ''): array
     {
         $this->calls[] = 'download';
 
@@ -68,6 +68,13 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
     public function ensureShellIntegrations(): array
     {
         $this->calls[] = 'ensure_shell_integrations';
+
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function verifyCurrentInstallation(string $expectedVersion): array
+    {
+        $this->calls[] = "verify_current_installation:{$expectedVersion}";
 
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
@@ -224,7 +231,7 @@ describe('update', function (): void {
                 ['name' => 'check', 'status' => 'skipped'],
             ])
             ->and($this->updater->calls)
-            ->toBe(['ensure_shell_integrations']);
+            ->toBe(['verify_current_installation:0.1.131', 'ensure_shell_integrations']);
     });
 
     it('renders the already-installed skip footer in human mode', function (): void {
@@ -263,7 +270,7 @@ describe('update', function (): void {
             ->not
             ->toContain('Skipped: 0.1.156 is already installed')
             ->and($this->updater->calls)
-            ->toBe(['ensure_shell_integrations']);
+            ->toBe(['verify_current_installation:0.1.174', 'ensure_shell_integrations']);
     });
 
     it('returns a JSON skip envelope when the gateway is still behind', function (): void {
@@ -482,7 +489,10 @@ describe('update', function (): void {
             ->and($secondOutput)
             ->not->toContain('Downloading binary')->and($secondOutput)
             ->not->toContain('Replacing binary')->and($secondOutput)
-            ->not->toContain('Running doctor')->and($this->updater->calls)->toBe(['ensure_shell_integrations']);
+            ->not->toContain('Running doctor')->and($this->updater->calls)->toBe([
+                'verify_current_installation:0.1.131',
+                'ensure_shell_integrations',
+            ]);
     });
 
     it('surfaces the doctor issue count without failing the update in JSON mode', function (): void {

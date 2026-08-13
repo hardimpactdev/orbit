@@ -6,13 +6,17 @@ namespace App\Services\Version;
 
 final readonly class VersionInfo
 {
+    public bool $updateAvailable;
+
     public function __construct(
         public string $version,
         public ?string $latestVersion,
-        public bool $updateAvailable,
         public ?string $releasedAt,
         public ?string $installedAt,
-    ) {}
+        public ?string $releaseSourceVersion,
+    ) {
+        $this->updateAvailable = $latestVersion !== null && version_compare($latestVersion, $version, operator: '>');
+    }
 
     /**
      * @return array{

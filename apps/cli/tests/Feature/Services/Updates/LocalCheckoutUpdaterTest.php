@@ -7,6 +7,7 @@ use App\Services\Updates\LocalCheckoutUpdater;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Progress\ForkedFrameTicker;
 
@@ -60,7 +61,9 @@ describe('LocalCheckoutUpdater', function (): void {
 
         $this->previousInstall = getenv('ORBIT_INSTALL_PATH');
         $this->previousBinaryUrl = getenv('ORBIT_BINARY_URL');
+        $this->previousBinarySha256 = getenv('ORBIT_BINARY_SHA256');
         $this->previousBinPath = getenv('ORBIT_BIN_PATH');
+        $this->previousManifestUrl = getenv('ORBIT_RELEASE_MANIFEST_URL');
         $this->previousMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
         $this->previousHome = getenv('HOME');
         $this->previousShell = getenv('SHELL');
@@ -72,8 +75,10 @@ describe('LocalCheckoutUpdater', function (): void {
 
         putenv("ORBIT_INSTALL_PATH={$this->installRoot}");
         putenv("ORBIT_BINARY_URL={$this->binaryUrl}");
+        putenv('ORBIT_BINARY_SHA256');
         putenv("ORBIT_BIN_PATH={$this->linkPath}");
         putenv("ORBIT_INSTALL_METADATA_PATH={$this->installRoot}/install.json");
+        putenv('ORBIT_RELEASE_MANIFEST_URL');
         putenv("HOME={$this->sandboxHome}");
         putenv('SHELL=/bin/bash');
     });
@@ -85,10 +90,16 @@ describe('LocalCheckoutUpdater', function (): void {
         $this->previousBinaryUrl === false
             ? putenv('ORBIT_BINARY_URL')
             : putenv("ORBIT_BINARY_URL={$this->previousBinaryUrl}");
+        $this->previousBinarySha256 === false
+            ? putenv('ORBIT_BINARY_SHA256')
+            : putenv("ORBIT_BINARY_SHA256={$this->previousBinarySha256}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
         $this->previousMetadataPath === false
             ? putenv('ORBIT_INSTALL_METADATA_PATH')
             : putenv("ORBIT_INSTALL_METADATA_PATH={$this->previousMetadataPath}");
+        $this->previousManifestUrl === false
+            ? putenv('ORBIT_RELEASE_MANIFEST_URL')
+            : putenv("ORBIT_RELEASE_MANIFEST_URL={$this->previousManifestUrl}");
         $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
         $this->previousShell === false ? putenv('SHELL') : putenv("SHELL={$this->previousShell}");
 
@@ -161,6 +172,51 @@ describe('LocalCheckoutUpdater', function (): void {
         @rmdir($home);
     });
 
+    it('reports a missing configured launcher as an unhealthy current installation', function (): void {
+        $result = new LocalCheckoutUpdater(new CheckoutPathResolver)->verifyCurrentInstallation('1.2.3');
+
+        expect($result['successful'])
+            ->toBeFalse()
+            ->and($result['exit_code'])
+            ->toBe(1)
+            ->and($result['output'])
+            ->toContain($this->linkPath);
+    });
+
+    it('accepts a configured launcher that reports the expected structured version', function (): void {
+        file_put_contents($this->linkPath, '#!/bin/sh');
+        chmod($this->linkPath, 0755);
+
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = new LocalCheckoutUpdater(new CheckoutPathResolver)->verifyCurrentInstallation('1.2.3');
+
+        expect($result['successful'])->toBeTrue()->and($result['exit_code'])->toBe(0);
+
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                is_array($process->command)
+                && $process->command === [$this->linkPath, '--version', '--local', '--json']
+            ),
+        );
+    });
+
+    it('rejects a configured launcher that reports a different version', function (): void {
+        file_put_contents($this->linkPath, '#!/bin/sh');
+        chmod($this->linkPath, 0755);
+
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.2'), exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $result = new LocalCheckoutUpdater(new CheckoutPathResolver)->verifyCurrentInstallation('1.2.3');
+
+        expect($result['successful'])
+            ->toBeFalse()
+            ->and($result['output'])
+            ->toContain('reports 1.2.2; expected 1.2.3');
+    });
+
     it('downloads the binary to a staged path and reports the resolved version', function (): void {
         Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0)]);
         Process::preventStrayProcesses();
@@ -201,6 +257,87 @@ describe('LocalCheckoutUpdater', function (): void {
             fn (PendingProcess $process): bool => (
                 is_array($process->command)
                 && $process->command === [$stagedBinary, '--version', '--local', '--json']
+            ),
+        );
+    });
+
+    it('rejects a downloaded binary that does not match its declared checksum', function (): void {
+        putenv('ORBIT_BINARY_SHA256='.str_repeat('a', 64));
+
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if (is_array($process->command) && ($process->command[0] ?? null) === 'curl') {
+                $outputIndex = array_search('-o', $process->command, true);
+                file_put_contents($process->command[$outputIndex + 1], 'candidate binary');
+            }
+
+            return Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0);
+        });
+        Process::preventStrayProcesses();
+
+        $download = new LocalCheckoutUpdater(new CheckoutPathResolver)->downloadBinary('1.2.3');
+
+        expect($download['successful'])
+            ->toBeFalse()
+            ->and($download['output'])
+            ->toContain('checksum');
+    });
+
+    it('rejects a downloaded binary that reports a different requested version', function (): void {
+        Process::fake(['*' => Process::result(output: local_checkout_version_json('1.2.2'), exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $download = new LocalCheckoutUpdater(new CheckoutPathResolver)->downloadBinary('1.2.3');
+
+        expect($download['successful'])
+            ->toBeFalse()
+            ->and($download['output'])
+            ->toContain('reports 1.2.2; expected 1.2.3');
+    });
+
+    it('downloads the host artifact from the configured release manifest', function (): void {
+        $manifestUrl = 'https://artifacts.orbit/channels/live-test/orbit-release-manifest.json';
+        $artifactUrl = 'https://artifacts.orbit/candidates/build-1/orbit-macos-arm64';
+        $artifactBytes = 'candidate binary';
+
+        putenv('ORBIT_BINARY_URL');
+        putenv("ORBIT_RELEASE_MANIFEST_URL={$manifestUrl}");
+
+        Http::fake([
+            $manifestUrl => Http::response([
+                'schema_version' => 1,
+                'version' => '1.2.3',
+                'cli_artifacts' => [
+                    'darwin-arm64' => [
+                        'url' => $artifactUrl,
+                        'sha256' => hash('sha256', $artifactBytes),
+                    ],
+                    'linux-amd64' => [
+                        'url' => $artifactUrl,
+                        'sha256' => hash('sha256', $artifactBytes),
+                    ],
+                ],
+            ]),
+        ]);
+
+        Process::fake(function (PendingProcess $process) use ($artifactBytes): ProcessResult {
+            if (is_array($process->command) && ($process->command[0] ?? null) === 'curl') {
+                $outputIndex = array_search('-o', $process->command, true);
+                file_put_contents($process->command[$outputIndex + 1], $artifactBytes);
+            }
+
+            return Process::result(output: local_checkout_version_json('1.2.3'), exitCode: 0);
+        });
+        Process::preventStrayProcesses();
+
+        $download = new LocalCheckoutUpdater(new CheckoutPathResolver)->downloadBinary('1.2.3');
+
+        expect($download['successful'])->toBeTrue()->and($download['version'])->toBe('1.2.3');
+
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                is_array($process->command)
+                && ($process->command[0] ?? null) === 'curl'
+                && in_array($artifactUrl, $process->command, strict: true)
             ),
         );
     });

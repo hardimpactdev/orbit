@@ -77,6 +77,31 @@ class OperationUpdatePlan extends Model
         return $this->manifest_source === ReleaseManifest::SourceTopologyCandidate;
     }
 
+    public function runtimeRoleImage(string $key): ?string
+    {
+        $image = $this->role_images[$key] ?? null;
+
+        if (! is_string($image) || trim($image) === '') {
+            return null;
+        }
+
+        $artifacts = $this->manifest_snapshot['role_image_artifacts'] ?? null;
+        $artifact = is_array($artifacts) ? $artifacts[$key] ?? null : null;
+
+        if (! is_array($artifact)) {
+            return trim($image);
+        }
+
+        $url = $artifact['url'] ?? null;
+        $sha256 = $artifact['sha256'] ?? null;
+
+        if (! is_string($url) || trim($url) === '' || ! is_string($sha256) || trim($sha256) === '') {
+            return trim($image);
+        }
+
+        return explode('@', trim($image), limit: 2)[0];
+    }
+
     public function toSnapshot(): OperationUpdatePlanSnapshot
     {
         return new OperationUpdatePlanSnapshot(

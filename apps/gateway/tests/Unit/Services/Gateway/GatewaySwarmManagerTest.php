@@ -125,6 +125,29 @@ it('deploys a stack file with docker stack deploy', function (): void {
     Process::assertRan("docker stack deploy -c '/tmp/orbit-stack.yml' 'orbit'");
 });
 
+it('can deploy a verified local image archive without registry resolution', function (): void {
+    Process::fake([
+        "docker stack deploy -c '/tmp/orbit-stack.yml' --resolve-image never 'orbit'" => Process::result(),
+    ]);
+
+    new GatewaySwarmManager()->deployStackForLoadedImageArtifact('/tmp/orbit-stack.yml', [
+        'url' => 'https://artifacts.example/orbit-websocket.tar.zst',
+        'sha256' => str_repeat('a', 64),
+    ]);
+
+    Process::assertRan("docker stack deploy -c '/tmp/orbit-stack.yml' --resolve-image never 'orbit'");
+});
+
+it('keeps registry image resolution when no local image archive was loaded', function (): void {
+    Process::fake([
+        "docker stack deploy -c '/tmp/orbit-stack.yml' 'orbit'" => Process::result(),
+    ]);
+
+    new GatewaySwarmManager()->deployStackForLoadedImageArtifact('/tmp/orbit-stack.yml', null);
+
+    Process::assertRan("docker stack deploy -c '/tmp/orbit-stack.yml' 'orbit'");
+});
+
 it('loads docker image archives after verifying the artifact hash', function (): void {
     $script = null;
 

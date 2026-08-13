@@ -205,7 +205,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBe([
             'caddy:2.9-alpine',
             'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-            'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+            'hardimpact/orbit-reverb:2.0.0',
         ])
         ->and(workload_updater_full_install_payload($shell, node: 'app-prod-1')['role_image_artifacts'])
         ->toBe([

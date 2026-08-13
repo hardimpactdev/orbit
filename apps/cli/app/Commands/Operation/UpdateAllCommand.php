@@ -137,6 +137,7 @@ final class UpdateAllCommand extends GatewayCommand
         $allCurrent = $this->terminalAllCurrent($terminal['payload']);
         $reapplyLocal = $this->terminalUsesTopologyCandidateManifest($terminal['payload']);
         $candidateBinaryUrl = $this->terminalCandidateBinaryUrl($terminal['payload']);
+        $candidateBinarySha256 = $this->terminalCandidateBinarySha256($terminal['payload']);
 
         // All-current short-circuit: skip local update; nothing was outdated.
         if ($allCurrent) {
@@ -146,7 +147,22 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         // Gateway phase succeeded — run local update as a fan-out target.
-        $this->runLocalFanOut($localUpdater, $progress, $targetVersion, $reapplyLocal, $candidateBinaryUrl);
+        $localUpdated = $this->runLocalFanOut(
+            $localUpdater,
+            $progress,
+            $targetVersion,
+            $reapplyLocal,
+            [
+                'url' => $candidateBinaryUrl,
+                'sha256' => $candidateBinarySha256,
+            ],
+        );
+
+        if (! $localUpdated) {
+            $progress->finishFailure($this->output);
+
+            return self::FAILURE;
+        }
 
         $progress->finishSuccess($this->output, $targetVersion);
 
@@ -227,9 +243,24 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         // Gateway phase succeeded — run local update as a fan-out target.
-        $download = $this->withBinaryUrl(
-            $this->terminalCandidateBinaryUrl($terminal['payload']),
-            fn (): array => $localUpdater->downloadBinary(),
+        $candidateBinaryUrl = $this->terminalCandidateBinaryUrl($terminal['payload']);
+        $candidateBinarySha256 = $this->terminalCandidateBinarySha256($terminal['payload']);
+
+        if (
+            $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
+            && ($candidateBinaryUrl === null
+            || $candidateBinarySha256 === null)
+        ) {
+            return $this->renderLocalUpdateFailure(
+                'download',
+                'Topology candidate CLI artifact is missing a valid URL or SHA-256 hash for this platform.',
+            );
+        }
+
+        $download = $this->withBinaryArtifact(
+            $candidateBinaryUrl,
+            $candidateBinarySha256,
+            fn (): array => $localUpdater->downloadBinary($this->terminalTargetVersion($terminal['payload']) ?? ''),
         );
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
@@ -292,30 +323,48 @@ final class UpdateAllCommand extends GatewayCommand
      * emitting sub-stage rows to the progress renderer. The local row mirrors
      * the workload-node sub-stage vocabulary: Downloading -> Replacing cli
      * binary -> Running doctor -> Done (or `Done (<n> issues)`).
+     *
+     * @param  array{url: string|null, sha256: string|null}  $candidateArtifact
      */
     private function runLocalFanOut(
         RunsLocalUpdate $localUpdater,
         UpdateAllHumanProgressRenderer $progress,
         ?string $targetVersion,
         bool $reapplyLocal,
-        ?string $candidateBinaryUrl,
-    ): void {
+        array $candidateArtifact,
+    ): bool {
+        $candidateBinaryUrl = $candidateArtifact['url'];
+        $candidateBinarySha256 = $candidateArtifact['sha256'];
+
         // Skip the download when the caller-local CLI is already on the target
         // (mirrors the per-node skip; the gateway-first gate is already met).
         if (! $reapplyLocal && $this->localIsCurrent($targetVersion)) {
             $progress->localNodeSkipped($this->output);
 
-            return;
+            return true;
+        }
+
+        if ($reapplyLocal && ($candidateBinaryUrl === null || $candidateBinarySha256 === null)) {
+            $progress->localNodeFailed(
+                $this->output,
+                'Topology candidate CLI artifact is missing a valid URL or SHA-256 hash for this platform.',
+            );
+
+            return false;
         }
 
         $progress->localNodeSubStep($this->output, 'downloading', $targetVersion ?? '');
 
-        $download = $this->withBinaryUrl($candidateBinaryUrl, static fn (): array => $localUpdater->downloadBinary());
+        $download = $this->withBinaryArtifact(
+            $candidateBinaryUrl,
+            $candidateBinarySha256,
+            static fn (): array => $localUpdater->downloadBinary($targetVersion ?? ''),
+        );
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             $progress->localNodeFailed($this->output, $download['output']);
 
-            return;
+            return false;
         }
 
         $progress->localNodeSubStep($this->output, 'replacing_cli_binary');
@@ -328,13 +377,15 @@ final class UpdateAllCommand extends GatewayCommand
         if (! $replace['successful']) {
             $progress->localNodeFailed($this->output, $replace['output']);
 
-            return;
+            return false;
         }
 
         $progress->localNodeSubStep($this->output, 'running_doctor');
         $doctor = $localUpdater->runDoctor();
 
         $progress->localNodeSucceeded($this->output, $doctor['issues']);
+
+        return true;
     }
 
     /**
@@ -540,6 +591,33 @@ final class UpdateAllCommand extends GatewayCommand
     /**
      * @param  array<string, mixed>  $payload
      */
+    private function terminalCandidateBinarySha256(array $payload): ?string
+    {
+        if (! $this->terminalUsesTopologyCandidateManifest($payload)) {
+            return null;
+        }
+
+        $platform = $this->localCliPlatform();
+
+        if ($platform === null) {
+            return null;
+        }
+
+        $data = $this->frameData($payload);
+        $artifacts = $this->frameArray($data, 'cli_artifacts') ?? $this->frameArray($payload, 'cli_artifacts') ?? [];
+        $artifact = $artifacts[$platform] ?? null;
+        $sha256 = is_array($artifact) ? $artifact['sha256'] ?? null : null;
+
+        if (! is_string($sha256) || preg_match('/^[a-f0-9]{64}$/i', trim($sha256)) !== 1) {
+            return null;
+        }
+
+        return strtolower(trim($sha256));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
     private function terminalCandidateReleasedAt(array $payload): ?string
     {
         if (! $this->terminalUsesTopologyCandidateManifest($payload)) {
@@ -625,23 +703,29 @@ final class UpdateAllCommand extends GatewayCommand
      * @param  callable(): TReturn  $callback
      * @return TReturn
      */
-    private function withBinaryUrl(?string $binaryUrl, callable $callback): mixed
+    private function withBinaryArtifact(?string $binaryUrl, ?string $sha256, callable $callback): mixed
     {
         if ($binaryUrl === null) {
             return $callback();
         }
 
-        $previous = getenv('ORBIT_BINARY_URL');
+        $previousUrl = getenv('ORBIT_BINARY_URL');
+        $previousSha256 = getenv('ORBIT_BINARY_SHA256');
         putenv("ORBIT_BINARY_URL={$binaryUrl}");
+
+        if ($sha256 === null) {
+            putenv('ORBIT_BINARY_SHA256');
+        } else {
+            putenv("ORBIT_BINARY_SHA256={$sha256}");
+        }
 
         try {
             return $callback();
         } finally {
-            if ($previous === false) {
-                putenv('ORBIT_BINARY_URL');
-            } else {
-                putenv("ORBIT_BINARY_URL={$previous}");
-            }
+            putenv($previousUrl === false ? 'ORBIT_BINARY_URL' : "ORBIT_BINARY_URL={$previousUrl}");
+            putenv(
+                $previousSha256 === false ? 'ORBIT_BINARY_SHA256' : "ORBIT_BINARY_SHA256={$previousSha256}",
+            );
         }
     }
 

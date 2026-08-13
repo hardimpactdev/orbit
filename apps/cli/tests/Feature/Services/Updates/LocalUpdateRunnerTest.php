@@ -48,6 +48,13 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         'output' => '',
     ];
 
+    /** @var array{successful: bool, exit_code: int, output: string} */
+    public array $currentInstallationResult = [
+        'successful' => true,
+        'exit_code' => 0,
+        'output' => '',
+    ];
+
     public function pullSource(): array
     {
         $this->calls[] = 'pull_source';
@@ -55,7 +62,7 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
-    public function downloadBinary(): array
+    public function downloadBinary(string $expectedVersion = ''): array
     {
         $this->calls[] = 'download';
 
@@ -89,6 +96,13 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         $this->calls[] = 'ensure_shell_integrations';
 
         return $this->shellIntegrationResult;
+    }
+
+    public function verifyCurrentInstallation(string $expectedVersion): array
+    {
+        $this->calls[] = "verify_current_installation:{$expectedVersion}";
+
+        return $this->currentInstallationResult;
     }
 
     public function runMigrations(): array
@@ -208,9 +222,44 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->fromVersion)
             ->toBe('0.1.131')
             ->and($updater->calls)
-            ->toBe(['ensure_shell_integrations'])
+            ->toBe(['verify_current_installation:0.1.131', 'ensure_shell_integrations'])
             ->and($result->stepResults)
             ->toBe(['check' => 'skipped']);
+    });
+
+    it('repairs a missing launcher when the installed version equals the latest release', function (): void {
+        config()->set('app.version', '0.1.131');
+        fakeRunnerLatest('0.1.131');
+
+        $updater = new RunnerFakeUpdater;
+        $updater->currentInstallationResult = [
+            'successful' => false,
+            'exit_code' => 1,
+            'output' => 'Configured Orbit launcher does not exist.',
+        ];
+
+        $result = makeRunner($updater)->run();
+
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->fromVersion)
+            ->toBe('0.1.131')
+            ->and($result->toVersion)
+            ->toBe('0.1.131')
+            ->and($updater->calls)
+            ->toBe([
+                'verify_current_installation:0.1.131',
+                'download',
+                'replace:/tmp/staged-orbit:0.1.131:2026-06-18T00:00:00+00:00',
+                'doctor',
+            ])
+            ->and($result->stepResults)
+            ->toBe([
+                'check' => 'completed',
+                'download' => 'completed',
+                'replace' => 'completed',
+                'doctor' => 'completed',
+            ]);
     });
 
     it('reports the installed version as latest when the release source is older', function (): void {
@@ -228,9 +277,34 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->fromVersion)
             ->toBe('0.1.174')
             ->and($updater->calls)
-            ->toBe(['ensure_shell_integrations'])
+            ->toBe(['verify_current_installation:0.1.174', 'ensure_shell_integrations'])
             ->and($result->stepResults)
             ->toBe(['check' => 'skipped']);
+    });
+
+    it('does not downgrade to repair an unverifiable install newer than the release source', function (): void {
+        config()->set('app.version', '0.1.174');
+        fakeRunnerLatest('0.1.156');
+
+        $updater = new RunnerFakeUpdater;
+        $updater->currentInstallationResult = [
+            'successful' => false,
+            'exit_code' => 1,
+            'output' => 'Configured Orbit launcher does not exist.',
+        ];
+
+        $result = makeRunner($updater)->run();
+
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_FAILED)
+            ->and($result->failedStep)
+            ->toBe('check')
+            ->and($result->output)
+            ->toContain('release source provides 0.1.156')
+            ->and($updater->calls)
+            ->toBe(['verify_current_installation:0.1.174'])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'failed']);
     });
 
     it('fails when shell integration ensure fails on an already-current install', function (): void {
@@ -253,7 +327,7 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->output)
             ->toContain('zsh shell integration')
             ->and($updater->calls)
-            ->toBe(['ensure_shell_integrations'])
+            ->toBe(['verify_current_installation:0.1.131', 'ensure_shell_integrations'])
             ->and($result->stepResults)
             ->toBe(['check' => 'failed']);
     });
@@ -445,7 +519,7 @@ describe('LocalUpdateRunner', function (): void {
         expect($second->status)
             ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
             ->and($updaterForSecondRun->calls)
-            ->toBe(['ensure_shell_integrations'])
+            ->toBe(['verify_current_installation:0.1.131', 'ensure_shell_integrations'])
             ->and($second->stepResults)
             ->toBe(['check' => 'skipped']);
     });

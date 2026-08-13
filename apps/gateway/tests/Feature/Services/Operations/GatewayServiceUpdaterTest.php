@@ -98,6 +98,7 @@ it('updates gateway and scheduler services to the plan image after target image 
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
             "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'",
             "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-operations-reverb'",
         ])
         ->and(array_values(array_filter(
             $operations,
@@ -176,7 +177,7 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->and($stack)
         ->toContain('orbit-operations-reverb:')
         ->toContain(
-            'image: "hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"',
+            'image: "hardimpact/orbit-reverb:1.2.3"',
         )
         ->toContain(
             '${ORBIT_CONFIG_ROOT:-'.$this->configRoot.'}/operations-websocket:/etc/orbit/operations-websocket:ro',
@@ -203,6 +204,59 @@ it('updates gateway and scheduler services to the plan image after target image 
             && str_contains($input, 'tls /etc/orbit/certs/gateway.crt /etc/orbit/certs/gateway.key')
         );
     });
+});
+
+it('fails the gateway update when operations Reverb rolls back to its previous image', function (): void {
+    Sleep::fake();
+
+    $run = gatewayServiceUpdaterRun();
+    $plan = gateway_service_updater_plan_with_reverb_artifact($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Process::fake(function ($process) use ($plan, $previousImage) {
+        $command = (string) $process->command;
+
+        if (
+            $command
+            === "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-operations-reverb'"
+        ) {
+            return Process::result(output: "hardimpact/orbit-reverb:1.2.2\n");
+        }
+
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        return match ($command) {
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
+        ->toThrow(RuntimeException::class, 'orbit_orbit-operations-reverb');
+
+    expect(
+        OperationEvent::query()
+            ->where('operation_run_id', $run->id)
+            ->where('event_type', 'step')
+            ->where('payload->key', 'gateway.stack')
+            ->where('payload->status', 'fail')
+            ->exists(),
+    )->toBeTrue();
 });
 
 it('reissues incomplete gateway leaf SANs and restarts router caddy before gateway service replacement', function (): void {
@@ -601,13 +655,16 @@ it('treats a same-image gateway service update with no Docker update status as h
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-runtime-hibernator'",
         "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'",
-        gateway_service_updater_stack_deploy_command(),
+        'docker stack deploy -c '
+            .escapeshellarg(config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml')
+            ." 'orbit'",
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
         "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
         "docker service ls --filter 'name=orbit_orbit-runtime-hibernator' --format '{{.Replicas}}'",
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-operations-reverb'",
     ]);
 
     Sleep::assertSleptTimes(0);
@@ -783,7 +840,7 @@ function gateway_service_updater_stack_deploy_command(): string
     return (
         'docker stack deploy -c '
         .escapeshellarg(config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml')
-        ." 'orbit'"
+        ." --resolve-image never 'orbit'"
     );
 }
 
@@ -896,6 +953,10 @@ function gateway_service_updater_common_process_result(
         "docker service scale --detach=true 'orbit_orbit-runtime-hibernator=1'" => Process::result(),
         'bash -s' => Process::result(),
         gateway_service_updater_stack_deploy_command() => Process::result(),
+        'docker stack deploy -c '
+            .escapeshellarg(config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml')
+            ." 'orbit'"
+            => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),
@@ -905,6 +966,8 @@ function gateway_service_updater_common_process_result(
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-operations-reverb'"
+            => Process::result(output: $plan->runtimeRoleImage('orbit-websocket')."\n"),
         default => null,
     };
 }

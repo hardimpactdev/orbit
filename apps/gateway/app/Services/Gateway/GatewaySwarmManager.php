@@ -123,8 +123,35 @@ final readonly class GatewaySwarmManager
 
     public function deployStack(string $stackFile, string $stack = 'orbit'): void
     {
+        $this->runStackDeploy($stackFile, $stack, '');
+    }
+
+    public function deployStackFromLocalImages(string $stackFile, string $stack = 'orbit'): void
+    {
+        $this->runStackDeploy($stackFile, $stack, '--resolve-image never ');
+    }
+
+    /**
+     * @param  array{url: string, sha256: string}|null  $loadedImageArtifact
+     */
+    public function deployStackForLoadedImageArtifact(
+        string $stackFile,
+        ?array $loadedImageArtifact,
+        string $stack = 'orbit',
+    ): void {
+        if ($loadedImageArtifact !== null) {
+            $this->deployStackFromLocalImages($stackFile, $stack);
+
+            return;
+        }
+
+        $this->deployStack($stackFile, $stack);
+    }
+
+    private function runStackDeploy(string $stackFile, string $stack, string $options): void
+    {
         $this->run(
-            'docker stack deploy -c '.escapeshellarg($stackFile).' '
+            'docker stack deploy -c '.escapeshellarg($stackFile).' '.$options
                 .escapeshellarg($this->normalizeName($stack, 'stack')),
             'deploy gateway Swarm stack',
         );

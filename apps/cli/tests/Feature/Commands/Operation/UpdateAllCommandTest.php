@@ -219,6 +219,69 @@ it('reports partial failure in json mode when the local update fails after the g
         ->toBe('Failed to update local Orbit installation.');
 });
 
+it('returns failure in human mode when the local update fails after the gateway phase', function (): void {
+    $this->localUpdater->results['download'] = [
+        'successful' => false,
+        'exit_code' => 1,
+        'output' => 'local binary update failed',
+        'staged_path' => null,
+        'version' => null,
+    ];
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3'],
+        ],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toContain('local binary update failed')
+        ->and($output)
+        ->toContain('Failed')
+        ->and($output)
+        ->not->toContain('Success: All nodes');
+});
+
+it('fails a topology candidate local update when its CLI checksum is missing', function (): void {
+    $artifacts = updateAllCommandCandidateCliArtifacts();
+    $platform = PHP_OS_FAMILY === 'Darwin' ? 'darwin-arm64' : 'linux-amd64';
+    unset($artifacts[$platform]['sha256']);
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 0,
+                'data' => [
+                    'updates' => [],
+                    'target_version' => '1.2.3',
+                    'manifest_source' => 'topology-candidate',
+                    'cli_artifacts' => $artifacts,
+                ],
+            ],
+        ],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('local_update_failed')
+        ->and($decoded['error']['meta']['failed_step'])
+        ->toBe('download')
+        ->and($this->localUpdater->calls)
+        ->toBe([]);
+});
+
 it('advertises both the --json and --stream-json output modes', function (): void {
     $command = app(Kernel::class)->all()['update:all'];
 
@@ -1851,6 +1914,10 @@ it('runs the local fan-out for topology candidate manifests when the caller is a
         ->toBe(['download', 'replace', 'doctor'])
         ->and($this->localUpdater->binaryUrls[0] ?? '')
         ->toContain('https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-')
+        ->and($this->localUpdater->binarySha256s)
+        ->toBe([str_repeat(PHP_OS_FAMILY === 'Darwin' ? 'c' : 'b', 64)])
+        ->and($this->localUpdater->expectedVersions)
+        ->toBe(['1.2.3'])
         ->and($this->localUpdater->releasedAts)
         ->toBe(['2026-06-25T20:00:25+00:00'])
         ->and($output)
@@ -1902,6 +1969,10 @@ it('runs the local download in json mode for topology candidate manifests when t
         ->toBe(['download', 'replace', 'doctor'])
         ->and($this->localUpdater->binaryUrls[0] ?? '')
         ->toContain('https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-')
+        ->and($this->localUpdater->binarySha256s)
+        ->toBe([str_repeat(PHP_OS_FAMILY === 'Darwin' ? 'c' : 'b', 64)])
+        ->and($this->localUpdater->expectedVersions)
+        ->toBe(['1.2.3'])
         ->and($this->localUpdater->releasedAts)
         ->toBe(['2026-06-25T20:00:25+00:00']);
 });
@@ -2357,7 +2428,7 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
 
-            public function downloadBinary(): array
+            public function downloadBinary(string \$expectedVersion = ''): array
             {
                 return [
                     'successful' => true,
@@ -2392,6 +2463,11 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
             }
 
             public function ensureShellIntegrations(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
+            public function verifyCurrentInstallation(string \$expectedVersion): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
@@ -2466,7 +2542,7 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
 
-            public function downloadBinary(): array
+            public function downloadBinary(string \$expectedVersion = ''): array
             {
                 return [
                     'successful' => true,
@@ -2493,6 +2569,11 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
             }
 
             public function ensureShellIntegrations(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
+            public function verifyCurrentInstallation(string \$expectedVersion): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
@@ -2684,6 +2765,12 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
      */
     public array $binaryUrls = [];
 
+    /** @var list<string|null> */
+    public array $binarySha256s = [];
+
+    /** @var list<string> */
+    public array $expectedVersions = [];
+
     /**
      * @var list<string|null>
      */
@@ -2720,11 +2807,14 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     /**
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
      */
-    public function downloadBinary(): array
+    public function downloadBinary(string $expectedVersion = ''): array
     {
         $this->calls[] = 'download';
         $binaryUrl = getenv('ORBIT_BINARY_URL');
         $this->binaryUrls[] = $binaryUrl === false ? null : $binaryUrl;
+        $binarySha256 = getenv('ORBIT_BINARY_SHA256');
+        $this->binarySha256s[] = $binarySha256 === false ? null : $binarySha256;
+        $this->expectedVersions[] = $expectedVersion;
 
         /** @var array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null} */
         return $this->results['download'];
@@ -2773,6 +2863,11 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     {
         $this->calls[] = 'ensure_shell_integrations';
 
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function verifyCurrentInstallation(string $expectedVersion): array
+    {
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 

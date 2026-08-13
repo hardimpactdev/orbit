@@ -163,7 +163,7 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
     /**
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
      */
-    public function downloadBinary(): array
+    public function downloadBinary(string $expectedVersion = ''): array
     {
         return [
             'successful' => true,
@@ -199,6 +199,11 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
     }
 
     public function ensureShellIntegrations(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function verifyCurrentInstallation(string $expectedVersion): array
     {
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }

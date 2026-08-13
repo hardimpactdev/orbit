@@ -192,7 +192,7 @@ class GatewayServiceUpdater
 
     private function operationsReverbImage(OperationUpdatePlan $plan): string
     {
-        $image = $plan->role_images['orbit-websocket'] ?? null;
+        $image = $plan->runtimeRoleImage('orbit-websocket');
 
         return is_string($image) && trim($image) !== ''
             ? trim($image)
@@ -263,11 +263,14 @@ class GatewayServiceUpdater
             ),
         );
 
-        $this->swarm()->deployStack($stackPath);
+        $this->swarm()->deployStackForLoadedImageArtifact(
+            $stackPath,
+            $this->operationsReverbImageArtifact($plan),
+        );
         $this->waitForGatewayHealth($targetImage);
         $this->waitForServiceReplica(self::SchedulerService);
         $this->waitForServiceReplica(self::RUNTIME_HIBERNATOR_SERVICE);
-        $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
+        $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE, $this->operationsReverbImage($plan));
 
         return null;
     }
@@ -378,10 +381,13 @@ class GatewayServiceUpdater
         throw new RuntimeException('Gateway service health check failed.');
     }
 
-    private function waitForServiceReplica(string $service): void
+    private function waitForServiceReplica(string $service, ?string $expectedImage = null): void
     {
         for ($attempt = 1; $attempt <= self::GatewayHealthCheckAttempts; $attempt++) {
-            if ($this->swarm()->serviceReplicas($service) === '1/1') {
+            $replicasConverged = $this->swarm()->serviceReplicas($service) === '1/1';
+            $imageConverged = $expectedImage === null || $this->swarm()->serviceImage($service) === $expectedImage;
+
+            if ($replicasConverged && $imageConverged) {
                 return;
             }
 

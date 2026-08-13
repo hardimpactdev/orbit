@@ -409,11 +409,13 @@ final readonly class WorkloadNodeUpdater
         $images = [];
 
         foreach ($this->requiredRoleImageKeys($plan, $node) as $key) {
-            if (! isset($plan->role_images[$key]) || ! is_string($plan->role_images[$key])) {
+            $image = $plan->runtimeRoleImage($key);
+
+            if ($image === null) {
                 throw new RuntimeException("Update plan contains an invalid role image for [{$key}].");
             }
 
-            $images[] = $plan->role_images[$key];
+            $images[] = $image;
         }
 
         return array_values(array_unique($images));

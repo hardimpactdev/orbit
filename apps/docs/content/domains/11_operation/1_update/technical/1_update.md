@@ -54,7 +54,13 @@ fields and does not prompt.
   than downloading a binary artifact.
 - Honor `ORBIT_BINARY_URL` as a full URL override (supports `file://` scheme
   for offline and E2E scenarios that point at a local artifact).
-- When `ORBIT_BINARY_URL` is not set, resolve the asset URL from
+- When `ORBIT_BINARY_URL` is not set and `ORBIT_RELEASE_MANIFEST_URL` selects a
+  release manifest, download the current host artifact from that manifest and
+  require its SHA-256 hash. The downloaded binary must match both that hash and
+  the version resolved during the check step before Orbit can replace the
+  launcher. This binds a same-version repair to one release source and prevents
+  candidate-to-public fallback or a moving-channel version mismatch.
+- When neither override is set, resolve the asset URL from
   `ORBIT_BINARY_BASE_URL/<asset>` (default base:
   `https://github.com/hardimpactdev/orbit/releases/latest/download`).
 - Supported asset names: `orbit-macos-arm64` (macOS Apple Silicon) and
@@ -85,6 +91,9 @@ fields and does not prompt.
   Orbit does not fall back to `config('app.version')`, `0.0.0`, or any other
   guessed version, and does not write install metadata under a version inferred
   from human table text or the first dotted triple in mixed progress output.
+- When the selected artifact declares a SHA-256 hash, verify it before running
+  the staged binary. A checksum or requested-version mismatch fails the download
+  step and leaves the existing launcher unchanged.
 - After a successful binary replace, and also when the installed CLI is already
   current, ensure the supported zsh shell integration when the active login
   shell is zsh: rewrite the Orbit-owned snippet at
@@ -118,13 +127,19 @@ fields and does not prompt.
   downloading the full binary, and compares it to the installed CLI version.
   `ORBIT_RELEASE_MANIFEST_URL` is the first release manifest source when set;
   otherwise the command uses the public GitHub latest-release manifest/API.
-- When the installed version already equals the latest release, `update`
-  performs no download and returns a success/skip result reporting that the
-  current version is already installed.
+- When the installed version already equals the latest release, `update` first
+  verifies that the configured host launcher exists, is executable, and reports
+  that exact version through `orbit --version --local --json`. A healthy
+  launcher performs no download and returns a success/skip result. A missing,
+  non-executable, malformed, or wrong-version launcher downloads the same
+  release again, relinks it, verifies it, and runs Doctor before returning
+  success.
 - When the installed version is newer than the release source, such as during a
   release-candidate rollout while public GitHub releases lag, `update` treats
   the installed version as current and reports that installed version in both
-  the check row and skip footer.
+  the check row and skip footer when its launcher verifies. If that newer
+  launcher cannot be verified, `update` fails the check instead of downloading
+  and downgrading to the older release source.
 - The local CLI version must never exceed the version its gateway runs. When a
   newer release exists, `update` reads the gateway's current version (a
   read-only gateway status query) and only proceeds when the gateway is already
@@ -206,6 +221,7 @@ gateway status query. The `Running doctor` step is verify-only.
 | Binary unavailable | A production artifact download fails or the production release source is unreachable. | Failure |
 | Unsupported platform | The host OS/arch is not a supported binary target. | Failure |
 | Verify failed | The resolved local Orbit entry point fails `orbit --version --local --json`, or succeeds without parseable structured version JSON. | Failure |
+| Same-version launcher drift | The configured launcher is missing, not executable, malformed, or reports the wrong version while the release source provides the installed version. | Repair by downloading, relinking, verifying, and running Doctor. |
 | Gateway behind (skip) | A newer release exists but the gateway has not updated to it. | Success / skip (no side effect; directs the operator to update the gateway first). |
 | Doctor reported drift | The post-update `doctor` verify reports issues. | Success (the update completed; the issue count is surfaced for follow-up). |
 

@@ -741,6 +741,9 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",
         ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-operations-reverb'" => Process::result(
+            output: 'hardimpact/orbit-reverb:1.2.3@sha256:'.str_repeat('d', times: 64)."\n",
+        ),
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "{$gatewayImage}\n",
         ),

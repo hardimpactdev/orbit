@@ -88,7 +88,7 @@ $source = <<<PHP
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];
         }
 
-        public function downloadBinary(): array
+        public function downloadBinary(string \$expectedVersion = ''): array
         {
             return [
                 'successful' => true,
@@ -123,6 +123,11 @@ $source = <<<PHP
         }
 
         public function ensureShellIntegrations(): array
+        {
+            return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+        }
+
+        public function verifyCurrentInstallation(string \$expectedVersion): array
         {
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];
         }
