@@ -125,6 +125,85 @@ describe('ProxyRouteProbe interface', function (): void {
                 'RemoteShell failed on ingress-1 (exit 2): sh: 2: set: Illegal option -o pipefail',
             );
     });
+
+    it('reports unavailable route observation as unverifiable instead of missing drift', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+        $snapshot = proxyProbeWithRemoteShell(new ProxyProbeRecordingRemoteShell(
+            "runtime_unavailable\t\t\t\t\t\t\t\t\t\t\n",
+        ))->introspect($route);
+
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(proxyProbeIssue($drift, 'proxy.route_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_missing'))
+            ->toBeNull();
+    });
+
+    it('reports malformed route observation as unverifiable instead of missing drift', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+        $snapshot = proxyProbeWithRemoteShell(new ProxyProbeRecordingRemoteShell(
+            "not-a-route-observation\n",
+        ))->introspect($route);
+
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
+
+        expect(proxyProbeIssue(drift: $drift, key: 'proxy.route_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.route_missing'))
+            ->toBeNull();
+    });
+
+    it('keeps verified route absence as genuine missing drift', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]);
+        $snapshot = proxyProbeWithRemoteShell(new ProxyProbeRecordingRemoteShell(
+            "observed\t0\t\t\t\t0\t0\t\t\t0\t\n",
+        ))->introspect($route);
+
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
+
+        expect(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'proxy.route_probe_failed'))
+            ->toBeNull();
+    });
 });
 
 describe('proxy registry probe foundation', function (): void {
@@ -660,9 +739,9 @@ describe('proxy backend and TLS reality', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
         $shell = new ProxyProbeRecordingRemoteShell(
-            "1\t"
+            "observed\t1\t"
             .str_repeat('a', 64)
-            ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\t\t\t0\t\n",
         );
 
         $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);
@@ -698,7 +777,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
         $shell = new ProxyProbeRecordingRemoteShell(
-            "1\t"
+            "observed\t1\t"
             .str_repeat('a', 64)
             ."\t/etc/orbit/certs/analytics.orbit.crt\t/etc/orbit/certs/analytics.orbit.key\t1\t1\t\t\t1\t\n",
         );
@@ -729,7 +808,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'upstream' => 'http://host.docker.internal:6767',
             ],
         ]);
-        $shell = new ProxyProbeRecordingRemoteShell("0\t\t\t\t0\t0\t\t\n");
+        $shell = new ProxyProbeRecordingRemoteShell("observed\t0\t\t\t\t0\t0\t\t\t0\t\n");
 
         proxyProbeWithRemoteShell($shell)->introspect($route);
 
@@ -770,13 +849,13 @@ describe('proxy backend and TLS reality', function (): void {
                 ],
             ]);
         $shell = new ProxyProbeRecordingRemoteShell(
-            "1\t"
+            "observed\t1\t"
             .str_repeat('a', 64)
             ."\t/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt"
             ."\t/Users/nckrtl/.config/orbit/certs/happie.nmbp.key"
             ."\t1\t1\t1\t"
             .base64_encode('HTTP/2 200')
-            ."\n",
+            ."\t0\t\n",
         );
 
         $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);
@@ -870,6 +949,67 @@ describe('proxy backend and TLS reality', function (): void {
                     'operation' => 'caddy.router.install',
                 ],
             ]);
+    });
+
+    it('keeps valid ingress drift when one backend observation is unavailable', function (): void {
+        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
+        $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
+        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
+        assignProxyProbeRole($edge, 'ingress');
+        assignProxyProbeRole($router, 'router');
+        assignProxyProbeRole($backend, 'app-prod');
+
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'placement' => 'ingress',
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'backend_artifacts' => [[
+                    'node_id' => $backend->id,
+                    'source_hash' => str_repeat('b', 64),
+                ]],
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
+            'docs.test' => [
+                'public' => [
+                    'route_probe_ok' => true,
+                    'route_exists' => true,
+                    'route_hash' => str_repeat('d', 64),
+                ],
+                'router' => [
+                    'route_probe_ok' => true,
+                    'route_exists' => true,
+                    'route_hash' => str_repeat('c', 64),
+                ],
+                'backends' => [
+                    $backend->id => [
+                        'route_probe_ok' => false,
+                        'route_probe_status' => 'runtime_unavailable',
+                        'route_probe_error' => 'orbit-caddy is not running.',
+                    ],
+                ],
+            ],
+        ]));
+
+        expect(proxyProbeIssue(drift: $drift, key: 'proxy.route_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.public_route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.backend_route_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue(drift: $drift, key: 'proxy.backend_route_mismatch'))
+            ->toBeNull();
     });
 
     it('reports incomplete persisted enactment after every production artifact matches', function (): void {
@@ -2416,7 +2556,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             // Caddyfile still on disk — different from the Docker-first hash.
             $observedLegacyHash = str_repeat('f', 64);
             $shell = new ProxyProbeRecordingRemoteShell(
-                "1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\n",
+                "observed\t1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\t\t\t0\t\n",
             );
 
             $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);

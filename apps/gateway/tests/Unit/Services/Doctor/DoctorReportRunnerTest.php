@@ -4510,9 +4510,11 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ): RemoteShellResult {
                 $input = json_decode((string) ($transportOptions['input'] ?? ''), associative: true);
                 $script = is_array($input) && is_string($input['script'] ?? null) ? $input['script'] : '';
-                $stdout = str_contains($script, 'body_b64=')
-                    ? $this->adoptSnapshot
-                    : '';
+                $stdout = match (true) {
+                    str_contains($script, 'ORBIT_PROXY_DOMAIN') => "observed\t0\t\t\t\t0\t0\t\t\t0\t\n",
+                    str_contains($script, 'body_b64=') => $this->adoptSnapshot,
+                    default => '',
+                };
                 $result = new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 1);
 
                 return new RemoteShellResult(
@@ -5332,6 +5334,7 @@ final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
             }
 
             return $this->success(implode("\t", [
+                'observed',
                 '1',
                 $route->source_hash,
                 "/etc/orbit/certs/{$route->domain}.crt",

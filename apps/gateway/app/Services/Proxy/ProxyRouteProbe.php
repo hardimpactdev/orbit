@@ -45,6 +45,7 @@ final readonly class ProxyRouteProbe
         private ?ToolScriptDispatcher $scripts = null,
         private ?ProxyRouteRenderer $renderer = null,
         private ?AgentToolProxyRouteIntent $agentToolRoutes = null,
+        private ?ProxyRouteFileProbeContract $routeFileProbeContract = null,
     ) {}
 
     public function key(): string
@@ -123,135 +124,17 @@ final readonly class ProxyRouteProbe
         bool $backend = false,
         ?string $runtimeUpstream = null,
     ): array {
-        $script = <<<'BASH'
-            set -euo pipefail
-            domain="$ORBIT_PROXY_DOMAIN"
-            suffix="${ORBIT_PROXY_SUFFIX:-}"
-            upstream="${ORBIT_PROXY_RUNTIME_UPSTREAM:-}"
-            path="/etc/caddy/sites/${domain}${suffix}.caddy"
-
-            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
-                printf '0\t\t\t\t0\t0\t\t0\t\n'
-                exit 0
-            fi
-
-            docker exec orbit-caddy sh -c '
-                path="$1"
-                upstream="$2"
-                exists=0
-                hash=""
-                cert=""
-                key=""
-                cert_exists=0
-                key_exists=0
-                runtime_reachable=""
-                runtime_error=""
-                cert_probe_attempted=0
-                cert_pem=""
-
-                if [ -f "$path" ]; then
-                    exists=1
-                    hash=$(sha256sum "$path" | cut -d " " -f 1)
-                    tls_line=$(grep -m 1 -E "^[[:space:]]*tls[[:space:]]+" "$path" || true)
-                    if [ -n "$tls_line" ]; then
-                        set -- $tls_line
-                        if [ "${1:-}" = "tls" ] && [ "${2:-}" != "internal" ]; then
-                            cert="${2:-}"
-                            key="${3:-}"
-                        fi
-                    fi
-                    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
-                    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
-
-                    if [ "$cert_exists" = "1" ]; then
-                        cert_probe_attempted=1
-                        cert_pem=$(base64 < "$cert" | tr -d "\n")
-                    fi
-
-                    if [ -n "$upstream" ]; then
-                        if command -v curl >/dev/null 2>&1; then
-                            case "$upstream" in
-                                https://*)
-                                    rest="${upstream#https://}"
-                                    authority="${rest%%/*}"
-                                    path="/"
-                                    if [ "$rest" != "$authority" ]; then
-                                        path="/${rest#*/}"
-                                    fi
-                                    host="${authority%%:*}"
-                                    port="443"
-                                    if [ "$authority" != "$host" ]; then
-                                        port="${authority##*:}"
-                                    fi
-
-                                    probe_output=$(curl -k -sS --connect-timeout 3 --max-time 8 -o /dev/null -w "HTTP/%{http_version} %{http_code}" --connect-to "$domain:$port:$host:$port" "https://$domain:$port$path" 2>&1 || true)
-                                    ;;
-                                *)
-                                    probe_output=$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w "HTTP/%{http_version} %{http_code}" "$upstream" 2>&1 || true)
-                                    ;;
-                            esac
-                        else
-                            probe_output=$(wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
-                        fi
-
-                        case "$probe_output" in
-                            *HTTP/*) runtime_reachable=1 ;;
-                            *) runtime_reachable=0 ;;
-                        esac
-
-                        runtime_error=$(printf "%s" "$probe_output" | tail -n 1 | base64 | tr -d "\n")
-                    fi
-                fi
-
-                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error" "$cert_probe_attempted" "$cert_pem"
-            ' sh "$path" "$upstream"
-            BASH;
-
-        $script = sprintf(
-            "export ORBIT_PROXY_DOMAIN=%s ORBIT_PROXY_SUFFIX=%s ORBIT_PROXY_RUNTIME_UPSTREAM=%s\n%s",
-            escapeshellarg($domain),
-            escapeshellarg($backend ? '.backend' : ''),
-            escapeshellarg($runtimeUpstream ?? ''),
-            $script,
+        $script = $this->routeFileProbeContract()->render(
+            domain: $domain,
+            routeSuffix: $backend ? '.backend' : '',
+            runtimeUpstream: $runtimeUpstream,
         );
 
         $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
 
-        $parts = explode("\t", trim($result->stdout), limit: 10);
-
-        if (count($parts) < 6) {
-            return [];
-        }
-
-        [
-            $exists,
-            $hash,
-            $cert,
-            $key,
-            $certExists,
-            $keyExists,
-            $runtimeReachable,
-            $runtimeError,
-            $certProbeAttempted,
-            $certPem,
-        ] = array_pad(
-            $parts,
-            length: 10,
-            value: '',
-        );
-
         return [
-            'route_exists' => $exists === '1',
-            'route_hash' => $hash,
-            'cert_path' => $cert,
-            'key_path' => $key,
-            'cert_exists' => $certExists === '1',
-            'key_exists' => $keyExists === '1',
-            'cert_validity_observed' => $certProbeAttempted === '1',
-            'cert_validity_days' => $this->certificateValidityDays($certPem),
             'runtime_upstream' => $runtimeUpstream,
-            'runtime_upstream_reachable' => $runtimeReachable === '' ? null : $runtimeReachable === '1',
-            'runtime_probe_error' => $runtimeError === '' ? null : base64_decode($runtimeError, true),
+            ...$this->routeFileProbeContract()->parse($result),
         ];
     }
 
@@ -586,6 +469,7 @@ final readonly class ProxyRouteProbe
             ...$this->checkRecordCompleteness($route),
             ...$this->checkNodeEligibility($route),
             ...$this->checkCustomDomainConflict($route),
+            ...$this->checkRouteProbeEvidence($route, $snapshot),
             ...$this->checkBackendReality($route, $snapshot),
             ...$this->checkTlsReality($route, $snapshot),
         ];
@@ -943,34 +827,6 @@ final readonly class ProxyRouteProbe
         return [];
     }
 
-    private function certificateValidityDays(string $encodedCertificate): ?int
-    {
-        if ($encodedCertificate === '') {
-            return null;
-        }
-
-        $certificate = base64_decode(string: $encodedCertificate, strict: true);
-
-        if (! is_string($certificate)) {
-            return null;
-        }
-
-        $parsed = openssl_x509_parse(certificate: $certificate, short_names: false);
-
-        if (! is_array($parsed)) {
-            return null;
-        }
-
-        $startsAt = $parsed['validFrom_time_t'] ?? null;
-        $expiresAt = $parsed['validTo_time_t'] ?? null;
-
-        if (! is_int($startsAt) || ! is_int($expiresAt) || $expiresAt < $startsAt) {
-            return null;
-        }
-
-        return intdiv(num1: $expiresAt - $startsAt, num2: 86400);
-    }
-
     /**
      * @param  array<string, mixed>  $observed
      * @return list<DriftEntry>
@@ -1206,6 +1062,111 @@ final readonly class ProxyRouteProbe
     /**
      * @return list<DriftEntry>
      */
+    private function checkRouteProbeEvidence(ProxyRoute $route, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($route->domain);
+
+        if (! is_array($observed)) {
+            return [];
+        }
+
+        $unavailable = [];
+
+        if (! $this->usesIngressPlacement($route)) {
+            $this->appendUnavailableObservation($unavailable, 'serving', $route->node_id, $observed);
+
+            return $this->unavailableRouteProbeDrift($route, $unavailable);
+        }
+
+        $this->appendUnavailableObservation(
+            $unavailable,
+            'public',
+            $route->node_id,
+            $this->publicObservation($observed),
+        );
+
+        $routerNodeId = $this->routerArtifact($route)['node_id'] ?? null;
+        $this->appendUnavailableObservation(
+            $unavailable,
+            'router',
+            is_int($routerNodeId) ? $routerNodeId : null,
+            $this->routerObservation($observed),
+        );
+
+        $backends = is_array($observed['backends'] ?? null) ? $observed['backends'] : [];
+
+        foreach ($backends as $nodeId => $backend) {
+            if (! is_array($backend)) {
+                continue;
+            }
+
+            $this->appendUnavailableObservation(
+                $unavailable,
+                'backend',
+                is_int($nodeId) ? $nodeId : null,
+                $backend,
+            );
+        }
+
+        return $this->unavailableRouteProbeDrift($route, $unavailable);
+    }
+
+    /**
+     * @param  list<array{scope: string, node_id: int|null, status: string|null, error: string|null}>  $unavailable
+     * @return list<DriftEntry>
+     */
+    private function unavailableRouteProbeDrift(ProxyRoute $route, array $unavailable): array
+    {
+        if ($unavailable === []) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.route_probe_failed',
+                kind: DriftKind::Unverifiable,
+                summary: "Proxy route {$route->domain} could not be fully inspected.",
+                detail: ['observations' => $unavailable],
+            ),
+        ];
+    }
+
+    /**
+     * @param  list<array{scope: string, node_id: int|null, status: string|null, error: string|null}>  $unavailable
+     * @param  array<array-key, mixed>  $observation
+     */
+    private function appendUnavailableObservation(
+        array &$unavailable,
+        string $scope,
+        ?int $nodeId,
+        array $observation,
+    ): void {
+        if (! $this->routeProbeFailed($observation)) {
+            return;
+        }
+
+        $unavailable[] = [
+            'scope' => $scope,
+            'node_id' => $nodeId,
+            'status' => is_string($observation['route_probe_status'] ?? null)
+                ? $observation['route_probe_status']
+                : null,
+            'error' => is_string($observation['route_probe_error'] ?? null)
+                ? $observation['route_probe_error']
+                : null,
+        ];
+    }
+
+    /** @param array<array-key, mixed> $observation */
+    private function routeProbeFailed(array $observation): bool
+    {
+        return ($observation['route_probe_ok'] ?? null) === false;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkBackendReality(ProxyRoute $route, ProbeSnapshot $snapshot): array
     {
         $observed = $snapshot->get($route->domain);
@@ -1222,6 +1183,10 @@ final readonly class ProxyRouteProbe
                 ...$this->checkBackendArtifactNodes($route),
                 ...$this->checkBackendArtifactReality($route, $observed),
             ];
+        }
+
+        if ($this->routeProbeFailed($observed)) {
+            return [];
         }
 
         if (($observed['route_exists'] ?? null) === false) {
@@ -1262,6 +1227,10 @@ final readonly class ProxyRouteProbe
     private function checkPublicRouteReality(ProxyRoute $route, array $observed): array
     {
         $public = $this->publicObservation($observed);
+
+        if ($this->routeProbeFailed($public)) {
+            return [];
+        }
 
         if (($public['route_exists'] ?? null) === false) {
             return [
@@ -1325,6 +1294,10 @@ final readonly class ProxyRouteProbe
     private function checkRouterRouteReality(ProxyRoute $route, array $observed): array
     {
         $router = $this->routerObservation($observed);
+
+        if ($this->routeProbeFailed($router)) {
+            return [];
+        }
 
         if (($router['route_exists'] ?? false) === false) {
             return [
@@ -1412,6 +1385,10 @@ final readonly class ProxyRouteProbe
                 continue;
             }
 
+            if ($this->routeProbeFailed($backend)) {
+                continue;
+            }
+
             if (($backend['route_exists'] ?? null) === false) {
                 $drift[] = new DriftEntry(
                     family: $this->key(),
@@ -1456,6 +1433,10 @@ final readonly class ProxyRouteProbe
         }
 
         $observed = $this->usesIngressPlacement($route) ? $this->publicObservation($observed) : $observed;
+
+        if ($this->routeProbeFailed($observed)) {
+            return [];
+        }
 
         if (($observed['route_exists'] ?? null) === false) {
             return [];
@@ -1714,6 +1695,11 @@ final readonly class ProxyRouteProbe
         return $this->scripts ?? app(ToolScriptDispatcher::class);
     }
 
+    private function routeFileProbeContract(): ProxyRouteFileProbeContract
+    {
+        return $this->routeFileProbeContract ?? new ProxyRouteFileProbeContract;
+    }
+
     private function shouldProbeRuntimeUpstream(ProxyRoute $route): bool
     {
         return $this->runtimeUpstreamForProbe($route) !== null;
@@ -1740,13 +1726,19 @@ final readonly class ProxyRouteProbe
                 return $expectedUpstream;
             }
         } catch (Throwable) {
-            $upstream = $config['runtime_upstream'] ?? null;
-
-            return is_string($upstream) && $upstream !== '' ? $upstream : null;
+            return $this->configuredRuntimeUpstream($config);
         }
 
-        $upstream = $config['runtime_upstream'] ?? null;
+        return $this->configuredRuntimeUpstream($config);
+    }
 
-        return is_string($upstream) && $upstream !== '' ? $upstream : null;
+    /** @param array<string, mixed> $config */
+    private function configuredRuntimeUpstream(array $config): ?string
+    {
+        if (! is_string($config['runtime_upstream'] ?? null) || $config['runtime_upstream'] === '') {
+            return null;
+        }
+
+        return $config['runtime_upstream'];
     }
 }

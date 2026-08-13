@@ -445,8 +445,8 @@ describe('DoctorRunController', function (): void {
             perRouteStdout: '',
             nodeLevelStdout: '',
             routeProbeStdouts: [
-                "0\t\t\t\t0\t0\n",
-                "1\t{$restoredHash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+                "observed\t0\t\t\t\t0\t0\t\t\t0\t\n",
+                "observed\t1\t{$restoredHash}\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\t\t\t0\t\n",
             ],
         ));
 
@@ -484,13 +484,17 @@ describe('DoctorRunController', function (): void {
             ],
         ]);
         $expectedHash = new ProxyRouteRenderer()->sourceHash($route);
+        $mismatchedObservation =
+            "observed\t1\t"
+            .str_repeat('a', 64)
+            ."\t/etc/orbit/certs/hauzer.app.crt\t/etc/orbit/certs/hauzer.app.key\t1\t1\t\t\t0\t\n";
         app()->instance(OrbitCaService::class, new DoctorRunFakeCa);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
             perRouteStdout: '',
             nodeLevelStdout: '',
             routeProbeStdouts: [
-                "0\t\t\t\t0\t0\n",
-                "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/hauzer.app.crt\t/etc/orbit/certs/hauzer.app.key\t1\t1\n",
+                "observed\t0\t\t\t\t0\t0\t\t\t0\t\n",
+                ...array_fill(start_index: 0, count: 8, value: $mismatchedObservation),
             ],
         ));
 
@@ -519,9 +523,9 @@ describe('DoctorRunController', function (): void {
             ->and($doctor['summary']['fixed'] ?? null)
             ->toBe(0)
             ->and($doctor['summary']['failed'] ?? null)
-            ->toBe(4)
+            ->toBe(2)
             ->and($doctor['convergence']['passes'] ?? null)
-            ->toBe(3)
+            ->toBe(2)
             ->and($doctor['convergence']['stop_reason'] ?? null)
             ->toBe('no_progress')
             ->and(collect($doctor['issues'] ?? [])->pluck('key')->all())
@@ -555,7 +559,10 @@ describe('DoctorRunController', function (): void {
         ]);
         app()->instance(
             RemoteShell::class,
-            new DoctorRunRemoteShell(perRouteStdout: "0\t\t\t\t0\t0\n", nodeLevelStdout: ''),
+            new DoctorRunRemoteShell(
+                perRouteStdout: "observed\t0\t\t\t\t0\t0\t\t\t0\t\n",
+                nodeLevelStdout: '',
+            ),
         );
 
         $response = $this->call(

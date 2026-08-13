@@ -117,6 +117,7 @@ final class ProxyDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'proxy',
                 'restore_proxy_route_mismatch',
             ),
+            self::blocked('proxy.route_probe_failed', 'proxy'),
             self::genuine(
                 'proxy.route_missing',
                 'proxy',
