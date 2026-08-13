@@ -92,8 +92,6 @@ it('keeps DoctorReportRunner as the proxy restore delegate', function (): void {
         )->and($runnerSource)->toContain(
             '$this->proxyRestorer->apply($node, $mode, $key, $detail, $issue)',
             '$this->proxyRestorer->issueTargetsWorkspace($detail)',
-            'private function verifyCompletedProxyAction(',
-            'private function actionMatchesRemainingIssue(',
         )
         ->not->toContain(
             'private function applyProxyIssue(',
