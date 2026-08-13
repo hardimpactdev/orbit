@@ -16,7 +16,6 @@ use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeTransport;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\FleetUpdateNodeCliLauncher;
-use App\Services\Operations\GatewayLocalOperationTokenAuthorizer;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -37,6 +36,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         private OperationRunRecorder $operationRuns,
         private RemoteExecutorOutputRedactor $outputRedactor,
         private NodeAgentPushDispatcher $agentPush,
+        private GatewayLocalCommandDispatcher $gatewayLocal,
         private string $applicationKey,
     ) {
         if (trim($this->applicationKey) === '') {
@@ -172,7 +172,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             $result = match ($transport) {
                 // Host-owned gateway checks (systemd, host Caddy, self-route,
                 // node-exporter tooling) force the host boundary when requested.
-                NodeTransport::GatewayOnly => $this->runGatewayLocal(
+                NodeTransport::GatewayOnly => $this->runGatewayOnly(
                     node: $node,
                     commandName: $commandName,
                     arguments: $arguments,
@@ -988,7 +988,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      * }  $dispatch
      * @mago-expect lint:excessive-parameter-list
      */
-    private function runGatewayLocal(
+    private function runGatewayOnly(
         Node $node,
         string $commandName,
         array $arguments,
@@ -1022,21 +1022,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             operationToken: $dispatch['operationToken'],
         );
 
-        $trustedExecution = app(GatewayLocalOperationTokenAuthorizer::class)->authorize(
-            compactToken: $dispatch['operationToken'],
-            expectedNode: $node->name,
-            expectedCommand: $commandName,
-            commandContext: $dispatch['commandContext'],
-        );
-        $dispatchOptions['environment'] = [
-            ...($dispatchOptions['environment'] ?? []),
-            ...$trustedExecution->environment(),
-        ];
-
-        return app(RemoteOrbitGatewayExecutor::class)->run(
+        return $this->gatewayLocal->run(
             node: $node,
+            commandName: $commandName,
             script: $script,
-            options: $dispatchOptions,
+            dispatch: $dispatch,
+            dispatchOptions: $dispatchOptions,
         );
     }
 

@@ -168,6 +168,7 @@ function websocket_runtime_source_installer_executor(): RemoteLocalExecutor
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+        gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
         applicationKey: websocket_runtime_source_installer_operation_secret(),
     );
 }

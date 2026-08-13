@@ -50,6 +50,7 @@ use App\Services\Processes\ProcessStreamSleeper;
 use App\Services\Processes\RuntimeWakeConcurrentRunner;
 use App\Services\Processes\SystemProcessStreamClock;
 use App\Services\Processes\UsleepProcessStreamSleeper;
+use App\Services\RemoteShell\GatewayLocalCommandDispatcher;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteExecutorOutputRedactor;
@@ -184,6 +185,7 @@ class AppServiceProvider extends ServiceProvider
             operationRuns: $app->make(OperationRunRecorder::class),
             outputRedactor: $app->make(RemoteExecutorOutputRedactor::class),
             agentPush: $app->make(NodeAgentPushDispatcher::class),
+            gatewayLocal: $app->make(GatewayLocalCommandDispatcher::class),
             applicationKey: $this->applicationKey(),
         ));
         $this->app->bind(NodeWireGuardSelfRouteProbe::class, fn (Application $app): NodeWireGuardSelfRouteProbe => new NodeWireGuardSelfRouteProbe(

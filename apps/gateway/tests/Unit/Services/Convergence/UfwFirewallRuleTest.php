@@ -500,6 +500,7 @@ function ufw_firewall_rule_remote(): RemoteFirewallRule
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+        gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
         applicationKey: ufw_firewall_rule_operation_secret(),
     ));
 }

@@ -86,6 +86,7 @@ function workspace_reachability_local_executor(): RemoteLocalExecutor
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+        gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
         applicationKey: workspace_reachability_operation_secret(),
     );
 }

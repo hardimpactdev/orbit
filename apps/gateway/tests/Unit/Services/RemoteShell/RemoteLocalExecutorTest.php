@@ -1279,6 +1279,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             operationRuns: app(OperationRunRecorder::class),
             outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
             agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+            gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
             applicationKey: 'gateway-secret',
         );
 
@@ -2189,6 +2190,7 @@ function remoteLocalExecutor(
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+        gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
         applicationKey: 'gateway-secret',
     );
 }

@@ -65,6 +65,7 @@ abstract class TestCase extends BaseTestCase
                 operationRuns: $app->make(OperationRunRecorder::class),
                 outputRedactor: $app->make(RemoteExecutorOutputRedactor::class),
                 agentPush: $app->make(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+                gatewayLocal: $app->make(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
                 applicationKey: $secret,
             );
         });

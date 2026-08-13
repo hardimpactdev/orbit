@@ -253,6 +253,7 @@ function process_docker_runtime_manager_executor(): RemoteLocalExecutor
         operationRuns: app(OperationRunRecorder::class),
         outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         agentPush: app(\App\Services\NodeCommandTransport\NodeAgentPushDispatcher::class),
+        gatewayLocal: app(\App\Services\RemoteShell\GatewayLocalCommandDispatcher::class),
         applicationKey: process_docker_runtime_manager_operation_secret(),
     );
 }
