@@ -14,6 +14,8 @@ use App\Services\Doctor\DoctorProcessRestorer;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessServiceCatalog;
+use App\Services\Processes\ProcessServiceRehydrator;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -48,6 +50,21 @@ it('keeps extra process runtime removal behind one injected service', function (
             'private function extraRuntimeRemovalAction(',
             'app(ProcessDockerRuntimeManager::class)',
         );
+});
+
+it('keeps managed service rehydration behind one deterministic dependency', function (): void {
+    $restorer = new ReflectionClass(DoctorProcessRestorer::class);
+    $dependencies = collect($restorer->getConstructor()?->getParameters() ?? [])
+        ->map(static fn (ReflectionParameter $parameter): ?string => $parameter->getType()?->__toString())
+        ->filter()
+        ->values()
+        ->all();
+
+    expect(class_exists(ProcessServiceRehydrator::class))
+        ->toBeTrue()
+        ->and($dependencies)
+        ->toContain(ProcessServiceRehydrator::class)
+        ->not->toContain(ProcessServiceCatalog::class);
 });
 
 it('uses direct dependencies inside the extra process runtime remover', function (): void {

@@ -2302,6 +2302,8 @@ describe('DoctorReportRunner', function (): void {
                     'service' => 'valkey',
                     'version_family' => '8',
                     'version' => '8.1',
+                    'service_options' => ['published_port' => 6380],
+                    'binds' => ['loopback'],
                 ],
                 'sort_order' => 1,
             ]);
@@ -2447,11 +2449,13 @@ describe('DoctorReportRunner', function (): void {
                 'version' => '8.1',
                 'image' => 'valkey/valkey:8.1',
                 'service_name' => 'orbit-valkey',
+                'service_options' => ['published_port' => 6380],
+                'binds' => ['loopback'],
                 'endpoint' => [
                     'name' => 'valkey',
                     'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 6379,
+                    'host' => '127.0.0.1',
+                    'port' => 6380,
                 ],
             ]);
 

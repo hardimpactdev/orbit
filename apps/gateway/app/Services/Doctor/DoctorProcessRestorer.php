@@ -14,7 +14,7 @@ use App\Models\Workspace;
 use App\Services\Processes\NodeProcessResolver;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\Processes\ProcessServiceCatalog;
+use App\Services\Processes\ProcessServiceRehydrator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Throwable;
@@ -33,7 +33,7 @@ final readonly class DoctorProcessRestorer
         private ProcessRuntimeDriverRegistry $processRuntimeDrivers,
         private DoctorProcessExtraRuntimeRemover $processExtraRuntimeRemover,
         private DoctorManagedFrankenPhpRuntimeRestorer $managedFrankenPhpRuntimeRestorer,
-        private ProcessServiceCatalog $processServiceCatalog,
+        private ProcessServiceRehydrator $processServiceRehydrator,
         private RecordProcessEvent $recordProcessEvent = new RecordProcessEvent,
     ) {}
 
@@ -255,13 +255,7 @@ final readonly class DoctorProcessRestorer
         }
 
         try {
-            $resolved = $this->processServiceCatalog->resolve(
-                service: $service,
-                version: $version,
-                runtime: $process->runtime,
-                node: $node,
-                processName: $process->name,
-            );
+            $resolved = $this->processServiceRehydrator->resolve($process, $node);
 
             $process->forceFill([
                 'command' => $resolved->command,

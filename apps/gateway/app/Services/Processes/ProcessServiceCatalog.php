@@ -35,6 +35,7 @@ final readonly class ProcessServiceCatalog
     /**
      * @param  array<string, mixed>  $serviceOptions
      * @param  list<string>|null  $binds
+     * @param  array<string, mixed>|null  $existingCredentials
      */
     public function resolve(
         string $service,
@@ -45,6 +46,7 @@ final readonly class ProcessServiceCatalog
         ?string $imageOverride = null,
         array $serviceOptions = [],
         ?array $binds = null,
+        ?array $existingCredentials = null,
     ): ProcessServiceDescriptor {
         $catalog = $this->services();
         $entry = $catalog[$service] ?? null;
@@ -99,7 +101,11 @@ final readonly class ProcessServiceCatalog
         $volumeName = "orbit-{$processName}";
         $dataPath = $this->hostPaths->processDataRoot($node, $processName);
         $servicePorts = $this->servicePorts($entry, $bindHosts, $publishedPort, $processName, $runtime);
-        $credentials = $this->encryptedCredentials($service, $entry);
+        $credentials = $existingCredentials ?? $this->encryptedCredentials($service, $entry);
+
+        if ($existingCredentials !== null) {
+            $this->assertStoredCredentials($service, $serviceOptions, $credentials);
+        }
 
         $runtimeConfig = [
             'service' => $service,
@@ -472,6 +478,46 @@ final readonly class ProcessServiceCatalog
             'password' => $password,
             'environment' => $passwordEnvironment,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $serviceOptions
+     * @param  array<string, mixed>  $credentials
+     */
+    private function assertStoredCredentials(string $service, array $serviceOptions, array $credentials): void
+    {
+        $environmentKey = match ($service) {
+            'postgres' => 'POSTGRES_PASSWORD',
+            'clickhouse' => 'CLICKHOUSE_PASSWORD',
+            default => null,
+        };
+
+        if ($environmentKey === null) {
+            return;
+        }
+
+        $password = is_string($credentials['password'] ?? null) ? $credentials['password'] : '';
+        $environment = is_array($credentials['environment'] ?? null) ? $credentials['environment'] : [];
+        $environmentPassword = is_string($environment[$environmentKey] ?? null)
+            ? $environment[$environmentKey]
+            : '';
+
+        if ($password === '' || ! hash_equals($password, $environmentPassword)) {
+            throw new RuntimeException("Managed service '{$service}' has no valid stored credentials.");
+        }
+
+        if ($service !== 'postgres') {
+            return;
+        }
+
+        if (
+            ($credentials['database'] ?? null) !== ($serviceOptions['database'] ?? null)
+            || ($credentials['username'] ?? null) !== ($serviceOptions['username'] ?? null)
+        ) {
+            throw new RuntimeException(
+                "Managed service '{$service}' stored credentials do not match its service options.",
+            );
+        }
     }
 
     /**
