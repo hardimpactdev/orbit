@@ -25,6 +25,33 @@ final readonly class E2EWgEasySwarmHandoff
                     handoff_complete=0
                     state_move_started=0
                     legacy_link_started=0
+                    peer_snapshot=/run/orbit/wg-easy-handoff-peers.tsv
+                    peer_snapshot_temporary=
+
+                    restore_peer_sessions() {
+                        container="$1"
+                        snapshot="$2"
+
+                        if ! sudo test -f "$snapshot"; then
+                            return 0
+                        fi
+
+                        for i in $(seq 1 30); do
+                            if docker exec "$container" wg show wg0 >/dev/null 2>&1; then
+                                break
+                            fi
+
+                            sleep 1
+                        done
+
+                        docker exec "$container" wg show wg0 >/dev/null
+
+                        sudo cat "$snapshot" | while IFS="$(printf '\t')" read -r peer_public_key peer_endpoint peer_address; do
+                            docker exec "$container" wg show wg0 peers | grep -Fx -- "$peer_public_key" >/dev/null
+                            docker exec "$container" wg set wg0 peer "$peer_public_key" endpoint "$peer_endpoint"
+                            docker exec "$container" ping -c 1 -W 1 "$peer_address" >/dev/null 2>&1 || true
+                        done
+                    }
 
                     restore_legacy_wg_easy() {
                         exit_status="$?"
@@ -42,7 +69,15 @@ final readonly class E2EWgEasySwarmHandoff
                             fi
 
                             if [ -d /home/orbit/.wg-easy ] && docker inspect wg-easy >/dev/null 2>&1; then
-                                docker start wg-easy >/dev/null 2>&1 || true
+                                if docker start wg-easy >/dev/null 2>&1; then
+                                    restore_peer_sessions wg-easy "$peer_snapshot" || true
+                                fi
+                            fi
+
+                            sudo rm -f "$peer_snapshot"
+
+                            if [ -n "$peer_snapshot_temporary" ]; then
+                                sudo rm -f "$peer_snapshot_temporary"
                             fi
                         fi
 
@@ -65,6 +100,24 @@ final readonly class E2EWgEasySwarmHandoff
                     test -f /home/orbit/.wg-easy/wg-easy.db
                     test ! -e /home/orbit/.config/orbit/wg-easy
                     source_database_checksum="$(sha256sum /home/orbit/.wg-easy/wg-easy.db | awk '{ print $1 }')"
+                    sudo install -d -m 0700 /run/orbit
+                    sudo rm -f "$peer_snapshot"
+                    peer_snapshot_temporary="$(sudo mktemp /run/orbit/wg-easy-handoff-peers.XXXXXX)"
+                    docker exec wg-easy wg show wg0 endpoints | while read -r peer_public_key peer_endpoint; do
+                        if [ "$peer_endpoint" = '(none)' ]; then
+                            continue
+                        fi
+
+                        peer_allowed_ips="$(docker exec wg-easy wg show wg0 allowed-ips | awk -v peer="$peer_public_key" '$1 == peer { print $2; exit }')"
+                        test -n "$peer_allowed_ips"
+                        peer_address="${peer_allowed_ips%%%%,*}"
+                        peer_address="${peer_address%%%%/*}"
+                        printf '%%s\t%%s\t%%s\n' "$peer_public_key" "$peer_endpoint" "$peer_address"
+                    done | sudo tee "$peer_snapshot_temporary" >/dev/null
+                    sudo test -s "$peer_snapshot_temporary"
+                    sudo chmod 0600 "$peer_snapshot_temporary"
+                    sudo mv "$peer_snapshot_temporary" "$peer_snapshot"
+                    peer_snapshot_temporary=
                     docker stop wg-easy >/dev/null
                     state_move_started=1
                     sudo mv /home/orbit/.wg-easy /home/orbit/.config/orbit/wg-easy
@@ -97,8 +150,61 @@ final readonly class E2EWgEasySwarmHandoff
     {
         E2ECommand::exec(
             $gateway,
-            'if docker inspect wg-easy >/dev/null 2>&1; then docker rm wg-easy >/dev/null; fi',
+            <<<'SH'
+                set -euo pipefail
+                peer_snapshot=/run/orbit/wg-easy-handoff-peers.tsv
+
+                if ! sudo test -f "$peer_snapshot" && ! docker inspect wg-easy >/dev/null 2>&1; then
+                    exit 0
+                fi
+
+                sudo test -f "$peer_snapshot"
+
+                vpn_task=
+
+                for i in $(seq 1 30); do
+                    vpn_task="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+
+                    if [ -n "$vpn_task" ] && docker exec "$vpn_task" wg show wg0 >/dev/null 2>&1; then
+                        break
+                    fi
+
+                    sleep 1
+                done
+
+                test -n "$vpn_task"
+                docker exec "$vpn_task" wg show wg0 >/dev/null
+
+                sudo cat "$peer_snapshot" | while IFS="$(printf '\t')" read -r peer_public_key peer_endpoint peer_address; do
+                    docker exec "$vpn_task" wg show wg0 peers | grep -Fx -- "$peer_public_key" >/dev/null
+                    docker exec "$vpn_task" wg set wg0 peer "$peer_public_key" endpoint "$peer_endpoint"
+                    docker exec "$vpn_task" ping -c 1 -W 1 "$peer_address" >/dev/null 2>&1 || true
+                done
+
+                for i in $(seq 1 15); do
+                    if sudo cat "$peer_snapshot" | while IFS="$(printf '\t')" read -r peer_public_key peer_endpoint peer_address; do
+                        latest_handshake="$(docker exec "$vpn_task" wg show wg0 latest-handshakes | awk -v peer="$peer_public_key" '$1 == peer { print $2; exit }')"
+                        test "${latest_handshake:-0}" -gt 0
+                    done; then
+                        break
+                    fi
+
+                    sleep 1
+                done
+
+                sudo cat "$peer_snapshot" | while IFS="$(printf '\t')" read -r peer_public_key peer_endpoint peer_address; do
+                    latest_handshake="$(docker exec "$vpn_task" wg show wg0 latest-handshakes | awk -v peer="$peer_public_key" '$1 == peer { print $2; exit }')"
+                    test "${latest_handshake:-0}" -gt 0
+                done
+
+                sudo rm -f "$peer_snapshot"
+
+                if docker inspect wg-easy >/dev/null 2>&1; then
+                    docker rm wg-easy >/dev/null
+                fi
+                SH,
             "Could not remove the stopped prepared wg-easy container on {$gateway->name()}",
+            timeoutSeconds: 60,
         );
     }
 
@@ -108,8 +214,10 @@ final readonly class E2EWgEasySwarmHandoff
             $gateway,
             <<<'SH'
                 set -euo pipefail
+                peer_snapshot=/run/orbit/wg-easy-handoff-peers.tsv
 
                 if ! docker inspect wg-easy >/dev/null 2>&1; then
+                    sudo rm -f "$peer_snapshot"
                     exit 0
                 fi
 
@@ -137,6 +245,26 @@ final readonly class E2EWgEasySwarmHandoff
 
                 test -d /home/orbit/.wg-easy
                 docker start wg-easy >/dev/null
+
+                if sudo test -f "$peer_snapshot"; then
+                    for i in $(seq 1 30); do
+                        if docker exec wg-easy wg show wg0 >/dev/null 2>&1; then
+                            break
+                        fi
+
+                        sleep 1
+                    done
+
+                    docker exec wg-easy wg show wg0 >/dev/null
+
+                    sudo cat "$peer_snapshot" | while IFS="$(printf '\t')" read -r peer_public_key peer_endpoint peer_address; do
+                        docker exec wg-easy wg show wg0 peers | grep -Fx -- "$peer_public_key" >/dev/null
+                        docker exec wg-easy wg set wg0 peer "$peer_public_key" endpoint "$peer_endpoint"
+                        docker exec wg-easy ping -c 1 -W 1 "$peer_address" >/dev/null 2>&1 || true
+                    done
+                fi
+
+                sudo rm -f "$peer_snapshot"
                 SH,
             "Could not restore the prepared standalone wg-easy runtime on {$gateway->name()}",
             timeoutSeconds: 60,

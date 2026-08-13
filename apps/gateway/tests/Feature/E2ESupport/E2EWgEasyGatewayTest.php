@@ -108,11 +108,23 @@ it('moves the verified quiesced wg-easy state to one canonical Swarm path', func
     new E2EWgEasySwarmHandoff()->stage($instance);
 
     $command = $commands[0];
+    $capture = strpos(haystack: $command, needle: 'wg show wg0 endpoints');
     $stop = strpos(haystack: $command, needle: 'docker stop wg-easy');
+    $syntax = Process::input($command)->run('bash -n');
 
-    expect($stop)
+    expect($syntax->successful())
+        ->toBeTrue($syntax->errorOutput())
+        ->and($capture)
         ->toBeInt()
+        ->and($stop)
+        ->toBeInt()
+        ->and($capture)
+        ->toBeLessThan($stop)
         ->and($command)
+        ->toContain('/run/orbit/wg-easy-handoff-peers.tsv')
+        ->toContain('wg show wg0 allowed-ips')
+        ->toContain('sudo chmod 0600')
+        ->toContain('sudo rm -f "$peer_snapshot"')
         ->toContain('PRAGMA quick_check')
         ->toContain('password_verify')
         ->toContain('ORBIT_WG_EASY_SWARM_HANDOFF_PHP')
@@ -127,6 +139,9 @@ it('moves the verified quiesced wg-easy state to one canonical Swarm path', func
         ->toContain('ln -s /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
         ->toContain('source_database_checksum')
         ->toContain('target_database_checksum')
+        ->not->toContain('wg show wg0 dump')
+        ->not->toContain('private-key')
+        ->not->toContain('preshared-keys')
         ->not->toContain('cp -a')
         ->not->toContain('docker rm wg-easy');
 });
@@ -184,8 +199,22 @@ it('finishes or rolls back the prepared wg-easy handoff explicitly', function ()
     $handoff = new E2EWgEasySwarmHandoff;
     $handoff->complete($instance);
     $handoff->restoreStandalone($instance);
+    $completeSyntax = Process::input($commands[0])->run('bash -n');
+    $restoreSyntax = Process::input($commands[1])->run('bash -n');
 
-    expect($commands[0])
+    expect($completeSyntax->successful())
+        ->toBeTrue($completeSyntax->errorOutput())
+        ->and($restoreSyntax->successful())
+        ->toBeTrue($restoreSyntax->errorOutput())
+        ->and($commands[0])
+        ->toContain('/run/orbit/wg-easy-handoff-peers.tsv')
+        ->toContain('label=com.docker.swarm.service.name=orbit_orbit-vpn')
+        ->toContain('wg show wg0 peers')
+        ->toContain('grep -Fx -- "$peer_public_key"')
+        ->toContain('wg set wg0 peer "$peer_public_key" endpoint "$peer_endpoint"')
+        ->toContain('ping -c 1 -W 1 "$peer_address"')
+        ->toContain('wg show wg0 latest-handshakes')
+        ->toContain('sudo rm -f "$peer_snapshot"')
         ->toContain('docker inspect wg-easy')
         ->toContain('docker rm wg-easy')
         ->not
@@ -194,6 +223,8 @@ it('finishes or rolls back the prepared wg-easy handoff explicitly', function ()
         ->toContain('docker service rm orbit_orbit-vpn orbit_orbit-dns')
         ->toContain('sudo rm /home/orbit/.wg-easy')
         ->toContain('sudo mv /home/orbit/.config/orbit/wg-easy /home/orbit/.wg-easy')
+        ->toContain('wg set wg0 peer "$peer_public_key" endpoint "$peer_endpoint"')
+        ->toContain('sudo rm -f "$peer_snapshot"')
         ->toContain('docker start wg-easy');
 });
 
