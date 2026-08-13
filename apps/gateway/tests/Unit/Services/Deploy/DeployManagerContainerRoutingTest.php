@@ -35,6 +35,8 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
 
     public ?array $sourcePathProbe = null;
 
+    public ?Throwable $failure = null;
+
     /**
      * @mago-expect lint:halstead
      */
@@ -100,6 +102,10 @@ final class DeployManagerRecordingShell implements RunsInternalCommands
                 stderr: '',
                 durationMs: 25,
             );
+        }
+
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
         }
 
         $payload = json_decode(
@@ -255,7 +261,7 @@ it('executes and records a deployment against the concrete instance target', fun
             domain: 'billing.example.com',
         ),
     ])->save();
-    createDeployManagerTestStep($app, 'git pull origin main');
+    createDeployManagerTestStep($app, command: 'git pull origin main');
     $shell = new DeployManagerRecordingShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -421,7 +427,7 @@ it('runs all commands on the host for static apps', function (): void {
 
 it('does not transform host paths to container paths when routing through host', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'cd "{{ app_path }}" && php artisan migrate');
+    createDeployManagerTestStep($app, command: 'cd "{{ app_path }}" && php artisan migrate');
 
     $shell = new DeployManagerRecordingShell;
 
@@ -442,8 +448,9 @@ it('does not transform host paths to container paths when routing through host',
 it('preserves documented app context aliases for existing deployment steps', function (): void {
     $app = createDeployManagerTestApp();
     createDeployManagerTestStep($app, command: 'mkdir -p "{{ app_path }}/database"');
+    app()->instance(RunsInternalCommands::class, new DeployManagerRecordingShell);
 
-    app(DeployManager::class)->run('docs.production', detach: true);
+    app(DeployManager::class)->run('docs.production');
 
     $context = DeploymentRun::query()->sole()->context;
 
@@ -519,7 +526,7 @@ it('does not route php-fpm systemctl commands through host php toolchain', funct
 
 it('runs built-in warmup steps on the host after user steps for php apps', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'git pull origin main');
+    createDeployManagerTestStep($app, command: 'git pull origin main');
 
     $shell = new DeployManagerRecordingShell;
 
@@ -807,7 +814,8 @@ it('marks run failed when built-in warmup step fails', function (): void {
 
 it('reports Agent reachability when remote deploy execution cannot start', function (): void {
     $app = createDeployManagerTestApp();
-    createDeployManagerTestStep($app, 'git pull origin main');
+    createDeployManagerTestStep($app, command: 'git pull origin main');
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
 
     $shell = new DeployManagerRecordingShell;
     $shell->results = [
@@ -824,4 +832,42 @@ it('reports Agent reachability when remote deploy execution cannot start', funct
                 ->and($exception->errorMeta()['node'])
                 ->toBe('app-prod-1');
         });
+
+    $run = DeploymentRun::query()->sole();
+    $instance->refresh();
+
+    expect([
+        $run->status,
+        $run->exit_code,
+        $instance->latest_deployment_run_id,
+        $instance->latest_deployment_status,
+    ])
+        ->toBe(['failed', 1, $run->id, 'failed'])
+        ->and($run->finished_at)
+        ->not->toBeNull()->and($run->duration_ms)
+        ->not->toBeNull();
+});
+
+it('records an unexpected deploy execution error as a failed run', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, command: 'git pull origin main');
+    $instance = Instance::query()->where('app_id', $app->id)->sole();
+
+    $shell = new DeployManagerRecordingShell;
+    $shell->failure = new RuntimeException('unexpected deploy failure');
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    expect(fn (): array => app(DeployManager::class)->run('docs'))
+        ->toThrow(RuntimeException::class, 'unexpected deploy failure');
+
+    $run = DeploymentRun::query()->sole();
+
+    expect($run->status)
+        ->toBe('failed')
+        ->and($run->exit_code)
+        ->toBe(1)
+        ->and($instance->refresh()->latest_deployment_run_id)
+        ->toBe($run->id)
+        ->and($instance->latest_deployment_status)
+        ->toBe('failed');
 });

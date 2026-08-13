@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Sdk\Laravel\GatewayApiException;
+use Throwable;
 
 final readonly class DeployManager
 {
@@ -38,6 +39,7 @@ final readonly class DeployManager
         private AppSelectorResolver $appSelectorResolver,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private ActiveReleaseRuntimeActivator $activeReleaseRuntimeActivator,
+        private DeploymentRunLifecycle $deploymentRunLifecycle,
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
         private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
@@ -134,7 +136,7 @@ final readonly class DeployManager
     /**
      * @return array{run: array<string, mixed>, output?: array{stdout: string, stderr: string}, meta: array<string, mixed>}
      */
-    public function run(string $app, bool $detach = false, ?ProgressReporter $progress = null): array
+    public function run(string $app, ?ProgressReporter $progress = null): array
     {
         $instance = $this->productionInstance($app);
         $model = $this->runtimeApp($instance);
@@ -151,90 +153,71 @@ final readonly class DeployManager
             );
         }
 
-        $progress?->tree('Running Deployment', $this->progressSteps($model, $steps, $detach));
+        $progress?->tree('Running Deployment', $this->progressSteps($model, $steps));
         $progress?->stepStart('resolve-instance');
         $progress?->stepDone('resolve-instance', $this->targetName($instance));
 
         $startedAt = Carbon::now();
         $progress?->stepStart('create-run');
-        $run = DeploymentRun::query()->create([
-            'instance_id' => $instance->id,
-            'status' => 'running',
-            'exit_code' => null,
-            'started_at' => $startedAt,
-        ]);
-        $context = $this->runContext($model, $instance, $run, $startedAt);
-        $run->forceFill(['context' => $context])->save();
-        $progress?->stepDone('create-run', "#{$run->id}");
-
-        $instance->forceFill([
-            'latest_deployment_status' => 'running',
-            'latest_deployment_run_id' => $run->id,
-        ])->save();
-
-        if ($detach) {
-            return [
-                'run' => $this->runEntity($run),
-                'meta' => [
-                    'action' => 'started',
-                    'detached' => true,
-                ],
-            ];
-        }
+        $run = $this->deploymentRunLifecycle->start($instance, $startedAt);
 
         $stdout = '';
         $stderr = '';
         $status = 'completed';
         $exitCode = 0;
 
-        foreach ($steps as $step) {
-            $stepStartedAt = now();
-            $command = $this->renderCommand($step->command, $context);
-            $routedCommand = $this->appCommandRouter->route($model, $command, $this->environment($context));
-            $progress?->stepStart($this->progressKey($step));
-            $result = $this->runStep(
-                $model->node ?? throw new GatewayApiException(
-                    message: "App '{$model->name}' has no owning node.",
-                    errorCode: 'deploy.execution_failed',
-                    errorMeta: ['app' => $model->name],
-                ),
-                command: $routedCommand,
-                cwd: $model->path,
-                timeout: (int) $step->timeout_seconds,
-                environment: $this->environment($context),
-            );
-            $stepFinishedAt = now();
-            $stepStatus = $result->successful() ? 'completed' : 'failed';
-            $stdout .= $result->stdout;
-            $stderr .= $result->stderr;
+        try {
+            $context = $this->runContext($model, $instance, $run, $startedAt);
+            $run->forceFill(['context' => $context])->save();
+            $progress?->stepDone('create-run', "#{$run->id}");
 
-            DeploymentRunStep::query()->create([
-                'deployment_run_id' => $run->id,
-                'deploy_step_id' => $step->id,
-                'title' => $step->title,
-                'command' => $routedCommand,
-                'status' => $stepStatus,
-                'stdout' => $result->stdout,
-                'stderr' => $result->stderr,
-                'exit_code' => $result->exitCode,
-                'started_at' => $stepStartedAt,
-                'finished_at' => $stepFinishedAt,
-                'duration_ms' => $result->durationMs,
-            ]);
+            foreach ($steps as $step) {
+                $stepStartedAt = now();
+                $command = $this->renderCommand($step->command, $context);
+                $routedCommand = $this->appCommandRouter->route($model, $command, $this->environment($context));
+                $progress?->stepStart($this->progressKey($step));
+                $result = $this->runStep(
+                    $model->node ?? throw new GatewayApiException(
+                        message: "App '{$model->name}' has no owning node.",
+                        errorCode: 'deploy.execution_failed',
+                        errorMeta: ['app' => $model->name],
+                    ),
+                    command: $routedCommand,
+                    cwd: $model->path,
+                    timeout: (int) $step->timeout_seconds,
+                    environment: $this->environment($context),
+                );
+                $stepFinishedAt = now();
+                $stepStatus = $result->successful() ? 'completed' : 'failed';
+                $stdout .= $result->stdout;
+                $stderr .= $result->stderr;
 
-            if (! $result->successful()) {
-                $progress?->stepFail($this->progressKey($step), "exit {$result->exitCode}");
-                $status = 'failed';
-                $exitCode = $result->exitCode;
+                DeploymentRunStep::query()->create([
+                    'deployment_run_id' => $run->id,
+                    'deploy_step_id' => $step->id,
+                    'title' => $step->title,
+                    'command' => $routedCommand,
+                    'status' => $stepStatus,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'exit_code' => $result->exitCode,
+                    'started_at' => $stepStartedAt,
+                    'finished_at' => $stepFinishedAt,
+                    'duration_ms' => $result->durationMs,
+                ]);
 
-                break;
+                if (! $result->successful()) {
+                    $progress?->stepFail($this->progressKey($step), "exit {$result->exitCode}");
+                    $status = 'failed';
+                    $exitCode = $result->exitCode;
+
+                    break;
+                }
+
+                $progress?->stepDone($this->progressKey($step), $this->formatDurationMs($result->durationMs));
             }
 
-            $progress?->stepDone($this->progressKey($step), $this->formatDurationMs($result->durationMs));
-        }
-
-        if ($status === 'completed') {
-            try {
+            if ($status === 'completed') {
                 $warmupPath = $model->path;
 
                 if ($this->usesLivePath($steps) && $model->runtimeKind() === AppRuntimeKind::Php) {
@@ -256,31 +239,17 @@ final readonly class DeployManager
                     $stdout .= $warmupResult['stdout'];
                     $stderr .= $warmupResult['stderr'];
                 }
-            } catch (GatewayApiException $warmupException) {
-                $status = 'failed';
-                $exitCode = 1;
-                $finishedAt = now();
-                $run->forceFill([
-                    'status' => $status,
-                    'exit_code' => $exitCode,
-                    'finished_at' => $finishedAt,
-                    'duration_ms' => (int) $startedAt->diffInMilliseconds($finishedAt),
-                ])->save();
-                $instance->forceFill(['latest_deployment_status' => $status])->save();
-                throw $warmupException;
             }
+        } catch (Throwable $throwable) {
+            $this->deploymentRunLifecycle->failed($run);
+
+            throw $throwable;
         }
 
-        $finishedAt = now();
         $progress?->stepStart('record-result');
-        $run->forceFill([
-            'status' => $status,
-            'exit_code' => $exitCode,
-            'finished_at' => $finishedAt,
-            'duration_ms' => (int) $startedAt->diffInMilliseconds($finishedAt),
-        ])->save();
-
-        $instance->forceFill(['latest_deployment_status' => $status])->save();
+        $run = $status === 'completed'
+            ? $this->deploymentRunLifecycle->completed($run)
+            : $this->deploymentRunLifecycle->failed($run, $exitCode);
         $run->load('steps');
         $progress?->stepDone('record-result', $status);
 
@@ -541,7 +510,7 @@ final readonly class DeployManager
      * @param  iterable<array-key, object>  $steps
      * @return list<array{key: string, label: string, doneLabel?: string}>
      */
-    private function progressSteps(App $app, iterable $steps, bool $detach): array
+    private function progressSteps(App $app, iterable $steps): array
     {
         $progressSteps = [
             [
@@ -555,10 +524,6 @@ final readonly class DeployManager
                 'doneLabel' => 'Created deployment run',
             ],
         ];
-
-        if ($detach) {
-            return $progressSteps;
-        }
 
         foreach ($steps as $step) {
             if (! $step instanceof DeployStep) {

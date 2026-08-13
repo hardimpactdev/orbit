@@ -63,7 +63,7 @@ final readonly class DeployOperationRunner
         );
 
         try {
-            $result = $this->deploy->run($instanceSelector, detach: false, progress: $reporter);
+            $result = $this->deploy->run($instanceSelector, progress: $reporter);
             $data = ['run' => $result['run']];
 
             if (isset($result['output'])) {
