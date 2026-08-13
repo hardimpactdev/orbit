@@ -1,0 +1,27 @@
+{
+  "candidate": "7a7686dace854ec91a9b7b2119b67853f85cc5c5",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "host": "nckrtl@192.168.6.20",
+  "topology": "dev-1d0079",
+  "command": "composer e2e:incus -- --start --topology=operator_gateway --checkout-roles=operator,gateway --json",
+  "expected": "Acquisition returns only after the operator can reach the overlaid gateway API",
+  "observed": {
+    "acquisition_exit_code": 0,
+    "network_ready_seconds": 0,
+    "checkout_overlay_seconds": 15.102,
+    "gateway_api_ready_seconds": 94.36,
+    "immediate_operator_node_list_exit_code": 0,
+    "immediate_operator_node_names": [
+      "gateway",
+      "operator-1"
+    ],
+    "candidate_command_sha256": "9cb914067bb54b8427db7522a6e2daf73ec608518718afc7e4e98f44a42bf294",
+    "gateway_runtime_command_sha256": "9cb914067bb54b8427db7522a6e2daf73ec608518718afc7e4e98f44a42bf294"
+  },
+  "release": {
+    "exit_code": 0,
+    "instances_reaped": 2
+  },
+  "result": "passed"
+}

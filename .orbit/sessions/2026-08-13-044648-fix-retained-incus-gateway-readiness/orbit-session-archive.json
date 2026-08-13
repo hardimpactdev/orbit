@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T02:46:48+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-retained-incus-gateway-readiness/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-044648-fix-retained-incus-gateway-readiness",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-incus-gateway-readiness-dev-1d0079.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/retained-incus-gateway-readiness-dev-1d0079.json": "76962b538e21db262f1bb7285e2621a8b6137a37a40af79268a79aab923bd060",
+        "loop.md": "c1941233c4dcc39cf4da6ef9ff0ed9e56a5e607a3fdc428404720eb6d8ebc11a"
+    },
+    "slug": "fix-retained-incus-gateway-readiness",
+    "requested_slug": "fix-retained-incus-gateway-readiness",
+    "compatible_slugs": [
+        "fix-retained-incus-gateway-readiness"
+    ],
+    "branch": "fix/retained-incus-gateway-readiness",
+    "candidate_commit": "7a7686dace854ec91a9b7b2119b67853f85cc5c5",
+    "accepted_feature_tip": "7a7686dace854ec91a9b7b2119b67853f85cc5c5",
+    "accepted_main_tip": "c13c3040a8e265a105cdf600ec0279f551a9a2a4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
