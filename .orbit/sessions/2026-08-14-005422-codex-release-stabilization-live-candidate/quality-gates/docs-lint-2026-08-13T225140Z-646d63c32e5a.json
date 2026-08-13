@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-13T22:51:31Z",
+    "ended_at": "2026-08-13T22:51:40Z",
+    "duration_seconds": 9,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/release-stabilization-live-candidate",
+        "commit": "51039cc89dba57cfdc34dc606dd78189d4c05701",
+        "dirty": false
+    },
+    "subgates": []
+}

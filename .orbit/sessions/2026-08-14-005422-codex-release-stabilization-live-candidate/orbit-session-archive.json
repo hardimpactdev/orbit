@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T22:54:22+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-release-stabilization-live-candidate/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-14-005422-codex-release-stabilization-live-candidate",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/51039-retained-incus-proof.txt",
+        "loop.md",
+        "quality-gates/docs-lint-2026-08-13T225140Z-646d63c32e5a.json",
+        "quality-gates/quality-check-2026-08-13T225124Z-0638ea50dc76.json"
+    ],
+    "entry_digests": {
+        "evidence/51039-retained-incus-proof.txt": "47e977d79398728aa22c18c009d5903fb1252a1258249dce54bd87bc5521db68",
+        "loop.md": "9bd6f04378a51e650d4fb2b28c9b294208cf6493a3c2f4d0c3b6f061f31ac85a",
+        "quality-gates/docs-lint-2026-08-13T225140Z-646d63c32e5a.json": "aeb3dd98cafa57446ff94c81ac95236f2e4aa19fc164c4cc78aadfe3345fca58",
+        "quality-gates/quality-check-2026-08-13T225124Z-0638ea50dc76.json": "7d601a26127c49173218b344a14163488a1cfacbb8ec3387856669bdef144884"
+    },
+    "slug": "codex-release-stabilization-live-candidate",
+    "requested_slug": "codex-release-stabilization-live-candidate",
+    "compatible_slugs": [
+        "codex-release-stabilization-live-candidate"
+    ],
+    "branch": "codex/release-stabilization-live-candidate",
+    "candidate_commit": "51039cc89dba57cfdc34dc606dd78189d4c05701",
+    "accepted_feature_tip": "51039cc89dba57cfdc34dc606dd78189d4c05701",
+    "accepted_main_tip": "c27de055546c2d32782ebc6d3c888f56ee3e1412",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

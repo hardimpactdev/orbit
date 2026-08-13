@@ -1,0 +1,57 @@
+Orbit retained Incus proof
+
+Candidate: 51039cc89dba57cfdc34dc606dd78189d4c05701
+Base: c27de055546c2d32782ebc6d3c888f56ee3e1412
+Topology: dev-8af004 (operator_gateway_app-dev)
+Host: beast
+Operator VM: orbit-e2e-dev-8af004-operator
+Gateway VM: orbit-e2e-dev-8af004-gateway
+Runtime checkout: /home/orbit/orbit-run
+
+Candidate identity
+
+- Operator UpdateAllCommand.php sha256: c91c161fae51513e95149ada6c6953dab3f7bd67b097bf025eb5490363223dd1
+- Operator LocalUpdateRunner.php sha256: 91a73485bb143fc93d8a252d4fb4f445468f59d4661d93c7fad7cf8552c45677
+- Gateway GatewayServiceUpdater.php sha256: a10268afd9b25aed8a7d7c93a96c7e67b9ca20bf32f8058ef408d7202c0ae73f
+- Gateway GatewaySwarmManager.php sha256: d3f30dd9f3a3ef70a1beca074f20b32c8feb71655c5312e928badb4b4a52e989
+- All four hashes matched the candidate worktree.
+
+Caller-local launcher repair
+
+- Isolated HOME: /tmp/orbit-2d1f-cli-proof-8af004/home
+- Isolated install root: /tmp/orbit-2d1f-cli-proof-8af004/install
+- Initial launcher state: missing
+- Manifest: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+- Command: ./apps/cli/orbit update --json
+- Result: completed from 0.1.192 to 0.1.192
+- Completed steps: check, download, replace, doctor
+- Installed launcher version: 0.1.192
+- Installed launcher sha256: 3caecc834ed6bd14652c4257f6ce9124d85e571e53425686cd8521ff93c13737
+- Manifest linux-amd64 sha256: 3caecc834ed6bd14652c4257f6ce9124d85e571e53425686cd8521ff93c13737
+- Launcher target: /tmp/orbit-2d1f-cli-proof-8af004/install/bin/orbit-binary-0.1.192
+- Result: PASS. A missing same-version launcher was repaired from the exact checksummed candidate artifact.
+
+Gateway local-image Swarm deployment
+
+- Loaded image ID: sha256:c6c0f86ba04c04b279c42ef484bb2d3bc766e6a7b7c7b861ded1775b6f5240cf
+- Candidate-style local tag: registry.invalid/orbit-proof:ba49
+- Deployment method: GatewaySwarmManager::deployStackForLoadedImageArtifact
+- Service: orbit-ba49-proof_proof
+- Recorded service image: registry.invalid/orbit-proof:ba49
+- Final replicas: 1/1
+- Final task state: Running
+- Result: PASS. Swarm used the exact already-loaded tag without registry digest substitution or a registry pull.
+
+Scope note
+
+Two attempts to run the complete update:all flow in this prepared topology reached environment layout limits that are outside this correction: the first lacked production bind directories, and the second lacked the production orbit_orbit-scheduler Swarm service. Neither attempt is claimed as a successful update:all proof. The retained proof above directly exercises the two corrected runtime boundaries. Full update:all acceptance remains the live candidate deployment step after landing and publication.
+
+Repository verification
+
+- Focused CLI: 119 tests, 550 assertions, PASS
+- Focused gateway: 65 tests, 450 assertions, PASS
+- The candidate terminal target-version guard passed in human and JSON modes and performs no local update effect when the target version is absent.
+- Full quality gate: .orbit/quality-gates/quality-check-2026-08-13T225124Z-0638ea50dc76.json (45/45 subgates, exit 0, exact candidate, clean worktree)
+- Docs lint: .orbit/quality-gates/docs-lint-2026-08-13T225140Z-646d63c32e5a.json (exit 0, exact candidate, clean worktree)
+- Final check: no warnings detected.
+- Human-only composer test:e2e* lanes were not run.
