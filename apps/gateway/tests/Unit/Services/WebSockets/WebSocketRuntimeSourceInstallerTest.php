@@ -166,6 +166,7 @@ function websocket_runtime_source_installer_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: websocket_runtime_source_installer_operation_secret(),
     );
 }

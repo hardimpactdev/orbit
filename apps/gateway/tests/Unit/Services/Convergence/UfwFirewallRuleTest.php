@@ -498,6 +498,7 @@ function ufw_firewall_rule_remote(): RemoteFirewallRule
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: ufw_firewall_rule_operation_secret(),
     ));
 }

@@ -111,6 +111,7 @@ function toolsProbeLocalExecutor(): RemoteLocalExecutor
         operationTokens: app(OperationTokenFactory::class),
         activityLogger: app(ActivityLogger::class),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: $secret,
     );
 }

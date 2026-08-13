@@ -1561,6 +1561,7 @@ function nodeRoleAssignmentLocalExecutor(RemoteShell $remoteShell): RemoteLocalE
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: 'gateway-secret',
     );
 }

@@ -84,6 +84,7 @@ function workspace_reachability_local_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: workspace_reachability_operation_secret(),
     );
 }

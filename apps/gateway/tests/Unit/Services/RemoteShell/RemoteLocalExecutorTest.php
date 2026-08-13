@@ -1277,6 +1277,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ),
             activityLogger: remoteLocalExecutorActivityLogger(),
             operationRuns: app(OperationRunRecorder::class),
+            outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
             applicationKey: 'gateway-secret',
         );
 
@@ -2185,6 +2186,7 @@ function remoteLocalExecutor(
         operationTokens: $operationTokens ?? remoteLocalExecutorTokenFactory(),
         activityLogger: remoteLocalExecutorActivityLogger(),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: 'gateway-secret',
     );
 }

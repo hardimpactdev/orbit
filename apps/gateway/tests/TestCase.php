@@ -11,6 +11,7 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\UpdateLeaseHeartbeatProcess;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteExecutorOutputRedactor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
@@ -62,6 +63,7 @@ abstract class TestCase extends BaseTestCase
                 operationTokens: $app->make(OperationTokenFactory::class),
                 activityLogger: $app->make(ActivityLogger::class),
                 operationRuns: $app->make(OperationRunRecorder::class),
+                outputRedactor: $app->make(RemoteExecutorOutputRedactor::class),
                 applicationKey: $secret,
             );
         });

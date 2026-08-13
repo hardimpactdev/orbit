@@ -196,6 +196,7 @@ function toolInstallerGitHubAuthLocalExecutor(RemoteShell $remoteShell): RemoteL
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
+        outputRedactor: app(\App\Services\RemoteShell\RemoteExecutorOutputRedactor::class),
         applicationKey: 'gateway-secret',
     );
 }
