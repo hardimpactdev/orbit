@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T09:56:33+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-operation-follow-liveness/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-115633-fix-operation-follow-liveness",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/operation-follow-liveness-retained-incus.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/operation-follow-liveness-retained-incus.txt": "266162c4940153a2aba7c4e5f4818342376ae5c99328d87fcc696d496c8f2b96",
+        "loop.md": "dbd8c1183b2ba6de8a4b913b882fe2e55b4c61a71abeebab84b0477a9b3e5f97"
+    },
+    "slug": "fix-operation-follow-liveness",
+    "requested_slug": "fix-operation-follow-liveness",
+    "compatible_slugs": [
+        "fix-operation-follow-liveness"
+    ],
+    "branch": "fix/operation-follow-liveness",
+    "candidate_commit": "f92967d1ca602e85887fb2e212abdb883fcb5ccb",
+    "accepted_feature_tip": "f92967d1ca602e85887fb2e212abdb883fcb5ccb",
+    "accepted_main_tip": "2f9fcfaa70e606a9e3b378296bc2182158ed6f8a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,28 @@
+candidate=f92967d1ca602e85887fb2e212abdb883fcb5ccb
+venue=retained-incus
+environment=dev-fixture
+topology=dev-b9f531
+kind=operator_gateway_app-dev
+provider=incus
+host=nckrtl@192.168.6.20
+target=orbit-e2e-dev-b9f531-operator
+solo_project=84
+solo_process=2381
+
+Launcher identity:
+/home/orbit/orbit-run/apps/cli/orbit
+apps/cli/app/Services/GatewayOperationFollower.php:15: public const int DEFAULT_MAX_EMPTY_REPLAYS = 120;
+
+Exercise:
+- Created an otherwise valid gateway operation run with status `running` and no journal events.
+- Booted the source-mounted CLI application in the retained operator VM.
+- Set `operation_follow_reconnect_sleep_ms=0` and `operation_follow_max_empty_replays=2` through the production Laravel binding.
+- Followed `/api/operations/00000000-0000-4000-8000-000000b9f531/events?once=1` over the retained WireGuard topology.
+
+Expected:
+The follower stops after the configured consecutive empty replay bound and returns the existing stream-closed-before-terminal failure.
+
+Observed:
+RESULT failure_kind=StreamClosedBeforeTerminal message=Gateway progress stream closed without a terminal frame.
+
+result=passed
