@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
+use App\Services\Firewall\IptablesRuleScript;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
@@ -35,6 +36,47 @@ final readonly class GatewayDirectFirewallInstaller
             throw new RuntimeException('Gateway-direct firewall requires a WireGuard CIDR and interface.');
         }
 
+        $allowWireGuardTcp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 1,
+            ruleArguments: '-i "$WG_IFACE" -p tcp --dport 443 -j RETURN',
+        );
+        $allowWireGuardUdp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 2,
+            ruleArguments: '-i "$WG_IFACE" -p udp --dport 443 -j RETURN',
+        );
+        $allowWireGuardCidrTcp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 3,
+            ruleArguments: '-s "$WG_CIDR" -p tcp --dport 443 -j RETURN',
+        );
+        $allowWireGuardCidrUdp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 4,
+            ruleArguments: '-s "$WG_CIDR" -p udp --dport 443 -j RETURN',
+        );
+        $dropPublicTcp = IptablesRuleScript::ensurePrivilegedAppended(
+            chain: 'DOCKER-USER',
+            ruleArguments: '-p tcp --dport 443 -j DROP',
+        );
+        $dropPublicUdp = IptablesRuleScript::ensurePrivilegedAppended(
+            chain: 'DOCKER-USER',
+            ruleArguments: '-p udp --dport 443 -j DROP',
+        );
+        $dropPublicIpv6Tcp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 1,
+            ruleArguments: '-p tcp --dport 443 -j DROP',
+            binary: 'ip6tables',
+        );
+        $dropPublicIpv6Udp = IptablesRuleScript::ensurePrivilegedInserted(
+            chain: 'DOCKER-USER',
+            position: 2,
+            ruleArguments: '-p udp --dport 443 -j DROP',
+            binary: 'ip6tables',
+        );
+
         return <<<SH
             set -euo pipefail
             WG_IFACE={$this->quote($wireguardInterface)}
@@ -60,25 +102,17 @@ final readonly class GatewayDirectFirewallInstaller
                 fi
             fi
 
-            sudo iptables -w 5 -C DOCKER-USER -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -I DOCKER-USER 1 -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN
-            sudo iptables -w 5 -C DOCKER-USER -i "\$WG_IFACE" -p udp --dport 443 -j RETURN >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -I DOCKER-USER 2 -i "\$WG_IFACE" -p udp --dport 443 -j RETURN
-            sudo iptables -w 5 -C DOCKER-USER -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -I DOCKER-USER 3 -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN
-            sudo iptables -w 5 -C DOCKER-USER -s "\$WG_CIDR" -p udp --dport 443 -j RETURN >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -I DOCKER-USER 4 -s "\$WG_CIDR" -p udp --dport 443 -j RETURN
-            sudo iptables -w 5 -C DOCKER-USER -p tcp --dport 443 -j DROP >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -A DOCKER-USER -p tcp --dport 443 -j DROP
-            sudo iptables -w 5 -C DOCKER-USER -p udp --dport 443 -j DROP >/dev/null 2>&1 \\
-                || sudo iptables -w 5 -A DOCKER-USER -p udp --dport 443 -j DROP
+            {$allowWireGuardTcp}
+            {$allowWireGuardUdp}
+            {$allowWireGuardCidrTcp}
+            {$allowWireGuardCidrUdp}
+            {$dropPublicTcp}
+            {$dropPublicUdp}
 
             if command -v ip6tables >/dev/null 2>&1; then
                 sudo ip6tables -w 5 -N DOCKER-USER >/dev/null 2>&1 || true
-                sudo ip6tables -w 5 -C DOCKER-USER -p tcp --dport 443 -j DROP >/dev/null 2>&1 \\
-                    || sudo ip6tables -w 5 -I DOCKER-USER 1 -p tcp --dport 443 -j DROP
-                sudo ip6tables -w 5 -C DOCKER-USER -p udp --dport 443 -j DROP >/dev/null 2>&1 \\
-                    || sudo ip6tables -w 5 -I DOCKER-USER 2 -p udp --dport 443 -j DROP
+                {$dropPublicIpv6Tcp}
+                {$dropPublicIpv6Udp}
             fi
 
             if command -v ufw >/dev/null 2>&1; then

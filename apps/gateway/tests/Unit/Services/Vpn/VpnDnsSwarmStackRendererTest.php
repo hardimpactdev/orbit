@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Vpn\VpnDnsSwarmStackRenderer;
+use Symfony\Component\Process\Process;
 
 it('renders vpn and dns as separate co-located Swarm services on a shared network', function (): void {
     $yaml = new VpnDnsSwarmStackRenderer()->render(
@@ -124,6 +125,12 @@ it('renders a vpn-side dns forwarding script from wg0 to the dns service', funct
         ->not->toContain('docker restart orbit-vpn');
 
     expect(substr_count(haystack: $script, needle: 'iptables -w 5'))->toBe(8);
+
+    $syntax = new Process(['bash', '-n']);
+    $syntax->setInput($script);
+    $syntax->run();
+
+    expect($syntax->isSuccessful())->toBeTrue($syntax->getErrorOutput());
 });
 
 it('renders a vpn-side dns forwarding probe script', function (): void {
@@ -144,6 +151,12 @@ it('renders a vpn-side dns forwarding probe script', function (): void {
         ->not->toContain(' -I ');
 
     expect(substr_count(haystack: $script, needle: 'iptables -w 5'))->toBe(4);
+
+    $syntax = new Process(['bash', '-n']);
+    $syntax->setInput($script);
+    $syntax->run();
+
+    expect($syntax->isSuccessful())->toBeTrue($syntax->getErrorOutput());
 });
 
 it('rejects unsafe WireGuard interface names in forwarding scripts', function (): void {

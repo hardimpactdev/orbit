@@ -242,6 +242,12 @@ it('waits for temporary xtables lock contention on every gateway-direct firewall
     expect(substr_count(haystack: $script, needle: 'sudo iptables -w 5 '))->toBe(14);
     expect(substr_count(haystack: $script, needle: 'sudo ip6tables '))->toBe(5);
     expect(substr_count(haystack: $script, needle: 'sudo ip6tables -w 5 '))->toBe(5);
+
+    $syntax = new SymfonyProcess(['bash', '-n']);
+    $syntax->setInput($script);
+    $syntax->run();
+
+    expect($syntax->isSuccessful())->toBeTrue($syntax->getErrorOutput());
 });
 
 it('repairs pre-existing gateway-owned TLS private key modes during routine runtime convergence', function (): void {
