@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 295,
-    "unique_candidate_commit_count": 191,
+    "record_count": 296,
+    "unique_candidate_commit_count": 192,
     "orphan_count": 0,
     "records": [
         {
@@ -7871,6 +7871,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "bfba62059704bae438fa1b623bec5e9663c76f74",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-032244-refactor-doctor-outcome-reconciler",
+            "slug": "refactor-doctor-outcome-reconciler",
+            "timestamp": "2026-08-13-032244",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "b75f2a063dc31d5633c2f7a1b7625a5a0c784286",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

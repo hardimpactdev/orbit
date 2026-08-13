@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T01:22:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-outcome-reconciler/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-032244-refactor-doctor-outcome-reconciler",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-outcome-reconciler-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/doctor-outcome-reconciler-retained-incus.md": "6761de65f74bf415d409d4b5b411efe3617ad525a2ce7c71cffae093e8249d0a",
+        "loop.md": "e9f96ee29f84806b6e2afb9825c1a4d98e92895f89c7a3e2e2a54f56f8748f90"
+    },
+    "slug": "refactor-doctor-outcome-reconciler",
+    "requested_slug": "refactor-doctor-outcome-reconciler",
+    "compatible_slugs": [
+        "refactor-doctor-outcome-reconciler"
+    ],
+    "branch": "refactor/doctor-outcome-reconciler",
+    "candidate_commit": "b75f2a063dc31d5633c2f7a1b7625a5a0c784286",
+    "accepted_feature_tip": "b75f2a063dc31d5633c2f7a1b7625a5a0c784286",
+    "accepted_main_tip": "85c029ed128056ac45c9c26ec3fa47798663295e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
