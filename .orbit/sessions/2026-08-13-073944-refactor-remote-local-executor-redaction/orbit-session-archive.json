@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T05:39:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-remote-local-executor-redaction/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-073944-refactor-remote-local-executor-redaction",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/remote-local-executor-redaction-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T053238Z-03bdd9c3d0c6.json"
+    ],
+    "entry_digests": {
+        "evidence/remote-local-executor-redaction-retained-incus.json": "4f11f9e7291e8468ee31723813101574dfc8b629b79b20c27970cf323a455fac",
+        "loop.md": "b7fe53ae9996e9700bc05e3aa918a0d44ae7d943a9ff93b09111f2483828f6b3",
+        "quality-gates/quality-check-2026-08-13T053238Z-03bdd9c3d0c6.json": "9750d554cd1aa45b8a735c06ebcd50ea1ad6c8d6d8be867e889b894403f14317"
+    },
+    "slug": "refactor-remote-local-executor-redaction",
+    "requested_slug": "refactor-remote-local-executor-redaction",
+    "compatible_slugs": [
+        "refactor-remote-local-executor-redaction"
+    ],
+    "branch": "refactor/remote-local-executor-redaction",
+    "candidate_commit": "a1baa5d95bea8f8cb459b64dd57d8f1a65eb213f",
+    "accepted_feature_tip": "a1baa5d95bea8f8cb459b64dd57d8f1a65eb213f",
+    "accepted_main_tip": "a01a4971fd7ce241b1e1482bb4f92482086ab7ff",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

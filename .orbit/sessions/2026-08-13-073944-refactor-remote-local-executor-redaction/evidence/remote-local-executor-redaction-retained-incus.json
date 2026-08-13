@@ -1,0 +1,27 @@
+{
+  "candidate": "a1baa5d95bea8f8cb459b64dd57d8f1a65eb213f",
+  "recorded_at": "2026-08-13T05:37:51Z",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "provider": "incus",
+  "host": "beast",
+  "host_lan_address": "192.168.6.20",
+  "topology": "dev-08af90",
+  "topology_kind": "operator_gateway",
+  "runtime_checkout": "/home/orbit/orbit-run",
+  "launcher": "/home/orbit/orbit-run/apps/cli/orbit",
+  "operation_id": "retained-redaction-a1baa5d95",
+  "command": "internal:executor:verify",
+  "expected": "The real gateway local executor succeeds, records the operation, and stores the minted operation token only as <redacted>.",
+  "observed": {
+    "exit_code": 0,
+    "operation_status": "succeeded",
+    "operation_lane": "local",
+    "activity_entries": 2,
+    "redacted_token_markers": 1,
+    "unsafe_token_lines": 0,
+    "stdout_summary_retained": true,
+    "stderr_summary": ""
+  },
+  "result": "passed"
+}
