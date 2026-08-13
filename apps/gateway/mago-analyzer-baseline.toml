@@ -3753,12 +3753,6 @@ count = 1
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Services\Doctor\DoctorReportRunner::nodeFromIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\Doctor\DoctorReportRunner::remainingIssues`: expected `list<array<string, mixed>>`, but provided type `list<array<array-key, mixed>>` is less specific.'
 count = 1
 
@@ -3784,12 +3778,6 @@ count = 1
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #3 of `App\Services\Doctor\DoctorReportRunner::applyFirewallIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #3 of `App\Services\Doctor\DoctorReportRunner::applyNodeIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
 
 [[issues]]

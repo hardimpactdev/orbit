@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 /**
- * DNS projection restore codes owned by applyDnsProjectionIssue.
+ * DNS projection restore codes owned by DoctorDnsProjectionRestorer::apply.
  */
 final class DoctorDnsProjectionRestoreSupport
 {

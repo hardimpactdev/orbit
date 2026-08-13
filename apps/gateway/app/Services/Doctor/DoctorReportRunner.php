@@ -197,8 +197,8 @@ final readonly class DoctorReportRunner
     ): array {
         $scope = $request->targetScope();
         $convergence = new DoctorRestoreConvergence;
-        // Apply may mutate the node row via a separately loaded model instance
-        // (e.g. nodeFromIssue). Re-resolve the selected node from the database
+        // Apply may mutate the node row through the issue-node resolver.
+        // Re-resolve the selected node from the database
         // for every post-mutation probe/apply so record changes are observed
         // without dropping family/key/instance/workspace fences.
         $resolveSelectedNode = function () use ($node): Node {
