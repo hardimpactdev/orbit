@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T15:52:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-update-all-lease-completeness/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-175219-fix-update-all-lease-completeness",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/update-all-lease-completeness-e3f6600c3.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T153814Z-4d28f3de69d7.json"
+    ],
+    "entry_digests": {
+        "evidence/update-all-lease-completeness-e3f6600c3.txt": "4b3744e8e8b6379ade4780884af9472fd2d63c8d93d4affece022f058735a89a",
+        "loop.md": "b54ad9359992a0623c246e0c7228488db90706e1cd220483f130362457a3927a",
+        "quality-gates/quality-check-2026-08-13T153814Z-4d28f3de69d7.json": "94b63b7e3fe7c8d82ffd212ecd66b147e20f4894c9027c733d46b2bc395fcbf4"
+    },
+    "slug": "fix-update-all-lease-completeness",
+    "requested_slug": "fix-update-all-lease-completeness",
+    "compatible_slugs": [
+        "fix-update-all-lease-completeness"
+    ],
+    "branch": "fix/update-all-lease-completeness",
+    "candidate_commit": "e3f6600c3d392740d79d0b73e40adad635b37bce",
+    "accepted_feature_tip": "e3f6600c3d392740d79d0b73e40adad635b37bce",
+    "accepted_main_tip": "f4c0bd90731ab438d593c9a05c477d9ed2650f48",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

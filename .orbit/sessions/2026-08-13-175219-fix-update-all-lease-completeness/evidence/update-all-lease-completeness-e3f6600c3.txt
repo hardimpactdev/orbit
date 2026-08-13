@@ -1,0 +1,62 @@
+Orbit update:all lease completeness retained proof
+
+candidate=e3f6600c3d392740d79d0b73e40adad635b37bce
+venue=retained-incus
+environment=dev-fixture
+topology=dev-6b4aeb
+kind=operator_gateway
+host=beast
+host_lan_ip=192.168.6.20
+gateway_instance=orbit-e2e-dev-6b4aeb-gateway
+runtime_checkout=/home/orbit/orbit-run
+
+Candidate binding
+
+local_sha256=1f913164093e8b664aa36d1edbd29305f110c05db6bdfa82631cd26125bb8437
+remote_sha256=1f913164093e8b664aa36d1edbd29305f110c05db6bdfa82631cd26125bb8437
+file=apps/gateway/app/Services/Operations/UpdateLeaseHeartbeatProcess.php
+pcntl={"pcntl":true,"alarm":true,"signals":true}
+
+The proof bootstrapped the candidate gateway application inside the retained
+gateway VM. It exercised the production UpdateRunner invalid-claim path. It
+then started the real heartbeat child twice. The first run killed that child
+with SIGKILL during the callback. The second run sent SIGTERM to the parent.
+
+Observed result
+
+{
+    "invalid_claim": {
+        "exception": "Update lease [999999] not found.",
+        "status": "failed",
+        "error_code": "update_runner_failed",
+        "error_events": 1,
+        "result": "passed"
+    },
+    "heartbeat_child_death": {
+        "exception": "Update lease heartbeat stopped while the update runner was active.",
+        "elapsed_seconds": 2.258,
+        "lease_still_active_at_detection": true,
+        "callback_completed": false,
+        "result": "passed"
+    },
+    "sigterm": {
+        "exception": "Update runner received SIGTERM while the lease heartbeat was active.",
+        "callback_completed": false,
+        "result": "passed"
+    },
+    "pcntl": {
+        "extension": true,
+        "alarm": true,
+        "signals": true
+    },
+    "result": "passed"
+}
+
+Expected
+
+- Invalid or stolen claims record one terminal operation failure.
+- Heartbeat child death interrupts active mutation before the lease expires.
+- SIGTERM follows the controlled failure path.
+- Failure cleanup never completes the interrupted callback.
+
+Result: passed
