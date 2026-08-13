@@ -33,124 +33,146 @@ it('normalizes capability metadata once for single and batch observations', func
     ));
 });
 
-it('owns the existing single capability script and tab separated reply contract', function (): void {
+it('uses the canonical JSONL contract for a single capability observation', function (): void {
     $contract = new ToolCapabilityProbeContract;
-    $script = $contract->renderOne(new ToolCapabilityProbeInput(
-        binary: '/home/agent/.local/bin/tool',
-        binaryAsUser: 'agent',
-        versionCommand: '/home/agent/.local/bin/tool --version',
-        service: 'tool.service',
-        providerCommand: 'tool status',
-        container: 'orbit-tool',
-        extraProbe: 'test -e /home/agent/.tool-ready',
+    $script = $contract->renderOne('tool', new ToolCapabilityProbeInput(
+        binary: 'sh',
+        versionCommand: "printf 'Tool 1.2.3\\n'",
     ));
-    $observation = $contract->parseOne(new RemoteShellResult(
-        exitCode: 0,
-        stdout: implode("\t", [
-            '/home/agent/.local/bin/tool',
-            'Tool 1.2.3',
-            'running',
-            '',
-            '',
-            '',
-            '',
-            '1',
-            'running',
-            'spec-hash',
-            '0',
-            'provider unavailable',
-        ])
-            ."\n",
-        stderr: '',
-        durationMs: 1,
-    ));
+    $observation = $contract->parseOne('tool', tool_capability_probe_contract_run($script));
 
     expect($script)->toStartWith('set -eu');
     expect($script)->toContain('# orbit-tool-probe:capability');
-    expect($script)->toContain("binary='/home/agent/.local/bin/tool'");
-    expect($script)->toContain("binary_as_user='agent'");
-    expect($script)->toContain("container='orbit-tool'");
-    expect($script)->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'');
-    expect(str_contains($script, 'php -r'))->toBeFalse();
-    expect($observation)->toBe([
+    expect($script)->toContain('printf \'{"name":');
+    expect(str_contains($script, '%s\\t%s'))->toBeFalse();
+    expect($observation)->toMatchArray([
+        'capability_probe_ok' => true,
         'installed' => true,
-        'path' => '/home/agent/.local/bin/tool',
         'version' => 'Tool 1.2.3',
-        'state' => 'running',
-        'config_exists' => null,
-        'config_hash' => null,
-        'secret_exists' => null,
-        'secret_hash' => null,
-        'container_exists' => true,
-        'container_state' => 'running',
-        'container_spec_hash' => 'spec-hash',
-        'provider_reachable' => false,
-        'provider_error' => 'provider unavailable',
+        'state' => 'unknown',
+    ]);
+    expect($observation['path'])->toBeString()->toEndWith('/sh');
+});
+
+it('keeps verified absence distinct from probe failure', function (): void {
+    $contract = new ToolCapabilityProbeContract;
+    $script = $contract->renderOne('missing-tool', new ToolCapabilityProbeInput(
+        binary: '/orbit/does-not-exist',
+    ));
+    $result = tool_capability_probe_contract_run($script);
+    $observation = $contract->parseOne('missing-tool', $result);
+
+    expect($result->successful())->toBeTrue();
+    expect($observation)->toMatchArray([
+        'capability_probe_ok' => true,
+        'installed' => false,
+        'path' => null,
     ]);
 });
 
-it('owns ordered batch rendering and line separated JSON reply parsing', function (): void {
+it('escapes shell observation text as valid JSON', function (): void {
     $contract = new ToolCapabilityProbeContract;
-    $script = $contract->renderMany([
-        'composer' => new ToolCapabilityProbeInput(binary: 'composer', versionCommand: 'composer --version'),
-        'docker' => new ToolCapabilityProbeInput(
-            binary: 'docker',
-            versionCommand: 'docker --version',
-            providerCommand: 'docker info',
-        ),
+    $script = $contract->renderOne('tool', new ToolCapabilityProbeInput(
+        binary: 'sh',
+        versionCommand: <<<'SH'
+            printf '%s\n' 'Tool "quoted" C:\orbit\bin'
+            SH,
+    ));
+
+    $observation = $contract->parseOne('tool', tool_capability_probe_contract_run($script));
+
+    expect($observation)->toMatchArray([
+        'capability_probe_ok' => true,
+        'version' => 'Tool "quoted" C:\orbit\bin',
     ]);
-    $observations = $contract->parseMany(new RemoteShellResult(
+});
+
+it('keeps valid batch siblings when one reply line is malformed', function (): void {
+    $contract = new ToolCapabilityProbeContract;
+    $result = new RemoteShellResult(
         exitCode: 0,
-        stdout: json_encode([
-            'name' => 'composer',
-            'installed' => true,
-            'path' => '/usr/local/bin/composer',
-        ], JSON_THROW_ON_ERROR)
-        ."\ninvalid\n"
-        .json_encode([
-            'name' => 'docker',
-            'installed' => false,
-            'path' => null,
-        ], JSON_THROW_ON_ERROR)
-        ."\n",
+        stdout: tool_capability_probe_json_line('composer', installed: true, path: '/usr/bin/composer')."\nnot-json\n",
+        stderr: '',
+        durationMs: 1,
+    );
+
+    $observations = $contract->parseMany($result, ['composer', 'docker']);
+
+    expect($observations['composer'])->toMatchArray([
+        'capability_probe_ok' => true,
+        'installed' => true,
+        'path' => '/usr/bin/composer',
+    ]);
+    expect($observations['docker'])->toBe([
+        'capability_probe_ok' => false,
+        'capability_probe_error' => 'Capability probe returned malformed JSON.',
+    ]);
+});
+
+it('marks one requested tool unverifiable for invalid reply contracts', function (
+    string $stdout,
+    string $expectedError,
+): void {
+    $contract = new ToolCapabilityProbeContract;
+
+    $observation = $contract->parseOne('composer', new RemoteShellResult(
+        exitCode: 0,
+        stdout: $stdout,
         stderr: '',
         durationMs: 1,
     ));
 
-    expect($script)->toStartWith('set -eu');
-    expect($script)->toContain('# orbit-tool-probe:capability-batch');
-    expect($script)->toContain("'composer')");
-    expect($script)->toContain("'docker')");
-    expect($script)->toContain("composer\ndocker\nORBIT_TOOLS");
-    expect($script)->toContain('printf \'{"name":');
-    expect(str_contains($script, 'php -r'))->toBeFalse();
+    expect($observation)->toBe([
+        'capability_probe_ok' => false,
+        'capability_probe_error' => $expectedError,
+    ]);
+})->with([
+    'empty reply' => ['', 'Capability probe returned no observation.'],
+    'missing installed' => [
+        '{"name":"composer","path":"/usr/bin/composer"}'."\n",
+        'Capability probe reply has an invalid installed field.',
+    ],
+    'non-boolean installed' => [
+        '{"name":"composer","installed":"yes","path":"/usr/bin/composer"}'."\n",
+        'Capability probe reply has an invalid installed field.',
+    ],
+    'wrong optional type' => [
+        '{"name":"composer","installed":true,"path":42}'."\n",
+        'Capability probe reply has an invalid path field.',
+    ],
+    'unknown name' => [
+        tool_capability_probe_json_line('docker', installed: true, path: '/usr/bin/docker')."\n",
+        'Capability probe reply identified an unexpected tool.',
+    ],
+    'duplicate name' => [
+        tool_capability_probe_json_line('composer', installed: true, path: '/usr/bin/composer')
+            ."\n"
+            .tool_capability_probe_json_line('composer', installed: true, path: '/usr/bin/composer')
+            ."\n",
+        'Capability probe returned duplicate observations.',
+    ],
+]);
+
+it('marks every requested tool unverifiable when the probe command fails', function (): void {
+    $contract = new ToolCapabilityProbeContract;
+
+    $observations = $contract->parseMany(new RemoteShellResult(
+        exitCode: 23,
+        stdout: '',
+        stderr: 'shell failed',
+        durationMs: 1,
+    ), ['composer', 'docker']);
+
     expect($observations)->toBe([
         'composer' => [
-            'installed' => true,
-            'path' => '/usr/local/bin/composer',
+            'capability_probe_ok' => false,
+            'capability_probe_error' => 'Capability probe command failed with exit code 23.',
         ],
         'docker' => [
-            'installed' => false,
-            'path' => null,
+            'capability_probe_ok' => false,
+            'capability_probe_error' => 'Capability probe command failed with exit code 23.',
         ],
     ]);
-});
-
-it('keeps single and batch capability facts equivalent for the same safe input', function (): void {
-    $contract = new ToolCapabilityProbeContract;
-    $input = new ToolCapabilityProbeInput(
-        binary: 'sh',
-        versionCommand: "printf 'Orbit Tool 1.0\\n'",
-    );
-
-    $single = $contract->parseOne(tool_capability_probe_contract_run($contract->renderOne($input)));
-    $batch = $contract->parseMany(tool_capability_probe_contract_run($contract->renderMany([
-        'safe-tool' => $input,
-    ])))['safe-tool'];
-
-    unset($single['config_exists'], $single['config_hash'], $single['secret_exists'], $single['secret_hash']);
-
-    expect($single)->toBe($batch);
 });
 
 it('keeps the capability wire contract out of the tools coordinator', function (): void {
@@ -159,8 +181,6 @@ it('keeps the capability wire contract out of the tools coordinator', function (
     $contractSource = (string) file_get_contents($gatewayPath.'/app/Services/Tools/ToolCapabilityProbeContract.php');
 
     expect(str_contains($probeSource, '# orbit-tool-probe:capability'))->toBeFalse();
-    expect(str_contains($probeSource, 'function toolCapabilityProbeScript('))->toBeFalse();
-    expect(str_contains($probeSource, 'function batchedToolCapabilityProbeScript('))->toBeFalse();
     expect($contractSource)->toContain('# orbit-tool-probe:capability');
     expect($contractSource)->toContain('# orbit-tool-probe:capability-batch');
     expect(str_contains($contractSource, 'app('))->toBeFalse();
@@ -177,4 +197,20 @@ function tool_capability_probe_contract_run(string $script): RemoteShellResult
         stderr: $process->getErrorOutput(),
         durationMs: 1,
     );
+}
+
+function tool_capability_probe_json_line(string $name, bool $installed, ?string $path): string
+{
+    return json_encode([
+        'name' => $name,
+        'installed' => $installed,
+        'path' => $path,
+        'version' => null,
+        'state' => 'unknown',
+        'container_exists' => null,
+        'container_state' => null,
+        'container_spec_hash' => null,
+        'provider_reachable' => null,
+        'provider_error' => null,
+    ], JSON_THROW_ON_ERROR);
 }

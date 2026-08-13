@@ -100,6 +100,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
+| `tool.capability_probe_failed` | The ordinary capability command failed or returned an empty, malformed, duplicate, missing, or incorrectly typed observation, so capability state is unverifiable for this run. |
 | `tool.php_cli_coverage_missing` | `php-cli` effective runtime is the `coverage` variant (matrix install contract) but a supported minor lacks a working statically linked PCOV (`extension_loaded('pcov')`, `function_exists('pcov\\start')`, `pcov.enabled`, or `php --ri pcov`). Under `install_contract=compatibility`, doctor validates the retained standard runtime instead and does not emit this code for desired coverage alone. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |
@@ -167,7 +168,7 @@ credential repair logic.
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
-`tool.config_probe_failed`, `tool.credentials_probe_failed`,
+`tool.capability_probe_failed`, `tool.config_probe_failed`, `tool.credentials_probe_failed`,
 `tool.agent_runtime_probe_failed`,
 `tool.agent_orbit_cli_inaccessible`, `tool.agent_consumer_url_unreachable`,
 `tool.seaweedfs.credentials_missing`, or

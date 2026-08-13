@@ -5,143 +5,163 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Data\RemoteShell\RemoteShellResult;
+use JsonException;
 
-/** @mago-expect lint:cyclomatic-complexity */
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class ToolCapabilityProbeContract
 {
-    public function renderOne(ToolCapabilityProbeInput $input): string
+    /** @var list<string> */
+    private const array NULLABLE_STRING_FIELDS = [
+        'path',
+        'version',
+        'state',
+        'container_state',
+        'container_spec_hash',
+        'provider_error',
+    ];
+
+    /** @var list<string> */
+    private const array NULLABLE_BOOLEAN_FIELDS = [
+        'container_exists',
+        'provider_reachable',
+    ];
+
+    public function renderOne(string $name, ToolCapabilityProbeInput $input): string
     {
-        $script = <<<'SH'
-            set -eu
-            # orbit-tool-probe:capability
-
-            binary=__BINARY__
-            binary_as_user=__BINARY_AS_USER__
-            version_command=__VERSION_COMMAND__
-            service=__SERVICE__
-            provider_command=__PROVIDER_COMMAND__
-            container=__CONTAINER__
-            extra_probe=__EXTRA_PROBE__
-
-            path=''
-            version=''
-            state='unknown'
-            provider_reachable=''
-            provider_error=''
-            config_exists=''
-            config_hash=''
-            secret_exists=''
-            secret_hash=''
-            container_exists=''
-            container_state=''
-            container_spec_hash=''
-
-            case "$binary" in
-                */*)
-                    if [ -n "$binary_as_user" ]; then
-                        if sudo -u "$binary_as_user" -H test -x "$binary" 2>/dev/null; then
-                            path=$binary
-                        fi
-                    elif [ -x "$binary" ]; then
-                        path=$binary
-                    fi
-                    ;;
-                *)
-                    path=$(command -v "$binary" 2>/dev/null || true)
-                    ;;
-            esac
-
-            if [ -z "$path" ]; then
-                exit 1
-            fi
-
-            if [ -n "$extra_probe" ]; then
-                if ! sh -c "$extra_probe" >/dev/null 2>&1; then
-                    exit 1
-                fi
-            fi
-
-            if [ -n "$version_command" ]; then
-                version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
-            fi
-
-            if [ -n "$provider_command" ]; then
-                if provider_output=$(sh -c "$provider_command" 2>&1 >/dev/null); then
-                    provider_reachable='1'
-                else
-                    provider_reachable='0'
-                    provider_error=$(printf '%s' "$provider_output" | sed -n '1p')
-                fi
-            fi
-
-            if [ -n "$service" ]; then
-                if systemctl is-active --quiet "$service" 2>/dev/null; then
-                    state='running'
-                else
-                    state='stopped'
-                fi
-            fi
-
-            if [ -n "$container" ]; then
-                if docker container inspect "$container" >/dev/null 2>&1; then
-                    container_exists='1'
-                    container_state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf 'stopped')
-
-                    state=$container_state
-                    container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
-
-                    if [ "$container_spec_hash" = "<no value>" ]; then
-                        container_spec_hash=''
-                    fi
-                else
-                    container_exists='0'
-                    container_state='missing'
-                fi
-            fi
-
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash" "$provider_reachable" "$provider_error"
-            SH;
-
-        return strtr($script, [
-            '__BINARY__' => escapeshellarg($input->binary),
-            '__BINARY_AS_USER__' => escapeshellarg($input->binaryAsUser),
-            '__VERSION_COMMAND__' => escapeshellarg($input->versionCommand),
-            '__SERVICE__' => escapeshellarg($input->service),
-            '__PROVIDER_COMMAND__' => escapeshellarg($input->providerCommand),
-            '__CONTAINER__' => escapeshellarg($input->container),
-            '__EXTRA_PROBE__' => escapeshellarg($input->extraProbe),
-        ]);
+        return $this->render([$name => $input], '# orbit-tool-probe:capability');
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function parseOne(RemoteShellResult $result): array
+    public function parseOne(string $name, RemoteShellResult $result): array
     {
-        $parts = explode(separator: "\t", string: trim($result->stdout), limit: 12);
-        $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
-
-        return [
-            'installed' => $result->successful(),
-            'path' => $parts[0] !== '' ? $parts[0] : null,
-            'version' => ($parts[1] ?? '') !== '' ? $parts[1] : null,
-            'state' => $containerState ?? (($parts[2] ?? '') !== '' ? $parts[2] : null),
-            'config_exists' => ($parts[3] ?? '') !== '' ? $parts[3] === '1' : null,
-            'config_hash' => ($parts[4] ?? '') !== '' ? $parts[4] : null,
-            'secret_exists' => ($parts[5] ?? '') !== '' ? $parts[5] === '1' : null,
-            'secret_hash' => ($parts[6] ?? '') !== '' ? $parts[6] : null,
-            'container_exists' => ($parts[7] ?? '') !== '' ? $parts[7] === '1' : null,
-            'container_state' => $containerState,
-            'container_spec_hash' => ($parts[9] ?? '') !== '' ? $parts[9] : null,
-            'provider_reachable' => ($parts[10] ?? '') !== '' ? $parts[10] === '1' : null,
-            'provider_error' => ($parts[11] ?? '') !== '' ? $parts[11] : null,
-        ];
+        return $this->parseMany($result, [$name])[$name];
     }
 
     /**
      * @param  array<string, ToolCapabilityProbeInput>  $inputs
      */
     public function renderMany(array $inputs): string
+    {
+        return $this->render($inputs, '# orbit-tool-probe:capability-batch');
+    }
+
+    /**
+     * @param  list<string>  $requestedNames
+     * @return array<string, array<string, mixed>>
+     */
+    public function parseMany(RemoteShellResult $result, array $requestedNames): array
+    {
+        if ($requestedNames === []) {
+            return [];
+        }
+
+        if (! $result->successful()) {
+            return $this->failedObservations(
+                $requestedNames,
+                "Capability probe command failed with exit code {$result->exitCode}.",
+            );
+        }
+
+        $stdout = rtrim($result->stdout, "\r\n");
+
+        if (trim($stdout) === '') {
+            return $this->failedObservations($requestedNames, 'Capability probe returned no observation.');
+        }
+
+        $lines = preg_split('/\R/', $stdout);
+
+        if ($lines === false) {
+            return $this->failedObservations($requestedNames, 'Capability probe reply could not be split into lines.');
+        }
+
+        $observations = [];
+        $claimedNames = [];
+
+        foreach ($lines as $index => $line) {
+            $expectedName = $requestedNames[$index] ?? null;
+
+            try {
+                /** @var mixed $payload */
+                $payload = json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                $this->attributeFailure(
+                    $observations,
+                    $claimedNames,
+                    $expectedName,
+                    'Capability probe returned malformed JSON.',
+                );
+
+                continue;
+            }
+
+            if (! is_array($payload)) {
+                $this->attributeFailure(
+                    $observations,
+                    $claimedNames,
+                    $expectedName,
+                    'Capability probe reply is not an object.',
+                );
+
+                continue;
+            }
+
+            if (
+                ! is_string($payload['name'] ?? null)
+                || ! in_array($payload['name'], $requestedNames, strict: true)
+            ) {
+                $this->attributeFailure(
+                    $observations,
+                    $claimedNames,
+                    $expectedName,
+                    'Capability probe reply identified an unexpected tool.',
+                );
+
+                continue;
+            }
+
+            $name = $payload['name'];
+
+            if (isset($claimedNames[$name])) {
+                $observations[$name] = $this->failedObservation('Capability probe returned duplicate observations.');
+
+                continue;
+            }
+
+            $claimedNames[$name] = true;
+            $error = $this->validationError($payload);
+
+            if ($error !== null) {
+                $observations[$name] = $this->failedObservation($error);
+
+                continue;
+            }
+
+            unset($payload['name']);
+            $observations[$name] = [
+                'capability_probe_ok' => true,
+                ...$payload,
+            ];
+        }
+
+        foreach ($requestedNames as $name) {
+            $observations[$name] ??= $this->failedObservation('Capability probe returned no observation.');
+        }
+
+        return array_combine(
+            $requestedNames,
+            array_map(static fn (string $name): array => $observations[$name], $requestedNames),
+        );
+    }
+
+    /**
+     * @param  array<string, ToolCapabilityProbeInput>  $inputs
+     */
+    private function render(array $inputs, string $marker): string
     {
         $cases = [];
 
@@ -161,7 +181,7 @@ final readonly class ToolCapabilityProbeContract
 
         $script = <<<'SH'
             set -eu
-            # orbit-tool-probe:capability-batch
+            __MARKER__
 
             json_escape() {
                 printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'
@@ -286,42 +306,74 @@ final readonly class ToolCapabilityProbeContract
             SH;
 
         return strtr($script, [
+            '__MARKER__' => $marker,
             '__CASES__' => implode("\n", $cases),
             '__NAMES__' => implode("\n", array_keys($inputs)),
         ]);
     }
 
     /**
-     * @return array<string, array<array-key, mixed>>
+     * @param  array<array-key, mixed>  $payload
      */
-    public function parseMany(RemoteShellResult $result): array
+    private function validationError(array $payload): ?string
     {
-        $observations = [];
-
-        $lines = preg_split('/\R/', trim($result->stdout));
-
-        if ($lines === false) {
-            return [];
+        if (! is_bool($payload['installed'] ?? null)) {
+            return 'Capability probe reply has an invalid installed field.';
         }
 
-        foreach ($lines as $line) {
-            if ($line === '') {
-                continue;
+        foreach (self::NULLABLE_STRING_FIELDS as $field) {
+            if (array_key_exists($field, $payload) && ! is_string($payload[$field]) && $payload[$field] !== null) {
+                return "Capability probe reply has an invalid {$field} field.";
             }
-
-            /** @mago-expect analyzer:mixed-assignment */
-            $payload = json_decode($line, associative: true);
-
-            if (! is_array($payload) || ! is_string($payload['name'] ?? null)) {
-                continue;
-            }
-
-            $name = $payload['name'];
-            unset($payload['name']);
-
-            $observations[$name] = $payload;
         }
 
-        return $observations;
+        foreach (self::NULLABLE_BOOLEAN_FIELDS as $field) {
+            if (array_key_exists($field, $payload) && ! is_bool($payload[$field]) && $payload[$field] !== null) {
+                return "Capability probe reply has an invalid {$field} field.";
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $observations
+     * @param  array<string, true>  $claimedNames
+     */
+    private function attributeFailure(
+        array &$observations,
+        array &$claimedNames,
+        ?string $expectedName,
+        string $error,
+    ): void {
+        if ($expectedName === null || isset($claimedNames[$expectedName])) {
+            return;
+        }
+
+        $claimedNames[$expectedName] = true;
+        $observations[$expectedName] = $this->failedObservation($error);
+    }
+
+    /**
+     * @param  list<string>  $requestedNames
+     * @return array<string, array<string, mixed>>
+     */
+    private function failedObservations(array $requestedNames, string $error): array
+    {
+        return array_combine(
+            $requestedNames,
+            array_map(fn (): array => $this->failedObservation($error), $requestedNames),
+        );
+    }
+
+    /**
+     * @return array{capability_probe_ok: false, capability_probe_error: string}
+     */
+    private function failedObservation(string $error): array
+    {
+        return [
+            'capability_probe_ok' => false,
+            'capability_probe_error' => $error,
+        ];
     }
 }

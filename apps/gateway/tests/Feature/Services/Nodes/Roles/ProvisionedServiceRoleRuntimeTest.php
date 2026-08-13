@@ -674,7 +674,19 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
     {
         return $this->successResult([
             'exit_code' => 0,
-            'stdout' => "/usr/bin/docker\t27.0\trunning\t\t\t\t\t\t\t\t1\t",
+            'stdout' =>
+                json_encode([
+                    'name' => 'docker',
+                    'installed' => true,
+                    'path' => '/usr/bin/docker',
+                    'version' => '27.0',
+                    'state' => 'running',
+                    'container_exists' => null,
+                    'container_state' => null,
+                    'container_spec_hash' => null,
+                    'provider_reachable' => true,
+                    'provider_error' => null,
+                ], JSON_THROW_ON_ERROR)."\n",
             'stderr' => '',
             'duration_ms' => 1,
         ]);

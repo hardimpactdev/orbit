@@ -296,6 +296,28 @@ function doctorRunnerFirewallProbeResult(string $ufwOutput): RemoteShellResult
     );
 }
 
+/** @param array{exists?: bool, state?: string, spec_hash?: string} $container */
+function doctorRunnerToolCapabilityStdout(
+    string $name,
+    ?string $path,
+    ?string $version = null,
+    string $state = 'unknown',
+    array $container = [],
+): string {
+    return json_encode([
+        'name' => $name,
+        'installed' => $path !== null,
+        'path' => $path,
+        'version' => $version,
+        'state' => $state,
+        'container_exists' => $container['exists'] ?? null,
+        'container_state' => $container['state'] ?? null,
+        'container_spec_hash' => $container['spec_hash'] ?? null,
+        'provider_reachable' => null,
+        'provider_error' => null,
+    ], JSON_THROW_ON_ERROR)."\n";
+}
+
 /**
  * Explicit post-mutation process observations for re-probe.
  *
@@ -673,8 +695,13 @@ describe('DoctorReportRunner', function (): void {
         );
         $shell = new DoctorReportRunnerRemoteShell(
             [
-                // Initial probe: missing capability.
-                new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+                // Initial probe: verified missing capability.
+                new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: doctorRunnerToolCapabilityStdout('composer', null),
+                    stderr: '',
+                    durationMs: 1,
+                ),
                 // Restore install mutation.
                 new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             ],
@@ -2459,21 +2486,44 @@ describe('DoctorReportRunner', function (): void {
             'name' => 'caddy',
             'config' => ['container' => $container->spec()],
         ]);
-        $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "/usr/bin/docker\tDocker version 27.0.0\t{$state}\t\t\t\t\t{$containerExists}\t{$state}\t{$container->specHash()}\n",
-                stderr: '',
-                durationMs: 1,
+        $healthyCaddy = new RemoteShellResult(
+            exitCode: 0,
+            stdout: doctorRunnerToolCapabilityStdout(
+                'caddy',
+                '/usr/bin/docker',
+                'Docker version 27.0.0',
+                'running',
+                [
+                    'exists' => true,
+                    'state' => 'running',
+                    'spec_hash' => $container->specHash(),
+                ],
             ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$container->specHash()}\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-        ]);
+            stderr: '',
+            durationMs: 1,
+        );
+        $shell = new DoctorReportRunnerRemoteShell(
+            [
+                new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: doctorRunnerToolCapabilityStdout(
+                        'caddy',
+                        '/usr/bin/docker',
+                        'Docker version 27.0.0',
+                        $state,
+                        [
+                            'exists' => $containerExists === '1',
+                            'state' => $state,
+                            'spec_hash' => $container->specHash(),
+                        ],
+                    ),
+                    stderr: '',
+                    durationMs: 1,
+                ),
+                new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            ],
+            whenExhausted: static fn (): RemoteShellResult => $healthyCaddy,
+        );
         app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
@@ -2688,15 +2738,32 @@ describe('DoctorReportRunner', function (): void {
             'name' => 'composer',
             'expected_version' => '3.0',
         ]);
-        $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
-                stderr: '',
-                durationMs: 1,
+        $updatedComposer = new RemoteShellResult(
+            exitCode: 0,
+            stdout: doctorRunnerToolCapabilityStdout(
+                'composer',
+                '/usr/local/bin/composer',
+                '3.0.0',
             ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]);
+            stderr: '',
+            durationMs: 1,
+        );
+        $shell = new DoctorReportRunnerRemoteShell(
+            [
+                new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: doctorRunnerToolCapabilityStdout(
+                        'composer',
+                        '/usr/local/bin/composer',
+                        'Composer version 2.8.0',
+                    ),
+                    stderr: '',
+                    durationMs: 1,
+                ),
+                new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            ],
+            whenExhausted: static fn (): RemoteShellResult => $updatedComposer,
+        );
         app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
@@ -3026,7 +3093,11 @@ describe('DoctorReportRunner', function (): void {
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+                stdout: doctorRunnerToolCapabilityStdout(
+                    'composer',
+                    '/usr/local/bin/composer',
+                    'Composer version 2.8.0',
+                ),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -3060,7 +3131,7 @@ describe('DoctorReportRunner', function (): void {
             ]);
     });
 
-    it('uses the same re-probe path for full restore runs of ordinary non-special keys', function (): void {
+    it('marks an ordinary restore action failed when the full restore re-probe still finds drift', function (): void {
         $node = createDoctorRunnerAppHostNode();
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -3069,17 +3140,24 @@ describe('DoctorReportRunner', function (): void {
         ]);
         $versionMismatch = new RemoteShellResult(
             exitCode: 0,
-            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+            stdout: doctorRunnerToolCapabilityStdout(
+                'composer',
+                '/usr/local/bin/composer',
+                'Composer version 2.8.0',
+            ),
             stderr: '',
             durationMs: 1,
         );
-        $shell = new DoctorReportRunnerRemoteShell([
-            $versionMismatch,
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            $versionMismatch,
-            $versionMismatch,
-            $versionMismatch,
-        ]);
+        $shell = new DoctorReportRunnerRemoteShell(
+            [
+                $versionMismatch,
+                new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+                $versionMismatch,
+                $versionMismatch,
+                $versionMismatch,
+            ],
+            whenExhausted: static fn (): RemoteShellResult => $versionMismatch,
+        );
         app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['tool']);
@@ -3093,7 +3171,9 @@ describe('DoctorReportRunner', function (): void {
             ->and(collect($report['issues'])->pluck('key')->all())
             ->toContain('tool.version_mismatch')
             ->and($report['actions'][0]['status'] ?? null)
-            ->toBe('completed');
+            ->toBe('failed')
+            ->and($report['actions'][0]['details']['error'] ?? null)
+            ->toBe('Drift remained after repair.');
     });
 
     it('keeps adopt drift after re-probe despite an updated action receipt', function (): void {
@@ -3106,7 +3186,11 @@ describe('DoctorReportRunner', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+                stdout: doctorRunnerToolCapabilityStdout(
+                    'composer',
+                    '/usr/local/bin/composer',
+                    'Composer version 2.8.0',
+                ),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -3149,13 +3233,21 @@ describe('DoctorReportRunner', function (): void {
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+                stdout: doctorRunnerToolCapabilityStdout(
+                    'composer',
+                    '/usr/local/bin/composer',
+                    'Composer version 2.8.0',
+                ),
                 stderr: '',
                 durationMs: 1,
             ),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+                stdout: doctorRunnerToolCapabilityStdout(
+                    'composer',
+                    '/usr/local/bin/composer',
+                    'Composer version 2.8.0',
+                ),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -3195,7 +3287,11 @@ describe('DoctorReportRunner', function (): void {
         ]);
         $healthy = new RemoteShellResult(
             exitCode: 0,
-            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+            stdout: doctorRunnerToolCapabilityStdout(
+                'composer',
+                '/usr/local/bin/composer',
+                'Composer version 2.8.0',
+            ),
             stderr: '',
             durationMs: 1,
         );
@@ -3227,7 +3323,11 @@ describe('DoctorReportRunner', function (): void {
         ]);
         $healthy = new RemoteShellResult(
             exitCode: 0,
-            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\n",
+            stdout: doctorRunnerToolCapabilityStdout(
+                'composer',
+                '/usr/local/bin/composer',
+                'Composer version 2.8.0',
+            ),
             stderr: '',
             durationMs: 1,
         );

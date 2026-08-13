@@ -76,6 +76,28 @@ function doctor_run_runtime_inventory_agent_response(): array
     ];
 }
 
+/** @param array{reachable?: bool, error?: string} $provider */
+function doctor_run_tool_capability_stdout(
+    string $name,
+    ?string $path,
+    ?string $version = null,
+    string $state = 'unknown',
+    array $provider = [],
+): string {
+    return json_encode([
+        'name' => $name,
+        'installed' => $path !== null,
+        'path' => $path,
+        'version' => $version,
+        'state' => $state,
+        'container_exists' => null,
+        'container_state' => null,
+        'container_spec_hash' => null,
+        'provider_reachable' => $provider['reachable'] ?? null,
+        'provider_error' => $provider['error'] ?? null,
+    ], JSON_THROW_ON_ERROR)."\n";
+}
+
 function createDoctorRunCallerNode(array $overrides = [], string $role = 'gateway'): Node
 {
     $attributes = array_merge([
@@ -561,7 +583,9 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'composer']);
-        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(perRouteStdout: '', exitCode: 1));
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            perRouteStdout: doctor_run_tool_capability_stdout('composer', null),
+        ));
 
         $response = $this->call(
             'POST',
@@ -591,7 +615,15 @@ describe('DoctorRunController', function (): void {
         ]);
         NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'docker']);
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
-            perRouteStdout: "/opt/homebrew/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t\t\t\t0\tCannot connect to the Docker daemon\n",
+            perRouteStdout: doctor_run_tool_capability_stdout(
+                'docker',
+                '/opt/homebrew/bin/docker',
+                'Docker version 27.0.0',
+                provider: [
+                    'reachable' => false,
+                    'error' => 'Cannot connect to the Docker daemon',
+                ],
+            ),
         ));
 
         $response = $this->call(
@@ -1154,15 +1186,18 @@ describe('DoctorRunController', function (): void {
             'expected_state' => 'installed',
             'expected_version' => '2.9',
         ]);
+        $versionMismatch = doctor_run_tool_capability_stdout('caddy', '/usr/bin/caddy', '2.8.4', 'stopped');
+        $updatedVersion = doctor_run_tool_capability_stdout('caddy', '/usr/bin/caddy', '2.9.0', 'stopped');
         app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
-            "/usr/bin/caddy\t2.8.4\tstopped\n",
+            $versionMismatch,
             perRouteStdouts: [
                 // First call: probe returns installed but mismatched version (2.8.4 vs expected 2.9)
-                "/usr/bin/caddy\t2.8.4\tstopped\n",
+                $versionMismatch,
                 // Second call: update script runs and succeeds
                 '',
-                // Third call: re-probe after fix confirms correct version
-                "/usr/bin/caddy\t2.9.0\tstopped\n",
+                // Batch convergence and final single-tool probes both confirm the update.
+                $updatedVersion,
+                $updatedVersion,
             ],
         ));
         bind_tool_script_dispatcher_to_remote_shell();
@@ -1205,7 +1240,7 @@ describe('DoctorRunController', function (): void {
                 // Apply/update mutation succeeds.
                 '',
                 // Re-probe still observes the mismatched version.
-                "/usr/bin/caddy\t2.8.4\tstopped\n",
+                doctor_run_tool_capability_stdout('caddy', '/usr/bin/caddy', '2.8.4', 'stopped'),
             ],
         ));
         bind_tool_script_dispatcher_to_remote_shell();

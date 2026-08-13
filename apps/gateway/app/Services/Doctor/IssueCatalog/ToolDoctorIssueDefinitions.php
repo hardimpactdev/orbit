@@ -35,6 +35,7 @@ final class ToolDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'tool',
                 'restore_tool_capability_missing',
             ),
+            self::blocked('tool.capability_probe_failed', 'tool'),
             self::genuine(
                 'tool.config_mismatch',
                 'tool',

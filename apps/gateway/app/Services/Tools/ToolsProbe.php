@@ -69,12 +69,15 @@ final readonly class ToolsProbe
             return $this->withManagedFileProbes($tool, $this->introspectPhpCliRuntimes($tool));
         }
 
-        $script = $this->capabilityProbeContract()->renderOne($this->capabilityProbeInput($tool, $metadata));
+        $script = $this->capabilityProbeContract()->renderOne(
+            $tool->name,
+            $this->capabilityProbeInput($tool, $metadata),
+        );
 
         $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe', $script);
 
         return $this->withManagedFileProbes($tool, new ProbeSnapshot([
-            $tool->name => $this->capabilityProbeContract()->parseOne($result),
+            $tool->name => $this->capabilityProbeContract()->parseOne($tool->name, $result),
         ]));
     }
 
@@ -134,15 +137,7 @@ final readonly class ToolsProbe
         $script = $this->capabilityProbeContract()->renderMany($batch);
         $result = $this->scriptDispatcher()->run($node, 'tool-catalog', 'probe-many', $script);
 
-        if (! $result->successful()) {
-            foreach (array_keys($batch) as $toolName) {
-                $snapshots[$toolName] = new ProbeSnapshot([]);
-            }
-
-            return $snapshots;
-        }
-
-        foreach ($this->capabilityProbeContract()->parseMany($result) as $name => $observation) {
+        foreach ($this->capabilityProbeContract()->parseMany($result, array_keys($batch)) as $name => $observation) {
             $snapshots[$name] = new ProbeSnapshot([$name => $observation]);
         }
 
@@ -571,10 +566,24 @@ final readonly class ToolsProbe
      */
     public function diff(NodeTool $tool, ProbeSnapshot $snapshot, bool $allowProvisioning = false): array
     {
-        return [
+        $intentIssues = [
             ...$this->checkRecordCompleteness($tool),
             ...$this->checkNodeEligibility($tool, $allowProvisioning),
             ...$this->checkDefinition($tool),
+        ];
+        $capabilityProbeIssues = $this->checkCapabilityProbe($tool, $snapshot);
+
+        if ($capabilityProbeIssues !== []) {
+            return [
+                ...$intentIssues,
+                ...$capabilityProbeIssues,
+                ...$this->checkAgentCredentials($tool),
+                ...$this->checkAgentUser($tool),
+            ];
+        }
+
+        return [
+            ...$intentIssues,
             ...$this->checkCapabilityPresence($tool, $snapshot),
             ...$this->checkPhpCliRuntimeState($tool, $snapshot),
             ...$this->checkDockerProviderReachability($tool, $snapshot),
@@ -722,9 +731,45 @@ final readonly class ToolsProbe
     /**
      * @return list<DriftEntry>
      */
+    private function checkCapabilityProbe(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['capability_probe_ok'] ?? true) !== false) {
+            return [];
+        }
+
+        $error = is_string($observed['capability_probe_error'] ?? null)
+            ? $observed['capability_probe_error']
+            : 'Capability probe returned no reliable observation.';
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.capability_probe_failed',
+                kind: DriftKind::Unverifiable,
+                summary: "Tool {$tool->name} capability could not be inspected.",
+                detail: [
+                    'tool' => $tool->name,
+                    'node' => $tool->node?->name,
+                    'error' => $error,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkCapabilityPresence(NodeTool $tool, ProbeSnapshot $snapshot): array
     {
         if ($tool->expected_state === 'absent') {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['capability_probe_ok'] ?? true) === false) {
             return [];
         }
 
@@ -743,8 +788,6 @@ final readonly class ToolsProbe
                 return [];
             }
         }
-
-        $observed = $snapshot->get($tool->name);
 
         if (($observed['installed'] ?? null) === true) {
             return [];
