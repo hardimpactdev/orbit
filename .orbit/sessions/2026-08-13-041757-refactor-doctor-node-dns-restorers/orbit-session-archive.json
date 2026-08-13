@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T02:17:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-doctor-node-dns-restorers/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-041757-refactor-doctor-node-dns-restorers",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/doctor-node-dns-restorers-retained-incus-dev-f47c10.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T021011Z-d37b4228a6ac.json"
+    ],
+    "entry_digests": {
+        "evidence/doctor-node-dns-restorers-retained-incus-dev-f47c10.json": "ca6cad4a9a869ee2fd4a1aa4e5f4e194cd122a172a02bc7a41e08584d3fd3659",
+        "loop.md": "429a68899bb3339a89b3ef84ac2e03bfada490d44607379c1ced15e066a940ee",
+        "quality-gates/quality-check-2026-08-13T021011Z-d37b4228a6ac.json": "b661ea7ec924f5f9c019039400afad55dc54c69f6ed2f71a6c6755d161d2adc7"
+    },
+    "slug": "refactor-doctor-node-dns-restorers",
+    "requested_slug": "refactor-doctor-node-dns-restorers",
+    "compatible_slugs": [
+        "refactor-doctor-node-dns-restorers"
+    ],
+    "branch": "refactor/doctor-node-dns-restorers",
+    "candidate_commit": "a89fa1001a871718e06ba073f610f5d0ecfba9d2",
+    "accepted_feature_tip": "a89fa1001a871718e06ba073f610f5d0ecfba9d2",
+    "accepted_main_tip": "d9148f543f51c119718178f30ad625e3a4cf65d5",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

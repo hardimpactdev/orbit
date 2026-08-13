@@ -1,0 +1,95 @@
+{
+  "candidate": "a89fa1001a871718e06ba073f610f5d0ecfba9d2",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "gateway:node repair and node.dns_mapping_mismatch",
+  "expected": "Doctor returns completed actions for normal node and private DNS projection drift, then the final fresh probes are healthy.",
+  "observed": {
+    "host": {
+      "name": "beast",
+      "ssh_user": "nckrtl",
+      "lan_ip": "192.168.6.20",
+      "host_resolution": "beast resolved to 192.168.6.20"
+    },
+    "topology": {
+      "id": "dev-f47c10",
+      "kind": "operator_gateway",
+      "provider": "incus",
+      "source_mounted_roles": [
+        "operator",
+        "gateway"
+      ],
+      "runtime_checkout": "/home/orbit/orbit-run",
+      "launcher": "/home/orbit/orbit-run/apps/cli/orbit"
+    },
+    "candidate_files": {
+      "DoctorDnsProjectionRestorer.php": "d8e48fad7283e0c365f1f45b71238207af46a9c4d8bac2364fca329fcf72faca",
+      "DoctorNodeRestorer.php": "79c257b80a1cbe2b66e2a81ac2e4d2425163798f1400b238fd75d6a509f607f4",
+      "DoctorIssueNodeResolver.php": "11c9b4103263772b404ef6aab291eeac0e528a84051f13345f6a69228f506046",
+      "DoctorReportRunner.php": "15a80322a0f8c23a8e0375c4f381af1da520924e3204635e8fa1e34e55dd26a0",
+      "DoctorDnsProjectionRestoreSupport.php": "97bf4ed3083c712198676895d57243f077849c8bc1034513d7aebf225fe9c4d2"
+    },
+    "node_dns_projection": {
+      "controlled_drift": "appended address=/orbit.stale-proof/10.6.0.99 to dnsmasq.d/10-node-records.conf",
+      "verify_before_restore": {
+        "healthy": false,
+        "issues": 1,
+        "key": "node.dns_mapping_mismatch",
+        "disposition": "genuine_drift",
+        "restorable": true
+      },
+      "restore": {
+        "healthy": true,
+        "fixed": 1,
+        "failed": 0,
+        "passes": 1,
+        "stop_reason": "converged",
+        "action_status": "completed"
+      },
+      "fresh_verify": {
+        "healthy": true,
+        "issues": 0
+      },
+      "runtime": {
+        "stale_record": "absent",
+        "orbit_dns_replicas": "1/1"
+      }
+    },
+    "normal_node_repair": {
+      "controlled_drift": "set managed=true on the role-bearing gateway node",
+      "verify_before_restore": {
+        "healthy": false,
+        "issues": 1,
+        "key": "node.managed_agent_intent_invalid",
+        "disposition": "genuine_drift",
+        "restorable": true
+      },
+      "restore": {
+        "healthy": true,
+        "fixed": 1,
+        "failed": 0,
+        "passes": 1,
+        "stop_reason": "converged",
+        "action_status": "completed"
+      },
+      "fresh_verify": {
+        "healthy": true,
+        "issues": 0
+      }
+    },
+    "topology_readiness_note": {
+      "acquisition_completed_at": "2026-08-13T02:11:56Z",
+      "first_operator_request": "failed because 10.6.0.2:443 was unreachable",
+      "gateway_listener": "10.6.0.2:443 was bound while the WireGuard route was still unreachable",
+      "first_confirmed_ready_at": "2026-08-13T02:13:31Z",
+      "classification": "separate retained Incus WireGuard readiness issue"
+    },
+    "release": {
+      "reaped": [
+        "orbit-e2e-dev-f47c10-operator",
+        "orbit-e2e-dev-f47c10-gateway"
+      ]
+    }
+  },
+  "result": "passed"
+}
