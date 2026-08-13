@@ -1,0 +1,45 @@
+{
+  "candidate": "881baf21335643ff19de8a433f691b6211d21054",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": "dev-71c359",
+  "topology_kind": "operator_gateway_agent",
+  "provider": "incus",
+  "host": {
+    "ssh_alias": "beast",
+    "user": "nckrtl",
+    "lan_ip": "192.168.6.20"
+  },
+  "target": "agent-1",
+  "command": "internal:executor:verify",
+  "operation": {
+    "id": "0198a1b2-c3d4-7e5f-8123-456789abcdf0",
+    "lane": "local",
+    "status": "succeeded",
+    "exit_code": 0,
+    "token_consumed": true
+  },
+  "result": {
+    "exit_code": 0,
+    "stderr": "",
+    "duration_ms": 1885
+  },
+  "activities": [
+    {
+      "event": "agent_push.dispatching",
+      "transport": "agent_push",
+      "status": "dispatching",
+      "redacted_token": true,
+      "unsafe_token": false
+    },
+    {
+      "event": "agent_push.completed",
+      "transport": "agent_push",
+      "status": "succeeded",
+      "exit_code": 0,
+      "unsafe_token": false
+    }
+  ],
+  "unsafe_token_lines": 0,
+  "result_status": "passed"
+}

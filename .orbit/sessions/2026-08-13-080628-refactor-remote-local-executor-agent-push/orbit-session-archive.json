@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T06:06:29+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-remote-local-executor-agent-push/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-080628-refactor-remote-local-executor-agent-push",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/agent-push-retained-incus.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/agent-push-retained-incus.json": "4b26ade5820cd4c2845f80ddea2a60c80d36136cb3188a74394eb9e55fa5ffc4",
+        "loop.md": "63f6dde1050724d19f9d303f853442a75001e64ac95ffd473292312fa60cb962"
+    },
+    "slug": "refactor-remote-local-executor-agent-push",
+    "requested_slug": "refactor-remote-local-executor-agent-push",
+    "compatible_slugs": [
+        "refactor-remote-local-executor-agent-push"
+    ],
+    "branch": "refactor/remote-local-executor-agent-push",
+    "candidate_commit": "881baf21335643ff19de8a433f691b6211d21054",
+    "accepted_feature_tip": "881baf21335643ff19de8a433f691b6211d21054",
+    "accepted_main_tip": "1b13f13d0ba4421aa90aaca73245e7fec6adda1f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
