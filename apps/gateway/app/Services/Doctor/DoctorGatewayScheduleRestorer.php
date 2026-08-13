@@ -17,6 +17,7 @@ final readonly class DoctorGatewayScheduleRestorer
     public function __construct(
         private SchedulesFixer $schedulesFixer,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private DoctorIssueNodeResolver $issueNodeResolver,
     ) {}
 
     /**
@@ -30,7 +31,7 @@ final readonly class DoctorGatewayScheduleRestorer
         DoctorIssue $issue,
         ?Schedule $schedule,
     ): array {
-        $gatewayNode = $this->gatewayNode() ?? $this->nodeFromIssue($issue) ?? $fallbackNode;
+        $gatewayNode = $this->gatewayNode() ?? $this->issueNodeResolver->resolve($issue) ?? $fallbackNode;
 
         try {
             $fixed = $this->schedulesFixer->fixGateway(
@@ -71,17 +72,6 @@ final readonly class DoctorGatewayScheduleRestorer
                 ],
             ];
         }
-    }
-
-    private function nodeFromIssue(DoctorIssue $issue): ?Node
-    {
-        if ($issue->node === null) {
-            return null;
-        }
-
-        $node = Node::query()->where('name', $issue->node)->first();
-
-        return $node instanceof Node ? $node : null;
     }
 
     private function gatewayNode(): ?Node

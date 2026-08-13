@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Doctor\DoctorGatewayScheduleRestorer;
+use App\Services\Doctor\DoctorIssueNodeResolver;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScheduleNodeResolver;
 use App\Services\Doctor\DoctorScheduleRestorer;
@@ -36,6 +37,7 @@ it('keeps gateway schedule repair behind its focused service', function (): void
     expect($dependencies)->toBe([
         SchedulesFixer::class,
         NodeRoleAssignments::class,
+        DoctorIssueNodeResolver::class,
     ]);
     expect(in_array(DoctorReportRunner::class, $dependencies, strict: true))->toBeFalse();
 });
@@ -59,7 +61,7 @@ it('keeps DoctorReportRunner as the schedule restore delegate', function (): voi
         throw new LogicException('DoctorReportRunner source cannot be read.');
     }
 
-    expect(in_array(DoctorScheduleRestorer::class, $dependencies, strict: true))->toBeTrue();
+    expect($dependencies)->toContain(DoctorScheduleRestorer::class);
     expect(in_array(SchedulesFixer::class, $dependencies, strict: true))->toBeFalse();
     expect(in_array(DoctorScheduleNodeResolver::class, $dependencies, strict: true))->toBeFalse();
     expect(in_array(NodeRoleAssignments::class, $dependencies, strict: true))->toBeFalse();

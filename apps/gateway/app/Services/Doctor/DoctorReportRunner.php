@@ -8,23 +8,17 @@ use App\Data\Doctor\DoctorIssue;
 use App\Data\Doctor\DoctorRestoreProbe;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
-use App\Data\Doctor\DriftEntry;
-use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeConvergenceContext;
 use App\Models\Node;
-use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodeConverger;
-use App\Services\Nodes\NodesProbe;
 use Illuminate\Support\Collection;
-use LogicException;
-use Throwable;
 
 final readonly class DoctorReportRunner
 {
     public const int FLEET_PROBE_BATCH_SIZE = DoctorFleetProbeRunner::BATCH_SIZE;
 
     public function __construct(
-        private NodesProbe $nodesProbe,
+        private DoctorNodeRestorer $nodeRestorer,
         private DoctorAppRestorer $appRestorer,
         private DoctorDatabaseConnectionRestorer $databaseConnectionRestorer,
         private DoctorAdoptRunner $adoptRunner,
@@ -39,7 +33,7 @@ final readonly class DoctorReportRunner
         private DoctorFleetProbeRunner $fleetProbeRunner,
         private DoctorFleetTargetProbe $fleetTargetProbe,
         private DoctorProxyRouteInventory $proxyRouteInventory,
-        private DnsmasqReconciler $dnsmasqReconciler,
+        private DoctorDnsProjectionRestorer $dnsProjectionRestorer,
         private DoctorIssueFactory $doctorIssueFactory,
         private DoctorReportSections $reportSections,
         private DoctorWorkspaceRestorer $workspaceRestorer,
@@ -407,7 +401,7 @@ final readonly class DoctorReportRunner
                 $mode === 'restore'
                 && DoctorDnsProjectionRestoreSupport::supports($issue->key)
             ) {
-                $actions[] = $this->applyDnsProjectionIssue($node, $issue);
+                $actions[] = $this->dnsProjectionRestorer->apply($node, $issue);
 
                 continue;
             }
@@ -516,7 +510,7 @@ final readonly class DoctorReportRunner
         $detail = $issue->detail;
 
         return match ($family) {
-            'node' => $this->applyNodeIssue($node, $key, $detail, $issue),
+            'node' => $this->nodeRestorer->apply($node, $issue),
             'app' => $this->appRestorer->apply($node, $key, $detail),
             'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
             'workspace' => $this->workspaceRestorer->apply($node, $key, $detail),
@@ -526,152 +520,6 @@ final readonly class DoctorReportRunner
             'schedule' => $this->scheduleRestorer->apply($node, $key, $detail, $issue),
             default => null,
         };
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     * @return array<string, mixed>
-     */
-    private function applyNodeIssue(Node $node, string $key, array $detail, DoctorIssue $issue): array
-    {
-        $targetNode = $this->nodeFromIssue($issue) ?? $node;
-        $entry = $this->driftEntryFromStoredParts('node', $key, $detail, $issue);
-        $code = $issue->code;
-
-        try {
-            $this->nodesProbe->reconcile($targetNode, $entry);
-        } catch (Throwable $e) {
-            return [
-                'family' => 'node',
-                'node' => $targetNode->name,
-                'code' => $code,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$code}.",
-                'details' => [
-                    'error' => $e->getMessage(),
-                ],
-            ];
-        }
-
-        return [
-            'family' => 'node',
-            'node' => $targetNode->name,
-            'code' => $code,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$code}.",
-            'details' => $detail,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function applyDnsProjectionIssue(Node $node, DoctorIssue $issue): array
-    {
-        $key = $issue->key;
-        $family = $key === 'node.dns_mapping_mismatch' ? 'node' : 'proxy';
-        $targetNode = $this->nodeFromIssue($issue) ?? $node;
-        $detail = $issue->detail;
-
-        if (! DoctorDnsProjectionRestoreSupport::supports($key)) {
-            return [
-                'family' => $family,
-                'node' => $targetNode->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'skipped',
-                'summary' => "No restore action is registered for {$key}.",
-                'details' => [
-                    ...$detail,
-                    'reason' => 'mode_not_supported',
-                ],
-            ];
-        }
-
-        if (! $this->dnsmasqReconciler->projectionDirectoryIsMounted()) {
-            return [
-                'family' => $family,
-                'node' => $targetNode->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$key}.",
-                'details' => [
-                    ...$detail,
-                    'error' => 'The live orbit-dns runtime does not consume the managed projection directory.',
-                ],
-            ];
-        }
-
-        try {
-            match ($key) {
-                'node.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileNodeRecords(),
-                'proxy.dns_mapping_mismatch' => $this->dnsmasqReconciler->reconcileProxyRecords(),
-                default => throw new LogicException("Unsupported DNS projection issue [{$key}]."),
-            };
-        } catch (Throwable $throwable) {
-            return [
-                'family' => $family,
-                'node' => $targetNode->name,
-                'code' => $key,
-                'key' => $key,
-                'mode' => 'restore',
-                'status' => 'failed',
-                'summary' => "Failed to fix {$key}.",
-                'details' => [
-                    ...$detail,
-                    'error' => $throwable->getMessage(),
-                ],
-            ];
-        }
-
-        return [
-            'family' => $family,
-            'node' => $targetNode->name,
-            'code' => $key,
-            'key' => $key,
-            'mode' => 'restore',
-            'status' => 'completed',
-            'summary' => $issue->summary !== '' ? $issue->summary : "Fixed {$key}.",
-            'details' => $detail,
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $detail
-     */
-    private function driftEntryFromStoredParts(
-        string $family,
-        string $key,
-        array $detail,
-        ?DoctorIssue $issue = null,
-    ): DriftEntry {
-        return new DriftEntry(
-            family: $family,
-            key: $key,
-            kind: $issue?->kind ?? DriftKind::Divergent,
-            summary: $issue?->summary ?? '',
-            detail: $detail,
-        );
-    }
-
-    private function nodeFromIssue(DoctorIssue $issue): ?Node
-    {
-        $nodeName = $issue->node;
-
-        if ($nodeName === null) {
-            return null;
-        }
-
-        $node = Node::query()->where('name', $nodeName)->first();
-
-        return $node instanceof Node ? $node : null;
     }
 
     private function issueSupportsMode(DoctorIssue $issue, string $mode): bool

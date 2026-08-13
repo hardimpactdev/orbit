@@ -15,6 +15,7 @@ final readonly class DoctorProxyRestorer
         private DoctorManagedProxyRestorer $managedProxyRestorer,
         private DoctorProxyRouteRestorer $proxyRouteRestorer,
         private DoctorProxyRouteInventory $proxyRouteInventory,
+        private DoctorIssueNodeResolver $issueNodeResolver,
     ) {}
 
     /**
@@ -28,7 +29,7 @@ final readonly class DoctorProxyRestorer
         array $detail,
         DoctorIssue $issue,
     ): ?array {
-        $node = $this->nodeFromIssue($issue) ?? $fallbackNode;
+        $node = $this->issueNodeResolver->resolve($issue) ?? $fallbackNode;
 
         if ($this->managedProxyRestorer->supportsBeforeExtra($key)) {
             return $this->managedProxyRestorer->apply(
@@ -100,18 +101,5 @@ final readonly class DoctorProxyRestorer
             summary: $issue->summary,
             detail: $issue->detail,
         );
-    }
-
-    private function nodeFromIssue(DoctorIssue $issue): ?Node
-    {
-        $nodeName = $issue->node;
-
-        if ($nodeName === null) {
-            return null;
-        }
-
-        $node = Node::query()->where('name', $nodeName)->first();
-
-        return $node instanceof Node ? $node : null;
     }
 }

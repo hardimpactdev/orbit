@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
+use App\Services\Doctor\DoctorIssueNodeResolver;
 use App\Services\Doctor\DoctorManagedProxyRestorer;
 use App\Services\Doctor\DoctorProxyRestorer;
 use App\Services\Doctor\DoctorProxyRouteInventory;
@@ -28,6 +29,7 @@ it('keeps proxy restore coordination behind one service', function (): void {
             DoctorManagedProxyRestorer::class,
             DoctorProxyRouteRestorer::class,
             DoctorProxyRouteInventory::class,
+            DoctorIssueNodeResolver::class,
         ])
         ->not->toContain(DoctorReportRunner::class);
 });
@@ -106,5 +108,5 @@ it('keeps DoctorReportRunner as the proxy restore delegate', function (): void {
             'private function handleProxyExtraAction(',
         );
 
-    expect(substr_count($runnerSource, '$this->proxyRestorer->orderForRecovery($issues)'))->toBe(2);
+    expect(substr_count($runnerSource, needle: '$this->proxyRestorer->orderForRecovery($issues)'))->toBe(2);
 });
