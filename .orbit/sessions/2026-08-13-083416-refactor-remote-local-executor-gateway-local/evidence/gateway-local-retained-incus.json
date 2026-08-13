@@ -1,0 +1,43 @@
+{
+  "candidate": "0fbbb561ae1ef03f3d604ca525ef2f127d0fca2e",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-143a35",
+    "kind": "operator_gateway",
+    "provider": "incus",
+    "host": "beast",
+    "host_lan_address": "192.168.6.20",
+    "host_user": "nckrtl"
+  },
+  "command": "internal:executor:verify",
+  "target": "gateway",
+  "result": {
+    "exit_code": 0,
+    "stderr": ""
+  },
+  "operation": {
+    "operation_id": "5be0fe9e-73ad-4c70-9782-1803f60575d8",
+    "lane": "local",
+    "status": "succeeded",
+    "internal_command": "internal:executor:verify",
+    "target": "gateway",
+    "exit_code": 0,
+    "operation_token_consumed": true
+  },
+  "activities": [
+    {
+      "event": "gateway_local.dispatching",
+      "transport": "gateway_local",
+      "status": "dispatching",
+      "operation_token": "<redacted>"
+    },
+    {
+      "event": "gateway_local.completed",
+      "transport": "gateway_local",
+      "status": "succeeded",
+      "exit_code": 0
+    }
+  ],
+  "result_status": "passed"
+}
