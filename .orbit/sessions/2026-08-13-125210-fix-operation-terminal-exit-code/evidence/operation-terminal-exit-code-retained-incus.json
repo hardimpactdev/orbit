@@ -1,0 +1,68 @@
+{
+    "schema_version": 1,
+    "candidate": "f76603756c75b743f72e133f9ad0713b0d908508",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "topology": {
+        "id": "dev-33b260",
+        "kind": "operator_gateway",
+        "provider": "incus",
+        "host": "nckrtl@192.168.6.20",
+        "operator": "orbit-e2e-dev-33b260-operator",
+        "gateway": "orbit-e2e-dev-33b260-gateway",
+        "checkout_roles": [
+            "operator",
+            "gateway"
+        ]
+    },
+    "expected": "A complete frame with exit_code 1 remains a complete event, returns shell exit 1, preserves the partial result, and stores the durable operation run as failed with the same result.",
+    "observed": {
+        "cli": {
+            "command": "orbit tool:update --stream-json",
+            "solo_process_id": 2386,
+            "solo_process_name": "operation-terminal-final-incus-proof",
+            "exit_code": 1,
+            "terminal_event": "complete",
+            "error_code": "operation_failed",
+            "terminal_exit_code": 1,
+            "footer": "Tool update failed",
+            "partial_result": {
+                "updated": [],
+                "skipped": [],
+                "failed": [
+                    {
+                        "tool": "php-cli",
+                        "node": "operator-1",
+                        "error": "Orbit Agent is unreachable for tool 'php-cli' update on node 'operator-1'."
+                    }
+                ]
+            }
+        },
+        "human_cli": {
+            "command": "orbit tool:update",
+            "exit_code": 1,
+            "footer": "Tool update failed"
+        },
+        "operation_run": {
+            "id": "d7a13c4e-b6f5-4a34-ab83-da4accf1daa8",
+            "status": "failed",
+            "exit_code": 1,
+            "result": {
+                "updated": [
+                    "composer"
+                ],
+                "failed": [
+                    {
+                        "node": "operator-1",
+                        "error": "proof failure"
+                    }
+                ],
+                "footer": "Proof operation failed"
+            },
+            "error": null
+        }
+    },
+    "result": "passed",
+    "cleanup": "The temporary node access, role, tool intent, and operation run rows were removed before the topology was released.",
+    "transport_note": "Host SSH used only nckrtl@192.168.6.20. The WireGuard address was not used for host SSH. No composer test:e2e* command ran."
+}

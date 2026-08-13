@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 311,
-    "unique_candidate_commit_count": 207,
+    "record_count": 312,
+    "unique_candidate_commit_count": 208,
     "orphan_count": 0,
     "records": [
         {
@@ -8239,6 +8239,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "f92967d1ca602e85887fb2e212abdb883fcb5ccb",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-125210-fix-operation-terminal-exit-code",
+            "slug": "fix-operation-terminal-exit-code",
+            "timestamp": "2026-08-13-125210",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "f76603756c75b743f72e133f9ad0713b0d908508",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

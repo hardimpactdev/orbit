@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T10:52:11+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-operation-terminal-exit-code/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-125210-fix-operation-terminal-exit-code",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/operation-terminal-exit-code-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T104811Z-c6db2d17eedd.json"
+    ],
+    "entry_digests": {
+        "evidence/operation-terminal-exit-code-retained-incus.json": "c278e44ccefb491aab901894f18c1b9b32ce2f6b64ee13312279483ff6850d4d",
+        "loop.md": "609c7b6f6b423e118c73810df51a0625fe0d901e7dd7c789b2520d7880adcc37",
+        "quality-gates/quality-check-2026-08-13T104811Z-c6db2d17eedd.json": "4e3ed1d75fb0beb2343c6438a16072819e8752ac1b4331c3dc0ab49792dccc7d"
+    },
+    "slug": "fix-operation-terminal-exit-code",
+    "requested_slug": "fix-operation-terminal-exit-code",
+    "compatible_slugs": [
+        "fix-operation-terminal-exit-code"
+    ],
+    "branch": "fix/operation-terminal-exit-code",
+    "candidate_commit": "f76603756c75b743f72e133f9ad0713b0d908508",
+    "accepted_feature_tip": "f76603756c75b743f72e133f9ad0713b0d908508",
+    "accepted_main_tip": "5d5346dfa956fc6916f2a7222e0bdb9e8bc088b7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
