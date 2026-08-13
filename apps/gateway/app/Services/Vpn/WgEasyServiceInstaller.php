@@ -179,13 +179,13 @@ class WgEasyServiceInstaller
         }
     }
 
-    public function removePeer(string $name, string $publicKey): void
+    public function removePeer(string $publicKey): void
     {
         if (! $this->hasOperationTokenSigningKey()) {
             throw new WgEasyStateInstallerFailed('Failed to authenticate wg-easy peer removal.');
         }
 
-        $this->deleteWgEasyPeer($name);
+        $this->deleteWgEasyPeerByPublicKey($publicKey);
         $this->removeRuntimePeer($publicKey);
     }
 
@@ -371,6 +371,21 @@ class WgEasyServiceInstaller
                 'name' => $name,
             ],
             failureMessage: 'Failed to delete wg-easy peer.',
+            successfulErrorCodes: ['peer_not_found'],
+        );
+    }
+
+    protected function deleteWgEasyPeerByPublicKey(string $publicKey): void
+    {
+        $this->runWgEasyStateAction(
+            action: self::ACTION_DELETE_PEER,
+            commandOptions: [
+                'public-key' => $publicKey,
+            ],
+            failureMessage: 'Failed to delete wg-easy peer.',
+            transportOptions: [
+                'redact_command_options' => ['public-key'],
+            ],
             successfulErrorCodes: ['peer_not_found'],
         );
     }

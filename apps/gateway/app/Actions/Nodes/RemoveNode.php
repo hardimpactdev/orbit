@@ -36,7 +36,7 @@ final readonly class RemoveNode
 
         if ($wireguardPeer instanceof WireGuardPeer) {
             try {
-                $this->vpnDnsSwarmInstaller->removePeer($name, $wireguardPeer->public_key);
+                $this->vpnDnsSwarmInstaller->removePeer($wireguardPeer->public_key);
             } catch (Throwable $exception) {
                 $meta = [
                     'name' => $name,

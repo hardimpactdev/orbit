@@ -102,7 +102,8 @@ This command follows the shared
 
 - When no Orbit `wireguard_peers` row exists, skip teardown and continue with
   `wireguard_peer_removed=false`.
-- When a row exists, delete the named peer from wg-easy durable state first.
+- When a row exists, delete the peer with the matching public key from wg-easy
+  durable state first.
   Treat `peer_not_found` as success so an interrupted attempt is retryable.
 - Remove the peer public key from the live gateway `wg0` interface next. An
   already-absent live public key is an idempotent success.

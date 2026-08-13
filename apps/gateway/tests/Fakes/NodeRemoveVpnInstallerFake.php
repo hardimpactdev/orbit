@@ -9,7 +9,7 @@ use Closure;
 
 final class NodeRemoveVpnInstallerFake extends VpnDnsSwarmInstaller
 {
-    /** @var list<array{name: string, public_key: string}> */
+    /** @var list<array{public_key: string}> */
     public array $calls = [];
 
     public function __construct(
@@ -17,15 +17,14 @@ final class NodeRemoveVpnInstallerFake extends VpnDnsSwarmInstaller
     ) {}
 
     #[\Override]
-    public function removePeer(string $name, string $publicKey): void
+    public function removePeer(string $publicKey): void
     {
         $this->calls[] = [
-            'name' => $name,
             'public_key' => $publicKey,
         ];
 
         if ($this->removePeer instanceof Closure) {
-            ($this->removePeer)($name, $publicKey);
+            ($this->removePeer)($publicKey);
         }
     }
 }

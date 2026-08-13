@@ -223,7 +223,7 @@ it('removes durable peer state before removing the peer from the live interface'
     Process::preventStrayProcesses();
 
     wgEasyServiceInstaller($this->workdir, $this->statePath)
-        ->removePeer('app-dev-1', 'public-key-with/+symbols=');
+        ->removePeer('public-key-with/+symbols=');
 
     expect($order)
         ->toBe(['durable', 'runtime'])
@@ -231,7 +231,8 @@ it('removes durable peer state before removing the peer from the live interface'
         ->toHaveCount(1)
         ->and($transport->calls[0]['script'])
         ->toContain("--action='delete-peer'")
-        ->toContain("--name='app-dev-1'");
+        ->toContain("--public-key='public-key-with/+symbols='")
+        ->not->toContain('--name=');
 
     Process::assertRan(static fn ($process): bool => str_contains(
         (string) $process->command,
@@ -254,7 +255,7 @@ it('continues live removal when durable peer state is already absent', function 
     Process::preventStrayProcesses();
 
     wgEasyServiceInstaller($this->workdir, $this->statePath)
-        ->removePeer('app-dev-1', 'already-absent-public-key');
+        ->removePeer('already-absent-public-key');
 
     Process::assertRan(static fn ($process): bool => str_contains(
         (string) $process->command,
@@ -270,7 +271,7 @@ it('fails peer removal when the live interface command fails', function (): void
 
     expect(
         fn (): mixed => wgEasyServiceInstaller($this->workdir, $this->statePath)
-            ->removePeer('app-dev-1', 'public-key'),
+            ->removePeer('public-key'),
     )
         ->toThrow(WgEasyStateInstallerFailed::class, 'Failed to remove the live WireGuard peer.');
 });
@@ -282,7 +283,7 @@ it('fails closed before peer removal when operation signing material is missing'
 
     expect(
         fn (): mixed => wgEasyServiceInstaller($this->workdir, $this->statePath)
-            ->removePeer('app-dev-1', 'public-key'),
+            ->removePeer('public-key'),
     )
         ->toThrow(WgEasyStateInstallerFailed::class, 'Failed to authenticate wg-easy peer removal.');
 

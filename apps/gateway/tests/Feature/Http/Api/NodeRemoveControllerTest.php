@@ -404,8 +404,8 @@ describe('NodeRemoveController', function (): void {
             ->toBe(2)
             ->and($installer->calls)
             ->toBe([
-                ['name' => 'app-1', 'public_key' => 'retry-public-key'],
-                ['name' => 'app-1', 'public_key' => 'retry-public-key'],
+                ['public_key' => 'retry-public-key'],
+                ['public_key' => 'retry-public-key'],
             ])
             ->and(DB::table('nodes')->where('id', $target->id)->exists())
             ->toBeFalse()
