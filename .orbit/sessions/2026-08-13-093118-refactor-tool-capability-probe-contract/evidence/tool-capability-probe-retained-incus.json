@@ -1,0 +1,39 @@
+{
+    "candidate": "162a7ac31381c052b7d966bdd81c9989d2885537",
+    "venue": "retained-incus",
+    "environment": "dev-fixture",
+    "target": "dev-dca9de/operator_gateway_app-dev/app-dev-1",
+    "transport": {
+        "host": "beast",
+        "ssh_user": "nckrtl",
+        "lan_ip": "192.168.6.20"
+    },
+    "expected": "The exact candidate checkout serves the gateway, Doctor completes the tool family through the single-tool probe path, and the batch probe returns one snapshot for every configured tool in deterministic order.",
+    "observed": {
+        "candidate_files": {
+            "apps/gateway/app/Services/Tools/ToolCapabilityProbeContract.php": "480f57c8785afa881ab504bf53bacd0c71aaa66638e2eecdaccae7ea896c7368",
+            "apps/gateway/app/Services/Tools/ToolsProbe.php": "18beeefb4b4a22f7bfd5dd4cdd28bbdeaa48923afae20200f74d83964b339582"
+        },
+        "doctor_single_probe": {
+            "node": "app-dev-1",
+            "family": "tool",
+            "healthy": true,
+            "issues": 0,
+            "exit_code": 0
+        },
+        "batch_probe": {
+            "tool_count": 7,
+            "snapshot_count": 7,
+            "snapshot_keys": [
+                "php-cli",
+                "caddy",
+                "composer",
+                "docker",
+                "gh",
+                "git",
+                "laravel-installer"
+            ]
+        }
+    },
+    "result": "passed"
+}

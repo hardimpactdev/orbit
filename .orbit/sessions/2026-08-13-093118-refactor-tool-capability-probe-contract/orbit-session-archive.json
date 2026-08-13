@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T07:31:18+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-tool-capability-probe-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-093118-refactor-tool-capability-probe-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/tool-capability-probe-retained-incus.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/tool-capability-probe-retained-incus.json": "3f6cc767c4d9f13c4c132fad4a0573dfd230c6f1babce023981571fdb1bda3bf",
+        "loop.md": "495fcba13a368b9492c079f64db404f5178516965be4a82932e9ac82ed5b57a4"
+    },
+    "slug": "refactor-tool-capability-probe-contract",
+    "requested_slug": "refactor-tool-capability-probe-contract",
+    "compatible_slugs": [
+        "refactor-tool-capability-probe-contract"
+    ],
+    "branch": "refactor/tool-capability-probe-contract",
+    "candidate_commit": "162a7ac31381c052b7d966bdd81c9989d2885537",
+    "accepted_feature_tip": "162a7ac31381c052b7d966bdd81c9989d2885537",
+    "accepted_main_tip": "cf7d4940acfddb90609c92658cdfa7226c18f15d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
