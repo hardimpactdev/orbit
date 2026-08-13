@@ -62,7 +62,7 @@ final class DoctorIssueResolutionId
     }
 
     /**
-     * @param  array<string, mixed>  $detail
+     * @param  array<array-key, mixed>  $detail
      */
     private static function databaseTarget(array $detail): string
     {

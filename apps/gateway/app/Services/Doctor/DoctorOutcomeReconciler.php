@@ -323,8 +323,10 @@ final class DoctorOutcomeReconciler
      */
     private function stringValue(array $item, string $key): ?string
     {
-        $value = $item[$key] ?? null;
+        if (! is_string($item[$key] ?? null)) {
+            return null;
+        }
 
-        return is_string($value) ? $value : null;
+        return $item[$key];
     }
 }
