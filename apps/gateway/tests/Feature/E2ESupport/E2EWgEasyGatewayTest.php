@@ -201,11 +201,19 @@ it('finishes or rolls back the prepared wg-easy handoff explicitly', function ()
     $handoff->restoreStandalone($instance);
     $completeSyntax = Process::input($commands[0])->run('bash -n');
     $restoreSyntax = Process::input($commands[1])->run('bash -n');
+    $oldContainerRemoval = strpos(haystack: $commands[0], needle: 'docker rm wg-easy');
+    $snapshotRemoval = strpos(haystack: $commands[0], needle: 'sudo rm -f "$peer_snapshot"');
 
     expect($completeSyntax->successful())
         ->toBeTrue($completeSyntax->errorOutput())
         ->and($restoreSyntax->successful())
         ->toBeTrue($restoreSyntax->errorOutput())
+        ->and($oldContainerRemoval)
+        ->toBeInt()
+        ->and($snapshotRemoval)
+        ->toBeInt()
+        ->and($oldContainerRemoval)
+        ->toBeLessThan($snapshotRemoval)
         ->and($commands[0])
         ->toContain('/run/orbit/wg-easy-handoff-peers.tsv')
         ->toContain('label=com.docker.swarm.service.name=orbit_orbit-vpn')

@@ -110,8 +110,7 @@ final readonly class E2EWgEasySwarmHandoff
 
                         peer_allowed_ips="$(docker exec wg-easy wg show wg0 allowed-ips | awk -v peer="$peer_public_key" '$1 == peer { print $2; exit }')"
                         test -n "$peer_allowed_ips"
-                        peer_address="${peer_allowed_ips%%%%,*}"
-                        peer_address="${peer_address%%%%/*}"
+                        peer_address="${peer_allowed_ips%%%%/*}"
                         printf '%%s\t%%s\t%%s\n' "$peer_public_key" "$peer_endpoint" "$peer_address"
                     done | sudo tee "$peer_snapshot_temporary" >/dev/null
                     sudo test -s "$peer_snapshot_temporary"
@@ -197,11 +196,11 @@ final readonly class E2EWgEasySwarmHandoff
                     test "${latest_handshake:-0}" -gt 0
                 done
 
-                sudo rm -f "$peer_snapshot"
-
                 if docker inspect wg-easy >/dev/null 2>&1; then
                     docker rm wg-easy >/dev/null
                 fi
+
+                sudo rm -f "$peer_snapshot"
                 SH,
             "Could not remove the stopped prepared wg-easy container on {$gateway->name()}",
             timeoutSeconds: 60,
