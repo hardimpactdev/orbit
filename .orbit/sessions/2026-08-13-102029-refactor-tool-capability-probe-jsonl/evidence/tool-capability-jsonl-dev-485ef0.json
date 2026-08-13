@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "candidate": "2cfed577078d242cd2306d67ebd115f3ae4f5ca2",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology_id": "dev-485ef0",
+  "topology": "operator_gateway_app-dev",
+  "host": "nckrtl@192.168.6.20",
+  "target": "app-dev-1 tool family",
+  "launcher": "/home/orbit/orbit-run/apps/cli/orbit",
+  "observed": {
+    "doctor": {
+      "healthy": true,
+      "issues": 0
+    },
+    "single_composer": {
+      "capability_probe_ok": true,
+      "installed": true,
+      "path": "/usr/local/bin/composer"
+    },
+    "batch": {
+      "ordinary_tools": [
+        "caddy",
+        "composer",
+        "docker",
+        "gh",
+        "git",
+        "laravel-installer"
+      ],
+      "all_capability_probe_ok": true,
+      "all_installed": true,
+      "special_php_cli_unchanged": true
+    },
+    "classification": {
+      "malformed_json": {
+        "key": "tool.capability_probe_failed",
+        "kind": "unverifiable"
+      },
+      "verified_absence": {
+        "key": "tool.capability_missing",
+        "kind": "missing"
+      }
+    }
+  },
+  "result": "passed"
+}

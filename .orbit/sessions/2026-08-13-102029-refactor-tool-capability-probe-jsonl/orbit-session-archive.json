@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T08:20:29+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/refactor-tool-capability-probe-jsonl/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-102029-refactor-tool-capability-probe-jsonl",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/tool-capability-jsonl-dev-485ef0.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/tool-capability-jsonl-dev-485ef0.json": "3400de31f1b0a016e43f13ebbcbff55890498b9e2cbace410698852b47272fb9",
+        "loop.md": "b13d75ef9b075fba8f4782694e2fac7c24b64c09e4bd932db35d59f245d784da"
+    },
+    "slug": "refactor-tool-capability-probe-jsonl",
+    "requested_slug": "refactor-tool-capability-probe-jsonl",
+    "compatible_slugs": [
+        "refactor-tool-capability-probe-jsonl"
+    ],
+    "branch": "refactor/tool-capability-probe-jsonl",
+    "candidate_commit": "2cfed577078d242cd2306d67ebd115f3ae4f5ca2",
+    "accepted_feature_tip": "2cfed577078d242cd2306d67ebd115f3ae4f5ca2",
+    "accepted_main_tip": "ed6ddce32c11a331cf302022daaf478b8711045f",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
