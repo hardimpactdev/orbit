@@ -154,6 +154,34 @@ it('honors explicit checkout-roles in the dry-run plan', function (): void {
         ->toContain('--checkout-roles=operator,gateway');
 });
 
+it('waits for the overlaid gateway API inside the acquisition cleanup boundary', function (): void {
+    $method = new ReflectionMethod(E2EDevTopologyCommand::class, 'acquireAndOverlay');
+    $source = (string) file_get_contents($method->getFileName());
+    $lines = explode("\n", $source);
+    $methodSource = implode("\n", array_slice(
+        $lines,
+        $method->getStartLine() - 1,
+        $method->getEndLine() - $method->getStartLine() + 1,
+    ));
+
+    $overlay = strpos(haystack: $methodSource, needle: "measure('checkout.overlay'");
+    $readiness = strpos(haystack: $methodSource, needle: 'E2EGatewayApi::waitForGatewayApi(');
+    $cleanupBoundary = strpos(haystack: $methodSource, needle: '} catch (Throwable $exception) {');
+
+    expect($overlay)
+        ->toBeInt()
+        ->and($readiness)
+        ->toBeInt()
+        ->and($cleanupBoundary)
+        ->toBeInt()
+        ->and($overlay)
+        ->toBeLessThan($readiness)
+        ->and($readiness)
+        ->toBeLessThan($cleanupBoundary)
+        ->and($methodSource)
+        ->toContain("measure('gateway-api.ready'");
+});
+
 it('rejects unsupported topology kinds with a stable json error', function (): void {
     $result = run_e2e_script([
         PHP_BINARY,

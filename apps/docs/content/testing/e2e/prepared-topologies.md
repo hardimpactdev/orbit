@@ -222,6 +222,10 @@ The command prints, in human or `--json` form, an `id`, the gateway API IP, and 
 per-role handle: the instance/container name plus a ready-to-run access example,
 e.g.
 
+Acquisition waits for the operator to reach the overlaid gateway API before it
+prints these handles. The retained timing list records this as
+`gateway-api.ready`.
+
 ```text
 [operator] orbit-e2e-dev-1a2b3c-operator
   ssh: ssh beast incus exec orbit-e2e-dev-1a2b3c-operator -- sudo -u orbit bash -lc 'cd /home/orbit/orbit-run && orbit node:list --json'

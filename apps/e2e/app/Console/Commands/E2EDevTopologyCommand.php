@@ -9,6 +9,7 @@ use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
 use App\E2E\Support\E2EDevTopologyManifestStore;
+use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2ETopologyAcquisitionOptions;
@@ -360,6 +361,12 @@ class E2EDevTopologyCommand extends Command
 
         try {
             $timer->measure('checkout.overlay', fn () => $harness->withCurrentCheckout($overlayRoles));
+            $timer->measure('gateway-api.ready', static fn () => E2EGatewayApi::waitForGatewayApi(
+                $lease->operator(),
+                $config->operatorUser,
+                $lease->sshKeyPair(),
+                $lease->gatewayApiIp(),
+            ));
         } catch (Throwable $exception) {
             try {
                 $lease->cleanup();
