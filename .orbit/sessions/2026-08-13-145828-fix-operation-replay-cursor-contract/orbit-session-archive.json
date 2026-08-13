@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T12:58:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-operation-replay-cursor-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-145828-fix-operation-replay-cursor-contract",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/operation-replay-cursor-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T125344Z-ef626336c6cf.json"
+    ],
+    "entry_digests": {
+        "evidence/operation-replay-cursor-retained-incus.json": "4934e563e4aea626186b8c6d2940fd5e53329c168b9a5ceae6f32fcc51ebb360",
+        "loop.md": "5b7ffe3c4b5e7ea592df29d9744e309129a1adce58ec3f7a2e1f0996e5c09214",
+        "quality-gates/quality-check-2026-08-13T125344Z-ef626336c6cf.json": "93e9c299cefd4476b9017c2c139b9dc30e8d0a267afa5b1d95ad5e3cd1c35cef"
+    },
+    "slug": "fix-operation-replay-cursor-contract",
+    "requested_slug": "fix-operation-replay-cursor-contract",
+    "compatible_slugs": [
+        "fix-operation-replay-cursor-contract"
+    ],
+    "branch": "fix/operation-replay-cursor-contract",
+    "candidate_commit": "6e44bda8206b1a96a5b69009725a1676e2b4676c",
+    "accepted_feature_tip": "6e44bda8206b1a96a5b69009725a1676e2b4676c",
+    "accepted_main_tip": "825d4a9bff476bec4f70043e5207915dff73e32b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

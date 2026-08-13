@@ -1,0 +1,73 @@
+{
+  "schema": "orbit-retained-proof-v1",
+  "recorded_at": "2026-08-13T12:50:00Z",
+  "candidate": {
+    "base": "825d4a9bff476bec4f70043e5207915dff73e32b",
+    "head": "6e44bda8206b1a96a5b69009725a1676e2b4676c",
+    "branch": "fix/operation-replay-cursor-contract"
+  },
+  "venue": {
+    "type": "retained-incus",
+    "environment": "dev-fixture",
+    "topology_id": "dev-ccf7c6",
+    "topology": "operator_gateway_app-dev",
+    "host": "beast",
+    "host_lan_address": "192.168.6.20",
+    "operator_instance": "orbit-e2e-dev-ccf7c6-operator",
+    "gateway_instance": "orbit-e2e-dev-ccf7c6-gateway",
+    "dev_instance": "orbit-e2e-dev-ccf7c6-dev",
+    "source_checkout": "/home/orbit/orbit-run",
+    "release_command": "composer e2e:incus -- --stop --id=dev-ccf7c6"
+  },
+  "candidate_binding": {
+    "note": "The retained source checkout has no Git metadata. These SHA-256 hashes match the committed candidate checkout.",
+    "files": {
+      "packages/core/src/Operations/OperationStreamFrameCursor.php": "1d2b21369c51322754edcef193b74b2ea41d7663636bdb32bcd74704b5566c85",
+      "apps/cli/app/Services/GatewayOperationStreamSubscriber.php": "2d779fa3aaa49136dbf564511cdd1884e274f015e29356e423ce80827365b4cd",
+      "apps/cli/app/Services/GatewayOperationEventStreamClient.php": "166e8da6e41a47da5521bde7b283947fa300c6dc7fd4a6123c8cb206a44c9aef"
+    }
+  },
+  "operation_replay": {
+    "operation_run_id": "f3332aaf-2b9b-421d-bfef-30d58479f9a1",
+    "seed": "Twenty unrelated durable journal events were inserted before the target operation.",
+    "durable_rows": [
+      {"event_id": 41, "event_sequence": 1, "type": "step"},
+      {"event_id": 42, "event_sequence": 2, "type": "step"},
+      {"event_id": 43, "event_sequence": 3, "type": "complete"}
+    ],
+    "requested_after_sequence": 1,
+    "observed": [
+      {"sse_sequence": 2, "resume_sequence": 2, "event_id": 42, "type": "step", "payload": {"key": "second", "status": "done"}},
+      {"sse_sequence": 3, "resume_sequence": 3, "event_id": 43, "type": "complete", "payload": {"exit_code": 0, "proof": "cursor-contract-ok"}}
+    ],
+    "result": "passed"
+  },
+  "process_log_replay": {
+    "operation_run_id": "2b71ae74-7b91-4920-a9df-4661243a643a",
+    "durable_rows": [
+      {"event_id": 46, "event_sequence": 1, "type": "stdout"},
+      {"event_id": 47, "event_sequence": 2, "type": "stdout"}
+    ],
+    "requested_after_sequence": 1,
+    "observed": [
+      {"sse_sequence": 2, "resume_sequence": 2, "event_id": 47, "type": "stdout", "data_contains": "cursor-proof-log"}
+    ],
+    "cleanup": "The disposable cursor-proof-logger process and its runtime unit were removed successfully.",
+    "result": "passed"
+  },
+  "topology_limit": {
+    "reverb": "The retained topology did not run the operations Reverb service.",
+    "public_follow": "A public process:log --follow invocation did not stay live in this topology. The durable process-log replay was instead exercised through the candidate CLI event-stream client against the real gateway.",
+    "claim": "This receipt proves retained gateway journal replay and terminal/process-log delivery. It does not claim a live Reverb websocket session."
+  },
+  "automated_proof": {
+    "core_operation_stream": "15 tests, 27 assertions",
+    "cli_stream_clients": "14 tests, 40 assertions",
+    "gateway_event_stream": "10 tests, 47 assertions",
+    "gateway_journal_and_publish": "41 tests, 268 assertions",
+    "cli_operation_and_log_flows": "74 tests, 341 assertions",
+    "mago": "scoped format and lint passed with no errors",
+    "librarian": "lint passed with zero errors",
+    "secret_scan": "passed"
+  }
+}

@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 312,
-    "unique_candidate_commit_count": 208,
+    "record_count": 313,
+    "unique_candidate_commit_count": 209,
     "orphan_count": 0,
     "records": [
         {
@@ -8262,6 +8262,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "f76603756c75b743f72e133f9ad0713b0d908508",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-13-145828-fix-operation-replay-cursor-contract",
+            "slug": "fix-operation-replay-cursor-contract",
+            "timestamp": "2026-08-13-145828",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6e44bda8206b1a96a5b69009725a1676e2b4676c",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
