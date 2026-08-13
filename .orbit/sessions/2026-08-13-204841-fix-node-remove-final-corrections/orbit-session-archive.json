@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T18:48:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-node-remove-final-corrections/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-204841-fix-node-remove-final-corrections",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/node-remove-blast-radius.txt",
+        "evidence/node-remove-retry-incus.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-13T184236Z-5d2025fe504a.json"
+    ],
+    "entry_digests": {
+        "evidence/node-remove-blast-radius.txt": "0e40c9d8a9f38d71bd6f0e81bd205cbafc5808e37602e86bae0de83c04c97153",
+        "evidence/node-remove-retry-incus.txt": "e2a3b788f6510ab324719b2a008fc520f6ab7bb1be693f6ad85334ca424d7621",
+        "loop.md": "fbd896e0edc66b3b882caa10f85ab152c25009f7d67508122fb1142f369efe1c",
+        "quality-gates/quality-check-2026-08-13T184236Z-5d2025fe504a.json": "555dfc5d27174deba0fcfd0f718112ff3ef6f5fedc391e0e651810d85eda1780"
+    },
+    "slug": "fix-node-remove-final-corrections",
+    "requested_slug": "fix-node-remove-final-corrections",
+    "compatible_slugs": [
+        "fix-node-remove-final-corrections"
+    ],
+    "branch": "fix/node-remove-final-corrections",
+    "candidate_commit": "035e0398b44f7ebc86deee5459f6b0e679cec75a",
+    "accepted_feature_tip": "035e0398b44f7ebc86deee5459f6b0e679cec75a",
+    "accepted_main_tip": "909949bb49f23d6ede9224379da957e4f89be687",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

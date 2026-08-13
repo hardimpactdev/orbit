@@ -1,0 +1,13 @@
+Orbit node removal blast-radius check
+
+Candidate: 035e0398b44f7ebc86deee5459f6b0e679cec75a
+Command:
+  rg -n "self_removal|removed_self|node\.dns_reconciliation_failed|wireguard_peer_removed|dnsReconciliation" PRODUCT_DECISIONS.md apps packages --glob '!**/vendor/**' --glob '!**/node_modules/**' --glob '!apps/docs/content/generated/monorepo-unit-map.json'
+
+Result:
+  The public response field is consistently named removed_self in gateway, CLI, SDK, generated TypeScript schema, tests, and product documentation.
+  The only self_removal text is part of the distinct node.self_removal_requires_remote_caller error code and related tests/docs.
+  node.dns_reconciliation_failed and wireguard_peer_removed are connected across the gateway action/controller, tests, product decision, error registry, and node-remove documentation.
+  No unresolved field-name consumer was found.
+
+Result: complete

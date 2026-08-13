@@ -1,0 +1,43 @@
+Orbit node removal retry proof
+
+Candidate: 035e0398b44f7ebc86deee5459f6b0e679cec75a
+Base: 909949bb49f23d6ede9224379da957e4f89be687
+Venue: retained-incus
+Topology: dev-3df6e2
+Provider: Incus on Beast
+Instances: orbit-e2e-dev-3df6e2-operator, orbit-e2e-dev-3df6e2-gateway, orbit-e2e-dev-3df6e2-dev
+Solo terminal: project 89, process 2396 (corrected-candidate-incus-proof)
+Beast SSH connection: 192.168.6.10 -> 192.168.6.20:22 (LAN, not WireGuard)
+Changed-file fingerprint, local candidate and remote runtime: 840c7601fc4b00892ec580553556f50bff88df23a88870b3196c3aedd1eb9a3b
+
+Fault injection:
+  incus exec orbit-e2e-dev-3df6e2-gateway -- chattr +i /home/orbit/.config/orbit/dnsmasq.d
+  orbit node:remove app-dev-1 --force --json
+
+Observed failure:
+  code=node.dns_reconciliation_failed
+  retryable=true
+  wireguard_peer_removed=false
+  message=Node 'app-dev-1' could not be removed because its private DNS records could not be reconciled.
+
+Observed rollback:
+  orbit node:list --json still returned app-dev-1 as active with its app-dev and database roles.
+  10-node-records.conf still contained address=/orbit.test/10.6.0.4 and address=/test/10.6.0.4.
+  Deterministic Pest coverage also proves rollback of the node, node_access, firewall rule, and WireGuard peer registry rows.
+
+Retry:
+  incus exec orbit-e2e-dev-3df6e2-gateway -- chattr -i /home/orbit/.config/orbit/dnsmasq.d
+  orbit node:remove app-dev-1 --force --json
+
+Observed retry result:
+  action=removed
+  removed_self=false
+  app-dev-1 was absent from the next node:list response.
+  No 10.6.0.4 record remained in 10-node-records.conf (DNS_RECORD_REMOVED_CONFIRMED).
+
+Self-removal output:
+  orbit node:remove operator-1 --force
+  Node 'operator-1' removed
+  This machine no longer has Orbit gateway access.
+
+Result: passed
