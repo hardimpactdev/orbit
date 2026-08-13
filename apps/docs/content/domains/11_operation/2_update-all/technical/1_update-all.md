@@ -266,9 +266,10 @@ The expected target shape per calling context:
   update paths compare the desired CLI hash rather than semantic version alone.
   This lets a new same-version candidate build update the fleet while preventing
   repeated installs of the exact same candidate artifact. The gateway terminal
-  result carries the non-empty target version plus the caller-local artifact URL
-  and SHA-256 from the immutable plan. The CLI rejects an incomplete candidate
-  result and verifies that hash and target version before replacement.
+  result carries a target version, and that value must not be empty. The result
+  also carries the caller-local artifact URL and SHA-256 from the immutable plan.
+  The CLI rejects an incomplete candidate result and verifies that hash and
+  target version before replacement.
 - Each updated installation emits per-node sub-stages through the operation
   journal: `Downloading <v>` → `Replacing cli binary` → `Running doctor` → `Done`
   for local/workload nodes; `Downloading <v> assets` → `Updating gateway app` →
