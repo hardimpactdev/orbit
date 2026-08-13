@@ -407,14 +407,38 @@ final readonly class GatewayStreamTransport
         $onEvent($name, $payload);
 
         if ($name === 'complete') {
-            return (int) ($payload['exit_code'] ?? 0);
+            return $this->terminalExitCode($payload, $defaultExitCode, missing: 0);
         }
 
         if ($name === 'error') {
-            return (int) ($payload['exit_code'] ?? $defaultExitCode);
+            $exitCode = $this->terminalExitCode($payload, $defaultExitCode, missing: $defaultExitCode);
+
+            return $exitCode === 0 ? 1 : $exitCode;
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalExitCode(array $payload, int $defaultExitCode, int $missing): int
+    {
+        if (! array_key_exists('exit_code', $payload)) {
+            return $missing;
+        }
+
+        $value = $payload['exit_code'];
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        return $defaultExitCode === 0 ? 1 : $defaultExitCode;
     }
 
     /**

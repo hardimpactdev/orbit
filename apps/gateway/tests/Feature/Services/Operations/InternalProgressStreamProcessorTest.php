@@ -161,6 +161,26 @@ describe('InternalProgressStreamProcessor', function (): void {
             ->not->toBeNull();
     });
 
+    it('transitions a completed operation with a nonzero exit code to failed and preserves its result', function (): void {
+        $lines = [
+            '{"event":"complete","data":{"exit_code":1,"updated":["composer"],"failed":["node"]}}',
+        ];
+
+        $row = $this->processor->process($this->run->id, $lines);
+
+        expect($row->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($row->exit_code)
+            ->toBe(1)
+            ->and($row->result)
+            ->toBe([
+                'updated' => ['composer'],
+                'failed' => ['node'],
+            ])
+            ->and($row->error)
+            ->toBeNull();
+    });
+
     it('rejects malformed frames before any persistence and leaves the queued row untouched', function (): void {
         $lines = [
             '{"event":"step","data":{"name":"clone"}}',

@@ -166,6 +166,43 @@ describe('ToolStream commands', function (): void {
             ->toBe($complete);
     });
 
+    it('returns a failed complete result when a bulk tool update has failed targets', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 1,
+            'data' => [
+                'updated' => [],
+                'skipped' => [],
+                'failed' => [['tool' => 'composer', 'node' => 'app-1']],
+                'footer' => 'Tool update failed',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:update', [
+            '--node' => 'app-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe([
+                'event' => 'complete',
+                'error' => [
+                    'code' => 'operation_failed',
+                    'message' => 'Tool update failed',
+                    'meta' => ['exit_code' => 1],
+                    'data' => [
+                        'updated' => [],
+                        'skipped' => [],
+                        'failed' => [['tool' => 'composer', 'node' => 'app-1']],
+                        'footer' => 'Tool update failed',
+                    ],
+                ],
+            ]);
+    });
+
     it('streams tool:reconfigure payloads to the gateway', function (): void {
         $complete = [
             'exit_code' => 0,

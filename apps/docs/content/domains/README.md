@@ -448,12 +448,29 @@ progress stream opens use the normal JSON error envelope and do not include an
 
 Non-terminal frames use `event=tree` or `event=step` with the gateway progress
 payload under `data`. Terminal success frames use `event=complete` with the
-command's normal JSON success payload under `success`. Terminal failure frames
-use `event=error` with a canonical error object:
+command's normal JSON success payload under `success`. An `error` progress
+event stays `event=error` and uses a canonical error object:
 
 ```json
 {"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":[]}}
 ```
+
+A `complete` progress event can also be a failure when its `exit_code` is
+nonzero. The frame stays `event=complete` because the work finished and its
+partial result remains useful. The CLI returns a nonzero process status and
+places the canonical failure plus the full result under `error`:
+
+```json
+{"event":"complete","error":{"code":"operation_failed","message":"Tool update failed","meta":{"exit_code":1},"data":{"updated":[],"failed":["node"],"footer":"Tool update failed"}}}
+```
+
+A streamed command in `--json` mode emits only this same failed terminal frame.
+It does not emit the earlier `tree` or `step` frames.
+
+The event name records how the operation ended. It does not by itself declare
+success. A missing `exit_code` on `complete` remains compatible with older
+producers and means zero. An invalid `exit_code` fails closed. An `error` event
+always fails, even if it carries zero.
 
 If the stream transport fails after any progress frame has been emitted, the
 CLI emits a final `event=error` frame instead of switching back to a plain JSON

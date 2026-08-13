@@ -12,6 +12,7 @@ use App\Services\Updates\RunsLocalUpdate;
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventType;
 use Throwable;
 
@@ -125,6 +126,13 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderOperationError($terminal['payload']);
         }
 
+        if (! new ProgressEvent($terminal['type'], $terminal['payload'])->isSuccessfulTerminal()) {
+            $progress->gatewayFailed($this->output, $this->operationCompleteFailureMessage($terminal['payload']));
+            $progress->finishFailure($this->output);
+
+            return self::FAILURE;
+        }
+
         $targetVersion = $this->terminalTargetVersion($terminal['payload']);
         $allCurrent = $this->terminalAllCurrent($terminal['payload']);
         $reapplyLocal = $this->terminalUsesTopologyCandidateManifest($terminal['payload']);
@@ -197,8 +205,9 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        if ($terminal['type'] === ProgressEventType::Error) {
-            // Gateway failed — output gateway error JSON directly.
+        if (! new ProgressEvent($terminal['type'], $terminal['payload'])->isSuccessfulTerminal()) {
+            // Gateway did not succeed — output its terminal frame directly and
+            // do not continue into the caller-local fan-out.
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
 
@@ -646,6 +655,19 @@ final class UpdateAllCommand extends GatewayCommand
         return (
             $this->frameString($data, 'message') ?? $this->frameString($payload, 'message')
             ?? 'Gateway progress stream failed.'
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function operationCompleteFailureMessage(array $payload): string
+    {
+        $data = $this->frameData($payload);
+
+        return (
+            $this->frameString($data, 'footer') ?? $this->frameString($payload, 'footer')
+            ?? 'Operation completed with failures.'
         );
     }
 

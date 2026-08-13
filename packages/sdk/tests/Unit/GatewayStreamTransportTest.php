@@ -46,6 +46,28 @@ it('invokes idle callbacks while waiting for the next stream frame', function ()
     expect($exitCode)->toBe(0)->and($idleCount)->toBeGreaterThan(0);
 });
 
+it('returns a failure exit code for every failed terminal outcome', function (string $frame, int $expected): void {
+    GatewayMockClient::global([
+        GenericGatewayStreamRequest::class => new SdkGatewayStreamMockResponse(new IdleThenFramesStream($frame)),
+    ]);
+
+    $connector = new GatewayConnector(baseUrl: 'https://gateway.test', caPemPath: null);
+    $exitCode = new GatewayStreamTransport($connector)->events(
+        request: new GenericGatewayStreamRequest('/api/stream', [], 'post'),
+        onEvent: fn () => null,
+        unavailableMessage: 'Gateway stream unavailable.',
+        requireTerminalFrame: true,
+        idleIntervalMicroseconds: 1,
+    );
+
+    expect($exitCode)->toBe($expected);
+})->with([
+    'complete with nonzero exit code' => ["event: complete\ndata: {\"exit_code\":17}\n\n", 17],
+    'complete with invalid exit code' => ["event: complete\ndata: {\"exit_code\":\"failed\"}\n\n", 1],
+    'error with zero exit code' => ["event: error\ndata: {\"exit_code\":0}\n\n", 1],
+    'error without exit code' => ["event: error\ndata: {}\n\n", 1],
+]);
+
 final class SdkGatewayStreamMockResponse extends GatewayMockResponse
 {
     public function __construct(

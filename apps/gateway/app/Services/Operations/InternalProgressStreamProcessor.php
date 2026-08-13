@@ -77,9 +77,17 @@ final readonly class InternalProgressStreamProcessor
     private function persistTerminal(string $operationRunId, ProgressEvent $terminal): OperationRun
     {
         if ($terminal->type === ProgressEventType::Complete) {
-            $exitCode = $this->intPayloadField($terminal->payload, 'exit_code', 0);
+            $exitCode = $terminal->terminalExitCode();
             $result = $terminal->payload;
             unset($result['exit_code']);
+
+            if (! $terminal->isSuccessfulTerminal()) {
+                return $this->recorder->completedWithFailure(
+                    id: $operationRunId,
+                    exitCode: $exitCode,
+                    result: $result === [] ? null : $result,
+                );
+            }
 
             return $this->recorder->succeeded(
                 id: $operationRunId,
@@ -89,7 +97,7 @@ final readonly class InternalProgressStreamProcessor
         }
 
         // ProgressEventType::Error
-        $exitCode = $this->intPayloadField($terminal->payload, 'exit_code', null);
+        $exitCode = $terminal->exitCode();
         $error = $terminal->payload;
         unset($error['exit_code']);
 
@@ -98,24 +106,6 @@ final readonly class InternalProgressStreamProcessor
             exitCode: $exitCode,
             error: $error === [] ? null : $error,
         );
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function intPayloadField(array $payload, string $key, ?int $default): ?int
-    {
-        $value = $payload[$key] ?? null;
-
-        if (is_int($value)) {
-            return $value;
-        }
-
-        if (is_string($value) && ctype_digit($value)) {
-            return (int) $value;
-        }
-
-        return $default;
     }
 }
 

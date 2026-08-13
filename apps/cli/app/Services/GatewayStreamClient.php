@@ -9,6 +9,7 @@ use App\Exceptions\GatewayApiFailureKind;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ForkedFrameTicker;
+use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Sdk\Laravel\GatewayConnector;
 use Orbit\Sdk\Laravel\GatewayStreamTransport;
@@ -38,7 +39,7 @@ final readonly class GatewayStreamClient implements GatewayProgressStreamClient
      * Accept: text/event-stream using the specified HTTP method, reads SSE
      * frames, and calls $onEvent($type, $payload) for each decoded frame.
      *
-     * Returns 0 on a `complete` frame, non-zero on `error`. Throws
+     * Returns the terminal frame's exit code. Throws
      * GatewayApiException when the stream closes before either terminal frame.
      *
      * @param  array<string, mixed>  $payload
@@ -156,11 +157,11 @@ final readonly class GatewayStreamClient implements GatewayProgressStreamClient
             $onEvent($type, $payload);
 
             if ($type === ProgressEventType::Complete) {
-                return (int) ($payload['exit_code'] ?? 0);
+                return new ProgressEvent($type, $payload)->terminalExitCode();
             }
 
             if ($type === ProgressEventType::Error) {
-                return (int) ($payload['exit_code'] ?? 1);
+                return new ProgressEvent($type, $payload)->terminalExitCode();
             }
         }
 

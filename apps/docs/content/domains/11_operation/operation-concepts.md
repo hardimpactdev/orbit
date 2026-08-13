@@ -48,6 +48,14 @@ These terms describe the update workflow and its components.
   return no new event. A new event resets that count. If the bound is reached
   before a terminal event exists, the command returns the existing
   stream-closed-before-terminal failure instead of waiting forever.
+
+A terminal event records how execution ended, while `exit_code` records whether
+it succeeded. A `complete` event with a missing or zero `exit_code` is
+successful. A `complete` event with a nonzero or invalid `exit_code` is a
+completed failure and keeps its partial result. An `error` event is always a
+failure. Consumers use this same rule for CLI exit status, machine output, and
+the stored operation status.
+
 - **Immutable update plan:** Persisted plan keyed by `operation_run_id`.
   Captures target version, gateway image digest, manifest snapshot, CLI artifact
   hashes, platform/architecture-specific Orbit Agent artifact hashes for

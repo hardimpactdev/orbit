@@ -12774,6 +12774,7 @@
                 "stream_json": true
             },
             "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/StreamsGatewayProgressTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
@@ -12781,6 +12782,13 @@
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/StreamsGatewayProgressTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/StreamsGatewayProgressTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/StreamsGatewayProgressTest.php"
+                },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
                     "working_directory": "apps/cli",

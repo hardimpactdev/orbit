@@ -117,6 +117,33 @@ describe('StreamsGatewayProgress', function (): void {
         expect(count(array_filter(explode("\n", $output))))->toBe(1);
     });
 
+    it('returns failure for a nonzero complete frame in --json mode without discarding its result', function (): void {
+        fakeStreamClient([
+            [
+                'type' => ProgressEventType::Complete,
+                'payload' => [
+                    'exit_code' => 1,
+                    'data' => ['updated' => ['composer'], 'failed' => ['node']],
+                ],
+            ],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this, ['--json' => true]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe([
+                'event' => 'complete',
+                'error' => [
+                    'code' => 'operation_failed',
+                    'message' => 'Operation completed with failures.',
+                    'meta' => ['exit_code' => 1],
+                    'data' => ['updated' => ['composer'], 'failed' => ['node']],
+                ],
+            ]);
+    });
+
     it('streams newline-delimited JSON frames in --stream-json mode', function (): void {
         fakeStreamClient([
             [
@@ -173,6 +200,41 @@ describe('StreamsGatewayProgress', function (): void {
                 'success' => [
                     'data' => ['result' => ['id' => 123]],
                     'meta' => [],
+                ],
+            ]);
+    });
+
+    it('emits a failed complete frame in --stream-json mode with the partial result intact', function (): void {
+        fakeStreamClient([
+            [
+                'type' => ProgressEventType::Complete,
+                'payload' => [
+                    'exit_code' => 1,
+                    'data' => [
+                        'updated' => ['composer'],
+                        'failed' => ['node'],
+                        'footer' => 'Tool update failed',
+                    ],
+                ],
+            ],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this, ['--stream-json' => true]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe([
+                'event' => 'complete',
+                'error' => [
+                    'code' => 'operation_failed',
+                    'message' => 'Tool update failed',
+                    'meta' => ['exit_code' => 1],
+                    'data' => [
+                        'updated' => ['composer'],
+                        'failed' => ['node'],
+                        'footer' => 'Tool update failed',
+                    ],
                 ],
             ]);
     });
@@ -461,6 +523,27 @@ describe('StreamsGatewayProgress', function (): void {
             ->and($output)
             ->not->toContain('[tree]')->and($output)
             ->not->toContain('[step]');
+    });
+
+    it('settles the human tree as failed for a nonzero complete frame', function (): void {
+        fakeStreamClient([
+            [
+                'type' => ProgressEventType::Tree,
+                'payload' => [
+                    'title' => 'Updating tools',
+                    'steps' => [['key' => 'update', 'label' => 'Update tools']],
+                ],
+            ],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'update', 'status' => 'fail']],
+            [
+                'type' => ProgressEventType::Complete,
+                'payload' => ['exit_code' => 1, 'data' => ['footer' => 'Tool update failed']],
+            ],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this);
+
+        expect($exitCode)->toBe(1)->and($output)->toContain('Tool update failed');
     });
 
     it('surfaces gateway_unavailable when the stream closes before a terminal frame', function (): void {

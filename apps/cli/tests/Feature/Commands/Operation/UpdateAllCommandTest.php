@@ -62,6 +62,79 @@ it('starts the durable update operation and follows its event stream in json mod
         ->not->toContain('runner started');
 });
 
+it('stops before local fan-out when a completed gateway update has a nonzero exit code', function (): void {
+    $follower = new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 1,
+                'data' => [
+                    'updates' => [
+                        ['target' => 'gateway', 'status' => 'completed'],
+                        ['target' => 'beast', 'status' => 'failed'],
+                    ],
+                    'footer' => 'Fleet update failed',
+                ],
+            ],
+        ],
+    ]);
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($this->localUpdater->calls)
+        ->toBe([])
+        ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe([
+            'event' => 'complete',
+            'error' => [
+                'code' => 'operation_failed',
+                'message' => 'Fleet update failed',
+                'meta' => ['exit_code' => 1],
+                'data' => [
+                    'updates' => [
+                        ['target' => 'gateway', 'status' => 'completed'],
+                        ['target' => 'beast', 'status' => 'failed'],
+                    ],
+                    'footer' => 'Fleet update failed',
+                ],
+            ],
+        ]);
+});
+
+it('shows the gateway footer when a completed gateway update fails in human mode', function (): void {
+    $follower = new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 1,
+                'data' => [
+                    'updates' => [
+                        ['target' => 'beast', 'status' => 'failed'],
+                    ],
+                    'footer' => 'Fleet update failed',
+                ],
+            ],
+        ],
+    ]);
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($this->localUpdater->calls)
+        ->toBe([])
+        ->and($output)
+        ->toMatch('/gateway\s+Failed\b.*Fleet update failed/')
+        ->and($output)
+        ->toContain('Failed');
+});
+
 it('sends the configured release manifest inline when starting the durable update operation', function (): void {
     config()->set('orbit.gateway.url', 'https://gateway.test');
     config()->set('orbit.gateway.timeout', 30);

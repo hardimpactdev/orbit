@@ -8,8 +8,10 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayProgressStreamClient;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamedStepTree;
+use Symfony\Component\Console\Command\Command;
 
 /**
  * Provides streamProgress() for commands that consume gateway SSE progress streams.
@@ -31,6 +33,22 @@ trait StreamsGatewayProgress
      * @param  array<string, mixed>  $data
      */
     abstract protected function renderFailure(string $code, string $message, array $meta = [], array $data = []): int;
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $meta
+     */
+    abstract protected function renderSuccess(array $data = [], array $meta = []): int;
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    abstract protected function outputJsonLine(array $payload): void;
+
+    /**
+     * @param  string|array<int, string>  $string
+     */
+    abstract public function line($string, $style = null, $verbosity = null);
 
     abstract protected function wantsJson(): bool;
 
@@ -195,6 +213,20 @@ trait StreamsGatewayProgress
                         $finalType = $type;
                         $finalPayload = $eventPayload;
 
+                        if (! $wantsJson && $this->progressTree?->isStarted()) {
+                            $terminal = new ProgressEvent($type, $eventPayload);
+                            $data = $this->frameData($eventPayload);
+                            $footer = $this->frameString($data, 'footer') ?? $this->frameString(
+                                $eventPayload,
+                                'footer',
+                            );
+
+                            $this->progressTree->finish(
+                                $footer ?? ($terminal->isSuccessfulTerminal() ? 'Done' : 'Failed'),
+                                success: $terminal->isSuccessfulTerminal(),
+                            );
+                        }
+
                         return;
                     }
 
@@ -210,16 +242,6 @@ trait StreamsGatewayProgress
         }
 
         if ($finalType instanceof ProgressEventType) {
-            if (! $wantsJson && $this->progressTree?->isStarted()) {
-                $data = $this->frameData($finalPayload);
-                $footer = $this->frameString($data, 'footer') ?? $this->frameString($finalPayload, 'footer');
-
-                $this->progressTree->finish(
-                    $footer ?? ($finalType === ProgressEventType::Complete ? 'Done' : 'Failed'),
-                    success: $finalType === ProgressEventType::Complete,
-                );
-            }
-
             return [
                 'type' => $finalType,
                 'payload' => $finalPayload,
@@ -237,19 +259,34 @@ trait StreamsGatewayProgress
      */
     protected function renderProgressTerminalFrame(ProgressEventType $type, array $payload): int
     {
+        $terminal = new ProgressEvent($type, $payload);
+
         if ($this->wantsStreamingJson()) {
+            if ($terminal->isSuccessfulTerminal()) {
+                return $this->renderStreamJsonCompleteFrame($payload);
+            }
+
             return $type === ProgressEventType::Complete
-                ? $this->renderStreamJsonCompleteFrame($payload)
+                ? $this->renderStreamJsonFailedCompleteFrame($terminal)
                 : $this->renderStreamJsonErrorFrame($payload);
         }
 
         if ($this->wantsJson()) {
+            if ($type === ProgressEventType::Complete && ! $terminal->isSuccessfulTerminal()) {
+                $this->outputJsonLine([
+                    'event' => ProgressEventType::Complete->value,
+                    'error' => $this->progressFailedCompleteError($terminal),
+                ]);
+
+                return Command::FAILURE;
+            }
+
             $this->outputJsonLine([
                 'event' => $type->value,
                 'data' => $payload,
             ]);
 
-            return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
+            return $terminal->isSuccessfulTerminal() ? Command::SUCCESS : Command::FAILURE;
         }
 
         if ($type === ProgressEventType::Error) {
@@ -260,15 +297,24 @@ trait StreamsGatewayProgress
         $footer = $this->frameString($data, 'footer') ?? $this->frameString($payload, 'footer');
 
         if ($this->progressTree?->isStarted()) {
-            $this->progressTree->finish($footer ?? 'Done', success: true);
+            $this->progressTree->finish(
+                $footer ?? ($terminal->isSuccessfulTerminal() ? 'Done' : 'Failed'),
+                success: $terminal->isSuccessfulTerminal(),
+            );
 
-            return self::SUCCESS;
+            return $terminal->isSuccessfulTerminal() ? Command::SUCCESS : Command::FAILURE;
         }
 
         if ($footer !== null) {
             $this->line($footer);
 
-            return self::SUCCESS;
+            return $terminal->isSuccessfulTerminal() ? Command::SUCCESS : Command::FAILURE;
+        }
+
+        if (! $terminal->isSuccessfulTerminal()) {
+            $this->line('Operation completed with failures.');
+
+            return Command::FAILURE;
         }
 
         return $this->renderSuccess($data);
@@ -305,7 +351,37 @@ trait StreamsGatewayProgress
             'success' => $success,
         ]);
 
-        return self::SUCCESS;
+        return Command::SUCCESS;
+    }
+
+    private function renderStreamJsonFailedCompleteFrame(ProgressEvent $terminal): int
+    {
+        $this->outputJsonLine([
+            'event' => ProgressEventType::Complete->value,
+            'error' => $this->progressFailedCompleteError($terminal),
+        ]);
+
+        return Command::FAILURE;
+    }
+
+    /**
+     * @return array{code: string, message: string, meta: array<string, mixed>, data: array<string, mixed>}
+     */
+    protected function progressFailedCompleteError(ProgressEvent $terminal): array
+    {
+        $data = $this->streamSuccessData($terminal->payload);
+
+        return [
+            'code' => $this->frameString($data, 'code') ?? 'operation_failed',
+            'message' =>
+                $this->frameString($data, 'footer') ?? $this->frameString($terminal->payload, 'footer')
+                    ?? 'Operation completed with failures.',
+            'meta' => [
+                ...$this->streamSuccessMeta($terminal->payload),
+                'exit_code' => $terminal->exitCode(1),
+            ],
+            'data' => $data,
+        ];
     }
 
     /**
@@ -318,7 +394,7 @@ trait StreamsGatewayProgress
             'error' => $this->streamErrorPayload($payload),
         ]);
 
-        return self::FAILURE;
+        return Command::FAILURE;
     }
 
     private function renderStreamJsonTransportFailure(GatewayApiException $exception): int
@@ -461,7 +537,7 @@ trait StreamsGatewayProgress
         if ($this->progressTree?->isStarted()) {
             $this->progressTree->finish($message, success: false);
 
-            return self::FAILURE;
+            return Command::FAILURE;
         }
 
         return $this->renderFailure($code, $message, $meta);

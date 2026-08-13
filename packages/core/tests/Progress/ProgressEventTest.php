@@ -8,6 +8,40 @@ use Orbit\Core\Progress\ProgressEventDecodingFailed;
 use Orbit\Core\Progress\ProgressEventEncoder;
 use Orbit\Core\Progress\ProgressEventType;
 
+describe(ProgressEvent::class, function (): void {
+    it('uses the terminal exit code as the success authority', function (array $payload, bool $successful): void {
+        $event = new ProgressEvent(ProgressEventType::Complete, $payload);
+
+        expect($event->isSuccessfulTerminal())->toBe($successful);
+    })->with([
+        'missing exit code remains compatible' => [[], true],
+        'zero integer succeeds' => [['exit_code' => 0], true],
+        'zero numeric string succeeds' => [['exit_code' => '0'], true],
+        'nonzero integer fails' => [['exit_code' => 1], false],
+        'nonzero numeric string fails' => [['exit_code' => '17'], false],
+        'invalid exit code fails closed' => [['exit_code' => 'failed'], false],
+    ]);
+
+    it('never classifies an error terminal as successful', function (): void {
+        $event = new ProgressEvent(ProgressEventType::Error, ['exit_code' => 0]);
+
+        expect($event->isSuccessfulTerminal())
+            ->toBeFalse()
+            ->and($event->terminalExitCode())
+            ->toBe(1);
+    });
+
+    it('normalizes terminal exit codes for process consumers', function (ProgressEvent $event, int $exitCode): void {
+        expect($event->terminalExitCode())->toBe($exitCode);
+    })->with([
+        'compatible complete frame' => [new ProgressEvent(ProgressEventType::Complete), 0],
+        'failed complete frame' => [new ProgressEvent(ProgressEventType::Complete, ['exit_code' => 17]), 17],
+        'malformed complete frame' => [new ProgressEvent(ProgressEventType::Complete, ['exit_code' => 'failed']), 1],
+        'error frame without code' => [new ProgressEvent(ProgressEventType::Error), 1],
+        'error frame with zero' => [new ProgressEvent(ProgressEventType::Error, ['exit_code' => 0]), 1],
+    ]);
+});
+
 describe(ProgressEventEncoder::class, function (): void {
     it('encodes a step event as a single SSE frame', function (): void {
         $encoder = new ProgressEventEncoder;

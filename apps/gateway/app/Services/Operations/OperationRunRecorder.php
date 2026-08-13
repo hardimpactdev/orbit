@@ -168,6 +168,22 @@ final readonly class OperationRunRecorder
     }
 
     /**
+     * @param  array<string, mixed>|null  $result
+     */
+    public function completedWithFailure(string $id, int $exitCode, ?array $result = null): OperationRun
+    {
+        return $this->finalize(
+            id: $id,
+            status: OperationStatus::Failed,
+            exitCode: $exitCode,
+            result: $result,
+            error: null,
+            stdoutSummary: null,
+            stderrSummary: null,
+        );
+    }
+
+    /**
      * @param  array<string, mixed>|null  $error
      */
     public function rejected(string $id, ?array $error = null): OperationRun

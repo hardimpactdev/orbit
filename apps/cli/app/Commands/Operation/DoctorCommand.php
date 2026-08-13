@@ -15,6 +15,7 @@ use App\Services\Doctor\InteractiveDoctorIssueSelector;
 use App\Services\GatewayStreamClient;
 use App\Services\StreamJsonIdleStepWriter;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\Console\Output\StreamOutput;
 use Throwable;
@@ -184,7 +185,7 @@ final class DoctorCommand extends GatewayCommand
 
         $this->writeDoctorPanel($report);
 
-        return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
+        return new ProgressEvent($type, $payload)->isSuccessfulTerminal() ? self::SUCCESS : self::FAILURE;
     }
 
     /**
@@ -259,13 +260,15 @@ final class DoctorCommand extends GatewayCommand
         }
 
         if ($finalType instanceof ProgressEventType) {
+            $terminal = new ProgressEvent($finalType, $finalPayload);
+
             if ($this->progressTree?->isStarted()) {
                 $data = $this->frameData($finalPayload);
                 $footer = $this->frameString($data, 'footer') ?? $this->frameString($finalPayload, 'footer');
 
                 $this->progressTree->finish(
-                    $footer ?? ($finalType === ProgressEventType::Complete ? 'Done' : 'Failed'),
-                    success: $finalType === ProgressEventType::Complete,
+                    $footer ?? ($terminal->isSuccessfulTerminal() ? 'Done' : 'Failed'),
+                    success: $terminal->isSuccessfulTerminal(),
                 );
 
                 if ($this->output->isDecorated() && $this->doctorPanelLineCount > 0) {
@@ -755,10 +758,19 @@ final class DoctorCommand extends GatewayCommand
      */
     private function doctorStreamFrame(ProgressEventType $type, array $payload): array
     {
-        if ($type === ProgressEventType::Complete) {
+        $terminal = new ProgressEvent($type, $payload);
+
+        if ($terminal->isSuccessfulTerminal()) {
             return [
                 'event' => $type->value,
                 'success' => $this->doctorStreamSuccess($type, $payload),
+            ];
+        }
+
+        if ($type === ProgressEventType::Complete) {
+            return [
+                'event' => $type->value,
+                'error' => $this->progressFailedCompleteError($terminal),
             ];
         }
 
