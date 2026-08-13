@@ -50,16 +50,17 @@ preset also covers the operation.
 
 ## Self-Removal
 
-A caller may remove its own client record when it has a covering grant for the
-operation. The gateway detects self-removal by comparing `node_remove.name`
-with the authenticated caller's WireGuard identity. Self-removal does not
-require an extra flag beyond the shared destructive consent model.
+The gateway detects self-removal by comparing `node_remove.name` with the
+authenticated caller's WireGuard identity. If that node still has an Orbit
+WireGuard peer row, the gateway returns
+`node.self_removal_requires_remote_caller` before mutation. Run the same
+command from the gateway or another authorized node. The restriction lets the
+client receive a reliable response and keeps the peer identity available for a
+retry if live teardown fails.
 
-When self-removal succeeds, the gateway removes the caller's gateway-owned
-node record, node access grants, and WireGuard peer. The local machine keeps
-its local gateway endpoint, trusted CA, and local WireGuard configuration.
-Future Orbit commands from that machine may fail because the gateway does not
-recognize its node identity.
+When no managed peer row exists, self-removal is allowed with the normal
+destructive consent model. The local machine keeps its local gateway endpoint,
+trusted CA, and local WireGuard configuration.
 
 ## Error Contract
 
@@ -79,12 +80,21 @@ must show:
 This node is not authorized for 'node:remove' on '<target>'.
 ```
 
+When the caller targets itself and still has a managed peer, the command must
+show:
+
+```text
+Remove this node from the gateway or another authorized node.
+```
+
 ## Failure Semantics
 
 - Fail before prompts or side effects when no gateway is configured.
 - Fail before gateway-owned side effects when the gateway is unreachable.
 - Fail before gateway-owned side effects when the caller is missing a covering
   `node:remove` or gateway-admin grant.
+- Fail before gateway-owned side effects when the caller targets itself and a
+  managed WireGuard peer row exists.
 - Fail before side effects when `node_remove.name` is missing, invalid, or
   points to the gateway node.
 

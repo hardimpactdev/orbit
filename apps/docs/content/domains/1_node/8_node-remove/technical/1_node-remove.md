@@ -20,7 +20,8 @@
 - The target node name resolves to an existing active node record.
 - The resolved node record's role is not `gateway`. No gateway node is
   removable by `node:remove`, regardless of gateway count.
-- The target node may be the current caller's own node record.
+- The target node may be the current caller's own node record only when it has
+  no gateway-managed WireGuard peer row.
 
 ## Signature
 
@@ -83,6 +84,8 @@ This command follows the shared
 
 ### Gateway Configuration Cleanup Rules
 
+- If an Orbit `wireguard_peers` row exists, complete the WireGuard detach rules
+  before deleting any Orbit registry row.
 - Delete all `node_access` records where the node is the consumer or the
   serving node.
 - Delete all gateway-side `firewall_rules` registry rows for the removed node so
@@ -97,15 +100,25 @@ This command follows the shared
 
 ### WireGuard Detach Rules
 
-- Attempt to remove the node's WireGuard peer identity that the gateway manages.
-- If the peer is already absent, continue without failure.
-- If peer removal fails for any other reason, capture the warning as remaining
-  node-family drift and continue.
+- When no Orbit `wireguard_peers` row exists, skip teardown and continue with
+  `wireguard_peer_removed=false`.
+- When a row exists, delete the named peer from wg-easy durable state first.
+  Treat `peer_not_found` as success so an interrupted attempt is retryable.
+- Remove the peer public key from the live gateway `wg0` interface next. An
+  already-absent live public key is an idempotent success.
+- Only after both steps succeed, delete the Orbit peer row and continue with
+  grant, firewall-row, and node deletion.
+- Any other teardown failure returns
+  `node.wireguard_peer_removal_failed`, sets `retryable=true`, and retains the
+  node, peer, grants, and firewall rows.
+- Do not SSH into the target. Swarm execution resolves the current VPN task
+  container before the live `wg` command.
 
 ### Removal Result Rules
 
 - Return the removed node name, action, whether the removed node was the current
-  caller, grant count, peer removal status, and any structured warnings.
+  caller, grant count, and peer removal status. Successful removal has no
+  teardown warning.
 
 ### Scope Boundaries
 
@@ -123,12 +136,11 @@ node that owns them. This is operational guidance, not a blocking precondition:
 `node:remove` remains scoped to node identity, grants, and WireGuard peer
 detach.
 
-When a caller removes its own node record, the command removes the
-gateway-owned node record, access grants, and WireGuard peer like any other
-client removal. The command does not require an extra flag beyond the
-shared destructive consent model. After success, future Orbit commands from
-that machine may fail until the machine is enrolled again or cleaned up through
-a future local cleanup command.
+When the target is the caller and an Orbit peer row exists, fail before teardown
+with `node.self_removal_requires_remote_caller`. The caller must use the gateway
+or another authorized node. This preserves reliable response delivery and
+retry authority. If no managed peer row exists, self-removal uses the normal
+registry cleanup path and returns `removed_self=true`.
 
 ## Renderer Contracts
 
@@ -142,13 +154,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Node not found | No active node record matches `name`. Already-absent removal is not idempotent. | Failure |
 | Gateway node removal | The target node has role `gateway`, regardless of gateway count. | Failure |
+| Self-removal has a managed peer | The authenticated caller targets its own node and an Orbit peer row exists. | Failure (`node.self_removal_requires_remote_caller`); no mutation. |
+| WireGuard teardown failed | Durable or live peer removal fails for a reason other than an accepted absent peer. | Failure (`node.wireguard_peer_removal_failed`, retryable); retain registry state. |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure |
 | Cancelled confirmation | Interactive mode where the operator declines the prompt. | Failure |
 
 Current removal always returns an empty warnings list. Peer removal is reported
-only via `wireguard_peer_removed` (true when a peer row was deleted). Any later
-stale peer on a live fleet is node-family drift handled by doctor, not by a
-remove-time warning payload.
+through `wireguard_peer_removed` only after durable state and the live interface
+are clean. A teardown failure is an error, not a warning or a successful result.
 
 DNS projection reconciliation failure is a command failure. Removal must not
 claim that node- or proxy-owned DNS artifacts are clean before the shared
@@ -162,14 +175,15 @@ already-absent node remains a validation failure.
 
 ## Doctor Relationship
 
-- Removed nodes disappear from the normal `doctor --family=node` scope.
-- A stale WireGuard peer for a removed node is reported as `node.wireguard_peer_extra`
-  by the node-family probe. See
-  [`node-doctor.md`](../../node-doctor.md#node-issue-codes).
-- `node.wireguard_peer_extra` is adopt-only: recovery is
-  `doctor --family=node --adopt` when peer attachment is intended. It is not
-  restored by `doctor --family=node --restore`. Other restorable node-family
-  drift may still name `doctor --family=node --restore`.
+See the [`node` family Doctor contract](../../node-doctor.md) for the scope of
+node checks that still have a registered node identity.
+
+- A WireGuard teardown failure keeps the node and peer rows, so the operator
+  retries `node:remove` instead of asking Doctor to reconstruct deleted
+  identity.
+- Removed nodes disappear from normal `doctor --family=node` scope. Doctor is
+  not the recovery mechanism for a peer whose node identity was already
+  deleted outside this contract.
 - Orphaned downstream family state on a removed node is not reported by the
   node family. Each downstream family owns its own drift detection.
 
@@ -184,7 +198,7 @@ removals.
 | Effect | `destructive` |
 | Subject | Target `Node` when the node is resolved; `none` when validation or lookup fails before target resolution. |
 | Properties | `target_node` is the requested node name; `removed_self` records whether the removed node was the caller; `grants_removed` records removed access edges; `wireguard_peer_removed` records whether the gateway peer detach completed. |
-| Description | `Node <name> removed` |
+| Description | `Node <name> removed` after success; `Node <name> removal failed` for rejected or failed attempts. |
 
 ## Test Mapping
 
@@ -193,7 +207,9 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI delete forwarding, force gating, human and JSON renderer output, and lifecycle validation before gateway contact. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway remove authorization, force removal, self-removal semantics, and delete envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway authorization, self-removal eligibility, teardown failure retention and retry, activity descriptions, and success envelopes. |
+| `apps/gateway/tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php` | Durable-before-live teardown order, absent-peer retry, signing-key failure, and runtime failure. |
+| `apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php` | Current Swarm VPN task resolution and live peer removal failure. |
 
 Input-mode-specific test mapping lives in:
 

@@ -683,6 +683,8 @@ describe('node write commands', function (): void {
             ->and($output)
             ->toContain('Remove node record')
             ->and($output)
+            ->toMatch('/Remove WireGuard peer.*Remove node grants/s')
+            ->and($output)
             ->toContain("Node 'app-1' removed")
             ->and($output)
             ->not->toContain('action:')->and($output)

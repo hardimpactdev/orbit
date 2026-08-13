@@ -179,6 +179,29 @@ class WgEasyServiceInstaller
         }
     }
 
+    public function removePeer(string $name, string $publicKey): void
+    {
+        if (! $this->hasOperationTokenSigningKey()) {
+            throw new WgEasyStateInstallerFailed('Failed to authenticate wg-easy peer removal.');
+        }
+
+        $this->deleteWgEasyPeer($name);
+        $this->removeRuntimePeer($publicKey);
+    }
+
+    protected function removeRuntimePeer(string $publicKey): void
+    {
+        $result = Process::timeout(30)->run(sprintf(
+            "%s\n\$ORBIT_DOCKER exec wg-easy wg set wg0 peer %s remove",
+            $this->dockerShellPrefix(),
+            escapeshellarg($publicKey),
+        ));
+
+        if (! $result->successful()) {
+            throw new WgEasyStateInstallerFailed('Failed to remove the live WireGuard peer.');
+        }
+    }
+
     private function waitUntilReady(): void
     {
         $result = Process::timeout(75)->run(sprintf(

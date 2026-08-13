@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Nodes\NodeRemovalFailed;
 use App\Actions\Nodes\RemoveNode;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
@@ -28,6 +29,8 @@ final class NodeRemoveController implements Loggable
     private int $activityGrantsRemoved = 0;
 
     private bool $activityWireGuardPeerRemoved = false;
+
+    private bool $activityRemovalCompleted = false;
 
     public function __construct(
         private readonly RemoveNode $removeNode,
@@ -77,9 +80,20 @@ final class NodeRemoveController implements Loggable
         $removedSelf = $caller->name === $node->name;
         $this->activityRemovedSelf = $removedSelf;
 
-        $dto = $this->removeNode->handle($node, $removedSelf);
+        try {
+            $dto = $this->removeNode->handle($node, $removedSelf);
+        } catch (NodeRemovalFailed $exception) {
+            return $this->error(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+                status: $exception->status,
+            );
+        }
+
         $this->activityGrantsRemoved = $dto->grantsRemoved;
         $this->activityWireGuardPeerRemoved = $dto->wireguardPeerRemoved;
+        $this->activityRemovalCompleted = true;
 
         $success = [
             'data' => [
@@ -178,7 +192,13 @@ final class NodeRemoveController implements Loggable
     {
         $target = $this->activityTargetName ?? (string) request()->route('name');
 
-        return $target !== '' ? "Node {$target} removed" : null;
+        if ($target === '') {
+            return null;
+        }
+
+        return $this->activityRemovalCompleted
+            ? "Node {$target} removed"
+            : "Node {$target} removal failed";
     }
 
     public function activityLogDescription(): ?string

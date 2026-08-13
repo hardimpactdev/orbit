@@ -14,6 +14,7 @@ use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\WgEasyServiceInstaller;
+use App\Services\Vpn\WgEasyStateInstallerFailed;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -197,6 +198,96 @@ it('routes peer persistence through the local executor when resolved from the co
             ->not->toContain('sudo sqlite3')->and($script)
             ->not->toContain('/var/www/.wg-easy');
     }
+});
+
+it('removes durable peer state before removing the peer from the live interface', function (): void {
+    $order = [];
+    $transport = new WgEasyServiceInstallerStateTransport(
+        static function () use (&$order): RemoteShellResult {
+            $order[] = 'durable';
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(JsonEnvelope::success(['deleted' => true]), JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
+        },
+    );
+    bindWgEasyServiceInstallerExecutor($transport);
+    Process::fake(static function ($process) use (&$order) {
+        $order[] = 'runtime';
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    wgEasyServiceInstaller($this->workdir, $this->statePath)
+        ->removePeer('app-dev-1', 'public-key-with/+symbols=');
+
+    expect($order)
+        ->toBe(['durable', 'runtime'])
+        ->and($transport->calls)
+        ->toHaveCount(1)
+        ->and($transport->calls[0]['script'])
+        ->toContain("--action='delete-peer'")
+        ->toContain("--name='app-dev-1'");
+
+    Process::assertRan(static fn ($process): bool => str_contains(
+        (string) $process->command,
+        "wg set wg0 peer 'public-key-with/+symbols=' remove",
+    ));
+});
+
+it('continues live removal when durable peer state is already absent', function (): void {
+    $transport = new WgEasyServiceInstallerStateTransport(new RemoteShellResult(
+        exitCode: 1,
+        stdout: json_encode(JsonEnvelope::failure(
+            code: 'peer_not_found',
+            message: 'Peer not found.',
+        ), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
+    ));
+    bindWgEasyServiceInstallerExecutor($transport);
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    wgEasyServiceInstaller($this->workdir, $this->statePath)
+        ->removePeer('app-dev-1', 'already-absent-public-key');
+
+    Process::assertRan(static fn ($process): bool => str_contains(
+        (string) $process->command,
+        "wg set wg0 peer 'already-absent-public-key' remove",
+    ));
+});
+
+it('fails peer removal when the live interface command fails', function (): void {
+    Process::fake([
+        '*' => Process::result(exitCode: 1, errorOutput: 'private runtime detail'),
+    ]);
+    Process::preventStrayProcesses();
+
+    expect(
+        fn (): mixed => wgEasyServiceInstaller($this->workdir, $this->statePath)
+            ->removePeer('app-dev-1', 'public-key'),
+    )
+        ->toThrow(WgEasyStateInstallerFailed::class, 'Failed to remove the live WireGuard peer.');
+});
+
+it('fails closed before peer removal when operation signing material is missing', function (): void {
+    config()->set('app.key', '');
+    Process::fake();
+    Process::preventStrayProcesses();
+
+    expect(
+        fn (): mixed => wgEasyServiceInstaller($this->workdir, $this->statePath)
+            ->removePeer('app-dev-1', 'public-key'),
+    )
+        ->toThrow(WgEasyStateInstallerFailed::class, 'Failed to authenticate wg-easy peer removal.');
+
+    expect($this->wgEasyStateTransport->calls)->toBeEmpty();
+    Process::assertNothingRan();
 });
 
 it('binds the gateway container working directory for gateway-local state commands', function (): void {

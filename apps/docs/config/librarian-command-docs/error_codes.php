@@ -52,9 +52,11 @@ return [
             'local_config_write_failed',
             'not_found',
             'provisioning_incomplete',
+            'self_removal_requires_remote_caller',
             'tld_in_use',
             'unsupported_adapter',
             'unsupported_platform',
+            'wireguard_peer_removal_failed',
         ],
         'process' => [
             'event_stream_failed',

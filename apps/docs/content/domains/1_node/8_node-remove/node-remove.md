@@ -57,9 +57,11 @@ command.
 
 1. Validates that the target node exists in gateway configuration.
 2. Refuses to remove any gateway node.
-3. Removes all node access grants where the node is the consumer or the
+3. If the gateway manages a WireGuard peer for the node, removes it from
+   wg-easy durable state and then from the live gateway WireGuard interface.
+   A failure stops removal and keeps the node registry state for retry.
+4. Removes all node access grants where the node is the consumer or the
    serving node.
-4. Removes the node's WireGuard peer identity that the gateway manages.
 5. Deletes the removed node's firewall-rule registry rows. This changes gateway
    configuration only; it does not contact the target or alter its live
    firewall.
@@ -71,14 +73,16 @@ command.
    configuration.
    Contract:
    [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
-8. Reports partial WireGuard detach failures as structured warnings and
-   remaining node-family drift. Projection reconciliation failures fail the
-   removal action instead of claiming successful cleanup.
+8. Reports a WireGuard detach failure as a retryable command error. Projection
+   reconciliation failures also fail the removal action instead of claiming
+   successful cleanup.
 
-When a configured client removes its own node record, the removal is allowed if
-the caller has a covering `node:remove` or gateway-admin grant. The machine loses
-Orbit gateway access after the gateway removes its node record and WireGuard
-peer. Local settings and local WireGuard configuration are left untouched.
+When a configured client targets its own node record, Orbit refuses removal
+while that node still has a gateway-managed WireGuard peer. Run the command from
+the gateway or another authorized node so the caller receives a reliable result
+and the gateway retains the peer identity if cleanup must be retried.
+Self-removal remains allowed when no managed peer row exists. Local settings and
+local WireGuard configuration are left untouched.
 
 `node:remove` does not:
 
@@ -95,10 +99,9 @@ peer. Local settings and local WireGuard configuration are left untouched.
   configuration when the removed node is the local machine.
 
 Downstream family state on a removed node becomes orphaned node reality. Clean
-it up through family-specific commands or `doctor --family=<family> --restore`.
-Stale WireGuard peers and node-record projection drift after configuration
-removal are reported by `doctor --family=node`; proxy-record projection drift
-is reported by `doctor --family=proxy`.
+it up through family-specific commands before removal. A WireGuard teardown
+failure leaves the node registered so the same `node:remove` request can retry;
+Doctor is not a recovery path after the node identity has been deleted.
 
 Already-absent node removal is not idempotent because the node record is the
 primary fleet identity. A missing node name usually means the operator targeted
@@ -110,14 +113,12 @@ must still exist and the grant row is only a relationship edge between them.
 ## Output
 
 You will see a confirmation prompt in interactive mode unless `--force`
-is supplied, then a success message with the removed node name. When WireGuard
-detach partially fails, a warning is shown and the stale peer remains
-node-family drift.
+is supplied, then a success message with the removed node name. A WireGuard
+detach failure returns an error and keeps the node registry state for retry.
 
 JSON output returns the command result, removed node name, whether the removed
-node was the current caller, grant and peer removal status. If WireGuard detach
-partially fails, JSON output keeps the result successful and reports repair
-guidance in machine-readable metadata.
+node was the current caller, grant count, and peer removal status. A teardown
+failure returns `node.wireguard_peer_removal_failed` with `retryable=true`.
 
 ## Requirements
 
@@ -127,6 +128,8 @@ guidance in machine-readable metadata.
   as `authorization_failed`.
 - The target node must exist in gateway configuration.
 - The target node must not be any gateway node.
+- A caller cannot remove its own node while a gateway-managed WireGuard peer
+  exists. Run the command from the gateway or another authorized node.
 - Removing a non-existent node is a validation failure, not an idempotent
   success. Grant revocation is the command in the node family that handles an absent edge idempotently;
   node identity removal is not.

@@ -171,6 +171,21 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
         }
     }
 
+    #[\Override]
+    protected function removeRuntimePeer(string $publicKey): void
+    {
+        $containerId = $this->manager->vpnTaskContainer();
+        $result = Process::timeout(30)->run(sprintf(
+            'docker exec %s wg set wg0 peer %s remove',
+            escapeshellarg($containerId),
+            escapeshellarg($publicKey),
+        ));
+
+        if (! $result->successful()) {
+            throw new WgEasyStateInstallerFailed('Failed to remove the live WireGuard peer.');
+        }
+    }
+
     private function waitUntilReady(): void
     {
         $result = Process::timeout(75)->run(<<<'SH'

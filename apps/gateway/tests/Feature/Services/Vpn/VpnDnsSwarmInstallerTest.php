@@ -152,6 +152,64 @@ it('uses the Swarm wg-easy state path for inherited state commands', function ()
     expect($installer->exposedStatePath())->toBe($this->root.'/wg-easy');
 });
 
+it('removes a live peer from the current Swarm VPN task container', function (): void {
+    $commands = [];
+    Process::fake(static function ($process) use (&$commands) {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_starts_with($command, 'docker ps -q --filter')) {
+            return Process::result(output: "current-vpn-task\n");
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+    $installer = new class($this->root) extends VpnDnsSwarmInstaller {
+        public function __construct(string $root)
+        {
+            parent::__construct(rootPath: $root);
+        }
+
+        public function removeLivePeer(string $publicKey): void
+        {
+            $this->removeRuntimePeer($publicKey);
+        }
+    };
+
+    $installer->removeLivePeer('swarm-public-key');
+
+    expect($commands)
+        ->toContain("docker exec 'current-vpn-task' wg set wg0 peer 'swarm-public-key' remove");
+});
+
+it('propagates a failed live peer removal from the Swarm VPN task', function (): void {
+    Process::fake(static function ($process) {
+        $command = (string) $process->command;
+
+        if (str_starts_with($command, 'docker ps -q --filter')) {
+            return Process::result(output: "current-vpn-task\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: 'private runtime detail');
+    });
+    Process::preventStrayProcesses();
+    $installer = new class($this->root) extends VpnDnsSwarmInstaller {
+        public function __construct(string $root)
+        {
+            parent::__construct(rootPath: $root);
+        }
+
+        public function removeLivePeer(string $publicKey): void
+        {
+            $this->removeRuntimePeer($publicKey);
+        }
+    };
+
+    expect(fn (): mixed => $installer->removeLivePeer('swarm-public-key'))
+        ->toThrow(RuntimeException::class, 'Failed to remove the live WireGuard peer.');
+});
+
 it('marks installer and renderer password parameters as sensitive', function (): void {
     foreach ([
         [WgEasyServiceInstaller::class,   'install'],

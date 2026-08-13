@@ -29,8 +29,9 @@ execution.
 1. Resolve `node_remove.name`.
 2. Validate the node exists and is not any gateway node.
 3. Apply destructive consent.
-4. Delete node access grants.
-5. Remove the gateway-managed WireGuard peer.
+4. Remove the gateway-managed peer from wg-easy durable state and the current
+   live VPN task interface. If either step fails, keep Orbit registry state.
+5. Delete node access grants.
 6. Delete the node's firewall-rule registry rows from gateway state without
    contacting the target or altering its live firewall.
 7. Delete the node record.
@@ -47,8 +48,8 @@ execution.
   future explicit gateway migration/removal flow.
 - Fail before side effects when destructive consent is missing in
   non-interactive input mode or when interactive confirmation is declined.
-- Report partial WireGuard detach as a structured warning in the success
-  response.
+- Return `node.wireguard_peer_removal_failed` and retain the node, peer, grants,
+  and firewall rows when WireGuard detach fails.
 - Fail the removal action when DNS projection reconciliation fails; do not
   report projection cleanup as successful.
 
@@ -56,8 +57,9 @@ execution.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local remove authorization, destructive consent, self-removal, gateway-node denial, not-found envelopes, and grant cleanup. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local authorization, destructive consent, self-removal eligibility, gateway-node denial, teardown retry, and grant cleanup. |
+| `apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php` | Dynamic VPN task resolution and live peer removal. |
 
 Destructive consent coverage note: gateway API tests cover missing-consent rejection; interactive confirmation remains a CLI prompt coverage gap outside this gateway-caller page.
 
-WireGuard detach warning variants stay coverage gaps until focused tests land.
+Focused gateway tests cover WireGuard detach failure and retry behavior.

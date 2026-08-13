@@ -6042,7 +6042,9 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php",
+                "apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php",
+                "apps/gateway/tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php"
             ],
             "verification_hints": [
                 {
@@ -6058,6 +6060,20 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/NodeRemoveControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/NodeRemoveControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Vpn/VpnDnsSwarmInstallerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Vpn/WgEasyServiceInstallerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14627,9 +14643,11 @@
                     "local_config_write_failed",
                     "not_found",
                     "provisioning_incomplete",
+                    "self_removal_requires_remote_caller",
                     "tld_in_use",
                     "unsupported_adapter",
-                    "unsupported_platform"
+                    "unsupported_platform",
+                    "wireguard_peer_removal_failed"
                 ],
                 "process": [
                     "event_stream_failed",

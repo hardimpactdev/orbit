@@ -55,8 +55,8 @@ final class NodeRemoveCommand extends GatewayCommand
             "Removing node '{$name}'",
             [
                 ['label' => 'Validate removal', 'doneLabel' => 'Validated removal'],
-                ['label' => 'Remove node grants', 'doneLabel' => 'Removed node grants'],
                 ['label' => 'Remove WireGuard peer', 'doneLabel' => 'Removed WireGuard peer'],
+                ['label' => 'Remove node grants', 'doneLabel' => 'Removed node grants'],
                 ['label' => 'Remove node record', 'doneLabel' => 'Removed node record'],
             ],
             work: function () use ($name, &$response): array {

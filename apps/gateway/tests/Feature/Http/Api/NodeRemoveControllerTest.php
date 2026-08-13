@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\WireGuardPeer;
+use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Fakes\NodeRemoveVpnInstallerFake;
 
 uses(RefreshDatabase::class);
 
@@ -126,6 +129,14 @@ function deleteRemoveNodeJson(string $uri, array $data = [], array $server = [])
         ], $server),
         json_encode($data, JSON_THROW_ON_ERROR),
     );
+}
+
+function bind_node_remove_vpn_installer(?Closure $removePeer = null): NodeRemoveVpnInstallerFake
+{
+    $installer = new NodeRemoveVpnInstallerFake($removePeer);
+    app()->instance(VpnDnsSwarmInstaller::class, $installer);
+
+    return $installer;
 }
 
 describe('NodeRemoveController', function (): void {
@@ -253,6 +264,153 @@ describe('NodeRemoveController', function (): void {
             ->toBeFalse()
             ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())
             ->toBeTrue();
+    });
+
+    it('refuses self-removal while the caller still has a managed WireGuard peer', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        WireGuardPeer::factory()->create([
+            'node_id' => $callerId,
+            'public_key' => 'self-public-key',
+        ]);
+        $installer = bind_node_remove_vpn_installer();
+
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/control-caller',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.self_removal_requires_remote_caller')
+            ->assertJsonPath('error.meta.name', 'control-caller');
+
+        expect($installer->calls)
+            ->toBeEmpty()
+            ->and(DB::table('nodes')->where('id', $callerId)->exists())
+            ->toBeTrue()
+            ->and(DB::table('wireguard_peers')->where('node_id', $callerId)->exists())
+            ->toBeTrue()
+            ->and(DB::table('node_access')->where('consumer_node_id', $callerId)->exists())
+            ->toBeTrue();
+    });
+
+    it('retains all registry state when WireGuard peer teardown fails', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        $target = Node::query()->create(apiRemoveNodeRow());
+        grantRemoveNodeAccess($callerId, $target->id);
+        grantRemoveNodeAccess($target->id, $gatewayId);
+        $peer = WireGuardPeer::factory()->for($target)->create([
+            'public_key' => 'target-public-key',
+        ]);
+        $firewallRuleId = (int) DB::table('firewall_rules')->insertGetId([
+            'node_id' => $target->id,
+            'name' => 'orbit-deny-public-ssh',
+            'direction' => 'in',
+            'action' => 'deny',
+            'source' => 'any',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'reason' => 'Orbit security baseline',
+            'source_hash' => hash(algo: 'sha256', data: 'orbit-deny-public-ssh'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        bind_node_remove_vpn_installer(static function (): never {
+            throw new RuntimeException('runtime detail must not leak');
+        });
+
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.wireguard_peer_removal_failed')
+            ->assertJsonPath('error.meta.name', 'app-1')
+            ->assertJsonPath('error.meta.retryable', true)
+            ->assertJsonMissing(['runtime detail must not leak']);
+
+        expect(DB::table('nodes')->where('id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('node_access')->where('consumer_node_id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('node_access')->where('serving_node_id', $target->id)->exists())
+            ->toBeTrue()
+            ->and(DB::table('firewall_rules')->where('id', $firewallRuleId)->exists())
+            ->toBeTrue()
+            ->and(Activity::query()->latest('id')->value('description'))
+            ->toBe('Node app-1 removal failed');
+    });
+
+    it('retries WireGuard teardown and deletes registry state only after it succeeds', function (): void {
+        $callerId = createRemoveCallerNode();
+        $gatewayId = createRemoveGatewayNode();
+        grantRemoveGatewayAccess($callerId, $gatewayId);
+        $target = Node::query()->create(apiRemoveNodeRow());
+        grantRemoveNodeAccess($callerId, $target->id);
+        grantRemoveNodeAccess($target->id, $gatewayId);
+        $peer = WireGuardPeer::factory()->for($target)->create([
+            'public_key' => 'retry-public-key',
+        ]);
+        $attempts = 0;
+        $installer = bind_node_remove_vpn_installer(function () use (&$attempts, $target, $peer): void {
+            $attempts++;
+
+            expect(DB::table('nodes')->where('id', $target->id)->exists())
+                ->toBeTrue()
+                ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+                ->toBeTrue();
+
+            if ($attempts === 1) {
+                throw new RuntimeException('first teardown attempt fails');
+            }
+        });
+        $request = [
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ];
+        $server = ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP];
+
+        deleteRemoveNodeJson('/api/nodes/app-1', $request, $server)
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.wireguard_peer_removal_failed');
+
+        $response = deleteRemoveNodeJson('/api/nodes/app-1', $request, $server);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.name', 'app-1')
+            ->assertJsonPath('success.data.removed_self', false)
+            ->assertJsonPath('success.data.wireguard_peer_removed', true)
+            ->assertJsonPath('success.data.grants_removed', 2);
+
+        expect($attempts)
+            ->toBe(2)
+            ->and($installer->calls)
+            ->toBe([
+                ['name' => 'app-1', 'public_key' => 'retry-public-key'],
+                ['name' => 'app-1', 'public_key' => 'retry-public-key'],
+            ])
+            ->and(DB::table('nodes')->where('id', $target->id)->exists())
+            ->toBeFalse()
+            ->and(DB::table('wireguard_peers')->where('id', $peer->id)->exists())
+            ->toBeFalse();
     });
 
     it('removes a node directly for a gateway caller', function (): void {
