@@ -802,7 +802,16 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     force_remote_host?: bool,
+     * }
      */
     private function transportDispatchOptions(
         Node $node,

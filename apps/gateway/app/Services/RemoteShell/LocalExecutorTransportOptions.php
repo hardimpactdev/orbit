@@ -185,10 +185,36 @@ final readonly class LocalExecutorTransportOptions
 
     /**
      * @param  array<string, string>  $environment
-     * @return array<string, mixed>
+     * @return array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     force_remote_host?: bool,
+     * }
      */
     public function dispatchOptions(array $environment): array
     {
+        /**
+         * @var array{
+         *     cwd?: string,
+         *     timeout?: int,
+         *     input?: string,
+         *     throw?: bool,
+         *     environment?: array<string, string>,
+         *     metadata?: array<string, string>,
+         *     strict?: bool,
+         *     redact_stdout?: bool,
+         *     redact_stderr?: bool,
+         *     redact_command_options?: list<string>,
+         *     bind_application_key?: bool,
+         *     bind_input?: bool,
+         *     force_remote_host?: bool,
+         * } $options
+         */
         $options = $this->values;
 
         unset(

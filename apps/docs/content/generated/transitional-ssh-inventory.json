@@ -65,8 +65,8 @@
         },
         {
             "path": "apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php",
-            "call_line": 1550,
-            "marker_line": 1549,
+            "call_line": 1022,
+            "marker_line": 1021,
             "edge": "remote-host-executor.run"
         },
         {
