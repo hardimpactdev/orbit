@@ -6,7 +6,6 @@ namespace App\Services\Operations;
 
 use App\Data\Operations\FleetVersionReport;
 use App\Exceptions\UpdateLeaseConflict;
-use App\Exceptions\UpdateLeaseReservationExpired;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
@@ -80,7 +79,7 @@ final readonly class UpdateRunner
             return $reservedFleetLeaseId === null
                 ? $this->fleetLease->acquireForRunner($operationRun)
                 : $this->fleetLease->claim($operationRun, $reservedFleetLeaseId);
-        } catch (UpdateLeaseReservationExpired|UpdateLeaseConflict $exception) {
+        } catch (Throwable $exception) {
             $this->markFailed($operationRun, $exception);
 
             throw $exception;

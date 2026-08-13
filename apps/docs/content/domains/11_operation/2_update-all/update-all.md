@@ -68,7 +68,10 @@ orbit update:all --stream-json
    stable candidate channel, the channel is resolved only for this plan.
 
    After the plan exists, the runner uses only that immutable snapshot for the
-   rest of the run.
+   rest of the run. If the reservation claim is invalid, the heartbeat process
+   stops, or the runner receives `SIGTERM`, the gateway records a terminal
+   operation failure and stops the update before the lease can expire under an
+   active mutation.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
    workload nodes. Production workload installs update the configured owner

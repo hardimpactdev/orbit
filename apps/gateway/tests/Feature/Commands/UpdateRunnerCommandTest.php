@@ -128,7 +128,7 @@ it('claims the reserved fleet lease passed by the launcher and releases it after
         ->not->toBe($reservationOwnerToken);
 });
 
-it('does not mutate the operation when a duplicate runner cannot claim the reservation', function (): void {
+it('fails the operation when a duplicate runner cannot claim the reservation', function (): void {
     $run = updateRunnerCommandRun();
     $fleetLease = app(FleetUpdateLease::class);
     $reservation = $fleetLease->reserve($run);
@@ -145,13 +145,83 @@ it('does not mutate the operation when a duplicate runner cannot claim the reser
         ->assertFailed();
 
     expect($run->refresh()->status)
-        ->toBe(OperationStatus::Queued)
+        ->toBe(OperationStatus::Failed)
         ->and($run->events()->count())
-        ->toBe(0)
+        ->toBe(1)
+        ->and($run->events()->firstOrFail()->event_type)
+        ->toBe('error')
+        ->and($run->error)
+        ->toMatchArray([
+            'code' => 'update_runner_failed',
+            'message' => 'Update runner failed.',
+        ])
         ->and($claimed->refresh()->active_resource_key)
         ->toBe('fleet:update-all')
         ->and($claimed->owner_token)
         ->not->toBe($reservation->owner_token);
+});
+
+it('fails the operation when its reserved fleet lease no longer exists', function (): void {
+    $run = updateRunnerCommandRun();
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
+
+    $this
+        ->artisan('orbit:update-runner', [
+            '--operation-run-id' => $run->id,
+            '--fleet-lease-id' => 999_999,
+        ])
+        ->expectsOutputToContain('Update lease [999999] not found.')
+        ->assertFailed();
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->events()->count())
+        ->toBe(1)
+        ->and($run->events()->firstOrFail()->event_type)
+        ->toBe('error')
+        ->and($run->error)
+        ->toMatchArray([
+            'code' => 'update_runner_failed',
+            'message' => 'Update runner failed.',
+        ]);
+});
+
+it('persists a terminal failure and releases its lease when heartbeat monitoring fails', function (): void {
+    $run = updateRunnerCommandRun();
+    $reservation = app(FleetUpdateLease::class)->reserve($run);
+
+    app()->instance(UpdateLeaseHeartbeatProcess::class, new class extends UpdateLeaseHeartbeatProcess {
+        #[Override]
+        public function whileRunning(
+            OperationRun $operationRun,
+            UpdateLease $fleetLease,
+            int $ttlSeconds,
+            callable $callback,
+        ): mixed {
+            throw new RuntimeException('Update lease heartbeat stopped while the update runner was active.');
+        }
+    });
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
+
+    $this
+        ->artisan('orbit:update-runner', [
+            '--operation-run-id' => $run->id,
+            '--fleet-lease-id' => $reservation->id,
+        ])
+        ->expectsOutputToContain('Update lease heartbeat stopped while the update runner was active.')
+        ->assertFailed();
+
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->error)
+        ->toMatchArray([
+            'code' => 'update_runner_failed',
+            'message' => 'Update runner failed.',
+        ])
+        ->and($run->events()->where('event_type', 'error')->count())
+        ->toBe(1)
+        ->and($reservation->refresh()->active_resource_key)
+        ->toBeNull();
 });
 
 it('fails the operation after its unclaimed fleet reservation expires', function (): void {

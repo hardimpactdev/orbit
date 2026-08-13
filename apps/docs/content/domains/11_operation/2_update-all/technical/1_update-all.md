@@ -200,15 +200,21 @@ The expected target shape per calling context:
   An active reservation or runner lease rejects a concurrent start before a
   second runner is launched.
 - The launched runner claims that exact reservation by rotating its owner token
-  once. A duplicate runner cannot claim or release the active lease.
+  once. A duplicate runner cannot claim or release the active lease. A missing,
+  released, mismatched, or already-claimed reservation records a terminal
+  operation failure without releasing a lease owned by another runner.
 - The runner holds `fleet:update-all` across deferred schema preparation,
   release-manifest resolution, both check steps, gateway replacement, scheduler
   update, workload node updates, and final verification.
 - A dedicated heartbeat process renews the fleet lease and every active nested
   lease belonging to the same operation behind the fleet owner-token fence. It
-  stops when the runner exits or the operation becomes terminal. Heartbeat
-  failure terminates the runner; if both processes disappear, the bounded lease
-  lifetime allows a later start to recover.
+  stops when the runner exits or the operation becomes terminal. The runner
+  checks that process at a bounded interval shorter than the lease lifetime.
+  Heartbeat exit or renewal failure interrupts the active runner callback,
+  records a terminal operation failure, and releases only leases fenced to that
+  runner. `SIGTERM` follows the same controlled failure path. If both processes
+  disappear before either can record the failure, the bounded lease lifetime
+  allows a later start to recover.
 - Gateway and scheduler leases are scoped to the gateway phase.
 - Node leases are scoped per workload node fan-out task.
 - Lease acquisition must map active-lease conflicts, including

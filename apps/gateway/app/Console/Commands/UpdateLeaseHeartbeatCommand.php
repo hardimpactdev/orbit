@@ -59,8 +59,8 @@ class UpdateLeaseHeartbeatCommand extends Command
                     $ready = true;
                 }
             } catch (Throwable $exception) {
-                $this->terminateParent($invocation->parentPid);
                 $this->error($exception->getMessage());
+                $this->terminateParent($invocation->parentPid);
 
                 return self::FAILURE;
             }
