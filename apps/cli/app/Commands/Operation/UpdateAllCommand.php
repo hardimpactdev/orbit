@@ -22,6 +22,8 @@ final class UpdateAllCommand extends GatewayCommand
 
     private const string TopologyCandidateManifestSource = 'topology-candidate';
 
+    private const string MissingTopologyCandidateTargetVersion = 'Topology candidate result is missing a valid target version.';
+
     #[\Override]
     protected $signature = 'update:all
         {--json : Output JSON}
@@ -139,6 +141,13 @@ final class UpdateAllCommand extends GatewayCommand
         $candidateBinaryUrl = $this->terminalCandidateBinaryUrl($terminal['payload']);
         $candidateBinarySha256 = $this->terminalCandidateBinarySha256($terminal['payload']);
 
+        if ($reapplyLocal && $targetVersion === null) {
+            $progress->localNodeFailed($this->output, self::MissingTopologyCandidateTargetVersion);
+            $progress->finishFailure($this->output);
+
+            return self::FAILURE;
+        }
+
         // All-current short-circuit: skip local update; nothing was outdated.
         if ($allCurrent) {
             $progress->finishSuccess($this->output, $targetVersion, allCurrent: true);
@@ -227,6 +236,13 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
 
+        $targetVersion = $this->terminalTargetVersion($terminal['payload']);
+        $usesTopologyCandidate = $this->terminalUsesTopologyCandidateManifest($terminal['payload']);
+
+        if ($usesTopologyCandidate && $targetVersion === null) {
+            return $this->renderLocalUpdateFailure('download', self::MissingTopologyCandidateTargetVersion);
+        }
+
         // All-current short-circuit: nothing was outdated, so the local update is
         // skipped too. Output the gateway terminal frame directly.
         if ($this->terminalAllCurrent($terminal['payload'])) {
@@ -236,8 +252,8 @@ final class UpdateAllCommand extends GatewayCommand
         // Local already on the target: skip its download and output the gateway
         // terminal frame directly (mirrors the human-mode local skip).
         if (
-            ! $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
-            && $this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))
+            ! $usesTopologyCandidate
+            && $this->localIsCurrent($targetVersion)
         ) {
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
@@ -247,7 +263,7 @@ final class UpdateAllCommand extends GatewayCommand
         $candidateBinarySha256 = $this->terminalCandidateBinarySha256($terminal['payload']);
 
         if (
-            $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
+            $usesTopologyCandidate
             && ($candidateBinaryUrl === null
             || $candidateBinarySha256 === null)
         ) {
@@ -260,7 +276,7 @@ final class UpdateAllCommand extends GatewayCommand
         $download = $this->withBinaryArtifact(
             $candidateBinaryUrl,
             $candidateBinarySha256,
-            fn (): array => $localUpdater->downloadBinary($this->terminalTargetVersion($terminal['payload']) ?? ''),
+            fn (): array => $localUpdater->downloadBinary($targetVersion ?? ''),
         );
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {

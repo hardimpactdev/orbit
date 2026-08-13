@@ -282,6 +282,60 @@ it('fails a topology candidate local update when its CLI checksum is missing', f
         ->toBe([]);
 });
 
+it('fails a topology candidate local update in human mode when its target version is missing', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'status' => 'succeeded',
+                'manifest_source' => 'topology-candidate',
+                'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+            ],
+        ],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toContain('Topology candidate result is missing a valid target version.')
+        ->and($this->localUpdater->calls)
+        ->toBe([]);
+});
+
+it('fails a topology candidate local update in json mode when its target version is missing', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 0,
+                'data' => [
+                    'updates' => [],
+                    'manifest_source' => 'topology-candidate',
+                    'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+                ],
+            ],
+        ],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('local_update_failed')
+        ->and($decoded['error']['meta']['failed_step'])
+        ->toBe('download')
+        ->and($decoded['error']['data']['output'])
+        ->toBe('Topology candidate result is missing a valid target version.')
+        ->and($this->localUpdater->calls)
+        ->toBe([]);
+});
+
 it('advertises both the --json and --stream-json output modes', function (): void {
     $command = app(Kernel::class)->all()['update:all'];
 
