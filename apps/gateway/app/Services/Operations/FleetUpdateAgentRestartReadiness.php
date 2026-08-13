@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\ProvisioningAgentReadinessProbe;
 use RuntimeException;
@@ -15,7 +16,7 @@ final readonly class FleetUpdateAgentRestartReadiness
         private ProvisioningAgentReadinessProbe $agentReadiness,
     ) {}
 
-    public function wait(OperationUpdatePlan $plan): void
+    public function wait(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
         $agentArtifacts = $plan->agent_artifacts ?? [];
 
@@ -32,7 +33,7 @@ final readonly class FleetUpdateAgentRestartReadiness
             usleep($settleMilliseconds * 1000);
         }
 
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             if (! $node->isAgentEligible()) {
                 continue;
             }

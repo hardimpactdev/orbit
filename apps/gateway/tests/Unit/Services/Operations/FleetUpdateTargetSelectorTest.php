@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Operations\FleetUpdateTargetSelector;
+use App\Services\Operations\OperationRunRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -91,6 +93,11 @@ it('selects only active Agent-eligible workload nodes', function (): void {
         ]);
 
     $selector = app(FleetUpdateTargetSelector::class);
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+    );
 
     expect($operator->isAgentEligible())
         ->toBeTrue()
@@ -101,6 +108,6 @@ it('selects only active Agent-eligible workload nodes', function (): void {
             'unsupported-app',
             'vpn-node',
         ])
-        ->and($selector->workloadNodes()->pluck('name')->all())
+        ->and($selector->workloadNodes($run)->pluck('name')->all())
         ->toBe(['eligible-app']);
 });

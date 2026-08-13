@@ -85,9 +85,9 @@ class FleetUpdateVerifier
 
     private function verifyWorkloadCli(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
-        app(FleetUpdateAgentRestartReadiness::class)->wait($plan);
+        app(FleetUpdateAgentRestartReadiness::class)->wait($operationRun, $plan);
 
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             foreach (FleetUpdateNodeCliLauncher::binPathsToVerify($node) as $binPath) {
                 $result = $this->localExecutor()->runInternal(
                     node: $node,
@@ -123,7 +123,7 @@ class FleetUpdateVerifier
 
     private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             $images = $this->requiredRoleImagesToVerify($plan, $node);
 
             if ($images === []) {

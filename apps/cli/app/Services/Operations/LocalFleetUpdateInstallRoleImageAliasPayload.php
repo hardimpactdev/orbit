@@ -47,7 +47,7 @@ final readonly class LocalFleetUpdateInstallRoleImageAliasPayload
 
         if (
             ! is_string($source)
-            || preg_match('/\A[^\s]+@sha256:[0-9a-f]{64}\z/i', $source) !== 1
+            || preg_match('/\A[^@\s]+(?:@sha256:[0-9a-f]{64})?\z/i', $source) !== 1
         ) {
             throw LocalFleetUpdateInstallCliPayloadField::validationFailure('role_image_aliases.source');
         }

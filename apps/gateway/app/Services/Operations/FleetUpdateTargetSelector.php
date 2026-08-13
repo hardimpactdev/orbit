@@ -7,6 +7,7 @@ namespace App\Services\Operations;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Models\OperationRun;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -19,12 +20,21 @@ final readonly class FleetUpdateTargetSelector
     /**
      * @return Collection<int, Node>
      */
-    public function workloadNodes(): Collection
+    public function workloadNodes(OperationRun $operationRun): Collection
+    {
+        return $this->workloadNodesExcluding($operationRun->caller_node_id);
+    }
+
+    /**
+     * @return Collection<int, Node>
+     */
+    public function workloadNodesExcluding(?int $callerNodeId): Collection
     {
         /** @var Collection<int, Node> $nodes */
         $nodes = $this
             ->activeNonGatewayRoleNodes()
             ->filter(static fn (Node $node): bool => $node->isAgentEligible())
+            ->except($callerNodeId === null ? null : [$callerNodeId])
             ->values();
 
         return $nodes;

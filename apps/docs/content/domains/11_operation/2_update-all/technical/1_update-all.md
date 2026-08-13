@@ -346,7 +346,8 @@ The expected target shape per calling context:
   tag and one healthy replica so a Swarm rollback cannot pass as convergence.
   Workload verification also inspects the local tag. When a candidate
   FrankenPHP image needs the stable runtime name, Orbit resolves the exact local
-  image ID and aliases that ID to the stable reference before final
+  image ID from the required candidate tag and aliases that ID to the stable
+  reference before final
   verification. This lets candidate channels verify private role images without
   distributing registry credentials to nodes.
 - For each remote update, the gateway authorizes a typed Orbit Agent request

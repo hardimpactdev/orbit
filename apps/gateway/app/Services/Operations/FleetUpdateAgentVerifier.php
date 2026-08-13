@@ -18,7 +18,7 @@ final readonly class FleetUpdateAgentVerifier
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        foreach ($this->nodes() as $node) {
+        foreach ($this->nodes($operationRun) as $node) {
             if (! $node->isAgentEligible()) {
                 continue;
             }
@@ -57,7 +57,7 @@ final readonly class FleetUpdateAgentVerifier
     /**
      * @return list<Node>
      */
-    private function nodes(): array
+    private function nodes(OperationRun $operationRun): array
     {
         $nodes = [];
         $gatewayNode = $this->targets->gatewayNode();
@@ -66,7 +66,7 @@ final readonly class FleetUpdateAgentVerifier
             $nodes[$gatewayNode->name] = $gatewayNode;
         }
 
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             $nodes[$node->name] = $node;
         }
 

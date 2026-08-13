@@ -132,7 +132,7 @@ final class UpdateAllController implements Loggable
      */
     private function runUpdateAll(OrbitUpdater $updater, ?ProgressReporter $reporter = null): array
     {
-        $nodes = app(FleetUpdateTargetSelector::class)->workloadNodes();
+        $nodes = app(FleetUpdateTargetSelector::class)->workloadNodesExcluding($this->activitySubject?->id);
 
         $localTarget = $this->localGatewayTarget();
         $updates = [];

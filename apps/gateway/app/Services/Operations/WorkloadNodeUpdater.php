@@ -42,7 +42,7 @@ final readonly class WorkloadNodeUpdater
     {
         $results = [];
 
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             $results[] = $this->updateNode($operationRun, $plan, $node);
         }
 
@@ -473,11 +473,12 @@ final readonly class WorkloadNodeUpdater
             return [];
         }
 
-        $source = $plan->role_images['orbit-frankenphp'] ?? null;
+        $declaredSource = $plan->role_images['orbit-frankenphp'] ?? null;
+        $source = $plan->runtimeRoleImage('orbit-frankenphp');
         $target = $this->phpRuntimes->imageFor(PhpRuntimeCatalog::DEFAULT);
         $pattern = '/\A'.preg_quote($target, '/').'-candidate-[^@\s]+@sha256:[0-9a-f]{64}\z/i';
 
-        if (! is_string($source) || preg_match($pattern, $source) !== 1) {
+        if (! is_string($declaredSource) || preg_match($pattern, $declaredSource) !== 1 || $source === null) {
             throw new RuntimeException('Topology candidate contains an invalid FrankenPHP role image.');
         }
 

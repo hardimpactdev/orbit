@@ -48,6 +48,49 @@ beforeEach(function (): void {
         ]);
 });
 
+it('excludes the caller-local node from remote workload updates', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $caller = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'beast',
+            'platform' => 'ubuntu_24-04',
+        ]);
+    $run = workloadUpdaterRun(callerNodeId: $caller->id);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.test/orbit-linux-x64',
+                    'sha256' => str_repeat('b', times: 64),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.test/orbit-macos-arm64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect(array_column($results, 'node'))
+        ->toBe(['beast'])
+        ->and(array_values(array_unique($shell->updatedNodes())))
+        ->toBe(['beast']);
+});
+
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -959,6 +1002,50 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->toBe('candidate-build');
 });
 
+it('uses the loaded archive tag as the topology candidate runtime alias source', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+        ]);
+    $candidateImage = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-candidate-build';
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workload_updater_snapshot_with_role_image_artifact(
+            targetVersion: '2.0.0',
+            manifestSource: 'topology-candidate',
+            cliArtifacts: [],
+            roleImages: [
+                'orbit-caddy' => 'caddy:2-alpine',
+                'orbit-frankenphp' => $candidateImage.'@sha256:'.str_repeat('f', times: 64),
+            ],
+            roleImageArtifacts: [
+                'orbit-frankenphp' => [
+                    'url' => 'https://artifacts.test/orbit-frankenphp-linux-amd64.tar',
+                    'sha256' => str_repeat('e', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    $payload = workload_updater_full_install_payload($shell, node: 'app-dev-1');
+
+    expect($payload['role_images'])
+        ->toContain($candidateImage)
+        ->and($payload['role_image_aliases'])
+        ->toBe([[
+            'source' => $candidateImage,
+            'target' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
+        ]]);
+});
+
 it('updates macos workload nodes with darwin arm64 CLI artifacts and portable checksum verification', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -1423,12 +1510,13 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
         ->toBe(0);
 });
 
-function workloadUpdaterRun(): OperationRun
+function workloadUpdaterRun(?int $callerNodeId = null): OperationRun
 {
     return app(OperationRunRecorder::class)->queued(
         operationId: (string) Str::uuid(),
         lane: 'gateway',
         operationType: 'update:all',
+        callerNodeId: $callerNodeId,
     );
 }
 
@@ -1544,17 +1632,29 @@ function workloadUpdaterSnapshot(
 /**
  * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
  * @param  array<string, string>  $roleImages
+ * @param  array<string, array{url: string, sha256: string}>  $roleImageArtifacts
  */
 function workload_updater_snapshot_with_role_image_artifact(
     string $targetVersion,
     array $cliArtifacts,
     array $roleImages,
+    string $manifestSource = 'github-release',
+    array $roleImageArtifacts = [],
 ): OperationUpdatePlanSnapshot {
     $snapshot = workloadUpdaterSnapshot(
         targetVersion: $targetVersion,
+        manifestSource: $manifestSource,
         cliArtifacts: $cliArtifacts,
         roleImages: $roleImages,
     );
+    $roleImageArtifacts = $roleImageArtifacts !== []
+        ? $roleImageArtifacts
+        : [
+            'orbit-websocket' => [
+                'url' => 'https://artifacts.test/orbit-reverb-linux-amd64.tar',
+                'sha256' => str_repeat('f', times: 64),
+            ],
+        ];
 
     return new OperationUpdatePlanSnapshot(
         targetVersion: $snapshot->targetVersion,
@@ -1563,12 +1663,7 @@ function workload_updater_snapshot_with_role_image_artifact(
         manifestVersion: $snapshot->manifestVersion,
         manifestSnapshot: [
             ...$snapshot->manifestSnapshot,
-            'role_image_artifacts' => [
-                'orbit-websocket' => [
-                    'url' => 'https://artifacts.test/orbit-reverb-linux-amd64.tar',
-                    'sha256' => str_repeat('f', times: 64),
-                ],
-            ],
+            'role_image_artifacts' => $roleImageArtifacts,
         ],
         cliArtifacts: $snapshot->cliArtifacts,
         agentArtifacts: $snapshot->agentArtifacts,

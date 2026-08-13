@@ -41,7 +41,7 @@ final readonly class FleetVersionProbe
             $outdated++;
         }
 
-        foreach ($this->targets->workloadNodes() as $node) {
+        foreach ($this->targets->workloadNodes($operationRun) as $node) {
             $nodeVersions[$node->name] = $this->nodeVersion($node, $operationRun);
 
             if ($this->nodeNeedsUpdate($node, $plan)) {
