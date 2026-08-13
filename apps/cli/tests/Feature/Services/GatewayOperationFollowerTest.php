@@ -119,6 +119,91 @@ it('fails after the configured number of empty replays', function (): void {
         ->toThrow(GatewayApiException::class, 'terminal frame');
 });
 
+it('bounds empty replays when no override is provided', function (): void {
+    $client = new FakeGatewayOperationEventStreamClient([
+        ...array_fill(
+            start_index: 0,
+            count: GatewayOperationFollower::DEFAULT_MAX_EMPTY_REPLAYS,
+            value: [],
+        ),
+        [
+            ['id' => 1, 'type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0]],
+        ],
+    ]);
+
+    expect(fn () => new GatewayOperationFollower($client, reconnectSleepMs: 0)
+        ->follow('/api/operations/run-1/events', fn () => null))
+        ->toThrow(GatewayApiException::class, 'terminal frame');
+
+    expect($client->lastEventIds)->toHaveCount(GatewayOperationFollower::DEFAULT_MAX_EMPTY_REPLAYS);
+});
+
+it('resets the empty replay count when a new event arrives', function (): void {
+    $client = new FakeGatewayOperationEventStreamClient([
+        [],
+        [
+            ['id' => 5, 'type' => ProgressEventType::Step, 'payload' => ['message' => 'runner resumed']],
+        ],
+        [],
+        [
+            ['id' => 6, 'type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0]],
+        ],
+    ]);
+
+    $terminal = new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 2)
+        ->follow('/api/operations/run-1/events', fn () => null);
+
+    expect($terminal['type'])
+        ->toBe(ProgressEventType::Complete)
+        ->and($client->lastEventIds)
+        ->toBe([null, null, 5, 5]);
+});
+
+it('uses the bounded empty replay default from the application binding', function (): void {
+    config()->set('orbit.gateway.operation_follow_reconnect_sleep_ms', 0);
+    config()->set('orbit.gateway.operation_follow_max_empty_replays');
+
+    $client = new FakeGatewayOperationEventStreamClient([
+        ...array_fill(
+            start_index: 0,
+            count: GatewayOperationFollower::DEFAULT_MAX_EMPTY_REPLAYS,
+            value: [],
+        ),
+        [
+            ['id' => 1, 'type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0]],
+        ],
+    ]);
+
+    app()->instance(GatewayOperationEventStreamClient::class, $client);
+
+    expect(fn () => app(GatewayOperationFollower::class)
+        ->follow('/api/operations/run-1/events', fn () => null))
+        ->toThrow(GatewayApiException::class, 'terminal frame');
+
+    expect($client->lastEventIds)->toHaveCount(GatewayOperationFollower::DEFAULT_MAX_EMPTY_REPLAYS);
+});
+
+it('uses the configured empty replay bound from the application binding', function (): void {
+    config()->set('orbit.gateway.operation_follow_reconnect_sleep_ms', 0);
+    config()->set('orbit.gateway.operation_follow_max_empty_replays', 2);
+
+    $client = new FakeGatewayOperationEventStreamClient([
+        [],
+        [],
+        [
+            ['id' => 1, 'type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0]],
+        ],
+    ]);
+
+    app()->instance(GatewayOperationEventStreamClient::class, $client);
+
+    expect(fn () => app(GatewayOperationFollower::class)
+        ->follow('/api/operations/run-1/events', fn () => null))
+        ->toThrow(GatewayApiException::class, 'terminal frame');
+
+    expect($client->lastEventIds)->toHaveCount(2);
+});
+
 class FakeGatewayOperationEventStreamClient extends GatewayOperationEventStreamClient
 {
     /**

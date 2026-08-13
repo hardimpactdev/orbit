@@ -44,7 +44,10 @@ These terms describe the update workflow and its components.
   publisher's local `sequence` records publisher order only. Subscribers replay
   events after the journal cursor before following live frames through the
   private operations WebSocket/Reverb plane until a terminal `complete` or
-  `error` event is persisted.
+  `error` event is persisted. The CLI bounds consecutive journal replays that
+  return no new event. A new event resets that count. If the bound is reached
+  before a terminal event exists, the command returns the existing
+  stream-closed-before-terminal failure instead of waiting forever.
 - **Immutable update plan:** Persisted plan keyed by `operation_run_id`.
   Captures target version, gateway image digest, manifest snapshot, CLI artifact
   hashes, platform/architecture-specific Orbit Agent artifact hashes for

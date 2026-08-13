@@ -12,10 +12,12 @@ use RuntimeException;
 
 class GatewayOperationFollower
 {
+    public const int DEFAULT_MAX_EMPTY_REPLAYS = 120;
+
     public function __construct(
         private readonly GatewayOperationEventStreamClient $events,
         private readonly int $reconnectSleepMs = 500,
-        private readonly int $maxEmptyReplays = 0,
+        private readonly int $maxEmptyReplays = self::DEFAULT_MAX_EMPTY_REPLAYS,
         private readonly int $maxTransientFailures = 120,
     ) {}
 
@@ -74,7 +76,7 @@ class GatewayOperationFollower
 
             $emptyReplays = $sawEvent ? 0 : $emptyReplays + 1;
 
-            if ($this->maxEmptyReplays > 0 && $emptyReplays >= $this->maxEmptyReplays) {
+            if (! $sawEvent && $emptyReplays >= max(1, $this->maxEmptyReplays)) {
                 throw GatewayApiException::streamClosedBeforeTerminal(
                     new RuntimeException('Operation event replay did not reach a terminal frame.'),
                 );

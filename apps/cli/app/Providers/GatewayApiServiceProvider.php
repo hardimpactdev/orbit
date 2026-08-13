@@ -131,7 +131,10 @@ final class GatewayApiServiceProvider extends ServiceProvider
                 config('orbit.gateway.operation_follow_reconnect_sleep_ms'),
                 500,
             ),
-            maxEmptyReplays: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_empty_replays'), 0),
+            maxEmptyReplays: $this->positiveInteger(
+                config('orbit.gateway.operation_follow_max_empty_replays'),
+                GatewayOperationFollower::DEFAULT_MAX_EMPTY_REPLAYS,
+            ),
             maxTransientFailures: $this->nonNegativeInteger(
                 config('orbit.gateway.operation_follow_max_transient_failures'),
                 120,
