@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-13T03:25:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-wg-handoff-peer-endpoints/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-13-052508-fix-wg-handoff-peer-endpoints",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/wg-easy-swarm-handoff-runtime.json",
+        "loop.md",
+        "quality-gates/profiles/2026-08-13T03-18-37Z-3ec4720f4f00/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/wg-easy-swarm-handoff-runtime.json": "6aa27e06ebce1ce929fb97765433037d3b1b19447a35fee0eb4dd9dbf61a61d9",
+        "loop.md": "897474a305c465e595ca006c143aa7be1f114322164f1737018b8af45295dae2",
+        "quality-gates/profiles/2026-08-13T03-18-37Z-3ec4720f4f00/gateway_pest.junit.xml": "cc2bf099bc9b545e8700eb2931c0c6b510343582ef1fb10ef7373d474934935b"
+    },
+    "slug": "fix-wg-handoff-peer-endpoints",
+    "requested_slug": "fix-wg-handoff-peer-endpoints",
+    "compatible_slugs": [
+        "fix-wg-handoff-peer-endpoints"
+    ],
+    "branch": "fix/wg-handoff-peer-endpoints",
+    "candidate_commit": "3ec4720f4f0086634a3fc55a5b26be4136f8a51c",
+    "accepted_feature_tip": "3ec4720f4f0086634a3fc55a5b26be4136f8a51c",
+    "accepted_main_tip": "68d51988dc551f70e5111cd684cc93987e6fb381",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

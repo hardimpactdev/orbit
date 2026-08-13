@@ -1,0 +1,27 @@
+{
+  "candidate": "3ec4720f4f0086634a3fc55a5b26be4136f8a51c",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "dev-32a664 operator_gateway",
+  "host": "nckrtl@192.168.6.20",
+  "command": "composer e2e:incus -- --start --topology=operator_gateway --checkout-roles=operator,gateway",
+  "expected": "The operator reaches the gateway API after the standalone-to-Swarm VPN handoff without waiting for the WireGuard client re-key timer.",
+  "observed": {
+    "gateway_api_ready_seconds": 1.005,
+    "previous_failure_seconds": 94.431,
+    "operator_node_list_exit_code": 0,
+    "operator_observed_nodes": [
+      "gateway",
+      "operator-1"
+    ],
+    "active_peer_endpoint_count": 2,
+    "active_peer_latest_handshake_ages_seconds": [
+      46,
+      54
+    ],
+    "peer_snapshot_removed": true,
+    "old_standalone_container_removed": true
+  },
+  "checked_at": "2026-08-13T03:22:45Z",
+  "result": "passed"
+}
