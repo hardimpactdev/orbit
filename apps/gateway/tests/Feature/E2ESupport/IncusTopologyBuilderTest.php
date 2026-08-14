@@ -177,11 +177,19 @@ it('extracts source-mounted vendor archives instead of recursively copying vendo
 
     $command = $method->invoke($builder, 'orbit');
 
+    $appKey = strpos($command, 'APP_KEY=base64:.+');
+    $migrate = strpos($command, 'php apps/gateway/artisan migrate');
+
     expect($command)
         ->toContain(SourceMountedCheckoutSyncer::VendorArchiveDirectory)
         ->toContain('tar -C "$target/$app" -xf "$archive"')
         ->toContain('Missing source-mounted vendor archive for $app at $archive')
+        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
         ->not->toContain('cp -a');
+
+    expect($appKey)->toBeInt();
+    expect($migrate)->toBeInt();
+    expect($appKey)->toBeLessThan($migrate);
 });
 
 it('throws when the base image is missing', function (): void {
@@ -1860,6 +1868,12 @@ it('records detailed gateway artifact provisioning timings', function (): void {
 
     $builder->build(E2ETopologyKind::OperatorGateway);
     $commandOutput = implode("\n", $commands);
+    $gatewayMigrationCommand = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'orbit-gateway:prepared-current')
+            && str_contains($command, 'migrate --force --no-interaction --ansi')
+        ),
+    );
 
     expect(array_column($timer->events(), 'name'))
         ->toContain(
@@ -1878,6 +1892,8 @@ it('records detailed gateway artifact provisioning timings', function (): void {
         ->toContain(
             "incus exec 'orbit-template-gateway-base' -- sh -lc 'docker load' < '/tmp/orbit-e2e-gateway-artifacts-test/orbit-gateway-current.tar'",
         )
+        ->and($gatewayMigrationCommand)
+        ->toContain('APP_KEY=base64:.+')
         ->and($commandOutput)
         ->not->toContain('orbit-template-gateway-base/var/tmp/orbit-gateway-current.tar')->and($commandOutput)
         ->not->toContain('rm -f \'/var/tmp/orbit-gateway-current.tar\'');
@@ -1957,6 +1973,9 @@ it('builds artifact backed prepared websocket topology through a gateway first c
         $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
+        $downstreamPreparationCommand = collect($commands)->first(
+            fn (string $command): bool => str_contains($command, 'install_orbit_binary()'),
+        );
 
         expect($manifest)
             ->toHaveCount(5)
@@ -1974,7 +1993,15 @@ it('builds artifact backed prepared websocket topology through a gateway first c
                 'PID_PREPARE_AGENT=$!',
             )->and($commandOutput)->toContain('/tmp/orbit-e2e-gateway-artifacts-test/orbit-binary')->and(
                 $commandOutput,
-            )->toContain('orbit-gateway-current.tar')->and($commandOutput)->toContain(
+            )->toContain('/home/orbit/.local/bin/orbit')->and($commandOutput)->toContain(
+                'orbit-gateway-current.tar',
+            )->and($downstreamPreparationCommand)->toContain(
+                'install -d -m 0755 -o ${user} -g ${user} /home/${user}/orbit/bin /home/${user}/.local/bin',
+            )->and($downstreamPreparationCommand)->toContain(
+                'runuser -u ${user} -- ln -sf /home/${user}/orbit/bin/orbit-binary /home/${user}/.local/bin/orbit',
+            )->and($downstreamPreparationCommand)->toContain(
+                '/home/${user}/.local/bin/orbit --version >/dev/null',
+            )->and($commandOutput)->toContain(
                 'artisan orbit:internal:bake-websocket-node',
             )->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.start')->and(
                 $phaseNames,

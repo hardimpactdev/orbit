@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeRoleAssignment;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\NodeRegistryWriter;
+use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -33,6 +34,7 @@ class BakeAgentNodeCommand extends Command
     public function handle(
         NodeRegistryWriter $registryWriter,
         DnsmasqReconciler $dnsmasqReconciler,
+        RoleSelfGrantMaterializer $roleSelfGrantMaterializer,
     ): int {
         $name = $this->stringArgument('name');
         $host = $this->stringOption('host');
@@ -79,6 +81,7 @@ class BakeAgentNodeCommand extends Command
             ],
         );
 
+        $roleSelfGrantMaterializer->materializeOnRoleApplied($node, NodeRoleName::Agent);
         $dnsmasqReconciler->reconcileNodeRecords();
 
         return self::SUCCESS;

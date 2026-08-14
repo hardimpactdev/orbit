@@ -13,7 +13,8 @@ it('routes source-mounted gateway-local actions through the candidate orbit cli'
     $command = E2EGatewayApi::sourceMountedGatewayStateCommand();
 
     expect($command)
-        ->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
+        ->toContain('openssl rand -base64 32')
+        ->not->toContain('artisan key:generate')->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/srv/orbit/apps/cli/orbit')
         ->not->toContain('/opt/orbit/apps/cli/orbit')
         ->not->toContain('ORBIT_LOCAL_EXECUTOR_BINARY=/usr/local/bin/orbit-cli')->and(strpos(
             haystack: $command,

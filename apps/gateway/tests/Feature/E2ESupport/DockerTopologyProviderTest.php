@@ -973,7 +973,7 @@ it('prepares source mounted gateway state before seeding docker gateway records'
         ->toBeLessThan($seedOperatorIdentity);
 
     $stateCommand = $commands[$stateBootstrap];
-    $appKey = strpos($stateCommand, 'php apps/gateway/artisan key:generate --force --no-interaction');
+    $appKey = strpos($stateCommand, 'openssl rand -base64 32');
     $migrate = strpos($stateCommand, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
 
     expect($appKey)

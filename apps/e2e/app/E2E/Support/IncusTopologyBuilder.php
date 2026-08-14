@@ -1443,9 +1443,16 @@ class IncusTopologyBuilder
                 $user,
             ));
             $this->installGatewayImageFromArtifactBundle($instance);
-            $this->timer->measure('gateway.provision.migrate', fn () => E2ECommand::gatewayArtisan(
+            $appKeyCommand =
+                'runuser -u '
+                .escapeshellarg($user)
+                .' -- env HOME='
+                .escapeshellarg("/home/{$user}")
+                .' bash -lc '
+                .escapeshellarg(E2EGatewayApi::gatewayAppKeyCommand());
+            $this->timer->measure('gateway.provision.migrate', fn () => E2ECommand::exec(
                 $instance,
-                'migrate --force --no-interaction --ansi',
+                $appKeyCommand.' && '.E2ECommand::gatewayArtisanCommand('migrate --force --no-interaction --ansi'),
                 "Could not migrate gateway database on {$instance->name()}",
                 timeoutSeconds: 120,
             ));
@@ -1471,6 +1478,8 @@ class IncusTopologyBuilder
         $name = $instance->name();
         $binary = "{$bundleDir}/orbit-binary";
         $target = "/home/{$user}/orbit/bin/orbit-binary";
+        $localBinDirectory = "/home/{$user}/.local/bin";
+        $launcher = "{$localBinDirectory}/orbit";
 
         $result = $this->host->run(implode("\n", [
             'set -euo pipefail',
@@ -1486,12 +1495,13 @@ class IncusTopologyBuilder
                 .' -- sh -lc '
                 .escapeshellarg(
                     'install -d -m 0755 -o '
-                    .escapeshellarg($user)
-                    .' -g '
-                    .escapeshellarg($user)
-                    .' /home/'
-                    .escapeshellarg($user)
-                    .'/orbit/bin',
+                        .escapeshellarg($user)
+                        .' -g '
+                        .escapeshellarg($user)
+                        .' '
+                        .escapeshellarg("/home/{$user}/orbit/bin")
+                        .' '
+                        .escapeshellarg($localBinDirectory),
                 ),
             'incus file push '.escapeshellarg($binary).' '.escapeshellarg("{$name}{$target}"),
             'incus exec '
@@ -1499,16 +1509,22 @@ class IncusTopologyBuilder
                 .' -- sh -lc '
                 .escapeshellarg(
                     'chown '
-                    .escapeshellarg($user)
-                    .':'
-                    .escapeshellarg($user)
-                    .' '
-                    .escapeshellarg($target)
-                    .' && chmod 0755 '
-                    .escapeshellarg($target)
-                    .' && ln -sf '
-                    .escapeshellarg($target)
-                    .' /usr/local/bin/orbit',
+                        .escapeshellarg($user)
+                        .':'
+                        .escapeshellarg($user)
+                        .' '
+                        .escapeshellarg($target)
+                        .' && chmod 0755 '
+                        .escapeshellarg($target)
+                        .' && ln -sf '
+                        .escapeshellarg($target)
+                        .' /usr/local/bin/orbit'
+                        .' && runuser -u '
+                        .escapeshellarg($user)
+                        .' -- ln -sf '
+                        .escapeshellarg($target)
+                        .' '
+                        .escapeshellarg($launcher),
                 ),
             'incus exec '
                 .escapeshellarg($name)
@@ -1518,7 +1534,9 @@ class IncusTopologyBuilder
                     .escapeshellarg($user)
                     .' -- env HOME=/home/'
                     .escapeshellarg($user)
-                    .' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null',
+                    .' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin '
+                    .escapeshellarg($launcher)
+                    .' --version >/dev/null',
                 ),
         ]), timeoutSeconds: 120);
 
@@ -1671,7 +1689,10 @@ class IncusTopologyBuilder
             'done',
             'chown -R "$user:$user" "$target"',
             'install -d -m 0755 -o "$user" -g "$user" "$config_root"',
-            'runuser -u "$user" -- env ORBIT_CONFIG_ROOT="$config_root" DB_CONNECTION=sqlite DB_DATABASE="$config_root/gateway.sqlite" SESSION_DRIVER=file bash -lc "cd \"$target\" && php apps/gateway/artisan migrate --force --no-interaction --ansi"',
+            'runuser -u "$user" -- env HOME="/home/$user" bash -lc '
+                .escapeshellarg(
+                    'cd '.escapeshellarg($targetPath).' && '.E2EGatewayApi::sourceMountedGatewayStateCommand(),
+                ),
             'touch "$config_root/source-mounted-runtime"',
             'chown "$user:$user" "$config_root/source-mounted-runtime"',
             'chmod 0755 '.escapeshellarg($cli),
@@ -2350,10 +2371,10 @@ class IncusTopologyBuilder
                 fi
 
                 incus exec "$name" -- sh -lc "id ${user} >/dev/null 2>&1 || useradd -m -s /bin/bash ${user}"
-                incus exec "$name" -- sh -lc "install -d -m 0755 -o ${user} -g ${user} /home/${user}/orbit/bin"
+                incus exec "$name" -- sh -lc "install -d -m 0755 -o ${user} -g ${user} /home/${user}/orbit/bin /home/${user}/.local/bin"
                 incus file push "$binary" "${name}/home/${user}/orbit/bin/orbit-binary"
-                incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/orbit/bin/orbit-binary && chmod 0755 /home/${user}/orbit/bin/orbit-binary && ln -sf /home/${user}/orbit/bin/orbit-binary /usr/local/bin/orbit"
-                incus exec "$name" -- sh -lc "runuser -u ${user} -- env HOME=/home/${user} PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null"
+                incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/orbit/bin/orbit-binary && chmod 0755 /home/${user}/orbit/bin/orbit-binary && ln -sf /home/${user}/orbit/bin/orbit-binary /usr/local/bin/orbit && runuser -u ${user} -- ln -sf /home/${user}/orbit/bin/orbit-binary /home/${user}/.local/bin/orbit"
+                incus exec "$name" -- sh -lc "runuser -u ${user} -- env HOME=/home/${user} PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /home/${user}/.local/bin/orbit --version >/dev/null"
             }
 
             prepare_role() {
@@ -2723,10 +2744,10 @@ class IncusTopologyBuilder
                 fi
 
                 incus exec "$name" -- sh -lc 'id orbit >/dev/null 2>&1 || useradd -m -s /bin/bash orbit'
-                incus exec "$name" -- sh -lc 'install -d -m 0755 -o orbit -g orbit /home/orbit/orbit/bin'
+                incus exec "$name" -- sh -lc 'install -d -m 0755 -o orbit -g orbit /home/orbit/orbit/bin /home/orbit/.local/bin'
                 incus file push "$binary" "${name}/home/orbit/orbit/bin/orbit-binary"
-                incus exec "$name" -- sh -lc 'chown orbit:orbit /home/orbit/orbit/bin/orbit-binary && chmod 0755 /home/orbit/orbit/bin/orbit-binary && ln -sf /home/orbit/orbit/bin/orbit-binary /usr/local/bin/orbit'
-                incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'
+                incus exec "$name" -- sh -lc 'chown orbit:orbit /home/orbit/orbit/bin/orbit-binary && chmod 0755 /home/orbit/orbit/bin/orbit-binary && ln -sf /home/orbit/orbit/bin/orbit-binary /usr/local/bin/orbit && runuser -u orbit -- ln -sf /home/orbit/orbit/bin/orbit-binary /home/orbit/.local/bin/orbit'
+                incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /home/orbit/.local/bin/orbit --version >/dev/null'
             }
 
             install_source_runtime() {

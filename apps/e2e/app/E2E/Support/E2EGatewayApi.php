@@ -148,6 +148,11 @@ final readonly class E2EGatewayApi
         self::repairGatewayConfigRootOwnership($gateway);
     }
 
+    public static function gatewayAppKeyCommand(): string
+    {
+        return self::appKeyCommand(self::gatewayStatePath('.env'));
+    }
+
     public static function sourceMountedGatewayStateCommand(): string
     {
         return implode(' && ', [
@@ -2287,7 +2292,7 @@ final readonly class E2EGatewayApi
 
         return implode(' && ', [
             "(grep -q '^APP_KEY=' {$envPath} || printf '%s\\n' 'APP_KEY=' >> {$envPath})",
-            "(grep -Eq '^APP_KEY=base64:.+' {$envPath} || php apps/gateway/artisan key:generate --force --no-interaction)",
+            "(grep -Eq '^APP_KEY=base64:.+' {$envPath} || (app_key=\"base64:\$(openssl rand -base64 32)\" && sed -i \"s|^APP_KEY=.*|APP_KEY=\${app_key}|\" {$envPath}))",
             "grep -Eq '^APP_KEY=base64:.+' {$envPath}",
         ]);
     }

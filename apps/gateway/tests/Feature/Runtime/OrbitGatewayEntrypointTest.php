@@ -42,6 +42,14 @@ it('supports mounted source-dev gateway app roots without a separate orbit-gatew
         ->not->toContain('orbit-gateway');
 });
 
+it('rewrites gateway environment values with same-filesystem temporary files', function (): void {
+    $entrypoint = file_get_contents(repo_path('docker/orbit-gateway/entrypoint.sh'));
+
+    expect($entrypoint)
+        ->toContain('tmp="$(mktemp "${env_path}.tmp.XXXXXX")"')
+        ->not->toContain('tmp="$(mktemp)"');
+});
+
 it('creates fresh gateway credential state with owner-only modes', function (): void {
     $state = run_gateway_entrypoint_mode_fixture();
 

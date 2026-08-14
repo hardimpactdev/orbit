@@ -6,6 +6,7 @@ use App\Data\Security\PinnedHostKey;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,6 +53,10 @@ describe('orbit:internal:bake-agent-node', function (): void {
             ->where('node_id', $node->id)
             ->where('role', NodeRoleName::Agent->value)
             ->first();
+        $selfAccess = NodeAccess::query()
+            ->where('consumer_node_id', $node->id)
+            ->where('serving_node_id', $node->id)
+            ->first();
 
         expect($node->host)
             ->toBe('10.6.0.6')
@@ -69,7 +74,9 @@ describe('orbit:internal:bake-agent-node', function (): void {
             ->not->toBeNull()->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.6', 'expected' => null],
             ])->and($assignment)
-            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([]);
+            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([])->and($selfAccess?->permissions)->toContain(
+                'doctor:verify',
+            );
     });
 
     it('rejects the private service namespace as an agent node tld', function (): void {

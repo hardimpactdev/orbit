@@ -542,7 +542,7 @@ it('starts Docker gateway API support through gateway container commands without
     $statePrepare = collect($commands)->first(
         fn (string $command): bool => (
             str_contains($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway' sh -lc")
-            && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
+            && str_contains($command, 'openssl rand -base64 32')
             && str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi')
         ),
     );
@@ -580,7 +580,7 @@ it('starts Docker gateway API support through gateway container commands without
         fn (string $command): bool => (
             str_contains($command, 'sudo docker exec --env')
             && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-            && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
+            && str_contains($command, 'openssl rand -base64 32')
             && str_contains($command, 'issueLeaf')
         ),
     );
@@ -610,7 +610,7 @@ it('starts Docker gateway API support through gateway container commands without
         ->not->toContain('/home/orbit/.config/orbit/gateway/storage/framework/views')
         ->not->toContain('systemctl stop caddy');
 
-    $appKey = strpos((string) $statePrepare, 'php apps/gateway/artisan key:generate --force --no-interaction');
+    $appKey = strpos((string) $statePrepare, 'openssl rand -base64 32');
     $migrate = strpos((string) $statePrepare, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
 
     expect($statePrepare)
