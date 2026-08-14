@@ -8,6 +8,9 @@ use Orbit\Core\Security\OperationTokenSigner;
 
 describe('internal doctor self command', function (): void {
     beforeEach(function (): void {
+        $this->previousBinPath = getenv('ORBIT_BIN_PATH');
+        $this->previousArgvPath = $_SERVER['argv'][0] ?? null;
+        putenv('ORBIT_BIN_PATH');
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
@@ -15,6 +18,16 @@ describe('internal doctor self command', function (): void {
     });
 
     afterEach(function (): void {
+        $this->previousBinPath === false
+            ? putenv('ORBIT_BIN_PATH')
+            : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
+
+        if ($this->previousArgvPath === null) {
+            unset($_SERVER['argv'][0]);
+        } else {
+            $_SERVER['argv'][0] = $this->previousArgvPath;
+        }
+
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-doctor-self-bin-*');
 
         if ($fakeBinPaths === false) {
@@ -39,9 +52,10 @@ describe('internal doctor self command', function (): void {
             ));
     });
 
-    it('runs local doctor self through fixed argv', function (): void {
+    it('falls back to the configured binary when the invoked launcher is unavailable', function (): void {
         $bin = install_doctor_self_fake_bin();
         config()->set('orbit.local_executor_binary', "{$bin}/orbit");
+        $_SERVER['argv'][0] = '';
 
         $exitCode = Artisan::call('internal:doctor-self', [
             '--operation-token' => doctor_self_signed_operation_token(),
@@ -59,6 +73,58 @@ describe('internal doctor self command', function (): void {
             ->and($payload['success']['data']['output'] ?? '')
             ->toContain('doctor.node.done')
             ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('orbit doctor --self --stream-json');
+    });
+
+    it('runs doctor through the invoked launcher instead of a stale configured binary', function (): void {
+        $configuredBin = install_doctor_self_fake_bin();
+        $invokedBin = install_doctor_self_fake_bin();
+        config()->set('orbit.local_executor_binary', "{$configuredBin}/orbit");
+        $_SERVER['argv'][0] = "{$invokedBin}/orbit";
+
+        $exitCode = Artisan::call('internal:doctor-self', [
+            '--operation-token' => doctor_self_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['exit_code'] ?? null)
+            ->toBe(0)
+            ->and(file_exists("{$invokedBin}/calls.log"))
+            ->toBeTrue()
+            ->and(file_exists("{$configuredBin}/calls.log"))
+            ->toBeFalse()
+            ->and(file_get_contents("{$invokedBin}/calls.log"))
+            ->toContain('orbit doctor --self --stream-json');
+    });
+
+    it('prefers the token-bound Orbit binary over invoked and configured fallbacks', function (): void {
+        $configuredBin = install_doctor_self_fake_bin();
+        $invokedBin = install_doctor_self_fake_bin();
+        $operationBin = install_doctor_self_fake_bin();
+        config()->set('orbit.local_executor_binary', "{$configuredBin}/orbit");
+        $_SERVER['argv'][0] = "{$invokedBin}/orbit";
+        putenv("ORBIT_BIN_PATH={$operationBin}/orbit");
+
+        $exitCode = Artisan::call('internal:doctor-self', [
+            '--operation-token' => doctor_self_signed_operation_token(),
+            '--json' => true,
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['exit_code'] ?? null)
+            ->toBe(0)
+            ->and(file_exists("{$operationBin}/calls.log"))
+            ->toBeTrue()
+            ->and(file_exists("{$invokedBin}/calls.log"))
+            ->toBeFalse()
+            ->and(file_exists("{$configuredBin}/calls.log"))
+            ->toBeFalse()
+            ->and(file_get_contents("{$operationBin}/calls.log"))
             ->toContain('orbit doctor --self --stream-json');
     });
 });

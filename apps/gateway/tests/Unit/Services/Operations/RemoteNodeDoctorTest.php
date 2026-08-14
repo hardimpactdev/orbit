@@ -58,6 +58,12 @@ it('runs node doctor self through agent-push internal command', function (): voi
         ->toHaveCount(1)
         ->and($requests[0]['argv'] ?? [])
         ->toContain('internal:doctor-self')
+        ->and($requests[0]['environment'] ?? [])
+        ->toMatchArray([
+            'HOME' => '/home/orbit',
+            'ORBIT_BIN_PATH' => '/home/orbit/.local/bin/orbit',
+            'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+        ])
         ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
         ->toBeTrue();
 });

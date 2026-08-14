@@ -15,8 +15,18 @@ final readonly class LocalDoctorSelfRunner
      */
     public function run(): array
     {
-        $binary = trim((string) config('orbit.local_executor_binary', self::ORBIT_BINARY));
-        $binary = $binary !== '' ? $binary : self::ORBIT_BINARY;
+        $operationBinary = getenv('ORBIT_BIN_PATH');
+        $binary = is_string($operationBinary) ? trim($operationBinary) : '';
+
+        if ($binary === '') {
+            $invokedBinary = $_SERVER['argv'][0] ?? null;
+            $binary = is_string($invokedBinary) ? trim($invokedBinary) : '';
+        }
+
+        if ($binary === '') {
+            $binary = trim((string) config('orbit.local_executor_binary', self::ORBIT_BINARY));
+            $binary = $binary !== '' ? $binary : self::ORBIT_BINARY;
+        }
 
         $process = new Process([
             $binary,
