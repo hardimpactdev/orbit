@@ -1,0 +1,305 @@
+Orbit Solo todo #747 retained Incus artifact evidence
+Candidate: 12de6e0fecd4dfc53aceba17dbaf1264aa3695e9
+Host: beast
+Requested topology: operator_gateway_app-dev_app-prod_websocket
+Incus source topology: operator_gateway_app-dev_app-prod_agent_websocket
+Candidate artifact namespace: solo-747-12de6e0f
+
+Read-only shared source inventory
+=================================
+
+The exact five source template/snapshot pairs were inspected with plain
+`incus info` and `incus snapshot show` on beast.
+
+- orbit-template-operator-base: present, virtual-machine, STOPPED
+  - clean-operator_gateway_app-dev_app-prod_agent_websocket-base: present, created 2026-08-14T14:16:03.736405016Z
+- orbit-template-gateway-base: present, virtual-machine, STOPPED
+  - clean-operator_gateway_app-dev_app-prod_agent_websocket-base: present, created 2026-08-14T14:16:03.749350093Z
+- orbit-template-app-dev-base: present, virtual-machine, RUNNING
+  - clean-operator_gateway_app-dev_app-prod_agent_websocket-base: absent
+- orbit-template-app-prod-base: present, virtual-machine, STOPPED
+  - clean-operator_gateway_app-dev_app-prod_agent_websocket-base: present, created 2026-08-14T14:16:03.752978276Z
+- orbit-template-agent-base: present, virtual-machine, STOPPED
+  - clean-operator_gateway_app-dev_app-prod_agent_websocket-base: present, created 2026-08-14T14:16:03.736239033Z
+
+No Incus operation or active e2e:prepare-topology process owned the running
+app-dev base template when checked. Its Incus metadata reported last use at
+2026-08-14 14:30 CEST. It was not stopped or changed.
+
+Candidate-scoped dry run
+========================
+
+Command:
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=solo-747-12de6e0f composer e2e:prepare-topology -- --roles=operator,gateway,app-dev,app-prod,websocket --use-build-artifacts --json operator_gateway_app-dev_app-prod_websocket
+
+Result: exit 0, dry_run=true
+
+Requested/source roles: operator, gateway, dev, prod. Websocket maps to dev.
+No agent role or shared-base template was selected.
+
+Targets:
+- orbit-template-operator-solo-747-12de6e0f / clean-operator_gateway_app-dev_app-prod_agent_websocket-solo-747-12de6e0f
+- orbit-template-gateway-solo-747-12de6e0f / clean-operator_gateway_app-dev_app-prod_agent_websocket-solo-747-12de6e0f
+- orbit-template-app-dev-solo-747-12de6e0f / clean-operator_gateway_app-dev_app-prod_agent_websocket-solo-747-12de6e0f
+- orbit-template-app-prod-solo-747-12de6e0f / clean-operator_gateway_app-dev_app-prod_agent_websocket-solo-747-12de6e0f
+
+Candidate-scoped preparation
+============================
+
+Command:
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=solo-747-12de6e0f composer e2e:prepare-topology -- --force --roles=operator,gateway,app-dev,app-prod,websocket --use-build-artifacts --json operator_gateway_app-dev_app-prod_websocket
+
+Result: exit 1 after local bundle and remote push completed. The builder failed
+before creating a namespaced template:
+
+Base snapshot [orbit-template-app-dev-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base] not found. Prepare the base artifact set first.
+
+The command cleaned its local and remote temporary bundles. Post-failure
+inventory found no namespaced Incus templates. It left the candidate-scoped
+Docker image `orbit-gateway:solo-747-12de6e0f-current` on beast. This image and
+the four planned namespaced templates/snapshots are cleanup-owned by todo #747.
+Do not remove them while a resumed retained topology depends on them.
+
+Decision
+========
+
+Do not run the shared full source-topology preparation. It would replace the
+existing unrelated agent template. Do not manually stop or snapshot the shared
+running app-dev template without separate authority. Resume isolated
+preparation after the missing shared app-dev base snapshot is restored by its
+owner.
+
+Explicit-base selected-role repair attempt
+==========================================
+
+Read-only command:
+ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE=base composer e2e:prepare-topology -- --roles=app-dev,websocket --use-build-artifacts --json operator_gateway_app-dev_app-prod_websocket
+
+Result: exit 1 before target resolution.
+
+Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes; omit --roles to rebuild the shared base artifact set.
+
+The repository treats an explicit `base` value as the shared base artifact set
+and rejects selected roles. No `--force` command ran and no shared template was
+changed.
+
+Authorized full shared source-topology rebuild
+==============================================
+
+Dry-run command:
+composer e2e:prepare-topology -- --json operator_gateway_app-dev_app-prod_agent_websocket
+
+Result: exit 0. The exact targets were the shared base operator, gateway,
+app-dev, app-prod, and agent templates, each with snapshot
+`clean-operator_gateway_app-dev_app-prod_agent_websocket-base`.
+
+Forced command:
+composer e2e:prepare-topology -- --force --json operator_gateway_app-dev_app-prod_agent_websocket
+
+Result: exit 1 after the authorized destructive rebuild phase. Gateway image
+build, gateway provisioning, five-role launch, WireGuard setup, and websocket
+runtime load passed. Prod and agent bake passed. Dev and websocket bake failed
+because app-dev could not resolve `s3.hardimpact.dev` while restoring PHP CLI
+coverage tools. The builder retained successful sibling checkpoints and cleaned
+its local and remote temporary artifact bundles.
+
+Post-failure shared snapshot inventory:
+- operator: present, created 2026-08-15T13:19:54.264131822Z
+- gateway: present, created 2026-08-15T13:19:54.273051521Z
+- app-dev: absent; template remains RUNNING
+- app-prod: present, created 2026-08-15T13:19:54.28841996Z
+- agent: present, created 2026-08-15T13:19:54.276513643Z
+
+Infrastructure diagnosis:
+- `beast` resolves and reaches `s3.hardimpact.dev` over HTTPS.
+- app-dev reaches its bridge gateway and `1.1.1.1` over ICMP.
+- app-dev outbound TCP 53 and 443 time out.
+- A bounded packet trace shows guest SYN packets entering `incusbr0` but never
+  leaving `beast`; no replies return.
+- Incus config has NAT enabled for `incusbr0`.
+- Guest OUTPUT policy is ACCEPT.
+- Host iptables FORWARD policy is DROP. It has explicit accepts for
+  `orbit-e2e-n-1`, but none for `incusbr0`.
+- `IncusWorkerNetwork::ensureOn()` is the repository analogue: it inserts
+  inbound and outbound FORWARD accepts for a managed bridge. No repository
+  command applies that repair to `incusbr0`.
+
+Classification: infrastructure, high confidence. The smallest next action is
+to authorize the equivalent two host rules for `incusbr0`, verify guest DNS and
+HTTPS, then rerun the full shared source-topology preparation. No retained clone
+was changed or deleted.
+
+Host FORWARD repair
+===================
+
+The final absence check found no exact `incusbr0` FORWARD accepts. Stale exact
+rules were deleted in bounded loops, then the repository-defined rules were
+inserted once each:
+
+- `sudo iptables -I FORWARD 1 -o incusbr0 -j ACCEPT`
+- `sudo iptables -I FORWARD 1 -i incusbr0 -j ACCEPT`
+
+The after check found exactly one inbound and one outbound rule. App-dev DNS
+and HTTPS then passed. Recovery is to delete those two exact rules once each
+after confirming no retained topology needs `incusbr0` forwarding.
+
+Gateway legacy-state repair
+===========================
+
+The next rebuild exposed an existing invalid Laravel encrypted cast. The full
+stack identified `App\Models\Process.credentials` on process row 1 (`valkey`).
+Only that raw column was set to NULL after a recoverable database copy was
+created. Eloquent then read the row successfully. Subsequent rebuilds passed
+this stage. The diagnostic database copy
+`gateway.sqlite.solo-747-pre-credentials-reset-20260815T132901Z.bak` was removed
+before the final snapshot after the repaired row was reverified as NULL.
+
+The remote checkpoint manifest at
+`.cache/orbit-e2e/provision-checkpoints/base/operator_gateway_app-dev_app-prod_agent_websocket.json`
+was a stale June 5 completed manifest. The full preparation path did not read or
+restore it, and emitted no checkpoint restore events. It was not moved or
+changed.
+
+Prepared websocket runtime-user defect
+======================================
+
+The first post-repair websocket bake failed because the generated prepared
+websocket command registered `app-dev-1` as `provisioner`. Guest inspection:
+
+- `/home/provisioner/.local/bin/orbit`: absent
+- `/home/orbit/.local/bin/orbit`: repository-installed symlink to the bundled
+  Orbit binary, owned by `orbit:orbit`, version 0.1.192
+- `/usr/local/bin/orbit`: root-owned symlink to the same binary
+- `command -v orbit` as `orbit`: `/home/orbit/.local/bin/orbit`
+- `command -v orbit` as `provisioner`: `/usr/local/bin/orbit`, but execution
+  could not traverse the orbit-owned home path
+
+`installPreparedAppRuntimePrerequisites()` and the bundle installer establish
+`orbit` as the prepared app runtime user. A TDD regression changed
+`runPreparedDownstreamAndWebSocketBakeInParallel()` to use
+`AppDevelopmentRuntimeUser`, matching `runPreparedWebSocketBake()`.
+
+- red: generated websocket command contained `--user=provisioner`
+- green focused: 1 test, 4 assertions
+- green readiness file: 14 tests, 113 assertions
+- fix commit: `9794fbd4e79edd64336cff13394a8e64d56e8ebd`
+- full quality: exit 0 in 130 seconds
+- quality receipt:
+  `.orbit/quality-gates/quality-check-2026-08-15T134029Z-5079232c1f89.json`
+
+Final full preparation attempt
+==============================
+
+Command:
+`composer e2e:prepare-topology -- --force --json operator_gateway_app-dev_app-prod_agent_websocket`
+
+The registry and binary-path defect was resolved. Dev, prod, and agent bake
+passed. Websocket registry used `orbit`, and runtime convergence reached
+`image:ensure`. The builder created fresh snapshots for all five shared base
+templates and stopped them, but returned exit 1 because websocket convergence
+failed.
+
+Exact direct diagnostic
+=======================
+
+Release-manifest payload:
+
+- image: `ghcr.io/hardimpactdev/orbit-reverb:0.1.192@sha256:191deb81fdf35902e72bb35602ad23dfc5f08950d073a66b7950e483fd538cb4`
+- artifact: null
+
+With the gateway API running and `app-dev-1.user=orbit`, direct
+`internal:websocket-runtime image:ensure` returned:
+
+- exit_code: 1
+- stdout error code: `websocket_runtime_image_pull_failed`
+- stdout cause: `Error response from daemon: error from registry: unauthorized`
+- stderr: empty
+
+Prepared-environment authentication probe
+=========================================
+
+The local GitHub CLI token was streamed through stdin directly into Docker
+login as the `orbit` guest user. It was never printed, logged, hashed, or stored
+outside Docker's temporary credential file.
+
+- GHCR login: succeeded
+- exact digest pull: succeeded and verified digest
+  `sha256:191deb81fdf35902e72bb35602ad23dfc5f08950d073a66b7950e483fd538cb4`
+- GHCR logout: succeeded
+- `/home/orbit/.docker/config.json` auth entry count after logout: zero
+- exact `image:ensure` after logout: exit 1 with the same `unauthorized` result
+
+Conclusion: caching the digest is insufficient because `image:ensure` always
+executes `docker pull`, which recontacts GHCR after logout. Full preparation was
+not retried because the required direct diagnostic was not green. Persisting a
+token into a prepared snapshot is not acceptable. The gateway and app-dev
+diagnostic templates were stopped. The old retained clone
+`orbit-e2e-20260625224858-24500-5f9ebe-dev` was not changed.
+
+Exact websocket bake and scrubbed snapshots
+============================================
+
+The remaining prepared websocket command was run directly through
+`E2ECommand::gatewayArtisan` while the app-dev `orbit` user had transient GHCR
+authentication:
+
+`orbit:internal:bake-websocket-node app-dev-1 --host=10.231.7.227 --wireguard-address=10.6.0.4 --gateway-endpoint=10.6.0.2 --user=orbit --valkey-node=app-dev-1 --converge-runtime`
+
+Result: exit 0, empty stderr. Runtime convergence completed image ensure,
+self-contained image inspection, environment, rendering, certificates, and
+container apply. Logout then succeeded and the Docker auth entry count was
+zero. Gateway and app-dev stopped cleanly. The exact target snapshot name is
+`clean-operator_gateway_app-dev_app-prod_agent_websocket-base`.
+
+A temporary clone from the scrubbed app-dev snapshot proved:
+
+- Docker auth entry count: zero
+- exact release digest image ID:
+  `sha256:191deb81fdf35902e72bb35602ad23dfc5f08950d073a66b7950e483fd538cb4`
+- `orbit-reverb:current` image ID: the same exact digest
+- websocket container: present with image `orbit-reverb:current` and restart
+  policy `always`
+- temporary clone: stopped and deleted
+
+An aborted full-preparation retry had already deleted all five target snapshots
+during preflight before it failed on gateway config-root permissions. The
+scrubbed gateway and app-dev targets were recreated. The three missing exact
+operator, app-prod, and agent targets were then recreated from their unchanged,
+previously completed prepared templates. No older ingress snapshot was deleted
+or changed. Final source inventory had the exact target on all five stopped
+templates.
+
+Retained acquisition failure
+============================
+
+Command:
+`composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod_websocket --json`
+
+Result: exit 1. The complete acquisition envelope reported this nested command:
+
+`cd /home/orbit/orbit && env ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit DB_CONNECTION=sqlite DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite SESSION_DRIVER=file php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=10.6.0.4 --wireguard-address=10.6.0.4 --gateway-endpoint=10.6.0.2 --user=orbit --valkey-node=app-dev-1 --converge-runtime`
+
+Nested output recorded valkey-node, host-key, registry, role-assignment, and
+runtime-converge timings, then threw at
+`WebSocketRoleBaseline::ensureManifestRuntimeImage()` line 166:
+`Could not install websocket runtime image on app-dev-1.`
+
+The acquisition envelope did not retain the inner `RemoteShellResult` stdout or
+stderr. Classification as the same unauthorized GHCR pull is a confirmed
+inference: the same exact manifest payload and action were directly captured as
+`websocket_runtime_image_pull_failed` / `unauthorized`, and the acquisition
+clone came from the verified scrubbed snapshot with zero Docker auth.
+
+No instance created on 2026-08-15 with the retained prefix remained after the
+failure. Pre-existing retained instances from older work were unchanged. Incus
+reported no active operations. The app-dev template was started read-only,
+reverified with zero Docker auth entries, and stopped cleanly.
+
+Checkpoint ownership
+====================
+
+Todo #775 owns the release-artifact blocker. Todo #747 is linked to #775 and is
+checkpointed without another acquisition retry. The #747 implementation remains
+at product-code candidate `9794fbd4e79edd64336cff13394a8e64d56e8ebd` with its
+focused and full quality evidence intact. Review, acceptance, archive, LAND,
+topology-asset cleanup, release, deployment, and push remain pending.
