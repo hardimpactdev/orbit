@@ -67,11 +67,13 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --pattern orbit-linux-x64 \
             --pattern orbit-macos-arm64 \
+            --pattern orbit-reverb-linux-amd64.tar \
             --pattern orbit-release-manifest.json \
             --dir "$asset_dir"
 
           test -s "$asset_dir/orbit-linux-x64"
           test -s "$asset_dir/orbit-macos-arm64"
+          test -s "$asset_dir/orbit-reverb-linux-amd64.tar"
           test -s "$asset_dir/orbit-release-manifest.json"
 
           echo "dir=${asset_dir}" >> "$GITHUB_OUTPUT"
@@ -144,6 +146,31 @@ jobs:
               if (! is_string($actualHash) || ($artifact['sha256'] ?? null) !== $actualHash) {
                   fail("Release manifest {$platform} sha256 does not match the promoted asset.");
               }
+          }
+
+          $websocketArtifact = $manifest['role_image_artifacts']['orbit-websocket'] ?? null;
+
+          if (! is_array($websocketArtifact)) {
+              fail('Release manifest must publish role_image_artifacts.orbit-websocket for credential-free websocket role acquisition.');
+          }
+
+          $reverbAsset = 'orbit-reverb-linux-amd64.tar';
+          $expectedReverbUrl = "https://github.com/{$repository}/releases/download/v{$version}/{$reverbAsset}";
+
+          if (($websocketArtifact['url'] ?? null) !== $expectedReverbUrl) {
+              fail("Release manifest role_image_artifacts.orbit-websocket URL must point at {$expectedReverbUrl}.");
+          }
+
+          $reverbPath = "{$assetDir}/{$reverbAsset}";
+
+          if (! is_file($reverbPath)) {
+              fail("Release manifest websocket role image archive {$reverbAsset} was not published with the release.");
+          }
+
+          $reverbHash = hash_file('sha256', $reverbPath);
+
+          if (! is_string($reverbHash) || ($websocketArtifact['sha256'] ?? null) !== $reverbHash) {
+              fail('Release manifest role_image_artifacts.orbit-websocket sha256 does not match the promoted archive.');
           }
 
           file_put_contents(getenv('GITHUB_OUTPUT'), "gateway_ref={$gateway}\n", FILE_APPEND);

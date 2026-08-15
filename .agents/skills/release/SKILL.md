@@ -62,10 +62,20 @@ manifests.
   the pushed `origin/main` commit, give the candidate a unique `build_id`, and
   make the no-GitHub boundary explicit in the report.
 - The GitHub Actions release workflow must verify the promoted
-  `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-release-manifest.json`, and
-  digest-pinned `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then
-  publish the split package repos and matching tags. It must not run CLI binary
-  builds, gateway image builds, or `gh release upload --clobber`.
+  `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-reverb-linux-amd64.tar`,
+  `orbit-release-manifest.json`, and digest-pinned
+  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then publish the split
+  package repos and matching tags. It must not run CLI binary builds, gateway
+  image builds, or `gh release upload --clobber`. Promotion fails closed when
+  the reverb role image archive is missing, when the manifest
+  `role_image_artifacts.orbit-websocket` URL is not the public release download
+  URL, or when its SHA-256 does not match the published archive.
+- The promoted `github-release` manifest must carry
+  `role_image_artifacts.orbit-websocket` (the public `orbit-reverb-linux-amd64.tar`
+  download URL plus SHA-256). Product authority forbids distributing or
+  persisting registry credentials and forbids a cached-image trust shortcut, so
+  credential-free retained websocket-role acquisition loads the digest-pinned
+  role image from this hash-verified archive with registry resolution disabled.
 - `orbit update:all` is the acceptance path. It updates the operator CLI,
   gateway service, scheduler service, selected workload node CLIs, and Orbit
   Agent binaries from the candidate manifest before GitHub publication.
@@ -286,6 +296,7 @@ manifests.
 
    cp "${candidate_dir}/orbit-linux-x64" orbit-linux-x64
    cp "${candidate_dir}/orbit-macos-arm64" orbit-macos-arm64
+   cp "${candidate_dir}/orbit-reverb-linux-amd64.tar" orbit-reverb-linux-amd64.tar
 
    bin/orbit-release-manifest \
      --version="$version" \
@@ -298,9 +309,19 @@ manifests.
      --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
      --role-image="orbit-caddy=caddy:2-alpine" \
      --role-image="orbit-frankenphp=${stable_frankenphp_image}@${frankenphp_digest}" \
-     --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
+     --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
+     --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=orbit-reverb-linux-amd64.tar" \
      --output="orbit-release-manifest.json"
    ```
+
+   The `orbit-reverb-linux-amd64.tar` archive is copied from the hash-verified
+   candidate state so the promoted manifest carries
+   `role_image_artifacts.orbit-websocket` with the public release download URL
+   and the archive SHA-256. The `orbit-websocket` role image stays
+   digest-pinned to the accepted candidate reverb image
+   (`${candidate_reverb_image}@${reverb_digest}` from `candidate.env`);
+   credential-free retained nodes load the pinned image from the published
+   archive instead of pulling the private GHCR digest.
 
 14. Create a draft release, attach the tested files, and publish the draft. The
     release workflow runs on the `release.published` event, so a tag push alone
@@ -318,10 +339,16 @@ manifests.
    gh release upload "v${version}" \
      orbit-linux-x64 \
      orbit-macos-arm64 \
+     orbit-reverb-linux-amd64.tar \
      orbit-release-manifest.json
 
    gh release edit "v${version}" --draft=false
    ```
+
+   `orbit-reverb-linux-amd64.tar` must be attached to the release so the URL
+   recorded in `role_image_artifacts.orbit-websocket` resolves publicly. The
+   release workflow requires it and fails the promotion when the archive is
+   missing, its manifest URL is wrong, or the archive SHA-256 mismatches.
 
 15. Watch the `Orbit Release` workflow until it succeeds. It verifies the
     attached assets and digest-pinned gateway image, then publishes the split
@@ -334,6 +361,7 @@ manifests.
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-release-manifest.json"
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-linux-x64"
    curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-macos-arm64"
+   curl -fsSI "https://github.com/hardimpactdev/orbit/releases/download/v${version}/orbit-reverb-linux-amd64.tar"
    tmp="$(mktemp -d)"
    trap 'rm -rf "$tmp"' EXIT
    DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"

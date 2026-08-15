@@ -19,6 +19,113 @@ function prepareReleaseWorkflowPackage(string $package, string $version, string 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
 }
 
+/**
+ * Extract the exact inline PHP verifier embedded in the release workflow so it
+ * can be executed against fixtures. The workflow runs it as a `php <<'PHP'`
+ * heredoc whose leading indentation is stripped by the YAML block scalar.
+ */
+function releaseWorkflowVerificationScript(): string
+{
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+    $capturing = false;
+    $php = [];
+
+    foreach (explode("\n", $workflow) as $line) {
+        if (! $capturing) {
+            if (str_contains($line, "php <<'PHP'")) {
+                $capturing = true;
+            }
+
+            continue;
+        }
+
+        if (trim($line) === 'PHP') {
+            break;
+        }
+
+        $php[] = preg_replace('/^ {10}/', '', $line);
+    }
+
+    expect($php)->not->toBeEmpty();
+
+    return implode("\n", $php);
+}
+
+/**
+ * Build a promotion asset directory whose manifest, CLI binaries, and websocket
+ * role image archive are internally consistent for the given version.
+ */
+function releaseWorkflowAssetDir(string $version = '1.2.3'): string
+{
+    $root = sys_get_temp_dir().'/orbit-release-verify-'.bin2hex(random_bytes(6));
+
+    mkdir($root, 0o700, true);
+    file_put_contents("{$root}/orbit-linux-x64", 'linux-binary-'.bin2hex(random_bytes(4)));
+    file_put_contents("{$root}/orbit-macos-arm64", 'mac-binary-'.bin2hex(random_bytes(4)));
+    file_put_contents("{$root}/orbit-reverb-linux-amd64.tar", 'reverb-image-'.bin2hex(random_bytes(4)));
+
+    $process = new Process([
+        PHP_BINARY,
+        repo_path('bin/orbit-release-manifest'),
+        "--version={$version}",
+        '--source=github-release',
+        "--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:{$version}@sha256:".str_repeat('a', times: 64),
+        '--repository=hardimpactdev/orbit',
+        "--cli-artifact=linux-amd64=orbit-linux-x64={$root}/orbit-linux-x64",
+        "--cli-artifact=darwin-arm64=orbit-macos-arm64={$root}/orbit-macos-arm64",
+        '--role-image=orbit-caddy=caddy:2-alpine',
+        "--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:{$version}@sha256:".str_repeat('d', times: 64),
+        "--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar={$root}/orbit-reverb-linux-amd64.tar",
+        "--output={$root}/orbit-release-manifest.json",
+    ], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+    return $root;
+}
+
+/**
+ * @return array{process: Process, output: string}
+ */
+function runReleaseWorkflowVerification(
+    string $assetDir,
+    string $version = '1.2.3',
+    string $repository = 'hardimpactdev/orbit',
+): array {
+    $script = sys_get_temp_dir().'/orbit-release-verify-script-'.bin2hex(random_bytes(6)).'.php';
+    $output = sys_get_temp_dir().'/orbit-release-verify-output-'.bin2hex(random_bytes(6));
+
+    file_put_contents($script, releaseWorkflowVerificationScript());
+    file_put_contents($output, '');
+
+    $process = new Process([PHP_BINARY, $script], repo_path(), [
+        'ASSET_DIR' => $assetDir,
+        'VERSION' => $version,
+        'GITHUB_REPOSITORY' => $repository,
+        'GITHUB_OUTPUT' => $output,
+        'PATH' => (string) getenv('PATH'),
+    ]);
+    $process->run();
+
+    return ['process' => $process, 'output' => $output];
+}
+
+/**
+ * @param  callable(array<string, mixed>): array<string, mixed>  $mutator
+ */
+function mutateReleaseWorkflowManifest(string $assetDir, callable $mutator): void
+{
+    $path = "{$assetDir}/orbit-release-manifest.json";
+    /** @var array<string, mixed> $manifest */
+    $manifest = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+
+    file_put_contents(
+        $path,
+        json_encode($mutator($manifest), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n",
+    );
+}
+
 it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub releases', function (): void {
     $workflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
 
@@ -110,6 +217,124 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
     expect($workflow)->toMatch(
         '/if \[ "\$actual_digest" != "\$expected_digest" \]; then\n\s+echo "Promoted gateway digest is \[\$\{actual_digest:-missing\}\], expected \[\$expected_digest\]\." >&2\n\s+exit 1\n\s+fi/',
     );
+});
+
+it('requires publishes and hash-verifies the websocket role image archive during promotion', function (): void {
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        // The reverb role image archive is downloaded and required to be present.
+        ->toContain('--pattern orbit-reverb-linux-amd64.tar')
+        ->toContain('test -s "$asset_dir/orbit-reverb-linux-amd64.tar"')
+        // The promoted manifest must expose the credential-free websocket artifact.
+        ->toContain("\$manifest['role_image_artifacts']['orbit-websocket']")
+        ->toContain('Release manifest must publish role_image_artifacts.orbit-websocket')
+        ->toContain(
+            '$expectedReverbUrl = "https://github.com/{$repository}/releases/download/v{$version}/{$reverbAsset}";',
+        )
+        ->toContain('Release manifest role_image_artifacts.orbit-websocket URL must point at')
+        ->toContain('Release manifest websocket role image archive')
+        ->toContain("hash_file('sha256', \$reverbPath)")
+        ->toContain(
+            'Release manifest role_image_artifacts.orbit-websocket sha256 does not match the promoted archive.',
+        );
+
+    // The archive download precedes manifest verification which precedes gateway promotion.
+    expect($workflow)->toMatch(
+        '/--pattern orbit-reverb-linux-amd64\.tar[\s\S]*Verify promoted release manifest[\s\S]*role_image_artifacts.*orbit-websocket[\s\S]*Promote canonical gateway image version tag/',
+    );
+});
+
+it('accepts a promotion manifest whose websocket archive url and checksum match', function (): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        ['process' => $process, 'output' => $output] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and((string) file_get_contents($output))
+            ->toContain('gateway_ref=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
+});
+
+it('fails promotion verification when the websocket archive is missing', function (): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        unlink("{$assetDir}/orbit-reverb-linux-amd64.tar");
+
+        ['process' => $process] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('websocket role image archive');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
+});
+
+it('fails promotion verification when the websocket artifact entry is absent', function (): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        mutateReleaseWorkflowManifest($assetDir, function (array $manifest): array {
+            unset($manifest['role_image_artifacts']);
+
+            return $manifest;
+        });
+
+        ['process' => $process] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('role_image_artifacts.orbit-websocket');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
+});
+
+it('fails promotion verification when the websocket artifact url is wrong', function (): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        mutateReleaseWorkflowManifest($assetDir, function (array $manifest): array {
+            $manifest['role_image_artifacts']['orbit-websocket']['url'] = 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/wrong-asset.tar';
+
+            return $manifest;
+        });
+
+        ['process' => $process] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('URL must point at');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
+});
+
+it('fails promotion verification when the websocket archive checksum mismatches', function (): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        // Rewrite the archive bytes after the manifest recorded the original hash.
+        file_put_contents("{$assetDir}/orbit-reverb-linux-amd64.tar", 'tampered-reverb-image');
+
+        ['process' => $process] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('sha256 does not match the promoted archive');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
 });
 
 it('keeps the TypeScript SDK independently versioned with Craft-style package-repo OIDC publish', function (): void {
