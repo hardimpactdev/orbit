@@ -105,8 +105,18 @@ final readonly class EnsureAppProcessRuntimeUnits
     {
         $driver = $this->runtimeDrivers->forProcess($process);
         $unitName = $driver->runtimeUnitName($app, $process, $workspace);
+        $node = $this->placement->runtimeNode($app, $process->instance);
 
-        if (! $driver->apply($app->node, $app, $process, $workspace)) {
+        if (! $node instanceof Node) {
+            return [[
+                'code' => 'process.runtime_unit_missing',
+                'family' => 'process',
+                'message' => "Process runtime unit '{$unitName}' was not enacted. Run doctor to converge process runtime units.",
+                'next_command' => 'doctor --family=process --restore',
+            ]];
+        }
+
+        if (! $driver->apply($node, $app, $process, $workspace)) {
             return [[
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
@@ -136,14 +146,16 @@ final readonly class EnsureAppProcessRuntimeUnits
      */
     private function ensureSiteCertificate(App $app, ?Workspace $workspace, ?Instance $instance = null): ?array
     {
-        if ($app->node === null) {
+        $node = $this->placement->runtimeNode($app, $instance);
+
+        if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
         $host = $this->host($app, $workspace, $instance);
 
         try {
-            $this->siteCertificateInstaller->ensureFor($app->node, $host);
+            $this->siteCertificateInstaller->ensureFor($node, $host);
 
             return null;
         } catch (Throwable) {

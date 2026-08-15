@@ -48,8 +48,7 @@ final readonly class AppsFixer
      */
     public function fix(App $app, DriftEntry $entry): ?array
     {
-        $app->loadMissing('node');
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, null);
 
         if (! $node instanceof Node) {
             return null;

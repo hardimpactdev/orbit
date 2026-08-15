@@ -7,6 +7,7 @@ namespace App\Enums\Processes;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 
 enum ProcessRuntime: string
 {
@@ -17,11 +18,11 @@ enum ProcessRuntime: string
 
     public static function defaultForApp(App $app): self
     {
-        if ($app->node instanceof Node && NodeHostPaths::isMacosPlatform($app->node->platform)) {
-            return self::Launchd;
-        }
+        // App owns no node: the default runtime follows the app's primary
+        // concrete instance placement.
+        $node = app(WorkspacePlacement::class)->runtimeNode($app, null);
 
-        if (NodeHostPaths::isMacosPlatform((string) $app->getAttribute('node.platform'))) {
+        if ($node instanceof Node && NodeHostPaths::isMacosPlatform($node->platform)) {
             return self::Launchd;
         }
 

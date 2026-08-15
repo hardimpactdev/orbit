@@ -500,6 +500,14 @@ it('repairs the production runtime user when handed app.security.system_user', f
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
+    ]);
     fake_apps_fixer_security_repair();
     $runtimeUser = app(AppRuntimeUser::class)->forApp($app);
     $runtimeHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
@@ -536,6 +544,14 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
     ]);
     fake_apps_fixer_security_repair();
     $runtimeUser = app(AppRuntimeUser::class)->forApp($app);

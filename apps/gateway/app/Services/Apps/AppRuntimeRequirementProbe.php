@@ -10,12 +10,14 @@ use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppRuntimeRequirementProbe
 {
     public function __construct(
         private RemoteAppRuntimeExtensionsProbe $extensionsProbe,
         private AppRuntimeContainerRenderer $renderer,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -29,14 +31,14 @@ final readonly class AppRuntimeRequirementProbe
             return [];
         }
 
-        $instance->loadMissing('app.node');
+        $instance->loadMissing('app');
         $app = $instance->app;
 
         if ($instance->driver !== InstanceDriver::Orbit || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if (! $node instanceof Node) {
             return [

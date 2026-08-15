@@ -15,6 +15,7 @@ final readonly class WorkspaceReadinessProbe
     public function __construct(
         private int $maxAttempts = 10,
         private int $retryDelayMilliseconds = 1_000,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -61,7 +62,7 @@ final readonly class WorkspaceReadinessProbe
             return ['reachable' => false, 'status' => 'no_app'];
         }
 
-        $node = $app->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             return ['reachable' => false, 'status' => 'no_node'];

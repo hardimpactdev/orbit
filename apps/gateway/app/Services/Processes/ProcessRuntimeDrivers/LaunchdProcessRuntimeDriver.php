@@ -11,6 +11,7 @@ use App\Models\Workspace;
 use App\Services\Processes\LaunchdPlistRenderer;
 use App\Services\Processes\LaunchdProcessRuntimePolicy;
 use App\Services\Processes\RemoteLaunchdService;
+use App\Services\Workspaces\WorkspacePlacement;
 use Throwable;
 
 /**
@@ -22,6 +23,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         private LaunchdPlistRenderer $renderer,
         private LaunchdProcessRuntimePolicy $runtimePolicy,
         private RemoteLaunchdService $launchd,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function runtimeUnitName(?App $app, Process $process, ?Workspace $workspace = null): string
@@ -116,7 +118,7 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         int $lines,
         bool $follow,
     ): string {
-        $node = $app instanceof App && $app->node instanceof Node ? $app->node : null;
+        $node = $app instanceof App ? $this->placement->runtimeNode($app, $process->instance) : null;
 
         if (! $node instanceof Node) {
             return 'printf %s '.escapeshellarg("launchd logs require an app node context.\n");

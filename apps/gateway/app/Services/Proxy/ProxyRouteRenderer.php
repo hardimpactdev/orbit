@@ -14,6 +14,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class ProxyRouteRenderer
@@ -23,6 +24,7 @@ final readonly class ProxyRouteRenderer
         private AppProxyRouteTargetResolver $appRouteTargets = new AppProxyRouteTargetResolver,
         private AppProxyRouteRuntimeTargets $appRouteRuntimeTargets = new AppProxyRouteRuntimeTargets,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     private const string WebSocketStreamCloseDelay = '5m';
@@ -124,7 +126,7 @@ final readonly class ProxyRouteRenderer
             return;
         }
 
-        $node = $app->node ?? $route->node;
+        $node = $this->placement->nodeForWorkspace($workspace) ?? $route->node;
 
         if (! $node instanceof Node) {
             return;
@@ -1086,7 +1088,7 @@ final readonly class ProxyRouteRenderer
                 return null;
             }
 
-            $node = $app->node;
+            $node = $this->placement->nodeForWorkspace($workspace);
 
             if (! $node instanceof Node) {
                 return null;

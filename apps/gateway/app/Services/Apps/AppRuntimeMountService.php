@@ -185,18 +185,10 @@ final readonly class AppRuntimeMountService
 
     private function homeForValidation(App $app, ?Instance $instance = null): string
     {
-        if ($instance instanceof Instance) {
-            $node = $this->placement->nodeForInstance($instance);
+        $node = $this->placement->runtimeNode($app, $instance);
 
-            if ($node instanceof Node) {
-                return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
-            }
-        }
-
-        $app->loadMissing('node');
-
-        if ($app->node instanceof Node) {
-            return NodeHostPaths::homeDirectoryFor($app->node->platform, $app->node->user);
+        if ($node instanceof Node) {
+            return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
         }
 
         return NodeHostPaths::homeDirectoryFor(null, $this->nodeUser($app));
@@ -238,9 +230,7 @@ final readonly class AppRuntimeMountService
 
     private function nodeUser(App $app): string
     {
-        $app->loadMissing('node');
-
-        $nodeUser = trim($app->node?->user ?: 'orbit');
+        $nodeUser = trim($this->placement->runtimeNode($app, null)?->user ?: 'orbit');
 
         if ($nodeUser === '' || preg_match('/^[A-Za-z0-9._-]+$/', $nodeUser) !== 1) {
             throw $this->validationFailure(

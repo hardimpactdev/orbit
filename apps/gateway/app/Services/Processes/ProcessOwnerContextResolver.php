@@ -202,9 +202,7 @@ final readonly class ProcessOwnerContextResolver
         $app = $selection->app;
 
         $instance = $selection->instance;
-        $node = $instance !== null
-            ? $this->placement->nodeForInstance($instance)
-            : $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if ($visibleNodeIds !== null && (! $node instanceof Node || ! in_array($node->id, $visibleNodeIds, true))) {
             throw new GatewayApiException("Instance '{$appName}' not found or not visible.", 'validation_failed', [
@@ -323,12 +321,9 @@ final readonly class ProcessOwnerContextResolver
 
     private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
-        $app->loadMissing('node');
         $selection ??= $this->requireInstance(new AppSelection(app: $app));
         $instance = $selection->instance;
-        $node = $instance !== null
-            ? $this->placement->nodeForInstance($instance)
-            : $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if (! $node instanceof Node) {
             throw new GatewayApiException("Instance '{$app->name}' has no node.", 'validation_failed', [

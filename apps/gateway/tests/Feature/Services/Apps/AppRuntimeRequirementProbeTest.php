@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Apps\InstanceRuntimeRequirementsData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -42,6 +43,12 @@ it('reports missing required PHP extensions with stable issue codes', function (
     $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/billing',
+            document_root: 'public',
+        ),
         'runtime_requirements' => new InstanceRuntimeRequirementsData(
             php_extensions: ['redis', 'intl'],
         ),
