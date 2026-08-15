@@ -1738,9 +1738,12 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/cli/tests/Feature/InternalDatabaseQueryLocalCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php",
+                "apps/gateway/tests/Feature/Services/DatabaseConnections/DatabaseQueryRunnerTest.php",
                 "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php",
-                "packages/core/tests/Database/DatabaseQueryClassifierTest.php"
+                "packages/core/tests/Database/DatabaseQueryClassifierTest.php",
+                "packages/core/tests/Database/DatabaseReadOnlyGuardTest.php"
             ],
             "verification_hints": [
                 {
@@ -1751,11 +1754,25 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php"
                 },
                 {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalDatabaseQueryLocalCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalDatabaseQueryLocalCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalDatabaseQueryLocalCommandTest.php"
+                },
+                {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Services/DatabaseConnections/DatabaseQueryRunnerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Services/DatabaseConnections/DatabaseQueryRunnerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/DatabaseConnections/DatabaseQueryRunnerTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php",
@@ -1770,6 +1787,13 @@
                     "runner": "vendor/bin/pest",
                     "runner_test_path": "tests/Database/DatabaseQueryClassifierTest.php",
                     "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/Database/DatabaseQueryClassifierTest.php"
+                },
+                {
+                    "repo_test_path": "packages/core/tests/Database/DatabaseReadOnlyGuardTest.php",
+                    "working_directory": "packages/core",
+                    "runner": "vendor/bin/pest",
+                    "runner_test_path": "tests/Database/DatabaseReadOnlyGuardTest.php",
+                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/Database/DatabaseReadOnlyGuardTest.php"
                 }
             ],
             "p4_mapping": {
