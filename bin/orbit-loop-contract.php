@@ -905,7 +905,11 @@ function orbitLoopAcceptanceVenue(array $changedFiles): string
     $venue = 'automated';
 
     foreach ($changedFiles as $path) {
-        $path = ltrim((string) $path, './');
+        $path = (string) $path;
+
+        if (str_starts_with($path, './')) {
+            $path = substr($path, 2);
+        }
 
         if ($path === '' || orbitLoopPathIsAutomationOnly($path)) {
             continue;
@@ -954,7 +958,7 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || in_array(
             $path,
             [
-                'orbit/sessions/index.json',
+                '.orbit/sessions/index.json',
                 'composer.json',
                 'composer.lock',
                 'LOOP.md.example',
