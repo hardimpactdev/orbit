@@ -48,7 +48,8 @@ The instance family owns these facts:
   container isolation,
   reported as `instance.security.*` issue keys inside the instance family;
 - production instance health: production instance health checks plus deployment pipeline
-  validity and latest deployment status recorded on each concrete instance;
+  validity and the latest deployment status derived from the greatest deployment run ID
+  that belongs to each concrete instance;
 - adoption facts recorded on the instance by `instance:register`; Doctor never
   infers or creates an app or instance from an observed path;
 - stale managed instance runtime configuration with dotted identities absent
@@ -228,5 +229,6 @@ No current E2E test is mapped for instance-family doctor coverage.
 path, document root, PHP runtime, managed runtime configuration, the
 configuration for instance runtime targets, production
 user policy, and production health. It also covers deployment pipeline
-configuration per instance, latest deployment status, stale artifacts, and exclusion of
+configuration per instance, latest deployment status derived from the greatest
+instance-owned deployment run ID, stale artifacts, and exclusion of
 proxy/workspace/process/schedule/node/tool/firewall drift.
