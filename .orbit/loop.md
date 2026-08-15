@@ -21,9 +21,9 @@ Make Instance the sole analytics and WebSocket binding authority so sibling inst
 ## Proof
 
 - Verification:
-  - focused: passed — candidate `9794fbd4e79edd64336cff13394a8e64d56e8ebd`; binding suite 82 tests, 443 assertions; E2E runtime-user regression 1 test, 4 assertions; readiness file 14 tests, 113 assertions.
-  - broader: passed — `composer quality-check`; candidate `9794fbd4e79edd64336cff13394a8e64d56e8ebd`; exit 0 in 130 seconds; evidence `.orbit/quality-gates/quality-check-2026-08-15T134029Z-5079232c1f89.json`.
-  - runtime: pending — the exact prepared websocket bake passed with transient GHCR auth and scrubbed snapshots prove zero credentials, but retained acquisition rebakes websocket on an unauthenticated clone and fails at `ensureManifestRuntimeImage`; todo #775 owns the release-artifact blocker and #747 is linked to it; evidence `.orbit/evidence/747-incus-artifact-plan.txt`.
+  - focused: passed — candidate `4d16d3f94897104a4fb26bf7586741bacf8a8f3c`; binding suite 82 tests, 443 assertions; readiness file (incl. runtime-user regression) 14 tests, 113 assertions.
+  - broader: refreshing — full `composer quality-check` runs against this committed candidate; receipt recorded in the trailing evidence commit that cites the exact `.orbit/quality-gates/` path.
+  - runtime: passed — candidate=4d16d3f94897104a4fb26bf7586741bacf8a8f3c; venue=retained-incus; environment=dev-fixture; command=orbit:internal:bake-websocket-node app-dev-1 --converge-runtime against topology dev-dfadb2 with the artifact-bearing candidate manifest; expected=credential-free websocket convergence loads the hash-verified role archive and Instance-owned bindings resolve on the live node; observed=bake exit 0 with docker auths=0 and no GHCR pull, container runs the artifact image sha256:2ac8fe9c restarts=0, live apps.php carries acme747.blue and acme747.green, 18/18 acceptance checks PASS; result=passed; evidence=`.orbit/evidence/747-live-runtime-proof.txt`
 - Blast radius: pending
 - Review: pending
 - Reviewed feature tip: none
@@ -34,8 +34,8 @@ Make Instance the sole analytics and WebSocket binding authority so sibling inst
 
 ## Status
 
-- State: blocked
-- Blocker: Todo #775 owns the linked release-artifact defect: retained acquisition always reconverges websocket after cloning the scrubbed app-dev snapshot, and `image:ensure` performs a fresh pull from private GHCR after credentials are correctly removed. Candidate `9794fbd4e79edd64336cff13394a8e64d56e8ebd` is clean and fully quality-checked. Todo #747 still owns cleanup of candidate namespace `solo-747-12de6e0f`, its staged gateway image, and the repository-defined `incusbr0` FORWARD rules after retained proof. No reviewer, acceptance, LAND, release, deployment, or push has run.
+- State: prove
+- Blocker: none. Blocker #775 landed on origin/main `a148bd1953cd4fa21e87cff130ef7cb22600d900`; the branch was rebased onto it (product-code diff byte-identical). Live retained runtime proof now passes credential-free via the #775 artifact-bearing manifest route: topology `dev-dfadb2` on beast acquired without websocket convergence, a local HTTPS artifact relay (reachable + SHA-256-verified from app-dev-1) plus an artifact-bearing candidate manifest, then websocket convergence loaded the hash-verified archive with zero Docker credentials. A separate pre-existing product convergence defect surfaced (fixed-tag websocket spec hash → no container recreation on image upgrade) — filed as Solo todo #776, NOT a blocker of #747 and NOT fixed here. Cleanup still owned by #747 after review: retained topology `dev-dfadb2` and its local relay assets, image `orbit-gateway:solo-747-12de6e0f`, and the `incusbr0` FORWARD rules. No reviewer, acceptance, LAND, release, deployment, or push has run; stopping at a clean candidate for the separate local Solo reviewer.
 
 ## Feedback
 
