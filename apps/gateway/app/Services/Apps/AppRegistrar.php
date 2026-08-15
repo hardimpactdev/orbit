@@ -19,6 +19,7 @@ use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Support\GatewayActionResult;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -41,6 +42,7 @@ final class AppRegistrar
     public function __construct(
         private readonly RemoteAppSourcePathProbe $sourcePathProbe,
         private readonly AppRegistrationResultAction $resultAction,
+        private readonly WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -685,26 +687,7 @@ final class AppRegistrar
 
     private function registrationEnvironment(?string $domain, Node $node): string
     {
-        if ($domain === null) {
-            return 'development';
-        }
-
-        if ($this->isDevelopmentDomainForNode($domain, $node)) {
-            return 'development';
-        }
-
-        return 'production';
-    }
-
-    private function isDevelopmentDomainForNode(string $domain, Node $node): bool
-    {
-        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-dev')) {
-            return false;
-        }
-
-        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
-
-        return $tld !== '' && str_ends_with($domain, ".{$tld}");
+        return $this->placement->environmentFor($domain, $node);
     }
 
     private function routeConflict(

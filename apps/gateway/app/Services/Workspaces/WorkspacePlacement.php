@@ -147,6 +147,48 @@ final class WorkspacePlacement
         return "{$app->name}.{$tld}";
     }
 
+    /**
+     * Derive an instance's environment from its own placement rather than an
+     * app-owned column. This mirrors AppRegistrar::registrationEnvironment: the
+     * instance's driver-config domain plus its serving node role decide whether
+     * it is a development or production runtime, so Instance stays the single
+     * placement authority.
+     */
+    public function environmentForInstance(Instance $instance): string
+    {
+        $config = $instance->driver_config;
+        $domain = $config instanceof OrbitInstanceDriverConfigData ? $config->domain : null;
+
+        return $this->environmentFor(
+            is_string($domain) && $domain !== '' ? $domain : null,
+            $this->nodeForInstance($instance),
+        );
+    }
+
+    public function environmentFor(?string $domain, ?Node $node): string
+    {
+        if ($domain === null || $domain === '') {
+            return 'development';
+        }
+
+        if ($node instanceof Node && $this->isDevelopmentDomainForNode($domain, $node)) {
+            return 'development';
+        }
+
+        return 'production';
+    }
+
+    private function isDevelopmentDomainForNode(string $domain, Node $node): bool
+    {
+        if (! $node->hasActiveRole('app-dev')) {
+            return false;
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+
+        return $tld !== '' && str_ends_with($domain, ".{$tld}");
+    }
+
     public function matchingOrbitInstanceForPath(App $app, string $path): ?Instance
     {
         $path = rtrim($path, '/');
