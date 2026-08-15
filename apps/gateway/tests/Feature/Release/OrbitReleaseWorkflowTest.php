@@ -106,6 +106,10 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
     expect($workflow)->toMatch(
         '/docker buildx imagetools create[\s\S]*docker buildx imagetools inspect "\$promoted_ref"[\s\S]*actual_digest=[\s\S]*if \[ "\$actual_digest" != "\$expected_digest" \]; then[\s\S]*Verify promoted gateway image is pullable/',
     );
+
+    expect($workflow)->toMatch(
+        '/if \[ "\$actual_digest" != "\$expected_digest" \]; then\n\s+echo "Promoted gateway digest is \[\$\{actual_digest:-missing\}\], expected \[\$expected_digest\]\." >&2\n\s+exit 1\n\s+fi/',
+    );
 });
 
 it('keeps the TypeScript SDK independently versioned with Craft-style package-repo OIDC publish', function (): void {
