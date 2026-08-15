@@ -7,7 +7,6 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Services\ApplicationLogs\ApplicationLogPathResolver;
-use App\Services\Processes\ProcessRuntimeApp;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -39,8 +38,9 @@ describe('ApplicationLogPathResolver', function (): void {
         ]);
 
         $resolver = app(ApplicationLogPathResolver::class);
-        $runtimeApp = ProcessRuntimeApp::make($app, $serving, $instance);
-        $root = $resolver->hostApplicationRoot($runtimeApp);
+        $config = $instance->driver_config;
+        assert($config instanceof OrbitInstanceDriverConfigData);
+        $root = $resolver->hostApplicationRoot((string) $config->path, (string) $config->document_root);
         $paths = $resolver->forInstance($app, $instance);
 
         expect($root)
@@ -77,8 +77,9 @@ describe('ApplicationLogPathResolver', function (): void {
         ]);
 
         $resolver = app(ApplicationLogPathResolver::class);
-        $runtimeApp = ProcessRuntimeApp::make($app, $serving, $instance);
-        $root = $resolver->hostApplicationRoot($runtimeApp);
+        $config = $instance->driver_config;
+        assert($config instanceof OrbitInstanceDriverConfigData);
+        $root = $resolver->hostApplicationRoot((string) $config->path, (string) $config->document_root);
         $paths = $resolver->forInstance($app, $instance);
 
         expect($root)

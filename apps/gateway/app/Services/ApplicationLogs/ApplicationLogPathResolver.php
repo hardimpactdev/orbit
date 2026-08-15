@@ -7,7 +7,6 @@ namespace App\Services\ApplicationLogs;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -34,8 +33,10 @@ final readonly class ApplicationLogPathResolver
             );
         }
 
-        $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
-        $root = $this->hostApplicationRoot($runtimeApp);
+        $root = $this->hostApplicationRoot(
+            $this->placement->runtimePath($app, $instance),
+            $this->placement->runtimeDocumentRoot($app, $instance),
+        );
 
         return $this->paths($root);
     }
@@ -61,10 +62,10 @@ final readonly class ApplicationLogPathResolver
     /**
      * Host-side mirror of AppRuntimeContainerRenderer::applicationRootInContainer().
      */
-    public function hostApplicationRoot(App $runtimeApp): string
+    public function hostApplicationRoot(string $path, string $documentRoot): string
     {
-        $base = rtrim($runtimeApp->path, characters: '/');
-        $documentRoot = trim((string) $runtimeApp->document_root, characters: '/');
+        $base = rtrim($path, characters: '/');
+        $documentRoot = trim($documentRoot, characters: '/');
 
         if ($documentRoot === 'live' || str_starts_with($documentRoot, 'live/')) {
             return $base.'/live';
