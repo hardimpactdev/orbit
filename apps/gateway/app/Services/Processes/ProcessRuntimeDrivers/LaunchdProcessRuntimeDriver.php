@@ -24,14 +24,14 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
         private RemoteLaunchdService $launchd,
     ) {}
 
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->unitName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -109,14 +109,14 @@ final readonly class LaunchdProcessRuntimeDriver implements ProcessRuntimeDriver
      * @mago-expect lint:no-boolean-flag-parameter
      */
     public function logScript(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,
         int $lines,
         bool $follow,
     ): string {
-        $node = $app->node instanceof Node ? $app->node : null;
+        $node = $app instanceof App && $app->node instanceof Node ? $app->node : null;
 
         if (! $node instanceof Node) {
             return 'printf %s '.escapeshellarg("launchd logs require an app node context.\n");

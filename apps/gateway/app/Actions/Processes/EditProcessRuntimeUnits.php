@@ -114,7 +114,7 @@ final readonly class EditProcessRuntimeUnits
         // written with workspace_id=null (which would starve workspace streams
         // and contaminate main-scope status derivation).
         $app = $context->runtimeApp();
-        $app->loadMissing(['workspaces']);
+        $app?->loadMissing(['workspaces']);
 
         foreach ($runtimeUnits as $runtimeUnit) {
             $workspace = $this->resolver->runtimeWorkspaceForUnit(

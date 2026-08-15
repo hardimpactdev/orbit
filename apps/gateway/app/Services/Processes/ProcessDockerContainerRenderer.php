@@ -25,13 +25,15 @@ final readonly class ProcessDockerContainerRenderer
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function render(App $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
+    public function render(?App $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
     {
         $process->loadMissing('owner');
 
         if ($process->owner instanceof Node) {
             return $this->renderNodeProcess($process->owner, $process);
         }
+
+        assert($app instanceof App);
 
         $runtime = $app->runtimeKind();
 
@@ -79,7 +81,7 @@ final readonly class ProcessDockerContainerRenderer
         );
     }
 
-    public function containerName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function containerName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
@@ -92,6 +94,8 @@ final readonly class ProcessDockerContainerRenderer
         if ($process->owner instanceof Node) {
             return $this->assertIdentitySlug($process->name);
         }
+
+        assert($app instanceof App);
 
         $this->assertIdentitySlug($app->name);
         $this->assertIdentitySlug($process->name);
@@ -119,8 +123,9 @@ final readonly class ProcessDockerContainerRenderer
         return $name;
     }
 
-    private function restartPolicy(App $app, Process $process): string
+    private function restartPolicy(?App $app, Process $process): string
     {
+        assert($app instanceof App);
         $process->loadMissing('instance');
 
         return $this->placement->runtimeNode($app, $process->instance)?->hasActiveRole('app-dev') === true
@@ -171,7 +176,7 @@ final readonly class ProcessDockerContainerRenderer
         );
     }
 
-    private function resolvePhpVersion(App $app, ?Workspace $workspace, Process $process): ?string
+    private function resolvePhpVersion(?App $app, ?Workspace $workspace, Process $process): ?string
     {
         if ($workspace instanceof Workspace) {
             $version = $workspace->effectivePhpVersion();
@@ -179,14 +184,16 @@ final readonly class ProcessDockerContainerRenderer
             return is_string($version) && trim($version) !== '' ? trim($version) : null;
         }
 
+        assert($app instanceof App);
         $process->loadMissing('instance');
         $version = $this->placement->runtimePhpVersion($app, $process->instance);
 
         return trim($version) !== '' ? trim($version) : null;
     }
 
-    private function resolveSourcePath(App $app, ?Workspace $workspace, Process $process): string
+    private function resolveSourcePath(?App $app, ?Workspace $workspace, Process $process): string
     {
+        assert($app instanceof App);
         $process->loadMissing('instance');
         $path = $workspace instanceof Workspace
             ? $workspace->path
@@ -205,8 +212,9 @@ final readonly class ProcessDockerContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environmentFor(App $app, Process $process, ?Workspace $workspace, string $phpVersion): array
+    private function environmentFor(?App $app, Process $process, ?Workspace $workspace, string $phpVersion): array
     {
+        assert($app instanceof App);
         $home = '/root';
 
         $environment =

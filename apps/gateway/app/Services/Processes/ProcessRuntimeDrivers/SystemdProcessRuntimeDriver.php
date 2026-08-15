@@ -19,14 +19,14 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         private RemoteSystemdService $systemd,
     ) {}
 
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->unitName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -85,7 +85,7 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
     }
 
     public function logScript(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

@@ -27,26 +27,21 @@ final readonly class ProcessOwnerContext
         public ?Instance $instance = null,
     ) {}
 
-    public function runtimeApp(): App
+    /**
+     * The logical app for app/workspace-owned processes, or null for
+     * node-owned host processes. Process-unit renderers resolve placement from
+     * the process's own instance (or its node for node-owned processes), so no
+     * synthetic runtime App is fabricated for node ownership.
+     */
+    public function runtimeApp(): ?App
     {
         if ($this->app instanceof App) {
-            // The logical app is returned as-is; process-unit renderers resolve
-            // placement (node/path/php version) from the process's own instance.
             $this->app->setRelation('node', $this->node);
 
             return $this->app;
         }
 
-        $home = new NodeHostPaths()->homeDirectory($this->node);
-
-        $app = new App([
-            'name' => $this->node->name,
-            'path' => $home,
-            'node_id' => $this->node->id,
-        ]);
-        $app->setRelation('node', $this->node);
-
-        return $app;
+        return null;
     }
 
     public function defaultRuntime(): ProcessRuntime

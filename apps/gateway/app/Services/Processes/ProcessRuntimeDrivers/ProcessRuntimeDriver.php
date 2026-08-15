@@ -11,11 +11,11 @@ use App\Models\Workspace;
 
 interface ProcessRuntimeDriver
 {
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string;
+    public function runtimeUnitName(?App $app, Process $process, ?Workspace $workspace = null): string;
 
     public function apply(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool;
@@ -33,7 +33,7 @@ interface ProcessRuntimeDriver
     public function isRunning(Node $node, string $runtimeUnit): bool;
 
     public function logScript(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

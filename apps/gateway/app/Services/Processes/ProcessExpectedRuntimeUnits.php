@@ -125,7 +125,7 @@ final readonly class ProcessExpectedRuntimeUnits
     }
 
     /**
-     * @return array{ProcessRuntime, Node, App}|null
+     * @return array{ProcessRuntime, Node, ?App}|null
      */
     private function resolve(Process $process): ?array
     {
@@ -133,7 +133,7 @@ final readonly class ProcessExpectedRuntimeUnits
         $runtime = $this->contextResolver->runtime($process);
 
         if ($process->owner instanceof Node) {
-            return [$runtime, $process->owner, ProcessRuntimeApp::forNode($process->owner)];
+            return [$runtime, $process->owner, null];
         }
 
         $this->contextResolver->loadRuntimeApp($process, withWorkspaces: true);

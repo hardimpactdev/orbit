@@ -61,7 +61,7 @@ final readonly class AddProcess
         ?string $label = null,
     ): array {
         $app = $context->runtimeApp();
-        $app->loadMissing(['node', 'workspaces']);
+        $app?->loadMissing(['node', 'workspaces']);
 
         $resolvedRuntime = $runtime ?? ($service === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
         $runtimeConfig = [];
@@ -206,7 +206,7 @@ final readonly class AddProcess
             return $process;
         });
 
-        $app->unsetRelation('processes');
+        $app?->unsetRelation('processes');
         $runtimeUnits = $this->runtimeUnitPayload->forProcess(
             $app,
             $process,
@@ -216,7 +216,7 @@ final readonly class AddProcess
         $startableRuntimeUnits = $runtimeUnits;
 
         if ($context->app instanceof App && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->instance, $consumer);
+            $warnings = $this->ensureRuntimeUnits->handle($context->app, $context->instance, $consumer);
         } else {
             $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
             $warnings = $applyResult['warnings'];
@@ -338,7 +338,7 @@ final readonly class AddProcess
      */
     private function applyRuntimeUnits(
         ProcessOwnerContext $context,
-        App $app,
+        ?App $app,
         Process $process,
         array $runtimeUnits,
     ): array {

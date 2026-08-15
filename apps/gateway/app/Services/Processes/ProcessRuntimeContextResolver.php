@@ -117,11 +117,12 @@ final readonly class ProcessRuntimeContextResolver
             return;
         }
 
-        $runtimeApp = ProcessRuntimeApp::make($logicalApp, $node, $instance);
-        $runtimeApp->setRelation('node', $node);
+        // The logical app is used as-is; process-unit renderers resolve
+        // placement from each process's own instance.
+        $logicalApp->setRelation('node', $node);
 
         if ($withWorkspaces) {
-            $runtimeApp->setRelation(
+            $logicalApp->setRelation(
                 'workspaces',
                 $this->excludesWorkspaces($process)
                     ? $logicalApp->newCollection()
@@ -134,13 +135,13 @@ final readonly class ProcessRuntimeContextResolver
         }
 
         if ($process->owner instanceof App) {
-            $process->setRelation('owner', $runtimeApp);
+            $process->setRelation('owner', $logicalApp);
 
             return;
         }
 
         if ($process->owner instanceof Workspace) {
-            $process->owner->setRelation('app', $runtimeApp);
+            $process->owner->setRelation('app', $logicalApp);
         }
     }
 

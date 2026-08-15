@@ -20,13 +20,15 @@ final readonly class SystemdUnitRenderer
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
         if ($process->owner instanceof Node) {
             return $this->assertUnitName($process->name);
         }
+
+        assert($app instanceof App);
 
         $this->assertIdentitySlug($app->name);
         $this->assertIdentitySlug($process->name);
@@ -50,7 +52,7 @@ final readonly class SystemdUnitRenderer
         return '/etc/systemd/system/'.$this->serviceName($runtimeUnit);
     }
 
-    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, ?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $user = $node->user ?: 'orbit';
@@ -76,7 +78,7 @@ final readonly class SystemdUnitRenderer
         ])).PHP_EOL;
     }
 
-    public function installScript(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
+    public function installScript(Node $node, ?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $serviceName = $this->serviceName($runtimeUnit);
@@ -97,7 +99,7 @@ final readonly class SystemdUnitRenderer
 
     private function workingDirectory(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
         string $home,
@@ -112,6 +114,7 @@ final readonly class SystemdUnitRenderer
             return $workspace->path;
         }
 
+        assert($app instanceof App);
         $process->loadMissing('instance');
 
         return $this->placement->runtimePath($app, $process->instance);
@@ -122,7 +125,7 @@ final readonly class SystemdUnitRenderer
      */
     private function environmentLines(
         Process $process,
-        App $app,
+        ?App $app,
         Node $node,
         ?Workspace $workspace,
         string $home,
@@ -137,6 +140,7 @@ final readonly class SystemdUnitRenderer
         // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
         // TLS variables belong to instance/workspace process contexts.
         if (! $process->owner instanceof Node) {
+            assert($app instanceof App);
             $environment += $this->vite->shellVariables($app, $node, $workspace, $process->instance);
         }
 

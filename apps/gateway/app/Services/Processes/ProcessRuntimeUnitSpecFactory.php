@@ -25,7 +25,7 @@ final readonly class ProcessRuntimeUnitSpecFactory
 
     public function name(
         ProcessRuntime $runtime,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): string {
@@ -40,7 +40,7 @@ final readonly class ProcessRuntimeUnitSpecFactory
     public function make(
         ProcessRuntime $runtime,
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): ProcessRuntimeUnitSpec {
@@ -58,7 +58,7 @@ final readonly class ProcessRuntimeUnitSpecFactory
     }
 
     private function docker(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
     ): ProcessRuntimeUnitSpec {
@@ -103,7 +103,7 @@ final readonly class ProcessRuntimeUnitSpecFactory
 
     private function systemd(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
     ): ProcessRuntimeUnitSpec {
@@ -122,7 +122,7 @@ final readonly class ProcessRuntimeUnitSpecFactory
 
     private function launchd(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
     ): ProcessRuntimeUnitSpec {

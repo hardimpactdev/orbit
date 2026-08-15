@@ -20,14 +20,14 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         private ProcessDockerRuntimeManager $manager,
     ) {}
 
-    public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function runtimeUnitName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         return $this->renderer->containerName($app, $process, $workspace);
     }
 
     public function apply(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace = null,
     ): bool {
@@ -87,7 +87,7 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     }
 
     public function logScript(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
         string $runtimeUnit,

@@ -16,13 +16,11 @@ use App\Models\Workspace;
 use App\Services\Apps\AppResponsePayload;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\InstancePayloads;
-use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Tools\CaddyTool;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -132,7 +130,7 @@ final readonly class RemoveApp
             $configOutcome = AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
             $removePath = $this->shouldRemoveAppPath(
                 $target['adopted'],
-                $target['app'],
+                $target['path'],
                 $node,
                 $occupiedAppPlacements,
             );
@@ -179,7 +177,8 @@ final readonly class RemoveApp
                 'orbit',
                 'remove',
                 $this->renderNonRuntimeCleanupScript(
-                    $target['app'],
+                    $target['host'],
+                    $target['path'],
                     $target['process_cleanup_scripts'],
                     $removePath,
                 ),
@@ -240,7 +239,7 @@ final readonly class RemoveApp
     }
 
     /**
-     * @return list<array{app: App, instance_id: int|null, adopted: bool, identity: string, node: Node, process_cleanup_scripts: list<string>, runtime_slug: string}>
+     * @return list<array{app: App, instance_id: int|null, adopted: bool, identity: string, node: Node, path: string, host: string, process_cleanup_scripts: list<string>, runtime_slug: string}>
      */
     private function cleanupTargets(App $app): array
     {
@@ -261,8 +260,8 @@ final readonly class RemoveApp
                 continue;
             }
 
-            $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
-            $runtimeApp->setRelation('node', $node);
+            // Placement is resolved from the instance; no synthetic runtime app
+            // is fabricated. Process-unit lookups self-resolve from the process.
             $workspaces = [];
 
             foreach ($appWorkspaces as $workspace) {
@@ -271,7 +270,6 @@ final readonly class RemoveApp
                 }
             }
 
-            $runtimeApp->setRelation('workspaces', new Collection($workspaces));
             $scripts = [];
 
             foreach ($appProcesses as $process) {
@@ -279,7 +277,7 @@ final readonly class RemoveApp
                     continue;
                 }
 
-                foreach ($this->runtimeUnits->forProcess($runtimeApp, $process) as $runtimeUnit) {
+                foreach ($this->runtimeUnits->forProcess($app, $process) as $runtimeUnit) {
                     $scripts[] = $this->runtimeDrivers
                         ->forProcess($process)
                         ->cleanupScript($runtimeUnit['name']);
@@ -296,17 +294,19 @@ final readonly class RemoveApp
 
                     $driver = $this->runtimeDrivers->forProcess($process);
                     $scripts[] = $driver->cleanupScript(
-                        $driver->runtimeUnitName($runtimeApp, $process, $workspace),
+                        $driver->runtimeUnitName($app, $process, $workspace),
                     );
                 }
             }
 
             $targets[] = [
-                'app' => $runtimeApp,
+                'app' => $app,
                 'instance_id' => $instance->id,
                 'adopted' => $instance->adopted,
                 'identity' => "{$app->name}.{$instance->name}",
                 'node' => $node,
+                'path' => $this->placement->runtimePath($app, $instance),
+                'host' => $this->cleanupHost($this->placement->runtimeUrl($app, $instance), $app->name),
                 'process_cleanup_scripts' => array_values(array_unique($scripts)),
                 'runtime_slug' => "{$app->name}-{$instance->name}",
             ];
@@ -322,6 +322,8 @@ final readonly class RemoveApp
             'adopted' => $app->adopted,
             'identity' => $app->name,
             'node' => $app->node,
+            'path' => (string) $app->path,
+            'host' => $this->cleanupHost($app->url(), $app->name),
             'process_cleanup_scripts' => [],
             'runtime_slug' => $app->name,
         ]];
@@ -388,8 +390,10 @@ final readonly class RemoveApp
                     continue;
                 }
 
-                $runtimeApp = ProcessRuntimeApp::make($app, $node, $instance);
-                $occupiedPlacements[$this->appPathKey($node, $runtimeApp->path)] = true;
+                $occupiedPlacements[$this->appPathKey(
+                    $node,
+                    $this->placement->runtimePath($app, $instance),
+                )] = true;
             }
         }
 
@@ -401,7 +405,7 @@ final readonly class RemoveApp
      */
     private function shouldRemoveAppPath(
         bool $adopted,
-        App $runtimeApp,
+        string $path,
         Node $node,
         array $occupiedAppPlacements,
     ): bool {
@@ -409,7 +413,7 @@ final readonly class RemoveApp
             return false;
         }
 
-        return ! array_key_exists($this->appPathKey($node, $runtimeApp->path), $occupiedAppPlacements);
+        return ! array_key_exists($this->appPathKey($node, $path), $occupiedAppPlacements);
     }
 
     /**
@@ -488,13 +492,13 @@ final readonly class RemoveApp
      * @param  list<string>  $processCleanupScripts
      */
     private function renderNonRuntimeCleanupScript(
-        App $app,
+        string $host,
+        string $appPath,
         array $processCleanupScripts,
         bool $removeAppPath,
     ): string {
-        $domain = parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
         $commands = [
-            'sudo rm -f '.escapeshellarg("/etc/caddy/sites/{$domain}.caddy"),
+            'sudo rm -f '.escapeshellarg("/etc/caddy/sites/{$host}.caddy"),
         ];
 
         array_push($commands, ...$processCleanupScripts);
@@ -502,9 +506,16 @@ final readonly class RemoveApp
         $commands[] = CaddyTool::reloadCommand().' || true';
 
         if ($removeAppPath) {
-            $commands[] = 'sudo rm -rf '.escapeshellarg($app->path);
+            $commands[] = 'sudo rm -rf '.escapeshellarg($appPath);
         }
 
         return implode("\n", $commands);
+    }
+
+    private function cleanupHost(string $url, string $fallback): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : $fallback;
     }
 }

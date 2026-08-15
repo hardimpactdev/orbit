@@ -10,7 +10,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessRuntimeApp;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
@@ -39,7 +38,8 @@ final readonly class EnsureAppProcessRuntimeUnits
             throw new RuntimeException("Instance '{$app->name}.{$instance->name}' has no owning node.");
         }
 
-        $app = ProcessRuntimeApp::make($app, $node, $instance);
+        // The logical app is used as-is; process-unit renderers resolve
+        // placement from each process's own instance.
         $app->setRelation('node', $node);
         $app->setRelation(
             'processes',
@@ -59,7 +59,7 @@ final readonly class EnsureAppProcessRuntimeUnits
         $warnings = [];
 
         foreach ($this->runtimeContexts($app, $consumer) as $workspace) {
-            $tlsWarning = $this->ensureSiteCertificate($app, $workspace);
+            $tlsWarning = $this->ensureSiteCertificate($app, $workspace, $instance);
 
             if ($tlsWarning !== null) {
                 $warnings[] = $tlsWarning;
@@ -134,13 +134,13 @@ final readonly class EnsureAppProcessRuntimeUnits
     /**
      * @return array<string, string>|null
      */
-    private function ensureSiteCertificate(App $app, ?Workspace $workspace): ?array
+    private function ensureSiteCertificate(App $app, ?Workspace $workspace, ?Instance $instance = null): ?array
     {
         if ($app->node === null) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
-        $host = $this->host($app, $workspace);
+        $host = $this->host($app, $workspace, $instance);
 
         try {
             $this->siteCertificateInstaller->ensureFor($app->node, $host);
@@ -156,9 +156,9 @@ final readonly class EnsureAppProcessRuntimeUnits
         }
     }
 
-    private function host(App $app, ?Workspace $workspace): string
+    private function host(App $app, ?Workspace $workspace, ?Instance $instance = null): string
     {
-        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        $url = $workspace instanceof Workspace ? $workspace->url() : $this->placement->runtimeUrl($app, $instance);
         $host = parse_url($url, PHP_URL_HOST);
 
         if (is_string($host) && $host !== '') {

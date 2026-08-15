@@ -35,7 +35,7 @@ final readonly class EditProcessRuntimeUnitResolver
      */
     public function runtimeWorkspaceForUnit(
         ProcessOwnerContext $context,
-        App $app,
+        ?App $app,
         Process $process,
         array $runtimeUnit,
     ): ?Workspace {
@@ -51,6 +51,7 @@ final readonly class EditProcessRuntimeUnitResolver
             return $context->workspace;
         }
 
+        assert($app instanceof App);
         $workspace = $app->workspaces->firstWhere('name', $runtimeUnit['context']);
 
         return $workspace instanceof Workspace ? $workspace : null;

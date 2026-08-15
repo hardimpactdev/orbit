@@ -21,12 +21,12 @@ class ProcessRuntimeUnitPayload
      * @return list<array{name: string, context: string}>
      */
     public function forProcess(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspaceContext = null,
         ?Node $consumer = null,
     ): array {
-        $app->loadMissing('workspaces');
+        $app?->loadMissing('workspaces');
         $process->loadMissing('owner');
 
         return collect($this->contexts($app, $process, $workspaceContext, $consumer))
@@ -42,7 +42,7 @@ class ProcessRuntimeUnitPayload
      * @return list<Workspace|null>
      */
     private function contexts(
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspaceContext,
         ?Node $consumer,
@@ -76,6 +76,7 @@ class ProcessRuntimeUnitPayload
             return [null];
         }
 
+        assert($app instanceof App);
         $workspaces = $process->instance_id === null
             ? $app->workspaces
             : $app->workspaces->where('instance_id', $process->instance_id);

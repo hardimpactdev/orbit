@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Services\Processes\LaunchdPlistRenderer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
@@ -25,9 +26,27 @@ it('uses the macos node user home for node-owned runtime apps', function (): voi
         'user' => 'nckrtl',
     ]);
 
-    $app = new ProcessOwnerContext($node, null, null, $node)->runtimeApp();
+    $context = new ProcessOwnerContext($node, null, null, $node);
+    $process = Process::factory()->create([
+        'owner_type' => $node->getMorphClass(),
+        'owner_id' => $node->id,
+        'node_id' => $node->id,
+        'instance_id' => null,
+        'runtime' => ProcessRuntime::Launchd,
+        'name' => 'metrics',
+        'command' => 'php artisan schedule:run',
+    ]);
 
-    expect($app->path)->toBe('/Users/nckrtl');
+    // Node-owned host processes have no synthetic runtime app; the launchd unit
+    // uses the node user home as its working directory.
+    $plist = app(LaunchdPlistRenderer::class)->render($node, null, $process);
+
+    expect($context->runtimeApp())
+        ->toBeNull()
+        ->and($plist)
+        ->toContain('<key>WorkingDirectory</key>')
+        ->and($plist)
+        ->toContain('<string>/Users/nckrtl</string>');
 });
 
 it('uses selected app instance placement for app-owned runtime apps', function (): void {

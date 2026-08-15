@@ -25,13 +25,15 @@ final readonly class LaunchdPlistRenderer
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
+    public function unitName(?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $process->loadMissing('owner');
 
         if ($process->owner instanceof Node) {
             return $this->assertUnitName($process->name);
         }
+
+        assert($app instanceof App);
 
         $this->assertIdentitySlug($app->name);
         $this->assertIdentitySlug($process->name);
@@ -67,7 +69,7 @@ final readonly class LaunchdPlistRenderer
         return $this->homeDirectory($node)."/Library/Logs/Orbit/processes/{$runtimeUnit}.err.log";
     }
 
-    public function render(Node $node, App $app, Process $process, ?Workspace $workspace = null): string
+    public function render(Node $node, ?App $app, Process $process, ?Workspace $workspace = null): string
     {
         $runtimeUnit = $this->unitName($app, $process, $workspace);
         $label = $this->label($runtimeUnit);
@@ -115,7 +117,7 @@ final readonly class LaunchdPlistRenderer
 
     private function workingDirectory(
         Node $node,
-        App $app,
+        ?App $app,
         Process $process,
         ?Workspace $workspace,
     ): string {
@@ -127,6 +129,7 @@ final readonly class LaunchdPlistRenderer
             return $workspace->path;
         }
 
+        assert($app instanceof App);
         $process->loadMissing('instance');
         $appPath = $this->placement->runtimePath($app, $process->instance);
 
@@ -142,7 +145,7 @@ final readonly class LaunchdPlistRenderer
      */
     private function environmentEntries(
         Process $process,
-        App $app,
+        ?App $app,
         Node $node,
         ?Workspace $workspace,
         string $home,
@@ -157,6 +160,7 @@ final readonly class LaunchdPlistRenderer
         // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
         // TLS variables belong to instance/workspace process contexts.
         if (! $process->owner instanceof Node) {
+            assert($app instanceof App);
             $environment += $this->vite->shellVariables($app, $node, $workspace, $process->instance);
         }
 

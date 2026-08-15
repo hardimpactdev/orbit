@@ -41,7 +41,7 @@ final readonly class EditProcess
         ?Node $consumer = null,
     ): array {
         $app = $context->runtimeApp();
-        $app->loadMissing(['node', 'workspaces']);
+        $app?->loadMissing(['node', 'workspaces']);
 
         $process = $context
             ->ownerProcesses()
@@ -150,7 +150,7 @@ final readonly class EditProcess
         }
 
         $process->save();
-        $app->unsetRelation('processes');
+        $app?->unsetRelation('processes');
         $runtimeUnits = $this->runtimeUnitPayload->forProcess(
             $app,
             $process,
@@ -160,7 +160,7 @@ final readonly class EditProcess
         $restartableRuntimeUnits = $runtimeUnits;
 
         if ($context->app !== null && $context->workspace === null) {
-            $warnings = $this->ensureRuntimeUnits->handle($app, $context->instance, $consumer);
+            $warnings = $this->ensureRuntimeUnits->handle($context->app, $context->instance, $consumer);
 
             if ($warnings === []) {
                 $warnings = $this->runtimeUnits->cleanupPrevious(
