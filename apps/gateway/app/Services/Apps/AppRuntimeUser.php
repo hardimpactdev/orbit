@@ -31,6 +31,20 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
         return $this->productionUser($app);
     }
 
+    /**
+     * Home directory the runtime user owns, matching the layout
+     * `internal:app-security:repair` creates via `useradd --home-dir`.
+     */
+    public function homeForApp(App $app): string
+    {
+        return $this->homeFor($this->forApp($app));
+    }
+
+    public function homeFor(string $user): string
+    {
+        return $user === 'root' ? '/root' : "/home/{$user}";
+    }
+
     private function isProduction(App $app): bool
     {
         $app->loadMissing('node');

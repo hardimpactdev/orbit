@@ -736,6 +736,62 @@ describe('production security reality', function (): void {
         )
             ->toBe([]);
     });
+
+    // Regression: node-scoped doctor only ever calls diffInstance(), so a
+    // production runtime user missing on the node was never surfaced as drift
+    // and could not be restored through the public CLI.
+    it('reports the missing production runtime user on an instance-scoped diff', function (): void {
+        [$app, $instance] = productionInstanceOnProdNode();
+
+        $drift = new AppsProbe()->diffInstance($app, $instance, new ProbeSnapshot([
+            'docs.production' => convergedRuntimeSnapshot([
+                'system_user_exists' => false,
+                'fs_permissions_ok' => false,
+            ]),
+        ]));
+
+        $systemUser = issue($drift, 'app.security.system_user');
+
+        expect($systemUser?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and($systemUser?->detail['app'])
+            ->toBe('docs')
+            ->and($systemUser?->detail['instance'])
+            ->toBe('production')
+            ->and($systemUser?->detail['runtime_user'])
+            ->toBe('docs')
+            ->and(issue($drift, 'app.security.fs_permissions')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
+
+    it('leaves instance-scoped container isolation to the process family', function (): void {
+        [$app, $instance] = productionInstanceOnProdNode();
+
+        $drift = new AppsProbe()->diffInstance($app, $instance, new ProbeSnapshot([
+            'docs.production' => convergedRuntimeSnapshot([
+                'container_exists' => false,
+                'container_spec_matches' => false,
+            ]),
+        ]));
+
+        expect(issue($drift, 'app.security.runtime_container_isolation'))->toBeNull();
+    });
+
+    it('reports no security drift for a converged production instance', function (): void {
+        [$app, $instance] = productionInstanceOnProdNode();
+
+        $drift = new AppsProbe()->diffInstance($app, $instance, new ProbeSnapshot([
+            'docs.production' => convergedRuntimeSnapshot(),
+        ]));
+
+        expect(
+            collect($drift)
+                ->pluck('key')
+                ->filter(fn (string $key): bool => str_starts_with($key, 'app.security.'))
+                ->all(),
+        )
+            ->toBe([]);
+    });
 });
 
 describe('registry intent', function (): void {
@@ -829,6 +885,39 @@ function convergedRuntimeSnapshot(array $overrides = []): array
         'runtime_image_probe_failed' => false,
         ...$overrides,
     ];
+}
+
+/**
+ * A production app plus its concrete Orbit instance on an app-prod node, the
+ * shape node-scoped doctor actually probes.
+ *
+ * @return array{0: App, 1: Instance}
+ */
+function productionInstanceOnProdNode(): array
+{
+    $node = appNode(['user' => 'orbit'], role: 'app-prod');
+    $app = App::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'docs',
+            'environment' => 'production',
+            'path' => '/home/docs/app',
+            'document_root' => 'public',
+        ]);
+
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/docs/app',
+            document_root: 'public',
+            domain: 'docs.example.com',
+        ),
+    ]);
+
+    return [$app, $instance];
 }
 
 function appNode(array $overrides = [], string $role = 'app-dev'): Node

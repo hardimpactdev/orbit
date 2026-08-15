@@ -46,6 +46,19 @@ it('aggregates only handler-owned restore support sources (not a passive allowli
         ->not->toBeEmpty();
 });
 
+// The codes app:new points operators at must stay restorable under the public
+// `instance.` spelling, not just the internal `app.` one.
+it('keeps the public instance security codes restorable', function (): void {
+    expect(DoctorRestoreSupport::supports('instance.security.system_user'))
+        ->toBeTrue()
+        ->and(DoctorRestoreSupport::actionId('instance.security.system_user'))
+        ->toBe('restore_app_security_system_user')
+        ->and(DoctorRestoreSupport::supports('instance.security.fs_permissions'))
+        ->toBeTrue()
+        ->and(DoctorRestoreSupport::actionId('instance.security.fs_permissions'))
+        ->toBe('restore_app_security_fs_permissions');
+});
+
 it('registers every catalog genuine_drift code in DoctorRestoreSupport with matching action ids', function (): void {
     $missing = [];
     $mismatched = [];

@@ -260,6 +260,7 @@ final readonly class AppsProbe
         $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot));
         $drift = array_merge($drift, $this->checkRuntimeConfig($app, $snapshot));
         $drift = array_merge($drift, $this->checkProductionSecurity($app, $snapshot));
+        $drift = array_merge($drift, $this->checkProductionContainerIsolation($app, $snapshot));
 
         return $drift;
     }
@@ -277,6 +278,10 @@ final readonly class AppsProbe
         $drift = array_merge($drift, $this->checkDocumentRoot($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkPhpRuntime($runtimeApp, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkRuntimeConfig($runtimeApp, $snapshot, $targetName, $app, $instance));
+        $drift = array_merge(
+            $drift,
+            $this->checkProductionSecurity($runtimeApp, $snapshot, $targetName, $app, $instance),
+        );
 
         return $drift;
     }
@@ -490,13 +495,20 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkProductionSecurity(App $app, ProbeSnapshot $snapshot): array
-    {
+    private function checkProductionSecurity(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?Instance $instance = null,
+    ): array {
         if (! $this->isProductionApp($app)) {
             return [];
         }
 
-        $observed = $snapshot->get($app->name);
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
@@ -513,11 +525,10 @@ final readonly class AppsProbe
                 family: $this->key(),
                 key: 'app.security.system_user',
                 kind: DriftKind::Missing,
-                summary: "Production app {$app->name} is missing its expected runtime user.",
-                detail: [
-                    'app' => $app->name,
+                summary: "Production app {$targetName} is missing its expected runtime user.",
+                detail: $this->targetDetail($canonicalApp, $instance, [
                     'runtime_user' => $this->appRuntimeUser()->forApp($app),
-                ],
+                ]),
             );
         }
 
@@ -526,22 +537,53 @@ final readonly class AppsProbe
                 family: $this->key(),
                 key: 'app.security.fs_permissions',
                 kind: DriftKind::Divergent,
-                summary: "Production app {$app->name} filesystem permissions do not match runtime policy.",
-                detail: [
-                    'app' => $app->name,
+                summary: "Production app {$targetName} filesystem permissions do not match runtime policy.",
+                detail: $this->targetDetail($canonicalApp, $instance, [
                     'path' => $app->path,
                     'runtime_user' => $this->appRuntimeUser()->forApp($app),
-                ],
+                ]),
             );
         }
 
+        return $drift;
+    }
+
+    /**
+     * Runtime container isolation stays app-scoped for now.
+     *
+     * instance-doctor.md documents it as an instance-owned diagnostic whose
+     * repair is handed to `doctor --family=process --restore`. Emitting it from
+     * diffInstance() would therefore add a second, non-restorable incident for
+     * every production instance that already reports the restorable
+     * `process.runtime_unit_missing` for the same absent container. Surfacing it
+     * without that duplication needs the process family to own the pairing, so
+     * it is deliberately left out of the instance path here.
+     *
+     * @return list<DriftEntry>
+     */
+    private function checkProductionContainerIsolation(App $app, ProbeSnapshot $snapshot): array
+    {
+        if (! $this->isProductionApp($app)) {
+            return [];
+        }
+
+        $observed = $snapshot->get($app->name);
+
+        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
+            return [];
+        }
+
         if (
-            $app->runtimeKind() === AppRuntimeKind::Php
-            && ($observed['docker_available'] ?? null) === true
-            && (($observed['container_exists'] ?? null) === false
-            || ($observed['container_spec_matches'] ?? null) === false)
+            $app->runtimeKind() !== AppRuntimeKind::Php
+            || ($observed['docker_available'] ?? null) !== true
+            || ($observed['container_exists'] ?? null) !== false
+            && ($observed['container_spec_matches'] ?? null) !== false
         ) {
-            $drift[] = new DriftEntry(
+            return [];
+        }
+
+        return [
+            new DriftEntry(
                 family: $this->key(),
                 key: 'app.security.runtime_container_isolation',
                 kind: $observed['container_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
@@ -550,10 +592,8 @@ final readonly class AppsProbe
                     'app' => $app->name,
                     'expected' => $this->appRuntimeContainerRenderer()->containerName($app),
                 ],
-            );
-        }
-
-        return $drift;
+            ),
+        ];
     }
 
     /**
