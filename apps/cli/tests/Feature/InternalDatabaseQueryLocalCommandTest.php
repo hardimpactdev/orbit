@@ -30,8 +30,8 @@ describe('internal database query local command', function (): void {
 
     it('rejects an invalid operation token before reading stdin', function (): void {
         config()->set('orbit.gateway.url', null);
-        app()->forgetInstance('App\Services\GatewayApiClient');
-        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->forgetInstance(\App\Services\GatewayApiClient::class);
+        app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
 
         [$exitCode, $output] = runInternalDatabaseQueryLocalCommand([
             '--operation-token' => 'not-a-token',
@@ -124,6 +124,67 @@ describe('internal database query local command', function (): void {
             ->toBe('Ada');
     });
 
+    it('rejects writable pragmas that are classified as reads', function (): void {
+        $path = createInternalDatabaseQueryLocalSqliteDatabase();
+
+        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(
+            [
+                '--operation-token' => databaseQueryLocalSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'connection' => [
+                    'driver' => 'sqlite',
+                    'path' => $path,
+                ],
+                'sql' => 'pragma user_version = 741',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $database = new PDO("sqlite:{$path}");
+        $userVersion = $database->query('pragma user_version')->fetchColumn();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload)
+            ->toBe(JsonEnvelope::failure(
+                'database_query.execution_failed',
+                'Database query execution failed.',
+                ['mode' => 'read'],
+            ))
+            ->and($userVersion)
+            ->toBe(0);
+    });
+
+    it('does not execute statements appended after a query-only pragma', function (): void {
+        $path = createInternalDatabaseQueryLocalSqliteDatabase();
+
+        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(
+            [
+                '--operation-token' => databaseQueryLocalSignedOperationToken(),
+                '--json' => true,
+            ],
+            json_encode([
+                'connection' => [
+                    'driver' => 'sqlite',
+                    'path' => $path,
+                ],
+                'sql' => 'pragma query_only = off; update users set name = "Changed" where id = 1',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $database = new PDO("sqlite:{$path}");
+        $name = $database->query('select name from users where id = 1')->fetchColumn();
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['meta']['mode'])
+            ->toBe('read')
+            ->and($name)
+            ->toBe('Ada');
+    });
+
     it('executes writes when write mode is explicit', function (): void {
         $path = createInternalDatabaseQueryLocalSqliteDatabase();
 
@@ -174,7 +235,7 @@ describe('internal database query local command', function (): void {
 
 function configureDatabaseQueryLocalOperationTokenGuard(): void
 {
-    app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+    app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
 }
 
 function databaseQueryLocalSignedOperationToken(

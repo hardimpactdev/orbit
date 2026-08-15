@@ -35,7 +35,15 @@ orbit internal:database-query-local --operation-token=<token> --json
 ### Local SQLite Rules
 
 - Opens the supplied SQLite file path locally on the owning node.
-- Executes the supplied SQL exactly once.
+- For SQL routed through the read path, records the existing
+  `PRAGMA query_only` value, enables query-only before preparing user SQL, and
+  restores the exact prior value after success or failure.
+- Executes one prepared SQL statement exactly once. SQLite PDO does not execute
+  an appended statement after a `PRAGMA query_only = OFF` statement.
+- Treats SQL classification as command UX and routing, not as the security
+  boundary for read-only execution. SQLite's native query-only control rejects
+  ordinary writes such as writable PRAGMAs, inserts, updates, deletes, creates,
+  and drops; SQLite does not describe this mode as a truly read-only connection.
 - Returns strict JSON only. No prompts, progress tree, prose, ANSI output, or
   mixed stdout/stderr framing are allowed.
 - Delegates query classification and execution to a node-local action/service;
@@ -63,7 +71,9 @@ orbit internal:database-query-local --operation-token=<token> --json
     verification outcomes (including unrecognized gateway denial reasons)
 - `validation_failed` for malformed stdin payloads.
 - `database_query.write_not_allowed` for write-capable SQL without write consent.
-- `database_query.execution_failed` for SQLite open or execution failures.
+- `database_query.execution_failed` for SQLite open failures, native read-only
+  rejections, execution failures, or failure to restore the prior query-only
+  state.
 
 ## Activity Logging
 

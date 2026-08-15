@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use JsonException;
 use Orbit\Core\Database\DatabaseQueryClassifier;
+use Orbit\Core\Database\DatabaseReadOnlyGuard;
 use PDO;
+use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
@@ -28,6 +30,7 @@ final readonly class DatabaseQueryRunner
 
     public function __construct(
         private DatabaseQueryClassifier $classifier,
+        private DatabaseReadOnlyGuard $readOnlyGuard,
     ) {}
 
     /**
@@ -62,7 +65,7 @@ final readonly class DatabaseQueryRunner
 
         try {
             $database = DB::connection($name);
-            $database->getPdo();
+            $pdo = $database->getPdo();
 
             if ($classification->mode === 'write') {
                 $affectedRows = $database->affectingStatement($sql);
@@ -71,49 +74,16 @@ final readonly class DatabaseQueryRunner
                     'data' => ['affected_rows' => $affectedRows],
                     'meta' => [
                         'mode' => 'write',
-                        'duration_ms' => $this->durationMs($startedAt),
+                        'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                     ],
                 ];
             }
 
-            $statement = $database->getPdo()->prepare($sql);
-            $statement->execute();
-            $columns = $this->columns($statement);
-            $rows = [];
-            $truncatedByLimit = false;
-
-            while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
-                if (count($rows) >= $limit) {
-                    $truncatedByLimit = true;
-
-                    break;
-                }
-
-                $rows[] = $row;
-            }
-
-            $statement->closeCursor();
-            $encoded = $this->compactRowsForJsonSize($rows, $columns, $maxJsonBytes);
-
-            return [
-                'data' => [
-                    'columns' => $encoded['columns'],
-                    'rows' => $encoded['rows'],
-                ],
-                'meta' => [
-                    'mode' => 'read',
-                    'limit' => $limit,
-                    'total_rows' => $truncatedByLimit ? null : count($rows),
-                    'returned_rows' => count($encoded['rows']),
-                    'truncated' => $truncatedByLimit || $encoded['truncated'],
-                    'truncated_by' => array_values(array_filter([
-                        $truncatedByLimit ? 'limit' : null,
-                        $encoded['truncated'] ? 'json_size' : null,
-                    ])),
-                    'max_json_bytes' => $maxJsonBytes,
-                    'duration_ms' => $this->durationMs($startedAt),
-                ],
-            ];
+            return $this->readOnlyGuard->run(
+                $pdo,
+                $payload->driver,
+                fn (): array => $this->runReadQuery($pdo, $sql, $limit, $maxJsonBytes, $startedAt),
+            );
         } catch (DatabaseQueryRunnerFailure $failure) {
             throw $failure;
         } catch (Throwable $throwable) {
@@ -173,7 +143,11 @@ final readonly class DatabaseQueryRunner
                 'charset' => 'utf8mb4',
                 'collation' => 'utf8mb4_unicode_ci',
                 'prefix' => '',
-                'options' => [PDO::ATTR_TIMEOUT => $timeout],
+                'options' => [
+                    PDO::ATTR_TIMEOUT => $timeout,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    Mysql::ATTR_MULTI_STATEMENTS => false,
+                ],
             ],
             'pgsql' => [
                 'driver' => 'pgsql',
@@ -185,12 +159,65 @@ final readonly class DatabaseQueryRunner
                 'charset' => 'utf8',
                 'prefix' => '',
                 'search_path' => 'public',
-                'options' => [PDO::ATTR_TIMEOUT => $timeout],
+                'options' => [
+                    PDO::ATTR_TIMEOUT => $timeout,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                ],
             ],
             default => throw new InvalidArgumentException(
                 "Unsupported database connection driver [{$payload->driver}].",
             ),
         };
+    }
+
+    /**
+     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
+     */
+    private function runReadQuery(
+        PDO $database,
+        string $sql,
+        int $limit,
+        int $maxJsonBytes,
+        float $startedAt,
+    ): array {
+        $statement = $database->prepare($sql);
+        $statement->execute();
+        $columns = $this->columns($statement);
+        $rows = [];
+        $truncatedByLimit = false;
+
+        while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+            if (count($rows) >= $limit) {
+                $truncatedByLimit = true;
+
+                break;
+            }
+
+            $rows[] = $row;
+        }
+
+        $statement->closeCursor();
+        $encoded = $this->compactRowsForJsonSize($rows, $columns, $maxJsonBytes);
+
+        return [
+            'data' => [
+                'columns' => $encoded['columns'],
+                'rows' => $encoded['rows'],
+            ],
+            'meta' => [
+                'mode' => 'read',
+                'limit' => $limit,
+                'total_rows' => $truncatedByLimit ? null : count($rows),
+                'returned_rows' => count($encoded['rows']),
+                'truncated' => $truncatedByLimit || $encoded['truncated'],
+                'truncated_by' => array_values(array_filter([
+                    $truncatedByLimit ? 'limit' : null,
+                    $encoded['truncated'] ? 'json_size' : null,
+                ])),
+                'max_json_bytes' => $maxJsonBytes,
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            ],
+        ];
     }
 
     private function limit(mixed $limit, bool $full): int
@@ -268,11 +295,6 @@ final readonly class DatabaseQueryRunner
         } catch (JsonException $exception) {
             throw new RuntimeException($exception->getMessage(), previous: $exception);
         }
-    }
-
-    private function durationMs(float $startedAt): int
-    {
-        return (int) round((microtime(true) - $startedAt) * 1000);
     }
 }
 

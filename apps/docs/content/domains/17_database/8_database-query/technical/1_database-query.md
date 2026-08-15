@@ -38,8 +38,25 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Execution Rules
 
 - Resolves the connection from target mappings and optional `--connection`.
-- Classifies SQL as read-only or write-capable before execution.
+- Classifies SQL as read-only or write-capable for command UX and execution
+  routing. Classification is not the mutation-prevention boundary.
 - Rejects write-capable SQL unless `--write` is supplied.
+- Establishes the selected driver's native read-only control before executing
+  any SQL routed through the read path:
+  - PostgreSQL and MySQL execute `START TRANSACTION READ ONLY`, then roll back
+    in a `finally` path. The transaction-local setting ends before the dynamic
+    connection can return to a pool.
+  - SQLite records the connection's existing `PRAGMA query_only` value, enables
+    it before preparing user SQL, and restores the exact prior value in a
+    `finally` path. The SQLite PDO path executes one prepared statement, so SQL
+    appended after a `PRAGMA query_only = OFF` statement is not executed.
+- Purges the dynamic gateway connection after success or failure. A cleanup
+  failure is an execution failure and the connection is discarded rather than
+  reused with uncertain state.
+- Preserves the engines' documented boundaries: MySQL read-only transactions
+  can still write to `TEMPORARY` tables, and SQLite describes `query_only` as
+  protection against ordinary database changes rather than a truly read-only
+  connection. Orbit does not replace those controls with a SQL parser.
 - Uses gateway execution for reachable `mysql` and `pgsql` connections.
 - Uses SQLite locality for `sqlite`: the gateway invokes the hidden internal
   `internal:database-query-local` CLI command on the owning node through
@@ -65,7 +82,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - `database_connection.target_not_found` when the target has no matching mapping.
 - `database_query.connection_ambiguous` when the target has multiple mappings and `--connection` is omitted.
 - `database_query.write_not_allowed` when write-capable SQL is attempted without `--write`.
-- `database_query.execution_failed` when the driver rejects the statement or connectivity fails after resolution.
+- `database_query.execution_failed` when connectivity fails, the native
+  read-only control rejects a statement, query execution fails, or read-only
+  cleanup cannot be completed. Failed read-path mutations return no result.
 
 ## Doctor Relationship
 
@@ -91,3 +110,6 @@ with [`database-doctor.md`](../../database-doctor.md).
 | `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Target resolution, ambiguity errors, read/write permission separation, SQLite locality handoff, and unattached-connection failures. |
 | `packages/core/tests/Database/DatabaseQueryClassifierTest.php` | Read/write SQL classification for documented statement classes. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php` | SQLite dispatch through `internal:database-query-local` without credential leakage. |
+| `apps/gateway/tests/Feature/Services/DatabaseConnections/DatabaseQueryRunnerTest.php` | Native read-only enforcement and ordinary reads for SQLite, MySQL, and PostgreSQL, including writable PRAGMA, side-effecting function, and `EXPLAIN ANALYZE` mutation attempts. |
+| `apps/cli/tests/Feature/InternalDatabaseQueryLocalCommandTest.php` | SQLite writable-PRAGMA rejection and multi-statement protection through the local execution path. |
+| `packages/core/tests/Database/DatabaseReadOnlyGuardTest.php` | SQLite prior-state restoration and PostgreSQL/MySQL transaction cleanup without connection-state leakage. |

@@ -7,6 +7,7 @@ namespace App\Services\Database;
 use InvalidArgumentException;
 use JsonException;
 use Orbit\Core\Database\DatabaseQueryClassifier;
+use Orbit\Core\Database\DatabaseReadOnlyGuard;
 use PDO;
 use PDOStatement;
 use RuntimeException;
@@ -26,6 +27,7 @@ final readonly class LocalDatabaseQueryAction
 
     public function __construct(
         private DatabaseQueryClassifier $classifier,
+        private DatabaseReadOnlyGuard $readOnlyGuard,
     ) {}
 
     /**
@@ -60,7 +62,11 @@ final readonly class LocalDatabaseQueryAction
                 return $this->runWriteQuery($database, $sql, $startedAt);
             }
 
-            return $this->runReadQuery($database, $sql, $limit, $maxJsonBytes, $startedAt);
+            return $this->readOnlyGuard->run(
+                $database,
+                'sqlite',
+                fn (): array => $this->runReadQuery($database, $sql, $limit, $maxJsonBytes, $startedAt),
+            );
         } catch (LocalDatabaseQueryFailure $failure) {
             throw $failure;
         } catch (InvalidArgumentException $exception) {

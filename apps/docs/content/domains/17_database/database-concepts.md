@@ -55,9 +55,12 @@ These terms describe how Orbit uses stored connection state for live database
 operations.
 
 - **Database query execution:** Orbit-owned execution of SQL against a selected
-  stored database connection, with command contracts deciding whether the query
-  is read-only or write-capable and with results rendered in strict JSON for
-  machine use.
+  stored database connection, with command contracts routing the query through
+  a read or write path and with results rendered in strict JSON for machine use.
+  The read path establishes a native read-only transaction for PostgreSQL/MySQL
+  or a restored `PRAGMA query_only` scope for SQLite before user SQL runs. SQL
+  classification guides UX and routing but is not the mutation-prevention
+  boundary.
 - **SQLite locality:** Invariant that SQLite queries execute on the node that
   owns the SQLite file path. Orbit does not tunnel SQLite file access through
   the gateway as a mounted path.

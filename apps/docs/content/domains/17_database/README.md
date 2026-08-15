@@ -97,8 +97,10 @@ under the `database:*` namespace.
 - `database:write` covers registry, target mapping, and managed user
   mutations: `database:add`, `database:add-user`, `database:update`,
   `database:remove`, `database:attach`, and `database:detach`.
-- `database:query` allows read-only SQL execution through
-  `database:query`.
+- `database:query` allows engine-guarded read-path SQL execution through
+  `database:query`; SQL classification supplies UX and routing, while the
+  selected database driver's native read-only control prevents ordinary
+  mutations.
 - `database:query:write` allows write-capable SQL execution when the caller
   explicitly supplies the command's write opt-in. It implies `database:query`.
 
