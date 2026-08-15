@@ -58,27 +58,27 @@ final readonly class EnactAppRuntime
                 throw new RuntimeException("Instance '{$app->name}.{$instance->name}' has no owning node.");
             }
 
-            $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
-
-            if ($runtimeApp->runtimeKind() === AppRuntimeKind::Php) {
+            if ($app->runtimeKind() === AppRuntimeKind::Php) {
                 try {
                     $this->ensureFrankenPhpRuntimeProcess->forApp($app, $instance);
-                    $this->ensureRuntimeTlsMaterial($runtimeApp, $node);
+                    $this->ensureRuntimeTlsMaterial($app, $instance, $node);
                     $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
                     $this->appRuntimeContainerManager->apply($node, $container);
                 } catch (AppRuntimeImageUnavailableException $exception) {
-                    $warnings[] = $this->phpVersionUnavailableWarning($runtimeApp, $exception);
+                    $warnings[] = $this->phpVersionUnavailableWarning($app, $instance, $node, $exception);
                 } catch (AppRuntimeUserUnavailableException $exception) {
-                    $warnings[] = $this->runtimeUserUnavailableWarning($runtimeApp, $exception);
+                    $warnings[] = $this->runtimeUserUnavailableWarning($app, $node, $exception);
                 } catch (AppRuntimeContainerApplyException $exception) {
                     $warnings[] = $this->runtimeContainerWarning(
-                        $runtimeApp,
+                        $app,
+                        $node,
                         $exception->hadExistingContainer,
                         $exception,
                     );
                 } catch (Throwable $exception) {
                     $warnings[] = $this->runtimeContainerWarning(
-                        $runtimeApp,
+                        $app,
+                        $node,
                         hadExistingContainer: false,
                         exception: $exception,
                     );
@@ -88,30 +88,34 @@ final readonly class EnactAppRuntime
             $warnings = [
                 ...$warnings,
                 ...$this->ensureAppProcessRuntimeUnits->handle($app, $instance),
-                ...$this->ensureAppProxyRoute->handle($runtimeApp, $instance),
+                ...$this->ensureAppProxyRoute->handle($app, $instance),
             ];
         }
 
         return $warnings;
     }
 
-    private function ensureRuntimeTlsMaterial(App $app, Node $owningNode): void
+    private function ensureRuntimeTlsMaterial(App $app, Instance $instance, Node $owningNode): void
     {
-        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+        if (! $this->innerTlsPolicy->appliesToApp($app, $instance)) {
             return;
         }
 
         $this->siteCertificateInstaller->ensureFor(
             $owningNode,
-            $this->innerTlsPolicy->appRouteDomain($app),
+            $this->innerTlsPolicy->appRouteDomain($app, $instance),
         );
     }
 
     /**
      * @return array<string, string>
      */
-    private function runtimeContainerWarning(App $app, bool $hadExistingContainer, Throwable $exception): array
-    {
+    private function runtimeContainerWarning(
+        App $app,
+        Node $node,
+        bool $hadExistingContainer,
+        Throwable $exception,
+    ): array {
         $code = $hadExistingContainer
             ? 'process.runtime_unit_mismatch'
             : 'process.runtime_unit_missing';
@@ -121,7 +125,7 @@ final readonly class EnactAppRuntime
         return [
             'code' => $code,
             'family' => 'process',
-            'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node?->name}': {$exception->getMessage()}",
+            'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$node->name}': {$exception->getMessage()}",
             'next_command' => 'doctor --family=process --restore',
         ];
     }
@@ -129,12 +133,18 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function phpVersionUnavailableWarning(App $app, AppRuntimeImageUnavailableException $exception): array
-    {
+    private function phpVersionUnavailableWarning(
+        App $app,
+        Instance $instance,
+        Node $node,
+        AppRuntimeImageUnavailableException $exception,
+    ): array {
+        $phpVersion = $this->placement->runtimePhpVersion($app, $instance);
+
         return [
             'code' => 'instance.php_version_unavailable',
             'family' => 'instance',
-            'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node?->name}'. Make the image available, then run doctor.",
+            'message' => "PHP {$phpVersion} runtime image '{$exception->image}' is not available on node '{$node->name}'. Make the image available, then run doctor.",
             'next_command' => 'doctor --family=instance --restore',
         ];
     }
@@ -142,12 +152,15 @@ final readonly class EnactAppRuntime
     /**
      * @return array<string, string>
      */
-    private function runtimeUserUnavailableWarning(App $app, AppRuntimeUserUnavailableException $exception): array
-    {
+    private function runtimeUserUnavailableWarning(
+        App $app,
+        Node $node,
+        AppRuntimeUserUnavailableException $exception,
+    ): array {
         return [
             'code' => 'instance.security.system_user',
             'family' => 'instance',
-            'message' => "Production runtime user '{$exception->runtimeUser}' for instance '{$app->name}' is missing on '{$app->node?->name}': {$exception->getMessage()}",
+            'message' => "Production runtime user '{$exception->runtimeUser}' for instance '{$app->name}' is missing on '{$node->name}': {$exception->getMessage()}",
             'next_command' => 'doctor --family=instance --restore',
         ];
     }

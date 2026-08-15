@@ -219,6 +219,18 @@ final class WorkspacePlacement
         return $this->filledValue($this->orbitConfigFor($instance)?->document_root) ?? (string) $app->document_root;
     }
 
+    /**
+     * The absolute document-root path for a runtime, combining its resolved
+     * source path and document root the same way App::documentRootPath does.
+     */
+    public function runtimeDocumentRootPath(App $app, ?Instance $instance): string
+    {
+        $path = rtrim($this->runtimePath($app, $instance), '/');
+        $root = trim($this->runtimeDocumentRoot($app, $instance), '/');
+
+        return $root === '' ? $path : "{$path}/{$root}";
+    }
+
     public function runtimeDomain(App $app, ?Instance $instance): ?string
     {
         return $this->filledValue($this->orbitConfigFor($instance)?->domain) ?? $app->domain;

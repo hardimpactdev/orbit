@@ -546,9 +546,10 @@ describe('ProxyRouteFixer', function (): void {
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
             appRouteEnactor: function (App $target, ?Instance $instance) use ($route, &$reenacted): void {
+                $config = $instance?->driver_config;
                 $reenacted[] = [
                     'app' => $target->name,
-                    'domain' => $target->domain,
+                    'domain' => $config instanceof OrbitInstanceDriverConfigData ? $config->domain : null,
                     'instance_id' => $instance?->id,
                 ];
                 $config = is_array($route->config) ? $route->config : [];

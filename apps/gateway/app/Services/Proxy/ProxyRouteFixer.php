@@ -15,7 +15,6 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
-use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Doctor\DoctorRestoreActionId;
@@ -270,11 +269,8 @@ final readonly class ProxyRouteFixer
         }
 
         $instance = $this->appRouteTargets()->instanceForRoute($route);
-        $runtimeApp = $instance instanceof Instance
-            ? $this->appRuntimeRenderer()->runtimeAppForInstance($app, $instance)
-            : $app;
 
-        $this->executeAppRouteEnactment($runtimeApp, $instance);
+        $this->executeAppRouteEnactment($app, $instance);
 
         $route->refresh();
         $config = is_array($route->config) ? $route->config : [];
@@ -311,11 +307,6 @@ final readonly class ProxyRouteFixer
     private function appRouteTargets(): AppProxyRouteTargetResolver
     {
         return app(AppProxyRouteTargetResolver::class);
-    }
-
-    private function appRuntimeRenderer(): AppRuntimeContainerRenderer
-    {
-        return app(AppRuntimeContainerRenderer::class);
     }
 
     /**

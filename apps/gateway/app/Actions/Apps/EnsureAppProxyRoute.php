@@ -22,6 +22,7 @@ use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Workspaces\WorkspacePlacement;
 use Closure;
 use RuntimeException;
 use Throwable;
@@ -43,6 +44,7 @@ final readonly class EnsureAppProxyRoute
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -51,9 +53,9 @@ final readonly class EnsureAppProxyRoute
     public function handle(App $app, ?Instance $instance = null): array
     {
         $instance ??= $this->routeInstance($app);
-        $owningNode = $this->appOwningNodeResolver->resolve($app);
+        $owningNode = $this->appOwningNodeResolver->resolve($app, $instance);
 
-        $domain = $this->domain($app, $owningNode);
+        $domain = $this->domain($app, $owningNode, $instance);
         [$servingNode, $config, $content] = $this->routeArtifact($app, $instance, $owningNode, $domain);
 
         $route = ProxyRoute::query()->updateOrCreate(
@@ -528,10 +530,12 @@ final readonly class EnsureAppProxyRoute
      */
     private function productionActivationWarnings(App $app, ?Instance $instance): array
     {
+        $domain = $this->placement->runtimeDomain($app, $instance);
+
         if (
-            $app->environment !== 'production'
-            || ! is_string($app->domain)
-            || $app->domain === ''
+            $this->placement->runtimeEnvironment($app, $instance) !== 'production'
+            || ! is_string($domain)
+            || $domain === ''
         ) {
             return [];
         }
@@ -543,8 +547,8 @@ final readonly class EnsureAppProxyRoute
         return [[
             'code' => 'proxy.domain_inactive',
             'family' => 'proxy',
-            'message' => "Production domain '{$app->domain}' is not yet active. Retry with 'orbit instance:register {$selector} --domain={$app->domain}' once DNS has propagated.",
-            'next_command' => "instance:register {$selector} --domain={$app->domain}",
+            'message' => "Production domain '{$domain}' is not yet active. Retry with 'orbit instance:register {$selector} --domain={$domain}' once DNS has propagated.",
+            'next_command' => "instance:register {$selector} --domain={$domain}",
         ]];
     }
 
@@ -585,10 +589,12 @@ final readonly class EnsureAppProxyRoute
         return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
-    private function domain(App $app, Node $owningNode): string
+    private function domain(App $app, Node $owningNode, ?Instance $instance = null): string
     {
-        if (is_string($app->domain) && $app->domain !== '') {
-            return $app->domain;
+        $domain = $this->placement->runtimeDomain($app, $instance);
+
+        if (is_string($domain) && $domain !== '') {
+            return $domain;
         }
 
         $tld = is_string($owningNode->tld) ? trim($owningNode->tld, '.') : '';
@@ -624,11 +630,11 @@ final readonly class EnsureAppProxyRoute
             ]
             : [];
 
-        if ($app->environment !== 'production') {
+        if ($this->placement->runtimeEnvironment($app, $instance) !== 'production') {
             $certificatePaths = $this->siteCertificatePaths($owningNode, $domain);
             $config = [
                 ...$instanceConfig,
-                'document_root' => $app->documentRootPath(),
+                'document_root' => $this->placement->runtimeDocumentRootPath($app, $instance),
                 'runtime_upstream' => $runtimeUpstream,
                 'php_socket' => null,
                 'tls' => [
@@ -637,7 +643,7 @@ final readonly class EnsureAppProxyRoute
                 ],
             ];
 
-            if ($this->innerTlsPolicy->appliesToApp($app)) {
+            if ($this->innerTlsPolicy->appliesToApp($app, $instance)) {
                 $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($owningNode, $domain);
             }
 
@@ -660,7 +666,7 @@ final readonly class EnsureAppProxyRoute
             'node_id' => $owningNode->id,
             'domain' => $domain,
             'bind' => $owningNode->wireguard_address,
-            'document_root' => $app->documentRootPath(),
+            'document_root' => $this->placement->runtimeDocumentRootPath($app, $instance),
             'runtime_upstream' => $runtimeUpstream,
             'php_socket' => null,
         ];
@@ -828,7 +834,7 @@ final readonly class EnsureAppProxyRoute
 
     private function runtimeUpstream(App $app, ?Instance $instance): string
     {
-        if ($this->innerTlsPolicy->appliesToApp($app)) {
+        if ($this->innerTlsPolicy->appliesToApp($app, $instance)) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);
         }
 
