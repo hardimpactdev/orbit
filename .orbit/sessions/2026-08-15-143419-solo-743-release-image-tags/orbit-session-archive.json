@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-15T12:34:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-743-release-image-tags/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-15-143419-solo-743-release-image-tags",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-15T123102Z-8f6a1c80d890.json"
+    ],
+    "entry_digests": {
+        "loop.md": "9d99f353c2cca51ab7767694bfb9ecc2ca2a44da28726d6c0027d4b28cfda135",
+        "quality-gates/quality-check-2026-08-15T123102Z-8f6a1c80d890.json": "d862faaf85e86c4bc25980e75e579d0beafd8a848555f91204af17b8e9d0be63"
+    },
+    "slug": "solo-743-release-image-tags",
+    "requested_slug": "solo-743-release-image-tags",
+    "compatible_slugs": [
+        "solo-743-release-image-tags"
+    ],
+    "branch": "solo-743-release-image-tags",
+    "candidate_commit": "c98e9fae0b2ccde22839eb9dbb6c4f87e40f18b1",
+    "accepted_feature_tip": "c98e9fae0b2ccde22839eb9dbb6c4f87e40f18b1",
+    "accepted_main_tip": "b654a9051dc987571ee6744136efa4990f7b1f02",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
