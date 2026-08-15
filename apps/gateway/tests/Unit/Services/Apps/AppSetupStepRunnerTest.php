@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppSetupRun;
@@ -97,9 +98,18 @@ function appSetupRunnerInstance(App $app): Instance
 {
     $instance = Instance::query()->where('app_id', $app->id)->first();
 
-    return $instance instanceof Instance
-        ? $instance
-        : Instance::factory()->for($app)->create();
+    if ($instance instanceof Instance) {
+        return $instance;
+    }
+
+    return Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $app->node_id,
+            node: $app->node?->name,
+            path: $app->path,
+            document_root: $app->document_root,
+        ),
+    ]);
 }
 
 it('runs app setup steps sequentially in the app path', function (): void {

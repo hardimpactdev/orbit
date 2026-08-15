@@ -948,6 +948,15 @@ describe('ProxyRouteRenderer', function (): void {
             'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
+        Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: is_string($app->path) ? $app->path : '',
+                document_root: is_string($app->document_root) ? $app->document_root : 'public',
+                domain: 'docs.test',
+            ),
+        ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')

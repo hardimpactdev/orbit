@@ -2,13 +2,35 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\RuntimeClientTrustPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+
+/**
+ * Attach an Orbit instance as the placement source for a policy fixture.
+ * A null domain resolves to a development environment; a non-empty domain on a
+ * non app-dev node resolves to production.
+ */
+function attachInnerTlsInstance(App $app, Node $node, ?string $domain = null): Instance
+{
+    return Instance::factory()->for($app, 'app')->create([
+        'name' => $domain === null ? 'development' : 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: "/home/{$node->user}/apps/{$app->name}",
+            document_root: 'public',
+            domain: $domain,
+        ),
+    ]);
+}
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
@@ -41,6 +63,11 @@ it('applies inner TLS only to opted-in app-dev PHP apps that are not production'
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
 
+    attachInnerTlsInstance($appDevPhpDefault, $appDevNode);
+    attachInnerTlsInstance($appDevPhpOptedIn, $appDevNode);
+    attachInnerTlsInstance($appProdPhp, $appProdNode, 'docs-prod.example.com');
+    attachInnerTlsInstance($appDevStatic, $appDevNode);
+
     expect($policy->appliesToApp($appDevPhpDefault))
         ->toBeFalse()
         ->and($policy->appliesToApp($appDevPhpOptedIn))
@@ -58,6 +85,7 @@ it('describes runtime TLS mounts and upstream transport for an app-dev route dom
         'name' => 'docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    attachInnerTlsInstance($app, $node);
 
     $domain = $policy->appRouteDomain($app);
 
@@ -111,6 +139,9 @@ it('describes runtime client trust for app-dev PHP apps that are not production'
         'environment' => 'production',
         'runtime' => AppRuntimeKind::Php,
     ]);
+
+    attachInnerTlsInstance($appDevPhp, $appDevNode);
+    attachInnerTlsInstance($appProdPhp, $appProdNode, 'docs-prod.example.com');
 
     expect($policy->mountsForApp($appDevPhp))
         ->toBe([[

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Instance;
@@ -37,17 +38,25 @@ function makeReadinessTarget(array $overrides = []): array
             'wireguard_address' => '10.6.0.61',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create(array_merge([
+    $attributes = array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
-    ], $overrides));
+    ], $overrides);
+    $app = App::factory()->for($node, 'node')->create($attributes);
 
     return [
         'app' => $app,
-        'instance' => Instance::factory()->for($app, 'app')->create(),
+        'instance' => Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: $attributes['path'],
+                document_root: $attributes['document_root'],
+            ),
+        ]),
     ];
 }
 

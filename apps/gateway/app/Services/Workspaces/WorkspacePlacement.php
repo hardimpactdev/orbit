@@ -190,33 +190,29 @@ final class WorkspacePlacement
     }
 
     /**
-     * Resolve the serving node for a runtime. When an instance is present its
-     * driver-config node is authoritative; otherwise the app-level node applies.
-     * This mirrors the placement the removed runtime App clone used to overlay.
+     * Resolve the serving node for a runtime from instance placement. A missing
+     * instance resolves the app's primary concrete instance; an instance-less
+     * app has no placement and therefore no serving node. App owns no node.
      */
     public function runtimeNode(App $app, ?Instance $instance): ?Node
     {
-        if ($instance instanceof Instance) {
-            $node = $this->nodeForInstance($instance);
+        $instance ??= $this->appPrimaryInstance($app);
 
-            if ($node instanceof Node) {
-                return $node;
-            }
-        }
-
-        $app->loadMissing('node');
-
-        return $app->node instanceof Node ? $app->node : null;
+        return $instance instanceof Instance ? $this->nodeForInstance($instance) : null;
     }
 
     public function runtimePath(App $app, ?Instance $instance): string
     {
-        return $this->filledValue($this->orbitConfigFor($instance)?->path) ?? (string) $app->path;
+        $instance ??= $this->appPrimaryInstance($app);
+
+        return $this->filledValue($this->orbitConfigFor($instance)?->path) ?? '';
     }
 
     public function runtimeDocumentRoot(App $app, ?Instance $instance): string
     {
-        return $this->filledValue($this->orbitConfigFor($instance)?->document_root) ?? (string) $app->document_root;
+        $instance ??= $this->appPrimaryInstance($app);
+
+        return $this->filledValue($this->orbitConfigFor($instance)?->document_root) ?? '';
     }
 
     /**
@@ -233,7 +229,9 @@ final class WorkspacePlacement
 
     public function runtimeDomain(App $app, ?Instance $instance): ?string
     {
-        return $this->filledValue($this->orbitConfigFor($instance)?->domain) ?? $app->domain;
+        $instance ??= $this->appPrimaryInstance($app);
+
+        return $this->filledValue($this->orbitConfigFor($instance)?->domain);
     }
 
     /**
@@ -260,6 +258,8 @@ final class WorkspacePlacement
 
     public function runtimePhpVersion(App $app, ?Instance $instance): string
     {
+        $instance ??= $this->appPrimaryInstance($app);
+
         if ($instance instanceof Instance) {
             $filled = $this->filledValue($instance->php_version);
 
@@ -268,18 +268,21 @@ final class WorkspacePlacement
             }
         }
 
-        return (string) $app->php_version;
+        return $app->php_version;
     }
 
     /**
-     * The runtime environment is instance-authoritative when an instance is
-     * present (derived from its placement), otherwise the app-level value.
+     * The runtime environment is instance-authoritative: it derives from the
+     * given instance, else the app's primary concrete instance. An instance-less
+     * app defaults to development. App owns no environment.
      */
     public function runtimeEnvironment(App $app, ?Instance $instance): string
     {
+        $instance ??= $this->appPrimaryInstance($app);
+
         return $instance instanceof Instance
             ? $this->environmentForInstance($instance)
-            : (string) $app->environment;
+            : 'development';
     }
 
     private function orbitConfigFor(?Instance $instance): ?OrbitInstanceDriverConfigData

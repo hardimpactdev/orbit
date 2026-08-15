@@ -149,7 +149,15 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $instance = Instance::factory()->for($app)->create();
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: is_string($app->path) ? $app->path : '',
+            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            domain: "{$app->name}.{$node->tld}",
+        ),
+    ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -256,7 +264,15 @@ it('creates a static app proxy route with file_server', function (): void {
             'name' => 'marketing',
             'document_root' => 'public',
         ]);
-    $instance = Instance::factory()->for($app)->create();
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: is_string($app->path) ? $app->path : '',
+            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            domain: "{$app->name}.{$node->tld}",
+        ),
+    ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -332,6 +348,15 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
         'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
+    ]);
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: is_string($app->path) ? $app->path : '',
+            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            domain: "{$app->name}.{$node->tld}",
+        ),
     ]);
 
     app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);

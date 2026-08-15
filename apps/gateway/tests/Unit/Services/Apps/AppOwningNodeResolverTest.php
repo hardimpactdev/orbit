@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\AppOwningNodeResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,6 +45,12 @@ function appOwningNodeResolverUnsavedApp(array $attributes = []): App
 it('resolves the loaded owning node for an app', function (): void {
     $node = appOwningNodeResolverNode();
     $app = appOwningNodeResolverApp(['name' => 'docs', 'node_id' => $node->id]);
+    Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+        ),
+    ]);
 
     $resolved = new AppOwningNodeResolver()->resolve($app);
 

@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\AppRuntimeUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,6 +22,16 @@ function appRuntimeUserTestApp(Node $node, array $overrides = []): App
         ...$overrides,
     ]);
     $app->setRelation('node', $node);
+
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $app->path,
+            document_root: $app->document_root,
+        ),
+    ]);
 
     return $app;
 }

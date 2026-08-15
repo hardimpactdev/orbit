@@ -45,6 +45,7 @@ function appAndNodeForManagerTest(): array
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    managerTestInstance($app, $node);
 
     return [$app, $node];
 }
@@ -59,8 +60,26 @@ function productionAppAndNodeForManagerTest(): array
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    managerTestInstance($app, $node);
 
     return [$app, $node];
+}
+
+/**
+ * Attach an Orbit instance mirroring the app's placement columns so
+ * instance-authoritative placement resolves the owning node, path, and root.
+ */
+function managerTestInstance(App $app, Node $node): Instance
+{
+    return Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: is_string($app->path) ? $app->path : '',
+            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            domain: $app->domain,
+        ),
+    ]);
 }
 
 function renderTestAppContainer(App $app): AppRuntimeContainer
@@ -221,6 +240,7 @@ it('creates the app-dev packages bind mount source before running the app runtim
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    managerTestInstance($app, $node);
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(
@@ -299,6 +319,7 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    managerTestInstance($app, $node);
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(
@@ -339,6 +360,7 @@ it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', f
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
+    managerTestInstance($app, $node);
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(

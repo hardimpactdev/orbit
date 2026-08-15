@@ -10,7 +10,6 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Workspaces\WorkspacePlacement;
-use Illuminate\Database\Eloquent\Relations\Relation;
 use InvalidArgumentException;
 
 final readonly class SystemdUnitRenderer
@@ -104,9 +103,9 @@ final readonly class SystemdUnitRenderer
         ?Workspace $workspace,
         string $home,
     ): string {
-        $ownerClass = Relation::getMorphedModel($process->owner_type) ?? $process->owner_type;
+        $process->loadMissing('owner');
 
-        if ($ownerClass === Node::class) {
+        if ($process->owner instanceof Node) {
             return $home;
         }
 
