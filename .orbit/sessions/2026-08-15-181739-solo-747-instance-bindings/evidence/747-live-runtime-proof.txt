@@ -1,0 +1,127 @@
+Orbit Solo todo #747 — live retained-topology runtime proof (post-#775 rebase)
+============================================================================
+
+Candidate (product code): 4d16d3f94897104a4fb26bf7586741bacf8a8f3c
+Evidence-checkpoint tip:  recorded at commit time
+Rebased onto origin/main: a148bd1953cd4fa21e87cff130ef7cb22600d900 (includes blocker #775)
+Host: beast    Provider: incus    Environment: dev-fixture
+
+Rebase
+======
+The five #747 commits were rebased onto origin/main a148bd195 (blocker #775 landed).
+No conflicts. Product-code diff is byte-identical before and after the rebase
+(git hash-object of `git diff <base> <product-candidate>` = 3f07f8dfe7f4e52143b80f80cbe243056334e96b
+both pre- and post-rebase). #775's release-workflow test is present in the base.
+
+Refreshed deterministic proof (candidate 4d16d3f94)
+===================================================
+- Binding suite (gateway): 82 tests, 443 assertions — passed.
+  Files: AppWebSocketBindingSchemaTest, AppAnalyticsControllerTest,
+  AppWebSocketControllerTest, MoveAppBindingsToInstancesTest,
+  AnalyticsProxyDoctorProbeTest, AppAnalyticsBindingServiceTest,
+  WebSocketBindingServiceTest, WebSocketProxyDoctorProbeTest,
+  WebSocketRouteRegistrarTest, WebSocketRuntimeAppConfigSyncerTest.
+- E2E readiness (incl. runtime-user regression): 14 tests, 113 assertions — passed
+  (apps/e2e/tests/Feature/E2ESupport/IncusAcquisitionReadinessTest.php).
+
+Supported two-stage credential-free route (#775 artifact-bearing manifest)
+==========================================================================
+Stage 1 — retained topology WITHOUT websocket convergence:
+  composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod --json
+  Result: exit 0. Topology id dev-dfadb2. Nodes: operator, gateway (wg 10.6.0.2),
+  app-dev-1 (wg 10.6.0.4, bridge 10.232.1.168 on orbit-e2e-n-1), app-prod-1.
+  Source-mounted checkout at /home/orbit/orbit-run. app-dev-1 roles at acquisition:
+  app-dev,database (no websocket).
+
+Stage 2 — local credential-free artifact relay + candidate manifest:
+  - Reverb tar built on beast from the self-contained `orbit-reverb:current` image via a
+    single-tag `FROM ... LABEL` build so the saved archive carries exactly one RepoTag:
+    RepoTags == ['ghcr.io/hardimpactdev/orbit-reverb:0.1.192'];
+    tar sha256 = cdb227bc0302d7d9fc8286fe91bbce408eb8b418d55d7a203cf60f9033d811f0
+  - Local HTTPS relay (python3 http.server + TLS) hosted inside the prod topology VM at
+    https://10.232.1.50:8443/orbit-reverb-linux-amd64.tar, self-signed cert SAN IP:10.232.1.50.
+  - Cert trusted on app-dev-1 via the repository-supported mechanism
+    (/usr/local/share/ca-certificates + update-ca-certificates), matching
+    App\Services\Trust\LinuxTrustStoreInstaller.
+  - Workload-node reachability + SHA-256 proof (OS trust, no --cacert):
+    app-dev-1 `curl -fsS https://10.232.1.50:8443/orbit-reverb-linux-amd64.tar`
+    → http=200, size=311951360, sha256=cdb227bc0302d7d9fc8286fe91bbce408eb8b418d55d7a203cf60f9033d811f0.
+  - Candidate manifest (source=topology-candidate, build_id=solo-747-12de6e0f) at
+    /home/orbit/solo747-manifest.json on the gateway VM, carrying:
+      role_images.orbit-websocket = ghcr.io/hardimpactdev/orbit-reverb:0.1.192@sha256:75cc7315b4aa6325069c5d07efa2754d46b7c1c1247ae860806758000fb768ab
+      role_image_artifacts.orbit-websocket = { url: https://10.232.1.50:8443/orbit-reverb-linux-amd64.tar, sha256: cdb227bc0302d7d9fc8286fe91bbce408eb8b418d55d7a203cf60f9033d811f0 }
+    Gateway resolves it via ORBIT_RELEASE_MANIFEST_URL=file:///home/orbit/solo747-manifest.json
+    (ReleaseManifestResolver → ReleaseManifest::fromArray validated; artifact url+sha256 present).
+
+  No GHCR credentials were configured, streamed, or persisted; no private-digest fallback;
+  no real GitHub release. app-dev-1 /home/orbit/.docker/config.json auths count = 0.
+
+Credential-free websocket role convergence
+==========================================
+  orbit:internal:bake-websocket-node app-dev-1 --host=10.6.0.4 --wireguard-address=10.6.0.4 \
+    --gateway-endpoint=10.6.0.2 --user=orbit --valkey-node=app-dev-1 --converge-runtime
+  Result: exit 0. Timings include runtime-image-ensure (artifact download + docker load)
+  and runtime-container-apply. Bake log has no pull/unauthorized/ghcr/error lines.
+
+  The node loaded the image from the hash-verified archive (no docker pull):
+  ghcr.io/hardimpactdev/orbit-reverb:0.1.192 (loaded) → tagged orbit-reverb:current.
+  app-dev-1 roles after: app-dev,database,websocket.
+
+  Container health: after removing the stale residual container (see below) and re-converging,
+  orbit-websocket-app-dev-1 runs image sha256:2ac8fe9c... (the artifact-loaded image),
+  restarts=0, exit=0, Reverb log "Starting secure server on 0.0.0.0:8080 (10.6.0.4)".
+
+#747 live acceptance proof (18/18 PASS = ALL_PASS)
+==================================================
+Exercised on the live gateway (real migrated schema + real services), app acme747 with
+sibling instances blue/green placed on app-dev-1:
+  - Migration move_app_bindings_to_instances applied; bindings Instance-owned
+    (app_websocket_bindings and app_analytics_bindings have instance_id, no app_id column).
+  - Sibling instances hold DISTINCT bindings: reverb_app_id qualified app.instance
+    (acme747.blue vs acme747.green); distinct binding rows; per-instance distinct public_hosts.
+  - Uniqueness: exactly one ws + one an binding per instance; duplicate analytics binding for
+    the same instance rejected by the unique constraint.
+  - API serialization includes app + instance identity: WebSocketCredentials → app=acme747,
+    reverb_app_id=acme747.blue.
+  - Runtime resolves the selected Instance: WebSocketRuntimeAppConfigSyncer::sync() pushed the
+    apps config to the live app-dev-1 reverb node; /etc/orbit/websocket/apps.php carries the
+    instance-qualified entries 'app_id' => 'acme747.blue' and 'app_id' => 'acme747.green'.
+
+Stale prepared-container observation (recorded per instruction)
+===============================================================
+Observation: The shared base snapshot clean-operator_gateway_app-dev_app-prod_agent_websocket-base
+is baked WITH the websocket role, so acquiring the NON-websocket topology
+operator_gateway_app-dev_app-prod still clones an app-dev VM carrying a pre-baked
+orbit-websocket-app-dev-1 container on the old cached image 191deb81..., which segfaulted
+(exit 139, crashloop) in the fresh clone.
+
+Determination (with evidence):
+ 1) Retained-template residue (test-harness, NOT product): the pre-baked/segfaulting container
+    is an artifact of the shared-base preparation strategy, not the convergence path. The
+    artifact-loaded image 2ac8fe9c... ran healthily, so the segfault is specific to the stale
+    residual image.
+ 2) Reproducible product convergence gap (PRE-EXISTING, unrelated to #747): container-apply
+    reused the stale container because the container spec hash is derived from the fixed tag
+    orbit-reverb:current (WebSocketRuntimeContainerRenderer::RuntimeImage), not the resolved
+    image digest; LocalWebSocketRuntimeAction::applyContainer never compares the running
+    container's image ID to the desired image. So re-pointing the tag to a new image does not
+    change the spec hash → no recreation. Reproduced live: after image:ensure re-tagged
+    orbit-reverb:current to 2ac8fe9c, the container kept running 191deb81 until manual
+    `docker rm -f` + re-converge.
+    git diff a148bd195..HEAD shows #747 does NOT touch WebSocketRoleBaseline,
+    LocalWebSocketRuntimeAction, the spec, or the renderer — this gap is not introduced by #747
+    and must NOT be fixed within #747.
+    Filed as a separate local Solo todo: #776 (not a blocker of #747).
+
+Retained topology / cleanup ownership (do NOT clean until proof + review complete)
+==================================================================================
+- Retained topology dev-dfadb2 on beast left RUNNING for the reviewer.
+- Local relay assets: /home/nckrtl/solo-747-relay on beast; relay process inside the prod VM
+  (/root/solo747, python3 relay.py on 10.232.1.50:8443); manifest + proof scripts on the
+  gateway VM (/home/orbit/solo747-manifest.json, /home/orbit/proof747.b64); trusted relay cert
+  on app-dev-1 (/usr/local/share/ca-certificates/orbit-solo747-relay.crt).
+- #747 also still owns cleanup of image orbit-gateway:solo-747-12de6e0f and the exact
+  incusbr0 FORWARD accept rules from the prior blocker investigation.
+- Untouched: retained clone orbit-e2e-20260625224858-24500-5f9ebe-dev and all unrelated
+  retained environments; the five source template snapshots
+  (clean-operator_gateway_app-dev_app-prod_agent_websocket-base) remain intact.

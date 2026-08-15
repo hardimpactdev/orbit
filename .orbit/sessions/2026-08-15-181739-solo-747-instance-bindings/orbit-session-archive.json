@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-15T16:17:39+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-747-instance-bindings/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-15-181739-solo-747-instance-bindings",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/747-live-runtime-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-15T161649Z-b597550179c8.json"
+    ],
+    "entry_digests": {
+        "evidence/747-live-runtime-proof.txt": "0270bc61750a577d64a4296aec82bd66be7503c0bc097e105dc2bddb696c28e3",
+        "loop.md": "0e541f6b9478aaf48ab4257eeea8b5aba3228f281f2811e7be1cb02c6106c46e",
+        "quality-gates/quality-check-2026-08-15T161649Z-b597550179c8.json": "e57ba0ac8e61d441ba0c54cdd16e381594d78e0bbc7ca1f685cd5a0bb726d1ec"
+    },
+    "slug": "solo-747-instance-bindings",
+    "requested_slug": "solo-747-instance-bindings",
+    "compatible_slugs": [
+        "solo-747-instance-bindings"
+    ],
+    "branch": "solo-747-instance-bindings",
+    "candidate_commit": "26f8c7bdf8ca836c6d39e4005852384db06d27e0",
+    "accepted_feature_tip": "26f8c7bdf8ca836c6d39e4005852384db06d27e0",
+    "accepted_main_tip": "a148bd1953cd4fa21e87cff130ef7cb22600d900",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
