@@ -41,8 +41,10 @@ return new class extends Migration {
 
         foreach (['app_websocket_bindings', 'app_analytics_bindings'] as $table) {
             foreach (DB::table($table)->select(['id', 'app_id'])->orderBy('id')->get() as $binding) {
+                $bindingId = (int) $binding->id;
+                $appId = (int) $binding->app_id;
                 $instanceIds = DB::table('instances')
-                    ->where('app_id', $binding->app_id)
+                    ->where('app_id', $appId)
                     ->orderBy('id')
                     ->pluck('id')
                     ->map(static fn (mixed $id): int => (int) $id)
@@ -52,8 +54,8 @@ return new class extends Migration {
                     $ambiguous[] = sprintf(
                         '%s#%d (app_id=%d, instances=%d)',
                         $table,
-                        $binding->id,
-                        $binding->app_id,
+                        $bindingId,
+                        $appId,
                         count($instanceIds),
                     );
 
@@ -62,7 +64,7 @@ return new class extends Migration {
 
                 $assignments[] = [
                     'table' => $table,
-                    'binding_id' => (int) $binding->id,
+                    'binding_id' => $bindingId,
                     'instance_id' => $instanceIds[0],
                 ];
             }

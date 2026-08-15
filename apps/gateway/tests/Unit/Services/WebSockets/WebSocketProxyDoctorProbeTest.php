@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Data\Doctor\DriftEntry;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;

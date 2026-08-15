@@ -20,7 +20,10 @@ use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-/** @mago-expect lint:kan-defect */
+/**
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:excessive-parameter-list
+ */
 class AnalyticsRouteRegistrar
 {
     public const string ServiceDomain = 'analytics.orbit';

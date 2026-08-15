@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Analytics;
 
-use App\Exceptions\AnalyticsDomainRequired;
 use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Exceptions\AnalyticsDomainRequired;
 use App\Models\Instance;
 use Illuminate\Support\Str;
 use InvalidArgumentException;

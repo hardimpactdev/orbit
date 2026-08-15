@@ -61,8 +61,7 @@ it('stores app websocket bindings with encrypted secret material', function (): 
         ->enabled->toBeTrue()
         ->reverb_app_secret->toBe('server-secret')
         ->allowed_origins->toBe(['https://example.com'])
-        ->public_hosts->toBe(['ws.example.com'])
-        ->and($instance->fresh()->webSocketBinding->is($binding))->toBeTrue();
+        ->public_hosts->toBe(['ws.example.com'])->and($instance->fresh()->webSocketBinding->is($binding))->toBeTrue();
 
     expect(DB::table('app_websocket_bindings')->whereKey($binding->id)->value('reverb_app_secret'))
         ->not

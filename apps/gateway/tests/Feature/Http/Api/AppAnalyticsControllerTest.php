@@ -226,7 +226,12 @@ describe('AppAnalyticsController', function (): void {
                 'verify_public_readiness',
             ]);
 
-        expect(AppAnalyticsBinding::query()->where('instance_id', appAnalyticsInstance($app)->id)->where('enabled', true)->exists())
+        expect(
+            AppAnalyticsBinding::query()
+                ->where('instance_id', appAnalyticsInstance($app)->id)
+                ->where('enabled', true)
+                ->exists(),
+        )
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
             ->toBeTrue()
@@ -329,7 +334,12 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('error.code', 'analytics.route_enactment_failed')
             ->assertJsonPath('error.meta.app', 'docs');
 
-        expect(AppAnalyticsBinding::query()->where('instance_id', appAnalyticsInstance($app)->id)->where('enabled', true)->exists())
+        expect(
+            AppAnalyticsBinding::query()
+                ->where('instance_id', appAnalyticsInstance($app)->id)
+                ->where('enabled', true)
+                ->exists(),
+        )
             ->toBeTrue();
     });
 
@@ -359,7 +369,12 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('error.code', 'analytics.route_cleanup_failed')
             ->assertJsonPath('error.meta.app', 'docs');
 
-        expect(AppAnalyticsBinding::query()->where('instance_id', appAnalyticsInstance($app)->id)->where('enabled', true)->exists())
+        expect(
+            AppAnalyticsBinding::query()
+                ->where('instance_id', appAnalyticsInstance($app)->id)
+                ->where('enabled', true)
+                ->exists(),
+        )
             ->toBeTrue();
     });
 
@@ -379,7 +394,12 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('success.data.binding.enabled', false)
             ->assertJsonPath('success.data.binding.public_hosts', []);
 
-        expect(AppAnalyticsBinding::query()->where('instance_id', appAnalyticsInstance($app)->id)->where('enabled', false)->exists())
+        expect(
+            AppAnalyticsBinding::query()
+                ->where('instance_id', appAnalyticsInstance($app)->id)
+                ->where('enabled', false)
+                ->exists(),
+        )
             ->toBeTrue()
             ->and(
                 ProxyRoute::query()
@@ -428,7 +448,9 @@ describe('AppAnalyticsController', function (): void {
 
         app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
 
-        $bindingUpdatedAt = AppAnalyticsBinding::query()->where('instance_id', appAnalyticsInstance($app)->id)->value('updated_at');
+        $bindingUpdatedAt = AppAnalyticsBinding::query()
+            ->where('instance_id', appAnalyticsInstance($app)->id)
+            ->value('updated_at');
         $routeUpdatedAt = ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('updated_at');
 
         $response = getAppAnalyticsJson('/api/instances/docs/analytics/verify');

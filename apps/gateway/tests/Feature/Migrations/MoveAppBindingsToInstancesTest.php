@@ -76,12 +76,14 @@ function withHistoricalBindingOwnershipSchema(Closure $callback): void
     $originalConnection = DB::getDefaultConnection();
     $connection = 'binding_ownership_migration_history';
 
-    config(["database.connections.{$connection}" => [
-        'driver' => 'sqlite',
-        'database' => ':memory:',
-        'prefix' => '',
-        'foreign_key_constraints' => true,
-    ]]);
+    config([
+        "database.connections.{$connection}" => [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+            'foreign_key_constraints' => true,
+        ],
+    ]);
 
     DB::purge($connection);
     DB::setDefaultConnection($connection);

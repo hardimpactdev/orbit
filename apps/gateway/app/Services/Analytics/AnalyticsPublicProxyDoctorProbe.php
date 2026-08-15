@@ -12,6 +12,7 @@ use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class AnalyticsPublicProxyDoctorProbe
 {
     public const string PUBLIC_ROUTE_KEY = 'proxy.analytics.public_route_missing';

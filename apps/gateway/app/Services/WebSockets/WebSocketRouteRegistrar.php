@@ -18,6 +18,7 @@ use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
+/** @mago-expect lint:excessive-parameter-list */
 class WebSocketRouteRegistrar
 {
     public const string ServiceDomain = 'websocket.orbit';
