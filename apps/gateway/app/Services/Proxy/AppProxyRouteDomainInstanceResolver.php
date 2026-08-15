@@ -49,12 +49,14 @@ final readonly class AppProxyRouteDomainInstanceResolver
 
     private function isBareAppRouteDomain(App $app, string $domain): bool
     {
-        if (is_string($app->domain) && mb_strtolower(trim($app->domain)) === $domain) {
+        $primaryDomain = $this->placement->runtimeDomain($app, null);
+
+        if (is_string($primaryDomain) && mb_strtolower(trim($primaryDomain)) === $domain) {
             return true;
         }
 
-        $app->loadMissing('node');
-        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, characters: '.') : '';
+        $nodeTld = $this->placement->runtimeNode($app, null)?->tld;
+        $tld = is_string($nodeTld) ? trim($nodeTld, characters: '.') : '';
 
         if ($tld === '') {
             return mb_strtolower($app->name) === $domain;

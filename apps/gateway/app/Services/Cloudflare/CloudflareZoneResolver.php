@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Cloudflare;
 
 use App\Models\App;
+use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareZoneResolver
 {
     public function __construct(
         private CloudflareClient $client,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -102,7 +104,8 @@ final readonly class CloudflareZoneResolver
             );
         }
 
-        $domain = is_string($app->domain) ? trim($app->domain) : '';
+        $resolvedDomain = $this->placement->runtimeDomain($app, null);
+        $domain = is_string($resolvedDomain) ? trim($resolvedDomain) : '';
 
         if ($domain === '' || ! str_contains($domain, '.')) {
             throw new GatewayApiException(

@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\GatewayExtension;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -190,9 +192,17 @@ it('requires the disable permission for the Cloudflare SSL disable API route', f
 
 it('adds a cache rule for an app without exposing project vocabulary', function (): void {
     $gateway = createCloudflareApiCallerNode();
-    App::factory()->for($gateway, 'node')->create([
+    $app = App::factory()->for($gateway, 'node')->create([
         'name' => 'docs',
         'domain' => 'docs.example.com',
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.example.com',
+        ),
     ]);
 
     Http::fake([
