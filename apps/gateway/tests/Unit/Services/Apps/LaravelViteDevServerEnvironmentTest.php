@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,8 +24,18 @@ it('uses macOS home paths for host Vite certificate variables', function (): voi
         'name' => 'happie-nmbp',
         'domain' => 'happie.nmbp',
     ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/Users/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
+        ),
+    ]);
 
-    $variables = new LaravelViteDevServerEnvironment()->shellVariables($app, $node);
+    $variables = new LaravelViteDevServerEnvironment()->shellVariables($app, $node, null, $instance);
 
     expect($variables['VITE_DEV_SERVER_KEY'])
         ->toBe('/Users/nckrtl/.config/orbit/certs/happie.nmbp.key')

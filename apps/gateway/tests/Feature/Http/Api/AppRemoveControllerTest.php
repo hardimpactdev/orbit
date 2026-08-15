@@ -273,6 +273,17 @@ describe('AppRemoveController', function (): void {
             'path' => '/home/orbit/apps/docs',
             'runtime' => 'static',
         ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'production',
+            'adopted' => false,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                node: $targetNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
+        ]);
 
         ProxyRoute::query()->create([
             'node_id' => $targetNode->id,

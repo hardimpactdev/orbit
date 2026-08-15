@@ -10,6 +10,7 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,13 +59,12 @@ final class AppRemoveController implements Loggable
     private function resolveApp(string $selector): ?App
     {
         $app = App::query()
-            ->with(['node', 'processes'])
+            ->with(['node', 'processes', 'instances'])
             ->get()
             ->filter(
                 fn (App $app): bool => (
                     $app->name === $selector
-                    || $app->domain === $selector
-                    || $app->url() === "https://{$selector}"
+                    || app(WorkspacePlacement::class)->appHasUrl($app, $selector)
                 ),
             )
             ->values()

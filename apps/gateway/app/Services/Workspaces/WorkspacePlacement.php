@@ -242,6 +242,11 @@ final class WorkspacePlacement
      */
     public function runtimeUrl(App $app, ?Instance $instance): string
     {
+        // App owns no placement: a missing instance resolves the app's primary
+        // concrete instance; a truly instance-less app yields a placement-free
+        // URL built only from its logical name.
+        $instance ??= $this->appPrimaryInstance($app);
+
         if ($instance instanceof Instance) {
             $host = $this->instanceUrlHost($instance, $app);
 
@@ -250,7 +255,7 @@ final class WorkspacePlacement
             }
         }
 
-        return $app->url();
+        return "https://{$app->name}";
     }
 
     public function runtimePhpVersion(App $app, ?Instance $instance): string
@@ -287,6 +292,46 @@ final class WorkspacePlacement
     private function filledValue(?string $value): ?string
     {
         return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    /**
+     * The app's primary concrete instance for app-level display and selector
+     * fallbacks: the first Orbit-managed instance, else the first instance.
+     */
+    public function appPrimaryInstance(App $app): ?Instance
+    {
+        $app->loadMissing('instances');
+
+        $orbit = $app->instances->first(
+            static fn (Instance $instance): bool => $instance->driver === InstanceDriver::Orbit,
+        );
+
+        if ($orbit instanceof Instance) {
+            return $orbit;
+        }
+
+        $first = $app->instances->first();
+
+        return $first instanceof Instance ? $first : null;
+    }
+
+    /**
+     * Match a URL/host selector against any of the app's instance hosts. App
+     * owns no placement, so URL identity comes from its concrete instances.
+     */
+    public function appHasUrl(App $app, string $value): bool
+    {
+        $host = rtrim((string) preg_replace('#^https?://#', '', trim($value)), '/');
+
+        if ($host === '') {
+            return false;
+        }
+
+        $app->loadMissing('instances');
+
+        return $app->instances->contains(
+            fn (Instance $instance): bool => $this->instanceUrlHost($instance, $app) === $host,
+        );
     }
 
     public function matchingOrbitInstanceForPath(App $app, string $path): ?Instance

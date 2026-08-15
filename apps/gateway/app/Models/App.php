@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Support\Str;
 use Override;
 
 /**
@@ -152,33 +151,5 @@ class App extends Model
     public function dependencyAuditSummaries(): HasMany
     {
         return $this->hasMany(AppDependencyAuditSummary::class, 'app_id');
-    }
-
-    public function url(): string
-    {
-        if (is_string($this->domain) && $this->domain !== '') {
-            return "https://{$this->domain}";
-        }
-
-        $this->loadMissing('node');
-
-        $tld = is_string($this->node?->tld) ? trim($this->node?->tld, '.') : '';
-
-        if ($tld === '') {
-            return "https://{$this->name}";
-        }
-
-        return "https://{$this->name}.{$tld}";
-    }
-
-    public function documentRootPath(): string
-    {
-        $root = trim($this->document_root, '/');
-
-        if ($root === '') {
-            return rtrim($this->path, '/');
-        }
-
-        return Str::finish(rtrim($this->path, '/'), '/').$root;
     }
 }

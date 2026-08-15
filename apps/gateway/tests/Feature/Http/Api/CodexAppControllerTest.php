@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\GatewayExtension;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -70,6 +72,15 @@ describe('CodexAppController', function (): void {
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
+        ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
         grantCodexAppAccess($caller, $appNode);
         grantCodexAppAccess($caller, $target);
@@ -208,6 +219,15 @@ describe('CodexAppController', function (): void {
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
         ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
         grantCodexAppAccess($caller, $appNode);
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
@@ -258,6 +278,15 @@ describe('CodexAppController', function (): void {
             'name' => 'docs',
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
+        ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
         grantCodexAppAccess($caller, $appNode);
         grantCodexAppAccess($caller, $target);

@@ -36,10 +36,6 @@ describe('App model', function (): void {
             ->toBeTrue()
             ->and($app->environment)
             ->toBe('development')
-            ->and($app->url())
-            ->toBe('https://docs.example.com')
-            ->and($app->documentRootPath())
-            ->toBe('/home/orbit/apps/docs/public')
             ->and($app->repository)
             ->toBe('git@github.com:orbit/docs.git')
             ->and($app->php_version)
@@ -71,9 +67,7 @@ describe('App model', function (): void {
             ->and($app->adopted)
             ->toBeFalse()
             ->and($app->environment)
-            ->toBe('development')
-            ->and($app->url())
-            ->toBe('https://api.test');
+            ->toBe('development');
     });
 
     it('creates the apps table with the registry indexes needed by read commands', function (): void {

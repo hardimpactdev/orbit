@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Schedules\ScheduleInstanceResolver;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -520,11 +521,14 @@ trait PromptsForRegistryEntities
      */
     private function appPromptPayload(App $app): array
     {
+        $placement = app(WorkspacePlacement::class);
+        $instance = $placement->appPrimaryInstance($app);
+
         return [
             'name' => $app->name,
-            'node' => $app->node?->name,
-            'environment' => $app->environment,
-            'url' => $app->url(),
+            'node' => $instance !== null ? $placement->nodeForInstance($instance)?->name : null,
+            'environment' => $instance !== null ? $placement->environmentForInstance($instance) : null,
+            'url' => $instance !== null ? $placement->runtimeUrl($app, $instance) : null,
             'repository' => $app->repository,
         ];
     }

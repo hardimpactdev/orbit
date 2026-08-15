@@ -11,6 +11,7 @@ use App\Services\CodexApp\RemoteCodexAppConfig;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -366,11 +367,15 @@ final readonly class CodexAppController
      */
     private function projectPayload(App $app): array
     {
+        $placement = app(WorkspacePlacement::class);
+        $instance = $placement->appPrimaryInstance($app);
+        $node = $instance !== null ? $placement->nodeForInstance($instance) : null;
+
         return [
             'project' => $app->name,
             'label' => $app->name,
-            'ssh_alias' => $this->sshAlias($app),
-            'remote_path' => rtrim($app->path, '/'),
+            'ssh_alias' => $node instanceof Node ? $node->name : $app->name,
+            'remote_path' => $instance !== null ? rtrim($placement->runtimePath($app, $instance), '/') : '',
         ];
     }
 
@@ -389,11 +394,6 @@ final readonly class CodexAppController
             'ssh_alias' => (string) ($connection['sshAlias'] ?? ''),
             'remote_path' => (string) ($project['remotePath'] ?? ''),
         ];
-    }
-
-    private function sshAlias(App $app): string
-    {
-        return $app->node instanceof Node ? $app->node->name : $app->name;
     }
 
     private function caller(Request $request): ?Node

@@ -310,9 +310,9 @@ final class ServingNodeResolver
         }
 
         return App::query()
-            ->with('node')
+            ->with(['node', 'instances'])
             ->get()
-            ->first(fn (App $app): bool => $app->url() === "https://{$value}" || $app->url() === $value);
+            ->first(fn (App $app): bool => app(WorkspacePlacement::class)->appHasUrl($app, $value));
     }
 
     private function appNodeFromValue(mixed $value): ?Node

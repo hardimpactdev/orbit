@@ -77,7 +77,7 @@ final readonly class AppSelectorResolver
             ->with(['node', 'instances'])
             ->get()
             ->first(
-                fn (App $candidate): bool => $candidate->url() === "https://{$value}" || $candidate->url() === $value,
+                fn (App $candidate): bool => $this->placement->appHasUrl($candidate, $value),
             );
 
         if ($app instanceof App) {

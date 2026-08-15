@@ -245,7 +245,6 @@ final readonly class RemoveApp
     {
         $targets = [];
         $instances = $app->instances;
-        $hasInstances = $instances->isNotEmpty();
         $appProcesses = $app->processes;
         $appWorkspaces = $app->workspaces;
 
@@ -312,21 +311,9 @@ final readonly class RemoveApp
             ];
         }
 
-        if ($targets !== [] || $hasInstances || ! $app->node instanceof Node) {
-            return $targets;
-        }
-
-        return [[
-            'app' => $app,
-            'instance_id' => null,
-            'adopted' => $app->adopted,
-            'identity' => $app->name,
-            'node' => $app->node,
-            'path' => (string) $app->path,
-            'host' => $this->cleanupHost($app->url(), $app->name),
-            'process_cleanup_scripts' => [],
-            'runtime_slug' => $app->name,
-        ]];
+        // An app with no concrete instance has no placement to clean up; the
+        // DB record removal in handle() is sufficient. App owns no placement.
+        return $targets;
     }
 
     /**
@@ -371,18 +358,10 @@ final readonly class RemoveApp
         $occupiedPlacements = [];
         $otherApps = App::query()
             ->whereKeyNot($removedApp->id)
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->get();
 
         foreach ($otherApps as $app) {
-            if ($app->instances->isEmpty()) {
-                if ($app->node instanceof Node) {
-                    $occupiedPlacements[$this->appPathKey($app->node, $app->path)] = true;
-                }
-
-                continue;
-            }
-
             foreach ($app->instances as $instance) {
                 $node = $this->placement->nodeForInstance($instance);
 

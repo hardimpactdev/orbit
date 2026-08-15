@@ -679,6 +679,17 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/nckrtl/apps/craft-starterkit-react',
+            document_root: 'public',
+        ),
+    ]);
+    $app->unsetRelation('instances');
 
     $container = rendererForTest()->render($app);
 
