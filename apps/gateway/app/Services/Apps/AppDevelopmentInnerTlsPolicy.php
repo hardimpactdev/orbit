@@ -69,7 +69,9 @@ final readonly class AppDevelopmentInnerTlsPolicy
             return false;
         }
 
-        if ($app->environment === 'production') {
+        $instance = $this->placement->instanceForWorkspace($workspace);
+
+        if ($this->placement->runtimeEnvironment($app, $instance) === 'production') {
             return false;
         }
 
@@ -90,8 +92,8 @@ final readonly class AppDevelopmentInnerTlsPolicy
             return $domain;
         }
 
-        $node = $this->placement->runtimeNode($app, $instance);
-        $tld = is_string($node?->tld) ? trim($node->tld, '.') : '';
+        $nodeTld = $this->placement->runtimeNode($app, $instance)?->tld;
+        $tld = is_string($nodeTld) ? trim($nodeTld, '.') : '';
 
         if ($tld === '') {
             return $app->name;

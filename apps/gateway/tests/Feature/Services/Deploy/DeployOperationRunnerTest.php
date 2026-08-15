@@ -36,6 +36,7 @@ it('persists deploy progress frames before WebSocket publication and supports jo
             node: $node->name,
             path: '/srv/docs',
             document_root: 'public',
+            domain: 'docs.example.com',
         ),
     ]);
     DeployStep::query()->create([

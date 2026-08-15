@@ -62,7 +62,7 @@ function createDeployFailureVisibilityApp(): App
             node: $node->name,
             path: $app->path,
             document_root: $app->document_root,
-            domain: $app->domain,
+            domain: is_string($app->domain) && $app->domain !== '' ? $app->domain : "{$app->name}.example.com",
         ),
     ]);
 

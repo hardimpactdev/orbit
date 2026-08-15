@@ -248,6 +248,85 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->toBe('reload');
 });
 
+it('routes the explicitly selected instance, not the primary or a stale app environment column', function (): void {
+    Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'tld' => 'test',
+            'wireguard_address' => '10.47.0.34',
+        ]);
+    // Stale app-level column claims production; the concrete instance decides.
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'environment' => 'production',
+        'document_root' => 'public',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    // Primary (first) Orbit instance the app-level route would otherwise pick.
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    // The explicitly selected, non-primary instance whose placement must win.
+    $selected = Instance::factory()->for($app)->create([
+        'name' => 'preview',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs-preview',
+            document_root: 'public',
+            domain: 'docs-preview.test',
+        ),
+    ]);
+
+    $shell = new EnsureAppProxyRouteTestShell;
+    $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.47.0.34:9477/v1/commands' => Http::sequence()
+            ->push(ensure_app_proxy_route_agent_response('managed-file.probe', [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('managed-file.write', [
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                'mode' => '0644',
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('caddy-config.read-global', [
+                'content' => new CaddyGlobalConfig()->fresh(),
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('caddy-config.write-site', [
+                'path' => '/etc/caddy/sites/docs-preview.test.caddy',
+            ]))
+            ->push(ensure_app_proxy_route_agent_response('caddy-config.reload', [
+                'container' => 'orbit-caddy',
+            ])),
+    ]);
+
+    app(EnsureAppProxyRoute::class)->handle($app, $selected);
+
+    $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
+
+    expect($route->domain)
+        ->toBe('docs-preview.test')
+        ->and($route->config['runtime_upstream'])
+        ->toContain('preview')
+        ->and($route->config['runtime_upstream'])
+        ->not->toContain('development');
+});
+
 it('creates a static app proxy route with file_server', function (): void {
     Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
     $node = Node::factory()

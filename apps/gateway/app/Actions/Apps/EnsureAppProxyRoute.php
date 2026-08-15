@@ -821,15 +821,13 @@ final readonly class EnsureAppProxyRoute
 
     private function routeInstance(App $app): ?Instance
     {
-        $app->loadMissing('instances');
-        $instance = $app->instances->first(
-            static fn (Instance $instance): bool => (
-                $instance->name === $app->environment
-                && $instance->driver === InstanceDriver::Orbit
-            ),
-        );
+        // The app-level (bare-domain) route targets the app's primary concrete
+        // instance; App owns no environment column to key the instance on.
+        $instance = $this->placement->appPrimaryInstance($app);
 
-        return $instance instanceof Instance ? $instance : null;
+        return $instance instanceof Instance && $instance->driver === InstanceDriver::Orbit
+            ? $instance
+            : null;
     }
 
     private function runtimeUpstream(App $app, ?Instance $instance): string

@@ -49,7 +49,9 @@ beforeEach(function (): void {
             'user' => 'gateway',
             'orbit_path' => '/home/gateway/orbit',
             'status' => 'active',
-            'tld' => 'gateway',
+            // The app-dev host serves demo.beast, so its dev tld is beast; this
+            // keeps the instance placement (demo.beast) resolving to development.
+            'tld' => 'beast',
             'created_at' => now(),
             'updated_at' => now(),
         ],

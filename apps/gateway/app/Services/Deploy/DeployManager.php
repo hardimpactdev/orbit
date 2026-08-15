@@ -725,17 +725,6 @@ final readonly class DeployManager
             );
         }
 
-        if ($selection->app->environment !== 'production') {
-            throw new GatewayApiException(
-                message: "App '{$selection->app->name}' is not production-capable.",
-                errorCode: 'deploy.production_app_required',
-                errorMeta: [
-                    'app' => $selection->app->name,
-                    'environment' => $selection->app->environment,
-                ],
-            );
-        }
-
         try {
             $selection = $this->appSelectorResolver->requireInstance($selection);
         } catch (AppSelectionResolutionFailed $exception) {
@@ -761,6 +750,21 @@ final readonly class DeployManager
         }
 
         $instance->setRelation('app', $selection->app);
+
+        // Production capability is instance-authoritative: the concrete instance's
+        // own placement decides, never a stale App-level environment column.
+        $environment = $this->placement->environmentForInstance($instance);
+
+        if ($environment !== 'production') {
+            throw new GatewayApiException(
+                message: "App '{$selection->app->name}' is not production-capable.",
+                errorCode: 'deploy.production_app_required',
+                errorMeta: [
+                    'app' => $selection->app->name,
+                    'environment' => $environment,
+                ],
+            );
+        }
 
         return $instance;
     }

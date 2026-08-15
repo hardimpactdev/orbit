@@ -195,6 +195,7 @@ it('authorizes deployment against the concrete app instance node', function (): 
             node: $instanceNode->name,
             path: '/srv/billing',
             document_root: 'public',
+            domain: 'billing.example.com',
         ),
     ]);
     $caller = Node::factory()->create([

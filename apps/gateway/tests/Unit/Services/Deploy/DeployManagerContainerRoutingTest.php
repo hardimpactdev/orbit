@@ -180,7 +180,9 @@ function createDeployManagerTestApp(array $overrides = []): App
             node: $node->name,
             path: $app->path,
             document_root: $app->document_root,
-            domain: $app->domain,
+            // A production instance is one whose placement resolves to production
+            // (domain present on a non app-dev node), independent of App columns.
+            domain: is_string($app->domain) && $app->domain !== '' ? $app->domain : "{$app->name}.example.com",
         ),
         'deploy_warmup_paths' => $warmupPaths,
     ]);
@@ -469,7 +471,7 @@ it('preserves documented app context aliases for existing deployment steps', fun
                 'instance' => 'production',
                 'path' => '/srv/docs',
                 'user' => 'orbit',
-                'domain' => null,
+                'domain' => 'docs.example.com',
                 'repository' => null,
             ],
         ]);
@@ -870,4 +872,40 @@ it('records an unexpected deploy execution error as a failed run', function (): 
         ->toBe($run->id)
         ->and($instance->latestDeploymentRun->status)
         ->toBe('failed');
+});
+
+it('treats production capability as instance-authoritative, ignoring a stale app environment column', function (): void {
+    // The helper builds an app-prod placement whose instance resolves to
+    // production; force the App column to the opposite (stale) value.
+    createDeployManagerTestApp(['environment' => 'development']);
+
+    expect(app(DeployManager::class)->productionInstance('docs.production')->name)
+        ->toBe('production');
+});
+
+it('resolves the concrete selected instance for production deploy, not the primary instance', function (): void {
+    // The helper supplies the app plus its (primary) production instance; add a
+    // second development instance so selection must distinguish between them.
+    $app = createDeployManagerTestApp();
+    $devNode = Node::factory()->appDev()->create(['name' => 'dev-selected', 'tld' => 'test']);
+    Instance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $devNode->id,
+            node: $devNode->name,
+            path: '/srv/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+
+    // Each selection is evaluated on its own instance: production is accepted,
+    // while the non-production instance is rejected even though it belongs to
+    // the same app whose other instance is production-capable.
+    expect(app(DeployManager::class)->productionInstance('docs.production')->name)
+        ->toBe('production');
+
+    expect(fn (): mixed => app(DeployManager::class)->productionInstance('docs.development'))
+        ->toThrow(GatewayApiException::class);
 });

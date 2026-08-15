@@ -180,3 +180,33 @@ it('describes workspace route domains and inherits the app-dev inner TLS policy 
         ->and($policy->appliesToWorkspace($workspace))
         ->toBeTrue();
 });
+
+it('lets the workspace instance, not a stale app environment column, decide inner TLS', function (): void {
+    $policy = new AppDevelopmentInnerTlsPolicy;
+    $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
+    // Stale app-level column claims production; the development instance is the
+    // authority, so inner TLS must still apply.
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo',
+        'environment' => 'production',
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
+    ]);
+    $devInstance = Instance::factory()->for($app, 'app')->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/demo',
+            document_root: 'public',
+        ),
+    ]);
+    $workspace = Workspace::factory()
+        ->for($app, 'app')
+        ->for($devInstance, 'instance')
+        ->create([
+            'name' => 'feature-a',
+        ]);
+
+    expect($policy->appliesToWorkspace($workspace))->toBeTrue();
+});
