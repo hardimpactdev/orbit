@@ -53,12 +53,11 @@ final readonly class AppRuntimeContainerRenderer
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
     {
-        $sourcePath = rtrim($app->path, '/');
-        $app->loadMissing('instances');
-
+        // The app-level container sources placement from the app's primary
+        // concrete instance; App owns no source path to match against.
         return $this->renderTarget(
             app: $app,
-            instance: $this->placement->matchingOrbitInstanceForPath($app, $sourcePath),
+            instance: $this->placement->appPrimaryInstance($app),
             runtimeSlug: $app->name,
             preloadPath: $preloadPath,
         );

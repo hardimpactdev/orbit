@@ -7,6 +7,7 @@ namespace App\Services\Workspaces;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
 
@@ -14,16 +15,22 @@ final readonly class WorktreeWorkspaceDriver
 {
     public function __construct(
         private RunsInternalCommands $localExecutor,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
-    {
-        $path = $this->workspacePath($app, $name);
+    public function create(
+        App $app,
+        Node $node,
+        string $name,
+        string $base,
+        ?Instance $instance = null,
+    ): WorkspaceProvisionResult {
+        $path = $this->workspacePath($app, $name, $instance);
         $result = $this->localExecutor->runInternal(
             node: $node,
             commandName: 'internal:workspace-source:create',
             arguments: [
-                rtrim($app->path, '/'),
+                rtrim($this->placement->runtimePath($app, $instance), '/'),
                 $name,
                 $base,
             ],
@@ -57,8 +64,8 @@ final readonly class WorktreeWorkspaceDriver
         );
     }
 
-    private function workspacePath(App $app, string $workspaceName): string
+    private function workspacePath(App $app, string $workspaceName, ?Instance $instance = null): string
     {
-        return rtrim($app->path, '/').'/.worktrees/'.$workspaceName;
+        return rtrim($this->placement->runtimePath($app, $instance), '/').'/.worktrees/'.$workspaceName;
     }
 }

@@ -172,7 +172,7 @@ final readonly class AppRuntimeMountService
             );
         }
 
-        if ($this->isReservedTarget($app, $target)) {
+        if ($this->isReservedTarget($app, $target, $instance)) {
             throw $this->validationFailure(
                 'target_reserved',
                 "Runtime mount target '{$target}' is reserved by Orbit.",
@@ -316,7 +316,7 @@ final readonly class AppRuntimeMountService
         );
     }
 
-    private function isReservedTarget(App $app, string $target): bool
+    private function isReservedTarget(App $app, string $target, ?Instance $instance = null): bool
     {
         $reservedTargets = [
             AppRuntimeContainer::SourceTarget,
@@ -327,7 +327,7 @@ final readonly class AppRuntimeMountService
             '/data',
         ];
 
-        $appPath = rtrim($app->path, '/');
+        $appPath = rtrim($this->placement->runtimePath($app, $instance), '/');
 
         if ($appPath !== '') {
             $reservedTargets[] = $appPath;

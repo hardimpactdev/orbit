@@ -158,19 +158,9 @@ final readonly class CreateWorkspace
         string $base,
         Instance $instance,
     ): WorkspaceProvisionResult {
-        $originalPath = $app->path;
-
-        try {
-            $instancePath = $this->appPathForInstance($instance);
-
-            if ($instancePath !== null) {
-                $app->path = $instancePath;
-            }
-
-            return $this->worktreeDriver->create($app, $node, $name, $base);
-        } finally {
-            $app->path = $originalPath;
-        }
+        // Placement is instance-authoritative: the worktree driver resolves the
+        // source path from the instance directly, so no App::path mutation.
+        return $this->worktreeDriver->create($app, $node, $name, $base, $instance);
     }
 
     /**
@@ -234,16 +224,5 @@ final readonly class CreateWorkspace
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
-    }
-
-    private function appPathForInstance(?Instance $instance): ?string
-    {
-        $config = $instance?->driver_config;
-
-        if (! $config instanceof OrbitInstanceDriverConfigData) {
-            return null;
-        }
-
-        return is_string($config->path) && $config->path !== '' ? $config->path : null;
     }
 }

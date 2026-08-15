@@ -114,7 +114,7 @@ final readonly class WorkspaceSetupTargetResolver
         $workspaceName = $name ?? basename($path);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
-        if (! $this->pathAllowedForWorkspace($app, $path, $instance)) {
+        if (! $this->pathAllowedForWorkspace($path, $instance)) {
             throw new WorkspaceSetupResolutionFailed(
                 'workspace.path_is_project_root',
                 "Path {$path} is the '{$this->selectionLabel(
@@ -260,22 +260,8 @@ final readonly class WorkspaceSetupTargetResolver
             );
         }
 
-        /** @var Collection<int, App> $apps */
-        $apps = App::query()
-            ->with(['node', 'instances'])
-            ->get()
-            ->sortByDesc(fn (App $app): int => strlen($this->normalizePath($app->path)));
-        $app = $apps
-            ->first(fn (App $app): bool => $this->pathMatches($this->normalizePath($app->path), $cwd));
-
-        if ($app instanceof App) {
-            return (
-                $this->normalizePath($app->path) === $cwd
-                    ? ['type' => 'app_root', 'app' => $app]
-                    : ['type' => 'inside_app', 'app' => $app]
-            );
-        }
-
+        // App owns no source path: cwd resolves through concrete instance
+        // placement above; an otherwise-unmatched cwd is unregistered.
         return ['type' => 'unregistered'];
     }
 
@@ -459,9 +445,9 @@ final readonly class WorkspaceSetupTargetResolver
         }
     }
 
-    private function pathAllowedForWorkspace(App $app, string $path, Instance $instance): bool
+    private function pathAllowedForWorkspace(string $path, Instance $instance): bool
     {
-        $appPath = $this->instancePath($instance) ?? $app->path;
+        $appPath = $this->instancePath($instance) ?? '';
 
         $appPath = rtrim($this->normalizePath($appPath), '/');
 

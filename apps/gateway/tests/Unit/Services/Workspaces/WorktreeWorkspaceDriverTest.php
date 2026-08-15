@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\RemoteShell\RemoteExecutor;
@@ -61,10 +63,18 @@ it('reports internal workspace source creation failures as workspace source fail
 
 function worktreeWorkspaceDriverApp(): App
 {
-    return new App()->forceFill([
+    $app = App::factory()->create([
         'name' => 'docs',
         'path' => '/srv/docs',
     ]);
+    Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            path: '/srv/docs',
+            document_root: 'public',
+        ),
+    ]);
+
+    return $app;
 }
 
 function worktreeWorkspaceDriverNode(): Node

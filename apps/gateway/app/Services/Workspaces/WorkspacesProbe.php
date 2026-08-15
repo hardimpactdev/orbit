@@ -497,7 +497,7 @@ final readonly class WorkspacesProbe
                     summary: "Workspace {$workspace->name} path is the parent app root, not a workspace path.",
                     detail: [
                         'path' => $workspace->path,
-                        'app_path' => $workspace->app?->path,
+                        'app_path' => $this->placement()->appPathForWorkspace($workspace),
                     ],
                 ),
             ];

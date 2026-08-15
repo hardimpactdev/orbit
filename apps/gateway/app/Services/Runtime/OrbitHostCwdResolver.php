@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Runtime;
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
 
@@ -131,14 +134,30 @@ final class OrbitHostCwdResolver
 
     private function bestMatchingApp(string $cwd): ?App
     {
-        /** @var Collection<int, App> $candidates */
-        $candidates = App::query()
-            ->with('node')
-            ->whereNotNull('path')
-            ->where('path', '!=', '')
+        // App owns no source path: cwd resolves through concrete Orbit instance
+        // placement, and the owning app comes from the matched instance.
+        /** @var Collection<int, Instance> $candidates */
+        $candidates = Instance::query()
+            ->where('driver', InstanceDriver::Orbit)
+            ->with('app.node')
             ->get();
 
-        return $this->longestPathMatch($candidates, $cwd, fn (App $app): string => $app->path);
+        $instance = $this->longestPathMatch(
+            $candidates,
+            $cwd,
+            fn (Instance $instance): string => $this->instancePath($instance),
+        );
+
+        return $instance?->app;
+    }
+
+    private function instancePath(Instance $instance): string
+    {
+        $config = $instance->driver_config;
+
+        return $config instanceof OrbitInstanceDriverConfigData && is_string($config->path)
+            ? $config->path
+            : '';
     }
 
     /**

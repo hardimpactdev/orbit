@@ -289,7 +289,7 @@ final readonly class RemoveWorkspace
     {
         return [
             'ORBIT_APP' => (string) $workspace->app?->name,
-            'ORBIT_APP_PATH' => (string) ($this->placement->appPathForWorkspace($workspace) ?? $workspace->app?->path),
+            'ORBIT_APP_PATH' => (string) $this->placement->appPathForWorkspace($workspace),
             'ORBIT_WORKSPACE_NAME' => $workspace->name,
             'ORBIT_WORKSPACE_PATH' => $workspace->path,
             'ORBIT_URL' => $workspace->url(),

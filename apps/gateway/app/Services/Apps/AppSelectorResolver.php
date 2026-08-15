@@ -163,22 +163,8 @@ final readonly class AppSelectorResolver
             return $instanceSelection;
         }
 
-        $app = App::query()
-            ->with(['node', 'instances'])
-            ->get()
-            ->first(function (App $app) use ($normalizedPath): bool {
-                $appPath = rtrim($app->path, '/');
-
-                return (
-                    $appPath !== ''
-                    && ($normalizedPath === $appPath || str_starts_with($normalizedPath, "{$appPath}/"))
-                );
-            });
-
-        if ($app instanceof App) {
-            return new AppSelection(app: $app, selector: $normalizedPath);
-        }
-
+        // App owns no source path: cwd/path selection resolves through concrete
+        // instance placement (above) and workspace paths (below) only.
         $workspace = Workspace::query()
             ->with(['app.node', 'app.instances', 'instance'])
             ->get()

@@ -98,7 +98,7 @@ final class AppRootUpdater
             );
         }
 
-        $normalized = $this->normalizeRoot($app, $instance->driver_config, $root);
+        $normalized = $this->normalizeRoot($instance->driver_config, $root);
 
         if (is_array($normalized)) {
             return $this->failCommand(
@@ -160,12 +160,12 @@ final class AppRootUpdater
      * @return string|array{field: string, root: string, resolved_path: string, app_path: string}
      */
     private function normalizeRoot(
-        App $app,
         OrbitInstanceDriverConfigData $config,
         string $root,
     ): string|array {
         $root = trim(str_replace('\\', '/', $root));
-        $appPath = rtrim($config->path ?? $app->path, '/');
+        // The instance's own driver-config path is authoritative; App owns none.
+        $appPath = rtrim($config->path ?? '', '/');
 
         if ($root === '' || str_starts_with($root, '/')) {
             return $this->invalidRootMeta($root, $appPath, $root);

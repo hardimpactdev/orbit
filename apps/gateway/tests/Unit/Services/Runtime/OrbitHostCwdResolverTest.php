@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Runtime\OrbitHostCwdResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,11 +18,21 @@ function appAtPath(string $name, string $path): App
 {
     $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => "app-{$name}"]);
 
-    return App::factory()->for($node, 'node')->create([
+    $app = App::factory()->for($node, 'node')->create([
         'name' => $name,
         'path' => $path,
         'runtime' => AppRuntimeKind::Php,
     ]);
+    Instance::factory()->for($app, 'app')->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: $path,
+            document_root: 'public',
+        ),
+    ]);
+
+    return $app;
 }
 
 function workspaceAtPath(App $app, string $name, string $path): Workspace
@@ -181,5 +193,28 @@ describe('OrbitHostCwdResolver', function (): void {
         appAtPath('docs', '/home/orbit/apps/docs');
 
         expect(new OrbitHostCwdResolver()->resolve('relative/path'))->toBeNull();
+    });
+
+    it('resolves the owning app from instance placement, not a stale app path column', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-docs', 'tld' => 'app-docs']);
+        // Stale/opposite app path column; the instance placement is authoritative.
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/stale/wrong-path',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
+
+        expect(new OrbitHostCwdResolver()->resolve('/home/orbit/apps/docs')?->app?->is($app))
+            ->toBeTrue()
+            ->and(new OrbitHostCwdResolver()->resolve('/stale/wrong-path'))
+            ->toBeNull();
     });
 });

@@ -64,22 +64,19 @@ final class WorkspacePlacement
 
     public function appPathForWorkspace(Workspace $workspace): ?string
     {
-        $workspace->loadMissing('app');
-        $instance = $this->instanceForWorkspace($workspace);
-        $config = $instance?->driver_config;
+        $config = $this->instanceForWorkspace($workspace)?->driver_config;
 
         if ($config instanceof OrbitInstanceDriverConfigData && is_string($config->path) && $config->path !== '') {
             return $config->path;
         }
 
-        return $workspace->app?->path;
+        // App owns no source path; an instance-less workspace has no app path.
+        return null;
     }
 
     public function documentRootForWorkspace(Workspace $workspace): string
     {
-        $workspace->loadMissing('app');
-        $instance = $this->instanceForWorkspace($workspace);
-        $config = $instance?->driver_config;
+        $config = $this->instanceForWorkspace($workspace)?->driver_config;
 
         if (
             $config instanceof OrbitInstanceDriverConfigData
@@ -89,7 +86,8 @@ final class WorkspacePlacement
             return $config->document_root;
         }
 
-        return (string) $workspace->app?->document_root;
+        // App owns no document root; placement-free when the instance carries none.
+        return '';
     }
 
     public function workspaceDomain(Workspace $workspace): string

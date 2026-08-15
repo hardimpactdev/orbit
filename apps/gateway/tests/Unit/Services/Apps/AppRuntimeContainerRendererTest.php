@@ -1080,3 +1080,31 @@ it('uses worker config defaults when worker_enabled is true and worker_config is
         'MAX_REQUESTS' => '500',
     ]);
 });
+
+it('renders the runtime source mount from the instance placement, not a stale app path column', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit']);
+    // Stale/opposite app path column; the instance placement is authoritative.
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'docs',
+        'path' => '/stale/wrong-path',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ], withDefaultInstance: false);
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(collect($container->mounts())->pluck('source'))
+        ->toContain('/home/orbit/apps/docs')
+        ->not->toContain('/stale/wrong-path');
+});
