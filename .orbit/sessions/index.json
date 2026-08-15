@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 321,
-    "unique_candidate_commit_count": 217,
+    "record_count": 322,
+    "unique_candidate_commit_count": 218,
     "orphan_count": 0,
     "records": [
         {
@@ -8469,6 +8469,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "c98e9fae0b2ccde22839eb9dbb6c4f87e40f18b1",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-15-164538-solo-775-websocket-role-artifact",
+            "slug": "solo-775-websocket-role-artifact",
+            "timestamp": "2026-08-15-164538",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6b868d71064e23ed3727f0b0c94ae8e953b2e33b",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
