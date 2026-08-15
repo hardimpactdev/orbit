@@ -448,11 +448,9 @@ it('uses the root VERSION file as the single release version source', function (
         ->and($cliConfig)
         ->not->toContain("'version' => '")->and($gatewayConfig)
         ->not->toContain("'version' => '")->and($gatewayWorkflow)
-        ->not->toContain('bin/orbit-version')
-        ->and($binaryWorkflow)
-        ->toContain('bin/orbit-version')
-        ->and($releaseWorkflow)
-        ->toContain('bin/orbit-version');
+        ->not->toContain('bin/orbit-version')->and($binaryWorkflow)->toContain('bin/orbit-version')->and(
+            $releaseWorkflow,
+        )->toContain('bin/orbit-version');
 });
 
 it('builds local e2e cli binary artifacts through the shared helper', function (): void {
