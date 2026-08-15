@@ -216,8 +216,7 @@ final readonly class DoctorManagedFrankenPhpRuntimeRestorer
 
         try {
             $this->ensureFrankenPhpRuntimeProcess->forApp($app, $instance);
-            $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
-            $this->ensureAppRuntimeTlsMaterial($runtimeApp, $instanceNode);
+            $this->ensureAppRuntimeTlsMaterial($app, $instance, $instanceNode);
 
             $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
             $outcome = $this->runtimeContainerManagers->forApp()->apply($instanceNode, $container);
@@ -359,15 +358,15 @@ final readonly class DoctorManagedFrankenPhpRuntimeRestorer
         }
     }
 
-    private function ensureAppRuntimeTlsMaterial(App $app, Node $node): void
+    private function ensureAppRuntimeTlsMaterial(App $app, ?Instance $instance, Node $node): void
     {
-        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+        if (! $this->innerTlsPolicy->appliesToApp($app, $instance)) {
             return;
         }
 
         $this->siteCertificateInstaller->ensureFor(
             $node,
-            $this->innerTlsPolicy->appRouteDomain($app),
+            $this->innerTlsPolicy->appRouteDomain($app, $instance),
         );
     }
 

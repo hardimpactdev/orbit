@@ -6,23 +6,26 @@ namespace App\Services\Apps;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class RemoteAppCacheClear
 {
     public function __construct(
         private RunsInternalCommands $localExecutor,
         private AppRuntimeUser $runtimeUser = new AppRuntimeUser,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function clear(Node $node, App $app): RemoteShellResult
+    public function clear(Node $node, App $app, ?Instance $instance = null): RemoteShellResult
     {
         return $this->clearPath(
             node: $node,
-            path: $app->path,
-            phpVersion: $app->php_version,
-            runtimeUser: $this->runtimeUser->forApp($app),
+            path: $this->placement->runtimePath($app, $instance),
+            phpVersion: $this->placement->runtimePhpVersion($app, $instance),
+            runtimeUser: $this->runtimeUser->forApp($app, $instance),
         );
     }
 

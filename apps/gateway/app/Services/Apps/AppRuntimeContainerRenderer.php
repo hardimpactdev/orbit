@@ -365,9 +365,12 @@ final readonly class AppRuntimeContainerRenderer
      * readiness validator must agree on this so what readiness checks
      * matches what the runtime points `FRANKENPHP_CONFIG` at.
      */
-    public static function workerFileRelativeToSource(App $app): string
+    public static function workerFileRelativeToSource(App $app, ?Instance $instance = null): string
     {
-        $documentRoot = trim($app->document_root, characters: '/');
+        $documentRoot = trim(
+            new WorkspacePlacement()->runtimeDocumentRoot($app, $instance),
+            characters: '/',
+        );
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return self::WorkerFileName;

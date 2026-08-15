@@ -42,7 +42,6 @@ final readonly class EnsureFrankenPhpRuntimeProcess
             );
         }
 
-        $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
         $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
 
         return $app->processes()->updateOrCreate(
@@ -61,13 +60,13 @@ final readonly class EnsureFrankenPhpRuntimeProcess
                     'container_name' => $container->name(),
                     'container_spec_hash' => $container->specHash(),
                     'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-                    'document_root' => $runtimeApp->document_root,
+                    'document_root' => $this->placement->runtimeDocumentRoot($app, $instance),
                     'php_ini_path' => $this->appRuntimeContainerRenderer->phpIniHostPathForInstance(
                         $app,
                         $instance,
                     ),
-                    'php_version' => $runtimeApp->php_version,
-                    'source_path' => $runtimeApp->path,
+                    'php_version' => $this->placement->runtimePhpVersion($app, $instance),
+                    'source_path' => $this->placement->runtimePath($app, $instance),
                 ],
                 'sort_order' => 0,
             ],

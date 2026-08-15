@@ -48,21 +48,20 @@ final readonly class InstanceEnvApplier
             );
         }
 
-        $runtimeApp = $this->containerRenderer->runtimeAppForInstance($app, $instance);
         $contents = $this->readContents($node, $envPath);
         $updated = $this->envFileEditor->update($contents, $values);
         $this->writeContents(
             $node,
             $envPath,
             $updated,
-            $this->runtimeUser->forApp($runtimeApp),
+            $this->runtimeUser->forApp($app, $instance),
         );
 
         $cacheCleared = false;
         $runtimeOutcome = null;
 
         if ($app->runtimeKind()->usesPhpRuntimeContainer()) {
-            $this->clearCaches($node, $runtimeApp);
+            $this->clearCaches($node, $app, $instance);
             $cacheCleared = true;
             $runtimeOutcome = $this->containerManager->apply(
                 $node,
@@ -116,9 +115,9 @@ final readonly class InstanceEnvApplier
         app(RemoteEnvFile::class)->write($node, $path, $contents, $runtimeUser);
     }
 
-    private function clearCaches(Node $node, App $app): void
+    private function clearCaches(Node $node, App $app, ?Instance $instance): void
     {
-        $result = $this->cacheClear->clear($node, $app);
+        $result = $this->cacheClear->clear($node, $app, $instance);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->output());

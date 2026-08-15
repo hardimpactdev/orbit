@@ -8,6 +8,8 @@ use App\Data\Apps\AppWorkerReadinessResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppWorkerReadiness
 {
@@ -24,12 +26,11 @@ final readonly class AppWorkerReadiness
 
     public function __construct(
         private RemoteAppWorkerReadinessProbe $probe,
-        private AppRuntimeContainerRenderer $runtimeRenderer,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function assess(App $app, Instance $instance): AppWorkerReadinessResult
     {
-        $app = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
         $target = "{$app->name}.{$instance->name}";
         $runtime = $app->runtimeKind();
 
@@ -42,9 +43,9 @@ final readonly class AppWorkerReadiness
             );
         }
 
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        if ($node === null) {
+        if (! $node instanceof Node) {
             return AppWorkerReadinessResult::notReady(
                 code: 'instance.worker_unknown_node',
                 message: "Instance '{$target}' has no owning node; cannot validate worker readiness.",
@@ -52,7 +53,7 @@ final readonly class AppWorkerReadiness
             );
         }
 
-        $appPath = rtrim($app->path, '/');
+        $appPath = rtrim($this->placement->runtimePath($app, $instance), '/');
 
         if ($appPath === '') {
             return AppWorkerReadinessResult::notReady(
@@ -62,7 +63,7 @@ final readonly class AppWorkerReadiness
             );
         }
 
-        $workerFileRelative = AppRuntimeContainerRenderer::workerFileRelativeToSource($app);
+        $workerFileRelative = AppRuntimeContainerRenderer::workerFileRelativeToSource($app, $instance);
 
         $stdout = trim($this->probe->stdout($node, $appPath, $workerFileRelative));
 
