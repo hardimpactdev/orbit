@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-15T11:40:53+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-741-database-read-only/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-15-134053-solo-741-database-read-only",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-741-quality-check.txt",
+        "evidence/solo-741-retained-incus.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/solo-741-quality-check.txt": "b37287da382fbe688aee0f78a5e7ac69ef49e62ac50a92f193bd5345a62bf7eb",
+        "evidence/solo-741-retained-incus.txt": "c30071a8ee4c1b564b987c9a7ede3e99dacf7e49b3c7c2ef10d965e5ca71708e",
+        "loop.md": "25b0e205cc219783545dc9a0900a866e44453bd0044b05e7854c1cc5ca2da1bb"
+    },
+    "slug": "solo-741-database-read-only",
+    "requested_slug": "solo-741-database-read-only",
+    "compatible_slugs": [
+        "solo-741-database-read-only"
+    ],
+    "branch": "solo-741-database-read-only",
+    "candidate_commit": "554d9d8ede8bd063b765c41ba397286d778a89bf",
+    "accepted_feature_tip": "554d9d8ede8bd063b765c41ba397286d778a89bf",
+    "accepted_main_tip": "49533e896f44606ebb0f69e2ee4824eadc7376ef",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,27 @@
+Orbit todo #741 retained-Incus acceptance receipt
+
+candidate=554d9d8ede8bd063b765c41ba397286d778a89bf
+venue=retained-incus
+environment=dev-fixture
+topology=dev-466abb
+topology_kind=operator_gateway
+provider=incus
+host=beast
+target=orbit-e2e-dev-466abb-gateway
+checkout=/home/orbit/orbit-run
+
+Candidate identity hashes
+84cb4e3dfd50afb78d02dd8bcf36caee584b64d492d42f3308696af14ddad74b  packages/core/src/Database/DatabaseReadOnlyGuard.php
+153c9f9da412ae8cec3a03aca52f8d8f051289de41a32351c7ae845fc16896fd  apps/cli/app/Services/Database/LocalDatabaseQueryAction.php
+e2b819cf5e0a2d40e4bbe3969bc8d39a2cf3aac06090ad6570c4f32bfb3592a1  apps/gateway/app/Services/DatabaseConnections/DatabaseQueryRunner.php
+
+Real boundary
+php apps/cli/orbit internal:database-query-local against task-owned /tmp/orbit-solo-741.sqlite
+
+1. Ordinary SELECT returned Ada and Grace with success/read and exit 0.
+2. `pragma user_version = 741` returned database_query.execution_failed/read and exit 1; post-check USER_VERSION=0.
+3. `pragma query_only = off; update users set name = "Changed" where id = 1` remained classified read and returned success with exit 0; post-check NAME=Ada.
+4. A subsequent SELECT returned Ada with exit 0; a fresh connection reported FRESH_QUERY_ONLY=0.
+
+result=passed
+source_receipt=/Users/nckrtl/orbit/.worktrees/solo-741-database-read-only-accept/.orbit/evidence/solo-741-retained-incus.txt

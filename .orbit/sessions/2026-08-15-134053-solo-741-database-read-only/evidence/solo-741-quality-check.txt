@@ -1,0 +1,10 @@
+Orbit todo #741 diff-routed broad quality gate
+
+candidate=554d9d8ede8bd063b765c41ba397286d778a89bf
+command=composer quality-check
+result=passed
+exit_code=0
+completed_at=2026-08-15T11:23:00Z
+profile=.orbit/quality-gates/profiles/2026-08-15T11-22-02Z-554d9d8ede8b
+
+The candidate-bound profile retained component logs for CLI, core, docs, gateway, and SDK checks. The complete command exited successfully on the exact candidate before acceptance.
