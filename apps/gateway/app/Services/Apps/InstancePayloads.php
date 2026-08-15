@@ -26,7 +26,8 @@ final readonly class InstancePayloads
      */
     public function instance(Instance $instance): array
     {
-        $instance->loadMissing(['app.node', 'runtimeMounts']);
+        $instance->loadMissing(['app.node', 'runtimeMounts', 'latestDeploymentRun']);
+        $latestDeploymentRun = $instance->latestDeploymentRun;
 
         return [
             'app' => $instance->app->name,
@@ -36,8 +37,8 @@ final readonly class InstancePayloads
             'worker_enabled' => $instance->worker_enabled,
             'worker_config' => is_array($instance->worker_config) ? $instance->worker_config : null,
             'deploy_warmup_paths' => $instance->deploy_warmup_paths ?? [],
-            'latest_deployment_status' => $instance->latest_deployment_status,
-            'latest_deployment_run_id' => $instance->latest_deployment_run_id,
+            'latest_deployment_status' => $latestDeploymentRun?->status,
+            'latest_deployment_run_id' => $latestDeploymentRun?->id,
         ];
     }
 

@@ -51,7 +51,7 @@ final class InstanceController implements Loggable
         }
 
         $app = $this->stringInput($request, 'app');
-        $query = Instance::query()->with(['app.node', 'runtimeMounts']);
+        $query = Instance::query()->with(['app.node', 'runtimeMounts', 'latestDeploymentRun']);
 
         if ($app !== null) {
             $targetApp = App::query()->where('name', $app)->first();
@@ -124,7 +124,7 @@ final class InstanceController implements Loggable
         }
 
         /** @var list<Instance> $instances */
-        $instances = $targetApp->instances()->with(['runtimeMounts'])->get()->all();
+        $instances = $targetApp->instances()->with(['runtimeMounts', 'latestDeploymentRun'])->get()->all();
         $instances = array_values(array_filter(
             $instances,
             function (Instance $instance) use ($caller, $callerIsGateway): bool {

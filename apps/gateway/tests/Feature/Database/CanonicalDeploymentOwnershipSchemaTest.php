@@ -13,6 +13,10 @@ uses(RefreshDatabase::class);
 it('stores deployment policy and history only on concrete app instances', function (): void {
     expect(Schema::hasColumn('instances', 'deploy_warmup_paths'))
         ->toBeTrue()
+        ->and(Schema::hasColumn('instances', 'latest_deployment_status'))
+        ->toBeFalse()
+        ->and(Schema::hasColumn('instances', 'latest_deployment_run_id'))
+        ->toBeFalse()
         ->and(Schema::hasColumn('apps', 'deploy_warmup_paths'))
         ->toBeFalse()
         ->and(Schema::hasColumn('apps', 'latest_deployment_status'))

@@ -287,8 +287,8 @@ Instance renderers return this shape under `success.data.instance`, or under
 | `worker_enabled` | boolean | Whether FrankenPHP worker mode is enabled for this instance. Defaults to `false`. |
 | `worker_config` | object \| null | Worker settings owned by this instance and retained across disable/enable cycles. |
 | `deploy_warmup_paths` | array | HTTP paths warmed after this instance deploys successfully. |
-| `latest_deployment_status` | string \| null | Latest deployment status owned by this instance. |
-| `latest_deployment_run_id` | integer \| null | Latest deployment run owned by this instance. |
+| `latest_deployment_status` | string \| null | Status derived from the greatest deployment run ID owned by this instance. |
+| `latest_deployment_run_id` | integer \| null | Greatest deployment run ID owned by this instance. The run is the sole durable owner of this state. |
 
 In the current converted app and instance command surface, `app:new` is the only command that
 records repository metadata. `instance:register` preserves an existing app's stored

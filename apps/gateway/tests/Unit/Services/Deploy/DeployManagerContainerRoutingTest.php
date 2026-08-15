@@ -273,7 +273,7 @@ it('executes and records a deployment against the concrete instance target', fun
         ->toBe('/home/billing/releases')
         ->and($result['run']['instance'])
         ->toBe('production')
-        ->and($instance->refresh()->latest_deployment_status)
+        ->and($instance->refresh()->latestDeploymentRun->status)
         ->toBe('completed')
         ->and(DeploymentRun::query()->sole()->instance_id)
         ->toBe($instance->id);
@@ -834,13 +834,13 @@ it('reports Agent reachability when remote deploy execution cannot start', funct
         });
 
     $run = DeploymentRun::query()->sole();
-    $instance->refresh();
+    $latestRun = $instance->refresh()->latestDeploymentRun;
 
     expect([
         $run->status,
         $run->exit_code,
-        $instance->latest_deployment_run_id,
-        $instance->latest_deployment_status,
+        $latestRun?->id,
+        $latestRun?->status,
     ])
         ->toBe(['failed', 1, $run->id, 'failed'])
         ->and($run->finished_at)
@@ -866,8 +866,8 @@ it('records an unexpected deploy execution error as a failed run', function (): 
         ->toBe('failed')
         ->and($run->exit_code)
         ->toBe(1)
-        ->and($instance->refresh()->latest_deployment_run_id)
+        ->and($instance->refresh()->latestDeploymentRun->id)
         ->toBe($run->id)
-        ->and($instance->latest_deployment_status)
+        ->and($instance->latestDeploymentRun->status)
         ->toBe('failed');
 });

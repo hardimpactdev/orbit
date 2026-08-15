@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Override;
 
 /**
@@ -29,14 +30,13 @@ use Override;
  * @property list<string>|null $deploy_warmup_paths
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
- * @property string|null $latest_deployment_status
- * @property int|null $latest_deployment_run_id
  * @property-read App $app
  * @property-read Collection<int, InstanceEnvVariable> $envVariables
  * @property-read Collection<int, InstanceRuntimeMount> $runtimeMounts
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
  * @property-read Collection<int, DeployStep> $deploySteps
  * @property-read Collection<int, DeploymentRun> $deploymentRuns
+ * @property-read DeploymentRun|null $latestDeploymentRun
  * @property-read Collection<int, AppSetupRun> $setupRuns
  * @property-read Collection<int, AppSetupStep> $setupSteps
  * @property-read Collection<int, Schedule> $schedules
@@ -63,8 +63,6 @@ class Instance extends Model
         'deploy_warmup_paths',
         'worker_enabled',
         'worker_config',
-        'latest_deployment_status',
-        'latest_deployment_run_id',
     ];
 
     #[Override]
@@ -158,6 +156,14 @@ class Instance extends Model
         $relation->getQuery()->orderByDesc('started_at');
 
         return $relation;
+    }
+
+    /**
+     * @return HasOne<DeploymentRun, $this>
+     */
+    public function latestDeploymentRun(): HasOne
+    {
+        return $this->hasOne(DeploymentRun::class)->latestOfMany();
     }
 
     /**

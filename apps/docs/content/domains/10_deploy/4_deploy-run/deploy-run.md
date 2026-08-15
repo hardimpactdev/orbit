@@ -41,8 +41,9 @@ for one production instance. It resolves the concrete instance, reads its ordere
 creates a gateway deployment run with a reusable run context, renders
 `{{ ... }}` placeholders in each step, and executes the configured shell
 scripts on the instance's owning node through the gateway. It stops at the first
-failed step, captures output for every executed step, and updates the instance's
-latest deployment status.
+failed step, captures output for every executed step, and updates that run's
+status. Readers derive the instance's latest deployment status from its greatest
+deployment run ID.
 
 The gateway sends each rendered command as a typed internal Agent-push request
 with a structured binary and argument vector. It persists progress to the

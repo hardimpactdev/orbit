@@ -17,8 +17,9 @@ it('keeps the newest deployment run authoritative when an older run finishes lat
     $instance = Instance::factory()->create(['app_id' => $app->id]);
     $lifecycle = app(DeploymentRunLifecycle::class);
 
-    $olderRun = $lifecycle->start($instance, Carbon::now());
-    $newerRun = $lifecycle->start($instance, Carbon::now());
+    $startedAt = Carbon::now();
+    $olderRun = $lifecycle->start($instance, $startedAt);
+    $newerRun = $lifecycle->start($instance, $startedAt);
 
     $completedNewerRun = $lifecycle->completed($newerRun);
     $failedOlderRun = $lifecycle->failed($olderRun);
@@ -27,9 +28,9 @@ it('keeps the newest deployment run authoritative when an older run finishes lat
         ->toBe('completed')
         ->and($failedOlderRun->status)
         ->toBe('failed')
-        ->and($instance->refresh()->latest_deployment_run_id)
+        ->and($instance->refresh()->latestDeploymentRun->id)
         ->toBe($newerRun->id)
-        ->and($instance->latest_deployment_status)
+        ->and($instance->latestDeploymentRun->status)
         ->toBe('completed');
 });
 
@@ -45,6 +46,6 @@ it('does not replace a terminal deployment run result', function (): void {
         ->toBe('completed')
         ->and($sameRun->exit_code)
         ->toBe(0)
-        ->and($instance->refresh()->latest_deployment_status)
+        ->and($instance->refresh()->latestDeploymentRun->status)
         ->toBe('completed');
 });

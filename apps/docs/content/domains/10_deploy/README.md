@@ -4,16 +4,18 @@ Deploy commands manage deployment policy and history for concrete production
 instances. The command family owns the `deploy:*` command prefix.
 
 Deployments are an operator workflow, not a standalone state family. Deployment
-step definitions, warmup paths, deployment runs, run logs, and latest deployment
-status are instance-owned gateway state. Instance doctor may use the selected
+step definitions and warmup paths are instance-owned gateway state. Deployment
+runs own their status and history. The greatest instance-owned run ID is the sole
+durable source for latest deployment state. Instance doctor may use the selected
 instance's deployment policy and latest run state when evaluating production app
 health.
 
 ## State Ownership
 
 The deploy command domain does not own a state family. Deployment policy,
-deployment history, run logs, and latest deployment status are owned by one
-concrete production instance in gateway state.
+deployment history, and run logs belong to one concrete production instance in
+gateway state. The latest DeploymentRun owns the latest deployment status; the
+instance does not store a second status snapshot.
 
 [`doctor --family=instance`](../5_app/instance-doctor.md) owns deployment pipeline
 validation and latest deployment health. A failed or stale latest deployment is
@@ -30,7 +32,8 @@ These rules define what the deploy command family owns and how it behaves.
   selector is shorthand only when the app has exactly one instance; otherwise
   the command fails with `error.meta.reason=instance_required`.
 - The gateway is the source of truth for deployment step definitions, step
-  metadata, run history, and latest deployment status.
+  metadata, and run history. Readers derive latest deployment state from the
+  greatest instance-owned deployment run ID.
 - Deployment commands apply only to concrete instances of production apps.
 - Grant authorization targets the instance's owning Orbit node. For an external
   instance without an Orbit node, gateway-owned policy and history reads target

@@ -17,24 +17,12 @@ final readonly class DeploymentRunLifecycle
 
     public function start(Instance $instance, Carbon $startedAt): DeploymentRun
     {
-        return $this->databaseLockRetry->transaction(static function () use ($instance, $startedAt): DeploymentRun {
-            $instanceQuery = Instance::query()->whereKey($instance->id);
-            $instanceQuery->lockForUpdate();
-            $lockedInstance = $instanceQuery->firstOrFail();
-            $run = DeploymentRun::query()->create([
-                'instance_id' => $lockedInstance->id,
-                'status' => 'running',
-                'exit_code' => null,
-                'started_at' => $startedAt,
-            ]);
-
-            $lockedInstance->forceFill([
-                'latest_deployment_status' => 'running',
-                'latest_deployment_run_id' => $run->id,
-            ])->save();
-
-            return $run;
-        });
+        return DeploymentRun::query()->create([
+            'instance_id' => $instance->id,
+            'status' => 'running',
+            'exit_code' => null,
+            'started_at' => $startedAt,
+        ]);
     }
 
     public function completed(DeploymentRun $run): DeploymentRun
@@ -67,11 +55,6 @@ final readonly class DeploymentRunLifecycle
                 'finished_at' => $finishedAt,
                 'duration_ms' => (int) $startedAt->diffInMilliseconds($finishedAt),
             ])->save();
-
-            Instance::query()
-                ->whereKey($lockedRun->instance_id)
-                ->where('latest_deployment_run_id', $lockedRun->id)
-                ->update(['latest_deployment_status' => $status]);
 
             return $lockedRun;
         });

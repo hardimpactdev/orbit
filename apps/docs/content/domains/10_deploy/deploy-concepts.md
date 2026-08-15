@@ -72,9 +72,10 @@ These terms describe the runtime side of deployments — how runs are tracked an
 - **Deployment log:** Stored per-step deployment output for a previous run. It
   is captured gateway history, not live streaming output, process manager log
   output, or a node filesystem read.
-- **Latest deployment status:** Gateway state owned by the instance that records the
-  newest deployment outcome. Instance doctor uses it when evaluating production app
-  health.
+- **Latest deployment status:** Status of the greatest instance-owned deployment
+  run ID. DeploymentRun is its sole durable owner; the instance does not store a
+  shadow status or run ID. Instance doctor uses the derived status when evaluating
+  production app health.
 
 ## Health and boundaries
 

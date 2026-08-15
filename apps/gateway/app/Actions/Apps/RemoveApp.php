@@ -69,6 +69,7 @@ final readonly class RemoveApp
             'node',
             'dependencyAuditSummaries',
             'instances.runtimeMounts',
+            'instances.latestDeploymentRun',
             'processes.instance',
             'schedules',
             'workspaces.processes.instance',

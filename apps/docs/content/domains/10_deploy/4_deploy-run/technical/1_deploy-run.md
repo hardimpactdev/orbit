@@ -109,8 +109,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - When the instance defines `deploy_warmup_paths`, sends HTTP warmup requests to
   those paths on the app runtime endpoint before the deployment is marked
   complete.
-- Updates the run status and the instance's latest deployment status to
-  `completed`, `failed`, or `cancelled`.
+- Updates only the run status to `completed`, `failed`, or `cancelled`. Readers
+  derive the instance's latest deployment state from its greatest deployment
+  run ID. An older run that finishes later cannot replace that latest state.
 
 ### Detached Run Rules
 
@@ -119,8 +120,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Detached runs return the durable operation identity after execution has been
   handed off to the gateway.
 - Detached runs do not stream step output after handing execution to the gateway.
-- The gateway updates deployment history and latest deployment status when the
-  detached run finishes.
+- The gateway updates the detached run when it finishes. Deployment history and
+  derived latest deployment status then reflect that durable run state.
 
 ### Scope Boundaries
 
@@ -169,9 +170,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 ## Doctor Relationship
 
 Deployment run history is instance-owned gateway state. `deploy:run` does not own a
-doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use latest
-deployment status when reporting `instance.latest_deployment_failed` or
-`instance.deployment_run_stuck`.
+doctor family. [`instance-doctor.md`](../../../5_app/instance-doctor.md) may use the
+latest instance-owned run's status when reporting
+`instance.latest_deployment_failed` or `instance.deployment_run_stuck`.
 
 ## Test Mapping
 
