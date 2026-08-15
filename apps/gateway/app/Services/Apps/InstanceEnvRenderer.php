@@ -19,7 +19,6 @@ final readonly class InstanceEnvRenderer
 {
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
-        private AppRuntimeContainerRenderer $runtimeRenderer,
         private WorkspacePlacement $placement,
     ) {}
 
@@ -102,17 +101,10 @@ final readonly class InstanceEnvRenderer
 
         $env = [];
         $sourceApp = $instance->app;
-        $app = $this->runtimeRenderer->runtimeAppForInstance($sourceApp, $instance);
-        $domain = $this->placement->instanceUrlHost($instance, $sourceApp);
-
-        if ($domain !== '') {
-            $app->domain = $domain;
-        }
-
-        $node = $app->node ?? null;
+        $node = $this->placement->runtimeNode($sourceApp, $instance);
 
         if ($node instanceof Node) {
-            foreach ($this->vite->shellVariables($app, $node) as $key => $value) {
+            foreach ($this->vite->shellVariables($sourceApp, $node, null, $instance) as $key => $value) {
                 $env[$key] = [
                     'value' => $value,
                     'secret' => false,

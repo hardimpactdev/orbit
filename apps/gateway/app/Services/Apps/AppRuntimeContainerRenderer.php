@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Instance;
@@ -229,42 +228,6 @@ final readonly class AppRuntimeContainerRenderer
     private function containerNameForSlug(string $runtimeSlug): string
     {
         return "orbit-app-{$runtimeSlug}";
-    }
-
-    public function runtimeAppForInstance(App $app, Instance $instance): App
-    {
-        $runtimeApp = clone $app;
-        $node = $this->placement->nodeForInstance($instance);
-
-        if ($node instanceof Node) {
-            $runtimeApp->node_id = $node->id;
-            $runtimeApp->setRelation('node', $node);
-        }
-
-        // The instance owns its PHP version outright. The app value is only the
-        // template new instances are created from, so it must never override a
-        // stored instance value here. The null fallback covers rows predating
-        // the snapshot migration; it is not live inheritance.
-        $runtimeApp->forceFill(array_filter([
-            'php_version' => $this->filledInstanceValue($instance->php_version),
-        ]));
-
-        $config = $instance->driver_config;
-
-        if ($config instanceof OrbitInstanceDriverConfigData) {
-            $runtimeApp->forceFill(array_filter([
-                'path' => $this->filledInstanceValue($config->path),
-                'document_root' => $this->filledInstanceValue($config->document_root),
-                'domain' => $this->filledInstanceValue($config->domain),
-            ]));
-        }
-
-        return $runtimeApp;
-    }
-
-    private function filledInstanceValue(?string $value): ?string
-    {
-        return is_string($value) && trim($value) !== '' ? $value : null;
     }
 
     /**

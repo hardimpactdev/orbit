@@ -236,6 +236,23 @@ final class WorkspacePlacement
         return $this->filledValue($this->orbitConfigFor($instance)?->domain) ?? $app->domain;
     }
 
+    /**
+     * The runtime URL for an app/instance. When an instance is present the URL
+     * is built from its own placement host; otherwise the app-level URL applies.
+     */
+    public function runtimeUrl(App $app, ?Instance $instance): string
+    {
+        if ($instance instanceof Instance) {
+            $host = $this->instanceUrlHost($instance, $app);
+
+            if ($host !== '') {
+                return "https://{$host}";
+            }
+        }
+
+        return $app->url();
+    }
+
     public function runtimePhpVersion(App $app, ?Instance $instance): string
     {
         if ($instance instanceof Instance) {

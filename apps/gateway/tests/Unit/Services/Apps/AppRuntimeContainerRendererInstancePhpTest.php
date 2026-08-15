@@ -36,9 +36,9 @@ it('renders each instance with its own stored php version, not the app default',
 
     $renderer = app(AppRuntimeContainerRenderer::class);
 
-    expect($renderer->runtimeAppForInstance($app, $pinned)->php_version)
+    expect($renderer->renderForInstance($app, $pinned)->environment()['ORBIT_PHP_VERSION'])
         ->toBe('8.3')
-        ->and($renderer->runtimeAppForInstance($app, $current)->php_version)
+        ->and($renderer->renderForInstance($app, $current)->environment()['ORBIT_PHP_VERSION'])
         ->toBe('8.5');
 });
 
@@ -49,6 +49,10 @@ it('does not move an instance when the app default changes', function (): void {
 
     $app->forceFill(['php_version' => '8.5'])->save();
 
-    expect(app(AppRuntimeContainerRenderer::class)->runtimeAppForInstance($app->refresh(), $instance)->php_version)
+    expect(
+        app(AppRuntimeContainerRenderer::class)
+            ->renderForInstance($app->refresh(), $instance)
+            ->environment()['ORBIT_PHP_VERSION'],
+    )
         ->toBe('8.4');
 });

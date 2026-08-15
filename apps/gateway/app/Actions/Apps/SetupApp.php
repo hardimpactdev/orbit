@@ -9,16 +9,16 @@ use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppSetupStepRunner;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class SetupApp
 {
     public function __construct(
         private AppSetupStepRunner $stepRunner,
         private LaravelViteDevServerEnvironment $vite,
-        private AppRuntimeContainerRenderer $runtimeRenderer,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -34,16 +34,14 @@ final readonly class SetupApp
      */
     public function handle(App $app, Instance $instance, Node $node): array
     {
-        $runtimeApp = $this->runtimeRenderer->runtimeAppForInstance($app, $instance);
-
-        $setupResult = $this->runSetupSteps($runtimeApp, $instance, $node);
+        $setupResult = $this->runSetupSteps($app, $instance, $node);
 
         return [
             'app' => $app->name,
             'instance' => $instance->name,
             'node' => $node->name,
-            'path' => $runtimeApp->path,
-            'url' => $runtimeApp->url(),
+            'path' => $this->placement->runtimePath($app, $instance),
+            'url' => $this->placement->runtimeUrl($app, $instance),
             'action' => $setupResult['status'] === 'completed' ? 'set_up' : 'converged',
             'setup_steps' => $setupResult,
         ];
@@ -102,6 +100,7 @@ final readonly class SetupApp
             $node,
             $this->appEnv($app, $instance, $node),
             $onStepProgress,
+            $instance,
         );
 
         if (! $success) {
@@ -156,10 +155,10 @@ final readonly class SetupApp
             [
                 'ORBIT_APP' => $app->name,
                 'ORBIT_APP_INSTANCE' => $instance->name,
-                'ORBIT_APP_PATH' => $app->path,
-                'ORBIT_URL' => $app->url(),
-                'ORBIT_PHP_VERSION' => $app->php_version,
-            ] + $this->vite->shellVariables($app, $node)
+                'ORBIT_APP_PATH' => $this->placement->runtimePath($app, $instance),
+                'ORBIT_URL' => $this->placement->runtimeUrl($app, $instance),
+                'ORBIT_PHP_VERSION' => $this->placement->runtimePhpVersion($app, $instance),
+            ] + $this->vite->shellVariables($app, $node, null, $instance)
         );
     }
 }

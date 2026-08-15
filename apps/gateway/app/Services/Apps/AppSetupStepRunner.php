@@ -8,8 +8,10 @@ use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupRunStep;
 use App\Models\AppSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppSetupStepRunner
 {
@@ -18,6 +20,7 @@ final readonly class AppSetupStepRunner
     public function __construct(
         private AppCommandRouter $commandRouter,
         ?RunsInternalCommands $localExecutor = null,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {
         $this->setupStepLocalExecutor = new AppSetupStepLocalExecutor($localExecutor);
     }
@@ -34,7 +37,9 @@ final readonly class AppSetupStepRunner
         Node $node,
         array $environment,
         ?callable $onProgress = null,
+        ?Instance $instance = null,
     ): bool {
+        $appPath = $this->placement->runtimePath($app, $instance);
         $run->update(['status' => 'running']);
         $stepCount = count($steps);
 
@@ -50,11 +55,17 @@ final readonly class AppSetupStepRunner
                 $onProgress('running', $step, $index + 1, $stepCount);
             }
 
-            $command = $this->commandRouter->routeLifecycleForPath($app, $step->command, $app->path, $environment);
+            $command = $this->commandRouter->routeLifecycleForPath(
+                $app,
+                $step->command,
+                $appPath,
+                $environment,
+                $instance,
+            );
             $result = $this->setupStepLocalExecutor->run(
                 node: $node,
                 command: $command,
-                cwd: $app->path,
+                cwd: $appPath,
                 timeout: $step->timeoutSeconds(),
                 environment: $environment,
             );

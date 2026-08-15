@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
@@ -28,10 +29,14 @@ final readonly class LaravelViteDevServerEnvironment
      *     VITE_DEV_SERVER_CERT: string,
      * }
      */
-    public function shellVariables(App $app, Node $node, ?Workspace $workspace = null): array
-    {
-        $url = $this->url($app, $workspace);
-        $host = $this->host($app, $workspace);
+    public function shellVariables(
+        App $app,
+        Node $node,
+        ?Workspace $workspace = null,
+        ?Instance $instance = null,
+    ): array {
+        $url = $this->url($app, $workspace, $instance);
+        $host = $this->host($app, $workspace, $instance);
         $certificates = $this->hostCertificatePaths($node, $host);
 
         return [
@@ -97,14 +102,16 @@ final readonly class LaravelViteDevServerEnvironment
         ];
     }
 
-    public function url(App $app, ?Workspace $workspace = null): string
+    public function url(App $app, ?Workspace $workspace = null, ?Instance $instance = null): string
     {
-        return $workspace instanceof Workspace ? $workspace->url() : $app->url();
+        return $workspace instanceof Workspace
+            ? $workspace->url()
+            : $this->placement->runtimeUrl($app, $instance);
     }
 
-    public function host(App $app, ?Workspace $workspace = null): string
+    public function host(App $app, ?Workspace $workspace = null, ?Instance $instance = null): string
     {
-        $url = $this->url($app, $workspace);
+        $url = $this->url($app, $workspace, $instance);
         $host = parse_url($url, PHP_URL_HOST);
 
         if (is_string($host)) {
@@ -116,15 +123,27 @@ final readonly class LaravelViteDevServerEnvironment
         if ($stripped !== '') {
             $host = explode('/', $stripped)[0];
 
-            return $host !== '' ? $host : $this->fallbackHost($app, $workspace);
+            return $host !== '' ? $host : $this->fallbackHost($app, $workspace, $instance);
         }
 
-        return $this->fallbackHost($app, $workspace);
+        return $this->fallbackHost($app, $workspace, $instance);
     }
 
-    private function fallbackHost(App $app, ?Workspace $workspace): string
+    private function fallbackHost(App $app, ?Workspace $workspace, ?Instance $instance = null): string
     {
-        return $workspace instanceof Workspace ? "{$workspace->name}.{$app->name}" : $app->name;
+        if ($workspace instanceof Workspace) {
+            return "{$workspace->name}.{$app->name}";
+        }
+
+        if ($instance instanceof Instance) {
+            $host = $this->placement->instanceUrlHost($instance, $app);
+
+            if ($host !== '') {
+                return $host;
+            }
+        }
+
+        return $app->name;
     }
 
     /**

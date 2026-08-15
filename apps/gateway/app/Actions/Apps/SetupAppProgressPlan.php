@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\AppSetupStep;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 use Throwable;
 
@@ -31,6 +32,7 @@ final class SetupAppProgressPlan
         private readonly App $app,
         private readonly Instance $instance,
         private readonly Node $node,
+        private readonly WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function title(): string
@@ -72,7 +74,7 @@ final class SetupAppProgressPlan
                             'meta' => [
                                 'phase' => 'setup_steps',
                                 'node' => $this->node->name,
-                                'path' => $this->app->path,
+                                'path' => $this->placement->runtimePath($this->app, $this->instance),
                             ],
                         ];
 
@@ -151,7 +153,7 @@ final class SetupAppProgressPlan
 
     public function doneFooter(): string
     {
-        return "Instance ready and available at: {$this->app->url()}";
+        return "Instance ready and available at: {$this->placement->runtimeUrl($this->app, $this->instance)}";
     }
 
     public function failFooter(): string
@@ -184,8 +186,8 @@ final class SetupAppProgressPlan
             'app' => $this->app->name,
             'instance' => $this->instance->name,
             'node' => $this->node->name,
-            'path' => $this->app->path,
-            'url' => $this->app->url(),
+            'path' => $this->placement->runtimePath($this->app, $this->instance),
+            'url' => $this->placement->runtimeUrl($this->app, $this->instance),
             'action' => $this->setupResult['status'] === 'completed' ? 'set_up' : 'converged',
             'setup_steps' => $this->setupResult,
         ];
