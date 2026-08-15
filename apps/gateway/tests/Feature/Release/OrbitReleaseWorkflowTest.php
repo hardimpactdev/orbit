@@ -45,6 +45,11 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('--tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
         ->toContain('expected_digest="${GATEWAY_REF##*@}"')
         ->toContain('promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
+        ->toContain('inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"')
+        ->toContain('actual_digest=')
+        ->toContain('awk \'/^Digest:/ { print $2; exit }\'')
+        ->toContain('if [ "$actual_digest" != "$expected_digest" ]; then')
+        ->toContain('Promoted gateway digest is [${actual_digest:-missing}], expected [$expected_digest].')
         ->toContain('Promoted gateway digest')
         ->toContain('Verify promoted gateway image is pullable')
         ->toContain('Verify promoted gateway image bakes the release version')
@@ -96,6 +101,10 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
 
     expect($workflow)->toMatch(
         '/Verify promoted release manifest[\s\S]*Promote canonical gateway image version tag[\s\S]*Verify promoted gateway image is pullable/',
+    );
+
+    expect($workflow)->toMatch(
+        '/docker buildx imagetools create[\s\S]*docker buildx imagetools inspect "\$promoted_ref"[\s\S]*actual_digest=[\s\S]*if \[ "\$actual_digest" != "\$expected_digest" \]; then[\s\S]*Verify promoted gateway image is pullable/',
     );
 });
 
