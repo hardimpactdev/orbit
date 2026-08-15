@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
@@ -28,21 +29,20 @@ final readonly class AppDevelopmentInnerTlsPolicy
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
-    public function appliesToApp(App $app): bool
+    public function appliesToApp(App $app, ?Instance $instance = null): bool
     {
-        $app->loadMissing('node.roleAssignments');
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        return $node instanceof Node && $this->appliesToAppOnNode($app, $node);
+        return $node instanceof Node && $this->appliesToAppOnNode($app, $node, $instance);
     }
 
-    public function appliesToAppOnNode(App $app, Node $node): bool
+    public function appliesToAppOnNode(App $app, Node $node, ?Instance $instance = null): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
         }
 
-        if ($app->environment === 'production') {
+        if ($this->placement->runtimeEnvironment($app, $instance) === 'production') {
             return false;
         }
 
@@ -82,14 +82,16 @@ final readonly class AppDevelopmentInnerTlsPolicy
         return $node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
     }
 
-    public function appRouteDomain(App $app): string
+    public function appRouteDomain(App $app, ?Instance $instance = null): string
     {
-        if (is_string($app->domain) && $app->domain !== '') {
-            return $app->domain;
+        $domain = $this->placement->runtimeDomain($app, $instance);
+
+        if (is_string($domain) && $domain !== '') {
+            return $domain;
         }
 
-        $app->loadMissing('node');
-        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
+        $node = $this->placement->runtimeNode($app, $instance);
+        $tld = is_string($node?->tld) ? trim($node->tld, '.') : '';
 
         if ($tld === '') {
             return $app->name;

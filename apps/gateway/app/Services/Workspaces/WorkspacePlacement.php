@@ -189,6 +189,77 @@ final class WorkspacePlacement
         return $tld !== '' && str_ends_with($domain, ".{$tld}");
     }
 
+    /**
+     * Resolve the serving node for a runtime. When an instance is present its
+     * driver-config node is authoritative; otherwise the app-level node applies.
+     * This mirrors the placement the removed runtime App clone used to overlay.
+     */
+    public function runtimeNode(App $app, ?Instance $instance): ?Node
+    {
+        if ($instance instanceof Instance) {
+            $node = $this->nodeForInstance($instance);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
+        }
+
+        $app->loadMissing('node');
+
+        return $app->node instanceof Node ? $app->node : null;
+    }
+
+    public function runtimePath(App $app, ?Instance $instance): string
+    {
+        return $this->filledValue($this->orbitConfigFor($instance)?->path) ?? (string) $app->path;
+    }
+
+    public function runtimeDocumentRoot(App $app, ?Instance $instance): string
+    {
+        return $this->filledValue($this->orbitConfigFor($instance)?->document_root) ?? (string) $app->document_root;
+    }
+
+    public function runtimeDomain(App $app, ?Instance $instance): ?string
+    {
+        return $this->filledValue($this->orbitConfigFor($instance)?->domain) ?? $app->domain;
+    }
+
+    public function runtimePhpVersion(App $app, ?Instance $instance): string
+    {
+        if ($instance instanceof Instance) {
+            $filled = $this->filledValue($instance->php_version);
+
+            if ($filled !== null) {
+                return $filled;
+            }
+        }
+
+        return (string) $app->php_version;
+    }
+
+    /**
+     * The runtime environment is instance-authoritative when an instance is
+     * present (derived from its placement), otherwise the app-level value.
+     */
+    public function runtimeEnvironment(App $app, ?Instance $instance): string
+    {
+        return $instance instanceof Instance
+            ? $this->environmentForInstance($instance)
+            : (string) $app->environment;
+    }
+
+    private function orbitConfigFor(?Instance $instance): ?OrbitInstanceDriverConfigData
+    {
+        $config = $instance?->driver_config;
+
+        return $config instanceof OrbitInstanceDriverConfigData ? $config : null;
+    }
+
+    private function filledValue(?string $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
     public function matchingOrbitInstanceForPath(App $app, string $path): ?Instance
     {
         $path = rtrim($path, '/');

@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -19,14 +20,20 @@ final readonly class RuntimeHostRoutingPolicy
     ) {}
 
     /** @return array<string, string> */
-    public function forApp(App $app): array
+    public function forApp(App $app, ?Instance $instance = null): array
     {
-        if (! $this->appliesToApp($app)) {
+        $node = $this->placement->runtimeNode($app, $instance);
+
+        if (! $node instanceof Node || ! $this->appliesTo($app, $node, $instance)) {
             return [];
         }
 
+        $host = $instance instanceof Instance
+            ? $this->placement->instanceUrlHost($instance, $app)
+            : $this->vite->host($app);
+
         return [
-            $this->vite->host($app) => 'host-gateway',
+            $host => 'host-gateway',
         ];
     }
 
@@ -51,16 +58,12 @@ final readonly class RuntimeHostRoutingPolicy
         ];
     }
 
-    private function appliesToApp(App $app): bool
+    private function appliesTo(App $app, Node $node, ?Instance $instance = null): bool
     {
-        $app->loadMissing('node.roleAssignments');
-
-        return $app->node instanceof Node && $this->appliesTo($app, $app->node);
-    }
-
-    private function appliesTo(App $app, Node $node): bool
-    {
-        if ($app->runtimeKind() !== AppRuntimeKind::Php || $app->environment === 'production') {
+        if (
+            $app->runtimeKind() !== AppRuntimeKind::Php
+            || $this->placement->runtimeEnvironment($app, $instance) === 'production'
+        ) {
             return false;
         }
 

@@ -28,7 +28,7 @@ final readonly class AppRuntimeMountService
      */
     public function mountsForRuntime(App $app, ?Instance $instance = null): array
     {
-        if (! $this->isSupportedAppDevPhpApp($app)) {
+        if (! $this->isSupportedAppDevPhpApp($app, $instance)) {
             return [];
         }
 
@@ -215,7 +215,7 @@ final readonly class AppRuntimeMountService
             );
         }
 
-        if (! $this->isAppDevApp($app)) {
+        if (! $this->isAppDevApp($app, $instance)) {
             throw $this->validationFailure(
                 'instance_mounts_app_dev_only',
                 'Configurable instance runtime mounts are currently supported on app-dev nodes only.',
@@ -224,16 +224,16 @@ final readonly class AppRuntimeMountService
         }
     }
 
-    private function isSupportedAppDevPhpApp(App $app): bool
+    private function isSupportedAppDevPhpApp(App $app, ?Instance $instance = null): bool
     {
-        return $app->runtimeKind() === AppRuntimeKind::Php && $this->isAppDevApp($app);
+        return $app->runtimeKind() === AppRuntimeKind::Php && $this->isAppDevApp($app, $instance);
     }
 
-    private function isAppDevApp(App $app): bool
+    private function isAppDevApp(App $app, ?Instance $instance = null): bool
     {
-        $app->loadMissing('node.roleAssignments');
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        return $app->node instanceof Node && $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value);
+        return $node instanceof Node && $node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 
     private function nodeUser(App $app): string

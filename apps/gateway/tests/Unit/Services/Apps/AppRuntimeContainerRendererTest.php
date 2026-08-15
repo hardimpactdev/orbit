@@ -120,6 +120,36 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
         ]);
 });
 
+it('derives runtime environment from the instance, not a stale app environment column', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], settings: ['tld' => 'test']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        // Stale app-level column claiming production; the instance is the authority.
+        'environment' => 'production',
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+
+    $container = rendererForTest()->renderForInstance($app, $instance);
+
+    // A development instance on an app-dev node gets no production container user,
+    // even though the app's environment column still reads 'production'.
+    expect($container->runtimeUser())->toBeNull();
+});
+
 it('mounts the owning app-dev node user packages directory at /packages', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
     $app = makeRuntimeRendererApp($node, [

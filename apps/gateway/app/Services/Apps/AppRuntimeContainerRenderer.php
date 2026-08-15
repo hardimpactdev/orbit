@@ -71,7 +71,7 @@ final readonly class AppRuntimeContainerRenderer
         ?string $preloadPath = null,
     ): AppRuntimeContainer {
         return $this->renderTarget(
-            app: $this->runtimeAppForInstance($app, $instance),
+            app: $app,
             instance: $instance,
             runtimeSlug: $this->instanceSlug($app, $instance),
             preloadPath: $preloadPath,
@@ -92,8 +92,12 @@ final readonly class AppRuntimeContainerRenderer
             );
         }
 
-        $policy = $this->phpRuntimePolicy->forVersion($app->php_version, $preloadPath);
-        $sourcePath = rtrim($app->path, '/');
+        $node = $this->placement->runtimeNode($app, $instance);
+        $policy = $this->phpRuntimePolicy->forVersion(
+            $this->placement->runtimePhpVersion($app, $instance),
+            $preloadPath,
+        );
+        $sourcePath = rtrim($this->placement->runtimePath($app, $instance), '/');
 
         if ($sourcePath === '') {
             throw new InvalidArgumentException(
@@ -113,13 +117,13 @@ final readonly class AppRuntimeContainerRenderer
                 'read_only' => false,
             ],
             [
-                'source' => $this->phpIniHostPathForSlug($app, $runtimeSlug),
+                'source' => $this->phpIniHostPathForSlug($app, $runtimeSlug, $instance),
                 'target' => AppRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,
             ],
         ];
 
-        if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
+        if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app, $instance)) !== null) {
             $mounts[] = $packagesMount;
         }
 
@@ -127,31 +131,27 @@ final readonly class AppRuntimeContainerRenderer
             $mounts[] = $mount;
         }
 
-        if ($this->innerTlsPolicy->appliesToApp($app)) {
-            $app->loadMissing('node');
-
-            if ($app->node !== null) {
-                foreach ($this->innerTlsPolicy->runtimeTlsMounts(
-                    $app->node,
-                    $this->innerTlsPolicy->appRouteDomain($app),
-                ) as $mount) {
-                    $mounts[] = $mount;
-                }
+        if ($node instanceof Node && $this->innerTlsPolicy->appliesToApp($app, $instance)) {
+            foreach ($this->innerTlsPolicy->runtimeTlsMounts(
+                $node,
+                $this->innerTlsPolicy->appRouteDomain($app, $instance),
+            ) as $mount) {
+                $mounts[] = $mount;
             }
         }
 
-        $mounts = array_merge($mounts, $this->runtimeClientTrust->mountsForApp($app));
+        $mounts = array_merge($mounts, $this->runtimeClientTrust->mountsForApp($app, $instance));
 
         return new AppRuntimeContainer(
             name: $this->containerNameForSlug($runtimeSlug),
             image: $policy->image,
             network: $this->names->network(),
-            restartPolicy: $this->restartPolicy($app),
+            restartPolicy: $this->restartPolicy($node),
             appSlug: $runtimeSlug,
-            runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
+            runtimeUser: $this->appRuntimeUser->containerUserForApp($app, $instance),
             environment: array_merge(
                 $this->environmentFor($app, $instance),
-                $this->runtimeClientTrust->environmentForApp($app),
+                $this->runtimeClientTrust->environmentForApp($app, $instance),
             ),
             mounts: $mounts,
             networkAliases: [
@@ -160,18 +160,16 @@ final readonly class AppRuntimeContainerRenderer
             ],
             phpIni: array_merge(
                 $policy->phpIni,
-                $this->runtimeClientTrust->phpIniForApp($app),
+                $this->runtimeClientTrust->phpIniForApp($app, $instance),
             ),
-            extraHosts: $this->runtimeHostRouting->forApp($app),
-            workingDirectory: $this->applicationRootInContainer($app),
+            extraHosts: $this->runtimeHostRouting->forApp($app, $instance),
+            workingDirectory: $this->applicationRootInContainer($app, $instance),
         );
     }
 
-    private function restartPolicy(App $app): string
+    private function restartPolicy(?Node $node): string
     {
-        $app->loadMissing('node');
-
-        return $app->node?->hasActiveRole('app-dev') === true ? 'unless-stopped' : 'always';
+        return $node?->hasActiveRole('app-dev') === true ? 'unless-stopped' : 'always';
     }
 
     public function containerName(App $app): string
@@ -192,20 +190,21 @@ final readonly class AppRuntimeContainerRenderer
     public function phpIniHostPathForInstance(App $app, Instance $instance): string
     {
         return $this->phpIniHostPathForSlug(
-            $this->runtimeAppForInstance($app, $instance),
+            $app,
             $this->instanceSlug($app, $instance),
+            $instance,
         );
     }
 
-    private function phpIniHostPathForSlug(App $app, string $runtimeSlug): string
+    private function phpIniHostPathForSlug(App $app, string $runtimeSlug, ?Instance $instance = null): string
     {
-        $app->loadMissing('node');
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node; cannot render runtime config path.");
         }
 
-        return $this->nodeHostPaths->appRuntimeConfigPath($app->node, $runtimeSlug);
+        return $this->nodeHostPaths->appRuntimeConfigPath($node, $runtimeSlug);
     }
 
     public function upstreamUrl(App $app): string
@@ -274,19 +273,19 @@ final readonly class AppRuntimeContainerRenderer
     private function environmentFor(App $app, ?Instance $instance): array
     {
         $environment = [
-            'APP_BASE_PATH' => $this->applicationRootInContainer($app),
-            'SERVER_ROOT' => $this->documentRootInContainer($app),
+            'APP_BASE_PATH' => $this->applicationRootInContainer($app, $instance),
+            'SERVER_ROOT' => $this->documentRootInContainer($app, $instance),
             'XDG_CONFIG_HOME' => self::XdgConfigHome,
             'XDG_DATA_HOME' => self::XdgDataHome,
             'ORBIT_APP' => $app->name,
-            'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
-            'ORBIT_PHP_VERSION' => $app->php_version,
+            'ORBIT_APP_DOCUMENT_ROOT' => $this->placement->runtimeDocumentRoot($app, $instance),
+            'ORBIT_PHP_VERSION' => $this->placement->runtimePhpVersion($app, $instance),
         ];
 
-        if ($this->innerTlsPolicy->appliesToApp($app)) {
+        if ($this->innerTlsPolicy->appliesToApp($app, $instance)) {
             $environment = array_merge(
                 $environment,
-                $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->appRouteDomain($app)),
+                $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->appRouteDomain($app, $instance)),
             );
         } else {
             $environment['SERVER_NAME'] = ':'.self::InternalPort;
@@ -298,7 +297,7 @@ final readonly class AppRuntimeContainerRenderer
             return $environment;
         }
 
-        $frankenPhpConfig = $this->frankenPhpConfig->classic($app);
+        $frankenPhpConfig = $this->frankenPhpConfig->classic($app, $instance);
 
         if ($frankenPhpConfig !== null) {
             $environment['FRANKENPHP_CONFIG'] = $frankenPhpConfig;
@@ -326,22 +325,22 @@ final readonly class AppRuntimeContainerRenderer
     private function workerEnvironmentFor(App $app, Instance $instance): array
     {
         $config = $instance->workerConfig();
-        $workerFile = $this->frankenPhpWorkerFilePath($app);
+        $workerFile = $this->frankenPhpWorkerFilePath($app, $instance);
 
         return [
-            'FRANKENPHP_CONFIG' => $this->frankenPhpConfig->worker($app, $workerFile, $config->workers),
+            'FRANKENPHP_CONFIG' => $this->frankenPhpConfig->worker($app, $workerFile, $config->workers, $instance),
             'MAX_REQUESTS' => (string) $config->maxRequests,
         ];
     }
 
-    public function frankenPhpWorkerFilePath(App $app): string
+    public function frankenPhpWorkerFilePath(App $app, ?Instance $instance = null): string
     {
-        return $this->documentRootInContainer($app).'/'.self::WorkerFileName;
+        return $this->documentRootInContainer($app, $instance).'/'.self::WorkerFileName;
     }
 
-    public function documentRootInContainer(App $app): string
+    public function documentRootInContainer(App $app, ?Instance $instance = null): string
     {
-        $documentRoot = trim($app->document_root, characters: '/');
+        $documentRoot = trim($this->placement->runtimeDocumentRoot($app, $instance), characters: '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return AppRuntimeContainer::SourceTarget;
@@ -350,9 +349,9 @@ final readonly class AppRuntimeContainerRenderer
         return AppRuntimeContainer::SourceTarget.'/'.$documentRoot;
     }
 
-    public function applicationRootInContainer(App $app): string
+    public function applicationRootInContainer(App $app, ?Instance $instance = null): string
     {
-        $documentRoot = trim($app->document_root, characters: '/');
+        $documentRoot = trim($this->placement->runtimeDocumentRoot($app, $instance), characters: '/');
 
         if ($documentRoot === 'live' || str_starts_with($documentRoot, 'live/')) {
             return AppRuntimeContainer::SourceTarget.'/live';

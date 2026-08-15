@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Models\App;
+use App\Models\Instance;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class FrankenPhpRuntimeConfigRenderer
 {
@@ -13,9 +15,13 @@ final readonly class FrankenPhpRuntimeConfigRenderer
         'max_idle_time 1h',
     ];
 
-    public function classic(App $app): ?string
+    public function __construct(
+        private WorkspacePlacement $placement = new WorkspacePlacement,
+    ) {}
+
+    public function classic(App $app, ?Instance $instance = null): ?string
     {
-        $lines = $this->threadPoolLines($app);
+        $lines = $this->threadPoolLines($app, $instance);
 
         if ($lines === []) {
             return null;
@@ -24,10 +30,10 @@ final readonly class FrankenPhpRuntimeConfigRenderer
         return $this->render($lines);
     }
 
-    public function worker(App $app, string $workerFile, string|int $workers): string
+    public function worker(App $app, string $workerFile, string|int $workers, ?Instance $instance = null): string
     {
         return $this->render([
-            ...$this->threadPoolLines($app),
+            ...$this->threadPoolLines($app, $instance),
             ...$this->workerLines($workerFile, $workers),
         ]);
     }
@@ -35,11 +41,9 @@ final readonly class FrankenPhpRuntimeConfigRenderer
     /**
      * @return list<string>
      */
-    private function threadPoolLines(App $app): array
+    private function threadPoolLines(App $app, ?Instance $instance): array
     {
-        $app->loadMissing('node.roleAssignments');
-
-        if ($app->node?->hasActiveRole('app-dev') !== true) {
+        if ($this->placement->runtimeNode($app, $instance)?->hasActiveRole('app-dev') !== true) {
             return [];
         }
 

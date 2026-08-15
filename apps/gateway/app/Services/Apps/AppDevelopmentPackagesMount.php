@@ -6,8 +6,10 @@ namespace App\Services\Apps;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppDevelopmentPackagesMount
 {
@@ -15,6 +17,7 @@ final readonly class AppDevelopmentPackagesMount
 
     public function __construct(
         private NodeHostPaths $hostPaths = new NodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public static function isSafeSource(string $source): bool
@@ -30,15 +33,15 @@ final readonly class AppDevelopmentPackagesMount
     /**
      * @return array{source: string, target: string, read_only: bool}|null
      */
-    public function forApp(App $app): ?array
+    public function forApp(App $app, ?Instance $instance = null): ?array
     {
-        $app->loadMissing('node.roleAssignments');
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             return null;
         }
 
-        return $this->forNode($app->node);
+        return $this->forNode($node);
     }
 
     /**

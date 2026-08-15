@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
@@ -35,21 +36,21 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function mountsForApp(App $app): array
+    public function mountsForApp(App $app, ?Instance $instance = null): array
     {
-        if (! $this->appliesToApp($app)) {
+        if (! $this->appliesToApp($app, $instance)) {
             return [];
         }
 
-        $app->loadMissing('node');
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             return [];
         }
 
         return [
             [
-                'source' => $this->nodeHostPaths->runtimeTrustPoolPath($app->node),
+                'source' => $this->nodeHostPaths->runtimeTrustPoolPath($node),
                 'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
                 'read_only' => true,
             ],
@@ -86,9 +87,9 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return array<string, string>
      */
-    public function phpIniForApp(App $app): array
+    public function phpIniForApp(App $app, ?Instance $instance = null): array
     {
-        if (! $this->appliesToApp($app)) {
+        if (! $this->appliesToApp($app, $instance)) {
             return [];
         }
 
@@ -115,9 +116,9 @@ final readonly class RuntimeClientTrustPolicy
     /**
      * @return array<string, string>
      */
-    public function environmentForApp(App $app): array
+    public function environmentForApp(App $app, ?Instance $instance = null): array
     {
-        if (! $this->appliesToApp($app)) {
+        if (! $this->appliesToApp($app, $instance)) {
             return [];
         }
 
@@ -141,28 +142,28 @@ final readonly class RuntimeClientTrustPolicy
         return $node instanceof Node && $this->appliesTo($app, $node) ? self::ENVIRONMENT : [];
     }
 
-    private function appliesToApp(App $app): bool
+    private function appliesToApp(App $app, ?Instance $instance = null): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
         }
 
-        if ($app->environment === 'production') {
+        if ($this->placement->runtimeEnvironment($app, $instance) === 'production') {
             return false;
         }
 
-        $app->loadMissing('node.roleAssignments');
+        $node = $this->placement->runtimeNode($app, $instance);
 
-        return $app->node instanceof Node && $this->appliesTo($app, $app->node);
+        return $node instanceof Node && $this->appliesTo($app, $node, $instance);
     }
 
-    private function appliesTo(App $app, Node $node): bool
+    private function appliesTo(App $app, Node $node, ?Instance $instance = null): bool
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
         }
 
-        if ($app->environment === 'production') {
+        if ($this->placement->runtimeEnvironment($app, $instance) === 'production') {
             return false;
         }
 

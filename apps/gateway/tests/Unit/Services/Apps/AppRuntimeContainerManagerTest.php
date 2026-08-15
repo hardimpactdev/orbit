@@ -243,7 +243,7 @@ it('creates the app-dev packages bind mount source before running the app runtim
 });
 
 it('creates configured runtime mount sources before running the app runtime container', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $node = createTestAppHostNode(['user' => 'nckrtl'], settings: ['tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
