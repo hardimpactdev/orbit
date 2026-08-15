@@ -11,6 +11,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 
 /**
@@ -21,6 +22,7 @@ final readonly class LaunchdPlistRenderer
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
         private LaunchdProcessRuntimePolicy $runtimePolicy,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
@@ -125,8 +127,11 @@ final readonly class LaunchdPlistRenderer
             return $workspace->path;
         }
 
-        if ($app->path !== '') {
-            return $app->path;
+        $process->loadMissing('instance');
+        $appPath = $this->placement->runtimePath($app, $process->instance);
+
+        if ($appPath !== '') {
+            return $appPath;
         }
 
         return $this->homeDirectory($node);
@@ -147,12 +152,12 @@ final readonly class LaunchdPlistRenderer
             'HOME' => $home,
         ];
 
-        $process->loadMissing('owner');
+        $process->loadMissing(['owner', 'instance']);
 
         // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
         // TLS variables belong to instance/workspace process contexts.
         if (! $process->owner instanceof Node) {
-            $environment += $this->vite->shellVariables($app, $node, $workspace);
+            $environment += $this->vite->shellVariables($app, $node, $workspace, $process->instance);
         }
 
         $entries = [

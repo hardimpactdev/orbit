@@ -7,6 +7,8 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Process;
+use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -62,19 +64,27 @@ it('uses selected app instance placement for app-owned runtime apps', function (
         ),
     ]);
 
-    $runtimeApp = new ProcessOwnerContext($nmbp, $app, null, $app, instance: $instance)->runtimeApp();
+    $logicalApp = new ProcessOwnerContext($nmbp, $app, null, $app, instance: $instance)->runtimeApp();
+    $process = Process::factory()->create([
+        'owner_type' => App::class,
+        'owner_id' => $app->id,
+        'instance_id' => $instance->id,
+        'node_id' => $nmbp->id,
+        'runtime' => ProcessRuntime::Docker,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+    ]);
 
-    expect($runtimeApp->name)
+    // runtimeApp is the logical app; the runtime resolves placement from the
+    // selected instance, so the rendered container uses NMBP instance placement.
+    $container = app(ProcessDockerContainerRenderer::class)->render($logicalApp, $process);
+    $sources = array_column($container->mounts(), 'source');
+
+    expect($logicalApp->name)
         ->toBe('happie')
-        ->and($runtimeApp->path)
-        ->toBe('/Users/nckrtl/apps/happie')
-        ->and($runtimeApp->domain)
-        ->toBe('happie.nmbp')
-        ->and($runtimeApp->document_root)
-        ->toBe('public')
-        ->and($runtimeApp->node?->name)
-        ->toBe('NMBP')
-        ->and($runtimeApp->url())
+        ->and($sources)
+        ->toContain('/Users/nckrtl/apps/happie')
+        ->and($container->environment()['APP_URL'])
         ->toBe('https://happie.nmbp');
 });
 
@@ -115,13 +125,27 @@ it('carries dotted app instance selectors into process owner contexts', function
         workspaceName: null,
     );
 
+    $instance = $context->instance;
+    $process = Process::factory()->create([
+        'owner_type' => App::class,
+        'owner_id' => $context->app?->id,
+        'instance_id' => $instance?->id,
+        'node_id' => $context->node->id,
+        'runtime' => ProcessRuntime::Docker,
+        'name' => 'queue',
+        'command' => 'php artisan queue:work',
+    ]);
+
+    $container = app(ProcessDockerContainerRenderer::class)->render($context->runtimeApp(), $process);
+    $sources = array_column($container->mounts(), 'source');
+
     expect($context->node->name)
         ->toBe('NMBP')
         ->and($context->app?->name)
         ->toBe('happie')
-        ->and($context->runtimeApp()->path)
-        ->toBe('/Users/nckrtl/apps/happie')
-        ->and($context->runtimeApp()->url())
+        ->and($sources)
+        ->toContain('/Users/nckrtl/apps/happie')
+        ->and($container->environment()['APP_URL'])
         ->toBe('https://happie.nmbp');
 });
 

@@ -30,11 +30,11 @@ final readonly class ProcessOwnerContext
     public function runtimeApp(): App
     {
         if ($this->app instanceof App) {
-            $app = ProcessRuntimeApp::make($this->app, $this->node, $this->instance);
+            // The logical app is returned as-is; process-unit renderers resolve
+            // placement (node/path/php version) from the process's own instance.
+            $this->app->setRelation('node', $this->node);
 
-            $app->setRelation('node', $this->node);
-
-            return $app;
+            return $this->app;
         }
 
         $home = new NodeHostPaths()->homeDirectory($this->node);

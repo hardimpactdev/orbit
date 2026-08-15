@@ -13,6 +13,7 @@ use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 
 final readonly class ProcessDockerContainerRenderer
@@ -21,6 +22,7 @@ final readonly class ProcessDockerContainerRenderer
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
         private LaravelViteDevServerEnvironment $vite,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function render(App $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
@@ -39,7 +41,7 @@ final readonly class ProcessDockerContainerRenderer
             );
         }
 
-        $phpVersion = $this->resolvePhpVersion($app, $workspace);
+        $phpVersion = $this->resolvePhpVersion($app, $workspace, $process);
 
         if ($phpVersion === null) {
             throw new InvalidArgumentException(
@@ -70,7 +72,7 @@ final readonly class ProcessDockerContainerRenderer
                     'target' => ProcessDockerContainer::SourceTarget,
                     'read_only' => false,
                 ],
-                ...$this->vite->containerCertificateMounts($app, $workspace),
+                ...$this->vite->containerCertificateMounts($app, $workspace, $process->instance),
             ],
             networkAliases: [$name],
             ports: [],
@@ -119,9 +121,9 @@ final readonly class ProcessDockerContainerRenderer
 
     private function restartPolicy(App $app, Process $process): string
     {
-        $app->loadMissing('node');
+        $process->loadMissing('instance');
 
-        return $app->node?->hasActiveRole('app-dev') === true
+        return $this->placement->runtimeNode($app, $process->instance)?->hasActiveRole('app-dev') === true
         && $process->restart_policy === ProcessRestartPolicy::Always
             ? 'unless-stopped'
             : $process->restart_policy->toDocker();
@@ -169,7 +171,7 @@ final readonly class ProcessDockerContainerRenderer
         );
     }
 
-    private function resolvePhpVersion(App $app, ?Workspace $workspace): ?string
+    private function resolvePhpVersion(App $app, ?Workspace $workspace, Process $process): ?string
     {
         if ($workspace instanceof Workspace) {
             $version = $workspace->effectivePhpVersion();
@@ -177,14 +179,18 @@ final readonly class ProcessDockerContainerRenderer
             return is_string($version) && trim($version) !== '' ? trim($version) : null;
         }
 
-        $version = $app->php_version;
+        $process->loadMissing('instance');
+        $version = $this->placement->runtimePhpVersion($app, $process->instance);
 
-        return is_string($version) && trim($version) !== '' ? trim($version) : null;
+        return trim($version) !== '' ? trim($version) : null;
     }
 
     private function resolveSourcePath(App $app, ?Workspace $workspace, Process $process): string
     {
-        $path = $workspace instanceof Workspace ? $workspace->path : $app->path;
+        $process->loadMissing('instance');
+        $path = $workspace instanceof Workspace
+            ? $workspace->path
+            : $this->placement->runtimePath($app, $process->instance);
         $path = rtrim($path, '/');
 
         if ($path === '') {
@@ -209,7 +215,7 @@ final readonly class ProcessDockerContainerRenderer
                 'HOME' => $home,
                 'ORBIT_APP' => $app->name,
                 'ORBIT_PHP_VERSION' => $phpVersion,
-            ] + $this->vite->containerVariables($app, $workspace);
+            ] + $this->vite->containerVariables($app, $workspace, $process->instance);
 
         if ($workspace instanceof Workspace) {
             $environment['ORBIT_WORKSPACE'] = $workspace->name;

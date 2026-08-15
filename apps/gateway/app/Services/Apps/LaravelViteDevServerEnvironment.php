@@ -57,10 +57,10 @@ final readonly class LaravelViteDevServerEnvironment
      *     VITE_DEV_SERVER_CERT: string,
      * }
      */
-    public function containerVariables(App $app, ?Workspace $workspace = null): array
+    public function containerVariables(App $app, ?Workspace $workspace = null, ?Instance $instance = null): array
     {
-        $url = $this->url($app, $workspace);
-        $host = $this->host($app, $workspace);
+        $url = $this->url($app, $workspace, $instance);
+        $host = $this->host($app, $workspace, $instance);
         $certificates = $this->containerCertificatePaths($host);
 
         return [
@@ -75,16 +75,20 @@ final readonly class LaravelViteDevServerEnvironment
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
-    public function containerCertificateMounts(App $app, ?Workspace $workspace = null): array
-    {
-        $app->loadMissing('node');
-        $node = $workspace instanceof Workspace ? $this->placement->nodeForWorkspace($workspace) : $app->node;
+    public function containerCertificateMounts(
+        App $app,
+        ?Workspace $workspace = null,
+        ?Instance $instance = null,
+    ): array {
+        $node = $workspace instanceof Workspace
+            ? $this->placement->nodeForWorkspace($workspace)
+            : $this->placement->runtimeNode($app, $instance);
 
         if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
-        $host = $this->host($app, $workspace);
+        $host = $this->host($app, $workspace, $instance);
         $hostCertificates = $this->hostCertificatePaths($node, $host);
         $containerCertificates = $this->containerCertificatePaths($host);
 

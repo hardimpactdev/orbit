@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use InvalidArgumentException;
 
@@ -16,6 +17,7 @@ final readonly class SystemdUnitRenderer
 {
     public function __construct(
         private LaravelViteDevServerEnvironment $vite,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function unitName(App $app, Process $process, ?Workspace $workspace = null): string
@@ -110,7 +112,9 @@ final readonly class SystemdUnitRenderer
             return $workspace->path;
         }
 
-        return $app->path;
+        $process->loadMissing('instance');
+
+        return $this->placement->runtimePath($app, $process->instance);
     }
 
     /**
@@ -128,12 +132,12 @@ final readonly class SystemdUnitRenderer
             'HOME' => $home,
         ];
 
-        $process->loadMissing('owner');
+        $process->loadMissing(['owner', 'instance']);
 
         // Node-owned host processes only receive PATH/HOME. Laravel/Vite URL and
         // TLS variables belong to instance/workspace process contexts.
         if (! $process->owner instanceof Node) {
-            $environment += $this->vite->shellVariables($app, $node, $workspace);
+            $environment += $this->vite->shellVariables($app, $node, $workspace, $process->instance);
         }
 
         return collect($environment)
