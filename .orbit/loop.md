@@ -22,7 +22,7 @@ Make Instance the sole analytics and WebSocket binding authority so sibling inst
 
 - Verification:
   - focused: passed — candidate `4d16d3f94897104a4fb26bf7586741bacf8a8f3c`; binding suite 82 tests, 443 assertions; readiness file (incl. runtime-user regression) 14 tests, 113 assertions.
-  - broader: refreshing — full `composer quality-check` runs against this committed candidate; receipt recorded in the trailing evidence commit that cites the exact `.orbit/quality-gates/` path.
+  - broader: passed — `composer quality-check`; bound candidate `0f25d2fc2fa90ce2ea506e573c4b88bcf4cc744d` (git dirty=false; product code `4d16d3f94897104a4fb26bf7586741bacf8a8f3c`); exit 0 in 126 seconds; all 45 subgates pass; evidence `.orbit/quality-gates/quality-check-2026-08-15T153340Z-ae3228fc5f47.json`.
   - runtime: passed — candidate=4d16d3f94897104a4fb26bf7586741bacf8a8f3c; venue=retained-incus; environment=dev-fixture; command=orbit:internal:bake-websocket-node app-dev-1 --converge-runtime against topology dev-dfadb2 with the artifact-bearing candidate manifest; expected=credential-free websocket convergence loads the hash-verified role archive and Instance-owned bindings resolve on the live node; observed=bake exit 0 with docker auths=0 and no GHCR pull, container runs the artifact image sha256:2ac8fe9c restarts=0, live apps.php carries acme747.blue and acme747.green, 18/18 acceptance checks PASS; result=passed; evidence=`.orbit/evidence/747-live-runtime-proof.txt`
 - Blast radius: pending
 - Review: pending
