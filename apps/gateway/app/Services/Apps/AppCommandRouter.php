@@ -7,13 +7,16 @@ namespace App\Services\Apps;
 use App\Contracts\AppRuntimeUserResolver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 
 final readonly class AppCommandRouter
 {
     public function __construct(
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -22,9 +25,15 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function route(App $app, string $command, array $environment = []): string
+    public function route(App $app, string $command, array $environment = [], ?Instance $instance = null): string
     {
-        return $this->routeForPath($app, $command, $app->path, $environment);
+        return $this->routeForPath(
+            $app,
+            $command,
+            $this->placement->runtimePath($app, $instance),
+            $environment,
+            $instance,
+        );
     }
 
     /**
@@ -34,8 +43,13 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function routeForPath(App $app, string $command, string $path, array $environment = []): string
-    {
+    public function routeForPath(
+        App $app,
+        string $command,
+        string $path,
+        array $environment = [],
+        ?Instance $instance = null,
+    ): string {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
         }
@@ -44,13 +58,15 @@ final readonly class AppCommandRouter
             return $command;
         }
 
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
+        $runtimeUser = $this->appRuntimeUser->forApp($app, $instance);
 
         return $this->wrapWithPathAssignment(
             command: $command,
             path: $path,
             environment: $environment,
-            pathAssignment: 'PATH=/opt/orbit/php/'.escapeshellarg($app->php_version).'/bin:$PATH ',
+            pathAssignment: 'PATH=/opt/orbit/php/'
+            .escapeshellarg($this->placement->runtimePhpVersion($app, $instance))
+            .'/bin:$PATH ',
             runtimeUser: $runtimeUser,
         );
     }
@@ -61,19 +77,24 @@ final readonly class AppCommandRouter
      *
      * @param array<string, string> $environment
      */
-    public function routeLifecycleForPath(App $app, string $command, string $path, array $environment = []): string
-    {
+    public function routeLifecycleForPath(
+        App $app,
+        string $command,
+        string $path,
+        array $environment = [],
+        ?Instance $instance = null,
+    ): string {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
         }
 
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
+        $runtimeUser = $this->appRuntimeUser->forApp($app, $instance);
 
         return $this->wrapWithPathAssignment(
             command: $command,
             path: $path,
             environment: $environment,
-            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser),
+            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser, instance: $instance),
             runtimeUser: $runtimeUser,
         );
     }
@@ -157,14 +178,19 @@ final readonly class AppCommandRouter
         return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
-    private function managedToolPathAssignment(App $app, string $runtimeUser, ?Node $node = null): string
-    {
+    private function managedToolPathAssignment(
+        App $app,
+        string $runtimeUser,
+        ?Node $node = null,
+        ?Instance $instance = null,
+    ): string {
         $home = $node instanceof Node
             ? NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser)
-            : $this->homeDirectory($app, $runtimeUser);
+            : $this->homeDirectory($app, $runtimeUser, $instance);
 
+        $phpVersion = $this->placement->runtimePhpVersion($app, $instance);
         $pathPrefix = implode(':', [
-            "/opt/orbit/php/{$app->php_version}/bin",
+            "/opt/orbit/php/{$phpVersion}/bin",
             "{$home}/.local/bin",
             "{$home}/.vite-plus/bin",
             "{$home}/.bun/bin",
@@ -178,10 +204,9 @@ final readonly class AppCommandRouter
         return 'PATH='.escapeshellarg($pathPrefix).':$PATH ';
     }
 
-    private function homeDirectory(App $app, string $runtimeUser): string
+    private function homeDirectory(App $app, string $runtimeUser, ?Instance $instance = null): string
     {
-        $app->loadMissing('node');
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if ($node instanceof Node) {
             return NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser);

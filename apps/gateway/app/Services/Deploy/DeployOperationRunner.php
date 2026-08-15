@@ -26,16 +26,7 @@ final readonly class DeployOperationRunner
      */
     public function start(string $instanceSelector, Node $caller): array
     {
-        $target = $this->deploy->runTarget($instanceSelector);
-        $node = $target->node;
-
-        if (! $node instanceof Node) {
-            throw new GatewayApiException(
-                "App '{$target->name}' has no owning node.",
-                'deploy.execution_failed',
-                ['app' => $target->name, 'instance' => $instanceSelector],
-            );
-        }
+        $node = $this->deploy->runTargetNode($instanceSelector);
 
         $operation = $this->operationRuns->queued(
             operationId: (string) Str::uuid(),

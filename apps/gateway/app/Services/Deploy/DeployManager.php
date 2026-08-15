@@ -25,6 +25,7 @@ use App\Services\Apps\AppSelectorResolver;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -44,6 +45,7 @@ final readonly class DeployManager
         private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
         private RemoveDeployStep $removeDeployStep = new RemoveDeployStep,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -139,7 +141,8 @@ final readonly class DeployManager
     public function run(string $app, ?ProgressReporter $progress = null): array
     {
         $instance = $this->productionInstance($app);
-        $model = $this->runtimeApp($instance);
+        $model = $this->deployApp($instance);
+        $node = $this->placement->runtimeNode($model, $instance);
         $steps = $instance
             ->deploySteps()
             ->orderBy('sort_order')
@@ -174,16 +177,21 @@ final readonly class DeployManager
             foreach ($steps as $step) {
                 $stepStartedAt = now();
                 $command = $this->renderCommand($step->command, $context);
-                $routedCommand = $this->appCommandRouter->route($model, $command, $this->environment($context));
+                $routedCommand = $this->appCommandRouter->route(
+                    $model,
+                    $command,
+                    $this->environment($context),
+                    $instance,
+                );
                 $progress?->stepStart($this->progressKey($step));
                 $result = $this->runStep(
-                    $model->node ?? throw new GatewayApiException(
+                    $node ?? throw new GatewayApiException(
                         message: "App '{$model->name}' has no owning node.",
                         errorCode: 'deploy.execution_failed',
                         errorMeta: ['app' => $model->name],
                     ),
                     command: $routedCommand,
-                    cwd: $model->path,
+                    cwd: $this->placement->runtimePath($model, $instance),
                     timeout: (int) $step->timeout_seconds,
                     environment: $this->environment($context),
                 );
@@ -218,7 +226,7 @@ final readonly class DeployManager
             }
 
             if ($status === 'completed') {
-                $warmupPath = $model->path;
+                $warmupPath = $this->placement->runtimePath($model, $instance);
 
                 if ($this->usesLivePath($steps) && $model->runtimeKind() === AppRuntimeKind::Php) {
                     $progress?->stepStart('activate-runtime');
@@ -289,9 +297,21 @@ final readonly class DeployManager
         return $payload;
     }
 
-    public function runTarget(string $app): App
+    public function runTargetNode(string $app): Node
     {
-        return $this->runtimeApp($this->productionInstance($app));
+        $instance = $this->productionInstance($app);
+        $this->deployApp($instance);
+        $node = $this->placement->runtimeNode($instance->app, $instance);
+
+        if (! $node instanceof Node) {
+            throw new GatewayApiException(
+                message: "App '{$instance->app->name}' has no owning node.",
+                errorCode: 'deploy.execution_failed',
+                errorMeta: ['app' => $instance->app->name, 'instance' => $instance->name],
+            );
+        }
+
+        return $node;
     }
 
     /**
@@ -316,7 +336,7 @@ final readonly class DeployManager
             return null;
         }
 
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if ($node === null) {
             return null;
@@ -336,6 +356,7 @@ final readonly class DeployManager
                 $warmupCommand,
                 $cwd,
                 $this->environment($context),
+                $instance,
             );
 
             $result = $this->runStep(
@@ -387,7 +408,7 @@ final readonly class DeployManager
             return;
         }
 
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if ($node === null) {
             return;
@@ -405,7 +426,7 @@ final readonly class DeployManager
             $this->runStep(
                 node: $node,
                 command: $command,
-                cwd: $app->path,
+                cwd: $this->placement->runtimePath($app, $instance),
                 timeout: 30,
                 environment: $this->environment($context),
             );
@@ -847,18 +868,18 @@ final readonly class DeployManager
         DeploymentRun $run,
         Carbon $startedAt,
     ): array {
-        $app->loadMissing('node');
-
-        $appPath = rtrim($app->path, '/');
+        $node = $this->placement->runtimeNode($app, $instance);
+        $appPath = rtrim($this->placement->runtimePath($app, $instance), '/');
+        $domain = $this->placement->runtimeDomain($app, $instance);
         $release = $startedAt->copy()->utc()->format('Ymd_His').'_'.$run->id;
-        $appUser = $this->appUser($app);
+        $appUser = $this->appUser($app, $instance);
 
         return [
             'app_name' => $app->name,
             'instance' => $instance->name,
             'app_path' => $appPath,
             'app_user' => $appUser,
-            'domain' => $app->domain,
+            'domain' => $domain,
             'repository' => $app->repository,
             'release' => $release,
             'release_name' => $release,
@@ -873,23 +894,27 @@ final readonly class DeployManager
                 'instance' => $instance->name,
                 'path' => $appPath,
                 'user' => $appUser,
-                'domain' => $app->domain,
+                'domain' => $domain,
                 'repository' => $app->repository,
             ],
             'node' => [
-                'name' => $app->node?->name,
-                'host' => $app->node?->host,
-                'user' => $app->node?->user ?: 'orbit',
+                'name' => $node?->name,
+                'host' => $node?->host,
+                'user' => $node?->user ?: 'orbit',
             ],
         ];
     }
 
-    private function appUser(App $app): string
+    private function appUser(App $app, ?Instance $instance = null): string
     {
-        return $this->appRuntimeUser->forApp($app);
+        return $this->appRuntimeUser->forApp($app, $instance);
     }
 
-    private function runtimeApp(Instance $instance): App
+    /**
+     * Resolve the logical app for a deploy target. Placement is read from the
+     * concrete instance via WorkspacePlacement; no synthetic app clone is used.
+     */
+    private function deployApp(Instance $instance): App
     {
         $instance->loadMissing('app');
         $app = $instance->app;
@@ -911,10 +936,7 @@ final readonly class DeployManager
             );
         }
 
-        $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
-        $runtimeApp->loadMissing('node');
-
-        if (! $runtimeApp->node instanceof Node) {
+        if (! $this->placement->runtimeNode($app, $instance) instanceof Node) {
             throw new GatewayApiException(
                 message: "Instance '{$this->targetName($instance)}' has no owning node.",
                 errorCode: 'deploy.execution_failed',
@@ -925,7 +947,7 @@ final readonly class DeployManager
             );
         }
 
-        return $runtimeApp;
+        return $app;
     }
 
     private function targetName(Instance $instance): string

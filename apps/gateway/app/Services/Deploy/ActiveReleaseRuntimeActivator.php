@@ -14,6 +14,7 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\RemoteAppSourcePathProbe;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessDockerRuntimeManager;
+use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
@@ -28,6 +29,7 @@ final readonly class ActiveReleaseRuntimeActivator
         private RemoteAppSourcePathProbe $appSourcePathProbe,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private ProcessDockerRuntimeManager $processDockerRuntimeManager,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -59,7 +61,7 @@ final readonly class ActiveReleaseRuntimeActivator
      */
     private function activateRuntime(App $app, Instance $instance, array $context): array
     {
-        $node = $app->node;
+        $node = $this->placement->runtimeNode($app, $instance);
 
         if (
             ! $node instanceof Node
