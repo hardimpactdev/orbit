@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -56,8 +58,19 @@ function websocketRouteRegistrarAppWithIngress(): array
         'node_id' => $appNode->id,
         'domain' => 'docs.example.com',
     ]);
+    Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            domain: 'docs.example.com',
+        ),
+    ]);
 
     return [$app, $ingress, $router];
+}
+
+function websocketRouteRegistrarInstance(App $app): Instance
+{
+    return $app->instances()->firstOrFail();
 }
 
 beforeEach(function (): void {
@@ -254,7 +267,7 @@ it('requires websocket backends to have a WireGuard address', function (): void 
 it('syncs public websocket hosts as ingress routes that target router and websocket.orbit', function (): void {
     [$app, $ingress, $router] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
-        'app_id' => $app->id,
+        'instance_id' => websocketRouteRegistrarInstance($app)->id,
         'public_hosts' => ['ws.example.com', 'events.example.com'],
     ]);
 
@@ -283,6 +296,7 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
         ->toBe('proxy')
         ->and($route->config)
         ->toMatchArray([
+            'instance_id' => websocketRouteRegistrarInstance($app)->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'websocket',
@@ -333,7 +347,7 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
 it('removes stale public websocket routes for the binding app', function (): void {
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
-        'app_id' => $app->id,
+        'instance_id' => websocketRouteRegistrarInstance($app)->id,
         'public_hosts' => ['ws-new.example.com'],
     ]);
 
@@ -343,7 +357,10 @@ it('removes stale public websocket routes for the binding app', function (): voi
         'domain' => 'ws-old.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        'config' => [
+            'instance_id' => websocketRouteRegistrarInstance($app)->id,
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+        ],
     ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
@@ -357,7 +374,7 @@ it('removes stale public websocket routes for the binding app', function (): voi
 it('removes public websocket routes when the binding is disabled', function (): void {
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
-        'app_id' => $app->id,
+        'instance_id' => websocketRouteRegistrarInstance($app)->id,
         'enabled' => false,
         'public_hosts' => ['ws.example.com'],
     ]);
@@ -368,7 +385,10 @@ it('removes public websocket routes when the binding is disabled', function (): 
         'domain' => 'ws.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        'config' => [
+            'instance_id' => websocketRouteRegistrarInstance($app)->id,
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+        ],
     ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
@@ -392,8 +412,11 @@ it('requires an ingress route when public websocket hosts are configured', funct
     $app = App::factory()->create([
         'node_id' => $appNode->id,
     ]);
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+    ]);
     $binding = AppWebSocketBinding::factory()->create([
-        'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'public_hosts' => ['ws.example.com'],
     ]);
 

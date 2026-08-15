@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -197,8 +199,14 @@ function analyticsPublicBinding(): array
         'domain' => 'docs.test',
         'node_id' => $appNode->id,
     ]);
+    $instance = Instance::factory()->for($app)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            domain: 'docs.test',
+        ),
+    ]);
     $binding = AppAnalyticsBinding::query()->create([
-        'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'enabled' => true,
         'public_hosts' => ['analytics.docs.test'],
     ]);

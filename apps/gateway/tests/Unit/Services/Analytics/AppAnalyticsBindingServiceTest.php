@@ -221,6 +221,32 @@ describe('AppAnalyticsBindingService', function (): void {
             ->toBeTrue();
     });
 
+    it('keeps distinct bindings for sibling instances', function (): void {
+        createAnalyticsRoutePrerequisites();
+        $production = createAnalyticsApp();
+        $production->loadMissing('app');
+        $config = $production->driver_config;
+        assert($config instanceof OrbitInstanceDriverConfigData);
+        $staging = Instance::factory()->for($production->app)->create([
+            'name' => 'staging',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $config->node_id,
+                domain: 'staging.docs.test',
+            ),
+        ]);
+
+        $service = app(AppAnalyticsBindingService::class);
+        $productionBinding = $service->enable($production, ['analytics.docs.test']);
+        $stagingBinding = $service->enable($staging, ['analytics.staging.docs.test']);
+
+        expect($productionBinding->instance_id)
+            ->toBe($production->id)
+            ->and($stagingBinding->instance_id)
+            ->toBe($staging->id)
+            ->and(AppAnalyticsBinding::query()->count())
+            ->toBe(2);
+    });
+
     it('disables bindings and removes public analytics routes without removing the private service route', function (): void {
         createAnalyticsRoutePrerequisites();
         $app = createAnalyticsApp();

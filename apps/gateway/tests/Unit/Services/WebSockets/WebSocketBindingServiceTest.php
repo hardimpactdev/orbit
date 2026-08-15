@@ -200,6 +200,36 @@ it('generates different credentials for different apps', function (): void {
         ->not->toBe($secondBinding->reverb_app_secret);
 });
 
+it('keeps distinct bindings for sibling instances', function (): void {
+    websocketBindingServiceRouteBackends();
+    $production = websocketBindingServiceApp(domain: 'docs.test');
+    $production->loadMissing('app');
+    $config = $production->driver_config;
+    assert($config instanceof OrbitInstanceDriverConfigData);
+    $staging = Instance::factory()->for($production->app)->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $config->node_id,
+            domain: 'staging.docs.test',
+        ),
+    ]);
+
+    $service = app(WebSocketBindingService::class);
+    $productionBinding = $service->enable($production, []);
+    $stagingBinding = $service->enable($staging, []);
+
+    expect($productionBinding->instance_id)
+        ->toBe($production->id)
+        ->and($stagingBinding->instance_id)
+        ->toBe($staging->id)
+        ->and($productionBinding->reverb_app_id)
+        ->toBe('docs-test.production')
+        ->and($stagingBinding->reverb_app_id)
+        ->toBe('docs-test.staging')
+        ->and(AppWebSocketBinding::query()->count())
+        ->toBe(2);
+});
+
 it('disables a binding and removes public route intent without deleting credentials', function (): void {
     websocketBindingServiceRouteBackends();
     $app = websocketBindingServiceApp(domain: 'docs.test');

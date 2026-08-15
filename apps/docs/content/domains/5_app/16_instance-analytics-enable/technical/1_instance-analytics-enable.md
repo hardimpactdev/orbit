@@ -103,7 +103,7 @@ The request body is `{"public_hosts": ["<host>", ...]}`. The array is optional.
 | `binding.site_domain` | string | Selected instance's canonical public domain used as Plausible `data-domain`. |
 | `binding.internal_host` | string | Private dashboard host, always `analytics.orbit`. |
 | `binding.dashboard_url` | string | Private dashboard URL, always `https://analytics.orbit`. |
-| `binding.public_hosts` | array | Public tracking hostnames bound to this app. |
+| `binding.public_hosts` | array | Public tracking hostnames bound to this instance. |
 | `binding.tracking_paths` | array | Plausible script and event-ingest paths served by public routes. |
 | `binding.tracking_endpoints` | array | Per-host objects containing `host`, compatible `script_base_url`, exact `script_url`, `event_endpoint`, `data_domain`, and `snippet`. |
 | `route_enactment` | object | `status=completed` plus the enacted `router` and `ingress` placements. |

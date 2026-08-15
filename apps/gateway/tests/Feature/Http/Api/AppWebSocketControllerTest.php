@@ -187,6 +187,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.instance', 'production')
             ->assertJsonPath('success.data.binding.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.binding.public_hosts', ['ws.docs.test', 'events.docs.test'])
             ->assertJsonPath('success.data.binding.allowed_origins', ['https://docs.test'])
@@ -308,6 +309,7 @@ describe('AppWebSocketController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.credentials.app', 'docs')
+            ->assertJsonPath('success.data.credentials.instance', 'production')
             ->assertJsonPath('success.data.credentials.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.credentials.public_hosts', ['ws.docs.test'])
             ->assertJsonPath('success.data.credentials.allowed_origins', ['https://docs.test'])

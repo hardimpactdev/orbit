@@ -187,6 +187,7 @@ describe('AppAnalyticsController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
+            ->assertJsonPath('success.data.binding.instance', 'production')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.site_domain', 'docs.test')
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')

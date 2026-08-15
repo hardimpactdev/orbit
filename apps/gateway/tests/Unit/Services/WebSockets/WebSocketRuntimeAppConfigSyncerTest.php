@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -52,9 +53,10 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
         ]);
 
     $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create(['name' => 'production']);
 
     AppWebSocketBinding::factory()->create([
-        'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'enabled' => true,
         'reverb_app_id' => 'docs',
         'reverb_app_key' => 'app-key',

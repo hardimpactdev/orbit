@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Data\Doctor\DriftEntry;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -179,8 +181,11 @@ it('limits app-scoped public websocket drift to the selected app', function (): 
             'name' => $definition['name'],
             'node_id' => $appNode->id,
         ]);
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         AppWebSocketBinding::factory()->create([
-            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'public_hosts' => [$definition['host']],
         ]);
     }
