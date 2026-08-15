@@ -210,7 +210,11 @@ describe('WorkspaceStepStoreController', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepStoreAccess($caller, $node);
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
+        ]);
 
         $response = $this->call(
             'POST',
@@ -241,7 +245,11 @@ describe('WorkspaceStepStoreController', function (): void {
     it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepStoreCallerNode(role: 'app-dev');
         $node = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
+        ]);
 
         $response = $this->call(
             'POST',

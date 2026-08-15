@@ -144,7 +144,8 @@ describe('AppRuntimeMountController', function (): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()->appDev()->create(['name' => 'beast', 'user' => 'nckrtl']);
         grantAppRuntimeMountAccess($caller, $appNode, ['instance:read']);
-        App::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
+        $app = App::factory()->for($appNode, 'node')->create(['name' => 'nckrtl']);
+        create_app_runtime_mount_instance($app, $appNode);
 
         $response = postAppRuntimeMountJson('/api/instances/nckrtl/mounts', [
             'source' => '/home/nckrtl/packages',

@@ -17,6 +17,7 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsProbe;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -30,6 +31,7 @@ final readonly class DoctorAppFamilyProbe
         private AppRuntimeContainerRenderer $runtimeContainerRenderer,
         private DoctorIssueFactory $doctorIssueFactory,
         private NodeHostPaths $nodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -171,11 +173,9 @@ final readonly class DoctorAppFamilyProbe
 
     private function issue(DriftEntry $entry, App $app): DoctorIssue
     {
-        $app->loadMissing('node');
-
         return $this->doctorIssueFactory->fromDriftEntry(
             $entry,
-            $app->node?->name,
+            $this->placement->runtimeNode($app, null)?->name,
             detail: [
                 ...($entry->detail ?? []),
                 'app' => $app->name,

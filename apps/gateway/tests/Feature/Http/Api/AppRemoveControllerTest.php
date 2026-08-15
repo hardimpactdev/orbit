@@ -425,7 +425,9 @@ describe('AppRemoveController', function (): void {
             'name' => 'resolved-app-node',
             'status' => 'active',
         ]);
-        grantAppRemoveAccess($caller, $legacyNode);
+        // Authorization is instance-authoritative: the caller is granted on the
+        // primary instance's node, not the stale App node_id (legacy node).
+        grantAppRemoveAccess($caller, $resolvedNode);
 
         $app = App::factory()
             ->static()
@@ -756,9 +758,16 @@ describe('AppRemoveController', function (): void {
         ]);
         grantAppRemoveAccess($caller, $targetNode, ['app:read']);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $targetNode->id,
+        ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'production',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                node: $targetNode->name,
+            ),
         ]);
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));

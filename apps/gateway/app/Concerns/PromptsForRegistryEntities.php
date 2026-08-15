@@ -232,11 +232,11 @@ trait PromptsForRegistryEntities
             ->sort(
                 fn (Workspace $first, Workspace $second): int => (
                     [
-                        mb_strtolower((string) $first->app?->node?->name),
+                        mb_strtolower((string) $this->workspaceNodeName($first)),
                         mb_strtolower((string) $first->app?->name),
                         mb_strtolower($first->name),
                     ] <=> [
-                        mb_strtolower((string) $second->app?->node?->name),
+                        mb_strtolower((string) $this->workspaceNodeName($second)),
                         mb_strtolower((string) $second->app?->name),
                         mb_strtolower($second->name),
                     ]
@@ -550,6 +550,11 @@ trait PromptsForRegistryEntities
         ];
     }
 
+    private function workspaceNodeName(Workspace $workspace): ?string
+    {
+        return app(WorkspacePlacement::class)->nodeForWorkspace($workspace)?->name;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -558,7 +563,7 @@ trait PromptsForRegistryEntities
         return [
             'name' => $workspace->name,
             'app' => $workspace->app?->name,
-            'node' => $workspace->app?->node?->name,
+            'node' => $this->workspaceNodeName($workspace),
             'url' => $workspace->url(),
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];

@@ -173,6 +173,13 @@ describe('CodexAppController', function (): void {
                 'platform' => 'ubuntu_24-04',
             ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+            ),
+        ]);
         grantCodexAppAccess($caller, $appNode);
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();

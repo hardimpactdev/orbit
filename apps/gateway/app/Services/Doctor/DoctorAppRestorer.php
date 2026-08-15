@@ -130,11 +130,9 @@ final readonly class DoctorAppRestorer
         try {
             return $this->appsFixer->fix($app, $entry);
         } catch (Throwable $exception) {
-            $app->loadMissing('node');
-
             return [
                 'family' => $entry->family,
-                'node' => $app->node?->name,
+                'node' => $this->workspacePlacement->runtimeNode($app, null)?->name,
                 'code' => $entry->key,
                 'key' => $entry->key,
                 'mode' => 'restore',

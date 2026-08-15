@@ -87,7 +87,15 @@ describe('ServingNodeResolver', function (): void {
 
     it('resolves project-owning nodes from project parameters', function (): void {
         $node = Node::factory()->create(['name' => 'app-node']);
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
 
         $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['app' => 'docs']),
@@ -95,6 +103,29 @@ describe('ServingNodeResolver', function (): void {
         );
 
         expect($resolved?->is($node))->toBeTrue();
+    });
+
+    it('resolves the serving node from instance placement, not a stale app node_id', function (): void {
+        $staleNode = Node::factory()->create(['name' => 'stale-node']);
+        $realNode = Node::factory()->create(['name' => 'real-node']);
+        // The app node_id points at the stale node; the concrete instance is
+        // placed on the real node, which is the serving-node authority.
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $staleNode->id]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $realNode->id,
+                node: $realNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest(['app' => 'docs']),
+            ServingNode::AppOwning,
+        );
+
+        expect($resolved?->is($realNode))->toBeTrue();
     });
 
     it('uses the gateway grant boundary for an external instance', function (): void {

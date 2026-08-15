@@ -330,7 +330,11 @@ describe('WorkspaceStepDeleteController', function (): void {
     it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepDeleteCallerNode(role: 'app-dev');
         $node = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
+        ]);
 
         $response = $this->call(
             'DELETE',

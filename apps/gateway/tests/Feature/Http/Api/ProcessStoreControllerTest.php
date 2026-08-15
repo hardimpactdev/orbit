@@ -414,7 +414,8 @@ describe('ProcessStoreController', function (): void {
     it('rejects unauthorized callers before writing intent', function (): void {
         createProcessStoreCallerNode();
         $appNode = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        create_process_store_app_instance($app, $appNode);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
         $response = $this->call(
@@ -441,7 +442,8 @@ describe('ProcessStoreController', function (): void {
 
     it('denies app callers without a process add grant before writing intent', function (): void {
         $caller = createProcessStoreCallerNode(role: 'app-dev');
-        App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        create_process_store_app_instance($app, $caller);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
         $response = $this->call(

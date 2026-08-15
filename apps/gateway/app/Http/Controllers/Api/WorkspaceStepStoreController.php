@@ -232,7 +232,7 @@ final class WorkspaceStepStoreController implements Loggable
             }
         }
 
-        return $selection->app->node;
+        return $this->workspacePlacement->runtimeNode($selection->app, $selection->instance);
     }
 
     /**

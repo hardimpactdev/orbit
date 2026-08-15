@@ -153,9 +153,9 @@ final readonly class WorkspaceListController implements Loggable
             return $node instanceof Node && in_array($node->id, $visibleNodeIds, true);
         }
 
-        $selection->app->loadMissing(['node', 'instances']);
+        $node = $this->placement->runtimeNode($selection->app, $selection->instance);
 
-        if ($selection->app->node instanceof Node && in_array($selection->app->node->id, $visibleNodeIds, true)) {
+        if ($node instanceof Node && in_array($node->id, $visibleNodeIds, true)) {
             return true;
         }
 

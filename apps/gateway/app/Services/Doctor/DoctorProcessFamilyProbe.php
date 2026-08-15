@@ -18,6 +18,7 @@ use App\Services\Apps\NodeRuntimeContainersInventory;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\NodeProcessResolver;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Collection;
 
 final readonly class DoctorProcessFamilyProbe
@@ -31,6 +32,7 @@ final readonly class DoctorProcessFamilyProbe
         private EnsureFrankenPhpRuntimeProcess $ensureRuntimeProcess,
         private AppRuntimeContainerRenderer $runtimeContainerRenderer,
         private DoctorIssueFactory $doctorIssueFactory,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -189,8 +191,9 @@ final readonly class DoctorProcessFamilyProbe
     private function issue(DriftEntry $entry, Process $process): DoctorIssue
     {
         $app = $process->ownerApp();
-        $app?->loadMissing('node');
-        $node = $app instanceof App ? $app->node : $process->node;
+        $node = $app instanceof App
+            ? $this->placement->runtimeNode($app, $process->instance)
+            : $process->node;
 
         return $this->doctorIssueFactory->fromDriftEntry(
             $entry,

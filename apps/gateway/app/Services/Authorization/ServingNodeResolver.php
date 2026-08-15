@@ -87,21 +87,25 @@ final class ServingNodeResolver
             );
 
             if ($process instanceof OrbitProcess) {
-                return $this->appForProcess($process)?->node;
+                $processApp = $this->appForProcess($process);
+
+                return $processApp instanceof App
+                    ? app(WorkspacePlacement::class)->runtimeNode($processApp, $process->instance)
+                    : null;
             }
         }
 
         $app = $this->appFromValue($this->requestValue($request, 'name'));
 
         if ($app instanceof App) {
-            return $app->node;
+            return app(WorkspacePlacement::class)->runtimeNode($app, null);
         }
 
         foreach (['host_cwd', 'path', 'caller_cwd'] as $parameter) {
             $app = $this->appFromPath($this->requestValue($request, $parameter));
 
             if ($app instanceof App) {
-                return $app->node;
+                return app(WorkspacePlacement::class)->runtimeNode($app, null);
             }
         }
 
@@ -300,15 +304,8 @@ final class ServingNodeResolver
             return $app;
         }
 
-        $app = App::query()
-            ->with('node')
-            ->where('domain', $value)
-            ->first();
-
-        if ($app instanceof App) {
-            return $app;
-        }
-
+        // App owns no domain column: domain-value resolution matches instance
+        // hosts via appHasUrl below instead of a shadow App::domain query.
         return App::query()
             ->with(['node', 'instances'])
             ->get()
@@ -320,18 +317,12 @@ final class ServingNodeResolver
         $selection = $this->appSelectionFromValue($value);
 
         if ($selection !== null) {
-            if ($selection->instance !== null) {
-                $node = app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
-
-                if ($node instanceof Node) {
-                    return $node;
-                }
-            }
-
-            return $selection->app->node;
+            return app(WorkspacePlacement::class)->runtimeNode($selection->app, $selection->instance);
         }
 
-        return $this->appFromValue($value)?->node;
+        $app = $this->appFromValue($value);
+
+        return $app instanceof App ? app(WorkspacePlacement::class)->runtimeNode($app, null) : null;
     }
 
     private function appSelectionFromValue(mixed $value): ?AppSelection

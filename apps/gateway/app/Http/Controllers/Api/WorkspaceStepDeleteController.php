@@ -161,7 +161,7 @@ final class WorkspaceStepDeleteController implements Loggable
             }
         }
 
-        return $selection->app->node;
+        return $this->workspacePlacement->runtimeNode($selection->app, $selection->instance);
     }
 
     private function instanceRequired(): JsonResponse

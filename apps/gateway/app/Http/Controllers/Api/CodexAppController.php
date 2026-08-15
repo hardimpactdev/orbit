@@ -161,16 +161,23 @@ final readonly class CodexAppController
 
         $model = $this->resolveApp($project);
 
-        if (! $model instanceof App || ! $model->node instanceof Node) {
+        if (! $model instanceof App) {
             return $this->error('project.not_found', "Project '{$project}' not found.", ['project' => $project], 404);
         }
 
-        if (! app(NodeAccessAuthorizer::class)->allows($caller, $model->node, 'codex:app')) {
+        // App owns no node: the serving node comes from the app's primary instance.
+        $servingNode = app(WorkspacePlacement::class)->runtimeNode($model, null);
+
+        if (! $servingNode instanceof Node) {
+            return $this->error('project.not_found', "Project '{$project}' not found.", ['project' => $project], 404);
+        }
+
+        if (! app(NodeAccessAuthorizer::class)->allows($caller, $servingNode, 'codex:app')) {
             return $this->error(
                 'authorization_failed',
-                "This node is not authorized for 'codex:app' on '{$model->node?->name}'.",
+                "This node is not authorized for 'codex:app' on '{$servingNode->name}'.",
                 [
-                    'serving_node' => $model->node?->name,
+                    'serving_node' => $servingNode->name,
                     'missing_permission' => 'codex:app',
                 ],
                 403,

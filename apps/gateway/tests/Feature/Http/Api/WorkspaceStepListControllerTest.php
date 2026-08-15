@@ -93,7 +93,11 @@ describe('WorkspaceStepListController', function (): void {
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $instance = Instance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
+        $instance = Instance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
+        ]);
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -176,7 +180,11 @@ describe('WorkspaceStepListController', function (): void {
         createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Instance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
+        Instance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
+        ]);
 
         $response = $this->call(
             'GET',
