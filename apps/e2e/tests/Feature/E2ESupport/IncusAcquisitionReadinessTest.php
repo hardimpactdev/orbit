@@ -8,6 +8,7 @@ use App\E2E\Support\E2ETopologyAcquisitionOptions;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusInstance;
+use App\E2E\Support\IncusTopologyBuilder;
 use App\E2E\Support\IncusTopologyProvider;
 use App\E2E\Support\IncusTopologyTemplate;
 use App\E2E\Support\SshKeyPair;
@@ -163,6 +164,40 @@ function incusAcquisitionReadinessSourceMountedInstances(IncusHost $host): array
         ),
     ];
 }
+
+it('bakes the prepared websocket role as the app development runtime user', function (): void {
+    [$host, $commands] = incusAcquisitionReadinessCapturingHost();
+    $builder = new IncusTopologyBuilder($host);
+    $gateway = new IncusInstance($host, 'orbit-template-gateway-base', commandTransport: true);
+    $method = new ReflectionMethod($builder, 'runPreparedDownstreamAndWebSocketBakeInParallel');
+
+    $method->invoke(
+        $builder,
+        $gateway,
+        '10.231.7.227',
+        '10.231.7.228',
+        '10.231.7.229',
+        ['dev'],
+    );
+
+    $script = implode("\n", $commands());
+    $webSocketCommandStart = strpos($script, 'orbit:internal:bake-websocket-node');
+    $webSocketCommandEnd = strpos($script, '--converge-runtime', $webSocketCommandStart);
+    $webSocketCommand = substr(
+        $script,
+        $webSocketCommandStart,
+        $webSocketCommandEnd - $webSocketCommandStart,
+    );
+    $unescapedWebSocketCommand = str_replace("'\\''", "'", $webSocketCommand);
+
+    expect($webSocketCommandStart)
+        ->toBeInt()
+        ->and($webSocketCommandEnd)
+        ->toBeInt()
+        ->and($unescapedWebSocketCommand)
+        ->toContain("--user='orbit'")
+        ->not->toContain("--user='provisioner'");
+});
 
 it('awaits clone agents and refreshes network identity through one parallel host call', function (): void {
     [$host, $commands] = incusAcquisitionReadinessCapturingHost();

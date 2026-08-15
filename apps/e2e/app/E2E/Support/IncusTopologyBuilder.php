@@ -3349,7 +3349,7 @@ class IncusTopologyBuilder
             '--host='.escapeshellarg($devHost),
             '--wireguard-address='.escapeshellarg(self::DevWireGuardIp),
             '--gateway-endpoint='.escapeshellarg(self::GatewayWireGuardIp),
-            '--user='.escapeshellarg($this->host->config->bootstrapUser),
+            '--user='.escapeshellarg(self::AppDevelopmentRuntimeUser),
             '--valkey-node='.escapeshellarg('app-dev-1'),
             '--converge-runtime',
         ]));
