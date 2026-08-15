@@ -1,0 +1,58 @@
+Solo todo #749 retained Incus acceptance evidence
+Captured: 2026-08-15T10:46:00Z
+
+Candidate: 1eedb03995e7054c9ec8c5ee34360952be930963
+Venue: retained-incus
+Environment: dev-fixture
+Topology: dev-b6ede4 (operator_gateway)
+Host: beast
+Target: orbit-e2e-dev-b6ede4-gateway:/home/orbit/orbit-run
+Solo project: 92
+Solo terminal: 2402 (solo-749-retained-incus-proof)
+
+Expected:
+- The retained gateway runs the source-mounted candidate implementation.
+- The focused relation, lifecycle, payload, controller, schema, and migration behavior passes in the gateway VM.
+- The migrated retained gateway database has no Instance deployment shadow columns.
+- The removal migration is recorded as applied.
+
+Candidate identity:
+
+  $ pwd
+  /home/orbit/orbit-run
+
+  $ readlink -f /usr/local/bin/orbit
+  /home/orbit/orbit-run/apps/cli/orbit
+
+  $ sha256sum /usr/local/bin/orbit apps/cli/orbit
+  eb19bf3561cf7627029de7e9b105b1460b72dacbf0511adb9004727c4fd4068a  /usr/local/bin/orbit
+  eb19bf3561cf7627029de7e9b105b1460b72dacbf0511adb9004727c4fd4068a  apps/cli/orbit
+
+The following changed-file hashes matched the implementing worktree exactly:
+
+  d20408933168a7e10af56be586ffae029945389774d1e2dbc54c64ec8b9eb565  apps/gateway/app/Models/Instance.php
+  7d008b67e799c0ed3545df7437d66901b5d896724fcbeaa4d47ef1355d3433d9  apps/gateway/app/Services/Deploy/DeploymentRunLifecycle.php
+  a6a918a7359f43613e3de3399e3eb0feb92565ab4871ca06c390cf5761412e5c  apps/gateway/database/migrations/2026_08_15_101835_remove_latest_deployment_state_from_instances_table.php
+
+Behavior proof in the agent-owned Solo terminal:
+
+  $ bin/orbit-gateway-pest --compact tests/Unit/Models/InstanceLatestDeploymentRunTest.php tests/Unit/Services/Deploy/DeploymentRunLifecycleTest.php tests/Unit/Services/Apps/InstancePayloadsDeploymentTest.php tests/Feature/Migrations/RemoveInstanceDeploymentShadowsTest.php tests/Feature/Database/CanonicalDeploymentOwnershipSchemaTest.php tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php tests/Feature/Http/Api/InstanceControllerTest.php tests/Feature/InstanceControllerTest.php
+  Tests:    53 passed (279 assertions)
+  Duration: 7.51s
+
+Pest printed a non-fatal permission warning while trying to create its optional
+mutation-plugin cache in the read-only source overlay. The command exited zero,
+and all selected tests and assertions passed.
+
+Migrated retained gateway database proof:
+
+  $ php apps/gateway/artisan tinker --execute='dump(["status_shadow" => Schema::hasColumn("instances", "latest_deployment_status"), "run_shadow" => Schema::hasColumn("instances", "latest_deployment_run_id"), "migration_applied" => DB::table("migrations")->where("migration", "2026_08_15_101835_remove_latest_deployment_state_from_instances_table")->exists()]);'
+  array:3 [
+    "status_shadow" => false
+    "run_shadow" => false
+    "migration_applied" => true
+  ]
+
+Observed result: passed. The candidate-owned runtime behavior passed in the
+retained gateway VM, and the retained gateway schema uses DeploymentRun without
+the Instance shadow columns.

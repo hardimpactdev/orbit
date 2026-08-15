@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-15T10:47:32+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-749-deployment-run-state/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-15-124732-solo-749-deployment-run-state",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-749-retained-incus.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-15T104053Z-81b9756c238e.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-749-retained-incus.txt": "354247468e23f0fb82c2ae4b0568e4c9df068feb5aa989e9bd99302045b37456",
+        "loop.md": "4f33708dee165a762cbb1bd3388e2687c8f715c3d31cf07de90e8fb60c8bc37f",
+        "quality-gates/quality-check-2026-08-15T104053Z-81b9756c238e.json": "18371b26b90b07597826953b9f4da8d2755b038aca8b19ec11dbde7f5d345063"
+    },
+    "slug": "solo-749-deployment-run-state",
+    "requested_slug": "solo-749-deployment-run-state",
+    "compatible_slugs": [
+        "solo-749-deployment-run-state"
+    ],
+    "branch": "solo-749-deployment-run-state",
+    "candidate_commit": "1eedb03995e7054c9ec8c5ee34360952be930963",
+    "accepted_feature_tip": "1eedb03995e7054c9ec8c5ee34360952be930963",
+    "accepted_main_tip": "1c8a97214e576fe6d89c35cb54582a04272a83d0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
