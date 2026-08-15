@@ -26,6 +26,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('name: Orbit Release')
         ->toContain('types: [published]')
         ->toContain('contents: write')
+        ->toContain('packages: write')
         ->toContain('bin/orbit-version')
         ->toContain('Release tag')
         ->toContain('does not match VERSION')
@@ -35,6 +36,16 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('source')
         ->toContain('github-release')
         ->toContain('hash_file')
+        ->toContain("preg_match('/^[0-9a-f]{64}$/D'")
+        ->toContain('docker/setup-buildx-action@v3')
+        ->toContain('Log in to GHCR')
+        ->toContain('Promote canonical gateway image version tag')
+        ->toContain('docker buildx imagetools create')
+        ->toContain('--prefer-index=false')
+        ->toContain('--tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
+        ->toContain('expected_digest="${GATEWAY_REF##*@}"')
+        ->toContain('promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
+        ->toContain('Promoted gateway digest')
         ->toContain('Verify promoted gateway image is pullable')
         ->toContain('Verify promoted gateway image bakes the release version')
         ->toContain('bin/orbit-prepare-release-package --package="$package"')
@@ -82,6 +93,10 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->not->toContain('vendor/bin/phpacker build mac arm')
         ->not->toContain('vendor/bin/phpacker build linux x64')
         ->not->toContain('orbit'.'-runtime');
+
+    expect($workflow)->toMatch(
+        '/Verify promoted release manifest[\s\S]*Promote canonical gateway image version tag[\s\S]*Verify promoted gateway image is pullable/',
+    );
 });
 
 it('keeps the TypeScript SDK independently versioned with Craft-style package-repo OIDC publish', function (): void {
@@ -418,6 +433,7 @@ it('uses the root VERSION file as the single release version source', function (
     $gatewayConfig = file_get_contents(repo_path('apps/gateway/config/app.php'));
     $gatewayWorkflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
     $binaryWorkflow = file_get_contents(repo_path('.github/workflows/orbit-cli-binary.yml'));
+    $releaseWorkflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
 
     expect($version)
         ->toMatch('/^\d+\.\d+\.\d+$/')
@@ -431,9 +447,12 @@ it('uses the root VERSION file as the single release version source', function (
         ->toContain('VERSION')
         ->and($cliConfig)
         ->not->toContain("'version' => '")->and($gatewayConfig)
-        ->not->toContain("'version' => '")->and($gatewayWorkflow)->toContain('bin/orbit-version')->and(
-            $binaryWorkflow,
-        )->toContain('bin/orbit-version');
+        ->not->toContain("'version' => '")->and($gatewayWorkflow)
+        ->not->toContain('bin/orbit-version')
+        ->and($binaryWorkflow)
+        ->toContain('bin/orbit-version')
+        ->and($releaseWorkflow)
+        ->toContain('bin/orbit-version');
 });
 
 it('builds local e2e cli binary artifacts through the shared helper', function (): void {

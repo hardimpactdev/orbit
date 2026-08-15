@@ -26,13 +26,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Read canonical version
-        id: version
-        run: |
-          set -euo pipefail
-          VERSION="$(bin/orbit-version)"
-          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
-
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         run: |
@@ -40,8 +33,6 @@ jobs:
 
       - name: Build gateway image
         id: build
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
 
@@ -58,7 +49,6 @@ jobs:
 
           docker buildx build \
             --file docker/orbit-gateway/Dockerfile \
-            --tag "${image}:${VERSION}" \
             --tag "${image}:sha-${short_sha}" \
             --metadata-file "$metadata_file" \
             "$output_mode" \

@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: write
-  packages: read
+  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -110,8 +110,14 @@ jobs:
           }
 
           $gateway = $manifest['images']['gateway'] ?? null;
+          $gatewayPrefix = "ghcr.io/hardimpactdev/orbit-gateway:{$version}@sha256:";
+          $gatewayDigest = is_string($gateway) ? substr($gateway, strlen($gatewayPrefix)) : '';
 
-          if (! is_string($gateway) || ! str_starts_with($gateway, "ghcr.io/hardimpactdev/orbit-gateway:{$version}@sha256:")) {
+          if (
+              ! is_string($gateway)
+              || ! str_starts_with($gateway, $gatewayPrefix)
+              || preg_match('/^[0-9a-f]{64}$/D', $gatewayDigest) !== 1
+          ) {
               fail('Release manifest gateway image must be the promoted digest-pinned ghcr.io/hardimpactdev/orbit-gateway image.');
           }
 
@@ -149,6 +155,38 @@ jobs:
               exit(1);
           }
           PHP
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Promote canonical gateway image version tag
+        env:
+          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          expected_digest="${GATEWAY_REF##*@}"
+          promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}" \
+            "$GATEWAY_REF"
+
+          inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"
+          actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+          if [ "$actual_digest" != "$expected_digest" ]; then
+            echo "Promoted gateway digest is [${actual_digest:-missing}], expected [$expected_digest]." >&2
+            exit 1
+          fi
+
+          echo "Promoted gateway digest ${expected_digest} to ${promoted_ref}."
 
       - name: Verify promoted gateway image is pullable
         env:
