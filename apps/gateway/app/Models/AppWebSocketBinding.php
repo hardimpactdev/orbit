@@ -12,14 +12,14 @@ use Override;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $instance_id
  * @property bool $enabled
  * @property string $reverb_app_id
  * @property string $reverb_app_key
  * @property string $reverb_app_secret
  * @property list<string> $allowed_origins
  * @property list<string> $public_hosts
- * @property-read App $app
+ * @property-read Instance $instance
  */
 class AppWebSocketBinding extends Model
 {
@@ -31,7 +31,7 @@ class AppWebSocketBinding extends Model
 
     #[Override]
     protected $fillable = [
-        'app_id',
+        'instance_id',
         'enabled',
         'reverb_app_id',
         'reverb_app_key',
@@ -52,10 +52,10 @@ class AppWebSocketBinding extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function app(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(App::class, 'app_id');
+        return $this->belongsTo(Instance::class);
     }
 }

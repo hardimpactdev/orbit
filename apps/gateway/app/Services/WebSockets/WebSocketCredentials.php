@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
-use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use RuntimeException;
 
 final readonly class WebSocketCredentials
@@ -26,14 +26,14 @@ final readonly class WebSocketCredentials
 
     public static function fromBinding(AppWebSocketBinding $binding): self
     {
-        $binding->loadMissing('app');
+        $binding->loadMissing('instance.app');
 
-        if (! $binding->app instanceof App) {
-            throw new RuntimeException('WebSocket credentials require an app binding owner.');
+        if (! $binding->instance instanceof Instance) {
+            throw new RuntimeException('WebSocket credentials require an instance binding owner.');
         }
 
         return new self(
-            app: $binding->app->name,
+            app: $binding->instance->app->name,
             internalHost: WebSocketRouteRegistrar::ServiceDomain,
             publicHosts: self::stringList($binding->public_hosts),
             allowedOrigins: self::stringList($binding->allowed_origins),

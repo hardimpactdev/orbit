@@ -12,10 +12,10 @@ use Override;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $instance_id
  * @property bool $enabled
  * @property list<string> $public_hosts
- * @property-read App $app
+ * @property-read Instance $instance
  */
 class AppAnalyticsBinding extends Model
 {
@@ -27,7 +27,7 @@ class AppAnalyticsBinding extends Model
 
     #[Override]
     protected $fillable = [
-        'app_id',
+        'instance_id',
         'enabled',
         'public_hosts',
     ];
@@ -42,10 +42,10 @@ class AppAnalyticsBinding extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return BelongsTo<Instance, $this>
      */
-    public function app(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(App::class, 'app_id');
+        return $this->belongsTo(Instance::class);
     }
 }

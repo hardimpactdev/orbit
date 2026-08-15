@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\AnalyticsDomainRequired;
 use App\Exceptions\AnalyticsMutationBusy;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Analytics\AnalyticsPublicHostNormalizer;
@@ -47,7 +49,7 @@ describe('AppAnalyticsBindingService', function (): void {
             $lock->release();
         }
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())->toBeFalse();
     });
 
     it('keeps a second mutation out after the former 120 second lease boundary', function (): void {
@@ -77,7 +79,7 @@ describe('AppAnalyticsBindingService', function (): void {
             Carbon::setTestNow();
         }
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())->toBeFalse();
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())->toBeFalse();
     });
 
     it('scales the mutation lease for legacy bindings with more than the current route limit', function (): void {
@@ -85,13 +87,13 @@ describe('AppAnalyticsBindingService', function (): void {
 
         foreach (range(start: 1, end: 25) as $index) {
             ProxyRoute::query()->create([
-                'node_id' => $app->node_id,
+                'node_id' => $app->app->node_id,
                 'domain' => "legacy-analytics-{$index}.docs.test",
-                'app_id' => $app->id,
+                'app_id' => $app->app_id,
                 'owner_type' => 'app-analytics',
                 'kind' => 'proxy',
                 'source_hash' => hash('sha256', "legacy-analytics-{$index}.docs.test"),
-                'config' => [],
+                'config' => ['instance_id' => $app->id],
             ]);
         }
 
@@ -159,7 +161,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test/path']))
             ->toThrow(InvalidArgumentException::class, 'Analytics public hosts must be public DNS hostnames.');
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
             ->toBeFalse();
@@ -183,7 +185,7 @@ describe('AppAnalyticsBindingService', function (): void {
                 'Analytics supports at most '.AnalyticsPublicHostNormalizer::MAXIMUM_HOSTS.' public hosts.',
             );
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
             ->toBeFalse();
@@ -253,7 +255,7 @@ describe('AppAnalyticsBindingService', function (): void {
 
         expect(ProxyRoute::query()->where('domain', 'analytics.orbit')->exists())
             ->toBeFalse()
-            ->and(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+            ->and(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())
             ->toBeFalse();
     });
 
@@ -264,10 +266,10 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, []))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "Instance 'docs.production' requires a configured valid public domain before analytics can be enabled.",
             );
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
             ->toBeFalse();
@@ -280,10 +282,10 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => app(AppAnalyticsBindingService::class)->enable($app, ['analytics.docs.test']))
             ->toThrow(
                 AnalyticsDomainRequired::class,
-                "App 'docs' requires a configured valid public domain before analytics can be enabled.",
+                "Instance 'docs.production' requires a configured valid public domain before analytics can be enabled.",
             );
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->exists())
+        expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('owner_type', 'app-analytics')->exists())
             ->toBeFalse();
@@ -312,7 +314,7 @@ describe('AppAnalyticsBindingService', function (): void {
     it('keeps the binding enabled when public route cleanup fails during disable', function (): void {
         $app = createAnalyticsApp();
         AppAnalyticsBinding::query()->create([
-            'app_id' => $app->id,
+            'instance_id' => $app->id,
             'enabled' => true,
             'public_hosts' => ['analytics.docs.test'],
         ]);
@@ -321,7 +323,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(fn () => new AppAnalyticsBindingService($registrar, new AnalyticsPublicHostNormalizer)->disable($app))
             ->toThrow(RuntimeException::class, 'Public analytics route cleanup failed.');
 
-        $binding = AppAnalyticsBinding::query()->where('app_id', $app->id)->firstOrFail();
+        $binding = AppAnalyticsBinding::query()->where('instance_id', $app->id)->firstOrFail();
 
         expect($binding->enabled)
             ->toBeTrue()
@@ -378,13 +380,13 @@ final class AnalyticsBindingRecordingRegistrar extends AnalyticsRouteRegistrar
     }
 
     /** @param list<string> $hosts */
-    public function assertPublicHostsAvailable(App $app, array $hosts): void
+    public function assertPublicHostsAvailable(Instance $app, array $hosts): void
     {
         $this->calls[] = 'assert-public-hosts:'.implode(',', $hosts);
     }
 
     /** @param list<string> $desiredHosts */
-    public function removeObsoletePublicHosts(App $app, array $desiredHosts): void
+    public function removeObsoletePublicHosts(Instance $app, array $desiredHosts): void
     {
         $this->calls[] = 'remove-obsolete-public-hosts:'.implode(',', $desiredHosts);
 
@@ -425,7 +427,7 @@ function createAnalyticsRoutePrerequisites(bool $createServiceRoute = true): voi
     }
 }
 
-function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App
+function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): Instance
 {
     $ingress = $withIngress
         ? Node::factory()
@@ -450,9 +452,17 @@ function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = t
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return App::factory()->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $appNode->id,
         'domain' => $domain,
+    ]);
+
+    return Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            domain: $domain,
+        ),
     ]);
 }

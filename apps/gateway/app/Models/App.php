@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 use Override;
@@ -34,8 +33,6 @@ use Override;
  * @property-read Collection<int, Instance> $instances
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
- * @property-read AppAnalyticsBinding|null $analyticsBinding
- * @property-read AppWebSocketBinding|null $webSocketBinding
  * @property-read Collection<int, AppDependencyAuditSummary> $dependencyAuditSummaries
  * @property-read Collection<int, Workspace> $workspaces
  */
@@ -147,22 +144,6 @@ class App extends Model
         $workspaces->orderBy('name');
 
         return $workspaces;
-    }
-
-    /**
-     * @return HasOne<AppWebSocketBinding, $this>
-     */
-    public function webSocketBinding(): HasOne
-    {
-        return $this->hasOne(AppWebSocketBinding::class, 'app_id');
-    }
-
-    /**
-     * @return HasOne<AppAnalyticsBinding, $this>
-     */
-    public function analyticsBinding(): HasOne
-    {
-        return $this->hasOne(AppAnalyticsBinding::class, 'app_id');
     }
 
     /**

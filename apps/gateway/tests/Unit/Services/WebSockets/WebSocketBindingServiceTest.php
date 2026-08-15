@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\WebSockets\WebSocketBindingService;
@@ -18,7 +20,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIngress = true): App
+function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIngress = true): Instance
 {
     $slug = str_replace('.', '-', $domain ?? 'private-app');
     $addressOffset = $domain === 'docs.test' ? 0 : 1;
@@ -46,10 +48,18 @@ function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIng
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
 
-    return App::factory()->create([
+    $app = App::factory()->create([
         'name' => $slug,
         'node_id' => $appNode->id,
         'domain' => $domain,
+    ]);
+
+    return Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            domain: $domain,
+        ),
     ]);
 }
 
@@ -90,12 +100,12 @@ it('enables an app websocket binding with generated credentials and synced route
 
     expect($binding)
         ->toBeInstanceOf(AppWebSocketBinding::class)
-        ->and($binding->app_id)
+        ->and($binding->instance_id)
         ->toBe($app->id)
         ->and($binding->enabled)
         ->toBeTrue()
         ->and($binding->reverb_app_id)
-        ->toBe('docs-test')
+        ->toBe('docs-test.production')
         ->and($binding->reverb_app_key)
         ->toHaveLength(32)
         ->and($binding->reverb_app_secret)
@@ -128,7 +138,7 @@ it('returns websocket credentials for an enabled binding', function (): void {
             'internal_host' => 'websocket.orbit',
             'public_hosts' => ['ws.docs.test'],
             'allowed_origins' => ['https://docs.test'],
-            'reverb_app_id' => 'docs-test',
+            'reverb_app_id' => 'docs-test.production',
             'reverb_app_key' => $binding->reverb_app_key,
             'reverb_app_secret' => $binding->reverb_app_secret,
         ]);

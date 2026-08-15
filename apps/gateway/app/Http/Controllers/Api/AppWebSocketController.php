@@ -67,7 +67,7 @@ final class AppWebSocketController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $binding = $service->enable($targetApp, $request->publicHosts());
+            $binding = $service->enable($targetInstance, $request->publicHosts());
         } catch (InvalidArgumentException $exception) {
             return $this->error(
                 code: 'validation_failed',
@@ -90,7 +90,7 @@ final class AppWebSocketController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding, $targetInstance),
+                    'binding' => $this->bindingPayload($binding),
                 ],
             ],
         ]);
@@ -116,7 +116,7 @@ final class AppWebSocketController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $credentials = $service->credentials($targetApp);
+            $credentials = $service->credentials($targetInstance);
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'websocket.binding_missing',
@@ -160,7 +160,7 @@ final class AppWebSocketController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $binding = $service->disable($targetApp);
+            $binding = $service->disable($targetInstance);
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'websocket.binding_missing',
@@ -176,7 +176,7 @@ final class AppWebSocketController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->bindingPayload($binding, $targetInstance),
+                    'binding' => $this->bindingPayload($binding),
                 ],
             ],
         ]);
@@ -216,13 +216,13 @@ final class AppWebSocketController implements Loggable
      *     allowed_origins: list<string>,
      * }
      */
-    private function bindingPayload(AppWebSocketBinding $binding, Instance $instance): array
+    private function bindingPayload(AppWebSocketBinding $binding): array
     {
-        $binding->loadMissing('app');
+        $binding->loadMissing('instance.app');
 
         return [
-            'app' => $binding->app->name,
-            'instance' => $instance->name,
+            'app' => $binding->instance->app->name,
+            'instance' => $binding->instance->name,
             'internal_host' => WebSocketRouteRegistrar::ServiceDomain,
             'public_hosts' => $this->stringList($binding->public_hosts),
             'allowed_origins' => $this->stringList($binding->allowed_origins),

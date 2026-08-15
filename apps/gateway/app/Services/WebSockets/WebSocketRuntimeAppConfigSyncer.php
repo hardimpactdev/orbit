@@ -56,7 +56,7 @@ class WebSocketRuntimeAppConfigSyncer
     private function enabledBindings(): Collection
     {
         return AppWebSocketBinding::query()
-            ->with('app')
+            ->with('instance.app')
             ->where('enabled', true)
             ->orderBy('reverb_app_id')
             ->get();

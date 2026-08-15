@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
-use App\Models\App;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\AppWebSocketBinding;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -21,15 +23,16 @@ final readonly class WebSocketBindingService
     /**
      * @param  array<int, mixed>  $publicHosts
      */
-    public function enable(App $app, array $publicHosts): AppWebSocketBinding
+    public function enable(Instance $instance, array $publicHosts): AppWebSocketBinding
     {
-        $binding = DB::transaction(function () use ($app, $publicHosts): AppWebSocketBinding {
+        $binding = DB::transaction(function () use ($instance, $publicHosts): AppWebSocketBinding {
             $this->routes->syncServiceRoute();
 
-            $binding = $this->existingBinding($app);
+            $instance->loadMissing('app');
+            $binding = $this->existingBinding($instance);
             $attributes = [
                 'enabled' => true,
-                'allowed_origins' => $this->allowedOrigins($app),
+                'allowed_origins' => $this->allowedOrigins($instance),
                 'public_hosts' => $this->normalizePublicHosts($publicHosts),
             ];
 
@@ -38,8 +41,8 @@ final readonly class WebSocketBindingService
                 $binding->save();
             } else {
                 $binding = AppWebSocketBinding::query()->create([
-                    'app_id' => $app->id,
-                    'reverb_app_id' => $app->name,
+                    'instance_id' => $instance->id,
+                    'reverb_app_id' => "{$instance->app->name}.{$instance->name}",
                     'reverb_app_key' => Str::random(32),
                     'reverb_app_secret' => Str::random(48),
                     ...$attributes,
@@ -57,17 +60,17 @@ final readonly class WebSocketBindingService
         return $binding->refresh();
     }
 
-    public function credentials(App $app): WebSocketCredentials
+    public function credentials(Instance $instance): WebSocketCredentials
     {
-        $binding = $this->enabledBinding($app);
+        $binding = $this->enabledBinding($instance);
 
         return WebSocketCredentials::fromBinding($binding);
     }
 
-    public function disable(App $app): AppWebSocketBinding
+    public function disable(Instance $instance): AppWebSocketBinding
     {
-        $binding = DB::transaction(function () use ($app): AppWebSocketBinding {
-            $binding = $this->binding($app);
+        $binding = DB::transaction(function () use ($instance): AppWebSocketBinding {
+            $binding = $this->binding($instance);
 
             $binding->fill([
                 'enabled' => false,
@@ -86,32 +89,32 @@ final readonly class WebSocketBindingService
         return $binding->refresh();
     }
 
-    private function existingBinding(App $app): ?AppWebSocketBinding
+    private function existingBinding(Instance $instance): ?AppWebSocketBinding
     {
         $binding = AppWebSocketBinding::query()
-            ->where('app_id', $app->id)
+            ->where('instance_id', $instance->id)
             ->first();
 
         return $binding instanceof AppWebSocketBinding ? $binding : null;
     }
 
-    private function binding(App $app): AppWebSocketBinding
+    private function binding(Instance $instance): AppWebSocketBinding
     {
-        $binding = $this->existingBinding($app);
+        $binding = $this->existingBinding($instance);
 
         if (! $binding instanceof AppWebSocketBinding) {
-            throw new RuntimeException("App '{$app->name}' does not have a websocket binding.");
+            throw new RuntimeException("Instance '{$instance->name}' does not have a websocket binding.");
         }
 
         return $binding;
     }
 
-    private function enabledBinding(App $app): AppWebSocketBinding
+    private function enabledBinding(Instance $instance): AppWebSocketBinding
     {
-        $binding = $this->binding($app);
+        $binding = $this->binding($instance);
 
         if (! $binding->enabled) {
-            throw new RuntimeException("App '{$app->name}' does not have an enabled websocket binding.");
+            throw new RuntimeException("Instance '{$instance->name}' does not have an enabled websocket binding.");
         }
 
         return $binding;
@@ -120,9 +123,14 @@ final readonly class WebSocketBindingService
     /**
      * @return list<string>
      */
-    private function allowedOrigins(App $app): array
+    private function allowedOrigins(Instance $instance): array
     {
-        $domain = is_string($app->domain) ? trim($app->domain) : '';
+        $config = $instance->driver_config;
+        $domain = match (true) {
+            $config instanceof OrbitInstanceDriverConfigData => trim((string) $config->domain),
+            $config instanceof LaravelCloudInstanceDriverConfigData => trim((string) $config->domain),
+            default => '',
+        };
 
         if ($domain === '') {
             return [];

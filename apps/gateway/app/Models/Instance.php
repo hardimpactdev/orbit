@@ -40,6 +40,8 @@ use Override;
  * @property-read Collection<int, AppSetupRun> $setupRuns
  * @property-read Collection<int, AppSetupStep> $setupSteps
  * @property-read Collection<int, Schedule> $schedules
+ * @property-read AppAnalyticsBinding|null $analyticsBinding
+ * @property-read AppWebSocketBinding|null $webSocketBinding
  *
  * @mago-expect lint:too-many-methods
  */
@@ -197,6 +199,22 @@ class Instance extends Model
         $relation->getQuery()->orderBy('name');
 
         return $relation;
+    }
+
+    /**
+     * @return HasOne<AppWebSocketBinding, $this>
+     */
+    public function webSocketBinding(): HasOne
+    {
+        return $this->hasOne(AppWebSocketBinding::class);
+    }
+
+    /**
+     * @return HasOne<AppAnalyticsBinding, $this>
+     */
+    public function analyticsBinding(): HasOne
+    {
+        return $this->hasOne(AppAnalyticsBinding::class);
     }
 
     public function runtimeRequirements(): InstanceRuntimeRequirementsData

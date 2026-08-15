@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\Instance;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -21,7 +21,7 @@ class AppAnalyticsBindingFactory extends Factory
         $slug = Str::slug(fake()->unique()->domainWord());
 
         return [
-            'app_id' => App::factory(),
+            'instance_id' => Instance::factory(),
             'enabled' => true,
             'public_hosts' => ["analytics.{$slug}.example.com"],
         ];

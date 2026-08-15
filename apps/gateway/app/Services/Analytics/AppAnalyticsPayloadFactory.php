@@ -9,6 +9,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -18,13 +19,14 @@ final readonly class AppAnalyticsPayloadFactory
     public function __construct(
         private AnalyticsRouteRegistrar $routes,
         private IngressResolver $ingressResolver,
+        private WorkspacePlacement $placement,
     ) {}
 
     /** @return array<string, mixed> */
-    public function enableResult(AppAnalyticsBinding $binding, Instance $instance): array
+    public function enableResult(AppAnalyticsBinding $binding): array
     {
         return [
-            'binding' => $this->integrationBinding($binding, $instance),
+            'binding' => $this->integrationBinding($binding),
             'route_enactment' => [
                 'status' => 'completed',
                 'placements' => ['router', 'ingress'],
@@ -49,24 +51,24 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    public function verificationContext(AppAnalyticsBinding $binding, Instance $instance): array
+    public function verificationContext(AppAnalyticsBinding $binding): array
     {
         return [
-            'binding' => $this->integrationBinding($binding, $instance),
+            'binding' => $this->integrationBinding($binding),
             'routes' => $this->routeStatuses($binding),
             'dns_expectation' => $this->dnsExpectation($binding),
         ];
     }
 
     /** @return array<string, mixed> */
-    public function binding(AppAnalyticsBinding $binding, Instance $instance): array
+    public function binding(AppAnalyticsBinding $binding): array
     {
-        $binding->loadMissing('app');
+        $binding->loadMissing('instance.app');
         $publicHosts = $this->stringList($binding->public_hosts);
 
         return [
-            'app' => $binding->app->name,
-            'instance' => $instance->name,
+            'app' => $binding->instance->app->name,
+            'instance' => $binding->instance->name,
             'enabled' => $binding->enabled,
             'internal_host' => AnalyticsRouteRegistrar::ServiceDomain,
             'dashboard_url' => 'https://'.AnalyticsRouteRegistrar::ServiceDomain,
@@ -84,9 +86,9 @@ final readonly class AppAnalyticsPayloadFactory
     }
 
     /** @return array<string, mixed> */
-    private function integrationBinding(AppAnalyticsBinding $binding, Instance $instance): array
+    private function integrationBinding(AppAnalyticsBinding $binding): array
     {
-        $bindingPayload = $this->binding($binding, $instance);
+        $bindingPayload = $this->binding($binding);
         $siteDomain = $this->siteDomain($binding);
         $publicHosts = $this->stringList($binding->public_hosts);
 
@@ -184,14 +186,16 @@ final readonly class AppAnalyticsPayloadFactory
 
     private function ingress(AppAnalyticsBinding $binding): ?Node
     {
-        $binding->loadMissing('app.node');
+        $binding->loadMissing('instance.app');
 
-        if (! $binding->app->node instanceof Node) {
+        if (! $binding->instance instanceof Instance) {
             return null;
         }
 
+        $node = $this->placement->nodeForInstance($binding->instance);
+
         try {
-            return $this->ingressResolver->forAppNode($binding->app->node);
+            return $node instanceof Node ? $this->ingressResolver->forAppNode($node) : null;
         } catch (Throwable) {
             return null;
         }
@@ -215,7 +219,8 @@ final readonly class AppAnalyticsPayloadFactory
 
     private function siteDomain(AppAnalyticsBinding $binding): string
     {
-        $domain = is_string($binding->app->domain) ? trim($binding->app->domain) : '';
+        $binding->loadMissing('instance.app');
+        $domain = $this->placement->instanceUrlHost($binding->instance, $binding->instance->app);
 
         return Str::lower($domain);
     }

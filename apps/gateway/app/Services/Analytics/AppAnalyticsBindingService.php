@@ -7,8 +7,8 @@ namespace App\Services\Analytics;
 use App\Exceptions\AnalyticsMutationBusy;
 use App\Exceptions\AnalyticsRouteCleanupFailed;
 use App\Exceptions\AnalyticsRouteEnactmentFailed;
-use App\Models\App;
 use App\Models\AppAnalyticsBinding;
+use App\Models\Instance;
 use App\Models\ProxyRoute;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
@@ -34,27 +34,30 @@ final readonly class AppAnalyticsBindingService
     /**
      * @param  array<int, mixed>  $publicHosts
      */
-    public function enable(App $app, array $publicHosts): AppAnalyticsBinding
+    public function enable(Instance $instance, array $publicHosts): AppAnalyticsBinding
     {
-        return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->enableUnlocked($app, $publicHosts));
+        return $this->withMutationLock(
+            $instance,
+            fn (): AppAnalyticsBinding => $this->enableUnlocked($instance, $publicHosts),
+        );
     }
 
     /** @param array<int, mixed> $publicHosts */
-    private function enableUnlocked(App $app, array $publicHosts): AppAnalyticsBinding
+    private function enableUnlocked(Instance $instance, array $publicHosts): AppAnalyticsBinding
     {
-        $hosts = $this->publicHostNormalizer->normalize($app, $publicHosts);
+        $hosts = $this->publicHostNormalizer->normalize($instance, $publicHosts);
         $this->routes->requireServiceRoute();
-        $this->routes->assertPublicHostsAvailable($app, $hosts);
+        $this->routes->assertPublicHostsAvailable($instance, $hosts);
 
         try {
-            $this->routes->removeObsoletePublicHosts($app, $hosts);
+            $this->routes->removeObsoletePublicHosts($instance, $hosts);
         } catch (RuntimeException $exception) {
             throw new AnalyticsRouteCleanupFailed($exception->getMessage(), previous: $exception);
         }
 
         /** @var AppAnalyticsBinding $binding */
-        $binding = DB::transaction(function () use ($app, $hosts): AppAnalyticsBinding {
-            $binding = $this->existingBinding($app);
+        $binding = DB::transaction(function () use ($instance, $hosts): AppAnalyticsBinding {
+            $binding = $this->existingBinding($instance);
             $attributes = [
                 'enabled' => true,
                 'public_hosts' => $hosts,
@@ -65,7 +68,7 @@ final readonly class AppAnalyticsBindingService
                 $binding->save();
             } else {
                 $binding = AppAnalyticsBinding::query()->create([
-                    'app_id' => $app->id,
+                    'instance_id' => $instance->id,
                     ...$attributes,
                 ]);
             }
@@ -85,24 +88,24 @@ final readonly class AppAnalyticsBindingService
         return $binding->refresh();
     }
 
-    public function disable(App $app): AppAnalyticsBinding
+    public function disable(Instance $instance): AppAnalyticsBinding
     {
-        return $this->withMutationLock($app, fn (): AppAnalyticsBinding => $this->disableUnlocked($app));
+        return $this->withMutationLock($instance, fn (): AppAnalyticsBinding => $this->disableUnlocked($instance));
     }
 
-    private function disableUnlocked(App $app): AppAnalyticsBinding
+    private function disableUnlocked(Instance $instance): AppAnalyticsBinding
     {
-        $this->binding($app);
+        $this->binding($instance);
 
         try {
-            $this->routes->removeObsoletePublicHosts($app, []);
+            $this->routes->removeObsoletePublicHosts($instance, []);
         } catch (RuntimeException $exception) {
             throw new AnalyticsRouteCleanupFailed($exception->getMessage(), previous: $exception);
         }
 
         /** @var AppAnalyticsBinding $binding */
-        $binding = DB::transaction(function () use ($app): AppAnalyticsBinding {
-            $binding = $this->binding($app);
+        $binding = DB::transaction(function () use ($instance): AppAnalyticsBinding {
+            $binding = $this->binding($instance);
 
             $binding->fill([
                 'enabled' => false,
@@ -116,37 +119,37 @@ final readonly class AppAnalyticsBindingService
         return $binding;
     }
 
-    public function show(App $app): AppAnalyticsBinding
+    public function show(Instance $instance): AppAnalyticsBinding
     {
-        return $this->binding($app);
+        return $this->binding($instance);
     }
 
-    private function existingBinding(App $app): ?AppAnalyticsBinding
+    private function existingBinding(Instance $instance): ?AppAnalyticsBinding
     {
         $binding = AppAnalyticsBinding::query()
-            ->where('app_id', $app->id)
+            ->where('instance_id', $instance->id)
             ->first();
 
         return $binding instanceof AppAnalyticsBinding ? $binding : null;
     }
 
-    private function binding(App $app): AppAnalyticsBinding
+    private function binding(Instance $instance): AppAnalyticsBinding
     {
-        $binding = $this->existingBinding($app);
+        $binding = $this->existingBinding($instance);
 
         if (! $binding instanceof AppAnalyticsBinding) {
-            throw new RuntimeException("App '{$app->name}' does not have an analytics binding.");
+            throw new RuntimeException("Instance '{$instance->name}' does not have an analytics binding.");
         }
 
         return $binding;
     }
 
     /** @param Closure(): AppAnalyticsBinding $mutation */
-    private function withMutationLock(App $app, Closure $mutation): AppAnalyticsBinding
+    private function withMutationLock(Instance $instance, Closure $mutation): AppAnalyticsBinding
     {
         try {
             /** @var AppAnalyticsBinding $binding */
-            $binding = Cache::lock('orbit:app-analytics:mutation', $this->mutationLockSeconds($app))
+            $binding = Cache::lock('orbit:app-analytics:mutation', $this->mutationLockSeconds($instance))
                 ->block($this->lockWaitSeconds, $mutation);
 
             return $binding;
@@ -158,11 +161,13 @@ final readonly class AppAnalyticsBindingService
         }
     }
 
-    private function mutationLockSeconds(App $app): int
+    private function mutationLockSeconds(Instance $instance): int
     {
+        $instance->loadMissing('app');
         $existingRouteCount = ProxyRoute::query()
-            ->where('app_id', $app->id)
+            ->where('app_id', $instance->app_id)
             ->where('owner_type', 'app-analytics')
+            ->where('config->instance_id', $instance->id)
             ->count();
 
         $routeBudgetSeconds =

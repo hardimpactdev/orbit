@@ -76,7 +76,7 @@ final class AppAnalyticsController implements Loggable
         }
 
         try {
-            $binding = $service->enable($targetApp, $publicHosts);
+            $binding = $service->enable($targetInstance, $publicHosts);
         } catch (AnalyticsOperationFailed $exception) {
             return $this->error(
                 code: $exception->errorCode(),
@@ -106,7 +106,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    ...$this->payloads->enableResult($binding, $targetInstance),
+                    ...$this->payloads->enableResult($binding),
                 ],
             ],
         ]);
@@ -132,7 +132,7 @@ final class AppAnalyticsController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $binding = $service->disable($targetApp);
+            $binding = $service->disable($targetInstance);
         } catch (AnalyticsOperationFailed $exception) {
             return $this->error(
                 code: $exception->errorCode(),
@@ -155,7 +155,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->payloads->binding($binding, $targetInstance),
+                    'binding' => $this->payloads->binding($binding),
                 ],
             ],
         ]);
@@ -181,7 +181,7 @@ final class AppAnalyticsController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $binding = $service->show($targetApp);
+            $binding = $service->show($targetInstance);
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.binding_missing',
@@ -197,7 +197,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'binding' => $this->payloads->binding($binding, $targetInstance),
+                    'binding' => $this->payloads->binding($binding),
                 ],
             ],
         ]);
@@ -223,7 +223,7 @@ final class AppAnalyticsController implements Loggable
         assert($targetInstance instanceof Instance);
 
         try {
-            $binding = $service->show($targetApp);
+            $binding = $service->show($targetInstance);
         } catch (RuntimeException $exception) {
             return $this->error(
                 code: 'analytics.binding_missing',
@@ -239,7 +239,7 @@ final class AppAnalyticsController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'verification_context' => $this->payloads->verificationContext($binding, $targetInstance),
+                    'verification_context' => $this->payloads->verificationContext($binding),
                 ],
             ],
         ]);

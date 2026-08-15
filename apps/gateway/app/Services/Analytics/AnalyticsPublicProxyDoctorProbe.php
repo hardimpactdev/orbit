@@ -37,12 +37,17 @@ final readonly class AnalyticsPublicProxyDoctorProbe
     {
         $entries = [];
         $bindings = AppAnalyticsBinding::query()
-            ->with('app.node')
+            ->with('instance.app')
             ->where('enabled', true)
             ->get();
 
         foreach ($bindings as $binding) {
-            if ($app !== null && $binding->app->name !== $app && $binding->app->domain !== $app) {
+            if (
+                $app !== null
+                && $binding->instance->app->name !== $app
+                && $binding->instance->name !== $app
+                && "{$binding->instance->app->name}.{$binding->instance->name}" !== $app
+            ) {
                 continue;
             }
 
@@ -107,7 +112,8 @@ final readonly class AnalyticsPublicProxyDoctorProbe
         $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
         $detail = [
             'binding_id' => $binding->id,
-            'app' => $binding->app->name,
+            'app' => $binding->instance->app->name,
+            'instance' => $binding->instance->name,
             'domain' => $intent->domain,
         ];
 
@@ -140,10 +146,11 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             family: 'proxy',
             key: self::PUBLIC_ROUTE_KEY,
             kind: DriftKind::Unverifiable,
-            summary: "Public analytics route intent cannot be resolved for app {$binding->app->name}.",
+            summary: "Public analytics route intent cannot be resolved for instance {$binding->instance->app->name}.{$binding->instance->name}.",
             detail: [
                 'binding_id' => $binding->id,
-                'app' => $binding->app->name,
+                'app' => $binding->instance->app->name,
+                'instance' => $binding->instance->name,
                 'reason' => $throwable->getMessage(),
             ],
         );

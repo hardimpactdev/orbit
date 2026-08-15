@@ -221,12 +221,12 @@ final readonly class WebSocketProxyDoctorProbe
         $drift = [];
         /** @var Collection<int, AppWebSocketBinding> $bindings */
         $bindings = AppWebSocketBinding::query()
-            ->with('app.node')
+            ->with('instance.app')
             ->where('enabled', true)
             ->when(
                 $app !== null,
                 static fn (Builder $query): Builder => $query->whereHas(
-                    'app',
+                    'instance.app',
                     static fn (Builder $appQuery): Builder => $appQuery->where('name', $app),
                 ),
             )
@@ -253,7 +253,8 @@ final readonly class WebSocketProxyDoctorProbe
                         mismatchSummary: "WebSocket public route {$intent->domain} differs from gateway WebSocket route intent.",
                         detail: [
                             'binding_id' => $binding->id,
-                            'app_id' => $binding->app_id,
+                            'app_id' => $binding->instance->app_id,
+                            'instance_id' => $binding->instance_id,
                         ],
                     ),
                 ];

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Instance;
@@ -106,9 +107,20 @@ function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress 
         'domain' => $domain,
     ]);
 
-    Instance::factory()->for($app)->create(['name' => 'production']);
+    Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            domain: $domain,
+        ),
+    ]);
 
     return $app;
+}
+
+function appWebSocketInstance(App $app): Instance
+{
+    return $app->instances()->firstOrFail();
 }
 
 /**
@@ -181,7 +193,7 @@ describe('AppWebSocketController', function (): void {
             ->assertJsonMissingPath('success.data.binding.reverb_app_secret')
             ->assertJsonMissingPath('success.data.binding.reverb_app_key');
 
-        expect(AppWebSocketBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
+        expect(AppWebSocketBinding::query()->where('instance_id', appWebSocketInstance($app)->id)->where('enabled', true)->exists())
             ->toBeTrue()
             ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->where('owner_type', 'router')->exists())
             ->toBeTrue()
@@ -289,7 +301,7 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
 
-        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+        $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
         $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
@@ -299,7 +311,7 @@ describe('AppWebSocketController', function (): void {
             ->assertJsonPath('success.data.credentials.internal_host', 'websocket.orbit')
             ->assertJsonPath('success.data.credentials.public_hosts', ['ws.docs.test'])
             ->assertJsonPath('success.data.credentials.allowed_origins', ['https://docs.test'])
-            ->assertJsonPath('success.data.credentials.reverb_app_id', 'docs')
+            ->assertJsonPath('success.data.credentials.reverb_app_id', 'docs.production')
             ->assertJsonPath('success.data.credentials.reverb_app_key', $binding->reverb_app_key)
             ->assertJsonPath('success.data.credentials.reverb_app_secret', $binding->reverb_app_secret);
     });
@@ -310,7 +322,7 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node, ['instance:write']);
 
-        app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+        app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
         $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
@@ -353,7 +365,7 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node);
 
-        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+        $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
         $reverbAppKey = $binding->reverb_app_key;
         $reverbAppSecret = $binding->reverb_app_secret;
 
@@ -392,7 +404,7 @@ describe('AppWebSocketController', function (): void {
         $app = createAppWebSocketApp();
         grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
 
-        $binding = app(WebSocketBindingService::class)->enable($app, ['ws.docs.test']);
+        $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
         $response = postAppWebSocketDisableJson('/api/instances/docs/websocket/disable');
 

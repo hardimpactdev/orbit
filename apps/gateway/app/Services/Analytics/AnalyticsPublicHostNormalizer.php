@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Analytics;
 
 use App\Exceptions\AnalyticsDomainRequired;
-use App\Models\App;
+use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Models\Instance;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -17,9 +19,9 @@ final readonly class AnalyticsPublicHostNormalizer
      * @param  array<int, mixed>  $publicHosts
      * @return list<string>
      */
-    public function normalize(App $app, array $publicHosts): array
+    public function normalize(Instance $instance, array $publicHosts): array
     {
-        $domain = $this->publicDomain($app);
+        $domain = $this->publicDomain($instance);
         $hosts = [];
 
         foreach ($publicHosts as $publicHost) {
@@ -55,13 +57,19 @@ final readonly class AnalyticsPublicHostNormalizer
         return $hosts === [] ? ["analytics.{$domain}"] : $hosts;
     }
 
-    private function publicDomain(App $app): string
+    private function publicDomain(Instance $instance): string
     {
-        $domain = is_string($app->domain) ? trim($app->domain) : '';
+        $instance->loadMissing('app');
+        $config = $instance->driver_config;
+        $domain = match (true) {
+            $config instanceof OrbitInstanceDriverConfigData => trim((string) $config->domain),
+            $config instanceof LaravelCloudInstanceDriverConfigData => trim((string) $config->domain),
+            default => '',
+        };
 
         if (! $this->isPublicDnsHostname($domain)) {
             throw new AnalyticsDomainRequired(
-                "App '{$app->name}' requires a configured valid public domain before analytics can be enabled.",
+                "Instance '{$instance->app->name}.{$instance->name}' requires a configured valid public domain before analytics can be enabled.",
             );
         }
 
