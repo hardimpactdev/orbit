@@ -143,7 +143,14 @@ final class AppStoreController implements Loggable
         ]);
 
         $app->setRelation('node', $node);
-        $instance = $this->ensureDefaultInstance($app, $node);
+        $instance = $this->ensureDefaultInstance(
+            $app,
+            $node,
+            $input['domain'] !== null ? 'production' : 'development',
+            $source['path'],
+            $input['root'],
+            $input['domain'],
+        );
         $this->activitySubject = $app;
         $warnings = $enactAppRuntime->handle($app);
 
@@ -247,7 +254,14 @@ final class AppStoreController implements Loggable
                 ]);
 
                 $app->setRelation('node', $node);
-                $instance = $this->ensureDefaultInstance($app, $node);
+                $instance = $this->ensureDefaultInstance(
+                    $app,
+                    $node,
+                    $input['domain'] !== null ? 'production' : 'development',
+                    $source['path'],
+                    $input['root'],
+                    $input['domain'],
+                );
                 $this->activitySubject = $app;
                 $events->stepEvent('registry', 'done', 'App registered');
                 $events->stepEvent('runtime', 'running', "Applying runtime for {$app->name}");
@@ -296,10 +310,21 @@ final class AppStoreController implements Loggable
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
     }
 
-    private function ensureDefaultInstance(App $app, Node $node): Instance
-    {
+    /**
+     * The instance is the placement authority: its driver config and name are
+     * sourced from the resolved node, the request input, and the created source
+     * path rather than read back from app-owned placement columns.
+     */
+    private function ensureDefaultInstance(
+        App $app,
+        Node $node,
+        string $environment,
+        string $path,
+        string $documentRoot,
+        ?string $domain,
+    ): Instance {
         return $app->instances()->updateOrCreate(
-            ['name' => $app->environment],
+            ['name' => $environment],
             [
                 'driver' => InstanceDriver::Orbit,
                 // Snapshot the app default at creation; it never tracks it after.
@@ -308,9 +333,9 @@ final class AppStoreController implements Loggable
                 'driver_config' => new OrbitInstanceDriverConfigData(
                     node_id: $node->id,
                     node: $node->name,
-                    path: $app->path,
-                    document_root: $app->document_root,
-                    domain: $app->domain,
+                    path: $path,
+                    document_root: $documentRoot,
+                    domain: $domain,
                 ),
                 'runtime_requirements' => new InstanceRuntimeRequirementsData,
             ],

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -282,6 +284,54 @@ describe('AppStoreController', function (): void {
                     ),
                 ))
             ->toBeTrue();
+    });
+
+    it('sources the default instance placement from the request rather than app columns', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        app()->instance(RemoteShell::class, new AppStoreRecordingRemoteShell);
+
+        $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
+                'root' => 'public',
+                'php_version' => '8.4',
+            ],
+            [],
+            [],
+            app_store_fallback_server(),
+        )->assertOk();
+
+        $instance = Instance::query()
+            ->whereHas('app', fn ($query) => $query->where('name', 'docs'))
+            ->firstOrFail();
+        $config = $instance->driver_config;
+
+        expect($instance->name)
+            ->toBe('development')
+            ->and($config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($config->node_id)
+            ->toBe($targetNode->id)
+            ->and($config->node)
+            ->toBe('app-1')
+            ->and($config->path)
+            ->toBe('/home/orbit/apps/docs')
+            ->and($config->document_root)
+            ->toBe('public')
+            ->and($config->domain)
+            ->toBeNull();
     });
 
     it('creates a template source without forwarding the stored destination as a clone source', function (): void {
