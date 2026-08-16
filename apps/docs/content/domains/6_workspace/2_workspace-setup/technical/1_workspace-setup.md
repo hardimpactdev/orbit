@@ -268,6 +268,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered setup plan for JSON and SSE adapters, including environment initialization, phase order, exact errors, non-rollback state, and final-result parity. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path, Codex/path-basename identity for path setup without a positional name, and parent-instance-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |

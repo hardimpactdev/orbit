@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\ProgressReporter;
+use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Instance;
@@ -13,8 +14,10 @@ use App\Models\Workspace;
 use RuntimeException;
 use Throwable;
 
-final class CreateWorkspaceProgressPlan
+final class CreateWorkspacePlan
 {
+    private ?WorkspaceProvisionResult $provisionResult = null;
+
     private ?Workspace $workspace = null;
 
     /** @var list<array<string, string>> */
@@ -29,8 +32,10 @@ final class CreateWorkspaceProgressPlan
     /** @var array{code: string, message: string, meta: array<string, mixed>}|null */
     private ?array $failure = null;
 
-    private bool $workspaceSourceProvisioned = false;
+    /** @var list<string> */
+    private array $completedSteps = [];
 
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private readonly CreateWorkspace $createWorkspace,
         private readonly SetupWorkspace $setupWorkspace,
@@ -48,32 +53,30 @@ final class CreateWorkspaceProgressPlan
     }
 
     /**
-     * @return list<array{key: string, label: string, doneLabel: string, run: callable(): string}>
+     * @return list<array{
+     *     key: string,
+     *     label: string,
+     *     doneLabel: string,
+     *     run: callable(): string,
+     * }>
+     * @mago-expect lint:halstead
      */
     public function steps(): array
     {
-        $sourceLabels = $this->createWorkspace->sourceProgressLabels($this->instance, $this->node);
-
         return [
             [
                 'key' => 'provision_workspace_source',
-                'label' => $sourceLabels['label'],
-                'doneLabel' => $sourceLabels['done_label'],
+                'label' => 'Creating git worktree',
+                'doneLabel' => 'Git worktree created',
                 'run' => function (): string {
                     try {
                         $this->createWorkspace->ensureNodeReachable($this->node);
-                        $provisionResult = $this->createWorkspace->provisionWorkspaceSource(
+                        $this->provisionResult = $this->createWorkspace->provisionWorkspaceSource(
                             $this->app,
                             $this->node,
                             $this->name,
                             $this->base,
                             $this->instance,
-                        );
-                        $this->workspace = $this->createWorkspace->createIntent(
-                            $this->app,
-                            $this->instance,
-                            $this->phpVersion,
-                            $provisionResult,
                         );
                     } catch (WorkspaceCreateFailed $exception) {
                         $this->failure = [
@@ -85,9 +88,27 @@ final class CreateWorkspaceProgressPlan
                         throw $exception;
                     }
 
-                    $this->workspaceSourceProvisioned = true;
+                    return $this->provisionResult->path;
+                },
+            ],
+            [
+                'key' => 'apply_workspace_registration',
+                'label' => 'Apply workspace registration',
+                'doneLabel' => 'Applied workspace registration',
+                'run' => function (): string {
+                    if (! $this->provisionResult instanceof WorkspaceProvisionResult) {
+                        throw new RuntimeException('Workspace source was not provisioned.');
+                    }
 
-                    return $this->workspace->path;
+                    $this->workspace = $this->createWorkspace->createIntent(
+                        $this->app,
+                        $this->instance,
+                        $this->phpVersion,
+                        $this->provisionResult,
+                    );
+                    $this->setupWorkspace->prepareWorkspaceState($this->workspace);
+
+                    return $this->workspace->name;
                 },
             ],
             [
@@ -95,12 +116,8 @@ final class CreateWorkspaceProgressPlan
                 'label' => 'Register proxy routes',
                 'doneLabel' => 'Registered proxy routes',
                 'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $this->setupWorkspace->prepareWorkspaceState($this->workspace);
-                    $routeWarnings = $this->setupWorkspace->registerProxyRoutes($this->workspace);
+                    $workspace = $this->workspaceOrFail();
+                    $routeWarnings = $this->setupWorkspace->registerProxyRoutes($workspace);
                     $this->warnings = array_merge($this->warnings, $routeWarnings);
 
                     if ($routeWarnings !== []) {
@@ -111,15 +128,21 @@ final class CreateWorkspaceProgressPlan
                 },
             ],
             [
+                'key' => 'initialize_workspace_environment',
+                'label' => 'Initialize workspace environment',
+                'doneLabel' => 'Initialized workspace environment',
+                'run' => function (): string {
+                    $this->setupWorkspace->initializeEnvironment($this->workspaceOrFail());
+
+                    return 'ready';
+                },
+            ],
+            [
                 'key' => 'install_workspace_runtime_container',
                 'label' => 'Install workspace runtime container',
                 'doneLabel' => 'Installed workspace runtime container',
                 'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $warning = $this->setupWorkspace->enactRuntimeContainer($this->workspace, $this->node);
+                    $warning = $this->setupWorkspace->enactRuntimeContainer($this->workspaceOrFail(), $this->node);
 
                     if ($warning !== null) {
                         $this->warnings[] = $warning;
@@ -135,11 +158,8 @@ final class CreateWorkspaceProgressPlan
                 'label' => 'Run workspace setup steps',
                 'doneLabel' => 'Ran workspace setup steps',
                 'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $setupResult = $this->setupWorkspace->runSetupSteps($this->workspace, $this->app, $this->node);
+                    $workspace = $this->workspaceOrFail();
+                    $setupResult = $this->setupWorkspace->runSetupSteps($workspace, $this->app, $this->node);
 
                     if ($setupResult['status'] === 'failed') {
                         $this->failure = [
@@ -163,11 +183,8 @@ final class CreateWorkspaceProgressPlan
                 'label' => 'Render inherited runtime units',
                 'doneLabel' => 'Rendered inherited runtime units',
                 'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $processResult = $this->setupWorkspace->startProcesses($this->app, $this->workspace, $this->node);
+                    $workspace = $this->workspaceOrFail();
+                    $processResult = $this->setupWorkspace->startProcesses($this->app, $workspace, $this->node);
 
                     if (! $processResult['success']) {
                         $this->failure = [
@@ -183,11 +200,9 @@ final class CreateWorkspaceProgressPlan
                         throw new RuntimeException($this->failure['message']);
                     }
 
-                    if ($processResult['count'] === 0) {
-                        return 'No inherited runtime units';
-                    }
-
-                    return implode(', ', $processResult['names']);
+                    return $processResult['count'] === 0
+                        ? 'No inherited runtime units'
+                        : implode(', ', $processResult['names']);
                 },
             ],
             [
@@ -195,11 +210,9 @@ final class CreateWorkspaceProgressPlan
                 'label' => 'Check workspace readiness',
                 'doneLabel' => 'Checked workspace readiness',
                 'run' => function (): string {
-                    if (! $this->workspace instanceof Workspace || ! $this->workspaceSourceProvisioned) {
-                        return 'skip:Workspace source was not provisioned.';
-                    }
-
-                    $this->httpProbe = $this->setupWorkspace->probeReadiness($this->workspace);
+                    $workspace = $this->workspaceOrFail();
+                    $this->httpProbe = $this->setupWorkspace->probeReadiness($workspace);
+                    $this->setupWorkspace->markActive($workspace);
 
                     if (! $this->httpProbe['reachable']) {
                         $warning = [
@@ -209,12 +222,9 @@ final class CreateWorkspaceProgressPlan
                             'next_command' => 'doctor --family=workspace --restore',
                         ];
                         $this->warnings[] = $warning;
-                        $this->setupWorkspace->markActive($this->workspace);
 
                         return 'skip:'.$warning['message'];
                     }
-
-                    $this->setupWorkspace->markActive($this->workspace);
 
                     return $this->httpProbe['status'];
                 },
@@ -222,7 +232,7 @@ final class CreateWorkspaceProgressPlan
         ];
     }
 
-    public function runForReporter(ProgressReporter $reporter): int
+    public function run(ProgressReporter $reporter): CreateWorkspaceResult
     {
         $steps = $this->steps();
 
@@ -237,22 +247,24 @@ final class CreateWorkspaceProgressPlan
 
             try {
                 $message = $step['run']();
-            } catch (Throwable $e) {
+            } catch (Throwable $exception) {
                 $this->failure ??= [
                     'code' => 'workspace.enactment_failed',
-                    'message' => $e->getMessage(),
+                    'message' => $exception->getMessage(),
                     'meta' => [
                         'step' => $step['key'],
                         'node' => $this->node->name,
                     ],
                 ];
-                $reporter->stepFail($step['key'], $e->getMessage());
+                $reporter->stepFail($step['key'], $exception->getMessage());
 
-                return 1;
+                return CreateWorkspaceResult::failed($this->failure, $this->completedSteps);
             }
 
+            $this->completedSteps[] = $step['key'];
+
             if (str_starts_with($message, 'skip:')) {
-                $reporter->stepSkip($step['key'], substr($message, 5));
+                $reporter->stepSkip($step['key'], substr($message, offset: 5));
 
                 continue;
             }
@@ -260,7 +272,7 @@ final class CreateWorkspaceProgressPlan
             $reporter->stepDone($step['key'], $message === '' ? null : $message);
         }
 
-        return 0;
+        return CreateWorkspaceResult::success($this->resultData(), $this->completedSteps);
     }
 
     public function doneFooter(): string
@@ -273,38 +285,20 @@ final class CreateWorkspaceProgressPlan
         return "Failed to create workspace '{$this->name}'.";
     }
 
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    public function failure(): ?array
-    {
-        return $this->failure;
-    }
-
-    /**
-     * @return array{
-     *     result: array{action: 'created'},
-     *     workspace: array<string, mixed>,
-     *     meta: array<string, mixed>,
-     * }
-     */
-    public function result(): array
+    private function workspaceOrFail(): Workspace
     {
         if (! $this->workspace instanceof Workspace) {
-            return [
-                'result' => ['action' => 'created'],
-                'workspace' => [],
-                'meta' => [
-                    'node' => $this->node->name,
-                    'base' => $this->base,
-                    'http_probe' => $this->httpProbe,
-                    'warnings' => $this->warnings,
-                ],
-            ];
+            throw new RuntimeException('Workspace intent was not written.');
         }
 
+        return $this->workspace;
+    }
+
+    /** @return array{result: array{action: 'created'}, workspace: array<string, mixed>, meta: array<string, mixed>} */
+    private function resultData(): array
+    {
         return $this->createWorkspace->result(
-            $this->workspace,
+            $this->workspaceOrFail(),
             $this->app,
             $this->node,
             $this->base,

@@ -111,7 +111,7 @@ for this default.
 
 ### Workspace Creation Rules
 
-`workspace:new` is an atomic creation + provisioning command. It does not
+`workspace:new` runs one ordered creation + provisioning plan. It does not
 support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use `workspace:setup --path` (routine adoption).
 `doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
@@ -132,6 +132,9 @@ The command performs:
    - **Workspace-owned proxy route:** create or update the workspace
      proxy route record; backend artifact convergence is owned by the
      `proxy` family.
+   - **Workspace environment:** preserve an existing workspace `.env`; when it
+     is missing, initialize it from the workspace's own `.env.example` and
+     overlay effective workspace values. Never copy the parent app `.env`.
    - **Runtime container:** render and install the runtime container
      configuration specific to this workspace
      on the node.
@@ -218,6 +221,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered create plan for JSON and SSE adapters, including phase order, source rollback, retained post-intent state, exact errors, and final-result parity. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete instance resolution, `instance_required` validation, and gateway stream request payload. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 

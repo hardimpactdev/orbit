@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\ProgressReporter;
-use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
-use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
-use App\Services\Workspaces\WorkspaceStepPolicyService;
 use RuntimeException;
 use Throwable;
 
-final class SetupWorkspaceProgressPlan
+/**
+ * @mago-expect lint:too-many-methods
+ * @mago-expect lint:cyclomatic-complexity
+ */
+final class SetupWorkspacePlan
 {
     /** @var list<array<string, string>> */
     private array $warnings = [];
@@ -45,20 +46,19 @@ final class SetupWorkspaceProgressPlan
     /** @var array{code: string, message: string, meta: array<string, mixed>}|null */
     private ?array $failure = null;
 
+    /** @var list<string> */
+    private array $completedSteps = [];
+
     private readonly bool $wasAlreadyActive;
 
     private ?ProgressReporter $reporter = null;
 
-    /**
-     * @mago-expect lint:excessive-parameter-list
-     */
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
         private readonly App $app,
         private readonly Node $node,
         private readonly bool $isAdoption,
-        private readonly WorkspaceStepPolicyService $stepPolicy,
     ) {
         $this->wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
     }
@@ -69,7 +69,14 @@ final class SetupWorkspaceProgressPlan
     }
 
     /**
-     * @return list<array{key: string, label: string, doneLabel: string, run: callable(): string}>
+     * @return list<array{
+     *     key: string,
+     *     label: string,
+     *     doneLabel: string,
+     *     phase: string,
+     *     run: callable(): string,
+     * }>
+     * @mago-expect lint:halstead
      */
     public function steps(): array
     {
@@ -78,6 +85,7 @@ final class SetupWorkspaceProgressPlan
                 'key' => 'apply_workspace_registration',
                 'label' => 'Apply and verify workspace registration',
                 'doneLabel' => 'Applied and verified workspace registration',
+                'phase' => 'registry',
                 'run' => function (): string {
                     $this->setupWorkspace->prepareWorkspaceState($this->workspace);
 
@@ -88,6 +96,7 @@ final class SetupWorkspaceProgressPlan
                 'key' => 'register_proxy_routes',
                 'label' => 'Register proxy routes',
                 'doneLabel' => 'Registered proxy routes',
+                'phase' => 'routing',
                 'run' => function (): string {
                     $routeWarnings = $this->setupWorkspace->registerProxyRoutes($this->workspace);
                     $this->warnings = array_merge($this->warnings, $routeWarnings);
@@ -100,9 +109,21 @@ final class SetupWorkspaceProgressPlan
                 },
             ],
             [
+                'key' => 'initialize_workspace_environment',
+                'label' => 'Initialize workspace environment',
+                'doneLabel' => 'Initialized workspace environment',
+                'phase' => 'artifacts',
+                'run' => function (): string {
+                    $this->setupWorkspace->initializeEnvironment($this->workspace);
+
+                    return 'ready';
+                },
+            ],
+            [
                 'key' => 'install_workspace_runtime_container',
                 'label' => 'Install workspace runtime container',
                 'doneLabel' => 'Installed workspace runtime container',
+                'phase' => 'artifacts',
                 'run' => function (): string {
                     $warning = $this->setupWorkspace->enactRuntimeContainer($this->workspace, $this->node);
 
@@ -122,26 +143,35 @@ final class SetupWorkspaceProgressPlan
                 'key' => 'run_workspace_setup_steps',
                 'label' => 'Run workspace setup steps',
                 'doneLabel' => 'Ran workspace setup steps',
+                'phase' => 'setup_steps',
                 'run' => function (): string {
-                    $this->setupResult = $this->setupWorkspace->runSetupSteps(
+                    $setupResult = $this->setupWorkspace->runSetupSteps(
                         $this->workspace,
                         $this->app,
                         $this->node,
                         $this->reportSetupStepProgress(...),
                     );
 
-                    if ($this->setupResult['status'] === 'failed') {
+                    $this->setupResult = [
+                        'status' => $setupResult['status'],
+                        'message' => $setupResult['message'],
+                        'count' => $setupResult['count'],
+                    ];
+
+                    if ($setupResult['status'] === 'failed') {
                         $this->failure = [
                             'code' => 'workspace.setup_step_failed',
-                            'message' => $this->setupResult['message'],
+                            'message' => $setupResult['message'],
                             'meta' => [
+                                'step' => $setupResult['step'] ?? 'unknown',
+                                'exit_code' => $setupResult['exit_code'] ?? 1,
                                 'phase' => 'setup_steps',
                                 'node' => $this->node->name,
                                 'path' => $this->workspace->path,
                             ],
                         ];
 
-                        throw new RuntimeException($this->setupResult['message']);
+                        throw new RuntimeException($setupResult['message']);
                     }
 
                     return $this->setupResult['message'];
@@ -154,6 +184,7 @@ final class SetupWorkspaceProgressPlan
                 'key' => 'render_inherited_runtime_units',
                 'label' => 'Render inherited runtime units',
                 'doneLabel' => 'Rendered inherited runtime units',
+                'phase' => 'processes',
                 'run' => function (): string {
                     $this->processResult = $this->setupWorkspace->startProcesses(
                         $this->app,
@@ -166,7 +197,7 @@ final class SetupWorkspaceProgressPlan
                             'code' => 'workspace.enactment_failed',
                             'message' => $this->processResult['message'],
                             'meta' => [
-                                'phase' => 'process',
+                                'phase' => 'processes',
                                 'node' => $this->node->name,
                             ],
                         ];
@@ -183,6 +214,7 @@ final class SetupWorkspaceProgressPlan
             'key' => 'check_workspace_readiness',
             'label' => 'Check workspace readiness',
             'doneLabel' => 'Checked workspace readiness',
+            'phase' => 'http_probe',
             'run' => function (): string {
                 $this->httpProbe = $this->setupWorkspace->probeReadiness($this->workspace);
                 $this->setupWorkspace->markActive($this->workspace);
@@ -206,7 +238,7 @@ final class SetupWorkspaceProgressPlan
         return $steps;
     }
 
-    public function runForReporter(ProgressReporter $reporter): int
+    public function run(ProgressReporter $reporter): SetupWorkspaceResult
     {
         $this->reporter = $reporter;
         $steps = $this->steps();
@@ -222,40 +254,27 @@ final class SetupWorkspaceProgressPlan
 
             try {
                 $message = $step['run']();
-            } catch (Throwable $e) {
+            } catch (Throwable $exception) {
                 $this->failure ??= [
                     'code' => 'workspace.enactment_failed',
-                    'message' => $e->getMessage(),
+                    'message' => $exception->getMessage(),
                     'meta' => [
-                        'phase' => 'artifacts',
+                        'phase' => $step['phase'],
                         'node' => $this->node->name,
                     ],
                 ];
-                $reporter->stepFail($step['key'], $e->getMessage());
-
+                $reporter->stepFail($step['key'], $exception->getMessage());
                 $this->reporter = null;
 
-                return 1;
+                return SetupWorkspaceResult::failed($this->failure, $this->completedSteps);
             }
+
+            $this->completedSteps[] = $step['key'];
 
             if (str_starts_with($message, 'skip:')) {
-                $reporter->stepSkip($step['key'], substr($message, 5));
+                $reporter->stepSkip($step['key'], substr($message, offset: 5));
 
                 continue;
-            }
-
-            if (str_starts_with($message, 'fail:')) {
-                $this->failure ??= [
-                    'code' => 'workspace.enactment_failed',
-                    'message' => substr($message, 5),
-                    'meta' => [
-                        'phase' => 'artifacts',
-                        'node' => $this->node->name,
-                    ],
-                ];
-                $reporter->stepFail($step['key'], substr($message, 5));
-
-                return 1;
             }
 
             $reporter->stepDone($step['key'], $message === '' ? null : $message);
@@ -263,7 +282,7 @@ final class SetupWorkspaceProgressPlan
 
         $this->reporter = null;
 
-        return 0;
+        return SetupWorkspaceResult::success($this->resultData(), $this->completedSteps);
     }
 
     private function reportSetupStepProgress(string $event, WorkspaceStep $step, int $index, int $count): void
@@ -293,30 +312,6 @@ final class SetupWorkspaceProgressPlan
     }
 
     /**
-     * @return 'set_up'|'adopted'|'converged'
-     */
-    public function action(): string
-    {
-        if ($this->isAdoption) {
-            return 'adopted';
-        }
-
-        if ($this->wasAlreadyActive) {
-            return 'converged';
-        }
-
-        return 'set_up';
-    }
-
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    public function failure(): ?array
-    {
-        return $this->failure;
-    }
-
-    /**
      * @return array{
      *     app: string,
      *     instance: string,
@@ -325,13 +320,13 @@ final class SetupWorkspaceProgressPlan
      *     path: string,
      *     url: string,
      *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, string>>,
-     *     setup_steps: array{status: string, message: string, count: int},
-     *     processes: array{status: string, message: string, count: int, names: list<string>},
+     *     warnings: list<array<string, string>|array{code: string, family: string, message: string, next_command: string}>,
+     *     setup_steps: array{status: string, count: int, message: string},
+     *     processes: array{status: string, count: int, names: list<string>, message: string},
      *     http_probe: array{reachable: bool, status: string},
      * }
      */
-    public function result(): array
+    private function resultData(): array
     {
         $this->workspace->loadMissing('instance');
 
@@ -355,21 +350,29 @@ final class SetupWorkspaceProgressPlan
         ];
     }
 
+    /** @return 'set_up'|'adopted'|'converged' */
+    private function action(): string
+    {
+        if ($this->isAdoption) {
+            return 'adopted';
+        }
+
+        if ($this->wasAlreadyActive) {
+            return 'converged';
+        }
+
+        return 'set_up';
+    }
+
     private function hasSetupSteps(): bool
     {
         $this->workspace->loadMissing('instance');
 
-        return $this->stepPolicy->hasStepsFor(
-            $this->app,
-            WorkspaceLifecyclePhase::Setup,
-            $this->workspace->instance,
-        );
+        return $this->setupWorkspace->hasSetupSteps($this->app, $this->workspace);
     }
 
     private function hasProcesses(): bool
     {
-        return Process::query()
-            ->where('app_id', $this->app->id)
-            ->exists();
+        return $this->setupWorkspace->hasProcesses($this->app, $this->workspace, $this->node);
     }
 }

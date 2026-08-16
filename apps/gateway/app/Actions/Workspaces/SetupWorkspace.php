@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
+use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -32,6 +33,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
+use App\Support\Streaming\NullProgressReporter;
 use RuntimeException;
 use Throwable;
 
@@ -60,100 +62,39 @@ final readonly class SetupWorkspace
      *     instance: string,
      *     workspace: string,
      *     node: string,
+     *     path: string,
      *     url: string,
      *     action: 'set_up'|'adopted'|'converged',
      *     warnings: list<array<string, string>|array{code: string, family: string, message: string, next_command: string}>,
      *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>},
+     *     processes: array{status: string, count: int, names: list<string>, message: string},
      *     http_probe: array{reachable: bool, status: string},
      * }
      */
     public function handle(App $app, Workspace $workspace, Node $node, bool $isAdoption = false): array
     {
+        $result = $this->plan($app, $workspace, $node, $isAdoption)->run(new NullProgressReporter);
+
+        if (! $result->isSuccessful()) {
+            $failure = $result->failure();
+
+            throw new RuntimeException($failure['message'] ?? 'Workspace setup failed.');
+        }
+
+        return $result->data();
+    }
+
+    public function plan(App $app, Workspace $workspace, Node $node, bool $isAdoption = false): SetupWorkspacePlan
+    {
         $workspace->loadMissing('app');
+
         try {
             $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             throw new RuntimeException($exception->getMessage(), previous: $exception);
         }
 
-        $wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
-
-        $this->prepareWorkspaceState($workspace);
-
-        $warnings = [];
-
-        // Phase 2: Proxy Routing
-        $routeWarnings = $this->registerProxyRoutes($workspace);
-        $warnings = array_merge($warnings, $routeWarnings);
-
-        // Phase 3: Workspace Environment
-        $this->envInitializer->initialize($workspace);
-
-        // Phase 4: Runtime Container Convergence (FrankenPHP for PHP workspaces)
-        $runtimeWarning = $this->enactRuntimeContainer($workspace, $node);
-        if ($runtimeWarning !== null) {
-            $warnings[] = $runtimeWarning;
-        }
-
-        // Phase 5: Setup Steps
-        $setupResult = $this->runSetupSteps($workspace, $app, $node);
-
-        if ($setupResult['status'] === 'failed') {
-            throw new RuntimeException($setupResult['message']);
-        }
-
-        // Phase 6: Processes
-        $processResult = $this->startProcesses($app, $workspace, $node);
-        if (! $processResult['success']) {
-            throw new RuntimeException($processResult['message']);
-        }
-
-        // Phase 7: HTTP Probe
-        $probe = $this->probeReadiness($workspace);
-
-        if (! $probe['reachable']) {
-            $warnings[] = [
-                'code' => 'workspace.http_probe_unhealthy',
-                'family' => 'workspace',
-                'message' => "Workspace did not become reachable: {$probe['status']}",
-                'next_command' => 'doctor --family=workspace --restore',
-            ];
-        }
-
-        $this->markActive($workspace);
-
-        // Determine result action
-        if ($isAdoption) {
-            $action = 'adopted';
-        } elseif ($wasAlreadyActive) {
-            $action = 'converged';
-        } else {
-            $action = 'set_up';
-        }
-
-        $workspace->loadMissing('instance');
-
-        return [
-            'app' => $app->name,
-            'instance' => $workspace->instance->name,
-            'workspace' => $workspace->name,
-            'node' => $node->name,
-            'url' => $workspace->url(),
-            'action' => $action,
-            'warnings' => $warnings,
-            'setup_steps' => [
-                'status' => $setupResult['status'],
-                'count' => $setupResult['count'],
-                'message' => $setupResult['message'],
-            ],
-            'processes' => [
-                'status' => 'started',
-                'count' => $processResult['count'],
-                'names' => $processResult['names'],
-            ],
-            'http_probe' => $probe,
-        ];
+        return new SetupWorkspacePlan($this, $workspace, $app, $node, $isAdoption);
     }
 
     public function prepareWorkspaceState(Workspace $workspace): void
@@ -169,6 +110,22 @@ final readonly class SetupWorkspace
     public function registerProxyRoutes(Workspace $workspace): array
     {
         return $this->proxyRoute->handle($workspace);
+    }
+
+    public function initializeEnvironment(Workspace $workspace): void
+    {
+        $this->envInitializer->initialize($workspace);
+    }
+
+    public function hasSetupSteps(App $app, Workspace $workspace): bool
+    {
+        $workspace->loadMissing('instance');
+
+        return $this->stepPolicy->hasStepsFor(
+            $app,
+            WorkspaceLifecyclePhase::Setup,
+            $workspace->instance,
+        );
     }
 
     /**
@@ -224,7 +181,7 @@ final readonly class SetupWorkspace
 
     /**
      * @param  (callable(string, WorkspaceStep, int, int): void)|null  $onStepProgress
-     * @return array{status: string, message: string, count: int}
+     * @return array{status: 'skipped'|'completed', message: string, count: int}|array{status: 'failed', message: string, count: 0, step: string, exit_code: int}
      */
     public function runSetupSteps(
         Workspace $workspace,
@@ -287,14 +244,17 @@ final readonly class SetupWorkspace
         );
 
         if (! $success) {
+            /** @var WorkspaceRunStep|null $failedStep */
             $failedStep = $run
                 ->runSteps()
                 ->orderByDesc('id')
                 ->first();
+            $failedCommand = $failedStep->command ?? 'unknown';
+            $failedExitCode = $failedStep->exit_code ?? 1;
 
             $message = 'Workspace setup failed.';
             if ($failedStep !== null) {
-                $message = "Setup step failed: {$failedStep->command}";
+                $message = "Setup step failed: {$failedCommand}";
                 if ($failedStep->output !== null && $failedStep->output !== '') {
                     $message .= "\n{$failedStep->output}";
                 }
@@ -304,6 +264,8 @@ final readonly class SetupWorkspace
                 'status' => 'failed',
                 'message' => $message,
                 'count' => 0,
+                'step' => $failedCommand,
+                'exit_code' => $failedExitCode,
             ];
         }
 
@@ -321,13 +283,7 @@ final readonly class SetupWorkspace
      */
     public function startProcesses(App $app, Workspace $workspace, Node $node): array
     {
-        $context = new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: $workspace,
-            owner: $workspace,
-            instance: $workspace->instance,
-        );
+        $context = $this->processOwnerContext($app, $workspace, $node);
 
         $appProcesses = $context->effectiveWorkspaceProcessesWithoutRuntime();
 
@@ -428,6 +384,25 @@ final readonly class SetupWorkspace
             'count' => count($names),
             'names' => $names,
         ];
+    }
+
+    public function hasProcesses(App $app, Workspace $workspace, Node $node): bool
+    {
+        return $this
+            ->processOwnerContext($app, $workspace, $node)
+            ->effectiveWorkspaceProcessesWithoutRuntime()
+            ->isNotEmpty();
+    }
+
+    private function processOwnerContext(App $app, Workspace $workspace, Node $node): ProcessOwnerContext
+    {
+        return new ProcessOwnerContext(
+            node: $node,
+            app: $app,
+            workspace: $workspace,
+            owner: $workspace,
+            instance: $workspace->instance,
+        );
     }
 
     /**

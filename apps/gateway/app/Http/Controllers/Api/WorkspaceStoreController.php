@@ -17,6 +17,7 @@ use App\Http\Authorization\ServingNode;
 use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
+use App\Support\Streaming\NullProgressReporter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -117,12 +118,30 @@ final class WorkspaceStoreController implements Loggable
         }
 
         try {
-            $result = $this->createWorkspace->handle($app, $name, $instance, $base, $phpVersion);
+            $node = $this->createWorkspace->resolveAppNode($app, $instance);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
             return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
         }
+
+        $plan = $createProgress->for($app, $name, $base, $phpVersion, $instance);
+        $outcome = $plan->run(new NullProgressReporter);
+
+        if (! $outcome->isSuccessful()) {
+            $failure = $outcome->failure();
+            $code = $failure['code'] ?? 'workspace.enactment_failed';
+            $status = $code === 'workspace.node_unreachable' ? 503 : 422;
+
+            return $this->error(
+                $code,
+                $failure['message'] ?? 'Workspace creation failed.',
+                $failure['meta'] ?? [],
+                $status,
+            );
+        }
+
+        $result = $outcome->data();
 
         $workspace = Workspace::query()
             ->where('app_id', $app->id)
@@ -236,11 +255,11 @@ final class WorkspaceStoreController implements Loggable
             $base,
             $phpVersion,
         ): void {
-            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion, $instance);
-            $exitCode = $plan->runForReporter(app(ProgressReporter::class));
+            $plan = $createProgress->for($app, $name, $base, $phpVersion, $instance);
+            $outcome = $plan->run(app(ProgressReporter::class));
 
-            if ($exitCode !== 0) {
-                $failure = $plan->failure() ?? [
+            if (! $outcome->isSuccessful()) {
+                $failure = $outcome->failure() ?? [
                     'code' => 'workspace.enactment_failed',
                     'message' => 'Workspace creation failed.',
                     'meta' => [
@@ -259,7 +278,7 @@ final class WorkspaceStoreController implements Loggable
                 return;
             }
 
-            $result = $plan->result();
+            $result = $outcome->data();
             $workspace = Workspace::query()
                 ->where('app_id', $app->id)
                 ->where('name', $name)

@@ -18,7 +18,7 @@ use App\Services\Workspaces\WorkspaceNodeReachability;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorktreeWorkspaceDriver;
-use RuntimeException;
+use App\Support\Streaming\NullProgressReporter;
 
 final readonly class CreateWorkspace
 {
@@ -46,36 +46,41 @@ final readonly class CreateWorkspace
         string $base = 'main',
         ?string $phpVersion = null,
     ): array {
-        $node = $this->resolveAppNode($app, $instance);
-        $this->ensureSupportedPhpVersion($phpVersion);
-        $this->ensureNodeReachable($node);
+        $result = $this->plan($app, $name, $instance, $base, $phpVersion)->run(new NullProgressReporter);
 
-        $provisionResult = $this->provisionWorkspaceSource($app, $node, $name, $base, $instance);
-        $workspace = $this->createIntent($app, $instance, $phpVersion, $provisionResult);
+        if (! $result->isSuccessful()) {
+            $failure = $result->failure();
 
-        $warnings = [];
-        $httpProbe = [
-            'reachable' => false,
-            'status' => 'not_run',
-        ];
-
-        try {
-            $setup = $this->setupWorkspace->handle($app, $workspace, $node);
-            $warnings = array_merge($warnings, $setup['warnings']);
-            $httpProbe = $setup['http_probe'];
-        } catch (RuntimeException $exception) {
             throw new WorkspaceCreateFailed(
-                'workspace.enactment_failed',
-                "Workspace enactment on node '{$node->name}' stopped before Orbit could classify remaining drift.",
-                [
-                    'step' => 'setup_pipeline',
-                    'node' => $node->name,
-                    'reason' => $exception->getMessage(),
-                ],
+                $failure['code'] ?? 'workspace.enactment_failed',
+                $failure['message'] ?? 'Workspace creation failed.',
+                $failure['meta'] ?? [],
             );
         }
 
-        return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
+        return $result->data();
+    }
+
+    public function plan(
+        App $app,
+        string $name,
+        Instance $instance,
+        string $base = 'main',
+        ?string $phpVersion = null,
+    ): CreateWorkspacePlan {
+        $node = $this->resolveAppNode($app, $instance);
+        $this->ensureSupportedPhpVersion($phpVersion);
+
+        return new CreateWorkspacePlan(
+            $this,
+            $this->setupWorkspace,
+            $app,
+            $node,
+            $name,
+            $base,
+            $phpVersion,
+            $instance,
+        );
     }
 
     public function resolveAppNode(App $app, Instance $instance): Node
@@ -162,17 +167,6 @@ final readonly class CreateWorkspace
     }
 
     /**
-     * @return array{label: string, done_label: string}
-     */
-    public function sourceProgressLabels(Instance $instance, Node $node): array
-    {
-        return [
-            'label' => 'Creating git worktree',
-            'done_label' => 'Git worktree created',
-        ];
-    }
-
-    /**
      * @param  array{reachable: bool, status: string}  $httpProbe
      * @param  list<array<string, string>>  $warnings
      * @return array{
@@ -180,6 +174,7 @@ final readonly class CreateWorkspace
      *     workspace: array<string, mixed>,
      *     meta: array<string, mixed>,
      * }
+     * @mago-expect lint:excessive-parameter-list
      */
     public function result(
         Workspace $workspace,
