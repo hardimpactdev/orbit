@@ -15,6 +15,7 @@ use App\Models\Workspace;
 use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspacePlacement;
 use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -160,13 +161,28 @@ final readonly class AppListController implements Loggable
             });
         }
 
-        if ($environment !== null) {
-            $query->where('environment', $environment);
-        }
-
         $query->getQuery()->orderByRaw('LOWER(name)');
 
-        return $query->get();
+        $apps = $query->get();
+
+        if ($environment === null) {
+            return $apps;
+        }
+
+        // App owns no environment: match apps that have any instance resolving
+        // to the requested environment.
+        $placement = app(WorkspacePlacement::class);
+
+        /** @var Collection<int, App> $filtered */
+        $filtered = $apps
+            ->filter(static fn (App $app): bool => $app->instances->contains(
+                static fn (Instance $instance): bool => (
+                    $placement->runtimeEnvironment($app, $instance) === $environment
+                ),
+            ))
+            ->values();
+
+        return $filtered;
     }
 
     /**

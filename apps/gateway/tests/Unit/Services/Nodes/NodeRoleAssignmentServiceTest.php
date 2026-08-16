@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -1089,8 +1091,16 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        App::factory()->create([
+        $app = App::factory()->create([
             'node_id' => $node->id,
+        ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/'.$app->name,
+                document_root: 'public',
+            ),
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-dev'))
@@ -1159,6 +1169,14 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $node->id,
         ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/'.$app->name,
+                document_root: 'public',
+            ),
+        ]);
         ProxyRoute::factory()
             ->forApp($app)
             ->create([
@@ -1218,6 +1236,15 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $backendNode->id,
             'environment' => 'production',
+        ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $backendNode->id,
+                node: $backendNode->name,
+                path: '/srv/apps/'.$app->name,
+                document_root: 'public',
+                domain: $app->name.'.example.com',
+            ),
         ]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
 
@@ -1281,6 +1308,15 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $backendNode->id,
             'environment' => 'production',
+        ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $backendNode->id,
+                node: $backendNode->name,
+                path: '/srv/apps/'.$app->name,
+                document_root: 'public',
+                domain: $app->name.'.example.com',
+            ),
         ]);
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
 
@@ -1405,6 +1441,14 @@ describe('node role assignment service', function (): void {
 
         $app = App::factory()->create([
             'node_id' => $node->id,
+        ]);
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/'.$app->name,
+                document_root: 'public',
+            ),
         ]);
         ProxyRoute::factory()
             ->forApp($app)

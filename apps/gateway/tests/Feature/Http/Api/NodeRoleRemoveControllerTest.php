@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Nodes\NodeRoleStatus;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -180,6 +183,16 @@ describe('NodeRoleRemoveController', function (): void {
             'agent_ide_config' => null,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+        // The node-bound dependent is the concrete development instance on the node.
+        $docs = App::query()->where('name', 'docs')->firstOrFail();
+        Instance::factory()->for($docs, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
 
         $response = deleteNodeRoleRemoveJson(
