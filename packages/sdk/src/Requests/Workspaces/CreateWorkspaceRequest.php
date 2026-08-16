@@ -68,7 +68,7 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
             base: is_string($meta['base'] ?? null) ? $meta['base'] : $this->base ?? 'main',
             action: is_string($data['result']['action'] ?? null) ? $data['result']['action'] : 'created',
             httpProbe: $this->stringKeyedArray($meta['http_probe'] ?? []),
-            warnings: $this->listOfStringArrays($meta['warnings'] ?? []),
+            warnings: $this->listOfStringKeyedArrays($meta['warnings'] ?? []),
         );
     }
 }

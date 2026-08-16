@@ -56,7 +56,10 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
                 'base' => $this->stringOption('base') ?? 'main',
                 'php_version' => $this->stringOption('php-version'),
             ],
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+            fn (ProgressEventType $type, array $payload): int => $this->renderCanonicalProgressTerminalFrame(
+                $type,
+                $payload,
+            ),
         );
     }
 

@@ -112,6 +112,7 @@ final readonly class WorkspaceSetupTargetResolver
         $this->ensureInstanceSupportsWorkspaces($app, $instance);
 
         $workspaceName = $name ?? basename($path);
+        $this->ensureValidWorkspaceName($workspaceName);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
         if (! $this->pathAllowedForWorkspace($path, $instance)) {
@@ -184,6 +185,8 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function resolveByName(string $name, ?string $appName): array
     {
+        $this->ensureValidWorkspaceName($name);
+
         $query = Workspace::query()
             ->with(['app.instances', 'instance'])
             ->where('name', $name);
@@ -336,6 +339,7 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function unwrap(Workspace $workspace, bool $isAdoption): array
     {
+        $this->ensureValidWorkspaceName($workspace->name);
         $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
 
@@ -368,6 +372,25 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         return [$workspace, $app, $node, $isAdoption];
+    }
+
+    private function ensureValidWorkspaceName(string $name): void
+    {
+        if (strlen($name) > 63 || preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) !== 1) {
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'Workspace name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and cannot exceed 63 characters.',
+                ['field' => 'name', 'reason' => 'slug_regex'],
+            );
+        }
+
+        if ($name === 'main') {
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                "Workspace name '{$name}' is reserved.",
+                ['field' => 'name', 'reason' => 'reserved_name'],
+            );
+        }
     }
 
     private function resolveApp(?string $appName): ?App

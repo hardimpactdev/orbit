@@ -56,7 +56,7 @@ final readonly class WorkspacesProbe
         $runtimeContainer = null;
 
         if (
-            $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active
+            $workspace->lifecycle_status === WorkspaceLifecycleStatus::Expected
             && $app->runtime === AppRuntimeKind::Php
             && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())
         ) {
@@ -271,7 +271,7 @@ final readonly class WorkspacesProbe
             return [];
         }
 
-        if ($workspace->lifecycle_status !== WorkspaceLifecycleStatus::Active) {
+        if ($workspace->lifecycle_status !== WorkspaceLifecycleStatus::Expected) {
             return [];
         }
 

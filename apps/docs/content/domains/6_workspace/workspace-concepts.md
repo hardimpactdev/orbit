@@ -104,7 +104,7 @@ The terms below describe setup and teardown step vocabulary.
 
 ## Lifecycle
 
-The terms below describe how a workspace moves through its active states.
+The terms below describe how a workspace moves through its lifecycle states.
 
 - **Workspace adoption:** Result of `workspace:setup` against an existing path
   with no Orbit management. The resulting workspace entity reports `adopted=true`.

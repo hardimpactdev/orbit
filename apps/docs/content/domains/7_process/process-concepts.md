@@ -128,7 +128,7 @@ These terms describe the runtime objects that Orbit derives from process definit
   runtime units as required by its scope. Node-level and workspace-scoped
   process definitions normally render one unit. Instance-scoped inherited
   process definitions may render one main-instance unit plus one unit for each
-  active workspace belonging to that same instance.
+  registered workspace belonging to that same instance.
 - **Runtime unit filename:** Backend-safe five-part identity for a rendered
   runtime unit. The canonical form is
   `orbit_<app>_<instance>_<workspace|main>_<process>` (for example

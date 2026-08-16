@@ -111,7 +111,7 @@ for this default.
 
 ### Workspace Creation Rules
 
-`workspace:new` is an atomic creation + provisioning command. It does not
+`workspace:new` runs one ordered creation + provisioning plan. It does not
 support partial-creation flags (e.g. `--keep-files`); operators who want to
 register an existing path use `workspace:setup --path` (routine adoption).
 `doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
@@ -132,6 +132,9 @@ The command performs:
    - **Workspace-owned proxy route:** create or update the workspace
      proxy route record; backend artifact convergence is owned by the
      `proxy` family.
+   - **Workspace environment:** preserve an existing workspace `.env`; when it
+     is missing, initialize it from the workspace's own `.env.example` and
+     overlay effective workspace values. Never copy the parent app `.env`.
    - **Runtime container:** render and install the runtime container
      configuration specific to this workspace
      on the node.
@@ -190,11 +193,21 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   cannot create the physical source path before the gateway row is written
   (`error.code=workspace.source_create_failed`). No configuration row is
   retained.
+- **Workspace registration failure (partial configuration)** — source
+  provisioning completed, but Orbit could not write or finish preparing the
+  gateway workspace row (`error.code=workspace.registration_failed`). The
+  source remains at `error.meta.path`; `error.meta.partial_state` is
+  `source_retained` when no row exists or `workspace_registered` when the row
+  was written. `error.meta.next_command` gives the exact `workspace:setup`
+  adoption command for the retained path.
 - **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
-  `error.meta.step`/`error.meta.reason`). Retryable conditions surface as
-  `success.meta.warnings[]` instead.
+  `error.meta.step`/`error.meta.reason`). Setup-step failures use the stable
+  reason `setup_step_failed`, process-start failures use
+  `process_start_failed`, and unclassified failures use `unexpected_failure`.
+  Public reasons do not contain command output or exception details. Retryable
+  conditions surface as `success.meta.warnings[]` instead.
 - **Exit status:** Uses the shared exit status policy. Success and
   success-with-warnings exit `0`; all documented command failures exit with the
   standard command failure status (`1`). This command defines no
@@ -218,6 +231,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered create plan plus controller-level JSON/SSE success and failure envelopes, including phase order, registration partial state, source rollback, retained post-intent state, exact errors, and final-result parity. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete instance resolution, `instance_required` validation, and gateway stream request payload. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 

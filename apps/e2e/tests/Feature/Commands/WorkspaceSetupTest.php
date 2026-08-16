@@ -39,12 +39,20 @@ if (! function_exists('workspaceLifecycleSeed')) {
                 'updated_at' => now(),
             ]);
 
-            \\App\\Models\\App::query()->create([
+            \$app = \\App\\Models\\App::query()->create([
                 'name' => 'docs',
-                'node_id' => \$nodes->get('app-dev-1'),
-                'path' => {$appPathValue},
-                'document_root' => 'public',
                 'php_version' => '8.5',
+            ]);
+
+            \\App\\Models\\Instance::factory()->for(\$app, 'app')->create([
+                'name' => 'development',
+                'php_version' => \$app->php_version,
+                'driver_config' => new \\App\\Data\\Apps\\OrbitInstanceDriverConfigData(
+                    node_id: \$nodes->get('app-dev-1'),
+                    node: 'app-dev-1',
+                    path: {$appPathValue},
+                    document_root: 'public',
+                ),
             ]);
 
             echo 'seeded';
@@ -110,20 +118,25 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $data = e2eJsonCommandResultData($payload);
 
-        expect($data['workspace'])
+        expect($data['workspace']['name'])
             ->toBe($workspaceName)
-            ->and($data['app'])
+            ->and($data['workspace']['app'])
             ->toBe('docs')
-            ->and($data['action'])
+            ->and($data['workspace']['path'])
+            ->toBe($workspacePath)
+            ->and($data['result']['action'])
             ->toBe('adopted')
-            ->and($data['setup_steps']['status'])
-            ->toBe('skipped');
+            ->and($data['workspace']['adopted'])
+            ->toBeTrue()
+            ->and($data['workspace']['lifecycle_status'])
+            ->toBe('expected');
 
         $gatewayRecord = $topology->ssh(
             'gateway',
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('lifecycle_status'),
+                'adopted' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('adopted'),
                 'route_count' => \\App\\Models\\ProxyRoute::query()
                     ->where('workspace_id', \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('id'))
                     ->count(),
@@ -133,7 +146,8 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'workspace' => 'active',
+            'workspace' => 'expected',
+            'adopted' => 1,
             'route_count' => 1,
         ]);
     } finally {

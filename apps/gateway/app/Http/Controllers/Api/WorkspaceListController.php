@@ -292,6 +292,7 @@ final readonly class WorkspaceListController implements Loggable
                     'instance' => $workspace->instance->name,
                     'node' => $this->placement->nodeForWorkspace($workspace)?->name,
                     'url' => $workspace->url(),
+                    'adopted' => $workspace->adopted,
                     'lifecycle_status' => $workspace->lifecycle_status->value,
                 ])
                 ->all(),

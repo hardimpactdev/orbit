@@ -41,14 +41,23 @@ function workspaceRemoveSeed(E2ETopologyHarness $topology, string $workspaceName
 
         \$app = \\App\\Models\\App::query()->create([
             'name' => 'docs',
-            'node_id' => \$nodes->get('app-dev-1'),
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'php_version' => '8.5',
+        ]);
+
+        \$instance = \\App\\Models\\Instance::factory()->for(\$app, 'app')->create([
+            'name' => 'development',
+            'php_version' => \$app->php_version,
+            'driver_config' => new \\App\\Data\\Apps\\OrbitInstanceDriverConfigData(
+                node_id: \$nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
 
         \$workspace = \\App\\Models\\Workspace::query()->create([
             'app_id' => \$app->id,
+            'instance_id' => \$instance->id,
             'name' => {$workspaceNameValue},
             'path' => {$workspacePathValue},
             'php_version' => null,

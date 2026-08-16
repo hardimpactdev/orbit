@@ -117,12 +117,30 @@ final class WorkspaceStoreController implements Loggable
         }
 
         try {
-            $result = $this->createWorkspace->handle($app, $name, $instance, $base, $phpVersion);
+            $node = $this->createWorkspace->resolveAppNode($app, $instance);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
             return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
         }
+
+        $plan = $createProgress->for($app, $name, $base, $phpVersion, $instance);
+        $outcome = $plan->run(app(ProgressReporter::class));
+
+        if (! $outcome->isSuccessful()) {
+            $failure = $outcome->failure();
+            $code = $failure['code'] ?? 'workspace.enactment_failed';
+            $status = $code === 'workspace.node_unreachable' ? 503 : 422;
+
+            return $this->error(
+                $code,
+                $failure['message'] ?? 'Workspace creation failed.',
+                $failure['meta'] ?? [],
+                $status,
+            );
+        }
+
+        $result = $outcome->data();
 
         $workspace = Workspace::query()
             ->where('app_id', $app->id)
@@ -236,11 +254,11 @@ final class WorkspaceStoreController implements Loggable
             $base,
             $phpVersion,
         ): void {
-            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion, $instance);
-            $exitCode = $plan->runForReporter(app(ProgressReporter::class));
+            $plan = $createProgress->for($app, $name, $base, $phpVersion, $instance);
+            $outcome = $plan->run(app(ProgressReporter::class));
 
-            if ($exitCode !== 0) {
-                $failure = $plan->failure() ?? [
+            if (! $outcome->isSuccessful()) {
+                $failure = $outcome->failure() ?? [
                     'code' => 'workspace.enactment_failed',
                     'message' => 'Workspace creation failed.',
                     'meta' => [
@@ -259,7 +277,7 @@ final class WorkspaceStoreController implements Loggable
                 return;
             }
 
-            $result = $plan->result();
+            $result = $outcome->data();
             $workspace = Workspace::query()
                 ->where('app_id', $app->id)
                 ->where('name', $name)
@@ -268,7 +286,13 @@ final class WorkspaceStoreController implements Loggable
 
             $emitter->complete(0, [
                 'footer' => $plan->doneFooter(),
-                'result' => $result,
+                'success' => [
+                    'data' => [
+                        'result' => $result['result'],
+                        'workspace' => $result['workspace'],
+                    ],
+                    'meta' => $result['meta'],
+                ],
             ]);
         });
     }

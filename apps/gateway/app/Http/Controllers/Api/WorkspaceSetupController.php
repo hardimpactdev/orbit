@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Workspaces\SetupWorkspace;
 use App\Actions\Workspaces\SetupWorkspaceProgress;
 use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
@@ -22,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 #[RequiresPermission('workspace:setup', servingNode: ServingNode::WorkspaceOwning)]
 final class WorkspaceSetupController implements Loggable
@@ -29,7 +29,6 @@ final class WorkspaceSetupController implements Loggable
     private ?Workspace $activitySubject = null;
 
     public function __construct(
-        private readonly SetupWorkspace $setupWorkspace,
         private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
@@ -101,41 +100,37 @@ final class WorkspaceSetupController implements Loggable
         $this->activitySubject = $workspace;
 
         try {
-            $result = $this->setupWorkspace->handle($app, $workspace, $node, $isAdoption);
-        } catch (\RuntimeException $e) {
+            $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
+            $outcome = $plan->run(app(ProgressReporter::class));
+        } catch (Throwable $exception) {
+            $outcome = $setupProgress->planConstructionFailure(
+                $workspace,
+                $node,
+                $isAdoption,
+                $exception,
+            );
+        }
+
+        if (! $outcome->isSuccessful()) {
+            $failure = $outcome->failure();
+
             return $this->error(
-                'workspace.enactment_failed',
-                $e->getMessage(),
-                [
-                    'phase' => 'artifacts',
-                    'node' => $node->name,
-                ],
+                $failure['code'] ?? 'workspace.enactment_failed',
+                $failure['message'] ?? 'Workspace setup failed.',
+                $failure['meta'] ?? [],
                 422,
             );
         }
 
-        $data = [
-            'app' => $result['app'],
-            'instance' => $result['instance'],
-            'workspace' => $result['workspace'],
-            'node' => $result['node'],
-            'url' => $result['url'],
-            'action' => $result['action'],
-            'setup_steps' => $result['setup_steps'],
-            'processes' => $result['processes'],
-            'http_probe' => $result['http_probe'],
-        ];
-
-        $meta = [];
-
-        if ($result['warnings'] !== []) {
-            $meta['warnings'] = $result['warnings'];
-        }
+        $result = $outcome->data();
 
         return response()->json([
             'success' => [
-                'data' => $data,
-                'meta' => $meta,
+                'data' => [
+                    'result' => $result['result'],
+                    'workspace' => $result['workspace'],
+                ],
+                'meta' => $result['meta'],
             ],
         ], 200);
     }
@@ -204,16 +199,37 @@ final class WorkspaceSetupController implements Loggable
         $this->activitySubject = $workspace;
 
         return $streams->make(function ($emitter) use ($setupProgress, $workspace, $app, $node, $isAdoption): void {
-            $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
-            $exitCode = $plan->runForReporter(app(ProgressReporter::class));
+            try {
+                $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
+                $outcome = $plan->run(app(ProgressReporter::class));
+            } catch (Throwable $exception) {
+                $outcome = $setupProgress->planConstructionFailure(
+                    $workspace,
+                    $node,
+                    $isAdoption,
+                    $exception,
+                );
+                $failure = $outcome->failure();
+                $message = $failure['message'] ?? 'Workspace setup failed.';
 
-            if ($exitCode !== 0) {
-                $failure = $plan->failure() ?? [
+                $emitter->error($message, 1, [
+                    'code' => $failure['code'] ?? 'workspace.enactment_failed',
+                    'message' => $message,
+                    'meta' => $failure['meta'] ?? [],
+                    'footer' => "Failed to set up workspace '{$workspace->name}'.",
+                ]);
+
+                return;
+            }
+
+            if (! $outcome->isSuccessful()) {
+                $failure = $outcome->failure() ?? [
                     'code' => 'workspace.enactment_failed',
                     'message' => 'Workspace setup failed.',
                     'meta' => [
                         'phase' => 'artifacts',
                         'node' => $node->name,
+                        'reason' => 'unexpected_failure',
                     ],
                 ];
 
@@ -227,9 +243,17 @@ final class WorkspaceSetupController implements Loggable
                 return;
             }
 
+            $result = $outcome->data();
+
             $emitter->complete(0, [
                 'footer' => $plan->doneFooter(),
-                'result' => $plan->result(),
+                'success' => [
+                    'data' => [
+                        'result' => $result['result'],
+                        'workspace' => $result['workspace'],
+                    ],
+                    'meta' => $result['meta'],
+                ],
             ]);
         });
     }

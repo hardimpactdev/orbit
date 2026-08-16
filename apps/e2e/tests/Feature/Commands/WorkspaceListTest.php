@@ -37,23 +37,35 @@ function workspaceListSeed(E2ETopologyHarness $topology): void
 
         $app = \App\Models\App::query()->create([
             'name' => 'docs',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/srv/docs',
-            'document_root' => 'public',
+        ]);
+
+        $instance = \App\Models\Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'php_version' => $app->php_version,
+            'driver_config' => new \App\Data\Apps\OrbitInstanceDriverConfigData(
+                node_id: $nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/srv/docs',
+                document_root: 'public',
+            ),
         ]);
 
         \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-alpha',
             'path' => '/srv/docs/.worktrees/feature-alpha',
+            'adopted' => false,
             'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
         ]);
 
         \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-beta',
             'path' => '/srv/docs/.worktrees/feature-beta',
-            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Active,
+            'adopted' => true,
+            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
         ]);
 
         echo 'seeded';
@@ -121,7 +133,9 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
             ->and(array_column($workspaces, 'name'))
             ->toContain('feature-beta')
             ->and($workspaces[0])
-            ->toHaveKeys(['name', 'app', 'node', 'url', 'lifecycle_status']);
+            ->toHaveKeys(['name', 'app', 'node', 'url', 'adopted', 'lifecycle_status'])
+            ->and(collect($workspaces)->firstWhere('name', 'feature-beta')['adopted'] ?? null)
+            ->toBeTrue();
 
         // Filter by instance
         $filteredResult = $topology->ssh(
@@ -163,7 +177,8 @@ it('lists workspaces from a non-gateway caller through the gateway api', functio
             'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
                 .escapeshellarg(implode("\n", [
                     '$nodes = \App\Models\Node::query()->whereIn(\'name\', [\'app-dev-1\'])->pluck(\'id\', \'name\');',
-                    '\App\Models\App::query()->create([\'name\' => \'empty-app\', \'node_id\' => $nodes->get(\'app-dev-1\'), \'environment\' => \'development\', \'path\' => \'/srv/empty\', \'document_root\' => \'public\']);',
+                    '$app = \App\Models\App::query()->create([\'name\' => \'empty-app\']);',
+                    '\App\Models\Instance::factory()->for($app, \'app\')->create([\'name\' => \'development\', \'php_version\' => $app->php_version, \'driver_config\' => new \App\Data\Apps\OrbitInstanceDriverConfigData(node_id: $nodes->get(\'app-dev-1\'), node: \'app-dev-1\', path: \'/srv/empty\', document_root: \'public\')]);',
                     'echo \'seeded-empty\';',
                 ])),
             timeoutSeconds: 120,

@@ -14288,6 +14288,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
                 "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php"
             ],
             "verification_hints": [
@@ -14304,6 +14305,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php",
@@ -14488,6 +14496,7 @@
                 "apps/cli/tests/Feature/InternalWorkspaceSetupStepCommandTest.php",
                 "apps/e2e/tests/Feature/Commands/WorkspaceSetupTest.php",
                 "apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
                 "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php",
                 "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php"
             ],
@@ -14519,6 +14528,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php",

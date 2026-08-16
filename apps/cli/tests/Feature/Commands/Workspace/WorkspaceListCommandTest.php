@@ -14,6 +14,7 @@ describe('workspace:list', function (): void {
                     'app' => 'docs',
                     'node' => 'app-1',
                     'url' => 'https://feature-docs.docs.test',
+                    'adopted' => true,
                     'lifecycle_status' => 'expected',
                 ],
             ],
@@ -38,7 +39,12 @@ describe('workspace:list', function (): void {
             );
         });
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['workspaces'][0]['name'])->toBe('feature-docs');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['workspaces'][0]['name'])
+            ->toBe('feature-docs')
+            ->and($decoded['success']['data']['workspaces'][0]['adopted'])
+            ->toBeTrue();
     });
 
     it('renders human output grouped by node then app as tables', function (): void {

@@ -74,7 +74,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    `docker` unless their catalog entry and node platform admit another service
    runtime.
 6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, policy fields, and durable display `label` (defaulting to the identity key when omitted).
-7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance. Canonical identities include both app and instance slugs.
+7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit. Instance-owned processes derive one main-instance unit plus one unit for each registered workspace belonging to that same instance. Canonical identities include both app and instance slugs.
 8. Render the derived runtime units on the resolved node or instance serving node through the selected runtime backend.
 9. Start rendered runtime units by default unless `--no-start` is present. When
    starting, record and publish a durable transitional `starting` event before

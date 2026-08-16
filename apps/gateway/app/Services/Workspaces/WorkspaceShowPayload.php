@@ -38,7 +38,7 @@ class WorkspaceShowPayload
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'adopted' => false,
+            'adopted' => $workspace->adopted,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
 

@@ -74,7 +74,7 @@ recreate both the derived definition and its container.
 ### Owning instance and workspace expansion
 
 The owner resolves to one active `Instance`. On `app-dev`, expected runtime
-contexts are that instance's main context plus every active workspace belonging
+contexts are that instance's main context plus every registered workspace belonging
 to the same instance. On `app-prod`, only the main context is eligible. All
 expected units are placed on the instance's serving node; other instances of
 the same app are outside this definition's expansion.
@@ -226,7 +226,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_unrenderable` | Rebuild a node-owned managed service from its catalog entry and stored process intent, then restore its runtime unit. Other invalid definitions have no automatic action. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway instance, workspace, and process configuration. For a managed PHP instance missing its canonical FrankenPHP process row, recreate that derived row first and then restore its container. |
-| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway instance, workspace, and process configuration. Docker orphan containers use the `orbit-app-*` inventory path. Systemd and launchd extras are removed only when the unit identity is a strict Orbit-owned `orbit_*` name and the expected path is the canonical managed location (`/etc/systemd/system/{unit}.service` or the node user's `~/Library/LaunchAgents/dev.hardimpact.orbit.{unit}.plist`). Arbitrary units are never removed. |
+| `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in registered gateway instance, workspace, and process configuration. Docker orphan containers use the `orbit-app-*` inventory path. Systemd and launchd extras are removed only when the unit identity is a strict Orbit-owned `orbit_*` name and the expected path is the canonical managed location (`/etc/systemd/system/{unit}.service` or the node user's `~/Library/LaunchAgents/dev.hardimpact.orbit.{unit}.plist`). Arbitrary units are never removed. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway instance, workspace, and process configuration. |
 | `process.runtime_unit_down` | Start the exact current Orbit-owned Docker runtime unit when its configured restart policy is `always`. |
 | `process.runtime_unit_unloaded` | No `doctor --restore` action. Doctor reports the unloaded label; `process:start` is the explicit lifecycle command. |

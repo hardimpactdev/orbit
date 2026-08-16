@@ -23,9 +23,6 @@ if (! function_exists('workspaceLifecycleSeed')) {
                 }
             }
 
-            \\App\\Models\\Node::query()
-                ->whereIn('name', ['operator-1', 'app-dev-1'])
-
             \\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
             \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
@@ -42,12 +39,20 @@ if (! function_exists('workspaceLifecycleSeed')) {
                 'updated_at' => now(),
             ]);
 
-            \\App\\Models\\App::query()->create([
+            \$app = \\App\\Models\\App::query()->create([
                 'name' => 'docs',
-                'node_id' => \$nodes->get('app-dev-1'),
-                'path' => {$appPathValue},
-                'document_root' => 'public',
-                'php_version' => '8.5'
+                'php_version' => '8.5',
+            ]);
+
+            \\App\\Models\\Instance::factory()->for(\$app, 'app')->create([
+                'name' => 'development',
+                'php_version' => \$app->php_version,
+                'driver_config' => new \\App\\Data\\Apps\\OrbitInstanceDriverConfigData(
+                    node_id: \$nodes->get('app-dev-1'),
+                    node: 'app-dev-1',
+                    path: {$appPathValue},
+                    document_root: 'public',
+                ),
             ]);
 
             echo 'seeded';
@@ -120,7 +125,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
             ->and($data['workspace']['path'])
             ->toBe($workspacePath)
             ->and($data['workspace']['lifecycle_status'])
-            ->toBe('active')
+            ->toBe('expected')
             ->and($data['meta']['base'])
             ->toBe('main');
 
@@ -140,7 +145,7 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         $state = json_decode(trim($gatewayRecord->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($state)->toMatchArray([
-            'workspace' => 'active',
+            'workspace' => 'expected',
             'route_count' => 1,
         ]);
     } finally {

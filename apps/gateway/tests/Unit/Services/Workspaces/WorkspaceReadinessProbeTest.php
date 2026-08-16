@@ -7,6 +7,8 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -21,12 +23,30 @@ it('retries transient unhealthy workspace responses', function (): void {
 
         return (
             $attempts < 3
-                ? ['reachable' => false, 'status' => $attempts === 1 ? '500' : '502']
-                : ['reachable' => true, 'status' => '200']
+                ? [
+                    'url' => 'https://feature.docs.test',
+                    'result' => 'unhealthy',
+                    'status_code' => $attempts === 1 ? 500 : 502,
+                    'duration_ms' => 1,
+                ]
+                : [
+                    'url' => 'https://feature.docs.test',
+                    'result' => 'healthy',
+                    'status_code' => 200,
+                    'duration_ms' => 1,
+                ]
         );
     });
 
-    expect($result)->toBe(['reachable' => true, 'status' => '200'])->and($attempts)->toBe(3);
+    expect($result)
+        ->toBe([
+            'url' => 'https://feature.docs.test',
+            'result' => 'healthy',
+            'status_code' => 200,
+            'duration_ms' => 1,
+        ])
+        ->and($attempts)
+        ->toBe(3);
 });
 
 it('returns the last unhealthy readiness result after all attempts fail', function (): void {
@@ -36,10 +56,23 @@ it('returns the last unhealthy readiness result after all attempts fail', functi
     $result = $probe->probeWith(function () use (&$attempts): array {
         $attempts++;
 
-        return ['reachable' => false, 'status' => $attempts === 1 ? '502' : 'error: Operation timed out'];
+        return [
+            'url' => 'https://feature.docs.test',
+            'result' => 'unhealthy',
+            'status_code' => $attempts === 1 ? 502 : null,
+            'duration_ms' => 1,
+        ];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => 'error: Operation timed out'])->and($attempts)->toBe(2);
+    expect($result)
+        ->toBe([
+            'url' => 'https://feature.docs.test',
+            'result' => 'unhealthy',
+            'status_code' => null,
+            'duration_ms' => 1,
+        ])
+        ->and($attempts)
+        ->toBe(2);
 });
 
 it('keeps default readiness retries within the setup probe budget', function (): void {
@@ -49,10 +82,20 @@ it('keeps default readiness retries within the setup probe budget', function ():
     $result = $probe->probeWith(function () use (&$attempts): array {
         $attempts++;
 
-        return ['reachable' => false, 'status' => '500'];
+        return [
+            'url' => 'https://feature.docs.test',
+            'result' => 'unhealthy',
+            'status_code' => 500,
+            'duration_ms' => 1,
+        ];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => '500'])->and($attempts)->toBe(10);
+    expect($result['result'])
+        ->toBe('unhealthy')
+        ->and($result['status_code'])
+        ->toBe(500)
+        ->and($attempts)
+        ->toBe(10);
 });
 
 it('does not retry non-transient workspace configuration failures', function (): void {
@@ -62,10 +105,20 @@ it('does not retry non-transient workspace configuration failures', function ():
     $result = $probe->probeWith(function () use (&$attempts): array {
         $attempts++;
 
-        return ['reachable' => false, 'status' => 'no_app'];
+        return [
+            'url' => 'https://feature.docs.test',
+            'result' => 'unhealthy',
+            'status_code' => 404,
+            'duration_ms' => 1,
+        ];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => 'no_app'])->and($attempts)->toBe(1);
+    expect($result['result'])
+        ->toBe('unhealthy')
+        ->and($result['status_code'])
+        ->toBe(404)
+        ->and($attempts)
+        ->toBe(1);
 });
 
 it('fails readiness when vite module assets are not reachable', function (): void {
@@ -87,7 +140,16 @@ it('fails readiness when vite module assets are not reachable', function (): voi
 
     $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
 
-    expect($result)->toBe(['reachable' => false, 'status' => 'asset_404']);
+    expect($result)
+        ->toHaveKeys(['url', 'result', 'status_code', 'duration_ms'])
+        ->and($result['url'])
+        ->toBe($url)
+        ->and($result['result'])
+        ->toBe('unhealthy')
+        ->and($result['status_code'])
+        ->toBe(404)
+        ->and($result['duration_ms'])
+        ->toBeInt();
 });
 
 it('passes readiness when vite module assets are reachable', function (): void {
@@ -111,7 +173,61 @@ it('passes readiness when vite module assets are reachable', function (): void {
 
     $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
 
-    expect($result)->toBe(['reachable' => true, 'status' => '200']);
+    expect($result)
+        ->toHaveKeys(['url', 'result', 'status_code', 'duration_ms'])
+        ->and($result['url'])
+        ->toBe($url)
+        ->and($result['result'])
+        ->toBe('healthy')
+        ->and($result['status_code'])
+        ->toBe(200)
+        ->and($result['duration_ms'])
+        ->toBeInt();
+});
+
+it('reports page probe exceptions without exposing their messages', function (): void {
+    $workspace = workspaceForReadinessProbe();
+    $sentinel = 'private-page-probe-sentinel';
+    Exceptions::fake();
+    Http::fake(fn (): never => throw new RuntimeException($sentinel));
+
+    $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
+
+    expect($result)
+        ->toHaveKeys(['url', 'result', 'status_code', 'duration_ms'])
+        ->and($result['result'])
+        ->toBe('unhealthy')
+        ->and($result['status_code'])
+        ->toBeNull()
+        ->and(json_encode($result, JSON_THROW_ON_ERROR))
+        ->not->toContain($sentinel);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $sentinel);
+});
+
+it('reports vite probe exceptions without exposing their messages', function (): void {
+    $workspace = workspaceForReadinessProbe();
+    $url = $workspace->url();
+    $sentinel = 'private-vite-probe-sentinel';
+    Exceptions::fake();
+    Http::fake(function (Request $request) use ($url, $sentinel) {
+        if ($request->url() === $url) {
+            return Http::response("<script type=\"module\" src=\"{$url}/@vite/client\"></script>");
+        }
+
+        throw new RuntimeException($sentinel);
+    });
+
+    $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
+
+    expect($result)
+        ->toHaveKeys(['url', 'result', 'status_code', 'duration_ms'])
+        ->and($result['result'])
+        ->toBe('unhealthy')
+        ->and($result['status_code'])
+        ->toBeNull()
+        ->and(json_encode($result, JSON_THROW_ON_ERROR))
+        ->not->toContain($sentinel);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $sentinel);
 });
 
 function workspaceForReadinessProbe(): Workspace

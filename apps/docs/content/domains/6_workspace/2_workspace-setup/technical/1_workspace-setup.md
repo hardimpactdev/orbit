@@ -89,6 +89,10 @@ the parent app path, including external agent worktree directories.
    - Interactive prompt for missing `[name]` when no CWD outcome or local
      Codex/path resolution supplied it; non-interactive failure if no prompt
      is available.
+   - Explicit and derived workspace names must not be `main`. That name is
+     reserved for the parent app source. Validation fails before side effects
+     with `error.code=validation_failed`, `error.meta.field=name`, and
+     `error.meta.reason=reserved_name`.
 2. **Resolve Path**:
    - Explicit `--path` (must be absolute).
    - Workspace `path` returned by the CWD path-ownership lookup or stored on
@@ -221,16 +225,25 @@ Agent-push, or runtime effects. This failure uses
 - **Remote Failures**: Agent-push timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
-  `error.meta.node`). Retryable runtime container or runtime artifact drift is
-  reported as `success.meta.warnings[]` with the owning family code.
+  `error.meta.node`, and a stable `error.meta.reason`). Process-start failures
+  use `process_start_failed`; plan construction uses
+  `plan_construction_failed`; progress-tree initialization uses
+  `reporter_initialization_failed`; other unclassified failures use
+  `unexpected_failure`.
+  Retryable runtime container or runtime artifact drift is reported as
+  `success.meta.warnings[]` with the owning family code. Public warnings do not
+  contain raw exception details.
 - **Setup Step Failure**: A sequential setup step returned non-zero. Reported
   as `error.code=workspace.setup_step_failed` with
-  `error.meta.{step, exit_code, node, path, phase=setup_steps}`. **No
-  rollback**: registry, routing, and artifact phases that completed before
-  the step failure remain in place. The retry path is re-running
-  `workspace:setup`; app-side scripts are expected to be re-runnable.
-- **HTTP Probe Warning**: Workspace returns `>= 500` or times out. Reported as a
-  non-fatal warning under `success.meta.warnings[]` with
+  `error.meta.{step, exit_code, node, path, phase=setup_steps,
+  reason=setup_step_failed}`. Detailed output remains in workspace run history
+  and is not returned in public JSON or stream JSON. **No rollback**: registry,
+  routing, and artifact phases that completed before the step failure remain in
+  place. The retry path is re-running `workspace:setup`; app-side scripts are
+  expected to be re-runnable.
+- **HTTP Probe Warning**: The workspace page returns `>= 500`, a Vite asset
+  returns `>= 400`, or a page or asset request fails. Reported as a non-fatal
+  warning under `success.meta.warnings[]` with
   `code=workspace.http_probe_unhealthy` and a retry command. The command
   itself succeeds because management-command success does not assert
   application HTTP health. This warning is command-owned metadata, not a
@@ -268,6 +281,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered setup plan plus controller-level JSON/SSE success and failure envelopes, including environment initialization, ordered phase events, exact errors, non-rollback state, and final-result parity. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path, Codex/path-basename identity for path setup without a positional name, and parent-instance-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |

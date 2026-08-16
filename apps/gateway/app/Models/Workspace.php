@@ -23,6 +23,7 @@ use Override;
  * @property string $name
  * @property string $path
  * @property string|null $php_version
+ * @property bool $adopted
  * @property WorkspaceLifecycleStatus $lifecycle_status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -41,12 +42,18 @@ class Workspace extends Model
     use HasFactory;
 
     #[Override]
+    protected $attributes = [
+        'adopted' => false,
+    ];
+
+    #[Override]
     protected $fillable = [
         'app_id',
         'instance_id',
         'name',
         'path',
         'php_version',
+        'adopted',
         'lifecycle_status',
     ];
 
@@ -54,6 +61,7 @@ class Workspace extends Model
     protected function casts(): array
     {
         return [
+            'adopted' => 'boolean',
             'lifecycle_status' => WorkspaceLifecycleStatus::class,
         ];
     }

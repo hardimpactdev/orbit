@@ -21,7 +21,7 @@ final readonly class CreateWorkspaceResponse
         public string $action,
         /** @var array<string, mixed> */
         public array $httpProbe,
-        /** @var list<array<string, string>> */
+        /** @var list<array<string, mixed>> */
         public array $warnings,
     ) {}
 }

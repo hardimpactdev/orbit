@@ -85,16 +85,23 @@ function fakeWorkspaceStreamGateway(string|StreamInterface $body, int $status = 
 }
 
 describe('WorkspaceStream commands', function (): void {
-    it('streams workspace:new and emits only the final complete frame in json mode', function (): void {
+    it('emits the same canonical workspace:new success data and meta in literal json and stream-json output', function (): void {
+        $success = [
+            'data' => [
+                'result' => ['action' => 'created'],
+                'workspace' => [
+                    'name' => 'feature-docs',
+                    'app' => 'docs',
+                    'instance' => 'development',
+                ],
+            ],
+            'meta' => ['node' => 'app-1', 'base' => 'main'],
+        ];
         $complete = [
             'exit_code' => 0,
             'data' => [
                 'footer' => "Workspace 'feature-docs' created",
-                'result' => [
-                    'result' => ['action' => 'created'],
-                    'workspace' => ['name' => 'feature-docs', 'app' => 'docs', 'instance' => 'development'],
-                    'meta' => ['node' => 'app-1', 'base' => 'main'],
-                ],
+                'success' => $success,
             ],
         ];
 
@@ -104,7 +111,7 @@ describe('WorkspaceStream commands', function (): void {
                 .sseFrame('complete', $complete),
         );
 
-        [$exitCode, $output] = runCommand($this, 'workspace:new', [
+        [$jsonExitCode, $jsonOutput] = runCommand($this, 'workspace:new', [
             'name' => 'feature-docs',
             '--instance' => 'docs',
             '--base' => 'main',
@@ -112,7 +119,15 @@ describe('WorkspaceStream commands', function (): void {
             '--json' => true,
         ]);
 
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        fakeWorkspaceStreamGateway(sseFrame('complete', $complete));
+
+        [$streamExitCode, $streamOutput] = runCommand($this, 'workspace:new', [
+            'name' => 'feature-docs',
+            '--instance' => 'docs',
+            '--base' => 'main',
+            '--php-version' => '8.5',
+            '--stream-json' => true,
+        ]);
 
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => (
@@ -128,16 +143,23 @@ describe('WorkspaceStream commands', function (): void {
             ),
         );
 
-        expect($exitCode)
+        expect($jsonExitCode)
             ->toBe(0)
-            ->and($decoded)
+            ->and(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['success' => $success])
+            ->and($streamExitCode)
+            ->toBe(0)
+            ->and(json_decode($streamOutput, associative: true, flags: JSON_THROW_ON_ERROR))
             ->toBe([
                 'event' => 'complete',
-                'data' => $complete,
+                'success' => $success,
             ])
-            ->and(count(array_filter(explode("\n", $output))))
+            ->and(count(array_filter(explode("\n", $jsonOutput))))
             ->toBe(1)
-            ->and($output)
+            ->and(count(array_filter(explode("\n", $streamOutput))))
+            ->toBe(1)
+            ->and($jsonOutput)
+            ->not->toContain('Provisioning worktree')->and($streamOutput)
             ->not->toContain('Provisioning worktree');
     });
 
@@ -180,6 +202,71 @@ describe('WorkspaceStream commands', function (): void {
             ->toContain('Workspace ready and available at: https://feature-docs.docs.test');
     });
 
+    it('emits the same canonical setup success data and meta in json and terminal stream-json output', function (): void {
+        $success = [
+            'data' => [
+                'result' => ['action' => 'adopted'],
+                'workspace' => [
+                    'name' => 'feature-docs',
+                    'app' => 'docs',
+                    'instance' => 'development',
+                    'node' => 'app-1',
+                    'path' => '/srv/docs/.worktrees/feature-docs',
+                    'url' => 'https://feature-docs.docs.test',
+                    'php_version' => '8.5',
+                    'php_inherited' => false,
+                    'adopted' => true,
+                    'lifecycle_status' => 'expected',
+                ],
+            ],
+            'meta' => [
+                'node' => 'app-1',
+                'http_probe' => [
+                    'url' => 'https://feature-docs.docs.test',
+                    'result' => 'healthy',
+                    'status_code' => 200,
+                    'duration_ms' => 12,
+                ],
+                'warnings' => [],
+            ],
+        ];
+        $complete = [
+            'exit_code' => 0,
+            'data' => [
+                'footer' => 'Workspace ready and available at: https://feature-docs.docs.test',
+                'success' => $success,
+            ],
+        ];
+
+        fakeWorkspaceStreamGateway(sseFrame('complete', $complete));
+
+        [$jsonExitCode, $jsonOutput] = runCommand($this, 'workspace:setup', [
+            'name' => 'feature-docs',
+            '--instance' => 'docs.development',
+            '--json' => true,
+        ]);
+
+        fakeWorkspaceStreamGateway(sseFrame('complete', $complete));
+
+        [$streamExitCode, $streamOutput] = runCommand($this, 'workspace:setup', [
+            'name' => 'feature-docs',
+            '--instance' => 'docs.development',
+            '--stream-json' => true,
+        ]);
+
+        expect($jsonExitCode)
+            ->toBe(0)
+            ->and(json_decode($jsonOutput, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['success' => $success])
+            ->and($streamExitCode)
+            ->toBe(0)
+            ->and(json_decode($streamOutput, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe([
+                'event' => 'complete',
+                'success' => $success,
+            ]);
+    });
+
     it('emits only the final workspace setup error frame in json mode', function (): void {
         $error = [
             'exit_code' => 1,
@@ -209,8 +296,7 @@ describe('WorkspaceStream commands', function (): void {
             ->toBe(1)
             ->and($decoded)
             ->toBe([
-                'event' => 'error',
-                'data' => $error,
+                'error' => $error['data'],
             ])
             ->and(count(array_filter(explode("\n", $output))))
             ->toBe(1)
@@ -233,8 +319,13 @@ describe('WorkspaceStream commands', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['event'])
-            ->toBe('complete')
+            ->and($decoded)
+            ->toBe([
+                'success' => [
+                    'data' => ['footer' => 'Workspace ready'],
+                    'meta' => [],
+                ],
+            ])
             ->and($output)
             ->not->toContain('heartbeat');
     });

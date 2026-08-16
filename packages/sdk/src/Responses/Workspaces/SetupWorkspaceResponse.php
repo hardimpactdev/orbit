@@ -7,7 +7,10 @@ namespace Orbit\Sdk\Laravel\Responses\Workspaces;
 final readonly class SetupWorkspaceResponse
 {
     /**
-     * @param  list<array<string, string>>  $warnings
+     * The first ten constructor parameters preserve the original public SDK
+     * response contract. Canonical workspace fields are additive.
+     *
+     * @param  list<array<string, mixed>>  $warnings
      * @param  array<string, mixed>  $setupSteps
      * @param  array<string, mixed>  $processes
      * @param  array<string, mixed>  $httpProbe
@@ -23,5 +26,11 @@ final readonly class SetupWorkspaceResponse
         public array $setupSteps,
         public array $processes,
         public array $httpProbe,
+        public string $name = '',
+        public ?string $path = null,
+        public ?string $phpVersion = null,
+        public bool $phpInherited = false,
+        public bool $adopted = false,
+        public string $lifecycleStatus = 'setup-pending',
     ) {}
 }

@@ -320,6 +320,44 @@ trait StreamsGatewayProgress
         return $this->renderSuccess($data);
     }
 
+    /**
+     * Render a terminal frame whose gateway payload already carries the
+     * canonical success data and meta envelope.
+     *
+     * Existing transitional stream consumers keep their established terminal
+     * framing through renderProgressTerminalFrame(). Commands that explicitly
+     * document a canonical non-stream JSON envelope opt into this adapter.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function renderCanonicalProgressTerminalFrame(ProgressEventType $type, array $payload): int
+    {
+        if (! $this->wantsJson()) {
+            return $this->renderProgressTerminalFrame($type, $payload);
+        }
+
+        $terminal = new ProgressEvent($type, $payload);
+
+        if ($terminal->isSuccessfulTerminal()) {
+            /** @var array<string, mixed> $success */
+            $success = JsonEnvelope::success(
+                $this->streamSuccessData($payload),
+                $this->streamSuccessMeta($payload),
+            );
+            $this->outputJsonLine($success);
+
+            return Command::SUCCESS;
+        }
+
+        $error = $type === ProgressEventType::Complete
+            ? $this->progressFailedCompleteError($terminal)
+            : $this->streamErrorPayload($payload);
+
+        $this->outputJsonLine(['error' => $error]);
+
+        return Command::FAILURE;
+    }
+
     private function gatewayStreamClient(): GatewayProgressStreamClient
     {
         return app(GatewayProgressStreamClient::class);
