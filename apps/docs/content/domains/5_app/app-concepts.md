@@ -47,7 +47,11 @@ The terms below define the core identity vocabulary.
   exception: it accepts only the logical slug and cascades across all instances.
 - **Orbit instance serving node:** Node selected explicitly for one Orbit
   instance. Orbit instances may only run on nodes with an active `app-dev` or
-  `app-prod` role; a node without either role is not a valid target.
+  `app-prod` role; a node without either role is not a valid target. Every app
+  primary ProxyRoute stores that concrete Instance through `instance_id`. The
+  route derives its App, workload node, runtime target, selector, and domain
+  from that Instance. `app_id` and route config are not independent placement
+  identities, and runtime readers do not scan sibling instances.
 
 ## Environment and hosting
 

@@ -8,7 +8,12 @@ These terms define the types of routes that the proxy family owns and manages.
 
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
-  target, and TLS configuration.
+  target, and TLS configuration. App primary, workspace, public analytics, and
+  public WebSocket route rows store one non-null `instance_id`. App identity
+  and workload placement come only from that Instance relation. Runtime readers
+  do not resolve configured IDs, selectors, domains, or App instance
+  candidates. Router, gateway, tool, S3, and custom routes keep
+  `instance_id=null`.
 - **Route owner:** The domain that owns route lifecycle. One of `app`,
   `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
   `tool`, or `custom`. The `owner` value classifies which domain's convergence
@@ -16,13 +21,12 @@ These terms define the types of routes that the proxy family owns and manages.
   or artifact.
 - **Route kind:** Route behavior at ingress. One of `app`, `instance`, `workspace`,
   `internal`, `proxy`, or `redirect`.
-- **App route:** Proxy route whose owner is the app and whose kind is
-  `instance`, and whose target is always one concrete instance. The route stores
-  the app slug as `owner.name`, the dotted instance selector as
-  `target.value`, and that instance's serving node as `node`. Edited through
-  app and instance commands.
+- **App route:** Instance-owned primary route whose public owner and kind are
+  `instance`. Its `owner.name` and `target.value` are the dotted instance
+  selector. Edited through app and instance commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
-  `workspace`. Edited through workspace commands.
+  `workspace`. Its route row stores the same Instance owner as its Workspace.
+  Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired
   with owner `gateway` and used for gateway API ingress; bound to the gateway
   Orbit network address and never a public application route.
@@ -35,11 +39,12 @@ These terms define the types of routes that the proxy family owns and manages.
   not HTTP proxy routes.
 - **Instance WebSocket route:** Public WebSocket route whose public owner is
   `websocket` and whose kind is `proxy`. It is created from an instance
-  WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
+  WebSocket binding, stores that binding's `instance_id`, is rendered on an
+  `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
 - **App analytics route:** Public analytics tracking route whose public
   owner is `analytics` and whose kind is `proxy`. It is created from an
-  instance analytics binding (instance-owned placement), rendered on an
+  instance analytics binding, stores that binding's `instance_id`, is rendered on an
   `ingress` node, forwards to `router`, and proxies only Plausible script and
   event-ingest paths. It must not expose the Plausible dashboard or target a
   concrete analytics node.

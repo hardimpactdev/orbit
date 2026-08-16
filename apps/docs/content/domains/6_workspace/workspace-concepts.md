@@ -17,7 +17,10 @@ The terms below define the core identity vocabulary for the workspace family.
   `instance_id`. A bare parent-app selector or parent-app path is only a
   shorthand resolver: it succeeds when exactly one registered instance
   matches and otherwise fails with `instance_required`. It never creates a
-  parent-app-only workspace.
+  parent-app-only workspace. Every workspace ProxyRoute stores both its
+  `workspace_id` and the same concrete `instance_id` as the Workspace. App and
+  workload-node identity are derived through that Instance. A missing,
+  deleted, or mismatched Workspace/Instance owner is invalid intent.
 - **Workspace identity slug:** Lowercase identity slug used as the workspace
   name. Unique within the parent app, maximum 63 characters, independent of the
   parent app slug.

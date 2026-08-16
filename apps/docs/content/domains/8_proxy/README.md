@@ -18,11 +18,11 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   by `router`.
 - Every proxy route has a kind: `app`, `instance`, `workspace`, `internal`, `proxy`, or
   `redirect`.
-- `proxy:list` shows all proxy routes by default, including app routes,
+- `proxy:list` shows all proxy routes by default, including instance routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `instance`, `workspace`, `gateway`,
+  `all`, `instance`, `workspace`, `gateway`,
   `websocket`, `s3`, `analytics`, `tool`, `custom`, and `redirect`.
   `websocket`, `s3`, and `analytics` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
