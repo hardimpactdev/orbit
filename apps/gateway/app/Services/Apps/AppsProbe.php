@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
 use App\Enums\DriftKind;
 use App\Models\App;
@@ -41,14 +42,14 @@ final readonly class AppsProbe
 
     public function introspect(App $app): ProbeSnapshot
     {
-        $app->loadMissing('node');
+        $node = $this->placement()->runtimeNode($app, null);
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             return new ProbeSnapshot([]);
         }
 
         return $this->snapshotFromProbe(
-            snapshot: $this->introspectProbe()->snapshot($app->node, $this->introspectionPayload($app)),
+            snapshot: $this->introspectProbe()->snapshot($node, $this->introspectionPayload($app)),
             fallbackName: $app->name,
         );
     }
@@ -247,19 +248,33 @@ final readonly class AppsProbe
     }
 
     /**
+     * The whole-app view: audits every concrete Orbit instance on its own
+     * serving node. App owns no placement to check on its own. `$snapshot` is an
+     * aggregate keyed by each instance's target name (app.instance) — each
+     * instance is evaluated only against its own snapshot entry, never a shared
+     * app-level entry. An app with no concrete Orbit instance is an incomplete
+     * record.
+     *
      * @return list<DriftEntry>
      */
     public function diff(App $app, ProbeSnapshot $snapshot): array
     {
+        $app->loadMissing('instances');
+        $orbitInstances = $app
+            ->instances
+            ->filter(static fn (Instance $instance): bool => $instance->driver === InstanceDriver::Orbit)
+            ->values();
+
+        if ($orbitInstances->isEmpty()) {
+            return $this->checkRecordCompleteness($app, null);
+        }
+
         $drift = [];
 
-        $drift = array_merge($drift, $this->checkRecordCompleteness($app));
-        $drift = array_merge($drift, $this->checkOwnerNode($app));
-        $drift = array_merge($drift, $this->checkSourcePath($app, $snapshot));
-        $drift = array_merge($drift, $this->checkDocumentRoot($app, $snapshot));
-        $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot));
-        $drift = array_merge($drift, $this->checkRuntimeConfig($app, $snapshot));
-        $drift = array_merge($drift, $this->checkProductionSecurity($app, $snapshot));
+        foreach ($orbitInstances as $instance) {
+            assert($instance instanceof Instance);
+            $drift = array_merge($drift, $this->diffInstance($app, $instance, $snapshot));
+        }
 
         return $drift;
     }
@@ -272,10 +287,13 @@ final readonly class AppsProbe
         $targetName = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
 
         $drift = [];
+        $drift = array_merge($drift, $this->checkRecordCompleteness($app, $instance));
+        $drift = array_merge($drift, $this->checkOwnerNode($app, $instance));
         $drift = array_merge($drift, $this->checkSourcePath($app, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkDocumentRoot($app, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkPhpRuntime($app, $snapshot, $targetName, $app, $instance));
         $drift = array_merge($drift, $this->checkRuntimeConfig($app, $snapshot, $targetName, $app, $instance));
+        $drift = array_merge($drift, $this->checkProductionSecurity($app, $snapshot, $targetName, $instance));
 
         return $drift;
     }
@@ -283,28 +301,38 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkRecordCompleteness(App $app): array
+    private function checkRecordCompleteness(App $app, ?Instance $instance = null): array
     {
-        if (
+        // Placement is instance-authoritative: a complete record is an app with
+        // a logical identity (name + php_version) plus a concrete instance whose
+        // placement resolves. For Orbit instances that means a resolvable node,
+        // source path, and document root. Evaluated per instance.
+        $incomplete =
             ! is_string($app->name)
             || $app->name === ''
-            || ! is_int($app->node_id)
-            || ! is_string($app->environment)
-            || $app->environment === ''
-            || ! is_string($app->path)
-            || $app->path === ''
-            || ! is_string($app->document_root)
-            || $app->document_root === ''
             || ! is_string($app->php_version)
             || $app->php_version === ''
-            || ! is_bool($app->adopted)
-        ) {
+            || ! $instance instanceof Instance;
+
+        if (! $incomplete && $instance instanceof Instance && $instance->driver === InstanceDriver::Orbit) {
+            $incomplete =
+                ! $this->placement()->runtimeNode($app, $instance) instanceof Node
+                || $this->placement()->runtimePath($app, $instance) === ''
+                || $this->placement()->runtimeDocumentRoot($app, $instance) === '';
+        }
+
+        if ($incomplete) {
+            $label = $instance instanceof Instance
+                ? $this->appRuntimeContainerRenderer()->targetName($app, $instance)
+                : $app->name;
+
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'app.record_incomplete',
                     kind: DriftKind::Missing,
-                    summary: "App record for {$app->name} is missing required fields.",
+                    summary: "App record for {$label} is missing required fields.",
+                    detail: $this->targetDetail($app, $instance),
                 ),
             ];
         }
@@ -496,13 +524,18 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkProductionSecurity(App $app, ProbeSnapshot $snapshot): array
-    {
-        if (! $this->isProductionApp($app)) {
+    private function checkProductionSecurity(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?Instance $instance = null,
+    ): array {
+        if (! $this->isProductionInstance($app, $instance)) {
             return [];
         }
 
-        $observed = $snapshot->get($app->name);
+        $targetName ??= $app->name;
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
@@ -519,11 +552,10 @@ final readonly class AppsProbe
                 family: $this->key(),
                 key: 'app.security.system_user',
                 kind: DriftKind::Missing,
-                summary: "Production app {$app->name} is missing its expected runtime user.",
-                detail: [
-                    'app' => $app->name,
-                    'runtime_user' => $this->appRuntimeUser()->forApp($app),
-                ],
+                summary: "Production app {$targetName} is missing its expected runtime user.",
+                detail: $this->targetDetail($app, $instance, [
+                    'runtime_user' => $this->appRuntimeUser()->forApp($app, $instance),
+                ]),
             );
         }
 
@@ -532,12 +564,11 @@ final readonly class AppsProbe
                 family: $this->key(),
                 key: 'app.security.fs_permissions',
                 kind: DriftKind::Divergent,
-                summary: "Production app {$app->name} filesystem permissions do not match runtime policy.",
-                detail: [
-                    'app' => $app->name,
-                    'path' => $app->path,
-                    'runtime_user' => $this->appRuntimeUser()->forApp($app),
-                ],
+                summary: "Production app {$targetName} filesystem permissions do not match runtime policy.",
+                detail: $this->targetDetail($app, $instance, [
+                    'path' => $this->placement()->runtimePath($app, $instance),
+                    'runtime_user' => $this->appRuntimeUser()->forApp($app, $instance),
+                ]),
             );
         }
 
@@ -551,11 +582,10 @@ final readonly class AppsProbe
                 family: $this->key(),
                 key: 'app.security.runtime_container_isolation',
                 kind: $observed['container_exists'] === false ? DriftKind::Missing : DriftKind::Divergent,
-                summary: "Production app {$app->name} runtime container isolation does not match security policy.",
-                detail: [
-                    'app' => $app->name,
-                    'expected' => $this->appRuntimeContainerRenderer()->containerName($app),
-                ],
+                summary: "Production app {$targetName} runtime container isolation does not match security policy.",
+                detail: $this->targetDetail($app, $instance, [
+                    'expected' => $this->containerNameForTarget($app, $app, $instance),
+                ]),
             );
         }
 
@@ -565,30 +595,37 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkOwnerNode(App $app): array
+    private function checkOwnerNode(App $app, ?Instance $instance = null): array
     {
-        $app->loadMissing('node');
+        $node = $this->placement()->runtimeNode($app, $instance);
+        $label = $instance instanceof Instance
+            ? $this->appRuntimeContainerRenderer()->targetName($app, $instance)
+            : $app->name;
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'app.owner_node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} points at a missing owning node.",
+                    summary: "App {$label} points at a missing owning node.",
+                    detail: $this->targetDetail($app, $instance),
                 ),
             ];
         }
 
-        $requiredRole = $app->environment === 'production' ? 'app-prod' : 'app-dev';
+        $requiredRole = $this->placement()->runtimeEnvironment($app, $instance) === 'production'
+            ? 'app-prod'
+            : 'app-dev';
 
-        if (! $app->node->isActive() || ! $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, $requiredRole)) {
+        if (! $node->isActive() || ! $this->nodeRoleAssignments()->nodeHasActiveRole($node, $requiredRole)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'app.owner_node_invalid',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} is owned by node {$app->node->name}, which is not an active app node.",
+                    summary: "App {$label} is owned by node {$node->name}, which is not an active app node.",
+                    detail: $this->targetDetail($app, $instance),
                 ),
             ];
         }
@@ -759,14 +796,14 @@ final readonly class AppsProbe
         return $this->nodeRoleAssignments ?? app(NodeRoleAssignments::class);
     }
 
-    private function isProductionApp(App $app): bool
+    private function isProductionInstance(App $app, ?Instance $instance = null): bool
     {
-        $app->loadMissing('node');
+        if ($this->placement()->runtimeEnvironment($app, $instance) === 'production') {
+            return true;
+        }
 
-        return (
-            $app->environment === 'production'
-            || $app->node instanceof Node
-            && $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, 'app-prod')
-        );
+        $node = $this->placement()->runtimeNode($app, $instance);
+
+        return $node instanceof Node && $this->nodeRoleAssignments()->nodeHasActiveRole($node, 'app-prod');
     }
 }

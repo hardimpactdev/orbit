@@ -52,6 +52,7 @@ describe('docker-first probe', function (): void {
                 'path' => '/home/orbit/apps/docs',
                 'document_root' => 'public',
             ]);
+        attachAppsProbeInstance($app, $node);
         fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
 
         $snapshot = new AppsProbe()->introspect($app);
@@ -147,6 +148,7 @@ describe('source path and document root reality', function (): void {
                 'path' => '/home/orbit/apps/docs',
                 'document_root' => 'public',
             ]);
+        attachAppsProbeInstance($app, $node);
         fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
 
         $snapshot = new AppsProbe()->introspect($app);
@@ -168,9 +170,10 @@ describe('source path and document root reality', function (): void {
     it('detects missing source paths', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => [
+            'docs.development' => [
                 'path_exists' => false,
                 'root_exists' => false,
                 'root_inside_path' => true,
@@ -216,7 +219,7 @@ describe('source path and document root reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => [
+            'docs.development' => [
                 'path_exists' => true,
                 'root_exists' => false,
                 'root_inside_path' => true,
@@ -264,7 +267,7 @@ describe('PHP runtime reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot(['docker_available' => false]),
+            'docs.development' => convergedRuntimeSnapshot(['docker_available' => false]),
         ]);
 
         $drift = new AppsProbe()->diff($app, $snapshot);
@@ -275,9 +278,10 @@ describe('PHP runtime reality', function (): void {
     it('does not report PHP runtime drift when the source path is missing', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'path_exists' => false,
                 'root_exists' => false,
                 'docker_available' => false,
@@ -301,7 +305,7 @@ describe('PHP runtime reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot(['runtime_image_available' => false]),
+            'docs.development' => convergedRuntimeSnapshot(['runtime_image_available' => false]),
         ]);
 
         $drift = new AppsProbe()->diff($app, $snapshot);
@@ -339,7 +343,7 @@ describe('PHP runtime reality', function (): void {
             // `app.php_version_unavailable` and must NOT introduce an undocumented
             // `app.runtime_image_probe_failed` key.
             $snapshot = new ProbeSnapshot([
-                'docs' => convergedRuntimeSnapshot([
+                'docs.development' => convergedRuntimeSnapshot([
                     'runtime_image_available' => false,
                     'runtime_image_probe_failed' => true,
                     'container_exists' => false,
@@ -372,7 +376,7 @@ describe('PHP runtime reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'runtime_image_available' => false,
                 'runtime_image_probe_failed' => true,
                 'container_exists' => true,
@@ -396,9 +400,10 @@ describe('PHP runtime reality', function (): void {
     it('does not emit app.php_version_unavailable for static apps regardless of node image availability', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'marketing' => convergedRuntimeSnapshot(['runtime_image_available' => false]),
+            'marketing.development' => convergedRuntimeSnapshot(['runtime_image_available' => false]),
         ]);
 
         $drift = new AppsProbe()->diff($app, $snapshot);
@@ -414,7 +419,7 @@ describe('runtime container reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'container_exists' => false,
                 'container_spec_matches' => false,
                 'container_running' => false,
@@ -433,7 +438,7 @@ describe('runtime container reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot(['container_spec_matches' => false]),
+            'docs.development' => convergedRuntimeSnapshot(['container_spec_matches' => false]),
         ]);
 
         $drift = new AppsProbe()->diff($app, $snapshot);
@@ -447,7 +452,7 @@ describe('runtime container reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'docker_available' => false,
                 'container_exists' => false,
                 'container_spec_matches' => false,
@@ -463,9 +468,10 @@ describe('runtime container reality', function (): void {
     it('does not report runtime container drift for static apps', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'marketing' => convergedRuntimeSnapshot([
+            'marketing.development' => convergedRuntimeSnapshot([
                 'container_exists' => false,
                 'container_spec_matches' => false,
             ]),
@@ -485,7 +491,7 @@ describe('runtime container reality', function (): void {
             attachAppsProbeInstance($app, $node);
 
             $snapshot = new ProbeSnapshot([
-                'docs' => convergedRuntimeSnapshot([
+                'docs.development' => convergedRuntimeSnapshot([
                     'container_exists' => true,
                     'container_spec_matches' => true,
                     'container_running' => false,
@@ -508,7 +514,7 @@ describe('managed runtime config reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'runtime_config_exists' => false,
                 'runtime_config_matches' => false,
             ]),
@@ -526,7 +532,7 @@ describe('managed runtime config reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot(['runtime_config_matches' => false]),
+            'docs.development' => convergedRuntimeSnapshot(['runtime_config_matches' => false]),
         ]);
 
         $drift = new AppsProbe()->diff($app, $snapshot);
@@ -537,9 +543,10 @@ describe('managed runtime config reality', function (): void {
     it('does not report runtime config drift for static apps', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'marketing' => convergedRuntimeSnapshot([
+            'marketing.development' => convergedRuntimeSnapshot([
                 'runtime_config_exists' => false,
                 'runtime_config_matches' => false,
             ]),
@@ -712,7 +719,7 @@ describe('production security reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'container_exists' => false,
                 'container_spec_matches' => false,
                 'system_user_exists' => false,
@@ -740,7 +747,7 @@ describe('production security reality', function (): void {
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
-            'docs' => convergedRuntimeSnapshot([
+            'docs.development' => convergedRuntimeSnapshot([
                 'system_user_exists' => false,
                 'fs_permissions_ok' => false,
                 'container_exists' => false,
@@ -764,6 +771,7 @@ describe('registry intent', function (): void {
     it('passes complete app records on active app nodes', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create();
+        attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
 
@@ -800,6 +808,7 @@ describe('owning node eligibility', function (): void {
     it('requires an active app node owner', function (callable $createNode): void {
         $node = $createNode();
         $app = App::factory()->for($node, 'node')->create();
+        attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_values(array_filter(
@@ -817,6 +826,7 @@ describe('owning node eligibility', function (): void {
     it('accepts active app node owners', function (): void {
         $node = appNode();
         $app = App::factory()->for($node, 'node')->create();
+        attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_filter(
@@ -825,6 +835,96 @@ describe('owning node eligibility', function (): void {
         );
 
         expect($ownerIssues)->toHaveCount(0);
+    });
+});
+
+describe('multi-instance auditing', function (): void {
+    it('audits every concrete instance and does not hide a broken secondary behind a healthy primary', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'public',
+            ]);
+        // Healthy primary instance.
+        attachAppsProbeInstance($app, $node);
+        // Broken secondary: valid placement, but its source path is missing on the node.
+        Instance::factory()->for($app, 'app')->create([
+            'name' => 'preview',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs-preview',
+                document_root: 'public',
+            ),
+        ]);
+
+        // Aggregate snapshot keyed by each instance target: primary healthy,
+        // secondary path missing.
+        $snapshot = new ProbeSnapshot([
+            'docs.development' => ['path_exists' => true, 'root_exists' => true, 'root_inside_path' => true],
+            'docs.preview' => ['path_exists' => false, 'root_exists' => false, 'root_inside_path' => true],
+        ]);
+
+        $drift = new AppsProbe()->diff($app, $snapshot);
+        $pathMissing = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $entry): bool => $entry->key === 'app.path_missing',
+        ));
+
+        // The healthy primary must not suppress the broken secondary's drift.
+        expect($pathMissing)
+            ->toHaveCount(1)
+            ->and($pathMissing[0]->detail['target'] ?? null)
+            ->toBe('docs.preview')
+            ->and($pathMissing[0]->detail['instance'] ?? null)
+            ->toBe('preview');
+    });
+
+    it('evaluates each instance against its own snapshot entry, not a shared app-level entry', function (): void {
+        $node = appNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->static()
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'public',
+            ]);
+        attachAppsProbeInstance($app, $node);
+        Instance::factory()->for($app, 'app')->create([
+            'name' => 'preview',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/docs-preview',
+                document_root: 'public',
+            ),
+        ]);
+
+        // Distinct observed reality per target: development healthy, preview's
+        // document root missing. A shared app-level snapshot key would make the
+        // per-instance distinction impossible and this assertion would fail.
+        $snapshot = new ProbeSnapshot([
+            'docs.development' => ['path_exists' => true, 'root_exists' => true, 'root_inside_path' => true],
+            'docs.preview' => ['path_exists' => true, 'root_exists' => false, 'root_inside_path' => true],
+        ]);
+
+        $drift = new AppsProbe()->diff($app, $snapshot);
+        $rootMissing = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $entry): bool => $entry->key === 'app.root_missing',
+        ));
+
+        expect($rootMissing)
+            ->toHaveCount(1)
+            ->and($rootMissing[0]->detail['target'] ?? null)
+            ->toBe('docs.preview');
     });
 });
 
