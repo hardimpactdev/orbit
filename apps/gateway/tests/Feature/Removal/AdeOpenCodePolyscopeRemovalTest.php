@@ -90,15 +90,15 @@ it('proves removed ADE, OpenCode, and PolyScope public surfaces are absent', fun
 
 it('clears legacy ADE storage, permissions, and tool intent while preserving generic workspaces and process history', function (): void {
     $node = Node::factory()->create();
-    $app = App::factory()->for($node, 'node')->create();
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
     $workspace = Workspace::factory()->create([

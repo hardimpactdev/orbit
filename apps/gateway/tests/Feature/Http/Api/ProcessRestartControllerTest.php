@@ -47,7 +47,7 @@ describe('ProcessRestartController', function (): void {
         $caller = createProcessRestartCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessRestartAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessRestartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -77,7 +77,7 @@ describe('ProcessRestartController', function (): void {
     it('returns partial runtime failure data', function (): void {
         createProcessRestartCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessRestartApiRemoteShell([
@@ -107,7 +107,7 @@ describe('ProcessRestartController', function (): void {
     it('requires authorization before runtime side effects', function (): void {
         createProcessRestartCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessRestartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);

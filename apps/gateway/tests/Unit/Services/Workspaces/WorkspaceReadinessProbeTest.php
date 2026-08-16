@@ -122,13 +122,16 @@ function workspaceForReadinessProbe(): Workspace
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
-        'name' => 'docs',
-        'node_id' => $node->id,
-    ]);
+    $app = App::factory()
+        ->placedOn($node)
+        ->create([
+            'name' => 'docs',
+        ]);
 
-    return Workspace::factory()->create([
-        'app_id' => $app->id,
-        'name' => 'feature',
-    ]);
+    return Workspace::factory()
+        ->for($app)
+        ->for($app->instances()->firstOrFail(), 'instance')
+        ->create([
+            'name' => 'feature',
+        ]);
 }

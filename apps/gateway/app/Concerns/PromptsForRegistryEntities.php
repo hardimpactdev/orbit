@@ -176,15 +176,23 @@ trait PromptsForRegistryEntities
             ->orderBy('name')
             ->get()
             ->filter(function (App $app) use ($node, $environment, $placement): bool {
-                if ($node !== null && ! $app->instances->contains(
-                    fn (Instance $instance): bool => $placement->runtimeNode($app, $instance)?->name === $node,
-                )) {
+                if (
+                    $node !== null
+                    && ! $app->instances->contains(
+                        fn (Instance $instance): bool => $placement->runtimeNode($app, $instance)?->name === $node,
+                    )
+                ) {
                     return false;
                 }
 
-                if ($environment !== null && ! $app->instances->contains(
-                    fn (Instance $instance): bool => $placement->runtimeEnvironment($app, $instance) === $environment,
-                )) {
+                if (
+                    $environment !== null
+                    && ! $app->instances->contains(
+                        fn (Instance $instance): bool => (
+                            $placement->runtimeEnvironment($app, $instance) === $environment
+                        ),
+                    )
+                ) {
                     return false;
                 }
 
@@ -243,8 +251,10 @@ trait PromptsForRegistryEntities
 
         return $workspaces
             ->filter(
-                fn (Workspace $workspace): bool => $node === null
-                    || $placement->nodeForWorkspace($workspace)?->name === $node,
+                fn (Workspace $workspace): bool => (
+                    $node === null
+                    || $placement->nodeForWorkspace($workspace)?->name === $node
+                ),
             )
             ->sort(
                 fn (Workspace $first, Workspace $second): int => (

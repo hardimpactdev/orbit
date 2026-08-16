@@ -20,9 +20,8 @@ it('uses macOS home paths for host Vite certificate variables', function (): voi
         'user' => 'nckrtl',
         'tld' => 'nmbp',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'happie-nmbp',
-        'domain' => 'happie.nmbp',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',

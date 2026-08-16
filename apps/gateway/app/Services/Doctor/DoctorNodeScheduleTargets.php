@@ -43,7 +43,7 @@ final readonly class DoctorNodeScheduleTargets
     {
         /** @var Collection<int, Instance> $instances */
         $instances = Instance::query()
-            ->with(['app.node', 'app.instances'])
+            ->with(['app.instances'])
             ->get();
 
         /** @var list<int> $instanceIds */

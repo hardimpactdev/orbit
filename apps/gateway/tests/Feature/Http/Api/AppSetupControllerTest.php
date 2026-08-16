@@ -69,8 +69,6 @@ function createAppSetupTarget(): array
         ]);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
-        'path' => '/home/orbit/apps/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',

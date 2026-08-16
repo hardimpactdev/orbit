@@ -23,9 +23,8 @@ it('renders the effective workspace process set for the selected instance only',
         'host' => '1.2.3.4',
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'domain' => 'docs.test',
         'php_version' => '8.5',
     ]);
 

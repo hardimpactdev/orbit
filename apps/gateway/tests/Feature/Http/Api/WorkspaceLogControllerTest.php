@@ -47,8 +47,12 @@ function grantWorkspaceLogAccess(Node $caller, Node $appNode): void
 
 function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
 {
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+    $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+    $workspace = Workspace::factory()->create([
+        'name' => 'feature-docs',
+        'app_id' => $app->id,
+        'instance_id' => $app->instances()->firstOrFail()->id,
+    ]);
     $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'command' => 'Install dependencies']);
     $run = WorkspaceRun::factory()->create([
         'workspace_id' => $workspace->id,
@@ -69,13 +73,10 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
     return $run;
 }
 
-function create_app_instance_workspace_log_run(Node $canonicalNode, Node $localNode): WorkspaceRun
+function create_app_instance_workspace_log_run(Node $localNode): WorkspaceRun
 {
     $app = App::factory()->create([
         'name' => 'happie',
-        'node_id' => $canonicalNode->id,
-        'domain' => 'happie.test',
-        'path' => '/home/nckrtl/apps/happie',
     ]);
     $instance = Instance::factory()
         ->for($app)
@@ -200,10 +201,9 @@ describe('WorkspaceLogController', function (): void {
 
 it('authorizes and reports app instance workspace run logs against the selected instance node', function (): void {
     $caller = createWorkspaceLogCallerNode();
-    $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
     $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
     grantWorkspaceLogAccess($caller, $localNode);
-    $run = create_app_instance_workspace_log_run($canonicalNode, $localNode);
+    $run = create_app_instance_workspace_log_run($localNode);
 
     $response = $this->call(
         'GET',

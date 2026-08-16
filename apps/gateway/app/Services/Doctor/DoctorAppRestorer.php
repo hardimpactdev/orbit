@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Data\Doctor\DriftEntry;
+use App\Enums\Apps\InstanceDriver;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Apps\AppsFixer;
 use App\Services\Workspaces\WorkspacePlacement;
+use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 final readonly class DoctorAppRestorer
@@ -40,7 +42,7 @@ final readonly class DoctorAppRestorer
 
         if ($instanceName !== null) {
             $app = App::query()
-                ->with(['node', 'instances'])
+                ->with('instances')
                 ->where('name', $appName)
                 ->first();
             $instance = $app instanceof App
@@ -58,10 +60,13 @@ final readonly class DoctorAppRestorer
             return null;
         }
 
+        // Scope the restore to apps with a concrete Orbit instance on this node;
+        // App owns no node_id column.
         $app = App::query()
-            ->with('node')
-            ->where('node_id', $node->id)
             ->where('name', $appName)
+            ->whereHas('instances', static fn (Builder $query): Builder => $query
+                ->where('driver', InstanceDriver::Orbit->value)
+                ->where('driver_config->data->node_id', $node->id))
             ->first();
 
         if (! $app instanceof App) {

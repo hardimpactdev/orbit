@@ -120,7 +120,7 @@ final class OrbitHostCwdResolver
     {
         /** @var Collection<int, Workspace> $candidates */
         $candidates = Workspace::query()
-            ->with('app.node')
+            ->with('app')
             ->whereNotNull('path')
             ->where('path', '!=', '')
             ->get();
@@ -139,7 +139,7 @@ final class OrbitHostCwdResolver
         /** @var Collection<int, Instance> $candidates */
         $candidates = Instance::query()
             ->where('driver', InstanceDriver::Orbit)
-            ->with('app.node')
+            ->with('app')
             ->get();
 
         $instance = $this->longestPathMatch(

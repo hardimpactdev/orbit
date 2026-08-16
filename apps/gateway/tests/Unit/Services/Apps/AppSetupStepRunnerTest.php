@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
-use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppSetupRun;
@@ -13,6 +12,7 @@ use App\Models\Node;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppSetupStepRunner;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
 use Tests\Fakes\WorkspaceSetupStepRunnerExecutorTransport;
@@ -86,30 +86,33 @@ function createAppSetupRunnerTestApp(array $overrides = []): App
             'user' => 'orbit',
         ]);
 
-    return App::factory()->create(array_merge([
-        'name' => 'docs',
-        'node_id' => $node->id,
-        'path' => '/home/orbit/apps/docs',
-        'php_version' => '8.5',
-    ], $overrides));
+    $path = is_string($overrides['path'] ?? null) ? $overrides['path'] : '/home/orbit/apps/docs';
+    unset($overrides['node_id'], $overrides['path']);
+
+    // Placement lives on the concrete instance created by placedOn().
+    return App::factory()
+        ->placedOn($node, 'development', $path)
+        ->create(array_merge([
+            'name' => 'docs',
+            'php_version' => '8.5',
+        ], $overrides));
 }
 
 function appSetupRunnerInstance(App $app): Instance
 {
-    $instance = Instance::query()->where('app_id', $app->id)->first();
+    /** @var Instance $instance */
+    $instance = Instance::query()->where('app_id', $app->id)->firstOrFail();
 
-    if ($instance instanceof Instance) {
-        return $instance;
-    }
+    return $instance;
+}
 
-    return Instance::factory()->for($app)->create([
-        'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            node: $app->node?->name,
-            path: $app->path,
-            document_root: $app->document_root,
-        ),
-    ]);
+function appSetupRunnerNode(App $app): Node
+{
+    $node = app(WorkspacePlacement::class)->nodeForInstance(appSetupRunnerInstance($app));
+
+    assert($node instanceof Node);
+
+    return $node;
 }
 
 it('runs app setup steps sequentially in the app path', function (): void {
@@ -135,7 +138,7 @@ it('runs app setup steps sequentially in the app path', function (): void {
         ]),
     ];
 
-    $result = $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
+    $result = $runner->run($run, $steps, $app, appSetupRunnerNode($app), ['ORBIT_APP' => 'docs']);
 
     expect($result)
         ->toBeTrue()
@@ -183,7 +186,7 @@ it('routes php and composer setup steps through the app host php toolchain', fun
         ]),
     ];
 
-    $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
+    $runner->run($run, $steps, $app, appSetupRunnerNode($app), ['ORBIT_APP' => 'docs']);
 
     expect($shell->runs[0]['script'])
         ->toContain("'sudo'")
@@ -221,7 +224,7 @@ it('fails fast on the first failed setup step and records output', function (): 
         ]),
     ];
 
-    $result = $runner->run($run, $steps, $app, $app->node, []);
+    $result = $runner->run($run, $steps, $app, appSetupRunnerNode($app), []);
 
     expect($result)->toBeFalse()->and($shell->runs)->toHaveCount(1);
 

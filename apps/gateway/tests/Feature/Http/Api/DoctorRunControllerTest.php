@@ -664,9 +664,6 @@ describe('DoctorRunController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
         ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -705,7 +702,7 @@ describe('DoctorRunController', function (): void {
     it('requires a concrete instance for an ambiguous project doctor selector', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = App::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         foreach (['development', 'production'] as $instanceName) {
             Instance::factory()->for($app)->create([
@@ -741,7 +738,7 @@ describe('DoctorRunController', function (): void {
         $caller = createDoctorRunCallerNode(role: 'operator');
         $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'status' => 'active']);
         $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'status' => 'active']);
-        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         foreach ([
             'visible' => $visibleNode,
@@ -810,7 +807,7 @@ describe('DoctorRunController', function (): void {
     it('retains unavailable instance diagnostics for gateway-admin doctor callers', function (): void {
         $caller = createDoctorRunCallerNode(role: 'operator');
         $gateway = createTestGatewayNode(['name' => 'gateway']);
-        $app = App::factory()->for($gateway, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -852,7 +849,7 @@ describe('DoctorRunController', function (): void {
         createDoctorRunCallerNode();
         $developmentNode = createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
         $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
-        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -900,7 +897,7 @@ describe('DoctorRunController', function (): void {
     it('rejects workspace doctor family and scope for production instances', function (): void {
         createDoctorRunCallerNode();
         $productionNode = createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
-        $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         Instance::factory()->for($app)->create([
             'name' => 'production',
@@ -982,11 +979,19 @@ describe('DoctorRunController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
+        ]);
+        $instance = Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
         Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
             'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
@@ -1017,12 +1022,20 @@ describe('DoctorRunController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
+        ]);
+        $instance = Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
         Process::factory()
-            ->forOwner($app)
+            ->forOwner($app, $appNode)
             ->create([
+                'instance_id' => $instance->id,
                 'name' => 'queue',
                 'runtime' => ProcessRuntime::Systemd,
             ]);
@@ -1335,7 +1348,7 @@ describe('DoctorRunController', function (): void {
     it('accepts the schedule family scope and returns schedule health', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
-        $app = App::factory()->create(['node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create();
         Schedule::factory()->forApp($app)->create();
         SchedulerState::factory()->create([
             'node_id' => $appNode->id,
@@ -1430,19 +1443,18 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($otherPath);
 
         $dngdmt = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'dngdmt',
-            'path' => $dngdmtPath,
         ]);
         $other = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'other-app',
-            'path' => $otherPath,
         ]);
 
         $fixturePassword = substr(hash('sha256', 'doctor-run db scope verify app credentials'), 0, 16);
 
-        foreach ([$dngdmt, $other] as $app) {
+        foreach ([
+            [$dngdmt, $dngdmtPath],
+            [$other,  $otherPath],
+        ] as [$app, $appPath]) {
             $connection = DatabaseConnection::factory()->create([
                 'slug' => $app->name,
                 'driver' => 'pgsql',
@@ -1453,7 +1465,7 @@ describe('DoctorRunController', function (): void {
                 'credentials' => ['password' => $fixturePassword],
             ]);
             DatabaseConnectionTarget::factory()
-                ->forInstance(doctorRunDatabaseInstance($app))
+                ->forInstance(doctorRunDatabaseInstance($app, $appNode, $appPath))
                 ->create([
                     'database_connection_id' => $connection->id,
                     'env_prefix' => 'DB',
@@ -1504,17 +1516,26 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($hotfixPath);
 
         $app = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'docs',
-            'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs'),
+        ]);
+        $instance = Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: storage_path('framework/testing/doctor-run-db-scope-verify-docs'),
+                document_root: 'public',
+            ),
         ]);
         $feature = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
             'path' => $featurePath,
         ]);
         $hotfix = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'hotfix',
             'path' => $hotfixPath,
         ]);
@@ -1585,23 +1606,39 @@ describe('DoctorRunController', function (): void {
             File::ensureDirectoryExists($billingFeaturePath);
 
             $docs = App::factory()->create([
-                'node_id' => $appNode->id,
                 'name' => 'docs',
-                'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs-root'),
+            ]);
+            $docsInstance = Instance::factory()->for($docs)->create([
+                'name' => 'development',
+                'driver_config' => new OrbitInstanceDriverConfigData(
+                    node_id: $appNode->id,
+                    node: $appNode->name,
+                    path: storage_path('framework/testing/doctor-run-db-scope-verify-docs-root'),
+                    document_root: 'public',
+                ),
             ]);
             $billing = App::factory()->create([
-                'node_id' => $appNode->id,
                 'name' => 'billing',
-                'path' => storage_path('framework/testing/doctor-run-db-scope-verify-billing-root'),
+            ]);
+            $billingInstance = Instance::factory()->for($billing)->create([
+                'name' => 'development',
+                'driver_config' => new OrbitInstanceDriverConfigData(
+                    node_id: $appNode->id,
+                    node: $appNode->name,
+                    path: storage_path('framework/testing/doctor-run-db-scope-verify-billing-root'),
+                    document_root: 'public',
+                ),
             ]);
 
             $docsFeature = Workspace::factory()->create([
                 'app_id' => $docs->id,
+                'instance_id' => $docsInstance->id,
                 'name' => 'feature',
                 'path' => $docsFeaturePath,
             ]);
             $billingFeature = Workspace::factory()->create([
                 'app_id' => $billing->id,
+                'instance_id' => $billingInstance->id,
                 'name' => 'feature',
                 'path' => $billingFeaturePath,
             ]);
@@ -1673,17 +1710,13 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($otherPath);
 
         $dngdmt = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'dngdmt',
-            'path' => $dngdmtPath,
         ]);
-        doctorRunDatabaseInstance($dngdmt);
+        doctorRunDatabaseInstance($dngdmt, $appNode, $dngdmtPath);
         $other = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'other-app',
-            'path' => $otherPath,
         ]);
-        doctorRunDatabaseInstance($other);
+        doctorRunDatabaseInstance($other, $appNode, $otherPath);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1733,17 +1766,13 @@ describe('DoctorRunController', function (): void {
         File::ensureDirectoryExists($otherPath);
 
         $dngdmt = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'dngdmt',
-            'path' => $dngdmtPath,
         ]);
-        doctorRunDatabaseInstance($dngdmt);
+        doctorRunDatabaseInstance($dngdmt, $appNode, $dngdmtPath);
         $other = App::factory()->create([
-            'node_id' => $appNode->id,
             'name' => 'other-app',
-            'path' => $otherPath,
         ]);
-        doctorRunDatabaseInstance($other);
+        doctorRunDatabaseInstance($other, $appNode, $otherPath);
 
         $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
 
@@ -1779,7 +1808,7 @@ describe('DoctorRunController', function (): void {
     });
 });
 
-function doctorRunDatabaseInstance(App $app): Instance
+function doctorRunDatabaseInstance(App $app, Node $node, string $path): Instance
 {
     $instance = $app->instances()->first();
 
@@ -1789,10 +1818,10 @@ function doctorRunDatabaseInstance(App $app): Instance
 
     return Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            node_id: $node->id,
+            node: $node->name,
+            path: $path,
+            document_root: 'public',
         ),
     ]);
 }

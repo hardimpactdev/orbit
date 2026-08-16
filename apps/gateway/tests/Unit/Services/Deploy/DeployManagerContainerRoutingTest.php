@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Services\Deploy\DeployManager;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Http\JsonEnvelope;
@@ -162,15 +163,28 @@ function createDeployManagerTestApp(array $overrides = []): App
 
     $attributes = array_merge([
         'name' => 'docs',
-        'node_id' => $node->id,
-        'environment' => 'production',
-        'path' => '/srv/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ], $overrides);
+    $path = isset($attributes['path']) && is_string($attributes['path']) ? $attributes['path'] : '/srv/docs';
+    $documentRoot = isset($attributes['document_root']) && is_string($attributes['document_root'])
+        ? $attributes['document_root']
+        : 'public';
+    $domain =
+        isset($attributes['domain']) && is_string($attributes['domain']) && $attributes['domain'] !== ''
+            ? $attributes['domain']
+            : null;
     $warmupPaths = $attributes['deploy_warmup_paths'] ?? null;
-    unset($attributes['deploy_warmup_paths']);
+    unset(
+        $attributes['deploy_warmup_paths'],
+        $attributes['node_id'],
+        $attributes['environment'],
+        $attributes['path'],
+        $attributes['document_root'],
+        $attributes['domain'],
+    );
 
+    /** @var App $app */
     $app = App::factory()->create($attributes);
     Instance::factory()->create([
         'app_id' => $app->id,
@@ -178,11 +192,11 @@ function createDeployManagerTestApp(array $overrides = []): App
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: $path,
+            document_root: $documentRoot,
             // A production instance is one whose placement resolves to production
             // (domain present on a non app-dev node), independent of App columns.
-            domain: is_string($app->domain) && $app->domain !== '' ? $app->domain : "{$app->name}.example.com",
+            domain: $domain ?? "{$app->name}.example.com",
         ),
         'deploy_warmup_paths' => $warmupPaths,
     ]);
@@ -599,7 +613,7 @@ it('activates a safe live release runtime before warming the application', funct
         ->toHaveCount(1)
         ->and($probeRuns[0])
         ->toMatchArray([
-            'node' => $app->node,
+            'node' => app(WorkspacePlacement::class)->runtimeNode($app, null),
             'binary' => 'internal:app-source-path:probe',
             'arguments' => ['/srv/docs/live'],
             'script' => null,
@@ -874,10 +888,10 @@ it('records an unexpected deploy execution error as a failed run', function (): 
         ->toBe('failed');
 });
 
-it('treats production capability as instance-authoritative, ignoring a stale app environment column', function (): void {
+it('treats production capability as instance-authoritative', function (): void {
     // The helper builds an app-prod placement whose instance resolves to
-    // production; force the App column to the opposite (stale) value.
-    createDeployManagerTestApp(['environment' => 'development']);
+    // production purely from its placement, with no App-level environment column.
+    createDeployManagerTestApp();
 
     expect(app(DeployManager::class)->productionInstance('docs.production')->name)
         ->toBe('production');

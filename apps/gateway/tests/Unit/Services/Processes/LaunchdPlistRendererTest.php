@@ -25,16 +25,15 @@ it('renders user LaunchAgent plist content with Orbit labels logs and escaped va
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = App::factory()->create([
-        'name' => 'docs',
-        'node_id' => $node->id,
-        'path' => '/Users/nckrtl/apps/docs & api',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/Users/nckrtl/apps/docs & api')
+        ->create([
+            'name' => 'docs',
+        ]);
     if (! $app instanceof App) {
         throw new RuntimeException('App factory did not return an App.');
     }
 
-    $app->setRelation('node', $node);
     $factory = OrbitProcess::factory();
     if (! $factory instanceof ProcessFactory) {
         throw new RuntimeException('Process factory did not return a ProcessFactory.');
@@ -86,10 +85,11 @@ it('keeps node-owned launch agents configured to run at load', function (): void
             'platform' => 'macos_14',
             'user' => 'nckrtl',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'path' => '/Users/nckrtl/apps/docs',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/Users/nckrtl/apps/docs')
+        ->create([
+            'name' => 'docs',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($node)
         ->create([
@@ -109,10 +109,11 @@ it('renders only PATH and HOME for node-owned launchd processes', function (): v
         'tld' => 'gateway',
         'status' => 'active',
     ]);
-    $surrogateApp = App::factory()->for($node, 'node')->create([
-        'name' => 'gateway',
-        'path' => '/Users/orbit',
-    ]);
+    $surrogateApp = App::factory()
+        ->placedOn($node, 'development', '/Users/orbit')
+        ->create([
+            'name' => 'gateway',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($node)
         ->create([
@@ -144,11 +145,11 @@ it('still renders Laravel Vite URL and TLS variables for app-owned launchd proce
         'tld' => 'test',
         'status' => 'active',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'path' => '/Users/nckrtl/apps/docs',
-        'domain' => 'docs.test',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/Users/nckrtl/apps/docs', 'public', 'docs.test')
+        ->create([
+            'name' => 'docs',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($app)
         ->create([
@@ -177,10 +178,11 @@ it('keeps app-prod launch agents configured to run at load', function (): void {
             'platform' => 'macos_14',
             'user' => 'nckrtl',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'path' => '/Users/nckrtl/apps/docs',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/Users/nckrtl/apps/docs')
+        ->create([
+            'name' => 'docs',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($app)
         ->create([
@@ -203,17 +205,15 @@ it('renders Vite launch agents with dynamic host and certificate environment', f
         throw new RuntimeException('Node factory did not return a Node.');
     }
 
-    $app = App::factory()->create([
-        'name' => 'happie-nmbp',
-        'domain' => 'happie.nmbp',
-        'node_id' => $node->id,
-        'path' => '/Users/nckrtl/apps/happie',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/Users/nckrtl/apps/happie', 'public', 'happie.nmbp')
+        ->create([
+            'name' => 'happie-nmbp',
+        ]);
     if (! $app instanceof App) {
         throw new RuntimeException('App factory did not return an App.');
     }
 
-    $app->setRelation('node', $node);
     $factory = OrbitProcess::factory();
     if (! $factory instanceof ProcessFactory) {
         throw new RuntimeException('Process factory did not return a ProcessFactory.');

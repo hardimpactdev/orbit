@@ -39,13 +39,12 @@ afterEach(function (): void {});
 function appAndNodeForManagerTest(): array
 {
     $node = Node::factory()->create(['user' => 'orbit']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    managerTestInstance($app, $node);
+    managerTestInstance($app, $node, '/home/orbit/apps/docs');
 
     return [$app, $node];
 }
@@ -53,31 +52,34 @@ function appAndNodeForManagerTest(): array
 function productionAppAndNodeForManagerTest(): array
 {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'environment' => 'production',
-        'path' => '/home/docs/app',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    managerTestInstance($app, $node);
+    managerTestInstance($app, $node, '/home/docs/app');
 
     return [$app, $node];
 }
 
 /**
- * Attach an Orbit instance mirroring the app's placement columns so
- * instance-authoritative placement resolves the owning node, path, and root.
+ * Attach an Orbit instance carrying the placement so instance-authoritative
+ * resolution finds the owning node, path, and root.
  */
-function managerTestInstance(App $app, Node $node): Instance
-{
+function managerTestInstance(
+    App $app,
+    Node $node,
+    string $path = '/home/orbit/apps/docs',
+    string $documentRoot = 'public',
+    ?string $domain = null,
+): Instance {
     return Instance::factory()->for($app, 'app')->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: is_string($app->path) ? $app->path : '',
-            document_root: is_string($app->document_root) ? $app->document_root : 'public',
-            domain: $app->domain,
+            path: $path,
+            document_root: $documentRoot,
+            domain: $domain,
         ),
     ]);
 }
@@ -234,13 +236,12 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
 
 it('creates the app-dev packages bind mount source before running the app runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    managerTestInstance($app, $node);
+    managerTestInstance($app, $node, '/home/nckrtl/apps/nckrtl');
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(
@@ -264,9 +265,8 @@ it('creates the app-dev packages bind mount source before running the app runtim
 
 it('creates configured runtime mount sources before running the app runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl'], settings: ['tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -277,8 +277,8 @@ it('creates configured runtime mount sources before running the app runtime cont
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/nckrtl/apps/nckrtl',
+            document_root: 'public',
             domain: 'nckrtl.test',
         ),
     ]);
@@ -313,13 +313,12 @@ it('creates configured runtime mount sources before running the app runtime cont
 
 it('installs the Orbit runtime trust pool on the node and mounts it into app-dev runtime containers', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'craft-starterkit-react',
-        'path' => '/home/nckrtl/apps/craft-starterkit-react',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    managerTestInstance($app, $node);
+    managerTestInstance($app, $node, '/home/nckrtl/apps/craft-starterkit-react');
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(
@@ -353,14 +352,13 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
 
 it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
-    managerTestInstance($app, $node);
+    managerTestInstance($app, $node, '/home/nckrtl/apps/nckrtl');
     $container = renderTestAppContainer($app);
 
     $shell = new AppRuntimeRecordingShell(

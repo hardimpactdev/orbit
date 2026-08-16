@@ -60,15 +60,16 @@ describe('WorkspaceShowController', function (): void {
         ]);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $node->id,
-            'domain' => null,
-            'php_version' => '8.5',
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+                'php_version' => '8.5',
+            ]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         ]);
 
@@ -126,10 +127,18 @@ describe('WorkspaceShowController', function (): void {
         $secondNode = Node::factory()->create(['name' => 'app-2']);
         assignWorkspaceShowRole($firstNode);
         assignWorkspaceShowRole($secondNode);
-        $docs = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
-        $api = App::factory()->create(['name' => 'api', 'node_id' => $secondNode->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
+        $docs = App::factory()->placedOn($firstNode)->create(['name' => 'docs']);
+        $api = App::factory()->placedOn($secondNode)->create(['name' => 'api']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $docs->id,
+            'instance_id' => $docs->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $api->id,
+            'instance_id' => $api->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -157,9 +166,6 @@ describe('WorkspaceShowController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'domain' => 'happie.test',
-            'path' => '/home/nckrtl/apps/happie',
         ]);
         $instance = Instance::factory()
             ->for($app)
@@ -206,8 +212,12 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
         Instance::factory()->for($app)->create(['name' => 'production']);
 
         $response = $this->call(
@@ -233,10 +243,11 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
         Instance::factory()->for($app)->create(['name' => 'production']);
@@ -266,8 +277,12 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($visibleNode);
         assignWorkspaceShowRole($hiddenNode);
         grantWorkspaceShowAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($hiddenNode)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
         Instance::factory()->for($app)->create(['name' => 'production']);
 
         $response = $this->call(
@@ -292,10 +307,11 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($visibleNode);
         assignWorkspaceShowRole($hiddenNode);
         grantWorkspaceShowAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $app = App::factory()->placedOn($hiddenNode)->create(['name' => 'docs']);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
         Instance::factory()->for($app)->create(['name' => 'production']);
@@ -320,7 +336,7 @@ describe('WorkspaceShowController', function (): void {
         assignWorkspaceShowRole($gateway, 'gateway');
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
@@ -349,10 +365,11 @@ describe('WorkspaceShowController', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         assignWorkspaceShowRole($node);
         grantWorkspaceShowAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
 
@@ -375,8 +392,12 @@ describe('WorkspaceShowController', function (): void {
         createWorkspaceShowCallerNode();
         $node = Node::factory()->create();
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create();
+        Workspace::factory()->create([
+            'name' => 'hidden',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -395,8 +416,12 @@ describe('WorkspaceShowController', function (): void {
         createWorkspaceShowCallerNode();
         $node = Node::factory()->create();
         assignWorkspaceShowRole($node);
-        $app = App::factory()->create(['node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create();
+        Workspace::factory()->create([
+            'name' => 'hidden',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',

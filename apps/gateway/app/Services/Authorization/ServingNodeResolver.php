@@ -279,14 +279,11 @@ final class ServingNodeResolver
         }
 
         if ($value instanceof App) {
-            $value->loadMissing('node');
-
             return $value;
         }
 
         if (is_int($value) || is_string($value) && ctype_digit($value)) {
             return App::query()
-                ->with('node')
                 ->whereKey($value)
                 ->first();
         }
@@ -296,7 +293,6 @@ final class ServingNodeResolver
         }
 
         $app = App::query()
-            ->with('node')
             ->where('name', $value)
             ->first();
 
@@ -307,7 +303,7 @@ final class ServingNodeResolver
         // App owns no domain column: domain-value resolution matches instance
         // hosts via appHasUrl below instead of a shadow App::domain query.
         return App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->get()
             ->first(fn (App $app): bool => app(WorkspacePlacement::class)->appHasUrl($app, $value));
     }
@@ -366,13 +362,11 @@ final class ServingNodeResolver
         $process->loadMissing('owner');
 
         if ($process->owner instanceof App) {
-            $process->owner->loadMissing('node');
-
             return $process->owner;
         }
 
         if ($process->owner instanceof Workspace) {
-            $process->owner->loadMissing('app.node');
+            $process->owner->loadMissing('app');
 
             return $process->owner->app;
         }
@@ -383,7 +377,7 @@ final class ServingNodeResolver
     private function workspaceFromValue(mixed $value, ?App $app = null): ?Workspace
     {
         if ($value instanceof Workspace) {
-            $value->loadMissing('app.node');
+            $value->loadMissing('app');
 
             return $value;
         }
@@ -393,7 +387,7 @@ final class ServingNodeResolver
         }
 
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->when($app instanceof App, fn ($query) => $query->where('app_id', $app?->id))
             ->when(
                 is_int($value) || ctype_digit($value),

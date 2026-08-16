@@ -43,8 +43,6 @@ function seed_workspace_for_app_log(Node $serving): Workspace
 {
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $serving->id,
-        'path' => '/srv/apps/docs',
     ]);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,

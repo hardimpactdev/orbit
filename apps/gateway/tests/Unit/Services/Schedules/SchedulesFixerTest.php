@@ -263,7 +263,7 @@ describe('SchedulesFixer', function (): void {
     it('releases stale gateway schedule locks and marks running history failed', function (): void {
         $gateway = createSchedulesFixerGatewayNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->create();
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleLock::factory()->create([
             'node_id' => $gateway->id,

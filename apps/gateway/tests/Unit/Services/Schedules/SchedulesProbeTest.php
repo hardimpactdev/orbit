@@ -420,7 +420,7 @@ describe('SchedulesProbe', function (): void {
             'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create();
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(
             exitCode: 255,
@@ -456,7 +456,7 @@ describe('SchedulesProbe', function (): void {
             'managed' => true,
             'wireguard_address' => '10.44.0.82',
         ]);
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create();
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleRun::factory()->create([
             'node_id' => $node->id,

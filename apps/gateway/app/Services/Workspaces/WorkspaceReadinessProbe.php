@@ -54,7 +54,7 @@ final readonly class WorkspaceReadinessProbe
      */
     private function probeOnce(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.node']);
+        $workspace->loadMissing(['app']);
 
         $app = $workspace->app;
 

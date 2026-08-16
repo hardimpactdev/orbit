@@ -67,7 +67,7 @@ final class AppRegistrar
         }
 
         $existingApp = App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->where('name', $input['app'])
             ->first();
 
@@ -79,6 +79,7 @@ final class AppRegistrar
 
         $selectedConfig = $selected?->driver_config;
         $selectedConfig = $selectedConfig instanceof OrbitInstanceDriverConfigData ? $selectedConfig : null;
+        $existingPlacement = $this->existingPlacement($existingApp);
 
         $node = $this->resolveTargetNode($input['node'], $existingApp, $selectedConfig);
 
@@ -86,7 +87,7 @@ final class AppRegistrar
             return $node;
         }
 
-        $effectiveDomain = $input['domain'] ?? $selectedConfig?->domain ?? $existingApp?->domain;
+        $effectiveDomain = $input['domain'] ?? $selectedConfig?->domain ?? $existingPlacement?->domain;
         $environment = $this->registrationEnvironment($effectiveDomain, $node);
         $requiredRole = $environment === 'production' ? 'app-prod' : 'app-dev';
         $eligibleNode = $this->ensureEligibleNode($node, $requiredRole);
@@ -103,8 +104,8 @@ final class AppRegistrar
         }
 
         $selectedName = $selected?->name ?? $input['instance'] ?? $environment;
-        $currentNodeId = $selectedConfig?->node_id ?? $existingApp?->node_id;
-        $currentPath = $selectedConfig?->path ?? $existingApp?->path;
+        $currentNodeId = $selectedConfig?->node_id ?? $existingPlacement?->node_id;
+        $currentPath = $selectedConfig?->path ?? $existingPlacement?->path;
         $path = $input['path'] ?? $currentPath;
 
         if ((! is_string($path) || $path === '') && $this->isInteractiveInput()) {
@@ -338,35 +339,43 @@ final class AppRegistrar
         return $instance;
     }
 
-    private function pathCollision(string $appName, string $selectedName, Node $node, string $path): ?int
+    /**
+     * The existing app's placement, sourced from its primary concrete Orbit
+     * instance. App owns no placement columns to fall back to.
+     */
+    private function existingPlacement(?App $app): ?OrbitInstanceDriverConfigData
     {
-        $pathOwner = App::query()
-            ->where('node_id', $node->id)
-            ->where('path', $path)
-            ->where('name', '!=', $appName)
-            ->first();
-
-        $owningInstance = $pathOwner instanceof App
-            ? null
-            : Instance::query()
-                ->with('app')
-                ->where('driver_config->node_id', $node->id)
-                ->where('driver_config->path', $path)
-                ->get()
-                ->first(
-                    fn (Instance $candidate): bool => (
-                        $candidate->app?->name !== $appName
-                        || $candidate->name !== $selectedName
-                    ),
-                );
-
-        if (! $pathOwner instanceof App && ! $owningInstance instanceof Instance) {
+        if (! $app instanceof App) {
             return null;
         }
 
-        $owningSelector = $pathOwner instanceof App
-            ? "{$pathOwner->name}.{$pathOwner->environment}"
-            : $owningInstance?->app?->name.'.'.$owningInstance?->name;
+        $config = $this->placement->appPrimaryInstance($app)?->driver_config;
+
+        return $config instanceof OrbitInstanceDriverConfigData ? $config : null;
+    }
+
+    private function pathCollision(string $appName, string $selectedName, Node $node, string $path): ?int
+    {
+        // Path ownership is instance-authoritative: a path on a node is owned by
+        // the concrete Orbit instance placed there, not an App shadow column.
+        $owningInstance = Instance::query()
+            ->with('app')
+            ->where('driver', InstanceDriver::Orbit->value)
+            ->where('driver_config->data->node_id', $node->id)
+            ->where('driver_config->data->path', $path)
+            ->get()
+            ->first(
+                fn (Instance $candidate): bool => (
+                    $candidate->app?->name !== $appName
+                    || $candidate->name !== $selectedName
+                ),
+            );
+
+        if (! $owningInstance instanceof Instance) {
+            return null;
+        }
+
+        $owningSelector = $owningInstance->app?->name.'.'.$owningInstance->name;
 
         return $this->failCommand(
             code: 'app.path_collision',
@@ -429,31 +438,24 @@ final class AppRegistrar
     ): App {
         $selectedConfig = $selected?->driver_config;
         $selectedConfig = $selectedConfig instanceof OrbitInstanceDriverConfigData ? $selectedConfig : null;
-        $documentRoot = $input['root'] ?? $selectedConfig?->document_root ?? $existingApp?->document_root ?? 'public';
+        $existingPlacement = $this->existingPlacement($existingApp);
+        $documentRoot =
+            $input['root'] ?? $selectedConfig?->document_root ?? $existingPlacement?->document_root ?? 'public';
         $phpVersion = $input['php_version'] ?? $existingApp?->php_version ?? PhpRuntimeCatalog::DEFAULT;
-        $isDefaultInstance = ! $existingApp instanceof App || $selectedName === $existingApp->environment;
+        // The default instance is the app's primary concrete instance (a new app
+        // makes its first instance the default). App owns no environment column.
+        $isDefaultInstance =
+            ! $existingApp instanceof App
+            || $selectedName === $this->placement->appPrimaryInstance($existingApp)?->name;
 
-        // instance:register is instance-scoped: --php-version writes the
-        // selected instance only. The app default is a creation-time template
-        // and is set when the app is created, never re-stamped from here.
+        // The App is logical-only: registration writes placement/adoption to the
+        // concrete instance below, never to the app record.
         $attributes = [
             'repository' => $existingApp?->repository,
         ];
 
         if (! $existingApp instanceof App) {
             $attributes['php_version'] = $phpVersion;
-        }
-
-        if ($isDefaultInstance) {
-            $attributes = [
-                ...$attributes,
-                'node_id' => $node->id,
-                'environment' => $environment,
-                'domain' => $effectiveDomain,
-                'path' => $path,
-                'document_root' => $documentRoot,
-                'adopted' => $existingApp instanceof App ? $existingApp->adopted : true,
-            ];
         }
 
         if ($input['runtime_proxy_transport'] !== null) {
@@ -464,10 +466,6 @@ final class AppRegistrar
             ['name' => $input['app']],
             $attributes,
         );
-
-        if ($isDefaultInstance) {
-            $app->setRelation('node', $node);
-        }
 
         $app->instances()->updateOrCreate(
             ['name' => $selectedName],

@@ -19,9 +19,9 @@ it('keeps node placement, row order, issue details, and progress inside the work
     $node = createTestAppHostNode();
     $otherNode = createTestAppHostNode();
     /** @var App $app */
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     /** @var App $otherApp */
-    $otherApp = App::factory()->for($otherNode, 'node')->create(['name' => 'other']);
+    $otherApp = App::factory()->create(['name' => 'other']);
     $instance = create_workspace_family_instance($app, $node);
     $otherInstance = create_workspace_family_instance($otherApp, $otherNode);
     Workspace::factory()
@@ -29,21 +29,21 @@ it('keeps node placement, row order, issue details, and progress inside the work
         ->for($instance, 'instance')
         ->create([
             'name' => 'zulu',
-            'path' => "{$app->path}/.worktrees/zulu",
+            'path' => "/home/orbit/apps/{$app->name}/.worktrees/zulu",
         ]);
     Workspace::factory()
         ->for($app, 'app')
         ->for($instance, 'instance')
         ->create([
             'name' => 'alpha',
-            'path' => "{$app->path}/.worktrees/alpha",
+            'path' => "/home/orbit/apps/{$app->name}/.worktrees/alpha",
         ]);
     Workspace::factory()
         ->for($otherApp, 'app')
         ->for($otherInstance, 'instance')
         ->create([
             'name' => 'excluded',
-            'path' => "{$otherApp->path}/.worktrees/excluded",
+            'path' => "/home/orbit/apps/{$otherApp->name}/.worktrees/excluded",
         ]);
     app()->instance(RunsInternalCommands::class, new DoctorWorkspaceFamilyExecutor);
     $events = [];
@@ -83,9 +83,9 @@ function create_workspace_family_instance(App $app, Node $node): Instance
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 

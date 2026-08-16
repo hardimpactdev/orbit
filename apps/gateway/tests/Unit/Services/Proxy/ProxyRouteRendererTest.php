@@ -654,9 +654,8 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders private backend routes for PHP apps as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'example',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -705,11 +704,9 @@ describe('ProxyRouteRenderer', function (): void {
     it('renders private backend routes for static apps as file_server only without PHP', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
         $app = App::factory()
-            ->for($appNode, 'node')
             ->static()
             ->create([
                 'name' => 'marketing',
-                'document_root' => 'public',
             ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -772,11 +769,9 @@ describe('ProxyRouteRenderer', function (): void {
     it('rejects static-app private backend routes with unsafe document root paths', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
         $app = App::factory()
-            ->for($appNode, 'node')
             ->static()
             ->create([
                 'name' => 'example',
-                'document_root' => 'public',
             ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -805,9 +800,8 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('rejects PHP-app private backend routes with unsafe runtime container upstream values', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'example',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -838,7 +832,7 @@ describe('ProxyRouteRenderer', function (): void {
         'derives a FrankenPHP runtime upstream from the app identity for a legacy app route persisted with only php_socket (no runtime_upstream) and never emits php_fastcgi',
         function (): void {
             $node = createTestAppHostNode();
-            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->create(['name' => 'legacy-docs']);
 
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
@@ -879,7 +873,7 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('derives a FrankenPHP runtime upstream from the app identity for a legacy private backend artifact (no runtime_upstream)', function (): void {
         $appNode = createTestAppHostNode(['wireguard_address' => '10.6.0.21']);
-        $app = App::factory()->for($appNode, 'node')->create(['name' => 'legacy-docs']);
+        $app = App::factory()->create(['name' => 'legacy-docs']);
 
         $route = ProxyRoute::factory()
             ->for($appNode, 'node')
@@ -913,7 +907,7 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('still renders static app routes with file_server even when the persisted config carries a legacy php_socket', function (): void {
         $node = createTestAppHostNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'legacy-marketing']);
+        $app = App::factory()->static()->create(['name' => 'legacy-marketing']);
 
         $route = ProxyRoute::factory()
             ->for($node, 'node')
@@ -943,17 +937,16 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders app-dev PHP routes through HTTPS runtime upstreams with gateway CA transport', function (): void {
         $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
         Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
-                path: is_string($app->path) ? $app->path : '',
-                document_root: is_string($app->document_root) ? $app->document_root : 'public',
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
                 domain: 'docs.test',
             ),
         ]);
@@ -1001,11 +994,8 @@ describe('ProxyRouteRenderer', function (): void {
             'wireguard_address' => '10.6.0.1',
         ]);
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'happie',
-            'domain' => 'happie.test',
-            'path' => '/Users/nckrtl/apps/happie',
-            'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
         Instance::factory()->for($app)->create([
@@ -1088,10 +1078,11 @@ describe('ProxyRouteRenderer', function (): void {
             'wireguard_address' => '10.6.0.1',
         ]);
         $node = createTestAppHostNode();
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'document_root' => 'public',
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+            ]);
         $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
@@ -1139,7 +1130,7 @@ describe('ProxyRouteRenderer', function (): void {
         'derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket',
         function (): void {
             $node = createTestAppHostNode();
-            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+            $app = App::factory()->create(['name' => 'legacy-docs']);
             $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
 
             $route = ProxyRoute::factory()
@@ -1176,9 +1167,8 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders private backend routes for PHP workspaces as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'example',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -1226,9 +1216,8 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('resolves path blocking from the workspace instance placement, not the app primary instance', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'example',
-            'document_root' => 'public',
             'runtime' => 'php',
         ]);
         // App primary instance serves from 'public'.
@@ -1253,10 +1242,13 @@ describe('ProxyRouteRenderer', function (): void {
                 document_root: '.',
             ),
         ]);
-        $workspace = Workspace::factory()->for($app, 'app')->for($workspaceInstance, 'instance')->create([
-            'name' => 'feature-a',
-            'path' => '/home/orbit/sites/example/.worktrees/feature-a',
-        ]);
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->for($workspaceInstance, 'instance')
+            ->create([
+                'name' => 'feature-a',
+                'path' => '/home/orbit/sites/example/.worktrees/feature-a',
+            ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
@@ -1295,9 +1287,8 @@ describe('ProxyRouteRenderer', function (): void {
             'wireguard_address' => '10.6.0.1',
         ]);
         $appNode = Node::factory()->appProd()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'example',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -1320,11 +1311,9 @@ describe('ProxyRouteRenderer', function (): void {
     it('renders private backend routes for static workspaces as file_server only', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
         $app = App::factory()
-            ->for($appNode, 'node')
             ->static()
             ->create([
                 'name' => 'marketing',
-                'document_root' => 'public',
             ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,

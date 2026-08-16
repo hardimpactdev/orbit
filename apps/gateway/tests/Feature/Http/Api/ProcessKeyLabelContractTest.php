@@ -46,7 +46,7 @@ function processKeyLabelFixture(array $processAttributes = []): array
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',

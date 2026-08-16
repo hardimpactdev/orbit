@@ -55,8 +55,6 @@ function websocketRouteRegistrarAppWithIngress(): array
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'domain' => 'docs.example.com',
     ]);
     Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -409,9 +407,7 @@ it('requires an ingress route when public websocket hosts are configured', funct
             'name' => 'app-prod-1',
             'wireguard_address' => '10.6.0.21',
         ]);
-    $app = App::factory()->create([
-        'node_id' => $appNode->id,
-    ]);
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);

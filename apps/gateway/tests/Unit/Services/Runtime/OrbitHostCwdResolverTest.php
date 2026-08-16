@@ -18,9 +18,8 @@ function appAtPath(string $name, string $path): App
 {
     $node = createTestAppHostNode(['name' => "app-{$name}", 'tld' => "app-{$name}"]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => $name,
-        'path' => $path,
         'runtime' => AppRuntimeKind::Php,
     ]);
     Instance::factory()->for($app, 'app')->create([
@@ -197,10 +196,9 @@ describe('OrbitHostCwdResolver', function (): void {
 
     it('resolves the owning app from instance placement, not a stale app path column', function (): void {
         $node = createTestAppHostNode(['name' => 'app-docs', 'tld' => 'app-docs']);
-        // Stale/opposite app path column; the instance placement is authoritative.
-        $app = App::factory()->for($node, 'node')->create([
+        // The app is logical-only; the instance placement is authoritative.
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/stale/wrong-path',
             'runtime' => AppRuntimeKind::Php,
         ]);
         Instance::factory()->for($app, 'app')->create([

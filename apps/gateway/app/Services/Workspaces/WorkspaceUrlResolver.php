@@ -15,7 +15,7 @@ final readonly class WorkspaceUrlResolver
 
     public function url(Workspace $workspace): string
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance', 'proxyRoutes']);
+        $workspace->loadMissing(['app.instances', 'instance', 'proxyRoutes']);
 
         $app = $workspace->app;
 

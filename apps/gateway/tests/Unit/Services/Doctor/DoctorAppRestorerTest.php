@@ -17,7 +17,7 @@ uses(TestCase::class, RefreshDatabase::class);
 it('returns null when an app instance belongs to a different node', function (): void {
     $appNode = Node::factory()->create(['name' => 'app-node']);
     $instanceNode = Node::factory()->create(['name' => 'instance-node']);
-    $app = App::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
 
     Instance::factory()->for($app)->create([
         'name' => 'production',

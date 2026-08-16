@@ -20,6 +20,7 @@ use App\Services\Nodes\NodeContainerScope;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
@@ -982,9 +983,12 @@ final readonly class ProxyRouteProbe
             return [];
         }
 
+        // Domain ownership is instance-authoritative: an app conflicts with the
+        // custom route when one of its concrete instances serves that host.
         $app = App::query()
-            ->where('domain', $route->domain)
-            ->first();
+            ->with('instances')
+            ->get()
+            ->first(fn (App $candidate): bool => app(WorkspacePlacement::class)->appHasUrl($candidate, $route->domain));
 
         if ($app instanceof App) {
             return [
@@ -1675,7 +1679,7 @@ final readonly class ProxyRouteProbe
         }
 
         try {
-            $route->loadMissing(['app.node', 'app.instances', 'workspace.app.node', 'node']);
+            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
 
@@ -1714,7 +1718,7 @@ final readonly class ProxyRouteProbe
         $config = is_array($route->config) ? $route->config : [];
 
         try {
-            $route->loadMissing(['app.node', 'app.instances', 'workspace.app.node', 'node']);
+            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
             $this->renderer()->renderManagedPhpRuntimeIntent($expected);

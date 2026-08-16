@@ -41,7 +41,7 @@ final readonly class WorkspacesProbe
 
     public function introspect(Workspace $workspace): ProbeSnapshot
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
         $node = $this->placement()->nodeForWorkspace($workspace);
 
@@ -335,7 +335,7 @@ final readonly class WorkspacesProbe
      */
     private function checkDevelopmentSecurity(Workspace $workspace, ProbeSnapshot $snapshot): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $node = $this->placement()->nodeForWorkspace($workspace);
 
         if (! $workspace->app instanceof App || ! $node instanceof Node) {

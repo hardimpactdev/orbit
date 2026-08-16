@@ -67,15 +67,15 @@ it('leaves no app_instances table or app_instance_id columns after cutover', fun
 
 it('keeps apps and app_id logical storage while FK ownership points at instances', function (): void {
     $node = Node::factory()->create(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
         ),
     ]);
     $workspace = Workspace::factory()->create([

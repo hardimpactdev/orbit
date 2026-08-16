@@ -15,7 +15,7 @@ uses(TestCase::class, RefreshDatabase::class);
 it('resolves the serving node from the selected project instance', function (): void {
     $developmentNode = Node::factory()->appDev()->create(['name' => 'dev-1']);
     $productionNode = Node::factory()->appProd()->create(['name' => 'prod-1']);
-    $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
 
     Instance::factory()->for($app, 'app')->create([
         'name' => 'development',

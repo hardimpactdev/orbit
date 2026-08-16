@@ -294,16 +294,25 @@ it('streams fleet per-node completed and total progress while a node is running'
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'path' => '/home/orbit/apps/docs',
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            node: $appNode->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
     ]);
     Workspace::factory()->create([
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'name' => 'feature',
         'path' => '/home/orbit/apps/docs/.worktrees/feature',
     ]);
     Workspace::factory()->create([
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'name' => 'hotfix',
         'path' => '/home/orbit/apps/docs/.worktrees/hotfix',
     ]);
@@ -530,9 +539,6 @@ it('streams instance family totals that include instance and runtime-config inve
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
     ]);
     Instance::factory()->for($app)->create([
         'name' => 'development',
@@ -595,16 +601,25 @@ it('streams per-family completed and total check counts when workspace inventory
     $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'path' => '/home/orbit/apps/docs',
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $appNode->id,
+            node: $appNode->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+        ),
     ]);
     Workspace::factory()->create([
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'name' => 'feature',
         'path' => '/home/orbit/apps/docs/.worktrees/feature',
     ]);
     Workspace::factory()->create([
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'name' => 'hotfix',
         'path' => '/home/orbit/apps/docs/.worktrees/hotfix',
     ]);

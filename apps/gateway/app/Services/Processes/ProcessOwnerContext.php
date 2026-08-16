@@ -36,8 +36,6 @@ final readonly class ProcessOwnerContext
     public function runtimeApp(): ?App
     {
         if ($this->app instanceof App) {
-            $this->app->setRelation('node', $this->node);
-
             return $this->app;
         }
 

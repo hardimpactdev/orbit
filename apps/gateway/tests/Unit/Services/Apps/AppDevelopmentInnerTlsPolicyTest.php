@@ -40,23 +40,21 @@ it('applies inner TLS only to opted-in app-dev PHP apps that are not production'
     $appDevNode = createTestAppHostNode(['user' => 'nckrtl']);
     $appProdNode = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
 
-    $appDevPhpDefault = App::factory()->for($appDevNode, 'node')->create([
+    $appDevPhpDefault = App::factory()->create([
         'name' => 'docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $appDevPhpOptedIn = App::factory()->for($appDevNode, 'node')->create([
+    $appDevPhpOptedIn = App::factory()->create([
         'name' => 'api',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
-    $appProdPhp = App::factory()->for($appProdNode, 'node')->create([
+    $appProdPhp = App::factory()->create([
         'name' => 'docs-prod',
-        'environment' => 'production',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $appDevStatic = App::factory()
-        ->for($appDevNode, 'node')
         ->static()
         ->create([
             'name' => 'marketing',
@@ -81,7 +79,7 @@ it('applies inner TLS only to opted-in app-dev PHP apps that are not production'
 it('describes runtime TLS mounts and upstream transport for an app-dev route domain', function (): void {
     $policy = new AppDevelopmentInnerTlsPolicy;
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -130,13 +128,12 @@ it('describes runtime client trust for app-dev PHP apps that are not production'
     $appDevNode = createTestAppHostNode(['user' => 'nckrtl']);
     $appProdNode = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
 
-    $appDevPhp = App::factory()->for($appDevNode, 'node')->create([
+    $appDevPhp = App::factory()->create([
         'name' => 'docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $appProdPhp = App::factory()->for($appProdNode, 'node')->create([
+    $appProdPhp = App::factory()->create([
         'name' => 'docs-prod',
-        'environment' => 'production',
         'runtime' => AppRuntimeKind::Php,
     ]);
 
@@ -166,11 +163,12 @@ it('describes runtime client trust for app-dev PHP apps that are not production'
 it('describes workspace route domains and inherits the app-dev inner TLS policy from the parent app', function (): void {
     $policy = new AppDevelopmentInnerTlsPolicy;
     $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'demo',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
+    attachInnerTlsInstance($app, $node);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
     ]);
@@ -184,11 +182,10 @@ it('describes workspace route domains and inherits the app-dev inner TLS policy 
 it('lets the workspace instance, not a stale app environment column, decide inner TLS', function (): void {
     $policy = new AppDevelopmentInnerTlsPolicy;
     $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
-    // Stale app-level column claims production; the development instance is the
-    // authority, so inner TLS must still apply.
-    $app = App::factory()->for($node, 'node')->create([
+    // The development workspace instance is the placement authority, so inner
+    // TLS must apply regardless of any other (e.g. production) app instance.
+    $app = App::factory()->create([
         'name' => 'demo',
-        'environment' => 'production',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);

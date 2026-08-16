@@ -56,9 +56,9 @@ describe('DashboardRuntimeInventoryController', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()
-            ->forOwner($app)
+            ->forOwner($app, $appNode)
             ->create([
                 'name' => 'queue',
                 'restart_policy' => ProcessRestartPolicy::Always,
@@ -102,11 +102,11 @@ describe('DashboardRuntimeInventoryController', function (): void {
 
         grant_dashboard_inventory_access($caller, $visibleNode, ['app:read', 'process:read', 'tool:read']);
 
-        $visibleApp = App::factory()->create(['name' => 'visible-app', 'node_id' => $visibleNode->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden-app', 'node_id' => $hiddenNode->id]);
+        $visibleApp = App::factory()->placedOn($visibleNode)->create(['name' => 'visible-app']);
+        $hiddenApp = App::factory()->placedOn($hiddenNode)->create(['name' => 'hidden-app']);
 
-        Process::factory()->forOwner($visibleApp)->create(['name' => 'visible-process']);
-        Process::factory()->forOwner($hiddenApp)->create(['name' => 'hidden-process']);
+        Process::factory()->forOwner($visibleApp, $visibleNode)->create(['name' => 'visible-process']);
+        Process::factory()->forOwner($hiddenApp, $hiddenNode)->create(['name' => 'hidden-process']);
         NodeTool::factory()->create(['name' => 'visible-tool', 'node_id' => $visibleNode->id]);
         NodeTool::factory()->create(['name' => 'hidden-tool', 'node_id' => $hiddenNode->id]);
 

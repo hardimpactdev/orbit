@@ -159,7 +159,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function runtimeConfigPath(Workspace $workspace): string
     {
         $this->roleGuard()->ensureWorkspaceSupported($workspace);
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);
 

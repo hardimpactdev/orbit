@@ -443,7 +443,7 @@ describe('proxy registry probe foundation', function (): void {
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
         $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['status' => 'active']);
-        $app = App::factory()->create(['node_id' => $appNode->id]);
+        $app = App::factory()->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
@@ -473,7 +473,7 @@ describe('proxy registry probe foundation', function (): void {
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
         $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['status' => 'active']);
-        $app = App::factory()->create(['node_id' => $appNode->id]);
+        $app = App::factory()->create();
         $renderer = new ProxyRouteRenderer;
         $config = [
             'placement' => 'ingress',
@@ -572,7 +572,7 @@ describe('proxy registry probe foundation', function (): void {
 
     it('requires workspace owners to resolve', function (): void {
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
@@ -682,7 +682,7 @@ describe('proxy registry probe foundation', function (): void {
 
     it('detects custom route conflicts with app domains', function (): void {
         $node = createTestAppHostNode();
-        App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.test']);
+        App::factory()->placedOn($node, domain: 'docs.test')->create(['name' => 'docs']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'docs.test',
@@ -704,7 +704,7 @@ describe('proxy registry probe foundation', function (): void {
 
     it('accepts resolved app and workspace owners', function (): void {
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->create();
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
 
         $appRoute = ProxyRoute::factory()->create([
@@ -819,11 +819,12 @@ describe('proxy backend and TLS reality', function (): void {
 
     it('probes HTTPS runtime upstreams with the route domain as SNI', function (): void {
         $node = createTestAppHostNode(['tld' => 'nmbp']);
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'happie-nmbp',
-            'document_root' => 'public',
-            'runtime_config' => ['proxy_transport' => 'https'],
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'happie-nmbp',
+                'runtime_config' => ['proxy_transport' => 'https'],
+            ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
@@ -890,7 +891,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -964,7 +965,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1025,7 +1026,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1093,7 +1094,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1124,7 +1125,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1179,7 +1180,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1238,7 +1239,7 @@ describe('proxy backend and TLS reality', function (): void {
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
+            'app_id' => App::factory()->create()->id,
             'config' => [
                 'placement' => 'ingress',
                 'router_artifact' => [
@@ -1312,11 +1313,12 @@ describe('proxy backend and TLS reality', function (): void {
 
     it('detects unreachable runtime upstreams behind otherwise expected app routes', function (): void {
         $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'document_root' => 'public',
-            'runtime_config' => ['proxy_transport' => 'http'],
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+                'runtime_config' => ['proxy_transport' => 'http'],
+            ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
@@ -1362,10 +1364,11 @@ describe('proxy backend and TLS reality', function (): void {
 
     it('accepts default app-dev PHP route artifacts that use HTTP runtime upstream intent', function (): void {
         $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'document_root' => 'public',
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+            ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
@@ -1408,13 +1411,12 @@ describe('proxy backend and TLS reality', function (): void {
 
     it('reports route mismatch when a canonical app instance route still targets the bare app runtime', function (): void {
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'happie',
-            'domain' => 'happie.test',
-            'path' => '/Users/nckrtl/apps/happie',
-            'document_root' => 'public',
-            'runtime_config' => ['proxy_transport' => 'https'],
-        ]);
+        $app = App::factory()
+            ->placedOn($node, path: '/Users/nckrtl/apps/happie')
+            ->create([
+                'name' => 'happie',
+                'runtime_config' => ['proxy_transport' => 'https'],
+            ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
@@ -1490,12 +1492,13 @@ describe('proxy backend and TLS reality', function (): void {
         'reports proxy.route_mismatch when an app-dev route still carries stale inner-TLS upstream config but the app now opts into HTTP runtime proxy transport',
         function (): void {
             $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-            $app = App::factory()->for($node, 'node')->create([
-                'name' => 'nckrtl',
-                'runtime' => AppRuntimeKind::Php,
-                'document_root' => 'public',
-                'runtime_config' => ['proxy_transport' => 'http'],
-            ]);
+            $app = App::factory()
+                ->placedOn($node)
+                ->create([
+                    'name' => 'nckrtl',
+                    'runtime' => AppRuntimeKind::Php,
+                    'runtime_config' => ['proxy_transport' => 'http'],
+                ]);
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
                 ->for($app, 'app')
@@ -1838,7 +1841,7 @@ describe('proxy backend and TLS reality', function (): void {
 
     it('skips TLS drift for internal TLS app and workspace routes', function (string $ownerType, string $kind): void {
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
+        $app = App::factory()->create();
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -2065,10 +2068,11 @@ describe('proxy node-level diff', function (): void {
             'name' => 'app-prod-1',
             'tld' => 'prod',
         ], role: 'app-prod');
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'docs',
-            'domain' => 'docs.prod',
-        ]);
+        $app = App::factory()
+            ->placedOn($node, domain: 'docs.prod')
+            ->create([
+                'name' => 'docs',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
@@ -2526,9 +2530,8 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             // hash should NOT match — proving doctor will detect drift and
             // restore can converge to the Docker-first artifact.
             $node = createTestAppHostNode();
-            $app = App::factory()->for($node, 'node')->create([
+            $app = App::factory()->create([
                 'name' => 'legacy-docs',
-                'document_root' => 'public',
             ]);
 
             $route = ProxyRoute::factory()
@@ -2588,8 +2591,6 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             assignProxyProbeRole($backend, 'app-prod');
             $app = App::factory()->create([
                 'name' => 'legacy-docs',
-                'document_root' => 'public',
-                'node_id' => $backend->id,
             ]);
 
             // Build a route with Docker-first backend_artifact source_hash (the

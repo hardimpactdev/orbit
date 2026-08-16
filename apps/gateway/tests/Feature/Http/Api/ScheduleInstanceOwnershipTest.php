@@ -371,9 +371,8 @@ function scheduleAppWithTwoInstances(): array
 {
     $developmentNode = scheduleAppNode('app-dev-1', 'app-dev');
     $productionNode = scheduleAppNode('app-prod-1', 'app-prod');
-    $app = App::factory()->for($developmentNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/srv/docs-development',
     ]);
     $development = scheduleInstance($app, $developmentNode, 'development', '/srv/docs-development');
     $production = scheduleInstance($app, $productionNode, 'production', '/srv/docs-production');

@@ -103,8 +103,6 @@ function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress 
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'domain' => $domain,
     ]);
 
     Instance::factory()->for($app)->create([
@@ -121,6 +119,14 @@ function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress 
 function appAnalyticsInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
+}
+
+function appAnalyticsNode(App $app): Node
+{
+    $config = appAnalyticsInstance($app)->driver_config;
+    assert($config instanceof OrbitInstanceDriverConfigData);
+
+    return Node::query()->findOrFail($config->node_id);
 }
 
 /**
@@ -178,7 +184,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app));
 
         $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => [],
@@ -248,7 +254,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read']);
 
         $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => ['analytics.docs.test'],
@@ -283,7 +289,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp(domain: null);
-        grantAppAnalyticsAccess($caller, $app->node);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app));
 
         $response = postAppAnalyticsEnableJson('/api/instances/docs/analytics/enable', [
             'public_hosts' => ['analytics.docs.test'],
@@ -303,7 +309,7 @@ describe('AppAnalyticsController', function (): void {
     it('returns a repairable failure when public route enactment fails', function (): void {
         $caller = createAppAnalyticsCallerNode();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app));
         $registrar = new class extends AnalyticsRouteRegistrar {
             public function __construct() {}
 
@@ -346,7 +352,7 @@ describe('AppAnalyticsController', function (): void {
     it('keeps the binding enabled when route cleanup fails during disable', function (): void {
         $caller = createAppAnalyticsCallerNode();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app));
         AppAnalyticsBinding::query()->create([
             'instance_id' => appAnalyticsInstance($app)->id,
             'enabled' => true,
@@ -382,7 +388,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app));
 
         app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
 
@@ -414,7 +420,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read']);
 
         app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
 
@@ -430,7 +436,7 @@ describe('AppAnalyticsController', function (): void {
     it('returns binding missing when show is requested before enable', function (): void {
         $caller = createAppAnalyticsCallerNode();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['instance:read']);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read']);
 
         $response = getAppAnalyticsJson('/api/instances/docs/analytics');
 
@@ -444,7 +450,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['instance:read', 'instance:write']);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read', 'instance:write']);
 
         app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
 
@@ -477,7 +483,7 @@ describe('AppAnalyticsController', function (): void {
         $caller = createAppAnalyticsCallerNode();
         createAppAnalyticsRoutePrerequisites();
         $app = createAppAnalyticsApp();
-        grantAppAnalyticsAccess($caller, $app->node, ['instance:read', 'instance:write']);
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read', 'instance:write']);
 
         app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
         ProxyRoute::query()->where('domain', 'analytics.docs.test')->update(['source_hash' => 'divergent']);

@@ -216,8 +216,8 @@ abstract class DatabaseConnectionApiController implements Loggable
     {
         $connection->loadMissing([
             'node',
-            'targets.instance.app.node',
-            'targets.workspace.app.node',
+            'targets.instance.app',
+            'targets.workspace.app',
         ]);
 
         $nodes = [];
@@ -277,9 +277,7 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         if ($owner instanceof App) {
-            $owner->loadMissing('node');
-
-            return $owner->node;
+            return $this->workspacePlacement->runtimeNode($owner, null);
         }
 
         return $this->workspacePlacement->nodeForWorkspace($owner);

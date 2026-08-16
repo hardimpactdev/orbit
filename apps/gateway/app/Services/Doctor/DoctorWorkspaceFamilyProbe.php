@@ -61,7 +61,7 @@ final readonly class DoctorWorkspaceFamilyProbe
 
         /** @var Collection<int, Workspace> $workspaces */
         $workspaces = $query
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->orderBy('id')
             ->get();
 
@@ -79,7 +79,7 @@ final readonly class DoctorWorkspaceFamilyProbe
 
     private function workspaceIssue(DriftEntry $entry, Workspace $workspace): DoctorIssue
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
 
         return $this->doctorIssueFactory->fromDriftEntry(
             $entry,

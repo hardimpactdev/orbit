@@ -20,7 +20,7 @@ it('removes only the node-bound instance and preserves an app instance on anothe
 
     // One logical app spanning two nodes: production on the prod node, development
     // on the dev node.
-    $app = App::factory()->for($prodNode, 'node')->create(['name' => 'multi']);
+    $app = App::factory()->create(['name' => 'multi']);
     $productionInstance = Instance::factory()->for($app, 'app')->create([
         'name' => 'production',
         'driver' => InstanceDriver::Orbit,
@@ -65,7 +65,7 @@ it('removes only the node-bound instance and preserves an app instance on anothe
 it('deletes the app only once its final instance is removed with the node role', function (): void {
     $devNode = createTestAppHostNode(['name' => 'dev-only-node', 'tld' => 'devonly']);
 
-    $app = App::factory()->for($devNode, 'node')->create(['name' => 'solo']);
+    $app = App::factory()->create(['name' => 'solo']);
     Instance::factory()->for($app, 'app')->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,

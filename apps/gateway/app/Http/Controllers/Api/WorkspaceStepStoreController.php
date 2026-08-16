@@ -222,8 +222,6 @@ final class WorkspaceStepStoreController implements Loggable
 
     private function servingNodeForSelection(AppSelection $selection): ?Node
     {
-        $selection->app->loadMissing('node');
-
         if ($selection->instance !== null) {
             $node = $this->workspacePlacement->nodeForInstance($selection->instance);
 

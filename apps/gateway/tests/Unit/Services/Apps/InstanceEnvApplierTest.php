@@ -46,8 +46,6 @@ describe('InstanceEnvApplier', function (): void {
             ENV);
 
         $app = App::factory()->create([
-            'node_id' => $node->id,
-            'path' => $path,
             'runtime' => AppRuntimeKind::Static,
         ]);
         $instance = Instance::factory()->for($app)->create([
@@ -143,9 +141,8 @@ function appAndNodeForEnvApplierTest(): array
             'wireguard_address' => '10.44.0.80',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'path' => '/home/orbit/apps/billing',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);

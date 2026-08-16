@@ -38,9 +38,8 @@ it('stores concrete app instance ownership for process definitions and events', 
 });
 
 it('derives an app process node from its concrete instance instead of legacy app placement', function (): void {
-    $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
     $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
-    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $instanceNode->id),
@@ -59,7 +58,7 @@ it('derives an app process node from its concrete instance instead of legacy app
 it('rejects an app process node that contradicts its concrete instance placement', function (): void {
     $legacyNode = Node::factory()->create(['name' => 'legacy-app-node']);
     $instanceNode = Node::factory()->create(['name' => 'production-app-node']);
-    $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $instanceNode->id),
@@ -77,7 +76,7 @@ it('rejects an app process node that contradicts its concrete instance placement
 
 it('rejects app process writes without concrete app instance ownership', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
 
     expect(fn (): Process => $app->processes()->create([
         'node_id' => $node->id,
@@ -90,7 +89,7 @@ it('rejects app process writes without concrete app instance ownership', functio
 
 it('rejects workspace process writes without concrete app instance ownership', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
     expect(fn (): Process => $workspace
@@ -277,7 +276,7 @@ it('stores role owned process runtime configuration', function (): void {
 
 it('stores app owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
+    $app = App::factory()->create(['name' => 'abc']);
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
@@ -306,8 +305,12 @@ it('stores app owned process runtime configuration', function (): void {
 
 it('stores workspace owned process runtime configuration', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
-    $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
+    $app = App::factory()->placedOn($node)->create(['name' => 'abc']);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'instance_id' => $app->instances()->firstOrFail()->id,
+        'name' => 'redesign',
+    ]);
 
     $process = $workspace
         ->processes()
@@ -335,8 +338,12 @@ it('stores workspace owned process runtime configuration', function (): void {
 
 it('defaults app and workspace host command processes to systemd when runtime is omitted', function (): void {
     $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
-    $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
+    $app = App::factory()->placedOn($node)->create(['name' => 'abc']);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'instance_id' => $app->instances()->firstOrFail()->id,
+        'name' => 'redesign',
+    ]);
 
     $relationProcess = $app->processes()->create([
         'instance_id' => $workspace->instance_id,

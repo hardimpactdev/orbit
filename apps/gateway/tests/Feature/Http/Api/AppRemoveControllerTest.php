@@ -71,9 +71,7 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'docs',
-                'node_id' => $developmentNode->id,
                 'repository' => 'git@github.com:orbit/docs.git',
-                'adopted' => true,
             ]);
         $development = Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -182,8 +180,16 @@ describe('AppRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'path' => '/home/orbit/apps/docs',
+        ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                node: $targetNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
         ]);
 
         ProxyRoute::query()->create([
@@ -196,7 +202,7 @@ describe('AppRemoveController', function (): void {
         ]);
 
         OrbitProcess::factory()
-            ->forOwner($app)
+            ->forOwner($app, $targetNode)
             ->create([
                 'name' => 'frankenphp-docs',
                 'command' => 'frankenphp',
@@ -269,8 +275,6 @@ describe('AppRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'path' => '/home/orbit/apps/docs',
             'runtime' => 'static',
         ]);
         Instance::factory()->for($app)->create([
@@ -336,8 +340,6 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'docs',
-                'node_id' => $legacyNode->id,
-                'path' => '/legacy/apps/docs',
             ]);
         Instance::factory()->for($app)->create([
             'name' => 'production',
@@ -380,8 +382,6 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'docs',
-                'node_id' => $legacyNode->id,
-                'path' => '/legacy/apps/docs',
             ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -433,8 +433,6 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'docs',
-                'node_id' => $legacyNode->id,
-                'path' => '/legacy/apps/docs',
             ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -513,7 +511,6 @@ describe('AppRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $developmentNode->id,
             'runtime' => 'static',
         ]);
         $development = Instance::factory()->for($app)->create([
@@ -604,8 +601,6 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'docs',
-                'node_id' => $developmentNode->id,
-                'path' => '/legacy/docs',
             ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',
@@ -627,7 +622,6 @@ describe('AppRemoveController', function (): void {
             ->static()
             ->create([
                 'name' => 'admin',
-                'path' => '/legacy/admin',
             ]);
         Instance::factory()->for($otherApp)->create([
             'name' => 'production',
@@ -678,9 +672,17 @@ describe('AppRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'path' => '/home/orbit/apps/docs',
             'runtime' => 'php',
+        ]);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                node: $targetNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+                domain: 'docs.test',
+            ),
         ]);
         Schedule::factory()->forApp($app)->create();
 
@@ -735,7 +737,6 @@ describe('AppRemoveController', function (): void {
         grantAppRemoveAccess($caller, $targetNode);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
         ]);
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
@@ -760,7 +761,6 @@ describe('AppRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
         ]);
         Instance::factory()->for($app)->create([
             'name' => 'production',

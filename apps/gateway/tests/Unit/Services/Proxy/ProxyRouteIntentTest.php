@@ -171,7 +171,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -258,7 +258,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('denies removal when a workspace owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
 
         ProxyRoute::factory()->create([
@@ -275,7 +275,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('removes orphaned workspace-owned routes when the workspace record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -309,7 +309,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('denies removal when an app owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -363,7 +363,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,

@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -91,9 +92,11 @@ describe('AppStore node role eligibility', function (): void {
             ->assertJsonPath('success.data.instance.node', $target->name)
             ->assertJsonMissingPath('success.data.app.node');
 
-        expect(App::query()->where('name', 'docs')->exists())
-            ->toBeTrue()
-            ->and(App::query()->where('name', 'docs')->value('environment'))
+        $storedApp = App::query()->where('name', 'docs')->first();
+        expect($storedApp)
+            ->not
+            ->toBeNull()
+            ->and(Instance::query()->where('app_id', $storedApp?->id)->value('name'))
             ->toBe('development');
     });
 
@@ -137,7 +140,8 @@ describe('AppStore node role eligibility', function (): void {
             ->assertJsonPath('success.data.instance.url', 'https://docs.example.com')
             ->assertJsonMissingPath('success.data.app.url');
 
-        expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
+        $storedApp = App::query()->where('name', 'docs')->firstOrFail();
+        expect(Instance::query()->where('app_id', $storedApp->id)->value('name'))->toBe('production');
     });
 
     it('rejects a node with only active database role', function (): void {

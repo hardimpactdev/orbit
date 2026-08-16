@@ -55,14 +55,11 @@ describe('AppRootController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
         ]);
         $instance = Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $targetNode->id,
-                path: $app->path,
+                path: '/home/orbit/apps/docs',
                 document_root: 'public',
             ),
         ]);
@@ -94,9 +91,7 @@ describe('AppRootController', function (): void {
         expect($instance->refresh()->driver_config)
             ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
             ->and($instance->driver_config->document_root)
-            ->toBe('web')
-            ->and(App::query()->where('name', 'docs')->value('document_root'))
-            ->toBe('public');
+            ->toBe('web');
     });
 
     it('rejects root updates when the caller lacks instance:root on the app node', function (): void {
@@ -113,9 +108,8 @@ describe('AppRootController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $targetNode->id,
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
         ]);
 
@@ -138,7 +132,10 @@ describe('AppRootController', function (): void {
             ->assertJsonPath('error.meta.missing_permission', 'instance:root')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->where('name', 'docs')->value('document_root'))->toBe('public');
+        expect($instance->refresh()->driver_config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($instance->driver_config->document_root)
+            ->not->toBe('web');
     });
 });
 

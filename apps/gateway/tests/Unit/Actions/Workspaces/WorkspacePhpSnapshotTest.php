@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
 
 it('copies the owning instance version onto a workspace created without an override', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.3']);
 
     $workspace = app(CreateWorkspace::class)->createIntent(
@@ -33,7 +33,7 @@ it('copies the owning instance version onto a workspace created without an overr
 
 it('keeps an explicit workspace version ahead of the owning instance version', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.3']);
 
     $workspace = app(CreateWorkspace::class)->createIntent(
@@ -48,7 +48,7 @@ it('keeps an explicit workspace version ahead of the owning instance version', f
 
 it('resolves a workspace to its own stored version', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.3']);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
@@ -62,7 +62,7 @@ it('resolves a workspace to its own stored version', function (): void {
 
 it('falls back to the owning instance before the app for legacy rows', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.3']);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
@@ -76,7 +76,7 @@ it('falls back to the owning instance before the app for legacy rows', function 
 
 it('does not move a workspace when the app default changes', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.4']);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
@@ -92,10 +92,9 @@ it('does not move a workspace when the app default changes', function (): void {
 
 it('stamps the owning instance version onto a workspace adopted by path', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
         'php_version' => '8.5',
-        'path' => '/srv/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',

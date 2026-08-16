@@ -57,7 +57,7 @@ function processStreamAppFixture(): array
     $caller = createProcessStreamCallerNode();
     $appNode = createTestAppHostNode(['name' => 'app-1']);
     grantProcessStreamAccess($caller, $appNode);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
@@ -200,7 +200,7 @@ describe('ProcessStreamController', function (): void {
     it('requires process:read grant and keeps CORS after Origin admission', function (): void {
         createProcessStreamCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',
@@ -465,7 +465,7 @@ describe('ProcessStreamController', function (): void {
         $caller = createProcessStreamCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         grantProcessStreamAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
@@ -609,7 +609,7 @@ describe('ProcessStreamController', function (): void {
 
     it('admits browser CORS preflight for the stream path including Last-Event-ID', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'domain' => 'test.app.example',

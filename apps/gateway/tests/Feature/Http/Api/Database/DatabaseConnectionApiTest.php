@@ -70,7 +70,7 @@ function grantDatabaseApiAccess(Node $consumer, Node $serving, array $permission
     ]);
 }
 
-function databaseApiInstanceForApp(App $app): Instance
+function databaseApiInstanceForApp(App $app, Node $node, ?string $domain = null): Instance
 {
     $instance = $app->instances()->first();
 
@@ -81,21 +81,21 @@ function databaseApiInstanceForApp(App $app): Instance
     return Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: $domain,
         ),
     ]);
 }
 
 function database_api_workspace_on_node(Node $node, string $appName, string $workspaceName): Workspace
 {
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => $appName,
-        'domain' => "{$appName}.test",
     ]);
-    $instance = databaseApiInstanceForApp($app);
+    $instance = databaseApiInstanceForApp($app, $node, "{$appName}.test");
 
     return Workspace::factory()
         ->for($app)
@@ -138,11 +138,11 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         $node = createTestAppHostNode(['name' => 'db-node']);
         grantDatabaseApiAccess($caller, $node, ['database:read', 'database:write']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'DB']);
 
         $listResponse = $this->call(
@@ -481,7 +481,7 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         $node = createTestAppHostNode(['name' => 'db-node']);
         grantDatabaseApiAccess($caller, $node, ['database:query']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $connection = DatabaseConnection::factory()->create([
             'slug' => 'docs-db',
             'node_id' => $node->id,
@@ -494,7 +494,7 @@ describe('database connection api', function (): void {
         ]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'DB']);
         bindDatabaseApiLocalExecutor(new DatabaseApiQueryRemoteShell(new RemoteShellResult(
             exitCode: 0,
@@ -630,7 +630,7 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'db-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $connection = DatabaseConnection::factory()->create([
             'slug' => 'primary-db',
             'node_id' => $node->id,
@@ -638,7 +638,7 @@ describe('database connection api', function (): void {
         ]);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'DB']);
 
         $listResponse = $this->call(
@@ -681,8 +681,11 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'db-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = databaseApiInstanceForApp($app, $node);
+        $workspace = Workspace::factory()
+            ->for($instance, 'instance')
+            ->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
         $createResponse = $this->call(
             'POST',
@@ -771,7 +774,7 @@ describe('database connection api', function (): void {
             ]);
 
         DatabaseConnectionTarget::factory()
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create([
                 'database_connection_id' => DatabaseConnection::query()->where('slug', 'renamed-db')->firstOrFail()->id,
                 'env_prefix' => 'DB',
@@ -815,11 +818,11 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'db-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
         DatabaseConnectionTarget::factory()
             ->for($connection, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'DB']);
 
         $removeWithoutForce = $this->call(
@@ -931,10 +934,8 @@ describe('database connection api', function (): void {
         $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $node->id,
-            'path' => '/srv/apps/docs',
         ]);
-        databaseApiInstanceForApp($app);
+        databaseApiInstanceForApp($app, $node);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
 
         $before = DB::table('database_connection_targets')->count();
@@ -982,12 +983,12 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'db-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $attached = DatabaseConnection::factory()->create(['slug' => 'docs-db', 'node_id' => $node->id]);
         $other = DatabaseConnection::factory()->create(['slug' => 'other-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()
             ->for($attached, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'DB']);
 
         $response = $this->call(
@@ -1013,16 +1014,16 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
         $node = createTestAppHostNode(['name' => 'db-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()
             ->for($primary, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'PRIMARY_DB']);
         DatabaseConnectionTarget::factory()
             ->for($analytics, 'connection')
-            ->forInstance(databaseApiInstanceForApp($app))
+            ->forInstance(databaseApiInstanceForApp($app, $node))
             ->create(['env_prefix' => 'ANALYTICS_DB']);
 
         $response = $this->call(

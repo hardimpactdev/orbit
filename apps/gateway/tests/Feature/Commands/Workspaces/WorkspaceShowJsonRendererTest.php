@@ -66,14 +66,16 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $node->id,
-            'php_version' => '8.5',
-        ]);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+                'php_version' => '8.5',
+            ]);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
             'php_version' => null,
         ]);
@@ -119,8 +121,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode('app-1', '1.2.3.4');
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -142,7 +148,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver' => InstanceDriver::Orbit,
@@ -240,8 +246,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -261,8 +271,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -282,10 +296,11 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs', 'php_version' => '8.4']);
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'php_version' => '8.5',
         ]);
 
@@ -309,8 +324,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -331,8 +350,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -359,8 +382,12 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
         $node = wsShowJsonAppNode();
         wsShowJsonGrantAccess($caller, $node);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -416,10 +443,18 @@ describe('WorkspaceShowJsonRenderer error codes', function (): void {
         ]);
         wsShowJsonGrantAccess($caller, $nodeB);
 
-        $appA = App::factory()->create(['name' => 'docs', 'node_id' => $nodeA->id]);
-        $appB = App::factory()->create(['name' => 'api', 'node_id' => $nodeB->id]);
-        Workspace::factory()->create(['name' => 'feature-x', 'app_id' => $appA->id]);
-        Workspace::factory()->create(['name' => 'feature-x', 'app_id' => $appB->id]);
+        $appA = App::factory()->placedOn($nodeA)->create(['name' => 'docs']);
+        $appB = App::factory()->placedOn($nodeB)->create(['name' => 'api']);
+        Workspace::factory()->create([
+            'name' => 'feature-x',
+            'app_id' => $appA->id,
+            'instance_id' => $appA->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'feature-x',
+            'app_id' => $appB->id,
+            'instance_id' => $appB->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -444,8 +479,12 @@ describe('WorkspaceShowJsonRenderer error codes', function (): void {
         wsShowJsonCallerNode();
         $node = wsShowJsonAppNode();
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',

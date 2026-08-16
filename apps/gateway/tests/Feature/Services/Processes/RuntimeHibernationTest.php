@@ -140,14 +140,14 @@ it('keeps production process groups outside development hibernation markers', fu
     $node = createTestAppHostNode([
         'name' => 'app-prod-1',
     ], role: 'app-prod');
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: null,
             domain: 'docs.example.com',
         ),
     ]);
@@ -878,8 +878,8 @@ it('coordinates cold markers across shared sources and warms only the activated 
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: null,
             domain: 'preview.docs.test',
         ),
     ]);
@@ -1195,17 +1195,16 @@ function create_runtime_hibernation_instance(): array
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.21',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: null,
             domain: 'docs.test',
         ),
     ]);

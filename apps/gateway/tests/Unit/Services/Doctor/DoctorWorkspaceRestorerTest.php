@@ -14,11 +14,17 @@ uses(TestCase::class, RefreshDatabase::class);
 it('returns the existing skipped action for the workspace placed on the target node', function (): void {
     $firstNode = Node::factory()->create(['name' => 'app-dev-1']);
     $secondNode = Node::factory()->create(['name' => 'app-dev-2']);
-    $firstApp = App::factory()->for($firstNode, 'node')->create(['name' => 'docs']);
-    $secondApp = App::factory()->for($secondNode, 'node')->create(['name' => 'api']);
+    $firstApp = App::factory()->placedOn($firstNode)->create(['name' => 'docs']);
+    $secondApp = App::factory()->placedOn($secondNode)->create(['name' => 'api']);
 
-    Workspace::factory()->for($firstApp, 'app')->create(['name' => 'feature']);
-    Workspace::factory()->for($secondApp, 'app')->create(['name' => 'feature']);
+    Workspace::factory()
+        ->for($firstApp, 'app')
+        ->for($firstApp->instances()->firstOrFail(), 'instance')
+        ->create(['name' => 'feature']);
+    Workspace::factory()
+        ->for($secondApp, 'app')
+        ->for($secondApp->instances()->firstOrFail(), 'instance')
+        ->create(['name' => 'feature']);
 
     $action = app(DoctorWorkspaceRestorer::class)->apply(
         $secondNode,
@@ -40,9 +46,12 @@ it('returns the existing skipped action for the workspace placed on the target n
 it('returns null when workspace identity or placement does not match', function (): void {
     $workspaceNode = Node::factory()->create(['name' => 'workspace-node']);
     $otherNode = Node::factory()->create(['name' => 'other-node']);
-    $app = App::factory()->for($workspaceNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->placedOn($workspaceNode)->create(['name' => 'docs']);
 
-    Workspace::factory()->for($app, 'app')->create(['name' => 'feature']);
+    Workspace::factory()
+        ->for($app, 'app')
+        ->for($app->instances()->firstOrFail(), 'instance')
+        ->create(['name' => 'feature']);
 
     $restorer = app(DoctorWorkspaceRestorer::class);
 

@@ -43,7 +43,7 @@ it('reads every node inventory in stable row identity order', function (): void 
         'status' => 'active',
     ]);
     /** @var App $app */
-    $app = App::factory()->create(['node_id' => $node->id]);
+    $app = App::factory()->create();
     /** @var Instance $firstInstance */
     $firstInstance = Instance::factory()->create([
         'app_id' => $app->id,

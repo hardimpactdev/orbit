@@ -38,9 +38,8 @@ it('stores renders and applies env only to the selected workspace', function ():
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'path' => '/home/orbit/apps/billing',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -213,9 +212,8 @@ it('derives the public apply path only from the registered workspace and ignores
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing-path-derivation',
-        'path' => '/home/orbit/apps/billing-path-derivation',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -318,9 +316,8 @@ it('reports phase-specific failures when the workspace env file write fails afte
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing-write-fail',
-        'path' => '/home/orbit/apps/billing-write-fail',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -408,9 +405,8 @@ it('reports phase-specific failures when runtime restart fails after the env fil
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing-runtime-fail',
-        'path' => '/home/orbit/apps/billing-runtime-fail',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -496,8 +492,8 @@ it('rejects incomplete instance selectors before an unauthorized cross-node writ
             'name' => 'other-node',
             'wireguard_address' => '10.44.0.92',
         ]);
-    $targetApp = App::factory()->for($targetNode, 'node')->create(['name' => 'billing']);
-    $otherApp = App::factory()->for($otherNode, 'node')->create(['name' => 'docs']);
+    $targetApp = App::factory()->create(['name' => 'billing']);
+    $otherApp = App::factory()->create(['name' => 'docs']);
     $targetInstance = Instance::factory()->for($targetApp)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(

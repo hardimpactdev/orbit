@@ -61,7 +61,7 @@ final readonly class AddProcess
         ?string $label = null,
     ): array {
         $app = $context->runtimeApp();
-        $app?->loadMissing(['node', 'workspaces']);
+        $app?->loadMissing('workspaces');
 
         $resolvedRuntime = $runtime ?? ($service === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
         $runtimeConfig = [];

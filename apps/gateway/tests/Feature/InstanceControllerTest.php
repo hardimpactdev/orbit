@@ -76,10 +76,8 @@ describe('InstanceController', function (): void {
         $caller = createInstanceApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantInstanceApiAccess($caller, $node);
-        App::factory()->for($node, 'node')->create([
+        App::factory()->create([
             'name' => 'billing',
-            'path' => '/home/orbit/apps/billing',
-            'document_root' => 'public',
         ]);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
@@ -135,7 +133,7 @@ describe('InstanceController', function (): void {
         $caller = createInstanceApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantInstanceApiAccess($caller, $node);
-        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+        App::factory()->create(['name' => 'billing']);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
             'name' => 'production-cloud',
@@ -161,7 +159,7 @@ describe('InstanceController', function (): void {
         $caller = createInstanceApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantInstanceApiAccess($caller, $node);
-        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+        App::factory()->create(['name' => 'billing']);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
             'name' => 'production-cloud',
@@ -186,7 +184,7 @@ describe('InstanceController', function (): void {
         $caller = createInstanceApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         grantInstanceApiAccess($caller, $node);
-        App::factory()->for($node, 'node')->create(['name' => 'billing']);
+        App::factory()->create(['name' => 'billing']);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
             'name' => 'production-cloud',
@@ -213,7 +211,7 @@ describe('InstanceController', function (): void {
         $devNode = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         $prodNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
         grantInstanceApiAccess($caller, $prodNode);
-        $app = App::factory()->for($devNode, 'node')->create(['name' => 'billing']);
+        $app = App::factory()->create(['name' => 'billing']);
 
         $created = appInstanceApiJson('POST', '/api/apps/billing/instances', [
             'name' => 'production-orbit',

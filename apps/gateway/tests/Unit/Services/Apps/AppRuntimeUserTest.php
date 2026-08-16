@@ -13,23 +13,26 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+/** @param array<string, mixed> $overrides */
 function appRuntimeUserTestApp(Node $node, array $overrides = []): App
 {
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'environment' => 'production',
-        'path' => '/home/docs/app',
-        ...$overrides,
-    ]);
-    $app->setRelation('node', $node);
+    // Placement lives on the concrete instance now: the old App `environment`
+    // and `path` shadows map to the instance name and driver-config path, and
+    // production-ness is derived from the serving node role.
+    $name = is_string($overrides['name'] ?? null) ? $overrides['name'] : 'docs';
+    $instanceName = is_string($overrides['environment'] ?? null) ? $overrides['environment'] : 'production';
+    $path = is_string($overrides['path'] ?? null) ? $overrides['path'] : '/home/docs/app';
+
+    $app = App::factory()->create(['name' => $name]);
 
     Instance::factory()->for($app, 'app')->create([
-        'name' => 'production',
+        'name' => $instanceName,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: $path,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 

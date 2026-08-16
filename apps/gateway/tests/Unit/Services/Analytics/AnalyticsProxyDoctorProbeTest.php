@@ -196,8 +196,6 @@ function analyticsPublicBinding(): array
         ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     $app = App::factory()->create([
         'name' => 'docs',
-        'domain' => 'docs.test',
-        'node_id' => $appNode->id,
     ]);
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(

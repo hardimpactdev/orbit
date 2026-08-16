@@ -57,7 +57,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToWorkspace(Workspace $workspace): bool
     {
-        $workspace->loadMissing(['app.node.roleAssignments', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
 
         $app = $workspace->app;
 
@@ -104,7 +104,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function workspaceRouteDomain(Workspace $workspace): string
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
 
         if (! $app instanceof App) {

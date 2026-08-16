@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Api\Concerns;
 use App\Data\Apps\AppSelection;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\AppSelectionResolutionFailed;
-use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -344,32 +343,37 @@ trait ResolvesVisibleToolNodes
             return $query->exists();
         }
 
-        return App::query()
-            ->where(function (Builder $query) use ($value): void {
-                $query->where('name', $value)
-                    ->orWhere('domain', $value);
+        // Placement is instance-authoritative: resolve the selector to a
+        // concrete instance and inspect its serving node, rather than querying
+        // the (now logical-only) app for a node relation or domain column.
+        try {
+            $selection = app(AppSelectorResolver::class)->resolve($value);
 
-                if (str_contains($value, '.')) {
-                    [$appName, $nodeTld] = explode('.', $value, 2);
+            if (! $selection instanceof AppSelection) {
+                return false;
+            }
 
-                    if ($appName !== '' && $nodeTld !== '') {
-                        $query->orWhere(function (Builder $query) use ($appName, $nodeTld): void {
-                            $query
-                                ->where('name', $appName)
-                                ->whereHas('node', function (Builder $query) use ($nodeTld): void {
-                                    $query->where('tld', $nodeTld);
-                                });
-                        });
-                    }
-                }
-            })
-            ->whereHas('node', function (Builder $query) use ($visibleNodeIds): void {
-                $query
-                    ->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
-                    ->where('status', NodeStatus::Active->value)
-                    ->whereNotIn('id', $visibleNodeIds);
-            })
-            ->exists();
+            $selection = app(AppSelectorResolver::class)->requireInstance($selection);
+        } catch (AppSelectionResolutionFailed) {
+            return false;
+        }
+
+        $instance = $selection->instance;
+
+        if (! $instance instanceof Instance) {
+            return false;
+        }
+
+        $node = app(WorkspacePlacement::class)->nodeForInstance($instance);
+
+        if (! $node instanceof Node || ! $node->isActive()) {
+            return false;
+        }
+
+        return (
+            in_array($node->id, $this->nodeRoleAssignments()->activeAppHostNodeIds(), true)
+            && ! in_array($node->id, $visibleNodeIds, true)
+        );
     }
 
     /**

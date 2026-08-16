@@ -159,8 +159,6 @@ describe('tool command shared contract', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs-contract',
-            'domain' => 'docs-contract.test',
-            'node_id' => $secondNode->id,
         ]);
         createToolContractInstance($app, $secondNode, 'production', 'docs-contract.test');
 
@@ -201,7 +199,6 @@ describe('tool command shared contract', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs-contract',
-            'node_id' => $secondNode->id,
         ]);
         createToolContractInstance($app, $secondNode, 'production');
 
@@ -250,8 +247,6 @@ describe('tool command shared contract', function (): void {
 
         $docsProject = App::factory()->create([
             'name' => 'docs-contract',
-            'domain' => 'docs-contract.example.test',
-            'node_id' => $firstNode->id,
         ]);
         createToolContractInstance(
             $docsProject,
@@ -261,7 +256,6 @@ describe('tool command shared contract', function (): void {
         );
         $apiProject = App::factory()->create([
             'name' => 'api-contract',
-            'node_id' => $secondNode->id,
         ]);
         createToolContractInstance($apiProject, $secondNode);
 

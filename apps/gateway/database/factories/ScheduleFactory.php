@@ -34,18 +34,26 @@ class ScheduleFactory extends Factory
                     return null;
                 }
 
-                return (int) (
-                    Instance::query()->where('app_id', $appId)->value('id')
-                    ?? Instance::factory()->create([
-                        'app_id' => $appId,
-                        'driver_config' => new OrbitInstanceDriverConfigData(
-                            node_id: $app->node_id,
-                            path: $app->path,
-                            document_root: $app->document_root,
-                            domain: $app->domain,
-                        ),
-                    ])->id
-                );
+                $existing = Instance::query()->where('app_id', $appId)->value('id');
+
+                if ($existing !== null) {
+                    return (int) $existing;
+                }
+
+                // Logical-only App: mint a default Orbit placement.
+                /** @var Node $node */
+                $node = Node::factory()->create();
+
+                return (int) Instance::factory()->create([
+                    'app_id' => $appId,
+                    'driver_config' => new OrbitInstanceDriverConfigData(
+                        node_id: $node->id,
+                        node: $node->name,
+                        path: '/home/orbit/apps/'.$app->name,
+                        document_root: 'public',
+                        domain: null,
+                    ),
+                ])->id;
             },
             'node_id' => null,
             'target_name' => static function (array $attributes): string {
@@ -76,15 +84,23 @@ class ScheduleFactory extends Factory
             /** @var App $target */
             $target = $app ?? App::factory()->create();
             /** @var Instance $instance */
-            $instance = $target->instances()->first() ?? Instance::factory()->create([
-                'app_id' => $target->id,
-                'driver_config' => new OrbitInstanceDriverConfigData(
-                    node_id: $target->node_id,
-                    path: $target->path,
-                    document_root: $target->document_root,
-                    domain: $target->domain,
-                ),
-            ]);
+            $instance = $target->instances()->first() ?? (function () use ($target): Instance {
+                /** @var Node $node */
+                $node = Node::factory()->create();
+                /** @var Instance $created */
+                $created = Instance::factory()->create([
+                    'app_id' => $target->id,
+                    'driver_config' => new OrbitInstanceDriverConfigData(
+                        node_id: $node->id,
+                        node: $node->name,
+                        path: '/home/orbit/apps/'.$target->name,
+                        document_root: 'public',
+                        domain: null,
+                    ),
+                ]);
+
+                return $created;
+            })();
 
             return [
                 'schedule_key' => "app:{$target->name}.{$instance->name}:{$attributes['name']}",

@@ -7,13 +7,20 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\AdoptAction;
+use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspacePlacement;
+use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ProxyRouteAdopter
 {
+    public function __construct(
+        private WorkspacePlacement $placement = new WorkspacePlacement,
+    ) {}
+
     /**
      * @return list<AdoptResult>
      */
@@ -52,7 +59,12 @@ final readonly class ProxyRouteAdopter
                 continue;
             }
 
-            $app = App::query()->where('domain', $domain)->first();
+            // Placement/domain is instance-authoritative: an app "owns" a domain
+            // when one of its concrete instances serves that host.
+            $app = App::query()
+                ->with('instances')
+                ->get()
+                ->first(fn (App $candidate): bool => $this->placement->appHasUrl($candidate, $domain));
 
             if ($app instanceof App) {
                 $results[] = new AdoptResult(
@@ -125,7 +137,9 @@ final readonly class ProxyRouteAdopter
     private function isWorkspaceDomain(string $domain, Node $node): bool
     {
         $apps = App::query()
-            ->where('node_id', $node->id)
+            ->whereHas('instances', static fn (Builder $query): Builder => $query
+                ->where('driver', InstanceDriver::Orbit->value)
+                ->where('driver_config->data->node_id', $node->id))
             ->get();
 
         $tld = $node->tld ?? '';

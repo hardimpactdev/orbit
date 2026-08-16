@@ -16,7 +16,6 @@ use App\Enums\Apps\InstanceDriver;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Services\Workspaces\WorkspacePlacement;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationRun;
@@ -26,6 +25,7 @@ use App\Services\Apps\InstancePayloads;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Support\GitRepositoryReference;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
@@ -133,20 +133,15 @@ final class AppStoreController implements Loggable
             );
         }
 
+        // The App is logical-only; all placement/adoption is written to the
+        // concrete Orbit instance below.
         $app = App::query()->create([
             'name' => $input['name'],
-            'node_id' => $node->id,
-            'environment' => $input['domain'] !== null ? 'production' : 'development',
-            'domain' => $input['domain'],
-            'path' => $source['path'],
-            'document_root' => $input['root'],
             'repository' => $input['source']->repository,
             'php_version' => $input['php_version'],
             'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
-            'adopted' => false,
         ]);
 
-        $app->setRelation('node', $node);
         $instance = $this->ensureDefaultInstance(
             $app,
             $node,
@@ -246,18 +241,11 @@ final class AppStoreController implements Loggable
 
                 $app = App::query()->create([
                     'name' => $input['name'],
-                    'node_id' => $node->id,
-                    'environment' => $input['domain'] !== null ? 'production' : 'development',
-                    'domain' => $input['domain'],
-                    'path' => $source['path'],
-                    'document_root' => $input['root'],
                     'repository' => $input['source']->repository,
                     'php_version' => $input['php_version'],
                     'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
-                    'adopted' => false,
                 ]);
 
-                $app->setRelation('node', $node);
                 $instance = $this->ensureDefaultInstance(
                     $app,
                     $node,

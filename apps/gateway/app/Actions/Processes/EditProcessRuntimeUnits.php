@@ -27,7 +27,7 @@ final readonly class EditProcessRuntimeUnits
     }
 
     /**
-     * @param array{context: ProcessOwnerContext, app: App, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
+     * @param array{context: ProcessOwnerContext, app: ?App, process: Process, runtime_units: list<array{name: string, context: string}>, previous_runtime: ProcessRuntime, previous_runtime_units: list<array{name: string, context: string}>} $request
      * @return array{
      *     warnings: list<array<string, mixed>>,
      *     applied_runtime_units: list<array{name: string, context: string}>

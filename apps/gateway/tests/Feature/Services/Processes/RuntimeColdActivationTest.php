@@ -648,8 +648,8 @@ it('single-flights dependency restoration across simultaneous scopes that share 
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: null,
             domain: 'preview.docs.test',
         ),
     ]);
@@ -897,17 +897,16 @@ function create_cold_runtime_instance(): array
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.21',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/docs',
+            document_root: null,
             domain: 'docs.test',
         ),
     ]);

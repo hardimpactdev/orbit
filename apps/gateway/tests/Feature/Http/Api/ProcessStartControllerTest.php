@@ -49,7 +49,7 @@ describe('ProcessStartController', function (): void {
         $caller = createProcessStartCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessStartAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -79,8 +79,12 @@ describe('ProcessStartController', function (): void {
     it('allows an app-node caller for its own workspace context through the gateway API', function (): void {
         $appNode = createProcessStartCallerNode(role: 'app-dev');
         grantProcessStartAccess($appNode, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -107,8 +111,12 @@ describe('ProcessStartController', function (): void {
     it('starts a workspace owned process for workspace context', function (): void {
         $appNode = createProcessStartCallerNode(role: 'app-dev');
         grantProcessStartAccess($appNode, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
         Process::factory()
             ->forOwner($workspace)
             ->create([
@@ -178,7 +186,7 @@ describe('ProcessStartController', function (): void {
     it('returns partial runtime failure data', function (): void {
         $caller = createProcessStartCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
@@ -210,7 +218,7 @@ describe('ProcessStartController', function (): void {
     it('rejects unsupported persisted runtimes before runtime side effects', function (): void {
         createProcessStartCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
         DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
         $remoteShell = new ProcessStartApiRemoteShell([]);
@@ -241,7 +249,7 @@ describe('ProcessStartController', function (): void {
     it('validates all selected process runtimes before bulk runtime side effects', function (): void {
         createProcessStartCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 10]);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 20]);
         DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
@@ -274,7 +282,7 @@ describe('ProcessStartController', function (): void {
     it('requires authorization before runtime side effects', function (): void {
         createProcessStartCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessStartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -303,7 +311,7 @@ describe('ProcessStartController', function (): void {
     it('denies callers without a process start grant before runtime side effects', function (): void {
         createProcessStartCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessStartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);

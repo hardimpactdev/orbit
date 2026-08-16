@@ -34,7 +34,7 @@ final readonly class ProcessAppHostnameResolver
         $domain = $this->assertStrictHostname($hostname);
 
         $route = ProxyRoute::query()
-            ->with(['app.instances', 'app.node', 'workspace.instance', 'workspace.app', 'node'])
+            ->with(['app.instances', 'workspace.instance', 'workspace.app', 'node'])
             ->where('domain', $domain)
             ->first();
 

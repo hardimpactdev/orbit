@@ -46,11 +46,8 @@ describe('docker-first probe', function (): void {
     it('dispatches app introspection through the internal agent-push command', function (): void {
         $node = appsProbeAgentNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'public',
             ]);
         attachAppsProbeInstance($app, $node);
         fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
@@ -74,14 +71,11 @@ describe('docker-first probe', function (): void {
     it('passes app reality inputs as a typed JSON payload', function (): void {
         $node = appsProbeAgentNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'web',
                 'php_version' => '8.5',
             ]);
-        attachAppsProbeInstance($app, $node);
+        attachAppsProbeInstance($app, $node, documentRoot: 'web');
         fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
 
         new AppsProbe()->introspect($app);
@@ -101,11 +95,8 @@ describe('docker-first probe', function (): void {
         $beast = appsProbeAgentNode(['name' => 'beast', 'wireguard_address' => '10.6.0.62']);
         $nmbp = appsProbeAgentNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = App::factory()
-            ->for($beast, 'node')
             ->create([
                 'name' => 'hauser',
-                'path' => '/home/nckrtl/apps/hauser',
-                'document_root' => 'public',
                 'php_version' => '8.5',
             ]);
         $instance = Instance::factory()->for($app)->create([
@@ -142,11 +133,8 @@ describe('source path and document root reality', function (): void {
     it('introspects source path, document root, and runtime container reality on the owning app node', function (): void {
         $node = appsProbeAgentNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'public',
             ]);
         attachAppsProbeInstance($app, $node);
         fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
@@ -169,7 +157,7 @@ describe('source path and document root reality', function (): void {
 
     it('detects missing source paths', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -190,9 +178,6 @@ describe('source path and document root reality', function (): void {
         $node = appNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = App::factory()->create([
             'name' => 'hauser',
-            'node_id' => $node->id,
-            'path' => '/Users/nckrtl/apps/hauser',
-            'document_root' => 'public',
         ]);
         $instance = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
@@ -215,7 +200,7 @@ describe('source path and document root reality', function (): void {
 
     it('detects missing document roots after the source path exists', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -234,11 +219,8 @@ describe('source path and document root reality', function (): void {
     it('detects document roots that resolve outside the app path', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => '../shared/public',
             ]);
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -259,7 +241,6 @@ describe('PHP runtime reality', function (): void {
     it('detects unavailable Docker runtimes on the owning app node', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
                 'php_version' => '8.5',
@@ -277,7 +258,7 @@ describe('PHP runtime reality', function (): void {
 
     it('does not report PHP runtime drift when the source path is missing', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -296,11 +277,9 @@ describe('PHP runtime reality', function (): void {
     it('emits app.php_version_unavailable when the selected FrankenPHP image is not on the owning node', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
                 'php_version' => '8.5',
-                'path' => '/home/orbit/apps/docs',
             ]);
         attachAppsProbeInstance($app, $node);
 
@@ -328,11 +307,9 @@ describe('PHP runtime reality', function (): void {
         function (): void {
             $node = appNode();
             $app = App::factory()
-                ->for($node, 'node')
                 ->create([
                     'name' => 'docs',
                     'php_version' => '8.5',
-                    'path' => '/home/orbit/apps/docs',
                 ]);
             attachAppsProbeInstance($app, $node);
 
@@ -367,11 +344,9 @@ describe('PHP runtime reality', function (): void {
     it('hands unknown image-probe failure with a mismatched runtime unit to process doctor', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
                 'php_version' => '8.5',
-                'path' => '/home/orbit/apps/docs',
             ]);
         attachAppsProbeInstance($app, $node);
 
@@ -399,7 +374,7 @@ describe('PHP runtime reality', function (): void {
 
     it('does not emit app.php_version_unavailable for static apps regardless of node image availability', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = App::factory()->static()->create(['name' => 'marketing']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -415,7 +390,7 @@ describe('PHP runtime reality', function (): void {
 describe('runtime container reality', function (): void {
     it('hands missing FrankenPHP runtime units to process doctor without duplicate app issues', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -434,7 +409,7 @@ describe('runtime container reality', function (): void {
 
     it('hands FrankenPHP runtime unit mismatches to process doctor without duplicate app issues', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -448,7 +423,7 @@ describe('runtime container reality', function (): void {
 
     it('does not report runtime container drift before Docker is available', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -467,7 +442,7 @@ describe('runtime container reality', function (): void {
 
     it('does not report runtime container drift for static apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = App::factory()->static()->create(['name' => 'marketing']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -487,7 +462,7 @@ describe('runtime container reality', function (): void {
         'hands a stopped FrankenPHP runtime unit to process doctor without duplicate app issues',
         function (): void {
             $node = appNode();
-            $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+            $app = App::factory()->create(['name' => 'docs']);
             attachAppsProbeInstance($app, $node);
 
             $snapshot = new ProbeSnapshot([
@@ -510,7 +485,7 @@ describe('runtime container reality', function (): void {
 describe('managed runtime config reality', function (): void {
     it('detects missing managed runtime config files for PHP apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -528,7 +503,7 @@ describe('managed runtime config reality', function (): void {
 
     it('detects managed runtime config hash mismatches', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -542,7 +517,7 @@ describe('managed runtime config reality', function (): void {
 
     it('does not report runtime config drift for static apps', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+        $app = App::factory()->static()->create(['name' => 'marketing']);
         attachAppsProbeInstance($app, $node);
 
         $snapshot = new ProbeSnapshot([
@@ -710,11 +685,8 @@ describe('production security reality', function (): void {
     it('detects production app runtime container isolation drift', function (): void {
         $node = appNode([], role: 'app-prod');
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
-                'environment' => 'production',
-                'path' => '/home/orbit/apps/docs',
             ]);
         attachAppsProbeInstance($app, $node);
 
@@ -740,7 +712,6 @@ describe('production security reality', function (): void {
     it('does not apply production app security drift to development apps', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->create([
                 'name' => 'docs',
             ]);
@@ -770,7 +741,7 @@ describe('production security reality', function (): void {
 describe('registry intent', function (): void {
     it('passes complete app records on active app nodes', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = App::factory()->create();
         attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
@@ -783,12 +754,7 @@ describe('registry intent', function (): void {
 
         $id = DB::table('apps')->insertGetId([
             'name' => 'incomplete',
-            'node_id' => $node->id,
-            'environment' => '',
-            'path' => '',
-            'document_root' => 'public',
             'php_version' => '8.5',
-            'adopted' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -807,7 +773,7 @@ describe('registry intent', function (): void {
 describe('owning node eligibility', function (): void {
     it('requires an active app node owner', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = App::factory()->create();
         attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
@@ -825,7 +791,7 @@ describe('owning node eligibility', function (): void {
 
     it('accepts active app node owners', function (): void {
         $node = appNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = App::factory()->create();
         attachAppsProbeInstance($app, $node);
 
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
@@ -842,12 +808,9 @@ describe('multi-instance auditing', function (): void {
     it('audits every concrete instance and does not hide a broken secondary behind a healthy primary', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->static()
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'public',
             ]);
         // Healthy primary instance.
         attachAppsProbeInstance($app, $node);
@@ -888,12 +851,9 @@ describe('multi-instance auditing', function (): void {
     it('evaluates each instance against its own snapshot entry, not a shared app-level entry', function (): void {
         $node = appNode();
         $app = App::factory()
-            ->for($node, 'node')
             ->static()
             ->create([
                 'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'public',
             ]);
         attachAppsProbeInstance($app, $node);
         Instance::factory()->for($app, 'app')->create([
@@ -964,17 +924,21 @@ function appNode(array $overrides = [], string $role = 'app-dev'): Node
 }
 
 /**
- * Attach an Orbit instance mirroring the app's placement columns so
- * instance-authoritative placement resolves the owning node and path.
+ * Attach a concrete Orbit instance carrying the app's placement so
+ * instance-authoritative resolution finds the owning node, path, and root.
  */
-function attachAppsProbeInstance(App $app, Node $node): Instance
-{
+function attachAppsProbeInstance(
+    App $app,
+    Node $node,
+    ?string $path = null,
+    string $documentRoot = 'public',
+): Instance {
     return Instance::factory()->for($app, 'app')->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: is_string($app->path) ? $app->path : '',
-            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            path: $path ?? '/home/orbit/apps/'.$app->name,
+            document_root: $documentRoot,
         ),
     ]);
 }

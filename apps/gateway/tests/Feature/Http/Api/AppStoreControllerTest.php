@@ -674,7 +674,8 @@ describe('AppStoreController', function (): void {
             ->assertJsonMissingPath('success.data.app.url')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.domain_inactive');
 
-        expect(App::query()->where('name', 'docs')->value('environment'))->toBe('production');
+        $app = App::query()->where('name', 'docs')->firstOrFail();
+        expect(Instance::query()->where('app_id', $app->id)->value('name'))->toBe('production');
 
         $route = ProxyRoute::query()->where('domain', 'docs.example.com')->firstOrFail();
 

@@ -50,8 +50,6 @@ function websocketBindingServiceApp(?string $domain = 'docs.test', bool $withIng
 
     $app = App::factory()->create([
         'name' => $slug,
-        'node_id' => $appNode->id,
-        'domain' => $domain,
     ]);
 
     return Instance::factory()->for($app)->create([

@@ -81,7 +81,7 @@ it(
     'backfills legacy app proxy route configs with a Docker-first runtime_upstream derived from the app identity and clears the legacy php_socket',
     function (): void {
         $node = Node::factory()->appDev()->create();
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'legacy-docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
@@ -126,7 +126,7 @@ it(
 it('backfills nested backend_artifacts entries too (ingress topology with private backends)', function (): void {
     $edge = Node::factory()->ingress()->create();
     $appNode = Node::factory()->appDev()->create();
-    $app = App::factory()->for($appNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'legacy-docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -173,7 +173,6 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
 it('does not backfill static app routes (they have no runtime_upstream)', function (): void {
     $node = Node::factory()->appDev()->create();
     $app = App::factory()
-        ->for($node, 'node')
         ->static()
         ->create([
             'name' => 'legacy-marketing',
@@ -236,7 +235,7 @@ it('leaves non-app proxy routes untouched (kind=proxy, kind=redirect)', function
 
 it('is idempotent: re-running over already-backfilled rows does not mutate them', function (): void {
     $node = Node::factory()->appDev()->create();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'legacy-docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -273,9 +272,8 @@ it(
     'updates non-ingress source_hash from the legacy php_fastcgi rendered content hash to the Docker-first reverse_proxy rendered content hash',
     function (): void {
         $node = Node::factory()->appDev()->create();
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'legacy-docs',
-            'document_root' => 'public',
             'runtime' => AppRuntimeKind::Php,
         ]);
 
@@ -340,9 +338,8 @@ it(
     function (): void {
         $edge = Node::factory()->ingress()->create(['wireguard_address' => '10.6.0.4']);
         $appNode = Node::factory()->appDev()->create(['wireguard_address' => '10.6.0.21']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'legacy-docs',
-            'document_root' => 'public',
             'runtime' => AppRuntimeKind::Php,
         ]);
 
@@ -416,9 +413,8 @@ it(
     'leaves a non-ingress source_hash that already matches the Docker-first rendering unchanged on a second run (idempotent at hash level)',
     function (): void {
         $node = Node::factory()->appDev()->create();
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'legacy-docs',
-            'document_root' => 'public',
             'runtime' => AppRuntimeKind::Php,
         ]);
 

@@ -15,6 +15,7 @@ use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -56,7 +57,22 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
  */
 function makeWorkspaceRendererApp(Node $node, array $attributes): App
 {
-    $app = App::factory()->for($node, 'node')->create($attributes);
+    $path = isset($attributes['path']) && is_string($attributes['path']) ? $attributes['path'] : null;
+    $documentRoot = isset($attributes['document_root']) && is_string($attributes['document_root'])
+        ? $attributes['document_root']
+        : 'public';
+    $domain = isset($attributes['domain']) && is_string($attributes['domain']) ? $attributes['domain'] : null;
+    unset(
+        $attributes['path'],
+        $attributes['document_root'],
+        $attributes['domain'],
+        $attributes['environment'],
+        $attributes['node_id'],
+    );
+
+    $app = App::factory()
+        ->placedOn($node, 'development', $path, $documentRoot, $domain)
+        ->create($attributes);
     assert($app instanceof App, description: 'Workspace factory must return an App model.');
 
     return $app;
@@ -67,6 +83,10 @@ function makeWorkspaceRendererApp(Node $node, array $attributes): App
  */
 function makeWorkspaceRendererWorkspace(App $app, array $attributes): Workspace
 {
+    if (! array_key_exists('instance_id', $attributes)) {
+        $attributes['instance_id'] = $app->instances()->firstOrFail()->id;
+    }
+
     $workspace = Workspace::factory()->for($app, 'app')->create($attributes);
     assert($workspace instanceof Workspace, description: 'Workspace factory must return a Workspace model.');
 
@@ -388,15 +408,15 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
         $app instanceof App,
         description: 'Workspace must retain its app relation before packages mount hash coverage.',
     );
-    $node = $app->node;
+    $node = app(WorkspacePlacement::class)->runtimeNode($app, $workspace->instance);
     assert(
         $node instanceof Node,
-        description: 'App must retain its node relation before packages mount hash coverage.',
+        description: 'App must retain its serving node before packages mount hash coverage.',
     );
 
     $node->forceFill(['user' => ' '])->save();
-    $app->unsetRelation('node');
     $workspace->unsetRelation('app');
+    $workspace->unsetRelation('instance');
 
     expect($withPackagesMount)->not->toBe($renderer->render($workspace)->specHash());
 });

@@ -29,10 +29,6 @@ function createDeployApiFixture(string $executionContext, array $permissions): a
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
-        'environment' => 'production',
-        'domain' => 'docs.example.com',
-        'path' => '/srv/docs',
     ]);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
@@ -180,12 +176,9 @@ it('returns canonical destructive consent metadata before removing a deployment 
 });
 
 it('authorizes deployment against the concrete app instance node', function (): void {
-    $logicalNode = createTestAppHostNode(['name' => 'logical-app-node'], role: 'app-prod');
     $instanceNode = createTestAppHostNode(['name' => 'production-instance-node'], role: 'app-prod');
     $app = App::factory()->create([
         'name' => 'billing',
-        'node_id' => $logicalNode->id,
-        'environment' => 'production',
     ]);
     Instance::factory()->create([
         'app_id' => $app->id,

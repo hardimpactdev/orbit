@@ -48,8 +48,12 @@ describe('WorkspaceHistoryController', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantWorkspaceHistoryAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         WorkspaceRun::factory()->create([
             'workspace_id' => $workspace->id,
@@ -85,8 +89,12 @@ describe('WorkspaceHistoryController', function (): void {
     it('caps limit at 500 and reports the cap', function (): void {
         createWorkspaceHistoryCallerNode(role: 'gateway');
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -107,10 +115,11 @@ describe('WorkspaceHistoryController', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceHistoryAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id, 'started_at' => '2026-05-02 10:00:00']);
@@ -130,15 +139,11 @@ describe('WorkspaceHistoryController', function (): void {
 
     it('returns history for app instance selectors', function (): void {
         $caller = createWorkspaceHistoryCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceHistoryAccess($caller, $localNode);
 
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'domain' => 'happie.test',
-            'path' => '/home/nckrtl/apps/happie',
         ]);
         $instance = Instance::factory()
             ->for($app)
@@ -200,8 +205,12 @@ describe('WorkspaceHistoryController', function (): void {
     it('returns authorization failure when the caller has no workspace visibility', function (): void {
         createWorkspaceHistoryCallerNode();
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create();
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',

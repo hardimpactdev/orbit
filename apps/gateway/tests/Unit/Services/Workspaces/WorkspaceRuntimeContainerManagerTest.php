@@ -43,17 +43,22 @@ afterEach(function (): void {});
 function workspaceAndNodeForManagerTest(): array
 {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-dev');
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'demo',
-        'path' => '/home/orbit/apps/demo',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
+    /** @var App $app */
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit/apps/demo')
+        ->create([
+            'name' => 'demo',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+    $workspace = Workspace::factory()
+        ->for($app, 'app')
+        ->for($app->instances()->firstOrFail(), 'instance')
+        ->create([
+            'name' => 'feature-a',
+            'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
+            'php_version' => null,
+        ]);
     $workspace->setRelation('app', $app);
 
     return [$workspace, $node];

@@ -109,7 +109,7 @@ describe('ProcessLogController', function (): void {
         $caller = createProcessLogCallerNode();
         $appNode = create_process_log_agent_node();
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent("Vite ready\n");
 
@@ -148,7 +148,7 @@ describe('ProcessLogController', function (): void {
         $caller = createProcessLogCallerNode();
         $appNode = create_process_log_agent_node();
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent("Vite ready\n");
 
@@ -180,8 +180,12 @@ describe('ProcessLogController', function (): void {
     it('returns bounded logs for a workspace owned process', function (): void {
         $appNode = createProcessLogCallerNode(role: 'app-dev');
         grantProcessLogAccess($appNode, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
         Process::factory()
             ->forOwner($workspace)
             ->create([
@@ -324,7 +328,7 @@ describe('ProcessLogController', function (): void {
     it('rejects unsupported persisted runtimes before log side effects', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
         DB::table('processes')->where('id', $process->id)->update(['runtime' => 'docker-swarm']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
@@ -355,7 +359,7 @@ describe('ProcessLogController', function (): void {
     it('requires authorization before log reads', function (): void {
         createProcessLogCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
@@ -383,7 +387,7 @@ describe('ProcessLogController', function (): void {
     it('returns log read failures as gateway errors', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $appNode = create_process_log_agent_node();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         fake_process_log_agent('', exitCode: 1, stderr: 'missing');
 
@@ -409,11 +413,11 @@ describe('ProcessLogController', function (): void {
             'user' => 'nckrtl',
         ]);
         grantProcessLogAccess($caller, $appNode);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/Users/nckrtl/apps/docs',
-        ]);
+        $app = App::factory()
+            ->placedOn($appNode)
+            ->create([
+                'name' => 'docs',
+            ]);
         Process::factory()
             ->forOwner($app)
             ->create([

@@ -149,7 +149,7 @@ final class WorkspaceRemoveController implements Loggable
     {
         /** @var Collection<int, Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance', 'app.processes'])
+            ->with(['app.instances', 'instance', 'app.processes'])
             ->where('name', $name)
             ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
                 'app_id',

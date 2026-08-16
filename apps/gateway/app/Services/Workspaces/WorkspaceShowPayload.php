@@ -23,7 +23,7 @@ class WorkspaceShowPayload
      */
     public function forWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance', 'app.processes']);
+        $workspace->loadMissing(['app.instances', 'instance', 'app.processes']);
 
         $app = $workspace->app;
         $node = $this->placement->nodeForWorkspace($workspace);

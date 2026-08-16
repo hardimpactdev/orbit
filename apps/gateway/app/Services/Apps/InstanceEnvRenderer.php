@@ -97,7 +97,7 @@ final readonly class InstanceEnvRenderer
      */
     private function renderEntries(Instance $instance): array
     {
-        $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
+        $instance->loadMissing(['app', 'envVariables', 'databaseConnectionTargets.connection']);
 
         $env = [];
         $sourceApp = $instance->app;

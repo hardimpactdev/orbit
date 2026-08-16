@@ -24,7 +24,7 @@ final readonly class AppProxyRouteTargetResolver
             return null;
         }
 
-        $route->loadMissing(['app.instances', 'app.node']);
+        $route->loadMissing('app.instances');
         $app = $route->app;
 
         if (! $app instanceof App) {

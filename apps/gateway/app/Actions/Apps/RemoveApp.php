@@ -64,7 +64,6 @@ final readonly class RemoveApp
     public function handle(App $app): array
     {
         $app->loadMissing([
-            'node',
             'dependencyAuditSummaries',
             'instances.runtimeMounts',
             'instances.latestDeploymentRun',

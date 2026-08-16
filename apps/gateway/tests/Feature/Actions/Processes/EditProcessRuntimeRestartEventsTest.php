@@ -25,7 +25,7 @@ uses(RefreshDatabase::class);
 function editProcessRestartFixture(string $processName = 'vite'): array
 {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
@@ -219,7 +219,7 @@ it('records ordered restart events when EditProcessRuntimeUnits::restart is invo
 
 it('scopes multi-context process:update --restart events per runtime unit workspace', function (): void {
     $node = createTestAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',

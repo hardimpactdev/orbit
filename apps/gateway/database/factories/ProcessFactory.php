@@ -80,27 +80,24 @@ class ProcessFactory extends Factory
             return $owner->node_id;
         }
 
-        if ($owner instanceof App) {
-            $node = $instance instanceof Instance
-                ? app(WorkspacePlacement::class)->nodeForInstance($instance)
-                : null;
-
-            return $node->id ?? $owner->node_id;
-        }
-
-        if ($owner instanceof Workspace) {
-            $node = $instance instanceof Instance
-                ? app(WorkspacePlacement::class)->nodeForInstance($instance)
-                : null;
+        // Placement is instance-authoritative: the serving node comes from the
+        // concrete Orbit instance, never from a (removed) App shadow column.
+        if ($instance instanceof Instance) {
+            $node = app(WorkspacePlacement::class)->nodeForInstance($instance);
 
             if ($node instanceof Node) {
                 return $node->id;
             }
+        }
 
-            $owner->loadMissing('app');
+        if ($owner instanceof Workspace) {
+            $owner->loadMissing('instance');
+            $node = $owner->instance instanceof Instance
+                ? app(WorkspacePlacement::class)->nodeForInstance($owner->instance)
+                : null;
 
-            if ($owner->app instanceof App) {
-                return $owner->app->node_id;
+            if ($node instanceof Node) {
+                return $node->id;
             }
         }
 
@@ -136,18 +133,20 @@ class ProcessFactory extends Factory
             return $instances->first();
         }
 
-        $servingNode = $node ?? $owner->node;
+        // The App is logical-only: with no concrete instance to inherit
+        // placement from, mint a default Orbit placement on the given (or a
+        // fresh) serving node.
+        /** @var Node $servingNode */
+        $servingNode = $node ?? Node::factory()->create();
 
         return Instance::factory()->for($owner)->createOne([
-            'name' => $owner->environment !== ''
-                ? $owner->environment
-                : 'development',
+            'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
-                node_id: $servingNode?->id,
-                node: $servingNode?->name,
-                path: $owner->path,
-                document_root: $owner->document_root,
-                domain: $owner->domain,
+                node_id: $servingNode->id,
+                node: $servingNode->name,
+                path: '/home/orbit/apps/'.$owner->name,
+                document_root: 'public',
+                domain: null,
             ),
         ]);
     }

@@ -1091,9 +1091,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = App::factory()->create([
-            'node_id' => $node->id,
-        ]);
+        $app = App::factory()->create();
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
@@ -1166,9 +1164,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = App::factory()->create([
-            'node_id' => $node->id,
-        ]);
+        $app = App::factory()->create();
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
@@ -1233,10 +1229,7 @@ describe('node role assignment service', function (): void {
     it('blocks ingress removal while public proxy route records depend on it', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
-        $app = App::factory()->create([
-            'node_id' => $backendNode->id,
-            'environment' => 'production',
-        ]);
+        $app = App::factory()->create();
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
@@ -1305,10 +1298,7 @@ describe('node role assignment service', function (): void {
     it('forces ingress removal by deleting Orbit-owned public proxy route records', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
-        $app = App::factory()->create([
-            'node_id' => $backendNode->id,
-            'environment' => 'production',
-        ]);
+        $app = App::factory()->create();
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
@@ -1439,9 +1429,7 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        $app = App::factory()->create([
-            'node_id' => $node->id,
-        ]);
+        $app = App::factory()->create();
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
@@ -1535,8 +1523,14 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
             'settings' => [],
         ]);
-        $app = App::factory()->create([
-            'node_id' => $node->id,
+        $app = App::factory()->create();
+        Instance::factory()->for($app, 'app')->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: $node->name,
+                path: '/home/orbit/apps/'.$app->name,
+                document_root: 'public',
+            ),
         ]);
         ProxyRoute::factory()
             ->forApp($app)

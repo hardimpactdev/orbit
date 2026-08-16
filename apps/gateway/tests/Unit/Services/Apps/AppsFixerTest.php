@@ -152,9 +152,8 @@ function apps_fixer_security_repair_was_sent(string $user, string $home, string 
 
 it('hands a missing FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -184,10 +183,8 @@ it('hands a missing FrankenPHP runtime unit to the process fixer', function (): 
 it('hands a missing app instance FrankenPHP runtime unit to the process fixer', function (): void {
     $beast = appsFixerNode();
     $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'hauser',
-        'path' => '/home/nckrtl/apps/hauser',
-        'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -223,9 +220,8 @@ it('hands a missing app instance FrankenPHP runtime unit to the process fixer', 
 
 it('does not mutate managed process intent through an app runtime issue', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -274,9 +270,8 @@ it('does not mutate managed process intent through an app runtime issue', functi
 
 it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -311,7 +306,7 @@ it('hands a mismatched FrankenPHP runtime unit to the process fixer', function (
 
 it('returns null for non-app-runtime drift keys', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
 
     $result = buildAppsFixer(new AppsFixerRecordingRemoteShell)->fix($app, new DriftEntry(
         family: 'app',
@@ -325,7 +320,7 @@ it('returns null for non-app-runtime drift keys', function (): void {
 
 it('returns null for static apps even on runtime container drift keys', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->static()->create(['name' => 'marketing']);
+    $app = App::factory()->static()->create(['name' => 'marketing']);
 
     $shell = new AppsFixerRecordingRemoteShell;
 
@@ -404,9 +399,8 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_missing', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -451,9 +445,8 @@ it('rewrites the selected instance runtime config when handed app.runtime_config
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_mismatch', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -494,9 +487,8 @@ it('repairs the production runtime user when handed app.security.system_user', f
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -539,9 +531,8 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         'wireguard_address' => '10.6.0.64',
         'managed' => true,
     ], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -580,9 +571,8 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
 
 it('leaves production runtime container isolation repair to the process family', function (): void {
     $node = appsFixerNode();
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);

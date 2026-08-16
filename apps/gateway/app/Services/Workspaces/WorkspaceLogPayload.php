@@ -21,7 +21,7 @@ class WorkspaceLogPayload
      */
     public function forRun(WorkspaceRun $run): array
     {
-        $run->loadMissing(['workspace.app.node', 'workspace.app.instances', 'workspace.instance', 'runSteps.step']);
+        $run->loadMissing(['workspace.app.instances', 'workspace.instance', 'runSteps.step']);
         $workspace = $run->workspace;
         $app = $workspace?->app;
         $node = $workspace instanceof Workspace

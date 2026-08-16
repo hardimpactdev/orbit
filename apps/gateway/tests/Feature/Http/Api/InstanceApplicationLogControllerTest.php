@@ -48,9 +48,6 @@ function seed_instance_for_app_log(Node $serving, string $path = '/srv/apps/docs
 {
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $serving->id,
-        'path' => $path,
-        'document_root' => 'public',
     ]);
 
     return Instance::factory()->create([

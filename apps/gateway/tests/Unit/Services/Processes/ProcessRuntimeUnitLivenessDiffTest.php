@@ -161,18 +161,17 @@ it('does not report an app development launchd runtime unit that is intentionall
             'platform' => 'macos_26-5-1',
             'user' => 'orbit',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/Users/orbit/apps/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/Users/orbit/apps/docs',
+            document_root: 'public',
+            domain: null,
         ),
     ]);
     $process = Process::factory()

@@ -65,7 +65,6 @@ function worktreeWorkspaceDriverApp(): App
 {
     $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/srv/docs',
     ]);
     Instance::factory()->for($app, 'app')->create([
         'driver_config' => new OrbitInstanceDriverConfigData(

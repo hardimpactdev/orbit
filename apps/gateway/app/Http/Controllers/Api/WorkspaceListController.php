@@ -204,7 +204,7 @@ final readonly class WorkspaceListController implements Loggable
         ?string $node,
     ): Collection {
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance']);
+            ->with(['app.instances', 'instance']);
 
         if ($selection instanceof AppSelection) {
             $query->where('app_id', $selection->app->id);

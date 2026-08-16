@@ -21,7 +21,7 @@ uses(RefreshDatabase::class);
 
 it('records a started process event when AddProcess successfully starts runtime units', function (): void {
     $appNode = createTestAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',
@@ -68,7 +68,7 @@ it('records a started process event when AddProcess successfully starts runtime 
 
 it('records starting then failed when the runtime backend fails to start', function (): void {
     $appNode = createTestAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'development',

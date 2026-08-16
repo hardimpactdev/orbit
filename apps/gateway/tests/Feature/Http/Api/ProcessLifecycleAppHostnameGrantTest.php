@@ -39,8 +39,8 @@ function processLifecycleHostnameGrantFixture(): array
     $grantedNode = createTestAppHostNode(['name' => 'granted-node']);
     $otherNode = createTestAppHostNode(['name' => 'other-node']);
 
-    $grantedApp = App::factory()->create(['name' => 'docs', 'node_id' => $grantedNode->id]);
-    $otherApp = App::factory()->create(['name' => 'other', 'node_id' => $otherNode->id]);
+    $grantedApp = App::factory()->create(['name' => 'docs']);
+    $otherApp = App::factory()->create(['name' => 'other']);
     $grantedInstance = Instance::factory()->create([
         'app_id' => $grantedApp->id,
         'name' => 'development',

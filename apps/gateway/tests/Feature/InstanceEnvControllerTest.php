@@ -74,7 +74,7 @@ it('authorizes app instance env against the selected instance node', function ()
     $caller = createInstanceEnvApiCaller();
     $logicalNode = Node::factory()->appDev()->create(['name' => 'logical-app-node']);
     $instanceNode = Node::factory()->appDev()->create(['name' => 'instance-node']);
-    $app = App::factory()->for($logicalNode, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->create(['name' => 'billing']);
     Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -101,9 +101,8 @@ it('authorizes hostname app selectors against the selected instance node', funct
     $caller = createInstanceEnvApiCaller();
     $logicalNode = Node::factory()->appDev()->create(['name' => 'hostname-logical-node']);
     $instanceNode = Node::factory()->appDev()->create(['name' => 'hostname-instance-node']);
-    $app = App::factory()->for($logicalNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'domain' => 'billing.test',
     ]);
     Instance::factory()->for($app)->create([
         'name' => 'development',
@@ -111,7 +110,7 @@ it('authorizes hostname app selectors against the selected instance node', funct
             node_id: $instanceNode->id,
             path: '/srv/billing-development',
             document_root: 'public',
-            domain: 'billing-development.test',
+            domain: 'billing.test',
         ),
     ]);
     grantInstanceEnvApiAccess($caller, $logicalNode, ['instance:read']);
@@ -136,17 +135,16 @@ it('sets lists and renders non-secret app instance env values with database atta
             'user' => 'nckrtl',
         ]);
     grantInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'domain' => 'craft-starterkit-react.test',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/billing',
+            document_root: null,
+            domain: 'craft-starterkit-react.test',
         ),
     ]);
     $connection = DatabaseConnection::factory()->for($node)->create([
@@ -235,10 +233,8 @@ it('applies set env values to the remote app runtime when apply is requested', f
             'user' => 'instance-runtime',
         ]);
     grantInstanceEnvApiAccess($caller, $instanceNode);
-    $app = App::factory()->for($projectNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'path' => '/home/orbit/apps/billing',
-        'domain' => 'billing-project.test',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -247,7 +243,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $instanceNode->id,
             path: '/home/orbit/apps/billing-development',
-            document_root: $app->document_root,
+            document_root: null,
             domain: 'billing-development.test',
         ),
     ]);
@@ -359,10 +355,8 @@ it('derives applied Orbit values from the instance node when its domain is impli
             'tld' => 'development',
         ]);
     grantInstanceEnvApiAccess($caller, $instanceNode);
-    $app = App::factory()->for($projectNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'path' => '/home/project-runtime/apps/billing',
-        'domain' => 'billing.example.com',
         'runtime' => 'php',
         'php_version' => '8.5',
     ]);
@@ -371,7 +365,7 @@ it('derives applied Orbit values from the instance node when its domain is impli
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $instanceNode->id,
             path: '/home/instance-runtime/apps/billing',
-            document_root: $app->document_root,
+            document_root: null,
             domain: null,
         ),
     ]);
@@ -421,7 +415,7 @@ it('rejects secret env writes until secret storage is designed', function (): vo
     $caller = createInstanceEnvApiCaller();
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     grantInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->create(['name' => 'billing']);
     Instance::factory()->for($app)->create(['name' => 'development']);
 
     $response = appInstanceEnvApiJson(

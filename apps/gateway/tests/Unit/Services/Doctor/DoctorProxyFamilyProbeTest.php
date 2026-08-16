@@ -22,9 +22,9 @@ it('keeps app scope, row order, issue payloads, and progress inside the proxy fa
         'platform' => 'ubuntu_24-04',
     ]);
     /** @var App $firstApp */
-    $firstApp = App::factory()->create(['node_id' => $node->id, 'name' => 'first-app']);
+    $firstApp = App::factory()->create(['name' => 'first-app']);
     /** @var App $secondApp */
-    $secondApp = App::factory()->create(['node_id' => $node->id, 'name' => 'second-app']);
+    $secondApp = App::factory()->create(['name' => 'second-app']);
     /** @var ProxyRoute $firstRoute */
     $firstRoute = ProxyRoute::factory()->create([
         'node_id' => $node->id,

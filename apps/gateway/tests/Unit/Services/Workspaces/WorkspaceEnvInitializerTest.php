@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Workspaces\WorkspaceEnvInitializer;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -36,7 +37,10 @@ it('initializes a missing workspace env from its own example without reading the
     File::delete($path.'/.env');
     File::put($path.'/.env.example', "APP_ENV=local\nAPP_URL=http://localhost\n");
     $workspace = workspace_env_initializer_workspace($path);
-    File::put($workspace->app->path.'/.env', "APP_ENV=production\nPARENT_SECRET=must-not-copy\n");
+    $parentApp = $workspace->app;
+    assert($parentApp instanceof App);
+    $parentPath = app(WorkspacePlacement::class)->runtimePath($parentApp, $workspace->instance);
+    File::put($parentPath.'/.env', "APP_ENV=production\nPARENT_SECRET=must-not-copy\n");
 
     expect(app(WorkspaceEnvInitializer::class)->initialize($workspace))
         ->toBeTrue()
@@ -57,10 +61,8 @@ function workspace_env_initializer_workspace(string $path): Workspace
         ]);
     $appPath = storage_path('framework/testing/workspace-env-parent');
     File::ensureDirectoryExists($appPath);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'billing',
-        'path' => $appPath,
-        'domain' => 'billing.test',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',

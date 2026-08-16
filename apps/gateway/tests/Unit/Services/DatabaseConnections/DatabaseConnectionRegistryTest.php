@@ -43,7 +43,7 @@ describe('DatabaseConnectionRegistry', function (): void {
         $logicalAppNode = Node::factory()->create(['name' => 'logical-app-node']);
         $instanceNode = Node::factory()->create(['name' => 'instance-node']);
         $unrelatedNode = Node::factory()->create(['name' => 'unrelated-node']);
-        $app = App::factory()->for($logicalAppNode, 'node')->create();
+        $app = App::factory()->create();
         $instance = Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $instanceNode->id,

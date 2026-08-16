@@ -25,13 +25,22 @@ function makeProcessRendererApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'beast']);
 
-    return App::factory()->for($node, 'node')->create(array_merge([
-        'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], $overrides));
+    $path = isset($overrides['path']) && is_string($overrides['path']) ? $overrides['path'] : '/home/orbit/apps/docs';
+    $documentRoot = isset($overrides['document_root']) && is_string($overrides['document_root'])
+        ? $overrides['document_root']
+        : 'public';
+    unset($overrides['path'], $overrides['document_root'], $overrides['node_id']);
+
+    /** @var App $app */
+    $app = App::factory()
+        ->placedOn($node, 'development', $path, $documentRoot)
+        ->create(array_merge([
+            'name' => 'docs',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ], $overrides));
+
+    return $app;
 }
 
 function makeProcessRendererProcess(App $app, array $overrides = []): Process
@@ -163,13 +172,13 @@ it('maps the process restart policy to the matching docker restart policy', func
 
 it('keeps always-restart docker processes persistent on app-prod nodes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit/apps/docs')
+        ->create([
+            'name' => 'docs',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
     $process = makeProcessRendererProcess($app);
 
     expect(processDockerRenderer()->render($app, $process)->restartPolicy())->toBe('always');
@@ -362,7 +371,7 @@ it('renders structured service ports for node owned managed service docker proce
         'name' => 'beast',
         'wireguard_address' => '10.6.0.7',
     ]);
-    $app = makeProcessRendererApp(['node_id' => $node->id]);
+    $app = makeProcessRendererApp();
     $process = Process::factory()
         ->forOwner($node)
         ->create([

@@ -51,7 +51,7 @@ it('treats a domain with no resolvable node as production', function (): void {
 
 it('derives development for a dev instance from its driver config domain and node', function (): void {
     $node = Node::factory()->appDev()->create(['tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create();
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
@@ -67,7 +67,7 @@ it('derives development for a dev instance from its driver config domain and nod
 
 it('derives production for an instance with a custom domain', function (): void {
     $node = Node::factory()->appDev()->create(['tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create();
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
@@ -83,7 +83,7 @@ it('derives production for an instance with a custom domain', function (): void 
 
 it('derives development for an instance with no domain', function (): void {
     $node = Node::factory()->appDev()->create(['tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create();
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,

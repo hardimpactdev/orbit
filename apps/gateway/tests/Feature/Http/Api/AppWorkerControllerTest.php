@@ -48,15 +48,18 @@ function create_worker_app_instance(
     Node $node,
     string $name = 'development',
     array $overrides = [],
+    ?string $path = null,
+    string $documentRoot = 'public',
+    ?string $domain = null,
 ): Instance {
     return Instance::factory()->for($app)->create(array_merge([
         'name' => $name,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: $path ?? '/home/orbit/apps/'.$app->name,
+            document_root: $documentRoot,
+            domain: $domain,
         ),
     ], $overrides));
 }
@@ -90,9 +93,8 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:read']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
             'runtime' => AppRuntimeKind::Php,
         ]);
@@ -120,9 +122,8 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:worker']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
         $instance = create_worker_app_instance($app, $node);
@@ -151,9 +152,8 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:worker']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
         $instance = create_worker_app_instance($app, $node);
@@ -180,9 +180,8 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:worker']);
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
         $instance = create_worker_app_instance($app, $node, overrides: [
@@ -216,7 +215,7 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:read']);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
+        $app = App::factory()->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
         create_worker_app_instance($app, $node);
         bindWorkerControllerShell();
 
@@ -260,18 +259,16 @@ describe('AppWorkerController', function (): void {
         // App "alpha" carries the colliding domain. If the controller path
         // short-circuits on a domain match, it would return alpha instead
         // of the docs.example.com-named app.
-        $alpha = App::factory()->for($node, 'node')->create([
+        $alpha = App::factory()->create([
             'name' => 'alpha',
-            'domain' => 'docs.example.com',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        create_worker_app_instance($alpha, $node);
-        $named = App::factory()->for($node, 'node')->create([
+        create_worker_app_instance($alpha, $node, domain: 'docs.example.com');
+        $named = App::factory()->create([
             'name' => 'docs.example.com',
-            'domain' => 'other.example.com',
             'runtime' => AppRuntimeKind::Php,
         ]);
-        create_worker_app_instance($named, $node);
+        create_worker_app_instance($named, $node, domain: 'other.example.com');
         bindWorkerControllerShell();
 
         $response = $this->call(
@@ -291,7 +288,7 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:read']);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         create_worker_app_instance($app, $node, name: 'development');
         create_worker_app_instance($app, $node, name: 'production');
 
@@ -317,7 +314,7 @@ describe('AppWorkerController', function (): void {
         $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'host' => '10.6.0.7']);
         $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'host' => '10.6.0.8']);
         grantWorkerAccess($caller, $visibleNode, ['instance:read']);
-        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         create_worker_app_instance($app, $visibleNode, name: 'development');
         create_worker_app_instance($app, $hiddenNode, name: 'production');
         bindWorkerControllerShell();
@@ -346,7 +343,7 @@ describe('AppWorkerController', function (): void {
         $visibleNode = createTestAppHostNode(['name' => 'app-visible', 'host' => '10.6.0.7']);
         $hiddenNode = createTestAppHostNode(['name' => 'app-hidden', 'host' => '10.6.0.8']);
         grantWorkerAccess($caller, $visibleNode, ['instance:read']);
-        $app = App::factory()->for($visibleNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         create_worker_app_instance($app, $visibleNode, name: 'development');
         create_worker_app_instance($app, $hiddenNode, name: 'production');
         bindWorkerControllerShell();
@@ -394,7 +391,7 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['instance:read']);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         create_worker_app_instance($app, $node, name: 'development');
         create_worker_app_instance($app, $node, name: 'production', overrides: [
             'worker_enabled' => true,

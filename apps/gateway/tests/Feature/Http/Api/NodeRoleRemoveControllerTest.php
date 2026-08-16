@@ -173,13 +173,8 @@ describe('NodeRoleRemoveController', function (): void {
 
         DB::table('apps')->insert([
             'name' => 'docs',
-            'node_id' => $node->id,
-            'domain' => null,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'repository' => null,
             'php_version' => '8.5',
-            'adopted' => false,
             'agent_ide_config' => null,
             'created_at' => now(),
             'updated_at' => now(),

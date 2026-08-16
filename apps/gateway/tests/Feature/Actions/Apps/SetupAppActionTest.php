@@ -22,10 +22,8 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
             'user' => 'nckrtl',
         ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'craft-starterkit-react',
-        'domain' => 'craft-starterkit-react.test',
-        'path' => '/home/nckrtl/apps/craft-starterkit-react',
         'php_version' => '8.5',
     ]);
 
@@ -33,9 +31,9 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/nckrtl/apps/craft-starterkit-react',
+            document_root: null,
+            domain: 'craft-starterkit-react.test',
         ),
     ]);
 

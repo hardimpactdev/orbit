@@ -113,7 +113,7 @@ describe('ActivityListController', function (): void {
     it('lists destructive activity newest first with normalized metadata', function (): void {
         $caller = createActivityListCallerNode();
         $appNode = Node::factory()->appDev()->create(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         createActivityEntry('node.listed', 'read', $caller);
         $olderDestructive = createActivityEntry(

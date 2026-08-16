@@ -224,7 +224,7 @@ final readonly class ProcessOwnerContextResolver
     ): ProcessOwnerContext {
         $selection = $appName !== null ? $this->resolveRequiredInstance($appName) : null;
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->where('name', $workspaceName);
 
         if ($selection instanceof AppSelection) {

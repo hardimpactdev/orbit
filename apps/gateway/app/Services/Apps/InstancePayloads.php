@@ -26,7 +26,7 @@ final readonly class InstancePayloads
      */
     public function instance(Instance $instance): array
     {
-        $instance->loadMissing(['app.node', 'runtimeMounts', 'latestDeploymentRun']);
+        $instance->loadMissing(['app', 'runtimeMounts', 'latestDeploymentRun']);
         $latestDeploymentRun = $instance->latestDeploymentRun;
 
         return [

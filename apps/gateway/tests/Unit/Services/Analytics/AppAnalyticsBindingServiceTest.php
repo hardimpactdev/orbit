@@ -84,10 +84,12 @@ describe('AppAnalyticsBindingService', function (): void {
 
     it('scales the mutation lease for legacy bindings with more than the current route limit', function (): void {
         $app = createAnalyticsApp();
+        $config = $app->driver_config;
+        assert($config instanceof OrbitInstanceDriverConfigData);
 
         foreach (range(start: 1, end: 25) as $index) {
             ProxyRoute::query()->create([
-                'node_id' => $app->app->node_id,
+                'node_id' => $config->node_id,
                 'domain' => "legacy-analytics-{$index}.docs.test",
                 'app_id' => $app->app_id,
                 'owner_type' => 'app-analytics',
@@ -480,8 +482,6 @@ function createAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = t
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'domain' => $domain,
     ]);
 
     return Instance::factory()->for($app)->create([

@@ -37,9 +37,7 @@ it('configures Plausible with its assigned PostgreSQL and ClickHouse WireGuard e
     $clickHousePassword = Str::random(32);
     $unrelatedDatabasePassword = Str::random(32);
 
-    $unrelatedApp = App::factory()->create([
-        'node_id' => $databaseNode->id,
-    ]);
+    $unrelatedApp = App::factory()->create();
     Process::factory()
         ->forOwner($unrelatedApp, $databaseNode)
         ->create([

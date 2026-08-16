@@ -75,7 +75,7 @@ final readonly class UsePhpRuntime
     private function convergeProject(array $result): array
     {
         $name = $this->requiredString($result, 'app');
-        $app = App::query()->with('node')->where('name', $name)->first();
+        $app = App::query()->where('name', $name)->first();
 
         if (! $app instanceof App) {
             throw new RuntimeException("PHP runtime target project '{$name}' disappeared before convergence.");

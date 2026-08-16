@@ -53,7 +53,7 @@ final readonly class AppRuntimeMountService
      */
     public function addToInstance(Instance $instance, string $source, string $target, bool $readOnly = true): array
     {
-        $instance->loadMissing('app.node');
+        $instance->loadMissing('app');
         $app = $instance->app;
 
         [$source, $target] = $this->validateIntent($app, $source, $target, $instance);

@@ -59,12 +59,15 @@ function workspace_setup_step_runner_signing_key(): string
 
 function workspace_setup_step_runner_test_app(Node $node): App
 {
-    return App::factory()->create([
-        'name' => 'demo',
-        'node_id' => $node->id,
-        'path' => '/home/orbit/apps/demo',
-        'php_version' => '8.5',
-    ]);
+    /** @var App $app */
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit/apps/demo')
+        ->create([
+            'name' => 'demo',
+            'php_version' => '8.5',
+        ]);
+
+    return $app;
 }
 
 it('executes setup steps sequentially on the host by default', function (): void {
@@ -203,13 +206,13 @@ it('routes workspace lifecycle commands through the selected node home when app 
             'status' => 'active',
         ]);
 
-    $app = new App([
-        'name' => 'demo',
-        'node_id' => $canonicalNode->id,
-        'path' => '/home/nckrtl/apps/demo',
-        'php_version' => '8.5',
-    ]);
-    $app->setRelation('node', $canonicalNode);
+    /** @var App $app */
+    $app = App::factory()
+        ->placedOn($canonicalNode, 'development', '/home/nckrtl/apps/demo')
+        ->create([
+            'name' => 'demo',
+            'php_version' => '8.5',
+        ]);
     $shell = new WorkspaceSetupStepRunnerTestShell;
 
     $runner = new WorkspaceSetupStepRunner($shell);

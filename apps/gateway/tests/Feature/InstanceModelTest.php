@@ -16,7 +16,7 @@ uses(RefreshDatabase::class);
 
 it('stores app instances as concrete runtime targets for a logical app', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->create(['name' => 'billing']);
 
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',

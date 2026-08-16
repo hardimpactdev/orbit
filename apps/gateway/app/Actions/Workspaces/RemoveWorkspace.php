@@ -52,7 +52,7 @@ final readonly class RemoveWorkspace
      */
     public function handle(Workspace $workspace, bool $keepFiles = false): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance', 'app.processes']);
+        $workspace->loadMissing(['app.instances', 'instance', 'app.processes']);
         $this->roleGuard->ensureWorkspaceSupported($workspace);
 
         $app = $workspace->app;

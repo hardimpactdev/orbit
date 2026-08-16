@@ -32,8 +32,6 @@ final class AppRemoveController implements Loggable
             return $this->error('app.not_found', "App '{$app}' not found.", ['app' => $app], 404);
         }
 
-        $targetApp->loadMissing('node');
-
         $this->activitySubject = $targetApp;
         $result = $removeApp->handle($targetApp);
         $payload = [
@@ -59,7 +57,7 @@ final class AppRemoveController implements Loggable
     private function resolveApp(string $selector): ?App
     {
         $app = App::query()
-            ->with(['node', 'processes', 'instances'])
+            ->with(['processes', 'instances'])
             ->get()
             ->filter(
                 fn (App $app): bool => (

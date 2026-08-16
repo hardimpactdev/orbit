@@ -30,6 +30,7 @@ use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -145,7 +146,7 @@ describe('runtime backend availability', function (): void {
             ->toHaveKey('input')
             ->and($shell->options[1]['bind_input'])
             ->toBeTrue();
-        expect($shell->nodes[0]->is($app->node))->toBeTrue();
+        expect($shell->nodes[0]->is(processableAppNode($app)))->toBeTrue();
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_development_main_vite"])->toMatchArray([
             'config_exists' => true,
             'config_matches' => true,
@@ -171,7 +172,7 @@ describe('runtime backend availability', function (): void {
 
         expect(issue($drift, 'process.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Unverifiable);
         expect(issue($drift, 'process.runtime_backend_unavailable')?->detail)->toMatchArray([
-            'node' => $app->node->name,
+            'node' => processableAppNode($app)->name,
             'exit_code' => 127,
             'output' => 'missing systemctl',
         ]);
@@ -501,7 +502,7 @@ describe('systemd unit reality', function (): void {
     it('probes inherited runtime units only for workspaces on the process app instance', function (): void {
         $developmentNode = createTestAppHostNode(['name' => 'app-development']);
         $productionNode = createTestAppHostNode(['name' => 'app-production']);
-        $app = App::factory()->for($developmentNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         $development = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
@@ -555,7 +556,7 @@ describe('systemd unit reality', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'feature-docs',
-                'path' => "{$app->path}/.worktrees/feature-docs",
+                'path' => '/home/orbit/apps/'.$app->name.'/.worktrees/feature-docs',
             ]);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -709,10 +710,7 @@ describe('systemd unit restart and environment reality', function (): void {
         $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
         $surrogateApp = new App([
             'name' => $node->name,
-            'path' => '/home/orbit',
-            'node_id' => $node->id,
         ]);
-        $surrogateApp->setRelation('node', $node);
         $expectedUnit = $renderer->render($node, $surrogateApp, $process);
         $runtimeUnit = $renderer->unitName($surrogateApp, $process);
         $canonicalPath = $renderer->unitPath($runtimeUnit);
@@ -766,7 +764,7 @@ describe('systemd unit restart and environment reality', function (): void {
         ]);
 
         $renderer = app(\App\Services\Processes\SystemdUnitRenderer::class);
-        $node = $app->node;
+        $node = processableAppNode($app);
         $expectedUnit = $renderer->render($node, $app, $process);
         $runtimeUnit = $renderer->unitName($app, $process);
         $canonicalPath = $renderer->unitPath($runtimeUnit);
@@ -805,7 +803,7 @@ describe('registry intent', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'feature-docs',
-                'path' => "{$app->path}/.worktrees/feature-docs",
+                'path' => '/home/orbit/apps/'.$app->name.'/.worktrees/feature-docs',
             ]);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -818,7 +816,7 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'node_id' => $app->node_id,
+            'node_id' => processableAppNode($app)->id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
             'instance_id' => $app->instances()->value('id'),
@@ -845,7 +843,7 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'node_id' => $app->node_id,
+            'node_id' => processableAppNode($app)->id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
             'name' => 'vite',
@@ -868,7 +866,7 @@ describe('registry intent', function (): void {
         $app = processableApp();
 
         $id = DB::table('processes')->insertGetId([
-            'node_id' => $app->node_id,
+            'node_id' => processableAppNode($app)->id,
             'owner_type' => $app->getMorphClass(),
             'owner_id' => $app->id,
             'name' => 'vite',
@@ -891,7 +889,7 @@ describe('registry intent', function (): void {
 describe('owner app eligibility', function (): void {
     it('requires an owner app on an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        $app = App::factory()->placedOn($node)->create();
         $process = processFor($app, ['name' => 'vite']);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
@@ -919,7 +917,7 @@ describe('runtime context expansion', function (): void {
             ->for($app, 'app')
             ->create([
                 'name' => 'Feature_App',
-                'path' => "{$app->path}/.worktrees/feature",
+                'path' => '/home/orbit/apps/'.$app->name.'/.worktrees/feature',
             ]);
         $process = processFor($app, ['name' => 'vite']);
 
@@ -1781,15 +1779,15 @@ describe('process placement after instance move', function (): void {
     it('probes moved app processes on the current placement node and not the stale node_id', function (): void {
         $oldNode = createTestAppHostNode(['name' => 'beast']);
         $newNode = createTestAppHostNode(['name' => 'nmbp']);
-        $app = App::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+        $app = App::factory()->create(['name' => 'mealou']);
         $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $oldNode->id,
                 node: $oldNode->name,
-                path: $app->path,
-                document_root: $app->document_root,
-                domain: $app->domain,
+                path: '/home/orbit/apps/mealou',
+                document_root: 'public',
+                domain: null,
             ),
         ]);
         $process = Process::factory()
@@ -1806,9 +1804,9 @@ describe('process placement after instance move', function (): void {
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $newNode->id,
                 node: $newNode->name,
-                path: $app->path,
-                document_root: $app->document_root,
-                domain: $app->domain,
+                path: '/home/orbit/apps/mealou',
+                document_root: 'public',
+                domain: null,
             ),
         ])->save();
         DB::table('processes')->where('id', $process->id)->update(['node_id' => $oldNode->id]);
@@ -1829,22 +1827,30 @@ function processableApp(array $overrides = []): App
 {
     $node = createTestAppHostNode();
 
+    $path = isset($overrides['path']) && is_string($overrides['path']) ? $overrides['path'] : null;
+    $documentRoot = isset($overrides['document_root']) && is_string($overrides['document_root'])
+        ? $overrides['document_root']
+        : 'public';
+    $domain = isset($overrides['domain']) && is_string($overrides['domain']) ? $overrides['domain'] : null;
+    unset($overrides['path'], $overrides['document_root'], $overrides['domain'], $overrides['node_id']);
+
+    /** @var App $app */
     $app = App::factory()
-        ->for($node, 'node')
+        ->placedOn($node, 'development', $path, $documentRoot, $domain)
         ->create($overrides);
 
-    Instance::factory()->for($app)->create([
-        'name' => 'development',
-        'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $node->id,
-            node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
-        ),
-    ]);
-
     return $app;
+}
+
+function processableAppNode(App $app): Node
+{
+    $node = app(WorkspacePlacement::class)->runtimeNode($app, null);
+
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Placed app is missing a serving node.');
+    }
+
+    return $node;
 }
 
 function processFor(App $app, array $overrides = []): Process
@@ -2064,10 +2070,9 @@ it('introspects launchd runtime units through user LaunchAgent plist checks', fu
         'user' => 'orbit',
     ]);
     $app = App::factory()
-        ->for($node, 'node')
+        ->placedOn($node, 'development', '/Users/orbit/apps/docs')
         ->create([
             'name' => 'docs',
-            'path' => '/Users/orbit/apps/docs',
         ]);
     $process = processFor($app, [
         'name' => 'vite',
@@ -2127,19 +2132,17 @@ it('reports launchd processes on linux placement as unrenderable instead of inve
         'user' => 'nckrtl',
     ]);
     $app = App::factory()
-        ->for($linux, 'node')
         ->create([
             'name' => 'mealou',
-            'path' => '/home/nckrtl/apps/mealou',
         ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $linux->id,
             node: $linux->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/nckrtl/apps/mealou',
+            document_root: 'public',
+            domain: null,
         ),
     ]);
     $process = Process::factory()
@@ -2172,26 +2175,24 @@ it('bounds long launchd unit names so they remain renderable', function (): void
         'user' => 'nckrtl',
     ]);
     $app = App::factory()
-        ->for($node, 'node')
         ->create([
             'name' => 'laravel-toolbar',
-            'path' => '/Users/nckrtl/apps/laravel-toolbar',
         ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/Users/nckrtl/apps/laravel-toolbar',
+            document_root: 'public',
+            domain: null,
         ),
     ]);
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
         'instance_id' => $instance->id,
         'name' => 'filament-pages-og-images',
-        'path' => $app->path.'/filament-pages-og-images',
+        'path' => '/Users/nckrtl/apps/laravel-toolbar/filament-pages-og-images',
     ]);
     $process = Process::factory()
         ->forOwner($workspace)

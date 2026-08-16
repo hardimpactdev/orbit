@@ -62,7 +62,7 @@ it('uses an eager loaded latest run without adding payload queries', function ()
         app(DeploymentRunLifecycle::class)->start($instance, Carbon::now()),
     );
     $instance = Instance::query()
-        ->with(['app.node', 'runtimeMounts', 'latestDeploymentRun'])
+        ->with(['app', 'runtimeMounts', 'latestDeploymentRun'])
         ->findOrFail($instance->id);
 
     DB::flushQueryLog();

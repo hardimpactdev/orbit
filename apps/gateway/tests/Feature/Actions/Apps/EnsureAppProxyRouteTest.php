@@ -144,17 +144,16 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             'tld' => 'test',
             'wireguard_address' => '10.47.0.31',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: is_string($app->path) ? $app->path : '',
-            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            path: '',
+            document_root: 'public',
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
@@ -258,10 +257,8 @@ it('routes the explicitly selected instance, not the primary or a stale app envi
             'wireguard_address' => '10.47.0.34',
         ]);
     // Stale app-level column claims production; the concrete instance decides.
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'environment' => 'production',
-        'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
     // Primary (first) Orbit instance the app-level route would otherwise pick.
@@ -337,18 +334,16 @@ it('creates a static app proxy route with file_server', function (): void {
             'wireguard_address' => '10.47.0.32',
         ]);
     $app = App::factory()
-        ->for($node, 'node')
         ->static()
         ->create([
             'name' => 'marketing',
-            'document_root' => 'public',
         ]);
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: is_string($app->path) ? $app->path : '',
-            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            path: '',
+            document_root: 'public',
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
@@ -397,7 +392,7 @@ it('creates a static app proxy route with file_server', function (): void {
         ->and($caddySite)
         ->toContain('file_server')
         ->and($caddySite)
-        ->toContain("root * {$app->path}/public")
+        ->toContain('root * /public')
         ->and($caddySite)
         ->toContain("uri /api/runtime-activations/app-instance/{$instance->id}")
         ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
@@ -422,9 +417,8 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
             'tld' => 'test',
             'wireguard_address' => '10.47.0.33',
         ]);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'api',
-        'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
@@ -432,8 +426,8 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: is_string($app->path) ? $app->path : '',
-            document_root: is_string($app->document_root) ? $app->document_root : 'public',
+            path: '',
+            document_root: 'public',
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
@@ -496,10 +490,8 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
 
 it('removes stale app-owned proxy routes for the same app when its domain changes', function (): void {
     $node = Node::factory()->appDev(['tld' => 'nmbp'])->create(['tld' => 'nmbp']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'happie-nmbp',
-        'document_root' => 'public',
-        'domain' => 'happie.nmbp',
         'runtime' => AppRuntimeKind::Php,
     ]);
     $instance = Instance::factory()->for($app)->create([
@@ -507,9 +499,9 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
         ),
     ]);
 
@@ -715,11 +707,8 @@ function ensure_app_proxy_route_production_topology(): array
         'status' => 'active',
         'settings' => ['ingress_node_id' => $ingress->id],
     ]);
-    $app = App::factory()->for($backend, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'hauzer',
-        'domain' => 'hauzer.app',
-        'environment' => 'production',
-        'document_root' => 'public',
         'runtime' => AppRuntimeKind::Php,
     ]);
     Instance::factory()->for($app)->create([
@@ -727,9 +716,9 @@ function ensure_app_proxy_route_production_topology(): array
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $backend->id,
             node: $backend->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/hauzer',
+            document_root: 'public',
+            domain: 'hauzer.app',
         ),
     ]);
 

@@ -24,16 +24,23 @@ function makePhpApp(array $overrides = [], bool $withDefaultInstance = true): Ap
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
-    $app = makeRuntimeRendererApp($node, array_merge([
+    $attributes = array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
-    ], $overrides), withDefaultInstance: false);
+    ], $overrides);
+
+    $app = makeRuntimeRendererApp($node, $attributes, withDefaultInstance: false);
 
     if ($withDefaultInstance) {
-        workerRuntimeInstance($app);
+        workerRuntimeInstance(
+            $app,
+            node: $node,
+            path: is_string($attributes['path']) ? $attributes['path'] : null,
+            documentRoot: is_string($attributes['document_root']) ? $attributes['document_root'] : null,
+        );
     }
 
     return $app;
@@ -44,20 +51,37 @@ function makePhpApp(array $overrides = [], bool $withDefaultInstance = true): Ap
  */
 function makeRuntimeRendererApp(Node $node, array $attributes, bool $withDefaultInstance = true): App
 {
-    $app = App::factory()->for($node, 'node')->create($attributes);
+    // Placement is instance-authoritative now: read the intended placement from
+    // the caller's attributes and thread it onto the concrete instance instead
+    // of the removed App shadow columns.
+    $path = is_string($attributes['path'] ?? null)
+        ? $attributes['path']
+        : '/home/orbit/apps/'.($attributes['name'] ?? 'app');
+    $documentRoot = is_string($attributes['document_root'] ?? null) ? $attributes['document_root'] : 'public';
+    $domain = is_string($attributes['domain'] ?? null) ? $attributes['domain'] : null;
+
+    unset(
+        $attributes['node_id'],
+        $attributes['environment'],
+        $attributes['domain'],
+        $attributes['path'],
+        $attributes['document_root'],
+        $attributes['adopted'],
+    );
+
+    $app = App::factory()->create($attributes);
     assert($app instanceof App);
 
-    // The default primary Orbit instance mirrors the app's placement columns so
-    // instance-authoritative rendering resolves node/path. Multi-instance tests
+    // The default primary Orbit instance carries placement. Multi-instance tests
     // opt out and define their own instances explicitly.
     if ($withDefaultInstance) {
         Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
-                path: is_string($app->path) ? $app->path : '',
-                document_root: is_string($app->document_root) ? $app->document_root : 'public',
-                domain: $app->domain,
+                path: $path,
+                document_root: $documentRoot,
+                domain: $domain,
             ),
         ]);
     }
@@ -76,13 +100,35 @@ function rendererForTest(): AppRuntimeContainerRenderer
 /**
  * @param  array<string, mixed>  $overrides
  */
-function workerRuntimeInstance(App $app, array $overrides = []): Instance
-{
-    $app->loadMissing('node');
+function workerRuntimeInstance(
+    App $app,
+    array $overrides = [],
+    ?Node $node = null,
+    ?string $path = null,
+    ?string $documentRoot = null,
+): Instance {
+    // This helper defines the app's single primary Orbit instance. Resolve the
+    // placement from an explicit node/path, else inherit it from any existing
+    // instance before we replace it, else mint a fresh node.
+    $existingConfig = $app->instances()->first()?->driver_config;
+    $existingConfig = $existingConfig instanceof OrbitInstanceDriverConfigData ? $existingConfig : null;
 
-    // This helper defines the app's single primary Orbit instance. Clear any
-    // prior instance (e.g. the mirror makePhpApp attaches) so callers that
-    // reconfigure it here do not collide on the app_id+name unique key.
+    $nodeId = $node?->id ?? $existingConfig?->node_id;
+    $nodeName = $node?->name ?? $existingConfig?->node;
+    $resolvedPath =
+        $path ?? (is_string($existingConfig?->path) ? $existingConfig->path : '/home/orbit/apps/'.$app->name);
+    $resolvedDocumentRoot =
+        $documentRoot ?? (is_string($existingConfig?->document_root) ? $existingConfig->document_root : 'public');
+
+    if ($nodeId === null) {
+        /** @var Node $freshNode */
+        $freshNode = Node::factory()->create();
+        $nodeId = $freshNode->id;
+        $nodeName = $freshNode->name;
+    }
+
+    // Clear any prior instance (e.g. the mirror makePhpApp attaches) so callers
+    // that reconfigure it here do not collide on the app_id+name unique key.
     $app->instances()->delete();
     $app->unsetRelation('instances');
 
@@ -90,11 +136,11 @@ function workerRuntimeInstance(App $app, array $overrides = []): Instance
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            node: $app->node?->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            node_id: $nodeId,
+            node: $nodeName,
+            path: $resolvedPath,
+            document_root: $resolvedDocumentRoot,
+            domain: null,
         ),
     ], $overrides));
 }
@@ -149,15 +195,18 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
 
 it('derives runtime environment from the instance, not a stale app environment column', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], settings: ['tld' => 'test']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'docs',
-        // Stale app-level column claiming production; the instance is the authority.
-        'environment' => 'production',
-        'path' => '/home/orbit/apps/docs',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'docs',
+            // Stale app-level column claiming production; the instance is the authority.
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
@@ -217,13 +266,17 @@ it('mounts the macos app-dev node user packages directory at /packages', functio
 
 it('uses only runtime mounts owned by the matching app instance for app containers', function (): void {
     $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'hauser',
-        'path' => '/home/nckrtl/apps/hauser',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'hauser',
+            'path' => '/home/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
@@ -345,13 +398,17 @@ it('renders concrete app instance runtime containers with instance identity and 
 
 it('does not use runtime mounts from another app instance when the matching instance has none', function (): void {
     $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'hauser',
-        'path' => '/home/nckrtl/apps/hauser',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'hauser',
+            'path' => '/home/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
@@ -394,21 +451,25 @@ it('does not use runtime mounts from another app instance when the matching inst
 
 it('renders configured app instance runtime mounts after built-in mounts', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'nckrtl',
+            'path' => '/home/nckrtl/apps/nckrtl',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/nckrtl/apps/nckrtl',
+            document_root: 'public',
             domain: 'nckrtl.test',
         ),
     ]);
@@ -441,7 +502,6 @@ it('does not mount the packages directory for app-prod PHP app runtimes', functi
     $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -465,7 +525,6 @@ it('renders a production app runtime user from the app source owner but leaves d
     $productionNode = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
     $productionApp = makeRuntimeRendererApp($productionNode, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -474,7 +533,6 @@ it('renders a production app runtime user from the app source owner but leaves d
 
     $developmentApp = makePhpApp([
         'name' => 'docs-dev',
-        'environment' => 'development',
         'path' => '/home/docs/app',
     ]);
 
@@ -537,21 +595,22 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
 
     $node->roleAssignments()->update(['status' => 'pending']);
     $node->unsetRelation('roleAssignments');
-    $app->unsetRelation('node');
+    $app->unsetRelation('instances');
 
     expect($withPackagesMount)->not->toBe($renderer->render($app)->specHash());
 });
 
 it('does not change the spec hash when another app instance runtime mount changes', function (): void {
     $renderer = rendererForTest();
+    $node = createTestAppHostNode(['user' => 'orbit']);
     $app = makePhpApp(['name' => 'docs-dev'], withDefaultInstance: false);
     Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            path: $app->path,
-            document_root: $app->document_root,
+            node_id: $node->id,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
             domain: 'docs-dev.test',
         ),
     ]);
@@ -559,9 +618,9 @@ it('does not change the spec hash when another app instance runtime mount change
         'name' => 'preview',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
+            node_id: $node->id,
             path: '/home/orbit/apps/docs-preview',
-            document_root: $app->document_root,
+            document_root: 'public',
             domain: 'docs-dev.preview',
         ),
     ]);
@@ -585,13 +644,17 @@ it('does not change the spec hash when another app instance runtime mount change
 it('changes the spec hash when matching app instance runtime mounts change', function (): void {
     $renderer = rendererForTest();
     $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'hauser',
-        'path' => '/home/nckrtl/apps/hauser',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'hauser',
+            'path' => '/home/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
@@ -699,13 +762,17 @@ it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', fu
 
 it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'craft-starterkit-react',
-        'path' => '/home/nckrtl/apps/craft-starterkit-react',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'craft-starterkit-react',
+            'path' => '/home/nckrtl/apps/craft-starterkit-react',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
@@ -746,7 +813,6 @@ it('does not render runtime client trust for app-prod PHP runtimes', function ()
     $node = createTestAppHostNode(['user' => 'orbit'], role: 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -810,7 +876,6 @@ it('keeps app-prod PHP runtimes on plain HTTP port 8080 without inner TLS mounts
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -895,7 +960,6 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod classic
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -911,7 +975,6 @@ it('runs a release-aware production runtime from the active live application roo
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
     $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
-        'environment' => 'production',
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
@@ -1084,13 +1147,17 @@ it('uses worker config defaults when worker_enabled is true and worker_config is
 it('renders the runtime source mount from the instance placement, not a stale app path column', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit']);
     // Stale/opposite app path column; the instance placement is authoritative.
-    $app = makeRuntimeRendererApp($node, [
-        'name' => 'docs',
-        'path' => '/stale/wrong-path',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ], withDefaultInstance: false);
+    $app = makeRuntimeRendererApp(
+        $node,
+        [
+            'name' => 'docs',
+            'path' => '/stale/wrong-path',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ],
+        withDefaultInstance: false,
+    );
     Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,

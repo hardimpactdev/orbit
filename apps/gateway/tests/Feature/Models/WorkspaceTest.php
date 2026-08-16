@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -25,14 +26,16 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'tld' => 'test',
     ]);
 
-    $app = App::factory()->create([
-        'name' => 'docs',
-        'node_id' => $node->id,
-        'php_version' => '8.5',
-    ]);
+    $app = App::factory()
+        ->placedOn($node)
+        ->create([
+            'name' => 'docs',
+            'php_version' => '8.5',
+        ]);
 
     $workspace = Workspace::factory()->create([
         'app_id' => $app->id,
+        'instance_id' => $app->instances()->firstOrFail()->id,
         'name' => 'feature-docs',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         'php_version' => null,
@@ -55,10 +58,8 @@ it('derives workspace url from a matching orbit app instance placement', functio
     $beast = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'Beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'happie',
-        'path' => '/Users/nckrtl/apps/happie-beast',
-        'domain' => null,
     ]);
 
     Instance::factory()->for($app)->create([
@@ -98,10 +99,8 @@ it('derives workspace url from explicit workspace proxy route before path placem
     $beast = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'beast']);
     $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
 
-    $app = App::factory()->for($beast, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'happie',
-        'path' => '/home/nckrtl/apps/happie',
-        'domain' => null,
     ]);
 
     Instance::factory()->for($app)->create([
@@ -218,7 +217,7 @@ it('keeps durable run history when step definitions are removed', function (): v
 
 it('allows proxy routes to point at workspace-owned intent', function (): void {
     $workspace = Workspace::factory()->create();
-    $node = $workspace->app->node;
+    $node = app(WorkspacePlacement::class)->nodeForWorkspace($workspace);
 
     $route = ProxyRoute::query()->create([
         'node_id' => $node->id,

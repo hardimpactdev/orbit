@@ -59,7 +59,7 @@ it('filters apps by node name across every instance of a multi-instance app', fu
     $otherNode = createTestAppHostNode(['name' => 'other-node', 'tld' => 'othernode']);
 
     // Multi-instance app spanning two nodes.
-    $alpha = App::factory()->for($devNode, 'node')->create(['name' => 'alpha']);
+    $alpha = App::factory()->create(['name' => 'alpha']);
     Instance::factory()->for($alpha, 'app')->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -81,7 +81,7 @@ it('filters apps by node name across every instance of a multi-instance app', fu
     ]);
 
     // Single-instance app on a different node.
-    $beta = App::factory()->for($otherNode, 'node')->create(['name' => 'beta']);
+    $beta = App::factory()->create(['name' => 'beta']);
     Instance::factory()->for($beta, 'app')->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -108,7 +108,7 @@ it('filters apps by environment across every instance of a multi-instance app', 
     $devNode = createTestAppHostNode(['name' => 'dev-node', 'tld' => 'devnode']);
     $prodNode = createTestAppHostNode(attributes: ['name' => 'prod-node', 'tld' => 'prodnode'], role: 'app-prod');
 
-    $alpha = App::factory()->for($devNode, 'node')->create(['name' => 'alpha']);
+    $alpha = App::factory()->create(['name' => 'alpha']);
     Instance::factory()->for($alpha, 'app')->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -130,7 +130,7 @@ it('filters apps by environment across every instance of a multi-instance app', 
     ]);
 
     // Development-only app.
-    $beta = App::factory()->for($devNode, 'node')->create(['name' => 'beta']);
+    $beta = App::factory()->create(['name' => 'beta']);
     Instance::factory()->for($beta, 'app')->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -151,10 +151,10 @@ it('filters apps by environment across every instance of a multi-instance app', 
 
 it('filters workspaces by their instance node, not a stale app node', function (): void {
     $realNode = createTestAppHostNode(['name' => 'real-node', 'tld' => 'realnode']);
-    $staleNode = createTestAppHostNode(['name' => 'stale-node', 'tld' => 'stalenode']);
+    createTestAppHostNode(['name' => 'stale-node', 'tld' => 'stalenode']);
 
-    // App node_id points at the stale node; the workspace instance is on the real node.
-    $app = App::factory()->for($staleNode, 'node')->create(['name' => 'docs']);
+    // The app is logical-only; its workspace instance is placed on the real node.
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app, 'app')->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(

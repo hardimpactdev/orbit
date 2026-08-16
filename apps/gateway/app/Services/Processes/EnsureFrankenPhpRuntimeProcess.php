@@ -93,7 +93,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
                 'name' => $this->workspaceProcessName($workspace),
             ],
             [
-                'node_id' => $node?->id ?? $app->node_id,
+                'node_id' => $node?->id ?? $this->placement->runtimeNode($app, null)?->id,
                 'command' => self::Command,
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::None,

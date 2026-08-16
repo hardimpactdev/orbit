@@ -83,7 +83,6 @@ final readonly class WorkspaceEnvApplier
             try {
                 $runtimeApp = clone $app;
                 $runtimeApp->path = $workspace->path;
-                $runtimeApp->setRelation('node', $node);
                 $result = $this->cacheClear->clearPath(
                     node: $node,
                     path: $workspace->path,
@@ -192,7 +191,6 @@ final readonly class WorkspaceEnvApplier
     {
         $runtimeApp = clone $app;
         $runtimeApp->path = $workspace->path;
-        $runtimeApp->setRelation('node', $node);
 
         $user = $this->runtimeUser->forApp($runtimeApp);
 

@@ -71,7 +71,6 @@ final readonly class SetupWorkspace
     public function handle(App $app, Workspace $workspace, Node $node, bool $isAdoption = false): array
     {
         $workspace->loadMissing('app');
-        $app->loadMissing('node');
         try {
             $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {

@@ -102,7 +102,7 @@ describe('ProxyRouteAdopter', function (): void {
 
     it('skips routes that conflict with app domains', function (): void {
         $node = createTestAppHostNode();
-        App::factory()->create(['node_id' => $node->id, 'domain' => 'docs.test']);
+        App::factory()->placedOn($node, domain: 'docs.test')->create();
         $snapshot = new ProbeSnapshot([
             'docs.test' => [
                 'hash' => str_repeat('a', 64),
@@ -117,7 +117,7 @@ describe('ProxyRouteAdopter', function (): void {
 
     it('skips routes that match workspace patterns', function (): void {
         $node = createTestAppHostNode(['tld' => 'test']);
-        $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs', 'domain' => 'docs.test']);
+        $app = App::factory()->placedOn($node, domain: 'docs.test')->create(['name' => 'docs']);
         Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature']);
         $snapshot = new ProbeSnapshot([
             'feature.docs.test' => [

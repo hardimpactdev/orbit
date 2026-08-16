@@ -51,7 +51,7 @@ function create_workspace_step_store_instance(App $app, Node $node, string $inst
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
+            path: '/home/orbit/apps/'.$app->name,
             domain: "{$app->name}.{$instanceName}",
         ),
     ]);
@@ -64,8 +64,6 @@ describe('WorkspaceStepStoreController', function (): void {
         grantWorkspaceStepStoreAccess($caller, $node);
         $app = App::factory()->create([
             'name' => 'hauser',
-            'node_id' => $node->id,
-            'path' => '/home/nckrtl/apps/hauser',
         ]);
         create_workspace_step_store_instance(app: $app, node: $node, instanceName: 'nmbp');
 
@@ -100,15 +98,12 @@ describe('WorkspaceStepStoreController', function (): void {
 
     it('stores instance-specific setup steps for dotted selectors without exposing them to sibling instances', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $nmbpNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         $developmentNode = createTestAppHostNode(['name' => 'dev-host', 'tld' => 'dev']);
         grantWorkspaceStepStoreAccess($caller, $nmbpNode);
         grantWorkspaceStepStoreAccess($caller, $developmentNode, ['workspace:write', 'workspace:read']);
         $app = App::factory()->create([
             'name' => 'hauser',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/hauser',
         ]);
         $nmbpInstance = create_workspace_step_store_instance(
             app: $app,
@@ -167,13 +162,10 @@ describe('WorkspaceStepStoreController', function (): void {
 
     it('stores instance-specific policy through an app-instance selector on the selected node', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $localNode);
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/happie',
         ]);
         $instance = create_workspace_step_store_instance(
             app: $app,
@@ -210,7 +202,7 @@ describe('WorkspaceStepStoreController', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepStoreAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
@@ -245,7 +237,7 @@ describe('WorkspaceStepStoreController', function (): void {
     it('rejects callers without workspace step write permission', function (): void {
         createWorkspaceStepStoreCallerNode(role: 'app-dev');
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, node: $node->name),
@@ -273,13 +265,10 @@ describe('WorkspaceStepStoreController', function (): void {
 
     it('validates bad timeout and unknown anchors for dotted selectors', function (): void {
         $caller = createWorkspaceStepStoreCallerNode(role: 'gateway');
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepStoreAccess($caller, $localNode);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/docs',
         ]);
         $instance = create_workspace_step_store_instance(
             app: $app,
@@ -338,8 +327,6 @@ describe('WorkspaceStepStoreController', function (): void {
         grantWorkspaceStepStoreAccess($caller, $localNode);
         $app = App::factory()->create([
             'name' => 'hauser',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/hauser',
         ]);
         create_workspace_step_store_instance(app: $app, node: $localNode, instanceName: 'nmbp');
         $other = create_workspace_step_store_instance(

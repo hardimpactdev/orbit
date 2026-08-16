@@ -265,7 +265,7 @@ final readonly class DoctorManagedFrankenPhpRuntimeRestorer
         Process $process,
         Workspace $workspace,
     ): array {
-        $workspace->loadMissing(['app.node', 'instance']);
+        $workspace->loadMissing(['instance']);
         $app = $workspace->app;
         $workspaceNode = $this->workspacePlacement->nodeForWorkspace($workspace);
 

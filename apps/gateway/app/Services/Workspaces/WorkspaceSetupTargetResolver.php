@@ -135,7 +135,7 @@ final readonly class WorkspaceSetupTargetResolver
                 'path' => $path,
             ]);
 
-            return $this->unwrap($existing->fresh(['app.node', 'app.instances', 'instance']), false);
+            return $this->unwrap($existing->fresh(['app.instances', 'instance']), false);
         }
 
         $workspace = Workspace::create([
@@ -150,7 +150,7 @@ final readonly class WorkspaceSetupTargetResolver
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
-        return $this->unwrap($workspace->load(['app.node', 'app.instances', 'instance']), true);
+        return $this->unwrap($workspace->load(['app.instances', 'instance']), true);
     }
 
     private function callerNodeInstanceForPath(App $app, ?Node $callerNode, string $path): ?Instance
@@ -185,7 +185,7 @@ final readonly class WorkspaceSetupTargetResolver
     private function resolveByName(string $name, ?string $appName): array
     {
         $query = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->where('name', $name);
 
         $selection = null;
@@ -229,7 +229,7 @@ final readonly class WorkspaceSetupTargetResolver
     {
         /** @var list<Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->get()
             ->all();
 
@@ -274,7 +274,7 @@ final readonly class WorkspaceSetupTargetResolver
             return [];
         }
 
-        $query = App::query()->with(['node', 'instances']);
+        $query = App::query()->with(['instances']);
 
         if ($callerNode instanceof Node && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($callerNode)) {
             $query->where('node_id', $callerNode->id);
@@ -336,7 +336,7 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function unwrap(Workspace $workspace, bool $isAdoption): array
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
 
         if (! $app instanceof App) {
@@ -412,7 +412,7 @@ final readonly class WorkspaceSetupTargetResolver
 
     private function ensureWorkspaceSupportsWorkspaces(Workspace $workspace): void
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
 
         if (! $app instanceof App) {
@@ -457,7 +457,7 @@ final readonly class WorkspaceSetupTargetResolver
     private function firstWorkspaceMatch(App $app, string $workspaceName, Instance $instance): ?Workspace
     {
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->where('app_id', $app->id)
             ->where('name', $workspaceName)
             ->get();
@@ -477,7 +477,7 @@ final readonly class WorkspaceSetupTargetResolver
 
         /** @var list<App> $apps */
         $apps = App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->get()
             ->all();
 

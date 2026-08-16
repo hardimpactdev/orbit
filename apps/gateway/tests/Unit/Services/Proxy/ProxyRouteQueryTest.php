@@ -32,7 +32,7 @@ describe('ProxyRouteQuery', function (): void {
     it('normalizes proxy route entities and sorts them by node then domain', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node']);
         $aNode = Node::factory()->create(['name' => 'a-node']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $aNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $zNode->id,
@@ -129,10 +129,7 @@ describe('ProxyRouteQuery', function (): void {
                 'name' => 'nmbp',
                 'tld' => 'nmbp',
             ]);
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'happie',
-            'domain' => 'happie.test',
-        ]);
+        $app = App::factory()->create(['name' => 'happie']);
         Instance::factory()->for($app)->create([
             'name' => 'nmbp',
             'driver' => InstanceDriver::Orbit,
@@ -177,7 +174,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $backend->id, 'environment' => 'production']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -289,7 +286,7 @@ describe('ProxyRouteQuery', function (): void {
         $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
@@ -342,7 +339,7 @@ describe('ProxyRouteQuery', function (): void {
 
     it('enriches workspace route entities with canonical parent app.instance from the FK workspace only', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $development = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
@@ -401,7 +398,7 @@ describe('ProxyRouteQuery', function (): void {
 
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
 
         ProxyRoute::factory()->create([

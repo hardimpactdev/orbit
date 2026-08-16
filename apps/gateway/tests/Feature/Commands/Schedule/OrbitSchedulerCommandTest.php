@@ -78,8 +78,6 @@ it('dispatches due app schedules with gateway authority on the instance current 
     $currentInstanceNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $logicalDefaultNode->id,
-        'path' => '/srv/docs',
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
@@ -160,7 +158,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
 it('dispatches remote schedules through the internal schedule command without transitional fallback opt in', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
     Schedule::factory()
         ->forApp($app)
         ->create([
@@ -243,11 +241,11 @@ it('dispatches multiple remote schedules through the internal schedule command',
     $thirdNode = createOrbitSchedulerAppHostNode(['name' => 'app-3']);
 
     foreach ([[$firstNode, 'one'], [$secondNode, 'two'], [$thirdNode, 'three']] as [$node, $name]) {
-        $app = App::factory()->create([
-            'name' => $name,
-            'node_id' => $node->id,
-            'path' => "/srv/{$name}",
-        ]);
+        $app = App::factory()
+            ->placedOn($node, 'development', "/srv/{$name}")
+            ->create([
+                'name' => $name,
+            ]);
 
         Schedule::factory()
             ->forApp($app)
@@ -321,7 +319,7 @@ it('skips schedules that are not due', function (): void {
 it('records remote dispatch failures as failed gateway history', function (): void {
     createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+    $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
     Schedule::factory()
         ->forApp($app)
         ->create([

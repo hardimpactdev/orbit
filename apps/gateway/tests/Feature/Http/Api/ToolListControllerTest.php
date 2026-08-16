@@ -109,12 +109,10 @@ describe('ToolListController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $node->id,
-            'domain' => 'docs.example.com',
         ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',
-            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id, domain: 'docs.example.com'),
         ]);
         NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 

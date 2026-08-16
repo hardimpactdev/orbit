@@ -53,7 +53,7 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -131,8 +131,11 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()
+            ->for($app)
+            ->for($app->instances()->firstOrFail(), 'instance')
+            ->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
         Process::factory()
             ->forOwner($workspace)
             ->create([
@@ -174,11 +177,14 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessDestroyAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        $workspace = Workspace::factory()->for($app)->create([
-            'name' => 'feature-docs',
-            'path' => '/srv/docs-feature',
-        ]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()
+            ->for($app)
+            ->for($app->instances()->firstOrFail(), 'instance')
+            ->create([
+                'name' => 'feature-docs',
+                'path' => '/srv/docs-feature',
+            ]);
         Process::factory()
             ->forOwner($workspace)
             ->create([
@@ -227,7 +233,7 @@ describe('ProcessDestroyController', function (): void {
         if ($grantAccess) {
             grantProcessDestroyAccess($caller, $appNode);
         }
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -251,7 +257,7 @@ describe('ProcessDestroyController', function (): void {
 
     it('denies app callers without a process remove grant before deleting intent', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $app = App::factory()->placedOn($caller)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
@@ -277,8 +283,8 @@ describe('ProcessDestroyController', function (): void {
     it('lets app-dev self grants remove app-owned process intent on their own node only', function (): void {
         $caller = createProcessDestroyCallerNode(role: 'app-dev');
         $otherNode = createTestAppHostNode(['name' => 'app-2']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        $app = App::factory()->placedOn($caller)->create(['name' => 'docs']);
+        $hiddenApp = App::factory()->placedOn($otherNode)->create(['name' => 'hidden']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
         grantProcessDestroyAccess(
@@ -333,7 +339,7 @@ describe('ProcessDestroyController', function (): void {
     it('returns process not found without cleanup', function (): void {
         createProcessDestroyCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
         ]);

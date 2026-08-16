@@ -42,9 +42,8 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('proxies managed PHP app ingress artifacts to the FrankenPHP runtime container without mounting host paths', function (): void {
         $renderer = new ProxyRouteRenderer;
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
@@ -86,9 +85,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('mounts the host roots referenced by managed workspace route artifacts', function (): void {
         $node = Node::factory()->create(['name' => 'dev-1']);
         $app = App::factory()->create([
-            'node_id' => $node->id,
             'name' => 'docs',
-            'document_root' => 'public',
         ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
@@ -176,9 +173,8 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('renders private backend listeners on an internal port that ingress does not publish publicly', function (): void {
         $renderer = new ProxyRouteRenderer;
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'document_root' => 'public',
         ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,

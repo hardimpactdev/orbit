@@ -28,7 +28,7 @@ final readonly class DoctorWorkspaceRestorer
 
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
         $workspaces = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->where('name', $workspaceName)
             ->whereHas('app', static function ($query) use ($appName): void {
                 if ($appName !== null) {
@@ -46,7 +46,7 @@ final readonly class DoctorWorkspaceRestorer
             return null;
         }
 
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing('app');
 
         return [
             'family' => 'workspace',

@@ -41,16 +41,15 @@ function createAppSetupStepTarget(): array
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
     ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 

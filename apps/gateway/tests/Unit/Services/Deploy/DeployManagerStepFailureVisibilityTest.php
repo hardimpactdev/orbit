@@ -47,9 +47,6 @@ function createDeployFailureVisibilityApp(): App
 
     $app = App::factory()->create([
         'name' => 'visibility',
-        'node_id' => $node->id,
-        'environment' => 'production',
-        'path' => '/home/visibility/app',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -60,9 +57,9 @@ function createDeployFailureVisibilityApp(): App
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: is_string($app->domain) && $app->domain !== '' ? $app->domain : "{$app->name}.example.com",
+            path: '/home/visibility/app',
+            document_root: 'public',
+            domain: "{$app->name}.example.com",
         ),
     ]);
 

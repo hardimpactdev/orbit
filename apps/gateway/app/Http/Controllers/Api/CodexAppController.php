@@ -361,7 +361,6 @@ final readonly class CodexAppController
     private function resolveApp(string $selector): ?App
     {
         return App::query()
-            ->with('node')
             ->where(function ($query) use ($selector): void {
                 $query->where('name', $selector)
                     ->orWhere('domain', $selector);

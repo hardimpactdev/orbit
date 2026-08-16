@@ -90,7 +90,7 @@ final readonly class ProxyRouteRenderer
             return;
         }
 
-        $route->loadMissing('app.node', 'app.instances', 'workspace');
+        $route->loadMissing('app.instances', 'workspace');
 
         if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
             $this->normalizeWorkspacePhpRuntimeConfig($route);
@@ -336,7 +336,7 @@ final readonly class ProxyRouteRenderer
      */
     public function renderPrivateBackend(ProxyRoute $route, array $backendArtifact): string
     {
-        $route->loadMissing('app.node', 'workspace');
+        $route->loadMissing('app', 'workspace');
 
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
@@ -496,7 +496,7 @@ final readonly class ProxyRouteRenderer
 
     private function renderPhpFastCgi(ProxyRoute $route): string
     {
-        $route->loadMissing('app.node', 'workspace');
+        $route->loadMissing('app', 'workspace');
 
         $config = is_array($route->config) ? $route->config : [];
         $documentRoot = $config['document_root'] ?? null;
@@ -1097,7 +1097,7 @@ final readonly class ProxyRouteRenderer
      */
     private function deriveRuntimeUpstreamTls(ProxyRoute $route): ?array
     {
-        $route->loadMissing(['app.node', 'workspace.app.node', 'node']);
+        $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
 
         $workspace = $route->workspace;
 

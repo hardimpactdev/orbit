@@ -34,7 +34,7 @@ final readonly class AppSelectorResolver
         }
 
         $app = App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->where('name', $value)
             ->first();
 
@@ -42,19 +42,59 @@ final readonly class AppSelectorResolver
             return new AppSelection(app: $app, selector: $value);
         }
 
+        // An exact "app.instance-name" selector takes precedence over the
+        // instance-authoritative domain/alias resolution below: it names a
+        // concrete instance explicitly and must not be shadowed by an instance
+        // whose serving host happens to equal the selector string.
+        if (str_contains($value, '.')) {
+            [$appName, $instanceSelector] = explode('.', $value, 2);
+            $exactApp = App::query()
+                ->with('instances')
+                ->where('name', $appName)
+                ->first();
+
+            if ($exactApp instanceof App) {
+                $needle = mb_strtolower(trim($instanceSelector));
+                $exactInstance = $exactApp
+                    ->instances
+                    ->first(
+                        static fn (Instance $instance): bool => (
+                            mb_strtolower($instance->name) === $needle
+                            && ($instanceIsVisible === null || $instanceIsVisible($instance))
+                        ),
+                    );
+
+                if ($exactInstance instanceof Instance) {
+                    return new AppSelection(
+                        app: $exactApp,
+                        instance: $exactInstance,
+                        selector: $value,
+                        instanceSelector: $instanceSelector,
+                    );
+                }
+            }
+        }
+
+        // Domain resolution is instance-authoritative: match an app whose
+        // concrete instance serves this host, returning that instance so the
+        // caller does not re-resolve an ambiguous placement.
         $app = App::query()
-            ->with(['node', 'instances'])
-            ->where('domain', $value)
-            ->first();
+            ->with('instances')
+            ->get()
+            ->first(fn (App $candidate): bool => $this->placement->appHasUrl($candidate, $value));
 
         if ($app instanceof App) {
-            return new AppSelection(app: $app, selector: $value);
+            return new AppSelection(
+                app: $app,
+                instance: $this->placement->instanceForUrl($app, $value),
+                selector: $value,
+            );
         }
 
         if (str_contains($value, '.')) {
             [$appName, $instanceSelector] = explode('.', $value, 2);
             $app = App::query()
-                ->with(['node', 'instances'])
+                ->with('instances')
                 ->where('name', $appName)
                 ->first();
 
@@ -71,17 +111,6 @@ final readonly class AppSelectorResolver
                     instanceSelector: $instanceSelector,
                 );
             }
-        }
-
-        $app = App::query()
-            ->with(['node', 'instances'])
-            ->get()
-            ->first(
-                fn (App $candidate): bool => $this->placement->appHasUrl($candidate, $value),
-            );
-
-        if ($app instanceof App) {
-            return new AppSelection(app: $app, selector: $value);
         }
 
         return null;
@@ -166,7 +195,7 @@ final readonly class AppSelectorResolver
         // App owns no source path: cwd/path selection resolves through concrete
         // instance placement (above) and workspace paths (below) only.
         $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');
@@ -229,7 +258,7 @@ final readonly class AppSelectorResolver
         $bestLength = -1;
 
         App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->get()
             ->each(function (App $app) use ($path, &$bestSelection, &$bestLength): void {
                 $instance = $this->placement->matchingOrbitInstanceForPath($app, $path);

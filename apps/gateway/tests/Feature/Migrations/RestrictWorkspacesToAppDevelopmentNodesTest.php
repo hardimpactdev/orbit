@@ -62,7 +62,7 @@ it('is a no-op when re-run after the app_instances to instances cutover', functi
         'status' => 'active',
     ]);
 
-    $app = App::factory()->for($developmentNode, 'node')->create();
+    $app = App::factory()->create();
     $workspace = Workspace::factory()->for($app, 'app')->create();
     DB::table('workspaces')
         ->where('id', $workspace->id)
@@ -96,7 +96,7 @@ it('is a no-op when re-run after the app_instances to instances cutover', functi
 
 it('does not re-check production ownership after cutover when app_instances is gone', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -122,7 +122,7 @@ it('does not re-check production ownership after cutover when app_instances is g
 
 it('does not re-check name-only production ownership after cutover when app_instances is gone', function (): void {
     $productionNode = Node::factory()->appProd()->create(['name' => 'app-prod-name-only']);
-    $app = App::factory()->for($productionNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(

@@ -19,9 +19,6 @@ it('resolves exact instance names before node domain path or tld aliases', funct
 
     $app = App::factory()->create([
         'name' => 'mealou',
-        'node_id' => $nmbpNode->id,
-        'domain' => 'mealou.test',
-        'path' => '/srv/mealou',
     ]);
 
     $nmbp = Instance::factory()->for($app)->create([
@@ -63,11 +60,16 @@ it('keeps bare project selectors ambiguous when multiple instances exist', funct
     $node = createTestAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create([
         'name' => 'mealou',
-        'node_id' => $node->id,
     ]);
 
-    Instance::factory()->for($app)->create(['name' => 'nmbp']);
-    Instance::factory()->for($app)->create(['name' => 'development']);
+    Instance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+    ]);
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+    ]);
 
     $resolver = app(AppSelectorResolver::class);
     $selection = $resolver->resolve('mealou');

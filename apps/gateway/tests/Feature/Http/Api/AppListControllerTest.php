@@ -56,9 +56,9 @@ function create_app_list_instance(App $app, Node $node, string $name = 'developm
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 }
@@ -86,9 +86,9 @@ describe('AppListController', function (): void {
         grantAppListAccess($caller, $zNode);
         grantAppListAccess($caller, $aNode);
 
-        $zebra = App::factory()->create(['name' => 'zebra', 'node_id' => $aNode->id, 'domain' => 'zebra.test']);
-        $beta = App::factory()->create(['name' => 'beta', 'node_id' => $zNode->id, 'domain' => 'beta.test']);
-        $alpha = App::factory()->create(['name' => 'alpha', 'node_id' => $zNode->id, 'domain' => 'alpha.test']);
+        $zebra = App::factory()->create(['name' => 'zebra']);
+        $beta = App::factory()->create(['name' => 'beta']);
+        $alpha = App::factory()->create(['name' => 'alpha']);
 
         create_app_list_instance($zebra, $aNode);
         create_app_list_instance($beta, $zNode);
@@ -113,8 +113,8 @@ describe('AppListController', function (): void {
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node']);
         grantAppListAccess($caller, $visibleNode);
 
-        $visible = App::factory()->create(['name' => 'visible', 'node_id' => $hiddenNode->id]);
-        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $visibleNode->id]);
+        $visible = App::factory()->create(['name' => 'visible']);
+        $hidden = App::factory()->create(['name' => 'hidden']);
 
         create_app_list_instance($visible, $visibleNode);
         create_app_list_instance($hidden, $hiddenNode);
@@ -134,7 +134,7 @@ describe('AppListController', function (): void {
         grantAppListAccess($caller, $firstNode);
         grantAppListAccess($caller, $secondNode);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $firstNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         create_app_list_instance($app, $firstNode, name: 'development');
         create_app_list_instance($app, $secondNode, name: 'nmbp');
 
@@ -155,7 +155,7 @@ describe('AppListController', function (): void {
         $hiddenNode = createAppListAppNode(['name' => 'hidden-node', 'tld' => 'hidden']);
         grantAppListAccess($caller, $visibleNode);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $hiddenNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $visibleInstance = create_app_list_instance($app, $visibleNode, name: 'development');
         $hiddenInstance = create_app_list_instance($app, $hiddenNode, name: 'production');
 
@@ -190,7 +190,7 @@ describe('AppListController', function (): void {
         $developmentNode = createAppListAppNode(['name' => 'app-dev-1']);
         grantAppListAccess($caller, $developmentNode);
 
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $instance = create_app_list_instance($app, $developmentNode);
         Workspace::factory()->create([
             'name' => 'feature-docs',
@@ -219,8 +219,8 @@ describe('AppListController', function (): void {
             permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
         );
 
-        $owned = App::factory()->create(['name' => 'owned', 'node_id' => $otherNode->id]);
-        $hidden = App::factory()->create(['name' => 'hidden', 'node_id' => $caller->id]);
+        $owned = App::factory()->create(['name' => 'owned']);
+        $hidden = App::factory()->create(['name' => 'hidden']);
 
         create_app_list_instance($owned, $caller);
         create_app_list_instance($hidden, $otherNode);
@@ -240,8 +240,8 @@ describe('AppListController', function (): void {
         $firstNode = createAppListAppNode(['name' => 'app-1']);
         $secondNode = createAppListAppNode(['name' => 'app-2']);
 
-        $first = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
-        $second = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+        $first = App::factory()->create(['name' => 'first']);
+        $second = App::factory()->create(['name' => 'second']);
 
         create_app_list_instance($first, $firstNode);
         create_app_list_instance($second, $secondNode);
@@ -254,7 +254,7 @@ describe('AppListController', function (): void {
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         create_app_list_instance($app, $node);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
@@ -266,7 +266,7 @@ describe('AppListController', function (): void {
         $caller = createAppListCallerNode();
         $node = createAppListAppNode(['name' => 'app-1']);
         grantAppListAccess($caller, $node, ['node:read']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         create_app_list_instance($app, $node);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
@@ -305,13 +305,8 @@ describe('AppListController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $node->id,
-            'domain' => null,
-            'path' => '/srv/docs',
-            'document_root' => 'public',
             'repository' => null,
             'php_version' => '8.5',
-            'adopted' => false,
         ]);
         $instance = create_app_list_instance($app, $node);
         Workspace::factory()->create([
@@ -340,11 +335,8 @@ describe('AppListController', function (): void {
     it('includes dependency audit posture aggregates in app list JSON', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
-        $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
-
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $node->id,
         ]);
         AppDependencyAuditSummary::factory()
             ->findings()
@@ -366,18 +358,11 @@ describe('AppListController', function (): void {
     it('does not expose runtime placement details for static apps', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
-        $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
-
         App::factory()
             ->static()
             ->create([
                 'name' => 'marketing',
-                'node_id' => $node->id,
-                'domain' => null,
-                'path' => '/srv/marketing',
-                'document_root' => 'public',
                 'php_version' => '8.5',
-                'adopted' => false,
             ]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);

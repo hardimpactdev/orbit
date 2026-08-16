@@ -15,7 +15,7 @@ uses(RefreshDatabase::class);
 
 it('does not derive runtime-unit aliases for workspaces whose placement is unresolved', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+    $app = App::factory()->create(['name' => 'docs']);
     $development = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),

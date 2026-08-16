@@ -103,8 +103,6 @@ function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress 
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $appNode->id,
-        'domain' => $domain,
     ]);
 
     Instance::factory()->for($app)->create([
@@ -121,6 +119,14 @@ function createAppWebSocketApp(?string $domain = 'docs.test', bool $withIngress 
 function appWebSocketInstance(App $app): Instance
 {
     return $app->instances()->firstOrFail();
+}
+
+function appWebSocketNode(App $app): Node
+{
+    $config = appWebSocketInstance($app)->driver_config;
+    assert($config instanceof OrbitInstanceDriverConfigData);
+
+    return Node::query()->findOrFail($config->node_id);
 }
 
 /**
@@ -178,7 +184,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app));
 
         $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => ['ws.docs.test', 'events.docs.test'],
@@ -218,7 +224,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['instance:read']);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app), ['instance:read']);
 
         $response = postAppWebSocketEnableJson('/api/instances/docs/websocket/enable', [
             'public_hosts' => ['ws.docs.test'],
@@ -305,7 +311,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app), ['instance:credentials']);
 
         $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
@@ -327,7 +333,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['instance:write']);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app), ['instance:write']);
 
         app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
@@ -344,7 +350,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app), ['instance:credentials']);
 
         $response = getAppWebSocketCredentialsJson('/api/instances/docs/websocket/credentials');
 
@@ -370,7 +376,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app));
 
         $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
         $reverbAppKey = $binding->reverb_app_key;
@@ -409,7 +415,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node, ['instance:credentials']);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app), ['instance:credentials']);
 
         $binding = app(WebSocketBindingService::class)->enable(appWebSocketInstance($app), ['ws.docs.test']);
 
@@ -431,7 +437,7 @@ describe('AppWebSocketController', function (): void {
         $caller = createAppWebSocketCallerNode();
         createAppWebSocketRoutePrerequisites();
         $app = createAppWebSocketApp();
-        grantAppWebSocketAccess($caller, $app->node);
+        grantAppWebSocketAccess($caller, appWebSocketNode($app));
 
         $response = postAppWebSocketDisableJson('/api/instances/docs/websocket/disable');
 

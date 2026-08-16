@@ -46,9 +46,8 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'status' => 'active',
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => $kind,
     ]);
@@ -58,13 +57,21 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 
     return $app;
+}
+
+function enactAppRuntimeNode(App $app): Node
+{
+    $config = $app->instances()->firstOrFail()->driver_config;
+    assert($config instanceof OrbitInstanceDriverConfigData);
+
+    return Node::query()->findOrFail($config->node_id);
 }
 
 function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
@@ -94,10 +101,8 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         ],
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'environment' => 'production',
-        'path' => '/home/docs/app',
         'php_version' => '8.5',
         'runtime' => $kind,
     ]);
@@ -107,9 +112,9 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/docs/app',
+            document_root: null,
+            domain: null,
         ),
     ]);
 
@@ -177,7 +182,7 @@ final readonly class EnactAppRuntimeTestCa extends OrbitCaService
 
 it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini config', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
-    $app->node->forceFill([
+    enactAppRuntimeNode($app)->forceFill([
         'managed' => true,
         'wireguard_address' => '10.48.0.11',
     ])->save();
@@ -245,7 +250,7 @@ function base64DecodedPhpIni(string $script): string
 
 it('skips the FrankenPHP runtime container for static apps and serves the proxy route via file_server only', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
-    $app->node->forceFill([
+    enactAppRuntimeNode($app)->forceFill([
         'managed' => true,
         'wireguard_address' => '10.48.0.12',
     ])->save();
@@ -413,7 +418,7 @@ it('seeds one FrankenPHP process definition per concrete app instance', function
     expect($developmentProcess->instance_id)
         ->toBe($development->id)
         ->and($developmentProcess->node_id)
-        ->toBe($app->node_id)
+        ->toBe(enactAppRuntimeNode($app)->id)
         ->and($developmentProcess->runtime_config['container_name'])
         ->toBe('orbit-app-docs-development')
         ->and($productionProcess->instance_id)
@@ -667,12 +672,9 @@ it('returns process.runtime_unit_mismatch when recreating a drifted container fa
 it('throws when the app has no owning node', function (): void {
     $app = App::factory()->make([
         'name' => 'orphan',
-        'path' => '/home/orbit/apps/orphan',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
-        'node_id' => 99999,
     ]);
-    $app->setRelation('node', null);
 
     expect(fn () => app(EnactAppRuntime::class)->handle($app))->toThrow(RuntimeException::class);
 });
@@ -692,7 +694,7 @@ function expectAppFrankenPhpRuntimeProcess(App $app): void
         ->and($process?->instance_id)
         ->toBe($instance->id)
         ->and($process?->node_id)
-        ->toBe($app->node_id)
+        ->toBe(enactAppRuntimeNode($app)->id)
         ->and($process?->command)
         ->toBe('frankenphp')
         ->and($process?->restart_policy)

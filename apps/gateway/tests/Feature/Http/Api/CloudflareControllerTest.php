@@ -192,9 +192,8 @@ it('requires the disable permission for the Cloudflare SSL disable API route', f
 
 it('adds a cache rule for an app without exposing project vocabulary', function (): void {
     $gateway = createCloudflareApiCallerNode();
-    $app = App::factory()->for($gateway, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'domain' => 'docs.example.com',
     ]);
     Instance::factory()->for($app, 'app')->create([
         'name' => 'production',

@@ -30,7 +30,7 @@ final readonly class EnsureAppProcessRuntimeUnits
      */
     public function handle(App $app, ?Instance $instance = null, ?Node $consumer = null): array
     {
-        $app->loadMissing(['node', 'instances']);
+        $app->loadMissing('instances');
         $instance ??= $this->soleInstance($app);
         $node = $this->placement->nodeForInstance($instance);
 
@@ -40,7 +40,6 @@ final readonly class EnsureAppProcessRuntimeUnits
 
         // The logical app is used as-is; process-unit renderers resolve
         // placement from each process's own instance.
-        $app->setRelation('node', $node);
         $app->setRelation(
             'processes',
             $app->processes()->where('instance_id', $instance->id)->orderBy('sort_order')->get(),

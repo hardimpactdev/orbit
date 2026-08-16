@@ -40,7 +40,7 @@ it('reports missing required PHP extensions with stable issue codes', function (
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.51',
         ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->create(['name' => 'billing']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -88,7 +88,7 @@ it('reports unverifiable PHP extension state when the runtime cannot be queried'
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.52',
         ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->create(['name' => 'billing']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'runtime_requirements' => new InstanceRuntimeRequirementsData(

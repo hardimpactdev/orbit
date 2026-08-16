@@ -21,10 +21,11 @@ it('renders only PATH and HOME for node-owned systemd processes such as node-exp
         'tld' => 'gateway',
         'platform' => 'ubuntu_24-04',
     ]);
-    $surrogateApp = App::factory()->for($node, 'node')->create([
-        'name' => 'gateway',
-        'path' => '/home/orbit',
-    ]);
+    $surrogateApp = App::factory()
+        ->placedOn($node, 'development', '/home/orbit')
+        ->create([
+            'name' => 'gateway',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($node)
         ->create([
@@ -56,10 +57,11 @@ it('still renders Laravel Vite URL and TLS variables for app-owned systemd proce
         'tld' => 'test',
         'platform' => 'ubuntu_24-04',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'docs',
-        'path' => '/home/orbit/apps/docs',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit/apps/docs')
+        ->create([
+            'name' => 'docs',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($app)
         ->create([
@@ -87,10 +89,11 @@ it('escapes shell dollars so systemd does not expand process command variables',
         'user' => 'orbit',
         'status' => 'active',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'agent-runtime',
-        'path' => '/home/orbit',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit')
+        ->create([
+            'name' => 'agent-runtime',
+        ]);
     $process = OrbitProcess::factory()
         ->forOwner($node)
         ->create([
@@ -122,10 +125,11 @@ it('preserves the Hermes dashboard credential shell pipeline through systemd ren
         'status' => 'active',
         'tld' => 'agent',
     ]);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'agent-runtime',
-        'path' => '/home/orbit',
-    ]);
+    $app = App::factory()
+        ->placedOn($node, 'development', '/home/orbit')
+        ->create([
+            'name' => 'agent-runtime',
+        ]);
     $command = new HermesTool()->relatedProcess()['command'];
     $process = OrbitProcess::factory()
         ->forOwner($node)

@@ -36,13 +36,12 @@ it('renders and enacts systemd units for app process definitions', function (): 
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
-        'name' => 'docs',
-        'node_id' => $node->id,
-        'path' => '/home/orbit/apps/docs',
-        'runtime' => AppRuntimeKind::Static,
-    ]);
-    $app->setRelation('node', $node);
+    $app = App::factory()
+        ->placedOn($node)
+        ->create([
+            'name' => 'docs',
+            'runtime' => AppRuntimeKind::Static,
+        ]);
 
     $process = OrbitProcess::factory()
         ->forOwner($app)
@@ -93,12 +92,12 @@ it('reports process family warnings when systemd unit enactment fails after inte
         'status' => 'active',
     ]);
 
-    $app = App::factory()->create([
-        'name' => 'docs',
-        'node_id' => $node->id,
-        'runtime' => AppRuntimeKind::Static,
-    ]);
-    $app->setRelation('node', $node);
+    $app = App::factory()
+        ->placedOn($node)
+        ->create([
+            'name' => 'docs',
+            'runtime' => AppRuntimeKind::Static,
+        ]);
 
     OrbitProcess::factory()
         ->forOwner($app)
@@ -151,12 +150,12 @@ it(
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $node->id,
-            'runtime' => AppRuntimeKind::Static,
-        ]);
-        $app->setRelation('node', $node);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+                'runtime' => AppRuntimeKind::Static,
+            ]);
 
         OrbitProcess::factory()
             ->forOwner($app)
@@ -204,9 +203,7 @@ it('does not enact runtime units when an app has no process definitions', functi
 
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
     ]);
-    $app->setRelation('node', $node);
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
     ]);
@@ -231,8 +228,6 @@ it('does not reenact workspace runtime units for app-prod targets', function ():
         ]);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
-        'path' => '/home/orbit/apps/docs',
         'runtime' => AppRuntimeKind::Static,
     ]);
     $instance = Instance::factory()->for($app)->create([
@@ -276,14 +271,13 @@ describe('runtime dispatcher', function (): void {
             'user' => 'orbit',
         ]);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $node->id,
-            'path' => '/home/orbit/apps/docs',
-            'php_version' => '8.5',
-            'runtime' => AppRuntimeKind::Php,
-        ]);
-        $app->setRelation('node', $node);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'docs',
+                'php_version' => '8.5',
+                'runtime' => AppRuntimeKind::Php,
+            ]);
 
         OrbitProcess::factory()
             ->forOwner($app)
@@ -340,13 +334,12 @@ describe('runtime dispatcher', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
-            'name' => 'marketing',
-            'node_id' => $node->id,
-            'path' => '/home/orbit/apps/marketing',
-            'runtime' => AppRuntimeKind::Static,
-        ]);
-        $app->setRelation('node', $node);
+        $app = App::factory()
+            ->placedOn($node)
+            ->create([
+                'name' => 'marketing',
+                'runtime' => AppRuntimeKind::Static,
+            ]);
 
         OrbitProcess::factory()
             ->forOwner($app)

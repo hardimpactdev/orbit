@@ -69,9 +69,9 @@ function place_php_runtime_manager_app(App $app, Node $node): Instance
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 }
@@ -83,7 +83,7 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
         'name' => 'php',
         'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     place_php_runtime_manager_app($app, $node);
     Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
 
@@ -102,7 +102,7 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
 it('rejects workspace runtime reads from app-prod callers at the manager boundary', function (): void {
     $caller = Node::factory()->appProd()->create(['name' => 'app-prod-caller']);
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = place_php_runtime_manager_app($app, $node);
     Workspace::factory()->create([
         'name' => 'feature-docs',
@@ -129,7 +129,7 @@ it('rejects workspace runtime reads from app-prod callers at the manager boundar
 
 it('rejects workspace runtime reads when the workspace owner is app-prod', function (): void {
     $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = place_php_runtime_manager_app($app, $node);
     Workspace::factory()->create([
         'name' => 'legacy-workspace',
@@ -157,7 +157,6 @@ it('writes an instance runtime even when an unrelated workspace placement is unr
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
         'php_version' => '8.4',
     ]);
     $instance = place_php_runtime_manager_app($app, $node);
@@ -207,7 +206,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
             'cli_version' => null,
         ],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     $instance = place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs');
@@ -232,7 +231,7 @@ it('refreshes stale PHP image inventory on a macOS Docker-backed node and stays 
             'name' => 'nckrtl',
             'platform' => 'macos_14',
         ]);
-    $app = App::factory()->create(['name' => 'nckrtl', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'nckrtl', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node)->forceFill(['name' => 'nmbp'])->save();
     bind_php_runtime_inventory_probe(0, stdout: "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm\n");
 
@@ -260,7 +259,7 @@ it('does not register PHP inventory on an unsupported node', function (): void {
             'name' => 'nckrtl',
             'platform' => 'windows_11',
         ]);
-    $app = App::factory()->create(['name' => 'nckrtl', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'nckrtl', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node)->forceFill(['name' => 'nmbp'])->save();
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'nckrtl.nmbp');
@@ -285,7 +284,7 @@ it('reports a confirmed missing approved image after a successful empty inventor
         'name' => 'php',
         'config' => [],
     ]);
-    $app = App::factory()->create(['name' => 'nckrtl', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'nckrtl', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node)->forceFill(['name' => 'nmbp'])->save();
     bind_php_runtime_inventory_probe(0);
 
@@ -318,7 +317,7 @@ it('does not misreport an unavailable image inventory as a confirmed missing ima
             'image_inventory_error' => 'The previous probe failed.',
         ],
     ]);
-    $app = App::factory()->create(['name' => 'nckrtl', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'nckrtl', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node)->forceFill(['name' => 'nmbp'])->save();
     bind_php_runtime_inventory_probe(2, stderr: 'Docker-compatible provider is unreachable.');
 
@@ -346,7 +345,7 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
             'cli_version' => '8.5',
         ],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->view(instance: 'docs');
@@ -383,7 +382,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         ],
     ]);
 
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $appNode);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs', node: 'image-node');
@@ -528,7 +527,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
         ],
     ]);
 
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $appNode);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
 
@@ -565,7 +564,7 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
             'cli_version' => '8.5',
         ],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs');
@@ -601,7 +600,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
             'cli_version' => '8.5',
         ],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     place_php_runtime_manager_app($app, $node);
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', instance: 'docs');
@@ -629,7 +628,7 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
             'cli_version' => '8.5',
         ],
     ]);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     place_php_runtime_manager_app($app, $node);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
 

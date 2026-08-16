@@ -68,7 +68,7 @@ describe('InstanceController', function (): void {
         $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
         grant_app_instance_access($caller, $appNode);
-        App::factory()->for($appNode, 'node')->create(['name' => 'docs']);
+        App::factory()->create(['name' => 'docs']);
 
         get_app_instance_json('/api/instances')
             ->assertOk()
@@ -88,10 +88,8 @@ describe('InstanceController', function (): void {
         grant_app_instance_access($caller, $appNode);
 
         /** @var App $app */
-        $app = App::factory()->for($appNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'hauser',
-            'path' => '/Users/nckrtl/apps/hauser',
-            'document_root' => 'public',
             'runtime' => AppRuntimeKind::Php,
         ]);
         $nmbp = $app->instances()->create([
@@ -151,11 +149,10 @@ describe('InstanceController', function (): void {
 
     it('filters list output by each instance serving node', function (): void {
         $caller = create_app_instance_caller();
-        $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         $visibleNode = createTestAppHostNode(['name' => 'visible']);
         $hiddenNode = createTestAppHostNode(['name' => 'hidden']);
         grant_app_instance_access($caller, $visibleNode);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         foreach (['visible' => $visibleNode, 'hidden' => $hiddenNode] as $name => $node) {
             Instance::factory()->for($app)->create([
@@ -178,10 +175,9 @@ describe('InstanceController', function (): void {
 
     it('authorizes show against the selected instance serving node', function (): void {
         $caller = create_app_instance_caller();
-        $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         $servingNode = createTestAppHostNode(['name' => 'serving']);
         grant_app_instance_access($caller, $servingNode);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
 
         Instance::factory()->for($app)->create([
             'name' => 'production',
@@ -200,10 +196,9 @@ describe('InstanceController', function (): void {
 
     it('authorizes add against the explicit target node', function (): void {
         $caller = create_app_instance_caller();
-        $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         $targetNode = createTestAppHostNode(['name' => 'target']);
         grant_app_instance_access($caller, $targetNode, ['instance:write']);
-        App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        App::factory()->create(['name' => 'docs']);
 
         $this
             ->call(
@@ -231,7 +226,7 @@ describe('InstanceController', function (): void {
         $caller = create_app_instance_caller();
         $node = createTestAppHostNode(['name' => 'target']);
         grant_app_instance_access($caller, $node, ['instance:write']);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+        $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
 
         $this
             ->call(
@@ -268,7 +263,7 @@ describe('InstanceController', function (): void {
         $caller = create_app_instance_caller();
         $legacyNode = createTestAppHostNode(['name' => 'legacy']);
         grant_app_instance_access($caller, $legacyNode, ['instance:read', 'instance:write']);
-        $app = App::factory()->for($legacyNode, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'cloud',
             'driver' => InstanceDriver::LaravelCloud,
@@ -297,7 +292,7 @@ describe('InstanceController', function (): void {
         grant_app_instance_access($caller, $secondNode, ['instance:read', 'instance:write']);
 
         foreach (['first-app' => $firstNode, 'second-app' => $secondNode] as $appName => $node) {
-            $app = App::factory()->for($node, 'node')->create(['name' => $appName]);
+            $app = App::factory()->create(['name' => $appName]);
             Instance::factory()->for($app)->create([
                 'name' => 'production',
                 'driver_config' => new OrbitInstanceDriverConfigData(

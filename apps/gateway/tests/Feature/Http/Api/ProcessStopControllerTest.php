@@ -47,7 +47,7 @@ describe('ProcessStopController', function (): void {
         $caller = createProcessStopCallerNode();
         $appNode = createTestAppHostNode();
         grantProcessStopAccess($caller, $appNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -76,7 +76,7 @@ describe('ProcessStopController', function (): void {
     it('returns partial runtime failure data', function (): void {
         createProcessStopCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'sort_order' => 10]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'sort_order' => 20]);
         app()->instance(RemoteShell::class, new ProcessStopApiRemoteShell([
@@ -106,7 +106,7 @@ describe('ProcessStopController', function (): void {
     it('requires authorization before runtime side effects', function (): void {
         createProcessStopCallerNode();
         $appNode = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         $remoteShell = new ProcessStopApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);

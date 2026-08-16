@@ -53,7 +53,7 @@ final readonly class RuntimeHibernationScopes
     {
         $scopes = [];
 
-        foreach (Instance::query()->with('app.node')->get() as $instance) {
+        foreach (Instance::query()->with('app')->get() as $instance) {
             $scope = $this->resolveInstance($instance->id);
 
             if ($scope instanceof RuntimeHibernationScope && $this->isDevelopmentNode($scope->node)) {
@@ -61,7 +61,7 @@ final readonly class RuntimeHibernationScopes
             }
         }
 
-        foreach (Workspace::query()->with(['app.node', 'instance'])->get() as $workspace) {
+        foreach (Workspace::query()->with(['instance'])->get() as $workspace) {
             $scope = $this->resolveWorkspace($workspace->id);
 
             if ($scope instanceof RuntimeHibernationScope && $this->isDevelopmentNode($scope->node)) {
@@ -75,7 +75,7 @@ final readonly class RuntimeHibernationScopes
     private function resolveInstance(int $id): ?RuntimeHibernationScope
     {
         $instance = Instance::query()
-            ->with('app.node')
+            ->with('app')
             ->find($id);
         $app = $instance?->app;
         $node = $instance instanceof Instance
@@ -103,7 +103,7 @@ final readonly class RuntimeHibernationScopes
     private function resolveWorkspace(int $id): ?RuntimeHibernationScope
     {
         $workspace = Workspace::query()
-            ->with(['app.node', 'instance'])
+            ->with(['instance'])
             ->find($id);
         $app = $workspace?->app;
         $instance = $workspace?->instance;

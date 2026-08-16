@@ -50,12 +50,6 @@ it('uses the macos node user home for node-owned runtime apps', function (): voi
 });
 
 it('uses selected app instance placement for app-owned runtime apps', function (): void {
-    /** @var Node $beast */
-    $beast = Node::factory()->create([
-        'name' => 'Beast',
-        'platform' => 'ubuntu_24-04',
-        'tld' => 'test',
-    ]);
     /** @var Node $nmbp */
     $nmbp = Node::factory()->create([
         'name' => 'NMBP',
@@ -66,10 +60,6 @@ it('uses selected app instance placement for app-owned runtime apps', function (
     /** @var App $app */
     $app = App::factory()->create([
         'name' => 'happie',
-        'node_id' => $beast->id,
-        'domain' => 'happie.test',
-        'path' => '/home/nckrtl/apps/happie',
-        'document_root' => 'public',
     ]);
     /** @var Instance $instance */
     $instance = Instance::factory()->for($app)->create([
@@ -108,12 +98,6 @@ it('uses selected app instance placement for app-owned runtime apps', function (
 });
 
 it('carries dotted app instance selectors into process owner contexts', function (): void {
-    /** @var Node $beast */
-    $beast = Node::factory()->create([
-        'name' => 'Beast',
-        'platform' => 'ubuntu_24-04',
-        'tld' => 'test',
-    ]);
     /** @var Node $nmbp */
     $nmbp = Node::factory()->create([
         'name' => 'NMBP',
@@ -124,9 +108,6 @@ it('carries dotted app instance selectors into process owner contexts', function
     /** @var App $app */
     $app = App::factory()->create([
         'name' => 'happie',
-        'node_id' => $beast->id,
-        'domain' => 'happie.test',
-        'path' => '/home/nckrtl/apps/happie',
     ]);
     Instance::factory()->for($app)->create([
         'name' => 'nmbp',

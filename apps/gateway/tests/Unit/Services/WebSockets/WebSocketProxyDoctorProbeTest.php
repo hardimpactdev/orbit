@@ -179,7 +179,6 @@ it('limits app-scoped public websocket drift to the selected app', function (): 
     ] as $definition) {
         $app = App::factory()->create([
             'name' => $definition['name'],
-            'node_id' => $appNode->id,
         ]);
         $instance = Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),

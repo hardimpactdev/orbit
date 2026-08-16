@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\App;
 use App\Models\LocalGatewaySettings;
+use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -42,7 +43,7 @@ describe('ProcessLogStreamStartController', function (): void {
             'managed' => true,
             'status' => 'active',
         ]);
-        $app = process_log_stream_create_app(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = process_log_stream_create_app($appNode, ['name' => 'docs']);
         process_log_stream_create_process($app, name: 'vite');
         $response = process_log_stream_start_api_call();
         $operationRunId = $response->json('success.data.operation.uuid');
@@ -88,9 +89,9 @@ describe('ProcessLogStreamStartController', function (): void {
 /**
  * @param  array<string, mixed>  $attributes
  */
-function process_log_stream_create_app(array $attributes): App
+function process_log_stream_create_app(Node $node, array $attributes = []): App
 {
-    $app = App::factory()->create($attributes);
+    $app = App::factory()->placedOn($node)->create($attributes);
 
     if (! $app instanceof App) {
         throw new RuntimeException('Expected app factory to create an app model.');

@@ -26,12 +26,12 @@ it('ignores a missing-process issue without a concrete app instance', function (
 
 it('ignores process rows without a supported managed runtime label', function (array $runtimeConfig): void {
     $node = Node::factory()->appDev()->create();
-    $app = App::factory()->for($node, 'node')->create();
+    $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
         ),
     ]);
     $process = Process::factory()
@@ -56,13 +56,13 @@ it('ignores process rows without a supported managed runtime label', function (a
 it('reports an app process placed on a different node without applying runtime changes', function (): void {
     $servingNode = Node::factory()->appDev()->create(['name' => 'serving-node']);
     $requestedNode = Node::factory()->appDev()->create(['name' => 'requested-node']);
-    $app = App::factory()->for($servingNode, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $servingNode->id,
-            path: $app->path,
-            document_root: $app->document_root,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
         ),
     ]);
     $process = Process::factory()

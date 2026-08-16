@@ -87,7 +87,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('denies domain conflicts for non-custom routes', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,
@@ -156,7 +156,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('denies force removal of a living workspace-owned route', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
 
         ProxyRoute::factory()->create([
@@ -185,7 +185,7 @@ describe('ProxyRoute mutation API', function (): void {
     it('force-removes an orphaned workspace-owned route and reports why it was safe', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $servingNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $servingNode->id,

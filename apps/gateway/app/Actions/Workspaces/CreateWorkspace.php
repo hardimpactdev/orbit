@@ -80,8 +80,6 @@ final readonly class CreateWorkspace
 
     public function resolveAppNode(App $app, Instance $instance): Node
     {
-        $app->loadMissing('node');
-
         $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {

@@ -24,7 +24,7 @@ final readonly class RemoveProcess
     public function handle(ProcessOwnerContext $context, string $name, ?Node $consumer = null): array
     {
         $app = $context->runtimeApp();
-        $app?->loadMissing(['node', 'workspaces']);
+        $app?->loadMissing('workspaces');
 
         $process = $context
             ->ownerProcesses()

@@ -18,7 +18,7 @@ it('derives schedule doctor scope from every concrete app instance placement', f
         'name' => 'static-app-host',
         'status' => 'active',
     ]);
-    $app = App::factory()->static()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->static()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(

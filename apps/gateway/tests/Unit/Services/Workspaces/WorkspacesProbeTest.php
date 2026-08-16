@@ -18,6 +18,7 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -56,11 +57,13 @@ describe('interface contract', function (): void {
 describe('source path reality', function (): void {
     it('introspects workspace source path reality on the parent app node', function (): void {
         $app = workspaceableApp();
+        $workspacePath = workspaceForAppPath($app).'/.worktrees/feature';
         $workspace = Workspace::factory()
             ->for($app, 'app')
+            ->for($app->instances()->firstOrFail(), 'instance')
             ->create([
                 'name' => 'feature',
-                'path' => "{$app->path}/.worktrees/feature",
+                'path' => $workspacePath,
                 'lifecycle_status' => WorkspaceLifecycleStatus::Active,
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
@@ -90,8 +93,8 @@ describe('source path reality', function (): void {
             ->and($shell->scripts[0])
             ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
             ->and($shell->scripts[0])
-            ->toContain("{$app->path}/.worktrees/feature");
-        expect($shell->nodes[0]->is($app->node))->toBeTrue();
+            ->toContain($workspacePath);
+        expect($shell->nodes[0]->is(workspaceableAppNode($app)))->toBeTrue();
     });
 
     it('does not remotely introspect production workspace registry drift', function (): void {
@@ -569,7 +572,9 @@ describe('app instance eligibility', function (): void {
 
     it('requires the selected app instance to resolve to an active app node', function (callable $createNode): void {
         $node = $createNode();
-        $app = App::factory()->for($node, 'node')->create();
+        assert($node instanceof Node);
+        /** @var App $app */
+        $app = App::factory()->placedOn($node)->create();
         $workspace = workspaceFor($app);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
@@ -612,20 +617,41 @@ function workspaceableApp(array $overrides = [], string $role = 'app-dev'): App
 {
     $node = createTestAppHostNode(role: $role);
 
+    $path = isset($overrides['path']) && is_string($overrides['path']) ? $overrides['path'] : null;
+    $documentRoot = isset($overrides['document_root']) && is_string($overrides['document_root'])
+        ? $overrides['document_root']
+        : 'public';
+    $domain = isset($overrides['domain']) && is_string($overrides['domain']) ? $overrides['domain'] : null;
+    unset(
+        $overrides['path'],
+        $overrides['document_root'],
+        $overrides['domain'],
+        $overrides['environment'],
+        $overrides['node_id'],
+    );
+
+    /** @var App $app */
     $app = App::factory()
-        ->for($node, 'node')
+        ->placedOn($node, 'development', $path, $documentRoot, $domain)
         ->create($overrides);
 
-    Instance::factory()->for($app)->create([
-        'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $node->id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
-        ),
-    ]);
-
     return $app;
+}
+
+function workspaceableAppNode(App $app): Node
+{
+    $node = app(WorkspacePlacement::class)->runtimeNode($app, null);
+
+    if (! $node instanceof Node) {
+        throw new \RuntimeException('Placed app is missing a serving node.');
+    }
+
+    return $node;
+}
+
+function workspaceForAppPath(App $app): string
+{
+    return '/home/orbit/apps/'.$app->name;
 }
 
 function workspaceFor(App $app, array $overrides = []): Workspace
@@ -634,9 +660,10 @@ function workspaceFor(App $app, array $overrides = []): Workspace
 
     return Workspace::factory()
         ->for($app, 'app')
+        ->for($app->instances()->firstOrFail(), 'instance')
         ->create([
             'name' => $name,
-            'path' => "{$app->path}/.worktrees/{$name}",
+            'path' => workspaceForAppPath($app).'/.worktrees/'.$name,
             ...$overrides,
         ]);
 }

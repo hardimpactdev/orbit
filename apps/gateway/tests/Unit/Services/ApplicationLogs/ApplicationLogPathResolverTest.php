@@ -21,9 +21,6 @@ describe('ApplicationLogPathResolver', function (): void {
         ]);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $serving->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
         ]);
         $instance = Instance::factory()->create([
             'app_id' => $app->id,
@@ -60,9 +57,6 @@ describe('ApplicationLogPathResolver', function (): void {
         ]);
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $serving->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
         ]);
         $instance = Instance::factory()->create([
             'app_id' => $app->id,

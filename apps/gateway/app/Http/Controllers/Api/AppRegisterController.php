@@ -11,12 +11,12 @@ use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
-use App\Services\Workspaces\WorkspacePlacement;
 use App\Models\Node;
 use App\Services\Apps\AppRegistrar;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -98,7 +98,7 @@ final class AppRegisterController implements Loggable
         }
 
         $existingApp = App::query()
-            ->with(['node', 'instances'])
+            ->with('instances')
             ->where('name', $appName)
             ->first();
 

@@ -126,7 +126,7 @@ final readonly class WorkspaceRoleGuard
 
     public function ensureWorkspaceSupported(Workspace $workspace): void
     {
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $app = $workspace->app;
         $instance = $this->placement->instanceForWorkspace($workspace);
         $node = $this->placement->nodeForWorkspace($workspace);
@@ -150,7 +150,7 @@ final readonly class WorkspaceRoleGuard
     public function ensureNodeOwnsNoWorkspaces(Node $node): void
     {
         $workspace = Workspace::query()
-            ->with(['app.node', 'app.instances', 'instance'])
+            ->with(['app.instances', 'instance'])
             ->get()
             ->first(
                 fn (Workspace $workspace): bool => $this->placement->nodeForWorkspace($workspace)?->id === $node->id,
@@ -174,7 +174,7 @@ final readonly class WorkspaceRoleGuard
             return false;
         }
 
-        $workspace->loadMissing(['app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app.instances', 'instance']);
         $servingNode = $this->placement->nodeForWorkspace($workspace);
 
         return $this->nodeSupportsWorkspaces($servingNode);

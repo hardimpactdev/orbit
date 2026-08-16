@@ -69,14 +69,30 @@ describe('WorkspaceListController', function (): void {
         grantWorkspaceListAccess($caller, $zNode);
         grantWorkspaceListAccess($caller, $aNode);
 
-        $zApp = App::factory()->create(['name' => 'zebra', 'node_id' => $zNode->id, 'domain' => 'zebra.test']);
-        $bApp = App::factory()->create(['name' => 'beta', 'node_id' => $aNode->id, 'domain' => 'beta.test']);
-        $aApp = App::factory()->create(['name' => 'alpha', 'node_id' => $aNode->id, 'domain' => 'alpha.test']);
+        $zApp = App::factory()->placedOn($zNode)->create(['name' => 'zebra']);
+        $bApp = App::factory()->placedOn($aNode)->create(['name' => 'beta']);
+        $aApp = App::factory()->placedOn($aNode)->create(['name' => 'alpha']);
 
-        Workspace::factory()->create(['name' => 'z-workspace', 'app_id' => $zApp->id]);
-        Workspace::factory()->create(['name' => 'beta-two', 'app_id' => $bApp->id]);
-        Workspace::factory()->create(['name' => 'alpha-one', 'app_id' => $aApp->id]);
-        Workspace::factory()->create(['name' => 'beta-one', 'app_id' => $bApp->id]);
+        Workspace::factory()->create([
+            'name' => 'z-workspace',
+            'app_id' => $zApp->id,
+            'instance_id' => $zApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'beta-two',
+            'app_id' => $bApp->id,
+            'instance_id' => $bApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'alpha-one',
+            'app_id' => $aApp->id,
+            'instance_id' => $aApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'beta-one',
+            'app_id' => $bApp->id,
+            'instance_id' => $bApp->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -93,10 +109,18 @@ describe('WorkspaceListController', function (): void {
         grantWorkspaceListAccess($caller, $devNode);
         grantWorkspaceListAccess($caller, $prodNode);
 
-        $docs = App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id]);
-        $site = App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id]);
-        Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $docs->id]);
-        Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $site->id]);
+        $docs = App::factory()->placedOn($devNode)->create(['name' => 'docs']);
+        $site = App::factory()->placedOn($prodNode)->create(['name' => 'site']);
+        Workspace::factory()->create([
+            'name' => 'docs-feature',
+            'app_id' => $docs->id,
+            'instance_id' => $docs->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'site-feature',
+            'app_id' => $site->id,
+            'instance_id' => $site->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -115,15 +139,11 @@ describe('WorkspaceListController', function (): void {
 
     it('filters workspaces by app instance selector', function (): void {
         $caller = createWorkspaceListCallerNode();
-        $canonicalNode = createWorkspaceListAppNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createWorkspaceListAppNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceListAccess($caller, $localNode);
 
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'domain' => 'happie.test',
-            'path' => '/home/nckrtl/apps/happie',
         ]);
         $instance = Instance::factory()
             ->for($app)
@@ -170,10 +190,18 @@ describe('WorkspaceListController', function (): void {
         $hiddenNode = createWorkspaceListAppNode(['name' => 'hidden-node']);
         grantWorkspaceListAccess($caller, $visibleNode);
 
-        $visibleApp = App::factory()->create(['name' => 'visible', 'node_id' => $visibleNode->id]);
-        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $hiddenNode->id]);
-        Workspace::factory()->create(['name' => 'visible-workspace', 'app_id' => $visibleApp->id]);
-        Workspace::factory()->create(['name' => 'hidden-workspace', 'app_id' => $hiddenApp->id]);
+        $visibleApp = App::factory()->placedOn($visibleNode)->create(['name' => 'visible']);
+        $hiddenApp = App::factory()->placedOn($hiddenNode)->create(['name' => 'hidden']);
+        Workspace::factory()->create([
+            'name' => 'visible-workspace',
+            'app_id' => $visibleApp->id,
+            'instance_id' => $visibleApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'hidden-workspace',
+            'app_id' => $hiddenApp->id,
+            'instance_id' => $hiddenApp->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -188,11 +216,17 @@ describe('WorkspaceListController', function (): void {
         assignWorkspaceListGatewayRole($caller);
         $firstNode = createWorkspaceListAppNode(['name' => 'app-1']);
         $secondNode = createWorkspaceListAppNode(['name' => 'app-2']);
-        $firstApp = App::factory()->create(['name' => 'first', 'node_id' => $firstNode->id]);
-        $secondApp = App::factory()->create(['name' => 'second', 'node_id' => $secondNode->id]);
+        $firstApp = App::factory()->placedOn($firstNode)->create(['name' => 'first']);
+        $secondApp = App::factory()->placedOn($secondNode)->create(['name' => 'second']);
 
-        Workspace::factory()->create(['app_id' => $firstApp->id]);
-        Workspace::factory()->create(['app_id' => $secondApp->id]);
+        Workspace::factory()->create([
+            'app_id' => $firstApp->id,
+            'instance_id' => $firstApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'app_id' => $secondApp->id,
+            'instance_id' => $secondApp->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -205,11 +239,19 @@ describe('WorkspaceListController', function (): void {
         assignWorkspaceListGatewayRole($caller);
         $developmentNode = createWorkspaceListAppNode(['name' => 'app-dev-1']);
         $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
-        $developmentApp = App::factory()->create(['name' => 'docs', 'node_id' => $developmentNode->id]);
-        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
+        $developmentApp = App::factory()->placedOn($developmentNode)->create(['name' => 'docs']);
+        $productionApp = App::factory()->placedOn($productionNode)->create(['name' => 'site']);
 
-        Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $developmentApp->id]);
-        Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
+        Workspace::factory()->create([
+            'name' => 'docs-feature',
+            'app_id' => $developmentApp->id,
+            'instance_id' => $developmentApp->instances()->firstOrFail()->id,
+        ]);
+        Workspace::factory()->create([
+            'name' => 'site-feature',
+            'app_id' => $productionApp->id,
+            'instance_id' => $productionApp->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -230,8 +272,12 @@ describe('WorkspaceListController', function (): void {
         $caller = createWorkspaceListCallerNode();
         assignWorkspaceListGatewayRole($caller);
         $productionNode = createWorkspaceListAppNode(['name' => 'app-prod-1'], 'app-prod');
-        $productionApp = App::factory()->create(['name' => 'site', 'node_id' => $productionNode->id]);
-        Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $productionApp->id]);
+        $productionApp = App::factory()->placedOn($productionNode)->create(['name' => 'site']);
+        Workspace::factory()->create([
+            'name' => 'site-feature',
+            'app_id' => $productionApp->id,
+            'instance_id' => $productionApp->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call(
             'GET',
@@ -252,8 +298,12 @@ describe('WorkspaceListController', function (): void {
     it('does not treat an unassigned caller as gateway visibility', function (): void {
         createWorkspaceListCallerNode();
         $node = createWorkspaceListAppNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -264,8 +314,12 @@ describe('WorkspaceListController', function (): void {
     it('returns authorization failure when the caller has no workspace registry visibility', function (): void {
         createWorkspaceListCallerNode();
         $node = createWorkspaceListAppNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
+        Workspace::factory()->create([
+            'name' => 'feature-docs',
+            'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
+        ]);
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
@@ -311,11 +365,12 @@ describe('WorkspaceListController', function (): void {
         $caller = createWorkspaceListCallerNode();
         assignWorkspaceListGatewayRole($caller);
         $node = createWorkspaceListAppNode(['name' => 'app-1', 'tld' => 'test']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => null]);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
 
         Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 

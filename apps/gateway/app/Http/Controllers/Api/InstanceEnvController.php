@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\Instance;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Apps\InstanceEnvApplier;
 use App\Services\Apps\InstanceEnvRenderer;
 use Illuminate\Database\Eloquent\Model;
@@ -154,11 +156,11 @@ final class InstanceEnvController implements Loggable
      */
     private function resolve(string $app, string $instance): array|JsonResponse
     {
-        $targetApp = App::query()
-            ->with('node')
-            ->where('name', $app)
-            ->orWhere('domain', $app)
-            ->first();
+        // Placement is instance-authoritative: resolve the selector (name or
+        // instance-served hostname) through the shared resolver rather than the
+        // removed app-level node relation / domain column.
+        $selection = app(AppSelectorResolver::class)->resolve($app);
+        $targetApp = $selection instanceof AppSelection ? $selection->app : null;
 
         if (! $targetApp instanceof App) {
             return response()->json([

@@ -10,25 +10,21 @@ use Database\Factories\AppFactory;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Override;
 
 /**
+ * The App is the logical project identity. All placement and adoption
+ * (node, environment, domain, source path, document root, adopted) lives on the
+ * app's concrete Instances; App owns none of it.
+ *
  * @property string $name
  * @property int $id
- * @property int $node_id
- * @property string $environment
- * @property string|null $domain
- * @property string $path
- * @property string $document_root
  * @property string|null $repository
  * @property string $php_version
  * @property AppRuntimeKind $runtime
  * @property array<string, mixed>|null $runtime_config
- * @property bool $adopted
- * @property-read Node|null $node
  * @property-read Collection<int, Instance> $instances
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
@@ -46,16 +42,10 @@ class App extends Model
     #[Override]
     protected $fillable = [
         'name',
-        'node_id',
-        'environment',
-        'domain',
-        'path',
-        'document_root',
         'repository',
         'php_version',
         'runtime',
         'runtime_config',
-        'adopted',
     ];
 
     #[Override]
@@ -67,7 +57,6 @@ class App extends Model
     protected function casts(): array
     {
         return [
-            'adopted' => 'boolean',
             'runtime' => AppRuntimeKind::class,
             'runtime_config' => 'array',
         ];
@@ -91,14 +80,6 @@ class App extends Model
         }
 
         return AppRuntimeKind::Php;
-    }
-
-    /**
-     * @return BelongsTo<Node, $this>
-     */
-    public function node(): BelongsTo
-    {
-        return $this->belongsTo(Node::class);
     }
 
     /**

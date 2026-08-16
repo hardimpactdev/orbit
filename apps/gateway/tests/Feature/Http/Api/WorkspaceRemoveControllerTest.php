@@ -68,7 +68,7 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
             'runtime' => 'static',
         ]);
@@ -129,12 +129,14 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $targetNode->id,
-        ]);
+        $app = App::factory()
+            ->placedOn($targetNode)
+            ->create([
+                'name' => 'docs',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'name' => 'feature-api',
         ]);
 
@@ -222,14 +224,11 @@ describe('WorkspaceRemoveController', function (): void {
 
     it('removes an app-instance workspace on the selected instance node', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceRemoveAccess($caller, $localNode);
 
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'domain' => 'happie.test',
         ]);
         $instance = Instance::factory()
             ->for($app)
@@ -314,7 +313,6 @@ describe('WorkspaceRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $sharedNode->id,
             'runtime' => 'static',
         ]);
         $development = Instance::factory()->for($app)->create([
@@ -408,8 +406,6 @@ describe('WorkspaceRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/srv/docs-development',
             'runtime' => 'php',
         ]);
         $instance = Instance::factory()->for($app)->create([
@@ -511,7 +507,6 @@ describe('WorkspaceRemoveController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $appNode->id,
             'runtime' => 'static',
         ]);
         $instance = Instance::factory()->for($app)->create([
@@ -577,13 +572,15 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'runtime' => 'static',
-        ]);
+        $app = App::factory()
+            ->placedOn($targetNode)
+            ->create([
+                'name' => 'docs',
+                'runtime' => 'static',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'name' => 'feature-api',
         ]);
 
@@ -636,13 +633,15 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $targetNode->id,
-            'runtime' => 'php',
-        ]);
+        $app = App::factory()
+            ->placedOn($targetNode)
+            ->create([
+                'name' => 'docs',
+                'runtime' => 'php',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'name' => 'feature-api',
         ]);
 
@@ -695,12 +694,14 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantWorkspaceRemoveAccess($caller, $targetNode);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $targetNode->id,
-        ]);
+        $app = App::factory()
+            ->placedOn($targetNode)
+            ->create([
+                'name' => 'docs',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'name' => 'feature-api',
         ]);
 
@@ -730,12 +731,14 @@ describe('WorkspaceRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $targetNode->id,
-        ]);
+        $app = App::factory()
+            ->placedOn($targetNode)
+            ->create([
+                'name' => 'docs',
+            ]);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'name' => 'feature-api',
         ]);
 

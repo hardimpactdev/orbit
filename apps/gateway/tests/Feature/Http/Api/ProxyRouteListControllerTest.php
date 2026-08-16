@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -46,15 +48,28 @@ function assignProxyRouteListRole(Node $node, string $role = 'gateway'): void
 
 function proxy_route_list_workspace_on_node(Node $node): Workspace
 {
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'domain' => 'docs.test',
+    ]);
+    $instance = $app->instances()->create([
+        'name' => 'development',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/srv/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
     ]);
 
-    return Workspace::factory()->for($app)->create([
-        'name' => 'feature-docs',
-        'path' => '/srv/apps/docs/workspaces/feature-docs',
-    ]);
+    return Workspace::factory()
+        ->for($app)
+        ->for($instance, 'instance')
+        ->create([
+            'name' => 'feature-docs',
+            'path' => '/srv/apps/docs/workspaces/feature-docs',
+        ]);
 }
 
 function proxy_route_list_workspace_boundary(string $boundary): Node
@@ -84,7 +99,7 @@ describe('ProxyRouteListController', function (): void {
         $visibleNode = Node::factory()->create(['name' => 'app-1']);
         $hiddenNode = Node::factory()->create(['name' => 'app-2']);
         grantProxyRouteListAccess($caller, $visibleNode);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $visibleNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()->create([
             'node_id' => $visibleNode->id,

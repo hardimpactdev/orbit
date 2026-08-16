@@ -11,6 +11,7 @@ use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -41,7 +42,7 @@ describe('explicit path adoption', function (): void {
             ->toBe(WorkspaceLifecycleStatus::SetupPending)
             ->and($resolvedApp->is($app))
             ->toBeTrue()
-            ->and($node->is($app->node))
+            ->and($node->is(app(WorkspacePlacement::class)->runtimeNode($app, null)))
             ->toBeTrue()
             ->and($isAdoption)
             ->toBeTrue();
@@ -108,16 +109,16 @@ describe('explicit path adoption', function (): void {
 
     it('rejects production placement before workspace registration', function (): void {
         $node = createTestAppHostNode(role: 'app-prod');
-        $app = App::factory()->for($node, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'site',
-            'environment' => 'production',
         ]);
         Instance::factory()->for($app)->create([
+            'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
-                path: $app->path,
-                document_root: $app->document_root,
-                domain: $app->domain,
+                path: '/srv/site',
+                document_root: 'public',
+                domain: null,
             ),
         ]);
 
@@ -146,20 +147,23 @@ function workspaceSetupResolverApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(role: 'app-dev');
 
-    $app = App::factory()
-        ->for($node, 'node')
-        ->create($overrides);
+    $path = isset($overrides['path']) && is_string($overrides['path']) ? $overrides['path'] : null;
+    $documentRoot = isset($overrides['document_root']) && is_string($overrides['document_root'])
+        ? $overrides['document_root']
+        : 'public';
+    $domain = isset($overrides['domain']) && is_string($overrides['domain']) ? $overrides['domain'] : null;
+    unset(
+        $overrides['path'],
+        $overrides['document_root'],
+        $overrides['domain'],
+        $overrides['node_id'],
+        $overrides['environment'],
+    );
 
-    Instance::factory()
-        ->for($app)
-        ->create([
-            'driver_config' => new OrbitInstanceDriverConfigData(
-                node_id: $node->id,
-                path: $app->path,
-                document_root: $app->document_root,
-                domain: $app->domain,
-            ),
-        ]);
+    /** @var App $app */
+    $app = App::factory()
+        ->placedOn($node, 'development', $path, $documentRoot, $domain)
+        ->create($overrides);
 
     return $app;
 }

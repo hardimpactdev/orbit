@@ -363,7 +363,7 @@ it('does not reactivate an app production role while the node owns a workspace',
         'last_error' => 'baseline failed',
         'converged_at' => null,
     ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(

@@ -41,7 +41,7 @@ final readonly class EditProcess
         ?Node $consumer = null,
     ): array {
         $app = $context->runtimeApp();
-        $app?->loadMissing(['node', 'workspaces']);
+        $app?->loadMissing('workspaces');
 
         $process = $context
             ->ownerProcesses()

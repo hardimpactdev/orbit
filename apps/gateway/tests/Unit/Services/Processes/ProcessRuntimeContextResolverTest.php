@@ -23,7 +23,7 @@ uses(RefreshDatabase::class);
 it('resolves the current instance placement instead of stale process node data', function (): void {
     $oldNode = createTestAppHostNode(['name' => 'beast']);
     $newNode = createTestAppHostNode(['name' => 'nmbp']);
-    $app = App::factory()->for($oldNode, 'node')->create(['name' => 'mealou']);
+    $app = App::factory()->create(['name' => 'mealou']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $oldNode->id),
@@ -55,7 +55,7 @@ it('falls back to systemd for an unknown stored runtime', function (): void {
 
 it('returns the main context before workspaces in stable id order', function (): void {
     $node = createTestAppHostNode(['name' => 'app-development']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
@@ -94,7 +94,7 @@ it('excludes workspace contexts on an app production node', function (): void {
         'role' => NodeRoleName::AppProduction->value,
         'status' => 'active',
     ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),

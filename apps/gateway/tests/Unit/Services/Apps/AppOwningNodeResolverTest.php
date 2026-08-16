@@ -44,7 +44,7 @@ function appOwningNodeResolverUnsavedApp(array $attributes = []): App
 
 it('resolves the loaded owning node for an app', function (): void {
     $node = appOwningNodeResolverNode();
-    $app = appOwningNodeResolverApp(['name' => 'docs', 'node_id' => $node->id]);
+    $app = appOwningNodeResolverApp(['name' => 'docs']);
     Instance::factory()->for($app, 'app')->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
@@ -60,9 +60,7 @@ it('resolves the loaded owning node for an app', function (): void {
 it('throws when the app has no owning node', function (): void {
     $app = appOwningNodeResolverUnsavedApp([
         'name' => 'orphan',
-        'node_id' => 99_999,
     ]);
-    $app->setRelation('node', null);
 
     expect(fn () => new AppOwningNodeResolver()->resolve($app))
         ->toThrow(RuntimeException::class, "App 'orphan' has no owning node.");

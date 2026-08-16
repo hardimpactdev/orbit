@@ -45,7 +45,13 @@ function makeReadinessTarget(array $overrides = []): array
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ], $overrides);
-    $app = App::factory()->for($node, 'node')->create($attributes);
+    // The App is logical-only; placement (path/document_root) lives on the
+    // concrete instance below.
+    $app = App::factory()->create([
+        'name' => $attributes['name'],
+        'php_version' => $attributes['php_version'],
+        'runtime' => $attributes['runtime'],
+    ]);
 
     return [
         'app' => $app,
@@ -129,11 +135,9 @@ describe('AppWorkerReadiness service', function (): void {
     });
 
     it('returns app.worker_unknown_node when the app has no owning node relation', function (): void {
-        // Build an App instance without saving so the node relation resolves to null.
+        // Build a logical App without saving so its instance has no owning node.
         $app = new App;
         $app->name = 'docs';
-        $app->path = '/home/orbit/apps/docs';
-        $app->document_root = 'public';
         $app->php_version = '8.5';
         $app->runtime = AppRuntimeKind::Php;
         $instance = Instance::factory()->for($app, 'app')->make();

@@ -1155,14 +1155,33 @@ describe('DatabaseConnectionProbe', function (): void {
  */
 function databaseConnectionProbeApp(array $attributes): App
 {
+    $nodeId = $attributes['node_id'] ?? null;
+    $path = isset($attributes['path']) && is_string($attributes['path']) ? $attributes['path'] : null;
+    $documentRoot = isset($attributes['document_root']) && is_string($attributes['document_root'])
+        ? $attributes['document_root']
+        : 'public';
+    $domain = isset($attributes['domain']) && is_string($attributes['domain']) ? $attributes['domain'] : null;
+    unset(
+        $attributes['node_id'],
+        $attributes['path'],
+        $attributes['document_root'],
+        $attributes['domain'],
+        $attributes['environment'],
+    );
+
+    /** @var App $app */
     $app = App::factory()->create($attributes);
 
+    $node = $nodeId !== null ? Node::query()->findOrFail($nodeId) : Node::factory()->create();
+
     Instance::factory()->for($app)->create([
+        'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            node_id: $node->id,
+            node: $node->name,
+            path: $path ?? '/home/orbit/apps/'.$app->name,
+            document_root: $documentRoot,
+            domain: $domain,
         ),
     ]);
 

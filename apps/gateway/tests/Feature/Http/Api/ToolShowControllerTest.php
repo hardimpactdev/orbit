@@ -157,8 +157,6 @@ describe('ToolShowController', function (): void {
 
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $node->id,
-            'domain' => 'docs.example.com',
         ]);
         Instance::factory()->for($app)->create([
             'name' => 'development',

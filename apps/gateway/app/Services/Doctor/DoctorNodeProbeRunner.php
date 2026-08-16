@@ -183,7 +183,7 @@ final readonly class DoctorNodeProbeRunner
 
         /** @var Collection<int, Instance> $instances */
         $instances = $query
-            ->with(['app.node', 'app.instances'])
+            ->with(['app.instances'])
             ->orderBy('id')
             ->get();
 

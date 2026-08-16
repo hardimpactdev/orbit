@@ -68,11 +68,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-        ]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -172,7 +168,7 @@ describe('CodexAppController', function (): void {
                 'name' => 'linux-operator',
                 'platform' => 'ubuntu_24-04',
             ]);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app, 'app')->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -221,11 +217,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-        ]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -281,11 +273,7 @@ describe('CodexAppController', function (): void {
                 'wireguard_address' => '10.44.0.24',
                 'user' => 'nicky',
             ]);
-        $app = App::factory()->create([
-            'name' => 'docs',
-            'node_id' => $appNode->id,
-            'path' => '/home/orbit/apps/docs',
-        ]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(

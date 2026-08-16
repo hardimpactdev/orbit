@@ -22,9 +22,8 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
         'tld' => 'test',
     ]);
 
-    $app = App::factory()->for($node, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'docs',
-        'domain' => 'docs.test',
     ]);
 
     $instance = Instance::factory()->for($app)->create([
@@ -33,9 +32,9 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
         ),
     ]);
 

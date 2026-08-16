@@ -235,7 +235,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             'host' => '10.6.0.5',
             'wireguard_address' => '10.6.0.5',
         ]);
-        $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+        $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(

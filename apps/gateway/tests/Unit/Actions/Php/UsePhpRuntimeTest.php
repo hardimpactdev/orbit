@@ -24,9 +24,9 @@ function place_use_php_runtime_app(App $app, Node $node): Instance
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 }
@@ -68,7 +68,6 @@ it('converges an app runtime after writing PHP selection intent', function (): v
     ]);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
         'php_version' => '8.4',
     ]);
     $instance = place_use_php_runtime_app($app, $node);
@@ -92,7 +91,6 @@ it('converges an app runtime after writing PHP selection intent', function (): v
 });
 
 it('converges a workspace runtime on its owning node after selection', function (): void {
-    $legacyNode = Node::factory()->appDev()->create(['name' => 'legacy-app-1']);
     $node = Node::factory()->appDev()->create(['name' => 'workspace-node']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -103,7 +101,6 @@ it('converges a workspace runtime on its owning node after selection', function 
     ]);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $legacyNode->id,
         'php_version' => '8.5',
     ]);
     place_use_php_runtime_app($app, $node);

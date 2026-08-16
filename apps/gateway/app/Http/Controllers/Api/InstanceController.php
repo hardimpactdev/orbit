@@ -51,7 +51,7 @@ final class InstanceController implements Loggable
         }
 
         $app = $this->stringInput($request, 'app');
-        $query = Instance::query()->with(['app.node', 'runtimeMounts', 'latestDeploymentRun']);
+        $query = Instance::query()->with(['app', 'runtimeMounts', 'latestDeploymentRun']);
 
         if ($app !== null) {
             $targetApp = App::query()->where('name', $app)->first();
@@ -678,7 +678,7 @@ final class InstanceController implements Loggable
 
         $targetInstance = $targetApp
             ->instances()
-            ->with(['app.node', 'runtimeMounts'])
+            ->with(['app', 'runtimeMounts'])
             ->where('name', $instance)
             ->first();
 
@@ -700,7 +700,7 @@ final class InstanceController implements Loggable
 
     private function resolveApp(string $selector): App|JsonResponse|null
     {
-        $baseQuery = App::query()->with(['node', 'instances']);
+        $baseQuery = App::query()->with(['instances']);
         $nameMatch = (clone $baseQuery)->where('name', $selector)->first();
 
         if ($nameMatch instanceof App) {

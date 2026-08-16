@@ -119,7 +119,6 @@ final readonly class ProcessRuntimeContextResolver
 
         // The logical app is used as-is; process-unit renderers resolve
         // placement from each process's own instance.
-        $logicalApp->setRelation('node', $node);
 
         if ($withWorkspaces) {
             $logicalApp->setRelation(

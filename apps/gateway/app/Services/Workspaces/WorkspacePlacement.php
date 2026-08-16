@@ -22,7 +22,7 @@ final class WorkspacePlacement
 
     public function nodeForWorkspace(Workspace $workspace): ?Node
     {
-        $workspace->loadMissing(['app.node', 'instance']);
+        $workspace->loadMissing(['instance']);
 
         $instance = $this->instanceForWorkspace($workspace);
 
@@ -92,7 +92,7 @@ final class WorkspacePlacement
 
     public function workspaceDomain(Workspace $workspace): string
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing('app');
         $app = $workspace->app;
 
         if (! $app instanceof App) {
@@ -322,15 +322,20 @@ final class WorkspacePlacement
      */
     public function appHasUrl(App $app, string $value): bool
     {
+        return $this->instanceForUrl($app, $value) instanceof Instance;
+    }
+
+    public function instanceForUrl(App $app, string $value): ?Instance
+    {
         $host = rtrim((string) preg_replace('#^https?://#', '', trim($value)), '/');
 
         if ($host === '') {
-            return false;
+            return null;
         }
 
         $app->loadMissing('instances');
 
-        return $app->instances->contains(
+        return $app->instances->first(
             fn (Instance $instance): bool => $this->instanceUrlHost($instance, $app) === $host,
         );
     }

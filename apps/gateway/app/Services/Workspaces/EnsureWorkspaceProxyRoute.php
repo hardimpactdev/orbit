@@ -40,7 +40,7 @@ final readonly class EnsureWorkspaceProxyRoute
      */
     public function handle(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.node', 'app.instances', 'instance']);
+        $workspace->loadMissing(['app', 'app.instances', 'instance']);
 
         $app = $workspace->app;
 

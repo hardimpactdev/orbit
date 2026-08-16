@@ -22,7 +22,7 @@ uses(RefreshDatabase::class);
 
 it('builds app systemd units in main then workspace id order', function (): void {
     $node = createTestAppHostNode(['name' => 'app-development']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
@@ -105,7 +105,7 @@ it('uses the Docker Swarm label hash when no top-level hash exists', function ()
 
 it('rejects app launchd units on Linux placement', function (): void {
     $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs']);
+    $app = App::factory()->create(['name' => 'docs']);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),

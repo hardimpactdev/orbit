@@ -82,12 +82,8 @@ beforeEach(function (): void {
     DB::table('apps')->insert([
         [
             'name' => 'demo',
-            'domain' => 'demo.beast',
-            'node_id' => 1,
-            'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
             'runtime' => 'php',
-            'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),
         ],
@@ -99,6 +95,7 @@ beforeEach(function (): void {
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: 1,
+            node: 'gateway',
             path: '/home/nckrtl/apps/demo',
             document_root: 'public',
             domain: 'demo.beast',
@@ -127,8 +124,8 @@ it('sets up a workspace and marks it active', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
@@ -150,8 +147,8 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -181,8 +178,8 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -245,8 +242,8 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
             ],
         ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
@@ -275,8 +272,8 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -347,7 +344,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 });
 
 it('sets up a Codex worktree against the selected app instance node', function (): void {
-    $canonicalNode = Node::query()->findOrFail(1);
+    $canonicalNode = Node::query()->where('name', 'gateway')->firstOrFail();
     $canonicalNode->update([
         'name' => 'beast',
         'host' => 'beast',
@@ -437,7 +434,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
 });
 
 it('infers the caller app instance for a Codex worktree path when app selector is bare', function (): void {
-    $canonicalNode = Node::query()->findOrFail(1);
+    $canonicalNode = Node::query()->where('name', 'gateway')->firstOrFail();
     $canonicalNode->update([
         'name' => 'beast',
         'host' => 'beast',
@@ -592,12 +589,6 @@ it('rejects production workspace routes before recording or enacting artifacts',
         ->where('role', 'app-dev')
         ->update(['role' => 'app-prod']);
 
-    App::query()
-        ->whereKey(1)
-        ->update([
-            'domain' => 'demo.example.com',
-            'environment' => 'production',
-        ]);
     Instance::query()
         ->findOrFail(1)
         ->update([
@@ -647,7 +638,7 @@ it('starts configured app processes for the workspace after rendering runtime un
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->firstOrFail();
+    $app = App::query()->firstOrFail();
 
     OrbitProcess::factory()
         ->forOwner($app)
@@ -659,7 +650,7 @@ it('starts configured app processes for the workspace after rendering runtime un
             'sort_order' => 1,
         ]);
 
-    $node = $app->node;
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -728,8 +719,8 @@ it('reports converged for already-active workspace', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::Active,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
@@ -746,8 +737,8 @@ it('reports adopted for new workspace with adoption flag', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node, isAdoption: true);
@@ -764,8 +755,8 @@ it('skips setup steps when none are configured', function (): void {
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
@@ -805,8 +796,12 @@ it('continues with workspace-owned env initialization after migration removes an
         expect($migration)->toBeInstanceOf(Migration::class);
         $migration->up();
 
-        $app = App::query()->with('node')->firstOrFail();
-        $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
+        $app = App::query()->firstOrFail();
+        $result = app(SetupWorkspace::class)->handle(
+            $app,
+            $workspace,
+            Node::query()->where('name', 'gateway')->firstOrFail(),
+        );
 
         expect(WorkspaceStep::query()->whereKey($unsafeStep->id)->exists())
             ->toBeFalse()
@@ -837,8 +832,8 @@ it('runs setup steps when configured', function (): void {
         'timeout_seconds' => 60,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
@@ -855,14 +850,14 @@ it('runs setup steps when configured', function (): void {
 });
 
 it('runs instance-specific setup steps for workspaces bound to an app instance', function (): void {
-    $app = App::query()->with('node')->first();
+    $app = App::query()->first();
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'nmbp',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
-            node_id: $app->node_id,
-            path: $app->path,
+            node_id: 1,
+            path: '/home/nckrtl/apps/demo',
             domain: 'demo.nmbp',
         ),
     ]);
@@ -891,7 +886,11 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
         'timeout_seconds' => 60,
     ]);
 
-    $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
+    $result = app(SetupWorkspace::class)->handle(
+        $app,
+        $workspace,
+        Node::query()->where('name', 'gateway')->firstOrFail(),
+    );
 
     expect($result['setup_steps']['status'])->toBe('completed')->and($result['setup_steps']['count'])->toBe(1);
 });
@@ -923,8 +922,8 @@ it('reports progress while setup steps are running', function (): void {
         'timeout_seconds' => 900,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $events = [];
 
     app(SetupWorkspace::class)->runSetupSteps(
@@ -971,8 +970,8 @@ it('routes php and composer setup steps through the selected workspace host php 
         'timeout_seconds' => 300,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -1022,8 +1021,8 @@ it('keeps non-php setup steps on the host', function (): void {
         'timeout_seconds' => 900,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -1058,8 +1057,8 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
         'timeout_seconds' => 1200,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
     $shell = new SetupWorkspaceActionTestShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -1105,7 +1104,7 @@ it(
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
-        $app = App::query()->with('node')->firstOrFail();
+        $app = App::query()->firstOrFail();
 
         OrbitProcess::factory()
             ->forOwner($app)
@@ -1126,7 +1125,7 @@ it(
                 'sort_order' => 10,
             ]);
 
-        $node = $app->node;
+        $node = Node::query()->where('name', 'gateway')->firstOrFail();
         $shell = new SetupWorkspaceActionTestShell;
         app()->instance(RemoteShell::class, $shell);
 
@@ -1172,8 +1171,8 @@ it('skips setup steps when hash matches previous successful run', function (): v
         ])),
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
@@ -1200,8 +1199,8 @@ it('throws when setup step fails', function (): void {
         'timeout_seconds' => 60,
     ]);
 
-    $app = App::query()->with('node')->first();
-    $node = $app->node;
+    $app = App::query()->first();
+    $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     app()->instance(RemoteShell::class, new SetupWorkspaceActionFailingShell);
 
@@ -1294,8 +1293,13 @@ final readonly class SetupWorkspaceActionTestCa extends OrbitCaService
 
 function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace, ?int $expectedNodeId = null): void
 {
-    $workspace->loadMissing('app');
-    $expectedNodeId ??= $workspace->app->node_id;
+    $workspace->loadMissing(['app', 'instance']);
+
+    if ($expectedNodeId === null) {
+        $config = $workspace->instance?->driver_config;
+        $expectedNodeId = $config instanceof OrbitInstanceDriverConfigData ? $config->node_id : null;
+    }
+
     $node = Node::query()->findOrFail($expectedNodeId);
     $home = NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
 

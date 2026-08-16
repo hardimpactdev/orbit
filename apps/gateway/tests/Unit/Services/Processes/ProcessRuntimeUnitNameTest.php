@@ -71,7 +71,7 @@ function runtime_unit_name_fixture(
             'platform' => 'macos_14',
             'status' => 'active',
         ]);
-    $app = App::factory()->for($node, 'node')->create(['name' => $appName]);
+    $app = App::factory()->create(['name' => $appName]);
     $instance = Instance::factory()->for($app)->create([
         'name' => $instanceName,
         'driver_config' => new OrbitInstanceDriverConfigData(

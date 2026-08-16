@@ -319,13 +319,11 @@ describe('AppRegisterController', function (): void {
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.43');
 
-        App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'runtime_config' => ['proxy_transport' => 'https'],
-            'adopted' => true,
         ]);
+        app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
@@ -416,10 +414,6 @@ describe('AppRegisterController', function (): void {
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $oldNode->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
         app_register_instance($app, 'second', $targetNode, '/srv/other');
@@ -454,11 +448,19 @@ describe('AppRegisterController', function (): void {
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
 
-        expect($app->node_id)
+        $development = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'development')
+            ->firstOrFail();
+        $developmentConfig = $development->driver_config;
+
+        expect($developmentConfig)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($developmentConfig->node_id)
             ->toBe($targetNode->id)
-            ->and($app->path)
+            ->and($developmentConfig->path)
             ->toBe('/srv/docs')
-            ->and($app->adopted)
+            ->and($development->adopted)
             ->toBeTrue();
 
         $sibling = Instance::query()
@@ -500,10 +502,6 @@ describe('AppRegisterController', function (): void {
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $oldNode->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
 
@@ -536,11 +534,7 @@ describe('AppRegisterController', function (): void {
             ->firstOrFail();
         $config = $instance->driver_config;
 
-        expect($app->node_id)
-            ->toBe($oldNode->id)
-            ->and($app->path)
-            ->toBe('/home/orbit/apps/docs')
-            ->and($config)
+        expect($config)
             ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
             ->and($config->node_id)
             ->toBe($oldNode->id)
@@ -570,10 +564,6 @@ describe('AppRegisterController', function (): void {
         fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
         $app = App::factory()->create([
             'name' => 'docs',
-            'node_id' => $oldNode->id,
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
         app_register_instance($app, 'second', $targetNode, '/srv/other');
@@ -600,8 +590,16 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('error.meta.reason', 'instance_required');
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
+        $config = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'development')
+            ->firstOrFail()
+            ->driver_config;
 
-        expect($app->node_id)->toBe($oldNode->id);
+        expect($config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($config->node_id)
+            ->toBe($oldNode->id);
     });
 
     it('rejects a dotted selector that names a missing instance', function (): void {
@@ -619,11 +617,8 @@ describe('AppRegisterController', function (): void {
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44');
-        $app = App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
 
@@ -669,13 +664,10 @@ describe('AppRegisterController', function (): void {
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44');
-        $app = App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'php_version' => '8.5',
             'runtime_config' => null,
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs');
         app_register_instance($app, 'second', $siblingNode, '/srv/docs');
@@ -736,12 +728,9 @@ describe('AppRegisterController', function (): void {
         ]);
         grantAppRegisterAccess($caller, $targetNode);
         fake_app_register_source_path_probe('10.6.0.44');
-        $app = App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'docs',
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'web',
             'php_version' => '8.4',
-            'adopted' => true,
         ]);
         app_register_instance($app, 'development', $targetNode, '/home/orbit/apps/docs', 'web');
 
@@ -768,8 +757,15 @@ describe('AppRegisterController', function (): void {
         $response->assertOk();
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
+        $config = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'development')
+            ->firstOrFail()
+            ->driver_config;
 
-        expect($app->document_root)
+        expect($config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($config->document_root)
             ->toBe('web')
             ->and($app->php_version)
             ->toBe('8.4');
@@ -788,15 +784,18 @@ describe('AppRegisterController', function (): void {
         ], settings: ['tld' => 'nmbp']);
         grantAppRegisterAccess($caller, $targetNode);
 
-        App::factory()->for($targetNode, 'node')->create([
+        $app = App::factory()->create([
             'name' => 'happie-nmbp',
-            'path' => '/Users/nckrtl/apps/happie',
-            'document_root' => 'public',
-            'domain' => 'happie-nmbp.nmbp',
-            'environment' => 'development',
             'runtime_config' => ['proxy_transport' => 'https'],
-            'adopted' => true,
         ]);
+        app_register_instance(
+            $app,
+            'development',
+            $targetNode,
+            '/Users/nckrtl/apps/happie',
+            'public',
+            'happie-nmbp.nmbp',
+        );
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(
@@ -844,10 +843,15 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.operation', 'runtime_trust_pool.ensure');
 
         $app = App::query()->where('name', 'happie-nmbp')->firstOrFail();
+        $config = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', 'development')
+            ->firstOrFail()
+            ->driver_config;
 
-        expect($app->environment)
-            ->toBe('development')
-            ->and($app->domain)
+        expect($config)
+            ->toBeInstanceOf(OrbitInstanceDriverConfigData::class)
+            ->and($config->domain)
             ->toBe('happie.nmbp')
             ->and($remoteShell->scripts[0])
             ->toContain("internal:app-source-path:probe '/Users/nckrtl/apps/happie'");

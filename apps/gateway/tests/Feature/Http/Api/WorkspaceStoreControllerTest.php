@@ -32,19 +32,17 @@ beforeEach(function (): void {
         'wireguard_address' => '10.6.0.7',
     ]);
 
-    $app = App::factory()->for($appNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'demo',
-        'domain' => 'demo.beast',
-        'path' => '/home/nckrtl/apps/demo',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
     Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $appNode->id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/nckrtl/apps/demo',
+            document_root: null,
+            domain: 'demo.beast',
         ),
     ]);
 
@@ -85,20 +83,13 @@ it('creates a workspace on the selected app instance node', function (): void {
     $shell = new WorkspaceStoreRuntimeContainerShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $canonicalNode = createTestAppHostNode([
-        'name' => 'beast',
-        'wireguard_address' => '10.6.0.17',
-        'tld' => 'test',
-    ]);
     $localNode = createTestAppHostNode([
         'name' => 'NMBP',
         'wireguard_address' => '10.6.0.18',
         'tld' => 'nmbp',
     ]);
-    $app = App::factory()->for($canonicalNode, 'node')->create([
+    $app = App::factory()->create([
         'name' => 'happie',
-        'domain' => 'happie.test',
-        'path' => '/home/nckrtl/apps/happie',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
@@ -248,19 +239,16 @@ it('rejects workspace creation for production app nodes', function (): void {
         'wireguard_address' => '10.6.0.8',
     ], role: 'app-prod');
     $app = App::factory()
-        ->for($node, 'node')
         ->create([
             'name' => 'prod',
-            'domain' => 'prod.test',
-            'path' => '/home/orbit/apps/prod',
             'php_version' => '8.5',
         ]);
     Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/prod',
+            document_root: null,
+            domain: 'prod.test',
         ),
     ]);
 

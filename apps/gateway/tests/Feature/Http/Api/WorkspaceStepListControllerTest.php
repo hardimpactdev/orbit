@@ -47,13 +47,10 @@ function grantWorkspaceStepListAccess(Node $caller, Node $appNode): void
 describe('WorkspaceStepListController', function (): void {
     it('lists only the selected app instance steps', function (): void {
         $caller = createWorkspaceStepListCallerNode();
-        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
         grantWorkspaceStepListAccess($caller, $localNode);
         $app = App::factory()->create([
             'name' => 'happie',
-            'node_id' => $canonicalNode->id,
-            'path' => '/home/nckrtl/apps/happie',
         ]);
         $instance = Instance::factory()->create([
             'app_id' => $app->id,
@@ -92,7 +89,7 @@ describe('WorkspaceStepListController', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',
@@ -133,9 +130,10 @@ describe('WorkspaceStepListController', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepListAccess($caller, $node);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+        $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
         WorkspaceStep::factory()->create([
@@ -179,7 +177,7 @@ describe('WorkspaceStepListController', function (): void {
     it('returns authorization failures for hidden apps', function (): void {
         createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
+        $app = App::factory()->create(['name' => 'docs']);
         Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'development',

@@ -21,16 +21,16 @@ function snapshot_php_instance(App $app, Node $node, string $name, ?string $phpV
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
-            path: $app->path,
-            document_root: $app->document_root,
-            domain: $app->domain,
+            path: '/home/orbit/apps/'.$app->name,
+            document_root: 'public',
+            domain: null,
         ),
     ]);
 }
 
 it('renders each instance with its own stored php version, not the app default', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.5']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $pinned = snapshot_php_instance($app, $node, 'production', '8.3');
     $current = snapshot_php_instance($app, $node, 'development', '8.5');
 
@@ -44,7 +44,7 @@ it('renders each instance with its own stored php version, not the app default',
 
 it('does not move an instance when the app default changes', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'docs', 'php_version' => '8.4']);
+    $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.4']);
     $instance = snapshot_php_instance($app, $node, 'development', '8.4');
 
     $app->forceFill(['php_version' => '8.5'])->save();

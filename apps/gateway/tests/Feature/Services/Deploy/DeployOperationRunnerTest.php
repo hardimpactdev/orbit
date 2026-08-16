@@ -23,9 +23,6 @@ it('persists deploy progress frames before WebSocket publication and supports jo
     $node = Node::factory()->appProd()->create(['name' => 'app-prod-1']);
     $app = App::factory()->create([
         'name' => 'docs',
-        'node_id' => $node->id,
-        'environment' => 'production',
-        'path' => '/srv/docs',
         'runtime' => 'static',
     ]);
     $instance = Instance::factory()->create([
