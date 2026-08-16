@@ -156,6 +156,72 @@ describe('internal codex app config command', function (): void {
             ->toBe(['new']);
     });
 
+    it('fails coherently when the mutation lock cannot be acquired', function (): void {
+        $configPath = codex_app_config_path($this->codexAppHome);
+        mkdir($configPath.'.lock', permissions: 0o700, recursive: true);
+
+        [$exitCode, $output] = run_internal_codex_app_config_command(
+            [
+                '--operation-token' => codex_app_config_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode(
+                codex_app_mutation_payload(
+                    mutation: 'add',
+                    label: 'docs',
+                    sshAlias: 'app-node',
+                    remotePath: '/srv/docs',
+                ),
+                JSON_THROW_ON_ERROR,
+            ),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('codex_app.config_lock_failed')
+            ->and(is_file($configPath))
+            ->toBeFalse();
+
+        Process::assertNothingRan();
+    });
+
+    it('preserves invalid config bytes and releases the lock after a read failure', function (): void {
+        $configPath = codex_app_config_path($this->codexAppHome);
+        $contents = "{not-json\n";
+        codex_app_write_contents($configPath, $contents);
+
+        [$exitCode, $output] = run_internal_codex_app_config_command(
+            [
+                '--operation-token' => codex_app_config_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode(
+                codex_app_mutation_payload(
+                    mutation: 'remove',
+                    label: 'docs',
+                    sshAlias: 'app-node',
+                ),
+                JSON_THROW_ON_ERROR,
+            ),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('codex_app.config_read_failed')
+            ->and(file_get_contents($configPath))
+            ->toBe($contents)
+            ->and(codex_app_lock_is_available($configPath.'.lock'))
+            ->toBeTrue();
+
+        Process::assertNothingRan();
+    });
+
     it('does not replace an unchanged config and still applies it', function (): void {
         $configPath = codex_app_config_path($this->codexAppHome);
         $contents =
