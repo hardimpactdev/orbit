@@ -77,6 +77,150 @@ it('changes the gateway image fingerprint when a declared critical input changes
     'core artifact catalog' => 'packages/core/resources/php-cli/artifact-catalog.json',
 ]);
 
+it('changes the fingerprint when an arbitrary file is added and removed under a declared directory', function (string $directory): void {
+    $root = make_gateway_image_input_fixture([
+        'packages/core/src/Core.php' => "<?php\n",
+    ], ['packages/core/src']);
+    $path = "{$root}/packages/core/src/{$directory}/Added.php";
+
+    try {
+        $before = E2EGatewayImageBuildInputs::fingerprint($root);
+        mkdir(dirname($path), recursive: true);
+        file_put_contents($path, data: "<?php\nreturn 'added';\n");
+        $afterAddition = E2EGatewayImageBuildInputs::fingerprint($root);
+        unlink($path);
+        $afterRemoval = E2EGatewayImageBuildInputs::fingerprint($root);
+
+        expect($afterAddition)
+            ->not->toBe($before)->and($afterRemoval)
+            ->not->toBe($afterAddition)->toBe($before);
+    } finally {
+        remove_directory($root);
+    }
+})->with([
+    'storage-shaped path copied by Docker' => 'storage',
+    'bootstrap cache-shaped path copied by Docker' => 'bootstrap/cache',
+]);
+
+it('does not apply a broader PHP ignore policy than the Docker build context', function (): void {
+    $root = make_gateway_image_input_fixture([
+        'packages/core/src/storage/Stored.php' => "<?php\n",
+        'packages/core/src/bootstrap/cache/Cached.php' => "<?php\n",
+    ], ['packages/core/src']);
+    $dockerignore = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+
+    try {
+        $inventory = E2EGatewayImageBuildInputs::inventory($root);
+
+        expect($dockerignore)
+            ->not->toContain('**/storage')
+            ->not->toContain('**/bootstrap/cache')->and($inventory['files'])->toHaveKeys([
+                'packages/core/src/storage/Stored.php',
+                'packages/core/src/bootstrap/cache/Cached.php',
+            ]);
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('rejects duplicate manifest aliases after canonical normalization', function (): void {
+    $root = make_gateway_image_input_fixture([
+        'VERSION' => '1.0.0',
+    ], ['VERSION', './VERSION']);
+
+    try {
+        expect(fn (): array => E2EGatewayImageBuildInputs::paths($root))
+            ->toThrow(RuntimeException::class, 'duplicate canonical path: VERSION');
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('rejects declared symlinks that resolve outside the repository', function (): void {
+    $root = make_gateway_image_input_fixture([], ['linked-input']);
+    $outside = make_temp_directory('gateway-image-input-outside');
+    file_put_contents("{$outside}/Outside.php", data: "<?php\n");
+    symlink("{$outside}/Outside.php", "{$root}/linked-input");
+
+    try {
+        expect(fn (): array => E2EGatewayImageBuildInputs::paths($root))
+            ->toThrow(RuntimeException::class, 'resolves outside the repository: linked-input');
+    } finally {
+        remove_directory($root);
+        remove_directory($outside);
+    }
+});
+
+it('rejects declared symlinks that alias an internal repository input', function (): void {
+    $root = make_gateway_image_input_fixture([
+        'VERSION' => '1.0.0',
+    ], ['linked-input']);
+    symlink('VERSION', "{$root}/linked-input");
+
+    try {
+        expect(fn (): array => E2EGatewayImageBuildInputs::paths($root))
+            ->toThrow(RuntimeException::class, 'symbolic-link aliases are not allowed: linked-input');
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('fails closed when a declared input is missing', function (): void {
+    $root = make_gateway_image_input_fixture([], ['missing-input']);
+
+    try {
+        expect(fn (): array => E2EGatewayImageBuildInputs::paths($root))
+            ->toThrow(RuntimeException::class, 'declared input does not exist: missing-input');
+    } finally {
+        remove_directory($root);
+    }
+});
+
+it('fails closed when a declared input is unreadable', function (): void {
+    $root = make_gateway_image_input_fixture([
+        'private-input' => 'secret',
+    ], ['private-input']);
+    chmod("{$root}/private-input", permissions: 0o000);
+
+    try {
+        expect(fn (): array => E2EGatewayImageBuildInputs::paths($root))
+            ->toThrow(RuntimeException::class, 'declared input is not readable: private-input');
+    } finally {
+        chmod("{$root}/private-input", permissions: 0o600);
+        remove_directory($root);
+    }
+});
+
+it('returns deterministic canonical staging paths contained in the repository', function (): void {
+    $root = make_gateway_image_input_fixture([
+        'VERSION' => '1.0.0',
+        'packages/core/src/Core.php' => "<?php\n",
+    ], [
+        './packages/core/src/Core.php',
+        'VERSION',
+        'packages/core/src',
+    ]);
+
+    try {
+        $first = E2EGatewayImageBuildInputs::stagingPaths($root);
+        $second = E2EGatewayImageBuildInputs::stagingPaths($root);
+
+        expect($first)
+            ->toBe(['VERSION', 'packages/core/src'])
+            ->toBe($second);
+
+        foreach ($first as $path) {
+            $resolved = realpath("{$root}/{$path}");
+
+            expect($path)
+                ->not->toStartWith('/')
+                ->not->toContain('..')->and($resolved)->toBeString()->toStartWith(realpath($root).'/');
+        }
+    } finally {
+        remove_directory($root);
+    }
+});
+
 it('includes the SDK package in CLI and gateway artifact build fingerprints', function (): void {
     $source = file_get_contents(app_path('E2E/Support/E2EArtifactBuildFingerprint.php'));
     $gatewayInputs = E2EGatewayImageBuildInputs::paths(repo_path());
@@ -139,4 +283,26 @@ function gateway_image_docker_copy_sources(string $dockerfile): array
     sort($sources);
 
     return $sources;
+}
+
+/**
+ * @param  array<string, string>  $files
+ * @param  list<string>  $manifestPaths
+ */
+function make_gateway_image_input_fixture(array $files, array $manifestPaths): string
+{
+    $root = make_temp_directory('gateway-image-input-contract');
+    $files[E2EGatewayImageBuildInputs::ManifestPath] = implode("\n", $manifestPaths)."\n";
+
+    foreach ($files as $path => $contents) {
+        $absolute = "{$root}/{$path}";
+
+        if (! is_dir(dirname($absolute))) {
+            mkdir(dirname($absolute), recursive: true);
+        }
+
+        file_put_contents($absolute, $contents);
+    }
+
+    return $root;
 }

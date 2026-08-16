@@ -497,6 +497,7 @@ it('keeps serving assertions out of the provision group', function (): void {
 function makeProvisionFingerprintFixture(): string
 {
     $root = make_temp_directory('provision-fingerprint');
+    $gatewayInputDirectories = [];
     $files = [
         'composer.json' => '{"scripts":{"test:e2e:provision:incus":"pest --group=e2e-provision"}}',
         'composer.lock' => '{}',
@@ -522,6 +523,15 @@ function makeProvisionFingerprintFixture(): string
         ),
     ];
 
+    foreach (E2EGatewayImageBuildInputs::paths(repo_path()) as $gatewayInput) {
+        if (! is_dir(repo_path($gatewayInput))) {
+            $files[$gatewayInput] ??= "fixture\n";
+            continue;
+        }
+
+        $gatewayInputDirectories[] = $gatewayInput;
+    }
+
     foreach ($files as $path => $contents) {
         $absolute = "{$root}/{$path}";
 
@@ -530,6 +540,12 @@ function makeProvisionFingerprintFixture(): string
         }
 
         file_put_contents($absolute, $contents);
+    }
+
+    foreach ($gatewayInputDirectories as $directory) {
+        if (! is_dir("{$root}/{$directory}")) {
+            mkdir("{$root}/{$directory}", recursive: true);
+        }
     }
 
     return $root;
