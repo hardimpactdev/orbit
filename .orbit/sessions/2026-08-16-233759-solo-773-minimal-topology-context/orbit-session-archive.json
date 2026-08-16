@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T21:37:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-773-minimal-topology-context/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-16-233759-solo-773-minimal-topology-context",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-773-retained-incus.json",
+        "evidence/solo-773-topology-build.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-16T212109Z-7f4c634ffe6f.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-773-retained-incus.json": "5573b0cac6928c3af318d62e2689883a9bf036432d335b7245a21743a9ab9f99",
+        "evidence/solo-773-topology-build.txt": "513ecf2a0402730cf00e0079314a3775157adb41b4122e78d2085f68376c469c",
+        "loop.md": "8c8eeda9a8ad9cc736a2b2dda6113714da9ded41159df58cfe373b67355539f4",
+        "quality-gates/quality-check-2026-08-16T212109Z-7f4c634ffe6f.json": "fd132ebf301401d1c268afc10ad802d6c5ef1799de3cf63870499d37bcc5dce4"
+    },
+    "slug": "solo-773-minimal-topology-context",
+    "requested_slug": "solo-773-minimal-topology-context",
+    "compatible_slugs": [
+        "solo-773-minimal-topology-context"
+    ],
+    "branch": "solo-773-minimal-topology-context",
+    "candidate_commit": "0426ce02250c3b76bb973bfc05c553000a611a37",
+    "accepted_feature_tip": "0426ce02250c3b76bb973bfc05c553000a611a37",
+    "accepted_main_tip": "10bfd6839a9867bd393daf344a44daa13c6c6591",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

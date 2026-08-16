@@ -1,0 +1,18 @@
+{
+  "candidate": "0426ce02250c3b76bb973bfc05c553000a611a37",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "dev-f72dac/operator",
+  "expected": "The source-mounted candidate selects docker/e2e/topology as the source-less topology image context, the context contains only Dockerfile, and all focused preparation contracts pass.",
+  "observed": "The VM launcher resolved to /home/orbit/orbit-run/apps/cli/orbit; the candidate and VM hashes matched for E2EPrepareDockerRuntimeCommand.php and the topology Dockerfile; the focused suite passed 9 tests with 91 assertions in 1.40 seconds.",
+  "result": "passed",
+  "source_hashes": {
+    "apps/e2e/app/Console/Commands/E2EPrepareDockerRuntimeCommand.php": "caec0d707bc78b3ccfe151a3fa7bdcacfad084a92f6ce687433198f7ecf7b39e",
+    "docker/e2e/topology/Dockerfile": "d7e6a33c04b1460588a6a8aa066953333333afd16c49becf3dc1fb084997fa1a"
+  },
+  "tests": 9,
+  "assertions": 91,
+  "duration_seconds": 1.40,
+  "notes": "The first run as the orbit user passed 8 tests and reached the final fixture-write case, which could not create an ignored artifact under the root-owned retained overlay. The same suite passed as VM root without changing the candidate.",
+  "recorded_at": "2026-08-16T21:32:09Z"
+}

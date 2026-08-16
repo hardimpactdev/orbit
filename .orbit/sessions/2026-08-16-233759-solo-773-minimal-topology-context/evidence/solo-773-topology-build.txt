@@ -1,0 +1,23 @@
+Todo: Solo #773
+Date: 2026-08-16
+Candidate: 0426ce02250c3b76bb973bfc05c553000a611a37
+Acceptance route: retained-incus
+
+Declared build inputs
+- Context: docker/e2e/topology
+- Context entries: Dockerfile
+- Context size: 4 KiB
+- COPY/ADD instructions: none
+
+Fresh builds
+- Local command: docker build --pull --no-cache --progress=plain -f docker/e2e/topology/Dockerfile -t orbit-e2e-topology-runtime:solo-773-local docker/e2e/topology
+- Local result: passed; architecture=arm64; image=sha256:444efba961316c817990fccf9a08a80ad47c31a0d15364634426a2e71bdd9fc6
+- Remote command: docker -H ssh://beast build --pull --no-cache --progress=plain -f docker/e2e/topology/Dockerfile -t orbit-e2e-topology-runtime:solo-773-remote docker/e2e/topology
+- Remote result: passed; architecture=amd64; image=sha256:b51848646e902eec4e7f99c4a121d671af3c4f65fc2a40b1d95eb123909fdfb2
+
+Context-invariance digest comparison
+- Local minimal context: sha256:444efba961316c817990fccf9a08a80ad47c31a0d15364634426a2e71bdd9fc6
+- Local broader docker/e2e context: sha256:444efba961316c817990fccf9a08a80ad47c31a0d15364634426a2e71bdd9fc6
+- Remote minimal context: sha256:b51848646e902eec4e7f99c4a121d671af3c4f65fc2a40b1d95eb123909fdfb2
+- Remote broader docker/e2e context with the same pulled base: sha256:b51848646e902eec4e7f99c4a121d671af3c4f65fc2a40b1d95eb123909fdfb2
+- Result: identical image IDs per architecture; local and remote IDs differ because the daemons build arm64 and amd64 images.
