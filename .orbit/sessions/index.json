@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 324,
-    "unique_candidate_commit_count": 220,
+    "record_count": 325,
+    "unique_candidate_commit_count": 221,
     "orphan_count": 0,
     "records": [
         {
@@ -8538,6 +8538,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "aae3c2abc491c616bc8dfe039fe77962dcd706b7",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-16-154649-todo-742-codex-atomic-config",
+            "slug": "todo-742-codex-atomic-config",
+            "timestamp": "2026-08-16-154649",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6227bbddfdbe34cdbb215c54cfe06a582b8d9887",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
