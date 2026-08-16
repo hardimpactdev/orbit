@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-16T12:43:35Z",
+    "ended_at": "2026-08-16T12:43:44Z",
+    "duration_seconds": 9,
+    "exit_code": 0,
+    "git": {
+        "branch": "solo-748-app-placement-shadows",
+        "commit": "aae3c2abc491c616bc8dfe039fe77962dcd706b7",
+        "dirty": false
+    },
+    "subgates": []
+}
