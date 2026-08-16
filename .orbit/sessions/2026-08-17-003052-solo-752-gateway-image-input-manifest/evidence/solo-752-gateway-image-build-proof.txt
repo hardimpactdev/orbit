@@ -1,0 +1,37 @@
+Solo Todo #752 gateway image build proof
+Date: 2026-08-17 Europe/Amsterdam
+Source branch: solo-752-gateway-image-input-manifest
+Base: 79e90ce4ed14b8a9b67fa173da8cf1e05fb60c7c
+Candidate: abea6810d463e015c357a5d9b7d83699f9b707b1
+
+Context authority: docker/orbit-gateway/Dockerfile.inputs
+Context preparation: rsync -ar --files-from=docker/orbit-gateway/Dockerfile.inputs ./ <context>/
+Local/Beast byte parity: rsync -anrc --delete produced no differences
+Local context fingerprint:  f486826d8f43e06c25d41ba7e7636123705f390be392e65c84e0f684e96ffb5f
+Beast context fingerprint: f486826d8f43e06c25d41ba7e7636123705f390be392e65c84e0f684e96ffb5f
+
+Fresh local build:
+  docker build --no-cache --pull --platform linux/arm64 ...
+  image: sha256:1b7582fd7db9b32cbdc59f17f941862a7dc25d5a2c84e1f54c9853ab0c9e2247
+  inspect: arm64 linux
+
+Fresh Beast build:
+  docker build --no-cache --pull --platform linux/amd64 ...
+  image: sha256:16fd58dd43d39abd5a3c317ed48503cae6428198771aae6c4a6e524be4ace007
+  inspect: amd64 linux
+
+Image content proof on both images:
+  /srv/orbit/bin/install-orbit exists and is executable
+  /srv/orbit/VERSION exists and contains 0.1.192
+  /srv/orbit/packages/core/resources/php-cli/artifact-catalog.json exists
+
+Fingerprint semantics proof:
+  PHP has no independent ignore list.
+  Arbitrary additions and removals below manifest directories change the fingerprint.
+  Manifest inputs are canonical, unique, readable, and repository-contained.
+  Internal and external symbolic-link aliases fail closed before inventory or staging.
+
+Candidate-bound quality receipt:
+  .orbit/quality-gates/profiles/2026-08-16T22-21-46Z-abea6810d463
+
+No composer test:e2e* or human-only E2E lane was run.

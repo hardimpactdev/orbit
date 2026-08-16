@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T22:30:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-752-gateway-image-input-manifest/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-003052-solo-752-gateway-image-input-manifest",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-752-gateway-image-build-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-16T222352Z-223bbfdd3d18.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-752-gateway-image-build-proof.txt": "477f30347cecf81b1234209dbd40afd9a72d03c7d2969dcde198e1cb1e44728a",
+        "loop.md": "6471a3de9fe3498dcbfa552cf98bb1c59080a2c0c56244c12039bf58d5cc4b1c",
+        "quality-gates/quality-check-2026-08-16T222352Z-223bbfdd3d18.json": "d137df3a40ec9901bd060c904c2d7e4c9d85eb99c49c2cb09992f5349c370bc6"
+    },
+    "slug": "solo-752-gateway-image-input-manifest",
+    "requested_slug": "solo-752-gateway-image-input-manifest",
+    "compatible_slugs": [
+        "solo-752-gateway-image-input-manifest"
+    ],
+    "branch": "solo-752-gateway-image-input-manifest",
+    "candidate_commit": "abea6810d463e015c357a5d9b7d83699f9b707b1",
+    "accepted_feature_tip": "abea6810d463e015c357a5d9b7d83699f9b707b1",
+    "accepted_main_tip": "79e90ce4ed14b8a9b67fa173da8cf1e05fb60c7c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
