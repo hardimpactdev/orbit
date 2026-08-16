@@ -30,7 +30,7 @@ class E2EPrepareDockerRuntimeCommand extends Command
                 'image' => DockerTopologyBuilder::runtimeImage(),
                 'action' => 'build',
                 'dockerfile' => repo_path('docker/e2e/topology/Dockerfile'),
-                'context' => repo_path(),
+                'context' => repo_path('docker/e2e/topology'),
             ],
             [
                 'image' => DockerTopologyProvider::gatewayImage(),

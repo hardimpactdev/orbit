@@ -232,10 +232,12 @@ OS trust-store mutation, systemd units, package installation, WireGuard
 interfaces, WireGuard peer routing, or VM networking must require VM
 capabilities so the provider pool refuses Docker.
 
-The Docker topology build context intentionally includes the local `vendor/`
-directory. Client prepared topology dependencies are installed or reused through
-transient `composer:2` helper containers and then persisted into the node image.
-Gateway source-dev code is synchronized to the gateway container sibling.
+The Docker image for the source-less topology runtime builds from
+`docker/e2e/topology/`. Its only declared build input is the Dockerfile; it does
+not send the repository root or depend on a repository allowlist. Client
+prepared topology dependencies are installed or reused through transient
+`composer:2` helper containers and then persisted into the node image. Gateway
+source-dev code is synchronized to the gateway container sibling.
 
 Docker provisioning uses a Composer cache during image preparation. By default
 the cache is a lockfile-keyed Docker volume; set
