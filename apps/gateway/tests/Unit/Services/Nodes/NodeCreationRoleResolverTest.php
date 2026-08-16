@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Nodes\NodeCreationRoleInputException;
 use App\Services\Nodes\NodeCreationRoleResolver;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -165,3 +166,88 @@ it('uses registered validation failures for pending explicit node roles', functi
 
     $this->fail('Expected the pending role to fail validation.');
 })->with(['websocket']);
+
+it('rejects every registry conflict pair during explicit role resolution', function (): void {
+    $registry = app(NodeRoleRegistry::class);
+    $roles = [
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
+        'metrics',
+        'analytics',
+    ];
+    $rejectedPairs = [];
+
+    foreach ($roles as $index => $firstRole) {
+        foreach (array_slice($roles, $index + 1) as $secondRole) {
+            $pair = $registry->firstConflictingRolePair([$firstRole, $secondRole]);
+
+            if ($pair === null) {
+                continue;
+            }
+
+            try {
+                app(NodeCreationRoleResolver::class)->resolve(
+                    template: null,
+                    operator: false,
+                    roles: implode(',', $pair),
+                );
+            } catch (NodeCreationRoleInputException $exception) {
+                expect($exception->errorCode)
+                    ->toBe('validation_failed')
+                    ->and($exception->getMessage())
+                    ->toBe("Workload roles {$pair[0]} and {$pair[1]} cannot be combined.")
+                    ->and($exception->meta)
+                    ->toBe([
+                        'field' => 'roles',
+                        'conflicts' => $pair,
+                    ]);
+                $rejectedPairs[] = implode('+', $pair);
+
+                continue;
+            }
+
+            $this->fail("Expected roles {$pair[0]} and {$pair[1]} to conflict.");
+        }
+    }
+
+    expect($rejectedPairs)->toHaveCount(18);
+});
+
+it('accepts every implemented compatible workload creation pair', function (): void {
+    $registry = app(NodeRoleRegistry::class);
+    $roles = [
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        's3',
+        'metrics',
+        'analytics',
+    ];
+    $acceptedPairs = [];
+
+    foreach ($roles as $index => $firstRole) {
+        foreach (array_slice($roles, $index + 1) as $secondRole) {
+            if ($registry->firstConflictingRolePair([$firstRole, $secondRole]) !== null) {
+                continue;
+            }
+
+            $selection = app(NodeCreationRoleResolver::class)->resolve(
+                template: null,
+                operator: false,
+                roles: "{$firstRole},{$secondRole}",
+            );
+
+            expect($selection->workloadRoles)->toBe([$firstRole, $secondRole]);
+            $acceptedPairs[] = "{$firstRole}+{$secondRole}";
+        }
+    }
+
+    expect($acceptedPairs)->toHaveCount(13);
+});

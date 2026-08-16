@@ -5886,7 +5886,9 @@
                 "apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php",
                 "apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php",
                 "apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php",
-                "apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php"
+                "apps/gateway/tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php",
+                "apps/gateway/tests/Unit/Services/Nodes/NodeCreationRoleResolverTest.php",
+                "apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php"
             ],
             "verification_hints": [
                 {
@@ -5944,6 +5946,20 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Nodes/NodeBootstrapBundleBuilderTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Nodes/NodeCreationRoleResolverTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Nodes/NodeCreationRoleResolverTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Nodes/NodeCreationRoleResolverTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Nodes/NodeRoleRegistryTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Nodes/NodeRoleRegistryTest.php"
                 }
             ],
             "p4_mapping": {

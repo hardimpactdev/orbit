@@ -13,6 +13,7 @@ use App\Models\WireGuardPeer;
 use App\Services\Nodes\NodeBootstrapCompletionLock;
 use App\Services\Nodes\NodeBootstrapCompletionResult;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Database\QueryException;
@@ -214,8 +215,14 @@ it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', functi
         ->assertJsonPath('error.code', 'node.provisioning_incomplete')
         ->assertJsonPath('error.meta.step', 'agent_readiness');
 
-    expect(NodeBootstrap::query()->findOrFail($bootstrapId)->status)
+    $bootstrap = NodeBootstrap::query()->findOrFail($bootstrapId);
+
+    expect($bootstrap->status)
         ->toBe('pending')
+        ->and($bootstrap->last_error['code'] ?? null)
+        ->toBe('node.provisioning_incomplete')
+        ->and($bootstrap->last_error['meta']['step'] ?? null)
+        ->toBe('agent_readiness')
         ->and(Node::query()->where('name', 'agent-1')->firstOrFail()->isProvisioning())
         ->toBeTrue()
         ->and(DB::table('activity_log')->where('event', 'node.created')->count())
@@ -225,6 +232,309 @@ it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', functi
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
         0,
     );
+});
+
+it('records genuine role convergence failures on the pending bootstrap', function (): void {
+    [$gateway, $caller] = nodeBootstrapGatewayAndCaller();
+
+    WireGuardPeer::query()->create([
+        'node_id' => $gateway->id,
+        'public_key' => 'gateway-peer-public-key',
+        'private_key' => 'gateway-peer-private-key',
+        'pre_shared_key' => 'gateway-peer-preshared-key',
+        'allowed_ips' => '10.6.0.2/32',
+    ]);
+
+    $roleAssignments = new class extends NodeRoleAssignmentService {
+        public function __construct() {}
+
+        public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            return $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Error,
+                'settings' => $settings,
+                'last_error' => 'Simulated convergence failure.',
+                'converged_at' => null,
+            ]);
+        }
+
+        public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            return $node->roleAssignments()->where('role', $role)->firstOrFail();
+        }
+    };
+    app()->instance(NodeRoleAssignmentService::class, $roleAssignments);
+
+    $prepare = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson('/api/nodes/bootstrap', [
+            'name' => 'database-failure',
+            'roles' => ['database'],
+            'host' => '192.0.2.79',
+            'user' => 'root',
+            'tld' => 'database-failure',
+            'platform' => 'ubuntu_24-04',
+            'architecture' => 'amd64',
+        ])
+        ->assertOk();
+
+    Http::fake([
+        'http://10.6.0.3:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $bootstrapId = $prepare->json('success.data.bootstrap.id');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.provisioning_incomplete')
+        ->assertJsonPath('error.meta.role', 'database')
+        ->assertJsonPath('error.meta.last_error', 'Simulated convergence failure.');
+
+    $bootstrap = NodeBootstrap::query()->findOrFail($bootstrapId);
+
+    expect($bootstrap->status)
+        ->toBe('pending')
+        ->and($bootstrap->last_error['code'] ?? null)
+        ->toBe('node.provisioning_incomplete')
+        ->and($bootstrap->last_error['meta']['role'] ?? null)
+        ->toBe('database')
+        ->and($bootstrap->last_error['meta']['last_error'] ?? null)
+        ->toBe('Simulated convergence failure.');
+});
+
+it('rejects every conflicting creation role pair before bootstrap side effects', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+    $registry = app(NodeRoleRegistry::class);
+    $roles = [
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
+        'metrics',
+        'analytics',
+    ];
+    $contexts = [];
+
+    foreach ($roles as $index => $firstRole) {
+        foreach (array_slice($roles, $index + 1) as $secondRole) {
+            $pair = $registry->firstConflictingRolePair([$firstRole, $secondRole]);
+
+            if ($pair === null) {
+                continue;
+            }
+
+            $node = Node::factory()->create([
+                'name' => "conflict-{$index}-".count($contexts),
+                'host' => '192.0.2.80',
+                'tld' => "conflict-{$index}-".count($contexts),
+                'platform' => 'ubuntu_24-04',
+                'architecture' => 'amd64',
+                'status' => 'provisioning',
+            ]);
+            $bootstrap = NodeBootstrap::query()->create([
+                'node_id' => $node->id,
+                'initiating_node_id' => $caller->id,
+                'request' => [
+                    'name' => $node->name,
+                    '--roles' => implode(',', $pair),
+                    '--host' => $node->host,
+                    '--tld' => $node->tld,
+                    '--user' => 'root',
+                    '--platform' => $node->platform,
+                    '--architecture' => $node->architecture,
+                ],
+                'status' => 'pending',
+                'last_error' => [
+                    'code' => 'previous_failure',
+                    'message' => 'Preserve this pending-bootstrap error.',
+                ],
+            ]);
+            $contexts[] = [$node, $bootstrap, $pair];
+        }
+    }
+
+    $roleAssignments = new class extends NodeRoleAssignmentService {
+        public int $calls = 0;
+
+        public function __construct() {}
+
+        public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            $this->calls++;
+
+            return $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Error,
+                'settings' => $settings,
+                'last_error' => 'unexpected role assignment',
+                'converged_at' => null,
+            ]);
+        }
+
+        public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            $this->calls++;
+
+            return $node->roleAssignments()->where('role', $role)->firstOrFail();
+        }
+    };
+    app()->instance(NodeRoleAssignmentService::class, $roleAssignments);
+
+    $remoteCommands = new class implements RunsInternalCommands {
+        public int $calls = 0;
+
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            $this->calls++;
+
+            return new RemoteShellResult(1, '', 'unexpected remote command', 1);
+        }
+    };
+    app()->instance(RunsInternalCommands::class, $remoteCommands);
+
+    Http::fake(['*' => Http::response([], 405)]);
+    $nodesBefore = Node::query()
+        ->orderBy('id')
+        ->get()
+        ->map
+        ->getAttributes()
+        ->all();
+    $bootstrapsBefore = NodeBootstrap::query()
+        ->orderBy('id')
+        ->get()
+        ->map
+        ->getAttributes()
+        ->all();
+    $roleAssignmentsBefore = NodeRoleAssignment::query()
+        ->orderBy('id')
+        ->get()
+        ->map
+        ->getAttributes()
+        ->all();
+    $wireGuardPeersBefore = WireGuardPeer::query()
+        ->orderBy('id')
+        ->get()
+        ->map
+        ->getAttributes()
+        ->all();
+    $mutatingQueries = [];
+    DB::listen(function ($query) use (&$mutatingQueries): void {
+        if (preg_match('/^(insert|update|delete)\b/i', ltrim($query->sql)) === 1) {
+            $mutatingQueries[] = $query->sql;
+        }
+    });
+
+    foreach ($contexts as [$node, $bootstrap, $pair]) {
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->postJson("/api/nodes/bootstrap/{$bootstrap->id}/complete")
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Workload roles {$pair[0]} and {$pair[1]} cannot be combined.")
+            ->assertJsonPath('error.meta.field', 'roles')
+            ->assertJsonPath('error.meta.conflicts', $pair);
+    }
+
+    expect($contexts)
+        ->toHaveCount(18)
+        ->and($roleAssignments->calls)
+        ->toBe(0)
+        ->and($remoteCommands->calls)
+        ->toBe(0)
+        ->and($mutatingQueries)
+        ->toBe([])
+        ->and(
+            Node::query()
+                ->orderBy('id')
+                ->get()
+                ->map
+                ->getAttributes()
+                ->all(),
+        )
+        ->toBe($nodesBefore)
+        ->and(
+            NodeBootstrap::query()
+                ->orderBy('id')
+                ->get()
+                ->map
+                ->getAttributes()
+                ->all(),
+        )
+        ->toBe($bootstrapsBefore)
+        ->and(
+            NodeRoleAssignment::query()
+                ->orderBy('id')
+                ->get()
+                ->map
+                ->getAttributes()
+                ->all(),
+        )
+        ->toBe($roleAssignmentsBefore)
+        ->and(
+            WireGuardPeer::query()
+                ->orderBy('id')
+                ->get()
+                ->map
+                ->getAttributes()
+                ->all(),
+        )
+        ->toBe($wireGuardPeersBefore);
+    Http::assertNothingSent();
+    Process::assertRanTimes(fn (): bool => true, 0);
+});
+
+it('preserves pending websocket validation through bootstrap completion', function (): void {
+    [, $caller] = nodeBootstrapGatewayAndCaller();
+    $node = Node::factory()->create([
+        'name' => 'websocket-pending',
+        'status' => 'provisioning',
+    ]);
+    $bootstrap = NodeBootstrap::query()->create([
+        'node_id' => $node->id,
+        'initiating_node_id' => $caller->id,
+        'request' => [
+            'name' => $node->name,
+            '--template' => 'websocket',
+            '--host' => $node->host,
+            '--tld' => $node->tld,
+            '--user' => 'root',
+            '--platform' => $node->platform,
+            '--architecture' => $node->architecture,
+        ],
+        'status' => 'pending',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrap->id}/complete")
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta', [
+            'field' => 'template',
+            'reason' => 'not_implemented',
+            'template' => 'websocket',
+        ]);
+
+    expect($bootstrap->fresh()->last_error)->toBe([
+        'code' => 'validation_failed',
+        'message' => "Node template 'websocket' is not implemented yet.",
+        'meta' => [
+            'field' => 'template',
+            'reason' => 'not_implemented',
+            'template' => 'websocket',
+        ],
+    ]);
 });
 
 it('completes through the WireGuard Agent once and then returns the active result idempotently', function (): void {
@@ -871,6 +1181,9 @@ it('supports metrics bootstrap and persists the client-observed target platform'
         'allowed_ips' => '10.6.0.2/32',
     ]);
 
+    app()->instance(NodeRoleAssignmentService::class, nodeBootstrapRoleAssignments());
+    app()->instance(RunsInternalCommands::class, nodeBootstrapSuccessfulAgentExecutor());
+
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
         ->postJson('/api/nodes/bootstrap', [
@@ -885,13 +1198,27 @@ it('supports metrics bootstrap and persists the client-observed target platform'
         ->assertOk();
 
     $node = Node::query()->where('name', 'metrics-1')->firstOrFail();
+    $bootstrapId = $response->json('success.data.bootstrap.id');
+
+    Http::fake([
+        'http://10.6.0.3:9477/v1/commands' => Http::response([], 405),
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->postJson("/api/nodes/bootstrap/{$bootstrapId}/complete")
+        ->assertOk()
+        ->assertJsonPath('success.data.node.status', 'active')
+        ->assertJsonPath('success.data.roles.0.role', 'metrics');
 
     expect($node->platform)
         ->toBe('ubuntu_24-04')
         ->and($node->architecture)
         ->toBe('arm64')
         ->and($response->json('success.data.bootstrap.script'))
-        ->toContain('orbit-linux-arm64');
+        ->toContain('orbit-linux-arm64')
+        ->and($node->fresh()->isActive())
+        ->toBeTrue();
 });
 
 it('rolls back an interrupted identity reservation so the same prepare can retry', function (): void {

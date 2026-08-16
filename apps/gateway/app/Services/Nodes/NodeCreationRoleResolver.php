@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Enums\Nodes\NodeRoleName;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
 
-final class NodeCreationRoleResolver
+final readonly class NodeCreationRoleResolver
 {
     private const array TEMPLATES = [
         'operator',
@@ -22,21 +23,13 @@ final class NodeCreationRoleResolver
         'agent',
     ];
 
-    private const array EXPLICIT_ROLES = [
-        NodeRoleName::AppDevelopment->value,
-        NodeRoleName::AppProduction->value,
-        NodeRoleName::Database->value,
-        NodeRoleName::Agent->value,
-        NodeRoleName::Ingress->value,
-        NodeRoleName::Metrics->value,
-        NodeRoleName::WebSocket->value,
-        's3',
-        NodeRoleName::Analytics->value,
-    ];
-
     private const array IMPLEMENTATION_PENDING_ROLES = [
         NodeRoleName::WebSocket->value,
     ];
+
+    public function __construct(
+        private NodeRoleRegistry $roleRegistry,
+    ) {}
 
     public function resolve(?string $template, bool $operator, ?string $roles): NodeCreationRoleSelection
     {
@@ -156,19 +149,7 @@ final class NodeCreationRoleResolver
      */
     private function fromTemplate(string $template): NodeCreationRoleSelection
     {
-        if (in_array($template, self::IMPLEMENTATION_PENDING_ROLES, true)) {
-            throw new NodeCreationRoleInputException(
-                errorCode: 'validation_failed',
-                message: "Node template '{$template}' is not implemented yet.",
-                meta: [
-                    'field' => 'template',
-                    'reason' => 'not_implemented',
-                    'template' => $template,
-                ],
-            );
-        }
-
-        return match ($template) {
+        $selection = match ($template) {
             'operator' => new NodeCreationRoleSelection(false, true, false, [], $template, 'operator'),
             'gateway' => new NodeCreationRoleSelection(true, false, false, [], $template, 'gateway'),
             'app-development' => new NodeCreationRoleSelection(
@@ -232,6 +213,16 @@ final class NodeCreationRoleResolver
                 $template,
                 NodeRoleName::Metrics->value,
             ),
+            'websocket' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::WebSocket->value,
+                ],
+                $template,
+                NodeRoleName::WebSocket->value,
+            ),
             'agent' => new NodeCreationRoleSelection(
                 false,
                 false,
@@ -253,6 +244,22 @@ final class NodeCreationRoleResolver
                 NodeRoleName::Analytics->value,
             ),
         };
+
+        $this->guardWorkloadRoleSelection($selection->workloadRoles);
+
+        if (in_array($template, self::IMPLEMENTATION_PENDING_ROLES, true)) {
+            throw new NodeCreationRoleInputException(
+                errorCode: 'validation_failed',
+                message: "Node template '{$template}' is not implemented yet.",
+                meta: [
+                    'field' => 'template',
+                    'reason' => 'not_implemented',
+                    'template' => $template,
+                ],
+            );
+        }
+
+        return $selection;
     }
 
     /**
@@ -260,15 +267,7 @@ final class NodeCreationRoleResolver
      */
     private function fromExplicitRoles(array $roles): NodeCreationRoleSelection
     {
-        foreach ($roles as $role) {
-            if (! in_array($role, self::EXPLICIT_ROLES, true)) {
-                throw new NodeCreationRoleInputException(
-                    errorCode: 'validation_failed',
-                    message: 'Node roles must be one or more of app-dev, app-prod, database, agent, ingress, metrics, websocket, s3, or analytics.',
-                    meta: ['field' => 'roles'],
-                );
-            }
-        }
+        $this->guardWorkloadRoleSelection($roles);
 
         foreach (self::IMPLEMENTATION_PENDING_ROLES as $pendingRole) {
             if (in_array($pendingRole, $roles, true)) {
@@ -284,8 +283,6 @@ final class NodeCreationRoleResolver
             }
         }
 
-        $this->guardRoleConflicts($roles);
-
         return new NodeCreationRoleSelection(
             gateway: false,
             operator: false,
@@ -296,43 +293,19 @@ final class NodeCreationRoleResolver
         );
     }
 
-    /**
-     * @param  list<string>  $roles
-     */
-    private function guardRoleConflicts(array $roles): void
+    /** @param list<string> $roles */
+    private function guardWorkloadRoleSelection(array $roles): void
     {
-        $this->guardPairConflict($roles, NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value);
-        $this->guardPairConflict($roles, NodeRoleName::AppProduction->value, NodeRoleName::Database->value);
-        $this->guardPairConflict($roles, NodeRoleName::Ingress->value, NodeRoleName::Database->value);
-
-        if (in_array(NodeRoleName::Agent->value, $roles, true) && count($roles) > 1) {
-            throw new NodeCreationRoleInputException(
-                errorCode: 'validation_failed',
-                message: 'The agent role cannot be combined with other workload roles.',
-                meta: [
-                    'field' => 'roles',
-                    'role' => NodeRoleName::Agent->value,
-                ],
-            );
-        }
-    }
-
-    /**
-     * @param  list<string>  $roles
-     */
-    private function guardPairConflict(array $roles, string $firstRole, string $secondRole): void
-    {
-        if (! in_array($firstRole, $roles, true) || ! in_array($secondRole, $roles, true)) {
-            return;
+        foreach ($roles as $role) {
+            if (! $this->roleRegistry->roleIsEligibleForWorkloadNodeCreation($role)) {
+                throw NodeCreationRoleInputException::unsupportedWorkloadRole();
+            }
         }
 
-        throw new NodeCreationRoleInputException(
-            errorCode: 'validation_failed',
-            message: "Workload roles {$firstRole} and {$secondRole} cannot be combined.",
-            meta: [
-                'field' => 'roles',
-                'conflicts' => [$firstRole, $secondRole],
-            ],
-        );
+        $conflictingPair = $this->roleRegistry->firstConflictingRolePair($roles);
+
+        if ($conflictingPair !== null) {
+            throw NodeCreationRoleInputException::conflictingWorkloadRoles($conflictingPair);
+        }
     }
 }

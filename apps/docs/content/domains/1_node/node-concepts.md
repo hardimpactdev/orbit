@@ -186,6 +186,18 @@ Assignments in `active`, `pending`, or `error` must satisfy this matrix:
 Compatibility checks treat assignments in `active`, `pending`, or `error` as
 unresolved conflicts. Assignments already in `removing` are ignored.
 
+The code-defined node-role registry is the single compatibility authority for
+role assignment and workload-node creation. `node:new` asks the registry
+whether each expanded role is eligible for workload creation and whether the
+complete role set contains a conflicting pair. It performs the same check
+again when a pending bootstrap enters completion, before Agent readiness,
+role-assignment writes, remote dispatch, convergence, or security setup.
+Conflict rejection leaves the existing pending bootstrap unchanged, including
+its `last_error` value.
+Named templates and template implementation status are command concepts. They
+remain outside the node-role registry; only the roles produced by a template
+enter registry validation.
+
 In this version, `gateway`, `vpn`, and `router` are gateway-coupled
 infrastructure roles. They are stored as separate role assignments and shown
 separately in role output, but first gateway bootstrap assigns them together and normal

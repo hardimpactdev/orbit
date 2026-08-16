@@ -158,6 +158,102 @@ describe('node role registry', function (): void {
             ->not->toContain('s3');
     });
 
+    it('owns workload role eligibility during node creation', function (): void {
+        $registry = new NodeRoleRegistry;
+
+        expect(array_map(
+            fn (NodeRoleName $role): bool => $registry->roleIsEligibleForWorkloadNodeCreation($role->value),
+            NodeRoleName::cases(),
+        ))->toBe([
+            false,
+            false,
+            false,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+        ])->and($registry->roleIsEligibleForWorkloadNodeCreation('app-development'))->toBeFalse();
+    });
+
+    it('classifies every workload creation role pair from the compatibility matrix', function (): void {
+        $registry = new NodeRoleRegistry;
+        $roles = [
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ];
+        $conflictingPairs = [];
+        $compatiblePairs = [];
+
+        foreach ($roles as $index => $firstRole) {
+            foreach (array_slice($roles, $index + 1) as $secondRole) {
+                $pair = [$firstRole, $secondRole];
+
+                if ($registry->firstConflictingRolePair($pair) === $pair) {
+                    $conflictingPairs[] = implode('+', $pair);
+
+                    continue;
+                }
+
+                $compatiblePairs[] = implode('+', $pair);
+            }
+        }
+
+        expect($conflictingPairs)
+            ->toBe([
+                'app-dev+app-prod',
+                'app-dev+agent',
+                'app-dev+ingress',
+                'app-prod+database',
+                'app-prod+agent',
+                'app-prod+websocket',
+                'app-prod+s3',
+                'app-prod+analytics',
+                'database+agent',
+                'database+ingress',
+                'agent+ingress',
+                'agent+websocket',
+                'agent+s3',
+                'agent+metrics',
+                'agent+analytics',
+                'ingress+websocket',
+                'ingress+s3',
+                'ingress+analytics',
+            ])
+            ->and($compatiblePairs)
+            ->toBe([
+                'app-dev+database',
+                'app-dev+websocket',
+                'app-dev+s3',
+                'app-dev+metrics',
+                'app-dev+analytics',
+                'app-prod+ingress',
+                'app-prod+metrics',
+                'database+websocket',
+                'database+s3',
+                'database+metrics',
+                'database+analytics',
+                'ingress+metrics',
+                'websocket+s3',
+                'websocket+metrics',
+                'websocket+analytics',
+                's3+metrics',
+                's3+analytics',
+                'metrics+analytics',
+            ]);
+    });
+
     it('defines supported platforms and assignability for the initial roles', function (): void {
         $registry = new NodeRoleRegistry;
 

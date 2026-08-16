@@ -87,6 +87,9 @@ final readonly class GatewayNodeCreator
         return $this->bootstrapCompletion->complete(
             $bootstrap,
             $caller,
+            fn (NodeBootstrap $lockedBootstrap): ?GatewayActionResult => $this->prevalidateBootstrapRoleCompatibility(
+                $lockedBootstrap,
+            ),
             function (NodeBootstrap $lockedBootstrap): GatewayActionResult {
                 $input = new NodeCreationInput([...$lockedBootstrap->request, '--json' => true]);
 
@@ -109,6 +112,31 @@ final readonly class GatewayNodeCreator
                 );
             },
         );
+    }
+
+    private function prevalidateBootstrapRoleCompatibility(NodeBootstrap $bootstrap): ?GatewayActionResult
+    {
+        $input = new NodeCreationInput([...$bootstrap->request, '--json' => true]);
+
+        try {
+            app(NodeCreationRoleResolver::class)->resolve(
+                template: $input->stringOption('template'),
+                operator: (bool) $input->option('operator'),
+                roles: $input->stringOption('roles'),
+            );
+        } catch (NodeCreationRoleInputException $exception) {
+            if (! is_array($exception->meta['conflicts'] ?? null)) {
+                return null;
+            }
+
+            return $this->failCommand(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+            );
+        }
+
+        return null;
     }
 
     /**
