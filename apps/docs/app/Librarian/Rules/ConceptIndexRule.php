@@ -24,11 +24,11 @@ final readonly class ConceptIndexRule implements GroupedRule
     {
         $conceptsPath = "{$this->docs->docsRoot()}/concepts.md";
 
-        if (! is_file($conceptsPath)) {
+        if (! $this->docs->isFile($conceptsPath)) {
             return [];
         }
 
-        $concepts = file_get_contents($conceptsPath) ?: '';
+        $concepts = $this->docs->contents($conceptsPath);
         $conceptsRelativePath = $this->docs->relativePath($conceptsPath);
         $findings = [];
 
@@ -53,7 +53,7 @@ final readonly class ConceptIndexRule implements GroupedRule
         string $conceptFile,
         string $familyDirectory,
     ): array {
-        $conceptContents = file_get_contents($conceptFile) ?: '';
+        $conceptContents = $this->docs->contents($conceptFile);
         $expectedTerms = $this->definedTerms($conceptContents);
         $relativeConceptFile = $this->docs->relativePath($conceptFile);
         $sectionHeading = $this->sectionHeading($this->docs->familyName($familyDirectory), $conceptContents);
@@ -127,7 +127,7 @@ final readonly class ConceptIndexRule implements GroupedRule
             $family = $this->docs->familyName($familyDirectory);
             $conceptFile = "{$familyDirectory}/{$family}-concepts.md";
 
-            if (is_file($conceptFile)) {
+            if ($this->docs->isFile($conceptFile)) {
                 $conceptFiles[$familyDirectory] = $conceptFile;
             }
         }

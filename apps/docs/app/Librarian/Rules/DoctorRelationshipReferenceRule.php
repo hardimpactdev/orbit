@@ -67,7 +67,7 @@ final readonly class DoctorRelationshipReferenceRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($canonicalFile)) {
+                if (! $this->docs->isFile($canonicalFile)) {
                     continue;
                 }
 
@@ -83,12 +83,12 @@ final readonly class DoctorRelationshipReferenceRule implements GroupedRule
      */
     private function checkFamilyDoctorFile(string $file): array
     {
-        if (! is_file($file)) {
+        if (! $this->docs->isFile($file)) {
             return [];
         }
 
         $findings = [];
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
 
         foreach ($this->requiredDoctorSections() as $pattern => $message) {
             if (preg_match($pattern, $contents) === 1) {
@@ -117,7 +117,7 @@ final readonly class DoctorRelationshipReferenceRule implements GroupedRule
      */
     private function checkCanonicalDoctorRelationship(string $file, string $doctorFileName): array
     {
-        $section = $this->section(file_get_contents($file) ?: '', 'Doctor Relationship');
+        $section = $this->section($this->docs->contents($file), 'Doctor Relationship');
 
         if ($section === '') {
             return [

@@ -40,7 +40,7 @@ final readonly class ConvertedFamilyStructureRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
-            if (! is_file("{$familyDirectory}/README.md")) {
+            if (! $this->docs->isFile("{$familyDirectory}/README.md")) {
                 $findings[] = $this->finding(
                     $this->docs->relativePath($familyDirectory),
                     'Converted family directories must contain README.md.',
@@ -49,7 +49,7 @@ final readonly class ConvertedFamilyStructureRule implements GroupedRule
 
             $doctorFile = self::STATE_FAMILY_DOCTORS[$this->docs->familyName($familyDirectory)] ?? null;
 
-            if ($doctorFile !== null && ! is_file("{$familyDirectory}/{$doctorFile}")) {
+            if ($doctorFile !== null && ! $this->docs->isFile("{$familyDirectory}/{$doctorFile}")) {
                 $findings[] = $this->finding(
                     $this->docs->relativePath($familyDirectory),
                     "State-family documentation directories must contain {$doctorFile}.",

@@ -70,7 +70,7 @@ final readonly class ReaderAddressRule implements GroupedRule
         $findings = [];
 
         foreach ($this->commandPageFiles() as $file) {
-            $contents = file_get_contents($file) ?: '';
+            $contents = $this->docs->contents($file);
 
             foreach ($this->actionSections($contents) as $section) {
                 if ($this->hasReaderOrientation($section['body'])) {

@@ -58,11 +58,11 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
         $canonicalFile = "{$commandDirectory}/technical/1_{$slug}.md";
         $live = $liveCommands[$slug] ?? null;
 
-        if ($live === null || ! is_file($canonicalFile)) {
+        if ($live === null || ! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
-        $contents = file_get_contents($canonicalFile) ?: '';
+        $contents = $this->docs->contents($canonicalFile);
         $signature = $this->parseSignature($contents);
 
         if ($signature === null) {

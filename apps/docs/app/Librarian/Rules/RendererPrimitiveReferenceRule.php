@@ -80,7 +80,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
      */
     private function checkRendererFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $findings = $this->bannedMethodFindings($file, $contents);
         $section = $this->section($contents, 'Primitive');
 
@@ -115,7 +115,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
      */
     private function checkInputModeFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $findings = $this->bannedMethodFindings($file, $contents);
         $promptMapping = $this->section($contents, 'Prompt Mapping');
 

@@ -40,11 +40,11 @@ final readonly class ReadCommandNoLiveProbeRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($canonicalFile)) {
+                if (! $this->docs->isFile($canonicalFile)) {
                     continue;
                 }
 
-                if (! $this->isBaseReadOnly(file_get_contents($canonicalFile) ?: '')) {
+                if (! $this->isBaseReadOnly($this->docs->contents($canonicalFile))) {
                     continue;
                 }
 
@@ -80,7 +80,7 @@ final readonly class ReadCommandNoLiveProbeRule implements GroupedRule
      */
     private function checkReadContractFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $findings = [];
 
         foreach (self::STALE_LIVE_OUTPUT_PATTERNS as $pattern => $message) {

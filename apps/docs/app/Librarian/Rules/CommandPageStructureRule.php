@@ -55,7 +55,7 @@ final readonly class CommandPageStructureRule implements GroupedRule
      */
     private function checkPublicCommandPage(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $sectionCount = $this->countSectionHeadings($contents);
 
         if ($sectionCount < self::MIN_SECTIONS) {

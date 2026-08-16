@@ -41,11 +41,11 @@ final readonly class DestructiveConsentRule implements GroupedRule
         $commandName = $this->docs->commandName($commandDirectory);
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-        if (! is_file($canonicalFile)) {
+        if (! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
-        $canonicalContents = file_get_contents($canonicalFile) ?: '';
+        $canonicalContents = $this->docs->contents($canonicalFile);
 
         if (! $this->hasDestructiveEffect($canonicalContents)) {
             return [];
@@ -108,7 +108,7 @@ final readonly class DestructiveConsentRule implements GroupedRule
      */
     private function checkInteractiveInputMode(string $file): array
     {
-        if (! is_file($file)) {
+        if (! $this->docs->isFile($file)) {
             return [
                 $this->finding(
                     $file,
@@ -118,7 +118,7 @@ final readonly class DestructiveConsentRule implements GroupedRule
         }
 
         $findings = [];
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $lowerContents = strtolower($contents);
 
         if (! str_contains($lowerContents, 'confirm')) {
@@ -143,7 +143,7 @@ final readonly class DestructiveConsentRule implements GroupedRule
      */
     private function checkNonInteractiveInputMode(string $file): array
     {
-        if (! is_file($file)) {
+        if (! $this->docs->isFile($file)) {
             return [
                 $this->finding(
                     $file,
@@ -153,7 +153,7 @@ final readonly class DestructiveConsentRule implements GroupedRule
         }
 
         $findings = [];
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $lowerContents = strtolower($contents);
 
         if (! str_contains($contents, '--force')) {

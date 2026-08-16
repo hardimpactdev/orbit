@@ -56,11 +56,11 @@ final readonly class CanonicalBehaviorBoundaryRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $file = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($file)) {
+                if (! $this->docs->isFile($file)) {
                     continue;
                 }
 
-                array_push($findings, ...$this->checkFile($file, file_get_contents($file) ?: ''));
+                array_push($findings, ...$this->checkFile($file, $this->docs->contents($file)));
             }
         }
 

@@ -25,7 +25,7 @@ final readonly class HumanRendererProgressTreeRule implements GroupedRule
         $findings = [];
 
         foreach ($this->humanRendererFiles() as $file) {
-            $contents = file_get_contents($file) ?: '';
+            $contents = $this->docs->contents($file);
 
             if (! str_contains($contents, "\n## Progress Tree")) {
                 $findings[] = new Finding(

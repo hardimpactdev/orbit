@@ -30,7 +30,7 @@ final readonly class AppPhpVersionContractRule implements GroupedRule
             }
 
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                foreach ($this->violations(file_get_contents($file) ?: '') as $message) {
+                foreach ($this->violations($this->docs->contents($file)) as $message) {
                     $findings[] = $this->finding($file, $message);
                 }
             }

@@ -111,11 +111,11 @@ final readonly class ActivityLoggingContractRule implements GroupedRule
 
                 $file = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($file)) {
+                if (! $this->docs->isFile($file)) {
                     continue;
                 }
 
-                $section = $this->activityLoggingSection(file_get_contents($file) ?: '');
+                $section = $this->activityLoggingSection($this->docs->contents($file));
 
                 if ($section === null) {
                     $findings[] = $this->finding(

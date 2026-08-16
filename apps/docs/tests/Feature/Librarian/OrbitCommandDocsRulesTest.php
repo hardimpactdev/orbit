@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Librarian\OrbitCommandDocs;
 use App\Librarian\Rules\ActivityLoggingContractRule;
 use App\Librarian\Rules\AppPhpVersionContractRule;
 use App\Librarian\Rules\BehaviorContractStructureRule;
@@ -129,6 +130,7 @@ beforeEach(function (): void {
     ]);
 
     app()->forgetInstance(DocsConfig::class);
+    app()->forgetInstance(OrbitCommandDocs::class);
 });
 
 afterEach(function (): void {

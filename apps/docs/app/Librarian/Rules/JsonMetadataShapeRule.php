@@ -31,11 +31,7 @@ final readonly class JsonMetadataShapeRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->markdownFiles($this->docs->docsRoot()) as $file) {
-            $contents = file_get_contents($file);
-
-            if ($contents === false) {
-                continue;
-            }
+            $contents = $this->docs->contents($file);
 
             foreach ($this->parser->parse($file, $contents) as $example) {
                 foreach ($this->decoder->decodeExamples($example->raw) as $decoded) {

@@ -89,11 +89,11 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
 
         $readme = "{$familyDirectory}/README.md";
 
-        if (! is_file($readme)) {
+        if (! $this->docs->isFile($readme)) {
             return [];
         }
 
-        $section = $this->stateOwnershipSection(file_get_contents($readme) ?: '');
+        $section = $this->stateOwnershipSection($this->docs->contents($readme));
 
         if ($section === null) {
             return [

@@ -25,7 +25,7 @@ final readonly class JsonRendererEnvelopeRule implements GroupedRule
         $findings = [];
 
         foreach ($this->jsonRendererFiles() as $file) {
-            $contents = file_get_contents($file) ?: '';
+            $contents = $this->docs->contents($file);
             $section = $this->section($contents, 'Envelope');
 
             if ($section === '') {

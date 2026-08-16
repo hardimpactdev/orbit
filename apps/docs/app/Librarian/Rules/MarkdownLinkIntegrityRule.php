@@ -39,7 +39,7 @@ final readonly class MarkdownLinkIntegrityRule implements GroupedRule
     private function checkFile(string $file): array
     {
         $findings = [];
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
 
         foreach ($this->relativeLinks($contents) as $link) {
             $target = $this->linkTarget($link);
@@ -50,7 +50,7 @@ final readonly class MarkdownLinkIntegrityRule implements GroupedRule
 
             $resolvedTarget = $this->normalizePath(dirname($file).'/'.$target);
 
-            if (file_exists($resolvedTarget)) {
+            if ($this->docs->exists($resolvedTarget)) {
                 continue;
             }
 

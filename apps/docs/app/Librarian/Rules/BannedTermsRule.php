@@ -53,7 +53,7 @@ final readonly class BannedTermsRule implements GroupedRule
                     continue;
                 }
 
-                $lines ??= explode("\n", file_get_contents($file) ?: '');
+                $lines ??= explode("\n", $this->docs->contents($file));
 
                 /** @var array{terms?: mixed, decision?: mixed, replacement?: mixed} $entry */
                 array_push($findings, ...$this->checkEntry($file, $lines, $entry));

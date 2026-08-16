@@ -65,7 +65,7 @@ final readonly class PublicCommandPageBoundaryRule implements GroupedRule
                 continue;
             }
 
-            $contents = file_get_contents($file) ?: '';
+            $contents = $this->docs->contents($file);
 
             array_push(
                 $findings,

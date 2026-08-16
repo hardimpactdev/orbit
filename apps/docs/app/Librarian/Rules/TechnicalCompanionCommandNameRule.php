@@ -41,11 +41,11 @@ final readonly class TechnicalCompanionCommandNameRule implements GroupedRule
         $commandSlug = $this->docs->commandName($commandDirectory);
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandSlug}.md";
 
-        if (! is_file($canonicalFile)) {
+        if (! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
-        $canonicalCommand = $this->canonicalCommand((string) file_get_contents($canonicalFile));
+        $canonicalCommand = $this->canonicalCommand($this->docs->contents($canonicalFile));
 
         if ($canonicalCommand === null) {
             return [];
@@ -58,7 +58,7 @@ final readonly class TechnicalCompanionCommandNameRule implements GroupedRule
                 continue;
             }
 
-            $companionCommand = $this->headingCommand((string) file_get_contents($file));
+            $companionCommand = $this->headingCommand($this->docs->contents($file));
 
             if ($companionCommand === null || $companionCommand === $canonicalCommand) {
                 continue;

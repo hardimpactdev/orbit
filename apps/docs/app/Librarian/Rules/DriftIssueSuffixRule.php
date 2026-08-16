@@ -26,7 +26,7 @@ final readonly class DriftIssueSuffixRule implements GroupedRule
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                foreach ($this->orphanedCodes(file_get_contents($file) ?: '') as $code) {
+                foreach ($this->orphanedCodes($this->docs->contents($file)) as $code) {
                     $replacement = preg_replace('/_orphaned$/', '_extra', $code) ?? $code;
 
                     $findings[] = new Finding(

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Librarian\OrbitCommandDocs;
 use App\Librarian\Rules\CommandDirectoryStructureRule;
+use App\Librarian\Rules\MarkdownLinkIntegrityRule;
 use HardImpact\Librarian\Docs\DocsConfig;
+use HardImpact\Librarian\Linting\GroupedRule;
 use Illuminate\Support\Facades\Artisan;
 
 beforeEach(function (): void {
@@ -18,6 +20,7 @@ beforeEach(function (): void {
     ]);
 
     app()->forgetInstance(DocsConfig::class);
+    app()->forgetInstance(OrbitCommandDocs::class);
 });
 
 afterEach(function (): void {
@@ -65,6 +68,83 @@ it('reports relative finding paths in the canonical docs namespace regardless of
         ->toBe('docs/domains/1_node/node.md')
         ->and($docs->relativePath("{$this->fixtureRoot}/content"))
         ->toBe('docs');
+});
+
+it('keeps one immutable command docs snapshot per lint invocation', function (): void {
+    writeLintScopeFamily($this->fixtureRoot, withTechnicalContract: true);
+    config()->set('librarian.rules', [
+        new readonly class("{$this->fixtureRoot}/content/domains/1_node/1_node-new/node-new.md") implements
+            GroupedRule {
+            public function __construct(
+                private string $commandPage,
+            ) {}
+
+            public function group(): string
+            {
+                return 'references';
+            }
+
+            public function check(): array
+            {
+                file_put_contents(
+                    filename: $this->commandPage,
+                    data: "# `orbit node:new`\n\n[Missing](missing.md)\n",
+                );
+
+                return [];
+            }
+        },
+        MarkdownLinkIntegrityRule::class,
+    ]);
+
+    $firstExitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'domains/1_node',
+        '--group' => 'references',
+    ]);
+    $firstPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    $secondExitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'domains/1_node',
+        '--group' => 'references',
+    ]);
+    $secondPayload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($firstExitCode)
+        ->toBe(0)
+        ->and(findingsForLintScopeRule(payload: $firstPayload, rule: 'command_docs.markdown_link_integrity'))
+        ->toBeEmpty()
+        ->and($secondExitCode)
+        ->toBe(1)
+        ->and(findingsForLintScopeRule(payload: $secondPayload, rule: 'command_docs.markdown_link_integrity'))
+        ->toHaveCount(1);
+});
+
+it('indexes generated files and keys markdown snapshots by directory and recursion mode', function (): void {
+    writeLintScopeFamily($this->fixtureRoot, withTechnicalContract: true);
+    writeLintScopeFile(
+        root: $this->fixtureRoot,
+        path: 'content/generated/command-catalog.json',
+        contents: "{\n    \"schema_version\": 1\n}\n",
+    );
+
+    $docs = app(OrbitCommandDocs::class);
+    $familyDirectory = "{$this->fixtureRoot}/content/domains/1_node";
+    $canonicalContract = "{$familyDirectory}/1_node-new/technical/1_node-new.md";
+    $generatedIndex = "{$this->fixtureRoot}/content/generated/command-catalog.json";
+
+    expect($docs->markdownFiles($familyDirectory, recursive: false))
+        ->not
+        ->toContain($canonicalContract)
+        ->and($docs->markdownFiles($familyDirectory, recursive: true))
+        ->toContain($canonicalContract)
+        ->and($docs->isFile($generatedIndex))
+        ->toBeTrue()
+        ->and($docs->contents($generatedIndex))
+        ->toBe("{\n    \"schema_version\": 1\n}\n")
+        ->and($docs->isFile("{$this->fixtureRoot}/content/generated/missing.json"))
+        ->toBeFalse();
 });
 
 function writeLintScopeFamily(string $root, bool $withTechnicalContract): void

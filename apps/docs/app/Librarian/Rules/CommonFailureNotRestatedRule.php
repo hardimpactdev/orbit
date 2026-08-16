@@ -52,11 +52,11 @@ final readonly class CommonFailureNotRestatedRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($canonicalFile)) {
+                if (! $this->docs->isFile($canonicalFile)) {
                     continue;
                 }
 
-                $section = $this->failureSemanticsSection(file_get_contents($canonicalFile) ?: '');
+                $section = $this->failureSemanticsSection($this->docs->contents($canonicalFile));
 
                 if ($section === '') {
                     continue;

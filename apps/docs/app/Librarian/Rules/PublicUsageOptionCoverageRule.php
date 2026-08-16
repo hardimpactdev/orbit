@@ -44,12 +44,12 @@ final readonly class PublicUsageOptionCoverageRule implements GroupedRule
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandSlug}.md";
         $publicFile = "{$commandDirectory}/{$commandSlug}.md";
 
-        if (! is_file($canonicalFile) || ! is_file($publicFile)) {
+        if (! $this->docs->isFile($canonicalFile) || ! $this->docs->isFile($publicFile)) {
             return [];
         }
 
-        $canonicalContents = (string) file_get_contents($canonicalFile);
-        $usageSignature = $this->optionParser->normativeUsageSignature((string) file_get_contents($publicFile));
+        $canonicalContents = $this->docs->contents($canonicalFile);
+        $usageSignature = $this->optionParser->normativeUsageSignature($this->docs->contents($publicFile));
 
         if ($usageSignature === null) {
             return [];

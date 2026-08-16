@@ -26,9 +26,7 @@ final readonly class TestMappingPathExistsRule implements GroupedRule
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                $contents = file_get_contents($file);
-
-                array_push($findings, ...$this->checkFile($file, $contents === false ? '' : $contents));
+                array_push($findings, ...$this->checkFile($file, $this->docs->contents($file)));
             }
         }
 

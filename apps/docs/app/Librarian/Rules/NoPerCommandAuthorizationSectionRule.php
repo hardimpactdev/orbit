@@ -37,11 +37,11 @@ final readonly class NoPerCommandAuthorizationSectionRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($canonicalFile)) {
+                if (! $this->docs->isFile($canonicalFile)) {
                     continue;
                 }
 
-                $contents = file_get_contents($canonicalFile) ?: '';
+                $contents = $this->docs->contents($canonicalFile);
 
                 foreach (self::BANNED_HEADINGS as $heading) {
                     if (preg_match('/^'.preg_quote($heading, '/').'\s*$/m', $contents) !== 1) {
