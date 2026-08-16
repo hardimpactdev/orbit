@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T21:03:06+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-751-doc-index-per-lint/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-16-230306-solo-751-doc-index-per-lint",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/todo-751-retained-incus.json",
+        "loop.md",
+        "quality-gates/docs-lint-2026-08-16T203704Z-02deb99be2ff.json",
+        "quality-gates/quality-check-2026-08-16T204601Z-8f377b631fac.json"
+    ],
+    "entry_digests": {
+        "evidence/todo-751-retained-incus.json": "ecb4cbfe619ccbadc65e15a6616d035c1ef142c60a26469d0cc91cc548509559",
+        "loop.md": "ff59354d05b701a91b4ee306fa1b3144436a1e8255d54b3b2d3231a905516f29",
+        "quality-gates/docs-lint-2026-08-16T203704Z-02deb99be2ff.json": "f619dff5c295b3bf9ab790f11e7318f6d25d0710e3e7cbd53eba60cba26e9036",
+        "quality-gates/quality-check-2026-08-16T204601Z-8f377b631fac.json": "2813d93c2f08cd9b46ed098e3b52281440e8301d276a05c1ac9a127413f751bc"
+    },
+    "slug": "solo-751-doc-index-per-lint",
+    "requested_slug": "solo-751-doc-index-per-lint",
+    "compatible_slugs": [
+        "solo-751-doc-index-per-lint"
+    ],
+    "branch": "solo-751-doc-index-per-lint",
+    "candidate_commit": "8134d4005bea298de3c490acf8fbd8c215ccd96f",
+    "accepted_feature_tip": "8134d4005bea298de3c490acf8fbd8c215ccd96f",
+    "accepted_main_tip": "0ffcf61fc54a4c6e0b95b191798b95ce8e4f8206",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

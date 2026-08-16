@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-16T20:36:56Z",
+    "ended_at": "2026-08-16T20:37:04Z",
+    "duration_seconds": 8,
+    "exit_code": 0,
+    "git": {
+        "branch": "solo-751-doc-index-per-lint",
+        "commit": "8134d4005bea298de3c490acf8fbd8c215ccd96f",
+        "dirty": false
+    },
+    "subgates": []
+}

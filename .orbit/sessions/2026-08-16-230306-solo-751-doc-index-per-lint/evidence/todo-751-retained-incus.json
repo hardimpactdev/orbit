@@ -1,0 +1,18 @@
+{
+  "candidate": "8134d4005bea298de3c490acf8fbd8c215ccd96f",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "target": "dev-eaba0a/operator",
+  "command": "vendor/bin/pest --compact tests/Feature/Librarian/LintPathScopeTest.php tests/Feature/Librarian/OrbitCommandDocsRulesTest.php",
+  "expected": "The source-mounted candidate reuses one immutable command-documentation filesystem index within each lint invocation and a later invocation observes path-scoped filesystem mutations, generated indexes, missing files, and broken links.",
+  "observed": "The VM launcher resolved to /home/orbit/orbit-run/apps/cli/orbit; the candidate and VM SHA-256 values matched for OrbitCommandDocs.php and AppServiceProvider.php; 92 focused tests passed with 674 assertions in 2.80 seconds.",
+  "result": "passed",
+  "source_hashes": {
+    "apps/docs/app/Librarian/OrbitCommandDocs.php": "42007da2fff68cac9fd7b5cb49ea2d0c1a2eac16c81c815dbdfc4a6f46a42812",
+    "apps/docs/app/Providers/AppServiceProvider.php": "f2e3977c5ce54b7c18be1cfc6a4c3110c895f0649c7900c35d199250a2fedbc3"
+  },
+  "tests": 92,
+  "assertions": 674,
+  "duration_seconds": 2.80,
+  "recorded_at": "2026-08-16T21:02:04Z"
+}
