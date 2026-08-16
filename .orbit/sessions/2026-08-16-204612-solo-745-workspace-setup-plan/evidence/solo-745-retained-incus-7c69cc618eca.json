@@ -1,0 +1,57 @@
+{
+  "candidate": "7c69cc618eca5d8ef5efd43408a59f535b6e9d9e",
+  "result": "passed",
+  "topology": {
+    "id": "dev-69c129",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast"
+  },
+  "sync": {
+    "command": "composer e2e:incus -- --sync --id=dev-69c129 --json --no-interaction",
+    "exit_code": 0,
+    "local_remote_followup_file_hashes_match": true
+  },
+  "followup_file_sha256": {
+    "apps/e2e/tests/Feature/Commands/Ephemeral/WorkspacesDoctorTest.php": "99cf0771fdc9386fee3913774f91198f2e3a030ecca41dfaed93d1a901c320bb",
+    "apps/e2e/tests/Feature/Commands/PhpRuntimeCommandsTest.php": "9143fdf543419d6b7b7e68bc7b210614185e4149b48484b34fd310f8bb09dd2d",
+    "apps/e2e/tests/Feature/Commands/ProcessListTest.php": "1691ee06cf3b215a3327ca0b6d876491f038e126681add833ad7e38143b13559",
+    "apps/e2e/tests/Feature/Commands/RegistryPromptInputModeTest.php": "ecd4da78ff6599331c25fb1dba8f26df3ca69091a689bec9858e4f14e5cbac17",
+    "apps/e2e/tests/Feature/Commands/WorkspaceHistoryTest.php": "378725fc70bbdfb8ea87f49534250ed725c2116663e8cdda18b18b673a7e6efe",
+    "apps/e2e/tests/Feature/Commands/WorkspaceLogTest.php": "d540bffe82bbef54866407425318b68bac71c38d0ab8eae992965c1164d0c9f5",
+    "apps/e2e/tests/Feature/Commands/WorkspaceRemoveTest.php": "9547c6ebb10decb00d7ff4b6f8d6313c8719cd89d90aac141d1579764f092da6",
+    "apps/e2e/tests/Feature/Commands/WorkspaceShowTest.php": "4598130db7a2bc9d001c6b0424495c0ec0414e87d67590bbc076754245f2bb72"
+  },
+  "commands": [
+    "orbit workspace:setup parity-amended-json --instance=parity745.development --json --no-interaction",
+    "orbit workspace:setup parity-amended-sse --instance=parity745.development --stream-json --no-interaction",
+    "orbit workspace:setup parity-adopt-closure --instance=parity745.development --json --no-interaction",
+    "orbit workspace:show parity-adopt-closure --instance=parity745.development --json --no-interaction",
+    "orbit workspace:list --instance=parity745.development --json --no-interaction"
+  ],
+  "setup_sse_phase_order": [
+    "apply_workspace_registration",
+    "register_proxy_routes",
+    "initialize_workspace_environment",
+    "install_workspace_runtime_container",
+    "check_workspace_readiness"
+  ],
+  "observed": {
+    "setup_json_action": "converged",
+    "setup_sse_action": "converged",
+    "json_terminal_model": "success.data.result+workspace and success.meta",
+    "sse_terminal_model": "event=complete with success.data.result+workspace and success.meta",
+    "json_lifecycle_status": "expected",
+    "sse_lifecycle_status": "expected",
+    "http_probe_fields": ["url", "result", "status_code", "duration_ms"],
+    "adoption_setup_adopted": true,
+    "adoption_show_adopted": true,
+    "adoption_list_adopted": true
+  },
+  "expected_fixture_warnings": [
+    "PHP 8.5 runtime image is unavailable on app-dev-1",
+    "The prepared fixture does not resolve parity745.test domains"
+  ],
+  "release_command": "composer e2e:incus -- --stop --id=dev-69c129"
+}
+

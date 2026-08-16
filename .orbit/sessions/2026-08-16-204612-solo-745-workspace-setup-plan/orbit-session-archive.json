@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T18:46:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-745-workspace-setup-plan/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-16-204612-solo-745-workspace-setup-plan",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-745-fix-7c69cc618eca.txt",
+        "evidence/solo-745-rereview-7c69cc618eca.txt",
+        "evidence/solo-745-retained-incus-7c69cc618eca.json",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/solo-745-fix-7c69cc618eca.txt": "9cb7f4439aabd86ade2ee0d8a2073c5d16b47cc915eb1e02826315501755f31e",
+        "evidence/solo-745-rereview-7c69cc618eca.txt": "2c201ea869e9d0114ec67c752169926ec6faef82f64effa6529dd044e8fabf06",
+        "evidence/solo-745-retained-incus-7c69cc618eca.json": "173b7e2e1ac2f925d3286b0670dd28746441c30a2bb3a27512c4e642096f7ab2",
+        "loop.md": "6c09e37d0ba14ec64db10abdb1f23db7e87d6a07dbaeb7587499a640e81c2154"
+    },
+    "slug": "solo-745-workspace-setup-plan",
+    "requested_slug": "solo-745-workspace-setup-plan",
+    "compatible_slugs": [
+        "solo-745-workspace-setup-plan"
+    ],
+    "branch": "solo-745-workspace-setup-plan",
+    "candidate_commit": "7c69cc618eca5d8ef5efd43408a59f535b6e9d9e",
+    "accepted_feature_tip": "7c69cc618eca5d8ef5efd43408a59f535b6e9d9e",
+    "accepted_main_tip": "e73d2891ce3a3b2901dace0e10133c52391e22dd",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

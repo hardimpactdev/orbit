@@ -1,0 +1,21 @@
+CHECKOUT_PROOF: worktree `/Users/nckrtl/orbit/.worktrees/solo-745-workspace-setup-plan`; branch `solo-745-workspace-setup-plan`; HEAD `7c69cc618eca5d8ef5efd43408a59f535b6e9d9e`; base/main `e73d2891ce3a3b2901dace0e10133c52391e22dd`; tracked, index, and untracked state clean.
+
+BLAST_RADIUS: complete — reviewed the full 77-file diff and authority/evidence set. Inventory found exactly 11 direct Workspace creations across 9 files: Doctor 1, PHP Runtime 1, Process List 1, Registry Prompt 2, History 1, List 2, Log 1, Remove 1, Show 1. Missing `instance_id`: 0. All 11 use their App's `$instance->id`. All 13 relevant App seed blocks are logical-only with no obsolete placement fields. The eight repaired files pass fresh PHP syntax checks and match the retained Incus evidence hashes.
+
+HUMAN_JUDGMENT: not-required — the closure criteria are deterministic, and the exact candidate has clean quality-gate and retained-topology proof. No unresolved product decision remains.
+
+VERDICT: PASS
+
+FINDINGS: none
+
+LAST_FINDING: closed — all 11 direct Workspace creations have valid concrete ownership. Each Instance belongs to the correct App, uses `OrbitInstanceDriverConfigData`, and has the intended node, path, `document_root`, PHP snapshot, and adoption state. WorkspaceNew, WorkspaceSetup, and WorkspaceList fixtures are also valid. The retained Incus proof passed with the eight repaired files synchronized.
+
+PRIOR_THREE: all closed — WorkspaceNew uses `expected`; WorkspaceNew/Setup/List use concrete Instances and current placement fields; warning documentation covers page `>=500`, Vite asset `>=400`, and page/asset request failures.
+
+FIVE_FINDINGS: all closed — canonical CLI envelopes, lifecycle migration and consumers, early-failure adoption durability, plan/reporter normalization, and list adoption documentation remain correct.
+
+PRIOR_EIGHT: all closed — JSON/SSE envelopes, readiness shape and redaction, adoption, lifecycle authority, SDK compatibility, reserved `main` validation, construction/reporting normalization, and nullable warning family remain correct.
+
+CLOSED_EARLIER: closed — source-retention recovery, endpoint parity, warning ownership, baseline cleanup, registration redaction and convergence, stable reasons, retry quoting, setup-output redaction, slug validation, and phase ordering show no regression. Exact lifecycle search found zero `WorkspaceLifecycleStatus::Active` references; the literal `active` remains only in the one-way backfill and its migration test. Quality receipt reports 45/45 subgates at exit 0. Retained Incus phase order is registration → proxy → environment → runtime container → readiness.
+
+REVIEWED_SHA: 7c69cc618eca5d8ef5efd43408a59f535b6e9d9e

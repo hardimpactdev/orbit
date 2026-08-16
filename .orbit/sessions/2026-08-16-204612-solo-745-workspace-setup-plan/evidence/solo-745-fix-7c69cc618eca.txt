@@ -1,0 +1,16 @@
+Todo #745 final blast-radius correction proof
+
+Candidate: 7c69cc618eca5d8ef5efd43408a59f535b6e9d9e
+Tracked worktree: clean
+Protected config SHA-256: 3985d753280ae022834e6a70b65f1eee85e5921263f9146b5ef564697170398f
+
+Eight manual E2E fixtures now create concrete Instances with placement in OrbitInstanceDriverConfigData and set instance_id on every direct Workspace row. RegistryPromptInputModeTest creates both required Instances and retains its intended adoption semantics.
+
+Verification:
+- PHP syntax: all eight files passed.
+- E2E Mago format, lint, and analyze: exit 0 with repository baselines; four existing analyzer warnings.
+- Direct manual E2E Workspace inventory: 11 creations, 0 missing instance_id.
+- Manual E2E execution was not run.
+- composer quality-check: exit 0; exact candidate; dirty=false; 45/45 subgates passed.
+- Quality receipt: .orbit/quality-gates/quality-check-2026-08-16T183233Z-73c52a1dda45.json
+
