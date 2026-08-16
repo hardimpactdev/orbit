@@ -43,10 +43,14 @@ final readonly class NodeBootstrapCompletion
         private NodeSecurityBaseline $securityBaseline,
     ) {}
 
-    /** @param Closure(NodeBootstrap): GatewayActionResult $converge */
+    /**
+     * @param  Closure(NodeBootstrap): ?GatewayActionResult  $prevalidate
+     * @param  Closure(NodeBootstrap): GatewayActionResult  $converge
+     */
     public function complete(
         NodeBootstrap $bootstrap,
         Node $caller,
+        Closure $prevalidate,
         Closure $converge,
     ): NodeBootstrapCompletionResult {
         try {
@@ -55,6 +59,7 @@ final readonly class NodeBootstrapCompletion
                 fn (): NodeBootstrapCompletionResult => $this->completeWhileLocked(
                     $bootstrap,
                     $caller,
+                    $prevalidate,
                     $converge,
                 ),
             );
@@ -192,11 +197,13 @@ final readonly class NodeBootstrapCompletion
     }
 
     /**
-     * @param Closure(NodeBootstrap): GatewayActionResult $converge
+     * @param  Closure(NodeBootstrap): ?GatewayActionResult  $prevalidate
+     * @param  Closure(NodeBootstrap): GatewayActionResult  $converge
      */
     private function completeWhileLocked(
         NodeBootstrap $bootstrap,
         Node $caller,
+        Closure $prevalidate,
         Closure $converge,
     ): NodeBootstrapCompletionResult {
         $bootstrap->refresh();
@@ -235,6 +242,12 @@ final readonly class NodeBootstrapCompletion
         }
 
         try {
+            $prevalidationFailure = $prevalidate($bootstrap);
+
+            if ($prevalidationFailure instanceof GatewayActionResult) {
+                return new NodeBootstrapCompletionResult($prevalidationFailure, false);
+            }
+
             $result = $converge($bootstrap);
         } catch (Throwable $exception) {
             $completed = $this->refreshCompletedBootstrap($bootstrap, $node);

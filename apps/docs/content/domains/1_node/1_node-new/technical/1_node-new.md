@@ -218,8 +218,9 @@ Caller-path behavior is split out into:
   bootstrap completion, validate the same role set again before Agent
   readiness, role-assignment writes, remote dispatch, convergence, or security
   setup. Every registry conflict pair, including `app-dev` plus `app-prod`,
-  fails before those effects. Sequential role assignment is not a substitute
-  for this prevalidation.
+  fails before those effects and leaves the existing pending bootstrap,
+  including `last_error`, unchanged. Sequential role assignment is not a
+  substitute for this prevalidation.
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
   `websocket` assignments store `settings.valkey_node_id`, `s3` assignments

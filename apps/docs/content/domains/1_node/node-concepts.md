@@ -192,6 +192,8 @@ whether each expanded role is eligible for workload creation and whether the
 complete role set contains a conflicting pair. It performs the same check
 again when a pending bootstrap enters completion, before Agent readiness,
 role-assignment writes, remote dispatch, convergence, or security setup.
+Conflict rejection leaves the existing pending bootstrap unchanged, including
+its `last_error` value.
 Named templates and template implementation status are command concepts. They
 remain outside the node-role registry; only the roles produced by a template
 enter registry validation.
