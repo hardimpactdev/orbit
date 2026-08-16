@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayImageBuildInputs;
 use App\E2E\Support\E2EProvisionCheckpointManifest;
 use App\E2E\Support\E2EProvisionCheckpointStore;
 use App\E2E\Support\E2EProvisionFingerprint;
@@ -496,6 +497,7 @@ it('keeps serving assertions out of the provision group', function (): void {
 function makeProvisionFingerprintFixture(): string
 {
     $root = make_temp_directory('provision-fingerprint');
+    $gatewayInputDirectories = [];
     $files = [
         'composer.json' => '{"scripts":{"test:e2e:provision:incus":"pest --group=e2e-provision"}}',
         'composer.lock' => '{}',
@@ -516,7 +518,19 @@ function makeProvisionFingerprintFixture(): string
         'bin/install-orbit' => "#!/usr/bin/env bash\necho install\n",
         'bin/e2e-provision-node' => "#!/usr/bin/env bash\necho provision\n",
         'bin/_e2e-deps.sh' => "#!/usr/bin/env bash\necho deps\n",
+        E2EGatewayImageBuildInputs::ManifestPath => (string) file_get_contents(
+            repo_path(E2EGatewayImageBuildInputs::ManifestPath),
+        ),
     ];
+
+    foreach (E2EGatewayImageBuildInputs::paths(repo_path()) as $gatewayInput) {
+        if (! is_dir(repo_path($gatewayInput))) {
+            $files[$gatewayInput] ??= "fixture\n";
+            continue;
+        }
+
+        $gatewayInputDirectories[] = $gatewayInput;
+    }
 
     foreach ($files as $path => $contents) {
         $absolute = "{$root}/{$path}";
@@ -526,6 +540,12 @@ function makeProvisionFingerprintFixture(): string
         }
 
         file_put_contents($absolute, $contents);
+    }
+
+    foreach ($gatewayInputDirectories as $directory) {
+        if (! is_dir("{$root}/{$directory}")) {
+            mkdir("{$root}/{$directory}", recursive: true);
+        }
     }
 
     return $root;

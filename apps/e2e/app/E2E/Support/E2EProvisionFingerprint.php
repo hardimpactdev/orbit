@@ -31,7 +31,7 @@ final readonly class E2EProvisionFingerprint
             'source' => [
                 'provision' => self::hashPathSet($root, self::provisionSourcePaths()),
                 'cli_artifact' => self::hashPathSet($root, self::cliArtifactPaths()),
-                'gateway_artifact' => self::hashPathSet($root, self::gatewayArtifactPaths()),
+                'gateway_artifact' => E2EGatewayImageBuildInputs::inventory($root),
                 'websocket_artifact' => self::hashPathSet($root, self::webSocketArtifactPaths()),
             ],
             'runtime_archives' => self::runtimeArchiveFingerprints($bundleDirectory),
@@ -185,32 +185,6 @@ final readonly class E2EProvisionFingerprint
             'apps/cli/composer.json',
             'apps/cli/composer.lock',
             'bin/orbit',
-        ];
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function gatewayArtifactPaths(): array
-    {
-        return [
-            'apps/gateway/artisan',
-            'apps/gateway/app',
-            'apps/gateway/bootstrap',
-            'apps/gateway/config',
-            'apps/gateway/database',
-            'apps/gateway/public',
-            'apps/gateway/resources/css',
-            'apps/gateway/resources/js',
-            'apps/gateway/resources/views',
-            'apps/gateway/routes',
-            'apps/gateway/.env.example',
-            'apps/gateway/composer.json',
-            'apps/gateway/composer.lock',
-            'packages/sdk/composer.json',
-            'packages/sdk/composer.lock',
-            'packages/sdk/src',
-            'docker/orbit-gateway',
         ];
     }
 

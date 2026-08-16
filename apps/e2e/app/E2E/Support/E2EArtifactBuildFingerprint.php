@@ -32,36 +32,7 @@ final class E2EArtifactBuildFingerprint
      */
     public static function gatewayImage(): string
     {
-        return self::forPaths([
-            'apps/gateway/artisan',
-            'apps/gateway/composer.json',
-            'apps/gateway/composer.lock',
-            'apps/gateway/.env.example',
-            'apps/gateway/app',
-            'apps/gateway/bootstrap',
-            'apps/gateway/config',
-            'apps/gateway/database',
-            'apps/gateway/public',
-            'apps/gateway/resources/css',
-            'apps/gateway/resources/js',
-            'apps/gateway/resources/views',
-            'apps/gateway/routes',
-            'packages/core/composer.json',
-            'packages/core/composer.lock',
-            'packages/core/src',
-            'packages/sdk/composer.json',
-            'packages/sdk/composer.lock',
-            'packages/sdk/src',
-            'docker/orbit-gateway',
-        ], [
-            'apps/gateway/bootstrap/cache',
-            'apps/gateway/database/database.sqlite',
-            'apps/gateway/database/database.sqlite-shm',
-            'apps/gateway/database/database.sqlite-wal',
-            'apps/gateway/storage/framework',
-            'apps/gateway/storage/logs',
-            'packages/sdk/vendor',
-        ]);
+        return E2EGatewayImageBuildInputs::fingerprint();
     }
 
     /**

@@ -732,12 +732,11 @@ it('builds the gateway artifact image on the Incus host', function (): void {
     expect($command)
         ->toContain('gateway-build-context')
         ->toContain('rsync -a --delete')
-        ->toContain("'apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway'")
+        ->toContain('E2EGatewayImageBuildInputs::stagingPaths()')
         ->toContain('docker build -f docker/orbit-gateway/Dockerfile')
         ->toContain('docker save')
-        ->toContain('docker/orbit-gateway/Dockerfile')
-        ->toContain('bin/install-orbit')
-        ->toContain('VERSION');
+        ->not->toContain("['apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway']")
+        ->not->toContain("['bin/install-orbit', 'VERSION']");
 });
 
 it('refreshes SDK dependencies in Incus selected-role source overlays', function (): void {
