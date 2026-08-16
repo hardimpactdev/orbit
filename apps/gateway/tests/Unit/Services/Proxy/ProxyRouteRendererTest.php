@@ -1224,6 +1224,71 @@ describe('ProxyRouteRenderer', function (): void {
             CADDY);
     });
 
+    it('resolves path blocking from the workspace instance placement, not the app primary instance', function (): void {
+        $appNode = Node::factory()->create(['name' => 'web-1']);
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'example',
+            'document_root' => 'public',
+            'runtime' => 'php',
+        ]);
+        // App primary instance serves from 'public'.
+        Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/sites/example',
+                document_root: 'public',
+            ),
+        ]);
+        // The workspace's own instance serves from the project root '.'.
+        $workspaceInstance = Instance::factory()->for($app, 'app')->create([
+            'name' => 'feature-a',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/sites/example/.worktrees/feature-a',
+                document_root: '.',
+            ),
+        ]);
+        $workspace = Workspace::factory()->for($app, 'app')->for($workspaceInstance, 'instance')->create([
+            'name' => 'feature-a',
+            'path' => '/home/orbit/sites/example/.worktrees/feature-a',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $appNode->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature-a.example.com',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'config' => [
+                'placement' => 'ingress',
+                'backend_artifacts' => [
+                    [
+                        'node_id' => $appNode->id,
+                        'domain' => 'feature-a.example.com',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/example/.worktrees/feature-a',
+                        'runtime_upstream' => 'http://orbit-ws-example-feature-a',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ],
+                ],
+            ],
+        ]);
+
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+
+        // The workspace instance root '.' selects the project-root directive,
+        // proving the concrete workspace placement wins over the app primary's 'public'.
+        expect($content)
+            ->toContain('import path_blocking_project_root')
+            ->not->toContain('import path_blocking_public_root');
+    });
+
     it('does not render development wake directives for production backend routes', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',

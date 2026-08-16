@@ -610,8 +610,7 @@ final class AppRegistrar
         }
 
         if ($nodeName === null && $existingApp instanceof App) {
-            $existingApp->loadMissing('node');
-            $node = $existingApp->node;
+            $node = app(WorkspacePlacement::class)->runtimeNode($existingApp, null);
 
             if ($node instanceof Node) {
                 return $node;

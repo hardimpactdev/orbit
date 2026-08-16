@@ -351,9 +351,7 @@ final readonly class ProxyRouteRenderer
 
         $this->validatedIpAddress($route, $bind);
 
-        $pathBlocking = $route->app?->document_root === '.'
-            ? 'import path_blocking_project_root'
-            : 'import path_blocking_public_root';
+        $pathBlocking = $this->pathBlockingDirective($route);
 
         $port = OrbitCaddyContainer::PrivateBackendPort;
 
@@ -509,9 +507,7 @@ final readonly class ProxyRouteRenderer
         $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
         $hibernation = $this->developmentRuntimeHibernationDirectives($route);
 
-        $pathBlocking = $route->app?->document_root === '.'
-            ? 'import path_blocking_project_root'
-            : 'import path_blocking_public_root';
+        $pathBlocking = $this->pathBlockingDirective($route);
 
         if ($usesPhpRuntime) {
             $runtimeUpstream = $this->runtimeUpstreamForRoute($route, $runtimeUpstream);
@@ -1066,6 +1062,34 @@ final readonly class ProxyRouteRenderer
         }
 
         return $this->innerTlsPolicy->runtimeUpstreamTransportDirectives($runtimeUpstreamTls);
+    }
+
+    private function pathBlockingDirective(ProxyRoute $route): string
+    {
+        // Document root is instance-authoritative; App owns none. A '.' root
+        // (serve from project root) uses the project-root path-blocking import.
+        // Resolve the route's concrete workspace/instance placement — the app
+        // primary is used only for truly app-level bare routes.
+        return $this->routeDocumentRoot($route) === '.'
+            ? 'import path_blocking_project_root'
+            : 'import path_blocking_public_root';
+    }
+
+    private function routeDocumentRoot(ProxyRoute $route): string
+    {
+        $workspace = $route->workspace;
+
+        if ($route->kind === 'workspace' && $workspace instanceof Workspace) {
+            return $this->placement->documentRootForWorkspace($workspace);
+        }
+
+        $app = $route->app;
+
+        if (! $app instanceof App) {
+            return '';
+        }
+
+        return $this->placement->runtimeDocumentRoot($app, $this->appRouteTargets->instanceForRoute($route));
     }
 
     /**

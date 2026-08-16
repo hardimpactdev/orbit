@@ -182,13 +182,13 @@ final readonly class AppsFixer
     {
         $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $appPath = rtrim($app->path, '/');
+        $appPath = $this->placement->runtimePath($app, null);
 
         $this->securityRepair()->repair(
             node: $node,
             user: $user,
             home: $home,
-            path: $appPath,
+            path: rtrim($appPath, '/'),
         );
 
         return [
@@ -202,7 +202,7 @@ final readonly class AppsFixer
             'details' => [
                 'app' => $app->name,
                 'runtime_user' => $user,
-                'path' => $app->path,
+                'path' => $appPath,
             ],
         ];
     }

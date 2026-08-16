@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Models\Node;
 use App\Services\Apps\AppRegistrar;
 use App\Services\Nodes\Access\AuthorizationResult;
@@ -113,7 +114,9 @@ final class AppRegisterController implements Loggable
             }
         }
 
-        $existingNode = $existingApp?->node;
+        $existingNode = $existingApp instanceof App
+            ? app(WorkspacePlacement::class)->runtimeNode($existingApp, null)
+            : null;
 
         if ($existingNode instanceof Node) {
             return $existingNode;

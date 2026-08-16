@@ -16,6 +16,7 @@ use App\Enums\Apps\InstanceDriver;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\OperationRun;
@@ -66,15 +67,18 @@ final class AppStoreController implements Loggable
             return $node;
         }
 
-        $existingApp = App::query()->with('node')->where('name', $input['name'])->first();
+        $existingApp = App::query()->with('instances')->where('name', $input['name'])->first();
 
         if ($existingApp instanceof App) {
+            // App owns no node: report where it is registered via its instance placement.
+            $existingNodeName = app(WorkspacePlacement::class)->runtimeNode($existingApp, null)?->name;
+
             return $this->error(
                 'app.collision',
-                "App name '{$input['name']}' is already registered in the gateway project registry on node '{$existingApp->node?->name}'.",
+                "App name '{$input['name']}' is already registered in the gateway project registry on node '{$existingNodeName}'.",
                 [
                     'name' => $input['name'],
-                    'node' => $existingApp->node?->name,
+                    'node' => $existingNodeName,
                 ],
                 409,
             );

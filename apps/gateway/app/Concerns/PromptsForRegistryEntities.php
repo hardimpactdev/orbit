@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\Workspace;
@@ -164,21 +165,31 @@ trait PromptsForRegistryEntities
         ?string $node = null,
         ?string $environment = null,
     ): array|GatewayApiException {
-        /** @var Builder<App> $query */
-        $query = App::query()->with('node');
-
-        if ($node !== null) {
-            $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node));
-        }
-
-        if ($environment !== null) {
-            $query->where('environment', $environment);
-        }
+        // App owns no node/environment: filter by concrete instance placement.
+        // A multi-instance app matches when ANY of its instances is on the given
+        // node or resolves to the given environment.
+        $placement = app(WorkspacePlacement::class);
 
         /** @mago-expect analyzer:invalid-argument */
-        return $query
+        return App::query()
+            ->with('instances')
             ->orderBy('name')
             ->get()
+            ->filter(function (App $app) use ($node, $environment, $placement): bool {
+                if ($node !== null && ! $app->instances->contains(
+                    fn (Instance $instance): bool => $placement->runtimeNode($app, $instance)?->name === $node,
+                )) {
+                    return false;
+                }
+
+                if ($environment !== null && ! $app->instances->contains(
+                    fn (Instance $instance): bool => $placement->runtimeEnvironment($app, $instance) === $environment,
+                )) {
+                    return false;
+                }
+
+                return true;
+            })
             ->map(fn (App $app): array => $this->appPromptPayload($app))
             ->values()
             ->all();
@@ -216,19 +227,25 @@ trait PromptsForRegistryEntities
         ?string $app = null,
         ?string $node = null,
     ): array|GatewayApiException {
-        return Workspace::query()
-            ->with('app.node')
+        // A workspace's node is instance-authoritative (its own instance
+        // placement), not App::node; filter by the resolved node name.
+        $placement = app(WorkspacePlacement::class);
+
+        /** @var \Illuminate\Support\Collection<int, Workspace> $workspaces */
+        $workspaces = Workspace::query()
+            ->with(['app.instances', 'instance'])
             ->when($app
             !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
                 'name',
                 $app,
             )))
-            ->when($node
-            !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where(
-                'name',
-                $node,
-            )))
-            ->get()
+            ->get();
+
+        return $workspaces
+            ->filter(
+                fn (Workspace $workspace): bool => $node === null
+                    || $placement->nodeForWorkspace($workspace)?->name === $node,
+            )
             ->sort(
                 fn (Workspace $first, Workspace $second): int => (
                     [
