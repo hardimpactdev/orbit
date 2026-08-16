@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T20:20:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-750-node-role-registry-creation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-16-222023-solo-750-node-role-registry-creation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/todo-750-retained-incus.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-16T200636Z-9d38847f056c.json"
+    ],
+    "entry_digests": {
+        "evidence/todo-750-retained-incus.json": "cb8f6d04591bdaec8c02f69035470aee4359bc5f03c05df5b8772f91c939d000",
+        "loop.md": "fbe1cd7ecd53608c64855ade6d9719100ef6311a850f3b75966c9d41365df63b",
+        "quality-gates/quality-check-2026-08-16T200636Z-9d38847f056c.json": "b670a9fbeea3c85de72c8dc259ca9d6bba4ec0a414d9b758c73a2f985dcfb2a6"
+    },
+    "slug": "solo-750-node-role-registry-creation",
+    "requested_slug": "solo-750-node-role-registry-creation",
+    "compatible_slugs": [
+        "solo-750-node-role-registry-creation"
+    ],
+    "branch": "solo-750-node-role-registry-creation",
+    "candidate_commit": "0cbef186db995ba4ac11ecbe73ff98c94e6befaf",
+    "accepted_feature_tip": "0cbef186db995ba4ac11ecbe73ff98c94e6befaf",
+    "accepted_main_tip": "7c851b85dd69f7fa5372f3b4f34ee1ae9e93114e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

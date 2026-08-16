@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "todo_id": 750,
+  "candidate": "0cbef186db995ba4ac11ecbe73ff98c94e6befaf",
+  "result": "passed",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-7bf9b7",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast",
+    "operator": "orbit-e2e-dev-7bf9b7-operator",
+    "gateway": "orbit-e2e-dev-7bf9b7-gateway",
+    "dev": "orbit-e2e-dev-7bf9b7-dev",
+    "runtime_path": "/home/orbit/orbit-run",
+    "solo_terminal_process_id": 2440
+  },
+  "sync": {
+    "command": "composer e2e:incus -- --sync --id=dev-7bf9b7 --checkout-roles=gateway,app-dev --json",
+    "source_hashes": {
+      "GatewayNodeCreator.php": "124a41673619ac3ed9da908dfec2597d2e1c258f7eeb2d1dab86ed3594774b7a",
+      "NodeBootstrapCompletion.php": "468c14d1863928990ddd0117928ece4807d7fa7c99afb2e8d4d878782d67d95c",
+      "NodeRoleRegistry.php": "758c01f46209e731b9a3ebffddc8093e6ceceb1582bfa2b1d8eac5660e3a767c"
+    },
+    "source_hashes_match_candidate": true
+  },
+  "creation_prevalidation": {
+    "expected_conflicting_pairs": 18,
+    "observed_conflicting_pairs": [
+      "app-dev+app-prod",
+      "app-dev+agent",
+      "app-dev+ingress",
+      "app-prod+database",
+      "app-prod+agent",
+      "app-prod+websocket",
+      "app-prod+s3",
+      "app-prod+analytics",
+      "database+agent",
+      "database+ingress",
+      "agent+ingress",
+      "agent+websocket",
+      "agent+s3",
+      "agent+metrics",
+      "agent+analytics",
+      "ingress+websocket",
+      "ingress+s3",
+      "ingress+analytics"
+    ],
+    "error_code": "validation_failed",
+    "error_meta_fields": [
+      "roles",
+      "conflicts"
+    ],
+    "rejected_node": "registry-conflict-proof",
+    "rejected_node_lookup_error": "node.not_found"
+  },
+  "bootstrap_completion_prevalidation": {
+    "bootstrap_id": "01a00c30-dd7a-712c-a4fb-c069f509daa1",
+    "requested_roles": [
+      "app-dev",
+      "agent"
+    ],
+    "request": {
+      "method": "POST",
+      "path": "/api/nodes/bootstrap/01a00c30-dd7a-712c-a4fb-c069f509daa1/complete",
+      "caller": "gateway",
+      "error_code": "validation_failed",
+      "error_message": "Workload roles app-dev and agent cannot be combined.",
+      "error_meta_conflicts": [
+        "app-dev",
+        "agent"
+      ]
+    },
+    "before": {
+      "status": "pending",
+      "last_error": {
+        "sentinel": "unchanged"
+      },
+      "updated_at": "2026-08-16T20:09:40.000000Z"
+    },
+    "after": {
+      "status": "pending",
+      "last_error": {
+        "sentinel": "unchanged"
+      },
+      "updated_at": "2026-08-16T20:09:40.000000Z",
+      "node_status": "provisioning",
+      "role_assignments": 0,
+      "wireguard_peers": 0
+    },
+    "bootstrap_mutated": false
+  },
+  "quality_receipt": ".orbit/quality-gates/quality-check-2026-08-16T200636Z-9d38847f056c.json"
+}
