@@ -39,11 +39,11 @@ final readonly class DoctorIssueVisibilityPredicateRule implements GroupedRule
             $checkedPaths[$doctorPath] = true;
             $file = "{$this->docs->docsRoot()}/{$doctorPath}";
 
-            if (! is_file($file)) {
+            if (! $this->docs->isFile($file)) {
                 continue;
             }
 
-            foreach ($this->predicateParser->parse((string) file_get_contents($file)) as $predicate) {
+            foreach ($this->predicateParser->parse($this->docs->contents($file)) as $predicate) {
                 if (! $this->describesCallerVisibility($predicate['text'])) {
                     continue;
                 }

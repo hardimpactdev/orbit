@@ -40,7 +40,7 @@ final readonly class CompoundCommandPrefixRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->markdownFiles($this->docs->commandsRoot()) as $file) {
-            array_push($findings, ...$this->fileFindings($file, file_get_contents($file) ?: ''));
+            array_push($findings, ...$this->fileFindings($file, $this->docs->contents($file)));
         }
 
         return $findings;

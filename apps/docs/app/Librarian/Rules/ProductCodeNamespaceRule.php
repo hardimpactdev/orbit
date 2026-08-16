@@ -54,7 +54,7 @@ final readonly class ProductCodeNamespaceRule implements GroupedRule
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                foreach ($this->pluralProductCodes(file_get_contents($file) ?: '') as $code => $singularPrefix) {
+                foreach ($this->pluralProductCodes($this->docs->contents($file)) as $code => $singularPrefix) {
                     $findings[] = new Finding(
                         path: $this->docs->relativePath($file),
                         line: null,

@@ -65,11 +65,11 @@ final readonly class DoctorIssueCodePrefixRule implements GroupedRule
 
             $file = "{$familyDirectory}/{$doctorFileName}";
 
-            if (! is_file($file)) {
+            if (! $this->docs->isFile($file)) {
                 continue;
             }
 
-            foreach ($this->doctorMapSections(file_get_contents($file) ?: '') as $sectionName => $section) {
+            foreach ($this->doctorMapSections($this->docs->contents($file)) as $sectionName => $section) {
                 foreach ($this->firstColumnCodes($section) as $code) {
                     if (str_starts_with($code, "{$familyKey}.")) {
                         continue;

@@ -35,13 +35,13 @@ final readonly class PublicStreamJsonOptionContractRule implements GroupedRule
 
             $publicFile = $this->publicFileFor($command, $directoriesBySlug);
 
-            if ($publicFile === null || ! is_file($publicFile)) {
+            if ($publicFile === null || ! $this->docs->isFile($publicFile)) {
                 continue;
             }
 
-            $contents = file_get_contents($publicFile);
+            $contents = $this->docs->contents($publicFile);
 
-            if ($contents !== false && str_contains($contents, '--stream-json')) {
+            if (str_contains($contents, '--stream-json')) {
                 continue;
             }
 

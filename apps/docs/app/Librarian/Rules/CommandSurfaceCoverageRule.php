@@ -101,11 +101,11 @@ final readonly class CommandSurfaceCoverageRule implements GroupedRule
     {
         $publicPage = "{$directory}/{$slug}.md";
 
-        if (! is_file($publicPage)) {
+        if (! $this->docs->isFile($publicPage)) {
             return false;
         }
 
-        $contents = file_get_contents($publicPage) ?: '';
+        $contents = $this->docs->contents($publicPage);
 
         return array_any(
             self::OFFLINE_MARKERS,

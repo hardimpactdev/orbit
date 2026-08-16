@@ -63,7 +63,7 @@ final readonly class SharedFailureVocabularyRule implements GroupedRule
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                $contents = file_get_contents($file) ?: '';
+                $contents = $this->docs->contents($file);
 
                 foreach (self::BANNED_CODES as $code => $replacement) {
                     if (! $this->containsCode($contents, $code)) {

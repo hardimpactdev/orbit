@@ -54,7 +54,7 @@ final readonly class WorkspaceLifecycleInstanceScopeRule implements GroupedRule
         ));
         $publicFile = "{$commandDirectory}/{$commandSlug}.md";
 
-        if (is_file($publicFile)) {
+        if ($this->docs->isFile($publicFile)) {
             $files[] = $publicFile;
         }
 
@@ -72,7 +72,7 @@ final readonly class WorkspaceLifecycleInstanceScopeRule implements GroupedRule
      */
     private function checkCompanion(string $file): array
     {
-        $contents = (string) file_get_contents($file);
+        $contents = $this->docs->contents($file);
         $findings = [];
         $matches = [];
 

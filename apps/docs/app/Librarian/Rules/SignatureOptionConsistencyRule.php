@@ -45,12 +45,12 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
         $commandName = $this->docs->commandName($commandDirectory);
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-        if (! is_file($canonicalFile)) {
+        if (! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
         $findings = [];
-        $allowedOptions = $this->signatureOptions(file_get_contents($canonicalFile) ?: '');
+        $allowedOptions = $this->signatureOptions($this->docs->contents($canonicalFile));
 
         foreach ($this->docs->markdownFiles("{$commandDirectory}/technical", recursive: false) as $file) {
             if ($file === $canonicalFile) {
@@ -73,7 +73,7 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
         $findings = [];
         $reportedOptions = [];
 
-        foreach ($this->mentionedOptionsByLine(file_get_contents($file) ?: '') as $mention) {
+        foreach ($this->mentionedOptionsByLine($this->docs->contents($file)) as $mention) {
             $option = $mention['option'];
 
             if (in_array($option, $allowedOptions, true) || isset($reportedOptions[$option])) {

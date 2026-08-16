@@ -26,7 +26,7 @@ final readonly class ExitStatusPolicyRule implements GroupedRule
 
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->markdownFiles($familyDirectory) as $file) {
-                foreach ($this->violations(file_get_contents($file) ?: '') as $line) {
+                foreach ($this->violations($this->docs->contents($file)) as $line) {
                     $findings[] = new Finding(
                         path: $this->docs->relativePath($file),
                         line: $line,

@@ -31,7 +31,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         $schemas = $this->registry->entitySchemas();
 
         foreach ($this->jsonRendererFiles() as $file) {
-            foreach ($this->parser->parse($file, file_get_contents($file) ?: '') as $example) {
+            foreach ($this->parser->parse($file, $this->docs->contents($file)) as $example) {
                 if (! $example->isValidArray() || ! is_array($example->decoded)) {
                     $findings[] = $this->finding(
                         $file,

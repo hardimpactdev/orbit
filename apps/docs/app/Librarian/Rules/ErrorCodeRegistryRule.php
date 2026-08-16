@@ -41,7 +41,7 @@ final readonly class ErrorCodeRegistryRule implements GroupedRule
             }
 
             foreach ($this->jsonRendererFiles($familyDirectory) as $file) {
-                $contents = file_get_contents($file) ?: '';
+                $contents = $this->docs->contents($file);
                 $exampleCodes = [];
 
                 foreach ($this->parser->parse($file, $contents) as $example) {

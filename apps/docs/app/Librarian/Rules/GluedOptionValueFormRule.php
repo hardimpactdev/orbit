@@ -46,7 +46,7 @@ final readonly class GluedOptionValueFormRule implements GroupedRule
         $findings = [];
 
         foreach ($this->docs->markdownFiles($this->docs->docsRoot()) as $file) {
-            foreach (explode("\n", (string) file_get_contents($file)) as $lineNumber => $line) {
+            foreach (explode("\n", $this->docs->contents($file)) as $lineNumber => $line) {
                 $matches = [];
                 $matchCount = preg_match_all($pattern, $line, $matches, PREG_SET_ORDER);
 

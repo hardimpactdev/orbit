@@ -43,34 +43,28 @@ final readonly class CommandDirectoryStructureRule implements GroupedRule
         $technicalDirectory = "{$commandDirectory}/technical";
 
         foreach ($this->requiredPaths($commandDirectory, $commandName) as $path => $message) {
-            if (file_exists($path)) {
+            if ($this->docs->exists($path)) {
                 continue;
             }
 
             $findings[] = $this->finding($this->docs->relativePath($commandDirectory), $message);
         }
 
-        if (! is_dir($technicalDirectory)) {
+        if (! $this->docs->isDirectory($technicalDirectory)) {
             return $findings;
         }
 
         $seenSlots = [];
 
-        foreach (scandir($technicalDirectory) ?: [] as $entry) {
-            $path = "{$technicalDirectory}/{$entry}";
+        foreach ($this->docs->directories($technicalDirectory) as $path) {
+            $findings[] = $this->finding(
+                $this->docs->relativePath($path),
+                'Technical directories must be flat; move companion files into the technical root.',
+            );
+        }
 
-            if (is_dir($path) && $entry !== '.' && $entry !== '..') {
-                $findings[] = $this->finding(
-                    $this->docs->relativePath($path),
-                    'Technical directories must be flat; move companion files into the technical root.',
-                );
-
-                continue;
-            }
-
-            if (! is_file($path) || ! str_ends_with($entry, '.md')) {
-                continue;
-            }
+        foreach ($this->docs->markdownFiles($technicalDirectory, recursive: false) as $path) {
+            $entry = basename($path);
 
             $pattern =
                 '/^(?<slot>[1-9]\d*(?:\.[1-9]\d*)?)_'

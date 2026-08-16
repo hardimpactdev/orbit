@@ -38,7 +38,7 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
         );
 
         foreach ($this->jsonRendererFiles() as $file) {
-            $contents = (string) file_get_contents($file);
+            $contents = $this->docs->contents($file);
 
             foreach ($this->jsonParser->parse($file, $contents) as $example) {
                 if (! $example->isValidArray() || ! is_array($example->decoded)) {
@@ -179,12 +179,12 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
 
         $absoluteDoctorPath = "{$this->docs->docsRoot()}/{$doctorPath}";
 
-        if (! is_file($absoluteDoctorPath)) {
+        if (! $this->docs->isFile($absoluteDoctorPath)) {
             return $findings;
         }
 
         $inspection->doctorIssues[$family] ??= $this->doctorParser->parse(
-            (string) file_get_contents($absoluteDoctorPath),
+            $this->docs->contents($absoluteDoctorPath),
         );
         $issue = $inspection->doctorIssues[$family][$code] ?? null;
 

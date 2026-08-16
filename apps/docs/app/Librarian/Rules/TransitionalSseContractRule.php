@@ -44,7 +44,7 @@ final readonly class TransitionalSseContractRule implements GroupedRule
      */
     private function checkFile(string $file): array
     {
-        $contents = (string) file_get_contents($file);
+        $contents = $this->docs->contents($file);
         $sections = [];
         preg_match_all(
             '/(?:\A|^## ).*?(?=^## |\z)/ms',

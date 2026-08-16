@@ -40,7 +40,7 @@ final readonly class TestMappingFormatRule implements GroupedRule
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->commandDirectories($familyDirectory) as $commandDirectory) {
                 foreach ($this->docs->markdownFiles("{$commandDirectory}/technical", recursive: false) as $file) {
-                    array_push($findings, ...$this->checkFile($file, file_get_contents($file) ?: ''));
+                    array_push($findings, ...$this->checkFile($file, $this->docs->contents($file)));
                 }
             }
         }

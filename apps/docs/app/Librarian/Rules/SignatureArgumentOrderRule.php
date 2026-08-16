@@ -30,7 +30,7 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
                     continue;
                 }
 
-                $signature = $this->signature(file_get_contents($file) ?: '');
+                $signature = $this->signature($this->docs->contents($file));
 
                 if ($signature === null) {
                     continue;

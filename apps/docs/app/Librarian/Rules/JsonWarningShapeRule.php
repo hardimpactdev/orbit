@@ -48,7 +48,7 @@ final readonly class JsonWarningShapeRule implements GroupedRule
      */
     private function checkFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $findings = [];
 
         if (str_contains($contents, 'success.data.drift[]') || str_contains($contents, 'success.data.drift')) {

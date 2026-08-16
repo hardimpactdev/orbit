@@ -27,7 +27,7 @@ final readonly class NextActionContractRule implements GroupedRule
         $findings = [];
 
         foreach ($this->jsonRendererFiles() as $file) {
-            $contents = file_get_contents($file) ?: '';
+            $contents = $this->docs->contents($file);
 
             foreach ($this->parser->parse($file, $contents) as $example) {
                 if (! $example->isValidArray() || ! is_array($example->decoded)) {

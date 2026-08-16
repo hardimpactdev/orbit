@@ -30,15 +30,15 @@ final readonly class PublicJsonOptionContractRule implements GroupedRule
                 $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
                 $publicFile = "{$commandDirectory}/{$commandName}.md";
 
-                if (! is_file($canonicalFile) || ! is_file($publicFile)) {
+                if (! $this->docs->isFile($canonicalFile) || ! $this->docs->isFile($publicFile)) {
                     continue;
                 }
 
-                if (! $this->signatureHasJsonOption(file_get_contents($canonicalFile) ?: '')) {
+                if (! $this->signatureHasJsonOption($this->docs->contents($canonicalFile))) {
                     continue;
                 }
 
-                if (str_contains(file_get_contents($publicFile) ?: '', '--json')) {
+                if (str_contains($this->docs->contents($publicFile), '--json')) {
                     continue;
                 }
 

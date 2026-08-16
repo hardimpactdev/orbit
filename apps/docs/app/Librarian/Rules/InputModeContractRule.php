@@ -41,12 +41,12 @@ final readonly class InputModeContractRule implements GroupedRule
         $commandName = $this->docs->commandName($commandDirectory);
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-        if (! is_file($canonicalFile)) {
+        if (! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
         $findings = [];
-        $canonicalContents = file_get_contents($canonicalFile) ?: '';
+        $canonicalContents = $this->docs->contents($canonicalFile);
         $interactiveFile = "{$commandDirectory}/technical/5.1_{$commandName}_input-mode_interactive.md";
         $nonInteractiveFile = "{$commandDirectory}/technical/5.2_{$commandName}_input-mode_non-interactive.md";
 
@@ -56,20 +56,20 @@ final readonly class InputModeContractRule implements GroupedRule
             ...$this->checkCanonicalInvocationBoilerplate($canonicalFile, $canonicalContents),
         );
 
-        if (! is_file($interactiveFile) && ! is_file($nonInteractiveFile)) {
+        if (! $this->docs->isFile($interactiveFile) && ! $this->docs->isFile($nonInteractiveFile)) {
             array_push($findings, ...$this->checkNoSplitInputModeStatement($canonicalFile, $canonicalContents));
 
             return $findings;
         }
 
-        if (! is_file($interactiveFile)) {
+        if (! $this->docs->isFile($interactiveFile)) {
             $findings[] = $this->finding(
                 $canonicalFile,
                 'Commands with split input-mode contracts must include 5.1 interactive input mode.',
             );
         }
 
-        if (! is_file($nonInteractiveFile)) {
+        if (! $this->docs->isFile($nonInteractiveFile)) {
             $findings[] = $this->finding(
                 $canonicalFile,
                 'Commands with split input-mode contracts must include 5.2 non-interactive input mode.',
@@ -86,11 +86,11 @@ final readonly class InputModeContractRule implements GroupedRule
             ),
         );
 
-        if (is_file($interactiveFile)) {
+        if ($this->docs->isFile($interactiveFile)) {
             array_push($findings, ...$this->checkInteractiveFile($interactiveFile));
         }
 
-        if (is_file($nonInteractiveFile)) {
+        if ($this->docs->isFile($nonInteractiveFile)) {
             array_push($findings, ...$this->checkNonInteractiveFile($nonInteractiveFile));
         }
 
@@ -203,7 +203,7 @@ final readonly class InputModeContractRule implements GroupedRule
      */
     private function checkInteractiveFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $lowerContents = strtolower($contents);
         $findings = [];
 
@@ -240,7 +240,7 @@ final readonly class InputModeContractRule implements GroupedRule
      */
     private function checkNonInteractiveFile(string $file): array
     {
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
         $lowerContents = strtolower($contents);
         $findings = [];
 

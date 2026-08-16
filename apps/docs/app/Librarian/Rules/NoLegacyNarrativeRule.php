@@ -69,9 +69,9 @@ final readonly class NoLegacyNarrativeRule implements GroupedRule
      */
     private function checkFile(string $file, string $relative): array
     {
-        $contents = file_get_contents($file);
+        $contents = $this->docs->contents($file);
 
-        if ($contents === false || $contents === '') {
+        if ($contents === '') {
             return [];
         }
 

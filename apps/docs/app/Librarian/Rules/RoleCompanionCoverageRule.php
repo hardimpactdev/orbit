@@ -68,11 +68,11 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         $commandName = $this->docs->commandName($commandDirectory);
         $canonicalFile = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-        if (! is_file($canonicalFile)) {
+        if (! $this->docs->isFile($canonicalFile)) {
             return [];
         }
 
-        $canonicalContents = file_get_contents($canonicalFile) ?: '';
+        $canonicalContents = $this->docs->contents($canonicalFile);
 
         $companionSlots = $this->companionSlotsToCheck($canonicalContents, $commandDirectory, $commandName);
 
@@ -85,7 +85,7 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         foreach ($companionSlots as $slot => $suffix) {
             $companionFile = "{$commandDirectory}/technical/{$slot}_{$commandName}{$suffix}.md";
 
-            if (! is_file($companionFile)) {
+            if (! $this->docs->isFile($companionFile)) {
                 $findings[] = $this->finding(
                     $canonicalFile,
                     "Canonical contract declares role-specific companion behavior but {$slot}_{$commandName}{$suffix}.md is missing.",
@@ -122,7 +122,7 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         $slots = [];
 
         foreach (self::ROLE_SUFFIXES as $slot => $suffix) {
-            if (is_file("{$commandDirectory}/technical/{$slot}_{$commandName}{$suffix}.md")) {
+            if ($this->docs->isFile("{$commandDirectory}/technical/{$slot}_{$commandName}{$suffix}.md")) {
                 $slots[$slot] = $suffix;
             }
 
@@ -140,7 +140,7 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
     private function checkCompanionFile(string $file, string $suffix): array
     {
         $findings = [];
-        $contents = file_get_contents($file) ?: '';
+        $contents = $this->docs->contents($file);
 
         if (! str_contains($contents, '[Back to')) {
             $findings[] = $this->finding(

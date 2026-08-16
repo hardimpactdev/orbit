@@ -44,11 +44,11 @@ final readonly class CanonicalTechnicalContractRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $file = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($file)) {
+                if (! $this->docs->isFile($file)) {
                     continue;
                 }
 
-                $contents = file_get_contents($file) ?: '';
+                $contents = $this->docs->contents($file);
 
                 foreach (self::REQUIRED_SECTIONS as $needle => $message) {
                     if (str_contains($contents, $needle)) {

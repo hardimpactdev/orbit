@@ -33,11 +33,11 @@ final readonly class CommandContractComplexityRule implements GroupedRule
                 $commandName = $this->docs->commandName($commandDirectory);
                 $file = "{$commandDirectory}/technical/1_{$commandName}.md";
 
-                if (! is_file($file)) {
+                if (! $this->docs->isFile($file)) {
                     continue;
                 }
 
-                $contents = file_get_contents($file) ?: '';
+                $contents = $this->docs->contents($file);
                 $metrics = $this->metrics($contents);
                 $score = $this->score($metrics);
 
