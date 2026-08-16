@@ -178,10 +178,12 @@ The provision fingerprint separates three input classes:
   under `apps/cli/build/` and `apps/cli/builds/` is excluded. The CLI artifact
   is consumed by operator, gateway, app-dev, app-prod, agent, and
   websocket-capable prepared roles.
-- Gateway artifact inputs: gateway source, gateway Composer manifests and
-  lockfiles, gateway runtime configuration, and gateway image/build assets. They
-  apply to the gateway role and to downstream roles whose prepared state depends
-  on gateway database registration.
+- Gateway artifact inputs: `docker/orbit-gateway/Dockerfile.inputs` is the
+  Dockerfile-adjacent authority consumed by remote context staging and both
+  gateway artifact fingerprint paths. Contract coverage keeps it equal to every
+  host-context `COPY` source in the gateway Dockerfile. These inputs apply to
+  the gateway role and to downstream roles whose prepared state depends on
+  gateway database registration.
 - Provision support inputs: `bin/install-orbit`, `bin/e2e-provision-node`,
   `bin/_e2e-deps.sh`, E2E topology builder/support code, command-shape code,
   topology kind/DAG, `ORBIT_E2E_*` environment values that affect topology

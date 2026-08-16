@@ -8,6 +8,7 @@ use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EArtifactBuildFingerprint;
 use App\E2E\Support\E2EArtifactProdManifest;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayImageBuildInputs;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
@@ -453,7 +454,7 @@ class E2EPrepareTopologyCommand extends Command
             );
         }
 
-        foreach (['apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway'] as $path) {
+        foreach (E2EGatewayImageBuildInputs::stagingPaths() as $path) {
             $label = str_replace('/', '-', $path);
             $mkdirParent = $timer->measure(
                 "gateway-artifacts.push.context-parent.{$label}",
@@ -469,48 +470,23 @@ class E2EPrepareTopologyCommand extends Command
                 );
             }
 
-            $copy = $timer->measure(
-                "gateway-artifacts.push.context-rsync.{$label}",
-                fn (): ProcessResult => Process::timeout(300)->run(sprintf(
-                    'rsync -a --delete --include=.env.example --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
-                    escapeshellarg(repo_path($path).'/'),
-                    escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
-                )),
-            );
-
-            if (! $copy->successful()) {
-                throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
-            }
-        }
-
-        foreach (['bin/install-orbit', 'VERSION'] as $path) {
-            $label = str_replace('/', '-', $path);
-            $parent = dirname($path);
-
-            if ($parent !== '.') {
-                $mkdirParent = $timer->measure(
-                    "gateway-artifacts.push.context-parent.{$label}",
-                    fn (): ProcessResult => $host->run(
-                        'mkdir -p '.escapeshellarg("{$remoteBuildContext}/{$parent}"),
-                        timeoutSeconds: 30,
-                    ),
+            $copy = is_dir(repo_path($path))
+                ? $timer->measure(
+                    "gateway-artifacts.push.context-rsync.{$label}",
+                    fn (): ProcessResult => Process::timeout(300)->run(sprintf(
+                        'rsync -a --delete --include=.env.example --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
+                        escapeshellarg(repo_path($path).'/'),
+                        escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
+                    )),
+                )
+                : $timer->measure(
+                    "gateway-artifacts.push.context-copy.{$label}",
+                    fn (): ProcessResult => Process::timeout(120)->run(sprintf(
+                        'scp -q %s %s',
+                        escapeshellarg(repo_path($path)),
+                        escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}"),
+                    )),
                 );
-
-                if (! $mkdirParent->successful()) {
-                    throw new RuntimeException(
-                        "Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}",
-                    );
-                }
-            }
-
-            $copy = $timer->measure(
-                "gateway-artifacts.push.context-copy.{$label}",
-                fn (): ProcessResult => Process::timeout(120)->run(sprintf(
-                    'scp -q %s %s',
-                    escapeshellarg(repo_path($path)),
-                    escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}"),
-                )),
-            );
 
             if (! $copy->successful()) {
                 throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");

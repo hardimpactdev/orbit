@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EGatewayImageBuildInputs;
 use App\E2E\Support\E2EProvisionCheckpointManifest;
 use App\E2E\Support\E2EProvisionCheckpointStore;
 use App\E2E\Support\E2EProvisionFingerprint;
@@ -516,6 +517,9 @@ function makeProvisionFingerprintFixture(): string
         'bin/install-orbit' => "#!/usr/bin/env bash\necho install\n",
         'bin/e2e-provision-node' => "#!/usr/bin/env bash\necho provision\n",
         'bin/_e2e-deps.sh' => "#!/usr/bin/env bash\necho deps\n",
+        E2EGatewayImageBuildInputs::ManifestPath => (string) file_get_contents(
+            repo_path(E2EGatewayImageBuildInputs::ManifestPath),
+        ),
     ];
 
     foreach ($files as $path => $contents) {
