@@ -644,7 +644,11 @@ final class ProvisionedServiceRoleInternalExecutor implements RunsInternalComman
 
             return (
                 $action === 'probe'
-                    ? $this->successResult(['exists' => false])
+                    ? $this->successResult([
+                        'exists' => false,
+                        'hash' => null,
+                        'mode' => null,
+                    ])
                     : $this->successResult(['outcome' => 'written'])
             );
         }

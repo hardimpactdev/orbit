@@ -1049,8 +1049,29 @@ function fake_app_register_source_path_probe(
     bool $exists = true,
 ): void {
     Http::preventStrayRequests();
-    Http::fake([
-        "http://{$address}:9477/v1/commands" => Http::response([
+    Http::fake(function (Request $request) use ($address, $path, $exists): mixed {
+        if ($request->url() !== "http://{$address}:9477/v1/commands") {
+            return Http::response([], 404);
+        }
+
+        $commandName = $request['argv'][0] ?? null;
+        $action = $request['argv'][1] ?? null;
+        $data = match (true) {
+            $commandName === 'internal:managed-file' && $action === 'probe' => [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ],
+            $commandName === 'internal:managed-file' && $action === 'write' => [
+                'outcome' => 'written',
+            ],
+            default => [
+                'path' => $path,
+                'exists' => $exists,
+            ],
+        };
+
+        return Http::response([
             'transport' => 'agent-push',
             'operation_id' => 'app-source-path.probe',
             'binary' => 'orbit',
@@ -1061,17 +1082,14 @@ function fake_app_register_source_path_probe(
                     'type' => 'stdout',
                     'message' => json_encode([
                         'success' => [
-                            'data' => [
-                                'path' => $path,
-                                'exists' => $exists,
-                            ],
+                            'data' => $data,
                             'meta' => [],
                         ],
                     ], JSON_THROW_ON_ERROR),
                 ],
             ],
-        ]),
-    ]);
+        ]);
+    });
 }
 
 function app_register_source_path_probe_was_sent(Request $request, string $address, string $path): bool
@@ -1132,6 +1150,14 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
 
         if (str_contains($script, "internal:caddy-config 'read-global'")) {
             return app_register_shell_success(['content' => '']);
+        }
+
+        if (str_contains($script, "internal:managed-file 'probe'")) {
+            return app_register_shell_success([
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]);
         }
 
         if (str_contains($script, "internal:caddy-config 'write-site'")) {

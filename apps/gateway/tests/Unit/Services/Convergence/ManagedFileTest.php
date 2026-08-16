@@ -144,6 +144,45 @@ it('reports unreachable when probing the managed file cannot reach the node', fu
         ->toBe('Could not inspect managed file /etc/orbit/missing.conf.');
 });
 
+it('does not apply a managed file after an ambiguous probe envelope', function (string $stdout): void {
+    $node = managed_file_node('10.47.0.24');
+    $file = new ManagedFile(
+        path: '/etc/orbit/ambiguous.conf',
+        content: "enabled=true\n",
+    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.47.0.24:9477/v1/commands' => managed_file_agent_response(
+            operationId: 'managed-file.probe',
+            data: [],
+            message: $stdout,
+        ),
+    ]);
+
+    $probe = $file->probe($node);
+    $plan = $file->plan($probe);
+    $result = $file->apply($node, $plan);
+
+    expect($probe->reachable)
+        ->toBeFalse()
+        ->and($probe->error)
+        ->toStartWith('Probe returned an invalid success envelope:')
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Unreachable)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Unreachable);
+
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn (Request $request): bool => ($request['argv'][1] ?? null) === 'write');
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+    'empty success.data object' => '{"success":{"data":[],"meta":[]}}',
+    'invalid success.data fields' => '{"success":{"data":{"exists":"false","hash":null,"mode":null},"meta":[]}}',
+]);
+
 function managed_file_node(string $wireguardAddress): Node
 {
     /** @var Node $node */

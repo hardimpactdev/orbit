@@ -9,11 +9,11 @@ use App\Data\Convergence\SystemdServicePlan;
 use App\Data\Convergence\SystemdServiceProbe;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
-use JsonException;
 
 final readonly class SystemdService
 {
@@ -52,21 +52,49 @@ final readonly class SystemdService
         }
 
         try {
-            $payload = RemoteShellSuccessData::fromJsonEnvelope($result);
-        } catch (JsonException $exception) {
+            $payload = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+
+            if (! is_bool($payload['exists'] ?? null) || ! is_bool($payload['enabled'] ?? null)) {
+                throw new RemoteShellProtocolException(
+                    'Systemd service probe success.data.exists and enabled must be booleans.',
+                );
+            }
+
+            if (! array_key_exists('hash', $payload)) {
+                throw new RemoteShellProtocolException('Systemd service probe success.data is missing hash.');
+            }
+
+            if ($payload['exists'] === false && $payload['hash'] !== null) {
+                throw new RemoteShellProtocolException('Missing systemd service probe data must use a null hash.');
+            }
+
+            if (
+                $payload['exists'] === true
+                && (! is_string($payload['hash'])
+                || preg_match('/^[a-f0-9]{64}$/', $payload['hash']) !== 1)
+            ) {
+                throw new RemoteShellProtocolException(
+                    'Present systemd service probe success.data.hash must be a SHA-256 digest.',
+                );
+            }
+
+            $exists = $payload['exists'];
+            $enabled = $payload['enabled'];
+            $hash = is_string($payload['hash']) ? $payload['hash'] : null;
+        } catch (RemoteShellProtocolException $exception) {
             return new SystemdServiceProbe(
                 reachable: false,
                 exists: false,
                 enabled: false,
-                error: "Probe returned invalid JSON: {$exception->getMessage()}",
+                error: "Probe returned an invalid success envelope: {$exception->getMessage()}",
             );
         }
 
         return new SystemdServiceProbe(
             reachable: true,
-            exists: ($payload['exists'] ?? null) === true,
-            enabled: ($payload['enabled'] ?? null) === true,
-            hash: is_string($payload['hash'] ?? null) ? $payload['hash'] : null,
+            exists: $exists,
+            enabled: $enabled,
+            hash: $hash,
         );
     }
 

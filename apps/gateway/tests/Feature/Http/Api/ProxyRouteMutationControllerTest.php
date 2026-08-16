@@ -50,6 +50,23 @@ describe('ProxyRoute mutation API', function (): void {
         $shell = new class implements RemoteShell {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
+                if (str_contains($script, "internal:managed-file 'probe'")) {
+                    return new RemoteShellResult(
+                        exitCode: 0,
+                        stdout: json_encode([
+                            'success' => [
+                                'data' => [
+                                    'exists' => false,
+                                    'hash' => null,
+                                    'mode' => null,
+                                ],
+                            ],
+                        ], JSON_THROW_ON_ERROR),
+                        stderr: '',
+                        durationMs: 1,
+                    );
+                }
+
                 return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
             }
         };

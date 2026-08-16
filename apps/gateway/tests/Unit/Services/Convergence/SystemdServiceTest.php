@@ -181,6 +181,45 @@ it('reports unreachable when probing the systemd service cannot reach the node',
         ->toBe('Could not inspect systemd service node-exporter.service.');
 });
 
+it('does not apply a systemd service after an ambiguous probe envelope', function (string $stdout): void {
+    $node = systemd_service_node('10.48.0.25');
+    $service = new SystemdService(
+        unitName: 'ambiguous-service',
+        content: "[Unit]\nDescription=Orbit ambiguous service\n",
+    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.48.0.25:9477/v1/commands' => systemd_service_agent_response(
+            operationId: 'systemd-service.probe',
+            data: [],
+            message: $stdout,
+        ),
+    ]);
+
+    $probe = $service->probe($node);
+    $plan = $service->plan($probe);
+    $result = $service->apply($node, $plan);
+
+    expect($probe->reachable)
+        ->toBeFalse()
+        ->and($probe->error)
+        ->toStartWith('Probe returned an invalid success envelope:')
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Unreachable)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Unreachable);
+
+    Http::assertSentCount(1);
+    Http::assertNotSent(fn (Request $request): bool => ($request['argv'][1] ?? null) === 'apply');
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+    'empty success.data object' => '{"success":{"data":[],"meta":[]}}',
+    'invalid success.data fields' => '{"success":{"data":{"exists":"false","enabled":false,"hash":null},"meta":[]}}',
+]);
+
 function systemd_service_node(string $wireguardAddress): Node
 {
     /** @var Node $node */

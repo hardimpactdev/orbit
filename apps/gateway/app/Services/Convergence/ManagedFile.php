@@ -9,12 +9,13 @@ use App\Data\Convergence\ManagedFilePlan;
 use App\Data\Convergence\ManagedFileProbe;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
-use JsonException;
 
+/** @mago-expect lint:kan-defect */
 final readonly class ManagedFile
 {
     /** @mago-expect lint:excessive-parameter-list */
@@ -118,20 +119,56 @@ final readonly class ManagedFile
         }
 
         try {
-            $payload = RemoteShellSuccessData::fromJsonEnvelope($result);
-        } catch (JsonException $exception) {
+            $payload = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+
+            if (! is_bool($payload['exists'] ?? null)) {
+                throw new RemoteShellProtocolException('Managed file probe success.data.exists must be a boolean.');
+            }
+
+            if (! array_key_exists('hash', $payload) || ! array_key_exists('mode', $payload)) {
+                throw new RemoteShellProtocolException('Managed file probe success.data is missing hash or mode.');
+            }
+
+            if ($payload['exists'] === false && ($payload['hash'] !== null || $payload['mode'] !== null)) {
+                throw new RemoteShellProtocolException('Missing managed file probe data must use null hash and mode.');
+            }
+
+            if (
+                $payload['exists'] === true
+                && (! is_string($payload['hash'])
+                || preg_match('/^[a-f0-9]{64}$/', $payload['hash']) !== 1)
+            ) {
+                throw new RemoteShellProtocolException(
+                    'Present managed file probe success.data.hash must be a SHA-256 digest.',
+                );
+            }
+
+            if (
+                $payload['exists'] === true
+                && (! is_string($payload['mode'])
+                || preg_match('/^[0-7]{3,4}$/', $payload['mode']) !== 1)
+            ) {
+                throw new RemoteShellProtocolException(
+                    'Present managed file probe success.data.mode must be an octal permission string.',
+                );
+            }
+
+            $exists = $payload['exists'];
+            $hash = is_string($payload['hash']) ? $payload['hash'] : null;
+            $mode = is_string($payload['mode']) ? $payload['mode'] : null;
+        } catch (RemoteShellProtocolException $exception) {
             return new ManagedFileProbe(
                 reachable: false,
                 exists: false,
-                error: "Probe returned invalid JSON: {$exception->getMessage()}",
+                error: "Probe returned an invalid success envelope: {$exception->getMessage()}",
             );
         }
 
         return new ManagedFileProbe(
             reachable: true,
-            exists: ($payload['exists'] ?? null) === true,
-            hash: is_string($payload['hash'] ?? null) ? $payload['hash'] : null,
-            mode: is_string($payload['mode'] ?? null) ? $payload['mode'] : null,
+            exists: $exists,
+            hash: $hash,
+            mode: $mode,
         );
     }
 

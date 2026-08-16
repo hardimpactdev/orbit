@@ -799,6 +799,14 @@ owner; a catalog-declared `tool:start`, `tool:stop`, `tool:restart`, or
 `tool:logs` verb may address exactly one process row whose canonical `tool`
 value matches the selected tool.
 
+Mutation-capable managed-file and systemd-service convergence treats only a
+typed probe success envelope as observed state. A valid probe explicitly
+reports either missing state or present state with the required typed fields.
+An unreachable probe, empty or malformed output, a missing or invalid
+`success.data` payload, or invalid probe fields produces an unreachable plan.
+Orbit never infers missing state from ambiguous output and never sends the
+managed-file write or systemd-service apply mutation after such a probe.
+
 Swarm is a per-artifact production backend, not a node-wide execution mode.
 Gateway API, scheduler, and runtime hibernation lifecycles are Swarm services
 (`orbit-gateway`, `orbit-scheduler`, and `orbit-runtime-hibernator`). Other

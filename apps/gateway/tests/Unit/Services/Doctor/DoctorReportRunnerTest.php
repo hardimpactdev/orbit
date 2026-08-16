@@ -5318,6 +5318,10 @@ final class DoctorReportRunnerAgentToolProxyRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'internal:managed-file') && str_contains($script, 'probe')) {
+            return doctorRunnerManagedFileProbeResult(exists: false);
+        }
+
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
             return $this->success("available\ttrue\ttrue\ttrue\n");
         }
