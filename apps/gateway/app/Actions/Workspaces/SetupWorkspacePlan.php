@@ -255,15 +255,21 @@ final class SetupWorkspacePlan
             try {
                 $message = $step['run']();
             } catch (Throwable $exception) {
-                $this->failure ??= [
-                    'code' => 'workspace.enactment_failed',
-                    'message' => $exception->getMessage(),
-                    'meta' => [
-                        'phase' => $step['phase'],
-                        'node' => $this->node->name,
-                    ],
-                ];
-                $reporter->stepFail($step['key'], $exception->getMessage());
+                if ($this->failure === null) {
+                    report($exception);
+
+                    $this->failure = [
+                        'code' => 'workspace.enactment_failed',
+                        'message' => "Workspace artifact application on node '{$this->node->name}' stopped before Orbit could classify remaining drift.",
+                        'meta' => [
+                            'phase' => $step['phase'],
+                            'node' => $this->node->name,
+                            'reason' => 'unexpected_failure',
+                        ],
+                    ];
+                }
+
+                $reporter->stepFail($step['key'], $this->failure['message']);
                 $this->reporter = null;
 
                 return SetupWorkspaceResult::failed($this->failure, $this->completedSteps);

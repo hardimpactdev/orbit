@@ -110,9 +110,11 @@ final class CreateWorkspacePlan
                         );
                         $this->setupWorkspace->prepareWorkspaceState($this->workspace);
                     } catch (Throwable $exception) {
+                        report($exception);
+
                         $this->failure = [
                             'code' => 'workspace.registration_failed',
-                            'message' => "Workspace source was created, but registration failed: {$exception->getMessage()}",
+                            'message' => 'Workspace source was created, but registration failed.',
                             'meta' => [
                                 'step' => 'apply_workspace_registration',
                                 'node' => $this->node->name,
@@ -120,7 +122,9 @@ final class CreateWorkspacePlan
                                 'partial_state' => $this->workspace instanceof Workspace
                                     ? 'workspace_registered'
                                     : 'source_retained',
-                                'next_command' => "orbit workspace:setup {$this->name} --instance={$this->app->name}.{$this->instance->name} --path={$this->provisionResult->path}",
+                                'next_command' =>
+                                    "orbit workspace:setup {$this->name} --instance={$this->app->name}.{$this->instance->name} --path="
+                                        .escapeshellarg($this->provisionResult->path),
                             ],
                         ];
 
@@ -267,15 +271,21 @@ final class CreateWorkspacePlan
             try {
                 $message = $step['run']();
             } catch (Throwable $exception) {
-                $this->failure ??= [
-                    'code' => 'workspace.enactment_failed',
-                    'message' => $exception->getMessage(),
-                    'meta' => [
-                        'step' => $step['key'],
-                        'node' => $this->node->name,
-                    ],
-                ];
-                $reporter->stepFail($step['key'], $exception->getMessage());
+                if ($this->failure === null) {
+                    report($exception);
+
+                    $this->failure = [
+                        'code' => 'workspace.enactment_failed',
+                        'message' => "Workspace application on node '{$this->node->name}' stopped before Orbit could classify remaining drift.",
+                        'meta' => [
+                            'step' => $step['key'],
+                            'node' => $this->node->name,
+                            'reason' => 'unexpected_failure',
+                        ],
+                    ];
+                }
+
+                $reporter->stepFail($step['key'], $this->failure['message']);
 
                 return CreateWorkspaceResult::failed($this->failure, $this->completedSteps);
             }

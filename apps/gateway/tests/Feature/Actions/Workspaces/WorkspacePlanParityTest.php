@@ -26,6 +26,7 @@ use App\Models\WorkspaceStep;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Support\Streaming\NullProgressReporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 
@@ -314,8 +315,10 @@ it('returns matching create success envelopes and ordered state transitions thro
 
 it('returns matching create registration failures and retained source state through JSON and SSE endpoints', function (string $adapter): void {
     $name = "registration-{$adapter}";
+    Exceptions::fake();
+
     Workspace::creating(function (): never {
-        throw new RuntimeException('registration failed');
+        throw new RuntimeException('sensitive registration detail');
     });
 
     $response = workspace_plan_parity_endpoint_request($adapter, uri: '/api/workspaces', payload: [
@@ -323,12 +326,14 @@ it('returns matching create registration failures and retained source state thro
         'instance' => 'demo.development',
         'base' => 'main',
     ]);
-    $expectedNextCommand = "orbit workspace:setup {$name} --instance=demo.development --path=/home/orbit/apps/demo/.worktrees/{$name}";
+    $path = "/home/orbit/apps/demo/.worktrees/{$name}";
+    $expectedNextCommand = "orbit workspace:setup {$name} --instance=demo.development --path=".escapeshellarg($path);
 
     if ($adapter === 'json') {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'workspace.registration_failed')
+            ->assertJsonPath('error.message', 'Workspace source was created, but registration failed.')
             ->assertJsonPath('error.meta.step', 'apply_workspace_registration')
             ->assertJsonPath('error.meta.partial_state', 'source_retained')
             ->assertJsonPath('error.meta.next_command', $expectedNextCommand);
@@ -357,16 +362,79 @@ it('returns matching create registration failures and retained source state thro
 
         expect($terminal['data']['code'] ?? null)
             ->toBe('workspace.registration_failed')
+            ->and($terminal['data']['message'] ?? null)
+            ->toBe('Workspace source was created, but registration failed.')
             ->and($terminal['data']['meta']['step'] ?? null)
             ->toBe('apply_workspace_registration')
             ->and($terminal['data']['meta']['partial_state'] ?? null)
             ->toBe('source_retained')
             ->and($terminal['data']['meta']['next_command'] ?? null)
             ->toBe($expectedNextCommand);
+
+        expect($response->streamedContent())->not->toContain('sensitive registration detail');
     }
+
+    Exceptions::assertReported(
+        fn (RuntimeException $exception): bool => $exception->getMessage() === 'sensitive registration detail',
+    );
 
     expect(Workspace::query()->where('name', $name)->exists())->toBeFalse();
 })->with(['json', 'sse']);
+
+it('returns stable reasons for generic create and setup failures through JSON and SSE endpoints', function (
+    string $operation,
+    string $adapter,
+): void {
+    $name = "generic-{$operation}-{$adapter}";
+    $uri = $operation === 'create' ? '/api/workspaces' : '/api/workspaces/setup';
+    $payload = [
+        'name' => $name,
+        'instance' => 'demo.development',
+    ];
+    $expectedMessage = $operation === 'create'
+        ? "Workspace application on node 'app-1' stopped before Orbit could classify remaining drift."
+        : "Workspace artifact application on node 'app-1' stopped before Orbit could classify remaining drift.";
+
+    if ($operation === 'setup') {
+        workspace_plan_parity_workspace($name);
+    }
+
+    ProxyRoute::creating(function (): never {
+        throw new RuntimeException('sensitive generic failure detail');
+    });
+
+    $response = workspace_plan_parity_endpoint_request($adapter, $uri, $payload);
+
+    if ($adapter === 'json') {
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'workspace.enactment_failed')
+            ->assertJsonPath('error.message', $expectedMessage)
+            ->assertJsonPath('error.meta.reason', 'unexpected_failure');
+    }
+
+    if ($adapter === 'sse') {
+        $response->assertSuccessful();
+        $events = workspace_plan_parity_sse_events($response);
+        $terminal = $events[array_key_last($events)] ?? null;
+
+        expect($terminal['event'] ?? null)
+            ->toBe('error')
+            ->and($terminal['data']['data']['code'] ?? null)
+            ->toBe('workspace.enactment_failed')
+            ->and($terminal['data']['data']['message'] ?? null)
+            ->toBe($expectedMessage)
+            ->and($terminal['data']['data']['meta']['reason'] ?? null)
+            ->toBe('unexpected_failure')
+            ->and($response->streamedContent())
+            ->not->toContain('sensitive generic failure detail');
+    }
+})->with([
+    ['create', 'json'],
+    ['create', 'sse'],
+    ['setup', 'json'],
+    ['setup', 'sse'],
+]);
 
 it('returns matching setup success envelopes and ordered state transitions through JSON and SSE endpoints', function (string $adapter): void {
     $name = "setup-{$adapter}";
@@ -487,6 +555,18 @@ it('returns matching setup failures and retained phase state through JSON and SS
 it('reports retained source and an adoption retry when workspace registration fails', function (): void {
     $app = App::query()->where('name', 'demo')->firstOrFail();
     $instance = Instance::query()->where('app_id', $app->id)->firstOrFail();
+    $node = Node::query()->where('name', 'app-1')->firstOrFail();
+    $appPath = "/home/orbit/apps/demo workspace;\$(touch nope)'quoted";
+    $workspacePath = "{$appPath}/.worktrees/feature-a";
+
+    $instance->update([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $appPath,
+            document_root: 'public',
+            domain: 'demo.test',
+        ),
+    ]);
 
     Workspace::creating(function (): never {
         throw new RuntimeException('registration failed');
@@ -503,15 +583,74 @@ it('reports retained source and an adoption retry when workspace registration fa
             'meta' => [
                 'step' => 'apply_workspace_registration',
                 'node' => 'app-1',
-                'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
+                'path' => $workspacePath,
                 'partial_state' => 'source_retained',
-                'next_command' => 'orbit workspace:setup feature-a --instance=demo.development --path=/home/orbit/apps/demo/.worktrees/feature-a',
+                'next_command' =>
+                    'orbit workspace:setup feature-a --instance=demo.development --path='
+                        .escapeshellarg($workspacePath),
             ],
         ])
         ->and($result->completedSteps())
         ->toBe(['provision_workspace_source'])
         ->and(Workspace::query()->where('name', 'feature-a')->exists())
         ->toBeFalse();
+});
+
+it('retains a registered workspace when preparation fails and converges it through the retry command', function (): void {
+    $app = App::query()->where('name', 'demo')->firstOrFail();
+    $instance = Instance::query()->where('app_id', $app->id)->firstOrFail();
+    $failPreparation = true;
+
+    Workspace::saving(function (Workspace $workspace) use (&$failPreparation): void {
+        if (! $workspace->exists || ! $failPreparation) {
+            return;
+        }
+
+        $failPreparation = false;
+
+        throw new RuntimeException('sensitive preparation detail');
+    });
+
+    $result = workspace_plan_parity_create_plan('json', $app, $instance, name: 'feature-a')
+        ->run(new NullProgressReporter);
+    $workspacePath = '/home/orbit/apps/demo/.worktrees/feature-a';
+    $expectedNextCommand =
+        'orbit workspace:setup feature-a --instance=demo.development --path='.escapeshellarg($workspacePath);
+
+    expect($result->isSuccessful())
+        ->toBeFalse()
+        ->and($result->failure())
+        ->toMatchArray([
+            'code' => 'workspace.registration_failed',
+            'message' => 'Workspace source was created, but registration failed.',
+            'meta' => [
+                'step' => 'apply_workspace_registration',
+                'node' => 'app-1',
+                'path' => $workspacePath,
+                'partial_state' => 'workspace_registered',
+                'next_command' => $expectedNextCommand,
+            ],
+        ])
+        ->and($result->completedSteps())
+        ->toBe(['provision_workspace_source']);
+
+    $retainedWorkspace = Workspace::query()->where('name', 'feature-a')->firstOrFail();
+
+    $retry = workspace_plan_parity_endpoint_request('json', uri: '/api/workspaces/setup', payload: [
+        'name' => 'feature-a',
+        'instance' => 'demo.development',
+        'path' => $workspacePath,
+    ]);
+
+    $retry
+        ->assertSuccessful()
+        ->assertJsonPath('success.data.workspace', 'feature-a')
+        ->assertJsonPath('success.data.action', 'set_up');
+
+    expect($retainedWorkspace->refresh()->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::Active)
+        ->and(Workspace::query()->where('name', 'feature-a')->count())
+        ->toBe(1);
 });
 
 it('returns command-owned readiness warnings from create and setup plans', function (
