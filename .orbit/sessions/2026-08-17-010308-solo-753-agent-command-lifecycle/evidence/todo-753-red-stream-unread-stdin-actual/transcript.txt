@@ -1,0 +1,19 @@
+   Compiling orbit-agent v0.1.0 (/Users/nckrtl/orbit/.worktrees/solo-753-agent-command-lifecycle/apps/agent)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running unittests src/lib.rs (apps/agent/target/debug/deps/orbit_agent-5d48837358c0dd41)
+
+running 1 test
+
+thread 'http::tests::execute_binary_stream_returns_while_large_stdin_is_unread' (67516724) panicked at src/http.rs:1660:17:
+stream response must start while stdin is unread: timed out waiting on channel
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test http::tests::execute_binary_stream_returns_while_large_stdin_is_unread ... FAILED
+
+failures:
+
+failures:
+    http::tests::execute_binary_stream_returns_while_large_stdin_is_unread
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 45 filtered out; finished in 3.01s
+
+error: test failed, to rerun pass `--lib`

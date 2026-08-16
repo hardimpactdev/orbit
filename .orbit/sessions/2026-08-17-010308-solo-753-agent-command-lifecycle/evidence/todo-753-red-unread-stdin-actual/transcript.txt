@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (apps/agent/target/debug/deps/orbit_agent-5d48837358c0dd41)
+
+running 1 test
+
+thread 'http::tests::execute_binary_times_out_while_large_stdin_is_unread' (67510804) panicked at src/http.rs:1563:35:
+timeout must remain bounded while stdin is unread: Timeout
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test http::tests::execute_binary_times_out_while_large_stdin_is_unread ... FAILED
+
+failures:
+
+failures:
+    http::tests::execute_binary_times_out_while_large_stdin_is_unread
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 41 filtered out; finished in 3.02s
+
+error: test failed, to rerun pass `--lib`

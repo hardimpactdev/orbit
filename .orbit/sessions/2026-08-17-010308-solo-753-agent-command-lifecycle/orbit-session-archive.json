@@ -1,0 +1,36 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T23:03:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-753-agent-command-lifecycle/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-010308-solo-753-agent-command-lifecycle",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/todo-753-green-unread-stdin-actual/transcript.txt",
+        "evidence/todo-753-red-stream-unread-stdin-actual/transcript.txt",
+        "evidence/todo-753-red-unread-stdin-actual/transcript.txt",
+        "evidence/todo-753-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-16T224856Z-4da6b630afbc.json"
+    ],
+    "entry_digests": {
+        "evidence/todo-753-green-unread-stdin-actual/transcript.txt": "175de0df29f3e4ccf8f2ff4f2fbe49eb872053cd3b866aa634f26067dda05a12",
+        "evidence/todo-753-red-stream-unread-stdin-actual/transcript.txt": "4f3277f4b1c056a64f648ac755493ffa21a839e21babb37bb8311a1f275c4c48",
+        "evidence/todo-753-red-unread-stdin-actual/transcript.txt": "229acbde79fb49f80dfe438387ba67c874313d3d59a67e44e6219f1e6da33f6d",
+        "evidence/todo-753-retained-incus-runtime.txt": "f94b178676cf16ba74817c92512cd647d3e0dc5c91319693d63e34838a405124",
+        "loop.md": "6d24f305b8bed1d10f8fe2955daa44b23a8c2dd545f23a61e44326328dc1f6c0",
+        "quality-gates/quality-check-2026-08-16T224856Z-4da6b630afbc.json": "2dc0a0def56e7910e9457b417acd9eb405d877c70f72b9c089e91486bcba5529"
+    },
+    "slug": "solo-753-agent-command-lifecycle",
+    "requested_slug": "solo-753-agent-command-lifecycle",
+    "compatible_slugs": [
+        "solo-753-agent-command-lifecycle"
+    ],
+    "branch": "solo-753-agent-command-lifecycle",
+    "candidate_commit": "c515edbd2c4f8562c1e5452065273ca41ac66973",
+    "accepted_feature_tip": "c515edbd2c4f8562c1e5452065273ca41ac66973",
+    "accepted_main_tip": "988cd256b9e0f178bf98c647ae135706842f7c7c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

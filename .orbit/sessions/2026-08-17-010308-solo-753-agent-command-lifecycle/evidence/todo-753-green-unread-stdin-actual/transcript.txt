@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (apps/agent/target/debug/deps/orbit_agent-5d48837358c0dd41)
+
+running 2 tests
+test http::tests::execute_binary_times_out_while_large_stdin_is_unread ... ok
+test http::tests::execute_binary_stream_returns_while_large_stdin_is_unread ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 45 filtered out; finished in 1.00s
+
+     Running unittests src/main.rs (apps/agent/target/debug/deps/orbit_agent-daaa0880961b20f3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
