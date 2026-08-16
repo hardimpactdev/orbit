@@ -58,13 +58,16 @@ function grantToolUpdateApiAccess(Node $caller, Node $node): void
     ]);
 }
 
-function assertToolUpdateApiBulkDidNotMutate(ToolUpdateApiRecordingShell $shell, NodeTool ...$tools): void
+function assert_tool_update_api_bulk_did_not_mutate(ToolUpdateApiRecordingShell $shell, NodeTool ...$tools): void
 {
     foreach ($tools as $tool) {
         $expectedAttributes = $tool->getAttributes();
         $freshTool = $tool->fresh();
 
-        assert($freshTool instanceof NodeTool);
+        assert(
+            $freshTool instanceof NodeTool,
+            description: 'Expected the selected tool row to still exist.',
+        );
 
         $actualAttributes = $freshTool->getAttributes();
 
@@ -74,7 +77,7 @@ function assertToolUpdateApiBulkDidNotMutate(ToolUpdateApiRecordingShell $shell,
         expect($actualAttributes)->toBe($expectedAttributes);
     }
 
-    expect($shell->scripts)->toBe([]);
+    expect($shell->scripts)->toBeEmpty();
 }
 
 it('updates host capability expected versions without service instance fields', function (): void {
@@ -254,7 +257,7 @@ it('limits bulk updates to the explicitly selected node for an authorized peer',
 
 it('allows the gateway to bulk update an explicitly selected tool-host node', function (): void {
     $gateway = createToolUpdateApiCallerNode();
-    assignToolUpdateApiRole($gateway, 'gateway');
+    assignToolUpdateApiRole($gateway, role: 'gateway');
     $targetNode = Node::factory()->appDev()->create(['name' => 'app-update-api-1']);
     $tool = NodeTool::factory()->create([
         'node_id' => $targetNode->id,
@@ -312,13 +315,12 @@ it('rejects missing and invalid bulk update selectors before mutation', function
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed');
 
-    if ($field === null) {
-        $response->assertJsonPath('error.meta.fields.0', 'target');
-    } else {
-        $response->assertJsonPath('error.meta.field', $field);
-    }
+    $response->assertJsonPath(
+        $field === null ? 'error.meta.fields.0' : 'error.meta.field',
+        $field ?? 'target',
+    );
 
-    assertToolUpdateApiBulkDidNotMutate($shell, $tool);
+    assert_tool_update_api_bulk_did_not_mutate($shell, $tool);
 })->with([
     'missing selector' => [[], null],
     'invalid node selector' => [['node' => 'missing-node'], 'node'],
@@ -371,7 +373,7 @@ it('rejects conflicting bulk update selectors before mutation', function (): voi
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.field', 'instance');
 
-    assertToolUpdateApiBulkDidNotMutate($shell, $selectedTool, $instanceTool);
+    assert_tool_update_api_bulk_did_not_mutate($shell, $selectedTool, $instanceTool);
 });
 
 it('rejects an unauthorized bulk update target before mutation', function (): void {
@@ -406,12 +408,12 @@ it('rejects an unauthorized bulk update target before mutation', function (): vo
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.node', $unauthorizedNode->name);
 
-    assertToolUpdateApiBulkDidNotMutate($shell, $visibleTool, $unauthorizedTool);
+    assert_tool_update_api_bulk_did_not_mutate($shell, $visibleTool, $unauthorizedTool);
 });
 
 it('rejects a gateway instance target whose active node is not a tool host', function (): void {
     $gateway = createToolUpdateApiCallerNode();
-    assignToolUpdateApiRole($gateway, 'gateway');
+    assignToolUpdateApiRole($gateway, role: 'gateway');
     $rolelessNode = Node::factory()->create(['name' => 'roleless-instance-node']);
     $app = App::factory()->create(['name' => 'docs']);
     Instance::factory()->for($app)->create([
@@ -445,7 +447,7 @@ it('rejects a gateway instance target whose active node is not a tool host', fun
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.field', 'instance');
 
-    assertToolUpdateApiBulkDidNotMutate($shell, $tool);
+    assert_tool_update_api_bulk_did_not_mutate($shell, $tool);
 });
 
 it('requires agent-push transport before running tool update scripts', function (): void {
@@ -480,7 +482,7 @@ it('requires agent-push transport before running tool update scripts', function 
         ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
         ->assertJsonPath('error.meta.node', 'app-update-api-1');
 
-    expect($shell->scripts)->toBe([]);
+    expect($shell->scripts)->toBeEmpty();
 });
 
 it('does not update database and cache services through tool updates', function (string $tool): void {

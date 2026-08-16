@@ -73,20 +73,24 @@ final class ToolUpdateBulkController implements Loggable
         ]);
     }
 
-    private function requestString(Request $request, string $key): ?string
-    {
-        $value = $request->input($key);
-
-        return is_string($value) && trim($value) !== '' ? trim($value) : null;
-    }
-
     /**
      * @param  list<int>  $visibleNodeIds
      */
     private function resolveTargetNode(Request $request, Node $caller, array $visibleNodeIds): Node|JsonResponse
     {
-        $node = $this->requestString($request, 'node');
-        $instance = $this->requestString($request, 'instance');
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowOnlyVisibleFallback: false,
+        );
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $node = $target['node'];
+        $instance = $target['app'];
 
         if ($node === null && $instance === null) {
             return response()->json([
@@ -100,24 +104,13 @@ final class ToolUpdateBulkController implements Loggable
             ], 422);
         }
 
-        $target = $this->authorizedToolTarget(
-            $request,
-            $caller,
-            $visibleNodeIds,
-            allowOnlyVisibleFallback: false,
-        );
-
-        if ($target instanceof JsonResponse) {
-            return $target;
-        }
-
         $targetNode = $node !== null
             ? $this->resolveNodeFilter($node, $caller, $visibleNodeIds)
             : $this->resolveAppNodeFilter((string) $instance, $caller, $visibleNodeIds);
 
         if (
             $targetNode instanceof Node
-            && in_array($targetNode->id, $this->nodeRoleAssignments()->activeToolHostNodeIds(), true)
+            && in_array($targetNode->id, $this->nodeRoleAssignments()->activeToolHostNodeIds(), strict: true)
         ) {
             return $targetNode;
         }
