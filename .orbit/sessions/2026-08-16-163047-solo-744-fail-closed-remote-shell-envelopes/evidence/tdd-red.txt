@@ -1,0 +1,11 @@
+Command: bin/orbit-gateway-pest --compact tests/Unit/Services/RemoteShell/RemoteShellSuccessDataTest.php tests/Unit/Services/Convergence/ManagedFileTest.php tests/Unit/Services/Convergence/SystemdServiceTest.php
+Exit code: 1
+Result: {"tool":"pest","result":"failed","tests":20,"passed":8,"assertions":62,"failed":12}
+Parser failures: Failed asserting that 'Call to undefined method App\\Services\\RemoteShell\\RemoteShellSuccessData::fromJsonEnvelopeOrFail()' contains "App\\Services\\RemoteShell\\Exceptions\\RemoteShellProtocolException" (4 datasets).
+ManagedFile failures: Failed asserting that true is false at ManagedFileTest.php:167 (empty output, malformed JSON, missing success.data, invalid success.data).
+SystemdService failures: Failed asserting that true is false at SystemdServiceTest.php:204 (empty output, malformed JSON, missing success.data, invalid success.data).
+
+Second RED command: bin/orbit-gateway-pest --compact tests/Unit/Services/Convergence/ManagedFileTest.php tests/Unit/Services/Convergence/SystemdServiceTest.php
+Exit code: 1
+Result: {"tool":"pest","result":"failed","tests":19,"passed":15,"assertions":101,"failed":4}
+Failures: both probes reported reachable=true for an empty success.data object and for mistyped exists fields, so both could plan apply mutations.

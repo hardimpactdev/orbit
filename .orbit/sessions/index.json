@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 325,
-    "unique_candidate_commit_count": 221,
+    "record_count": 326,
+    "unique_candidate_commit_count": 222,
     "orphan_count": 0,
     "records": [
         {
@@ -8561,6 +8561,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "6227bbddfdbe34cdbb215c54cfe06a582b8d9887",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-16-163047-solo-744-fail-closed-remote-shell-envelopes",
+            "slug": "solo-744-fail-closed-remote-shell-envelopes",
+            "timestamp": "2026-08-16-163047",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "75e939bae4f5838d6b52d6c458822f2d188172ef",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

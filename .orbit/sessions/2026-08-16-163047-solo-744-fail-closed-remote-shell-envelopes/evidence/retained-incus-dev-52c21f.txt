@@ -1,0 +1,33 @@
+Candidate: 75e939bae4f5838d6b52d6c458822f2d188172ef
+Venue: retained-incus
+Environment: dev-fixture
+Topology: dev-52c21f (operator_gateway_app-dev)
+Host: beast
+Inspected role: gateway (orbit-e2e-dev-52c21f-gateway)
+Solo terminal: project 2 process 2426 (todo-744-incus-proof)
+Runtime checkout: /home/orbit/orbit-run
+Launcher: /home/orbit/orbit-run/apps/cli/orbit
+
+Candidate identity was bound by acquiring dev-52c21f from the clean candidate
+worktree. Runtime file hashes matched the candidate worktree:
+
+e112296e2e67642ed8d38feb003154962c75410976acb78cd34914cc360c295e  apps/gateway/app/Services/RemoteShell/RemoteShellSuccessData.php
+ce8cf9feb154a4d70c34bdce33b9ea6db3cf8b1087713b6175d08d23feacf36d  apps/gateway/app/Services/Convergence/ManagedFile.php
+88f677101682350c6355157947d812f0ae53c2d37ad0950330d9286d231e56c9  apps/gateway/app/Services/Convergence/SystemdService.php
+
+Command:
+bin/orbit-gateway-pest --compact tests/Unit/Services/RemoteShell/RemoteShellSuccessDataTest.php tests/Unit/Services/Convergence/ManagedFileTest.php tests/Unit/Services/Convergence/SystemdServiceTest.php
+
+Observed:
+Tests: 24 passed (126 assertions)
+Duration: 3.95s
+
+The retained candidate runtime exercised empty output, malformed JSON, missing
+success.data, invalid success.data, invalid probe fields, valid missing, and
+valid present results. The ManagedFile and SystemdService tests assert exactly
+one probe request and no write/apply request for each ambiguous result.
+
+Integrated gateway health after proof:
+GET http://10.6.0.2/api/ca/root -> HTTP 200 in 0.705669s
+
+Result: passed
