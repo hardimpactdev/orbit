@@ -65,7 +65,7 @@ final readonly class SetupWorkspace
      *     path: string,
      *     url: string,
      *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, string>|array{code: string, family: string, message: string, next_command: string}>,
+     *     warnings: list<array<string, mixed>>,
      *     setup_steps: array{status: string, count: int, message: string},
      *     processes: array{status: string, count: int, names: list<string>, message: string},
      *     http_probe: array{reachable: bool, status: string},

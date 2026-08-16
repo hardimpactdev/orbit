@@ -193,6 +193,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   cannot create the physical source path before the gateway row is written
   (`error.code=workspace.source_create_failed`). No configuration row is
   retained.
+- **Workspace registration failure (partial configuration)** — source
+  provisioning completed, but Orbit could not write or finish preparing the
+  gateway workspace row (`error.code=workspace.registration_failed`). The
+  source remains at `error.meta.path`; `error.meta.partial_state` is
+  `source_retained` when no row exists or `workspace_registered` when the row
+  was written. `error.meta.next_command` gives the exact `workspace:setup`
+  adoption command for the retained path.
 - **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
@@ -221,7 +228,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, mandatory instance ownership, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
-| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered create plan for JSON and SSE adapters, including phase order, source rollback, retained post-intent state, exact errors, and final-result parity. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered create plan plus controller-level JSON/SSE success and failure envelopes, including phase order, registration partial state, source rollback, retained post-intent state, exact errors, and final-result parity. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side concrete instance resolution, `instance_required` validation, and gateway stream request payload. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 

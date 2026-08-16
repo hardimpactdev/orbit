@@ -14,13 +14,14 @@ use App\Models\Workspace;
 use RuntimeException;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class CreateWorkspacePlan
 {
     private ?WorkspaceProvisionResult $provisionResult = null;
 
     private ?Workspace $workspace = null;
 
-    /** @var list<array<string, string>> */
+    /** @var list<array<string, mixed>> */
     private array $warnings = [];
 
     /** @var array{reachable: bool, status: string} */
@@ -100,13 +101,31 @@ final class CreateWorkspacePlan
                         throw new RuntimeException('Workspace source was not provisioned.');
                     }
 
-                    $this->workspace = $this->createWorkspace->createIntent(
-                        $this->app,
-                        $this->instance,
-                        $this->phpVersion,
-                        $this->provisionResult,
-                    );
-                    $this->setupWorkspace->prepareWorkspaceState($this->workspace);
+                    try {
+                        $this->workspace = $this->createWorkspace->createIntent(
+                            $this->app,
+                            $this->instance,
+                            $this->phpVersion,
+                            $this->provisionResult,
+                        );
+                        $this->setupWorkspace->prepareWorkspaceState($this->workspace);
+                    } catch (Throwable $exception) {
+                        $this->failure = [
+                            'code' => 'workspace.registration_failed',
+                            'message' => "Workspace source was created, but registration failed: {$exception->getMessage()}",
+                            'meta' => [
+                                'step' => 'apply_workspace_registration',
+                                'node' => $this->node->name,
+                                'path' => $this->provisionResult->path,
+                                'partial_state' => $this->workspace instanceof Workspace
+                                    ? 'workspace_registered'
+                                    : 'source_retained',
+                                'next_command' => "orbit workspace:setup {$this->name} --instance={$this->app->name}.{$this->instance->name} --path={$this->provisionResult->path}",
+                            ],
+                        ];
+
+                        throw $exception;
+                    }
 
                     return $this->workspace->name;
                 },
@@ -217,9 +236,9 @@ final class CreateWorkspacePlan
                     if (! $this->httpProbe['reachable']) {
                         $warning = [
                             'code' => 'workspace.http_probe_unhealthy',
-                            'family' => 'workspace',
+                            'family' => null,
                             'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
-                            'next_command' => 'doctor --family=workspace --restore',
+                            'next_command' => "orbit workspace:setup {$workspace->name} --instance={$this->app->name}.{$this->instance->name}",
                         ];
                         $this->warnings[] = $warning;
 

@@ -168,7 +168,7 @@ final readonly class CreateWorkspace
 
     /**
      * @param  array{reachable: bool, status: string}  $httpProbe
-     * @param  list<array<string, string>>  $warnings
+     * @param  list<array<string, mixed>>  $warnings
      * @return array{
      *     result: array{action: 'created'},
      *     workspace: array<string, mixed>,

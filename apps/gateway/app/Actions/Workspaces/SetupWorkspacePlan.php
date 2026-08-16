@@ -19,7 +19,7 @@ use Throwable;
  */
 final class SetupWorkspacePlan
 {
-    /** @var list<array<string, string>> */
+    /** @var list<array<string, mixed>> */
     private array $warnings = [];
 
     /** @var array{status: string, message: string, count: int} */
@@ -222,9 +222,9 @@ final class SetupWorkspacePlan
                 if (! $this->httpProbe['reachable']) {
                     $warning = [
                         'code' => 'workspace.http_probe_unhealthy',
-                        'family' => 'workspace',
+                        'family' => null,
                         'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
-                        'next_command' => 'doctor --family=workspace --restore',
+                        'next_command' => "orbit workspace:setup {$this->workspace->name} --instance={$this->app->name}.{$this->workspace->instance->name}",
                     ];
                     $this->warnings[] = $warning;
 
@@ -320,7 +320,7 @@ final class SetupWorkspacePlan
      *     path: string,
      *     url: string,
      *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, string>|array{code: string, family: string, message: string, next_command: string}>,
+     *     warnings: list<array<string, mixed>>,
      *     setup_steps: array{status: string, count: int, message: string},
      *     processes: array{status: string, count: int, names: list<string>, message: string},
      *     http_probe: array{reachable: bool, status: string},
