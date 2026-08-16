@@ -51,6 +51,12 @@ After add or remove, Orbit applies:
 codex://codex-app/apply-config
 ```
 
+Orbit performs each add or remove as one target-side transaction. It locks the
+config, reads and merges the current value, atomically replaces only a changed
+value, and applies the committed config before it releases the lock. Concurrent
+commands cannot overwrite each other's updates. If apply fails, the command
+keeps the committed config and returns success with a warning.
+
 The command does not register a workspace, register a Codex-managed worktree,
 write app runtime files, or create node roles, grants, SSH keys, host keys, or
 WireGuard identity material.

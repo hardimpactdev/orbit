@@ -19,17 +19,16 @@ final readonly class RemoteCodexAppConfig
         return $this->run($node, ['action' => 'read']);
     }
 
-    public function write(Node $node, string $contents): RemoteShellResult
+    /**
+     * @param  array{label: string, ssh_alias: string, remote_path: string}  $project
+     */
+    public function mutate(Node $node, string $mutation, array $project): RemoteShellResult
     {
         return $this->run($node, [
-            'action' => 'write',
-            'contents' => $contents,
+            'action' => 'mutate',
+            'mutation' => $mutation,
+            'project' => $project,
         ]);
-    }
-
-    public function apply(Node $node): RemoteShellResult
-    {
-        return $this->run($node, ['action' => 'apply']);
     }
 
     /**
@@ -37,33 +36,35 @@ final readonly class RemoteCodexAppConfig
      */
     public function data(RemoteShellResult $result): array
     {
-        $payload = json_decode($result->stdout, associative: true);
-
-        if (! is_array($payload)) {
-            return [];
-        }
-
-        $success = $payload['success'] ?? null;
+        $success = $this->envelope($result)['success'] ?? null;
 
         if (! is_array($success)) {
             return [];
         }
 
-        $data = $success['data'] ?? null;
+        return $this->normalizedArray($success['data'] ?? null);
+    }
 
-        if (! is_array($data)) {
+    /**
+     * @return array<string, mixed>
+     */
+    public function meta(RemoteShellResult $result): array
+    {
+        $success = $this->envelope($result)['success'] ?? null;
+
+        if (! is_array($success)) {
             return [];
         }
 
-        $normalized = [];
+        return $this->normalizedArray($success['meta'] ?? null);
+    }
 
-        foreach ($data as $key => $value) {
-            if (is_string($key)) {
-                $normalized[$key] = $value;
-            }
-        }
-
-        return $normalized;
+    /**
+     * @return array<string, mixed>
+     */
+    public function error(RemoteShellResult $result): array
+    {
+        return $this->normalizedArray($this->envelope($result)['error'] ?? null);
     }
 
     /**
@@ -89,5 +90,39 @@ final readonly class RemoteCodexAppConfig
                 'throw' => false,
             ],
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     *
+     * @mago-expect analysis:mixed-assignment
+     */
+    private function envelope(RemoteShellResult $result): array
+    {
+        $payload = json_decode($result->stdout, associative: true);
+
+        return $this->normalizedArray($payload);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($value as $key => $entry) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $normalized[$key] = $entry;
+        }
+
+        return $normalized;
     }
 }

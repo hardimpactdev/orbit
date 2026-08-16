@@ -82,10 +82,10 @@ describe('CodexAppController', function (): void {
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
-            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{}']))
-                ->push(codex_app_agent_response('codex-app-config.write', ['bytes' => 42]))
-                ->push(codex_app_agent_response('codex-app-config.apply', ['exit_code' => 0])),
+            'http://10.44.0.24:9477/v1/commands' => codex_app_agent_response(
+                'codex-app-config.mutate',
+                ['changed' => true],
+            ),
         ]);
 
         $response = $this->call(
@@ -108,49 +108,103 @@ describe('CodexAppController', function (): void {
             ->assertJsonPath('success.data.codex_project.added', true);
 
         $requests = codex_app_agent_requests();
-        $writtenPayload = json_decode(
-            (string) ($requests[1]['input'] ?? ''),
-            associative: true,
-            flags: JSON_THROW_ON_ERROR,
-        );
-        $writtenConfig = json_decode(
-            (string) ($writtenPayload['contents'] ?? ''),
+        $mutationPayload = json_decode(
+            (string) ($requests[0]['input'] ?? ''),
             associative: true,
             flags: JSON_THROW_ON_ERROR,
         );
 
-        expect($writtenConfig['remoteConnections'])
-            ->toBe([
-                [
-                    'sshAlias' => 'app-node',
-                    'projects' => [
-                        [
-                            'remotePath' => '/home/orbit/apps/docs',
-                            'label' => 'docs',
-                        ],
-                    ],
-                ],
-            ])
-            ->and($requests)
-            ->toHaveCount(3)
+        expect($requests)
+            ->toHaveCount(1)
             ->and($requests[0]['argv'][0] ?? null)
             ->toBe('internal:codex-app-config')
             ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
             ->toBeTrue()
+            ->and($mutationPayload)
+            ->toBe([
+                'action' => 'mutate',
+                'mutation' => 'add',
+                'project' => [
+                    'label' => 'docs',
+                    'ssh_alias' => 'app-node',
+                    'remote_path' => '/home/orbit/apps/docs',
+                ],
+            ]);
+    });
+
+    it('removes an app project through one target-side mutation', function (): void {
+        $caller = Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => CODEX_APP_CALLER_WG_IP,
+                'wireguard_address' => CODEX_APP_CALLER_WG_IP,
+            ]);
+        $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
+        $target = Node::factory()
+            ->operator()
+            ->agent()
+            ->managed()
+            ->create([
+                'name' => 'mini',
+                'platform' => 'macos_15-5',
+                'wireguard_address' => '10.44.0.24',
+                'user' => 'nicky',
+            ]);
+        $app = App::factory()->create(['name' => 'docs']);
+        Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: $appNode->name,
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
+        grantCodexAppAccess($caller, $appNode);
+        grantCodexAppAccess($caller, $target);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.24:9477/v1/commands' => codex_app_agent_response(
+                'codex-app-config.mutate',
+                [
+                    'changed' => true,
+                    'removed' => true,
+                ],
+            ),
+        ]);
+
+        $response = $this->call(
+            'DELETE',
+            "/api/codex/apps/{$app->name}",
+            [
+                'node' => 'mini',
+            ],
+            [],
+            [],
+            codex_app_agent_push_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.codex_project.removed', true);
+
+        $requests = codex_app_agent_requests();
+
+        expect($requests)
+            ->toHaveCount(1)
+            ->and(agentPushRequestOperationIdMatchesToken($requests[0]))
+            ->toBeTrue()
             ->and(json_decode((string) $requests[0]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toMatchArray(['action' => 'read'])
-            ->and($requests[1]['argv'][0] ?? null)
-            ->toBe('internal:codex-app-config')
-            ->and(agentPushRequestOperationIdMatchesToken($requests[1]))
-            ->toBeTrue()
-            ->and($writtenPayload)
-            ->toMatchArray(['action' => 'write'])
-            ->and($requests[2]['argv'][0] ?? null)
-            ->toBe('internal:codex-app-config')
-            ->and(agentPushRequestOperationIdMatchesToken($requests[2]))
-            ->toBeTrue()
-            ->and(json_decode((string) $requests[2]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toMatchArray(['action' => 'apply']);
+            ->toBe([
+                'action' => 'mutate',
+                'mutation' => 'remove',
+                'project' => [
+                    'label' => 'docs',
+                    'ssh_alias' => 'app-node',
+                    'remote_path' => '/home/orbit/apps/docs',
+                ],
+            ]);
     });
 
     it('rejects non-macOS Codex App targets before agent-push work', function (): void {
@@ -231,8 +285,21 @@ describe('CodexAppController', function (): void {
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
-            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{not-json'])),
+            'http://10.44.0.24:9477/v1/commands' => codex_app_agent_response(
+                'codex-app-config.mutate',
+                [],
+                [
+                    'exit_code' => 1,
+                    'error' => [
+                        'code' => 'codex_app.config_read_failed',
+                        'message' => 'Codex App config is not valid JSON.',
+                        'meta' => [
+                            'path' => '/Users/nicky/.codex/codex-app/config.json',
+                            'json_error' => 'Syntax error',
+                        ],
+                    ],
+                ],
+            ),
         ]);
 
         $response = $this->call(
@@ -287,15 +354,22 @@ describe('CodexAppController', function (): void {
         grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
-            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{}']))
-                ->push(codex_app_agent_response('codex-app-config.write', ['bytes' => 42]))
-                ->push(codex_app_agent_response(
-                    operationId: 'codex-app-config.apply',
-                    data: [],
-                    exitCode: 1,
-                    stderr: 'callback unavailable',
-                )),
+            'http://10.44.0.24:9477/v1/commands' => codex_app_agent_response(
+                'codex-app-config.mutate',
+                ['changed' => true],
+                [
+                    'meta' => [
+                        'warnings' => [[
+                            'code' => 'codex_app.apply_failed',
+                            'message' => 'Codex App config apply callback failed.',
+                            'meta' => [
+                                'exit_code' => 1,
+                                'stderr' => 'callback unavailable',
+                            ],
+                        ]],
+                    ],
+                ],
+            ),
         ]);
 
         $response = $this->call(
@@ -315,26 +389,39 @@ describe('CodexAppController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.code', 'app_codex.apply_failed')
             ->assertJsonPath('success.meta.warnings.0.meta.node', 'mini');
 
-        expect(codex_app_agent_requests())->toHaveCount(3);
+        expect(codex_app_agent_requests())->toHaveCount(1);
     });
 });
 
 /**
  * @param  array<string, mixed>  $data
+ * @param  array{exit_code?: int, stderr?: string, meta?: array<string, mixed>, error?: array<string, mixed>}  $options
  * @return array<string, mixed>
  */
-function codex_app_agent_response(string $operationId, array $data, int $exitCode = 0, string $stderr = ''): array
-{
+function codex_app_agent_response(
+    string $operationId,
+    array $data,
+    array $options = [],
+): array {
     $frames = [];
+    $exitCode = $options['exit_code'] ?? 0;
+    $stderr = $options['stderr'] ?? '';
+    $meta = $options['meta'] ?? [];
+    $error = $options['error'] ?? null;
 
-    if ($data !== []) {
-        $frames[] = [
-            'type' => 'stdout',
-            'message' => json_encode([
+    if ($data !== [] || $meta !== [] || $error !== null) {
+        $envelope = $error !== null
+            ? ['error' => $error]
+            : [
                 'success' => [
                     'data' => $data,
+                    'meta' => $meta === [] ? (object) [] : $meta,
                 ],
-            ], JSON_THROW_ON_ERROR),
+            ];
+
+        $frames[] = [
+            'type' => 'stdout',
+            'message' => json_encode($envelope, JSON_THROW_ON_ERROR),
         ];
     }
 

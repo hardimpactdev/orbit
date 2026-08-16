@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\CodexApp\CodexAppConfigMerger;
@@ -23,7 +24,6 @@ final readonly class CodexAppController
         Request $request,
         string $project,
         RemoteCodexAppConfig $codexConfig,
-        CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
         $context = $this->mutationContext($request, $project, $catalog);
@@ -33,42 +33,33 @@ final readonly class CodexAppController
         }
 
         [$model, $target] = $context;
-        $config = $this->readConfig($codexConfig, $target);
-
-        if ($config instanceof JsonResponse) {
-            return $config;
-        }
-
         $project = $this->projectPayload($model);
-        $config = $merger->addProject(
-            $config,
-            $project['label'],
-            $project['ssh_alias'],
-            $project['remote_path'],
-        );
+        $mutation = $codexConfig->mutate($target, 'add', [
+            'label' => $project['label'],
+            'ssh_alias' => $project['ssh_alias'],
+            'remote_path' => $project['remote_path'],
+        ]);
 
-        $write = $this->writeConfig($codexConfig, $target, $config);
-
-        if ($write instanceof JsonResponse) {
-            return $write;
+        if (! $mutation->successful()) {
+            return $this->mutationFailure($codexConfig, $mutation, $target);
         }
 
-        $warnings = $this->applyConfig($codexConfig, $target);
-
-        return $this->success([
-            'codex_project' => [
-                ...$project,
-                'node' => $target->name,
-                'added' => true,
+        return $this->success(
+            [
+                'codex_project' => [
+                    ...$project,
+                    'node' => $target->name,
+                    'added' => true,
+                ],
             ],
-        ], $warnings);
+            $this->mutationWarnings($codexConfig, $mutation, $target),
+        );
     }
 
     public function remove(
         Request $request,
         string $project,
         RemoteCodexAppConfig $codexConfig,
-        CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
         $context = $this->mutationContext($request, $project, $catalog);
@@ -78,31 +69,29 @@ final readonly class CodexAppController
         }
 
         [$model, $target] = $context;
-        $config = $this->readConfig($codexConfig, $target);
-
-        if ($config instanceof JsonResponse) {
-            return $config;
-        }
-
         $project = $this->projectPayload($model);
-        $removed = $merger->hasProject($config, $project['label'], $project['ssh_alias']);
-        $config = $merger->removeProject($config, $project['label'], $project['ssh_alias']);
+        $mutation = $codexConfig->mutate($target, 'remove', [
+            'label' => $project['label'],
+            'ssh_alias' => $project['ssh_alias'],
+            'remote_path' => $project['remote_path'],
+        ]);
 
-        $write = $this->writeConfig($codexConfig, $target, $config);
-
-        if ($write instanceof JsonResponse) {
-            return $write;
+        if (! $mutation->successful()) {
+            return $this->mutationFailure($codexConfig, $mutation, $target);
         }
 
-        $warnings = $this->applyConfig($codexConfig, $target);
+        $removed = ($codexConfig->data($mutation)['removed'] ?? false) === true;
 
-        return $this->success([
-            'codex_project' => [
-                ...$project,
-                'node' => $target->name,
-                'removed' => $removed,
+        return $this->success(
+            [
+                'codex_project' => [
+                    ...$project,
+                    'node' => $target->name,
+                    'removed' => $removed,
+                ],
             ],
-        ], $warnings);
+            $this->mutationWarnings($codexConfig, $mutation, $target),
+        );
     }
 
     public function list(
@@ -309,18 +298,46 @@ final readonly class CodexAppController
         return $decoded;
     }
 
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function writeConfig(RemoteCodexAppConfig $codexConfig, Node $target, array $config): ?JsonResponse
-    {
-        $result = $codexConfig->write(
-            $target,
-            json_encode($config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n",
-        );
+    private function mutationFailure(
+        RemoteCodexAppConfig $codexConfig,
+        RemoteShellResult $result,
+        Node $target,
+    ): JsonResponse {
+        $error = $codexConfig->error($result);
+        $code = is_string($error['code'] ?? null) ? $error['code'] : '';
+        $errorMeta = is_array($error['meta'] ?? null) ? $error['meta'] : [];
 
-        if ($result->successful()) {
-            return null;
+        if ($code === 'codex_app.config_read_failed') {
+            $invalid = array_key_exists('json_error', $errorMeta);
+
+            return $this->error(
+                'app_codex.config_read_failed',
+                $invalid
+                    ? "Codex App config is not valid JSON on node '{$target->name}'."
+                    : "Codex App config could not be read on node '{$target->name}'.",
+                [
+                    'node' => $target->name,
+                    'path' => self::ConfigPath,
+                    ...($invalid ? ['json_error' => $errorMeta['json_error']] : []),
+                    'exit_code' => $result->exitCode,
+                    'stderr' => trim($result->stderr),
+                ],
+                $invalid ? 422 : 502,
+            );
+        }
+
+        if ($code === 'codex_app.config_lock_failed') {
+            return $this->error(
+                'app_codex.config_lock_failed',
+                "Codex App config lock failed on node '{$target->name}'.",
+                [
+                    'node' => $target->name,
+                    'path' => self::ConfigPath,
+                    'exit_code' => $result->exitCode,
+                    'stderr' => trim($result->stderr),
+                ],
+                502,
+            );
         }
 
         return $this->error(
@@ -338,24 +355,39 @@ final readonly class CodexAppController
 
     /**
      * @return list<array{code: string, message: string, meta: array<string, mixed>}>
+     *
+     * @mago-expect analysis:mixed-assignment
      */
-    private function applyConfig(RemoteCodexAppConfig $codexConfig, Node $target): array
-    {
-        $result = $codexConfig->apply($target);
+    private function mutationWarnings(
+        RemoteCodexAppConfig $codexConfig,
+        RemoteShellResult $result,
+        Node $target,
+    ): array {
+        $warnings = $codexConfig->meta($result)['warnings'] ?? [];
+        $normalized = [];
 
-        if ($result->successful()) {
+        if (! is_array($warnings)) {
             return [];
         }
 
-        return [[
-            'code' => 'app_codex.apply_failed',
-            'message' => 'Codex App config was written, but the apply callback failed.',
-            'meta' => [
-                'node' => $target->name,
-                'exit_code' => $result->exitCode,
-                'stderr' => trim($result->stderr),
-            ],
-        ]];
+        foreach ($warnings as $warning) {
+            if (! is_array($warning) || ($warning['code'] ?? null) !== 'codex_app.apply_failed') {
+                continue;
+            }
+
+            $meta = is_array($warning['meta'] ?? null) ? $warning['meta'] : [];
+            $normalized[] = [
+                'code' => 'app_codex.apply_failed',
+                'message' => 'Codex App config was written, but the apply callback failed.',
+                'meta' => [
+                    'node' => $target->name,
+                    'exit_code' => $meta['exit_code'] ?? null,
+                    'stderr' => is_string($meta['stderr'] ?? null) ? trim($meta['stderr']) : '',
+                ],
+            ];
+        }
+
+        return $normalized;
     }
 
     private function resolveApp(string $selector): ?App
@@ -409,6 +441,7 @@ final readonly class CodexAppController
         return $caller instanceof Node ? $caller : null;
     }
 
+    /** @mago-expect analysis:mixed-assignment */
     private function stringInput(Request $request, string $key): ?string
     {
         $value = $request->input($key);

@@ -4,7 +4,8 @@
 
 **Owner:** `codex`.
 
-**Effects:** `read` for `list`; `write, remote-apply` for `add` and `remove`.
+**Effects:** `read` for `list`; one locked target-side read, merge, atomic
+replacement, and apply action for `add` and `remove`.
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
@@ -60,8 +61,8 @@ This command follows the shared
   `codex-app` tool definition.
 - Use the selected Orbit instance serving-node name as the Codex SSH alias and
   that instance's path as `remotePath`. The gateway still reaches the selected
-  Codex App target node over that target node's WireGuard address when reading
-  and writing the config file.
+  Codex App target node over that target node's WireGuard address when listing
+  or mutating the config file.
 
 ## Context Contracts
 
@@ -99,10 +100,22 @@ This command follows the shared
 - Add is idempotent: an existing app project entry is updated in place.
 - Remove is idempotent: a missing app project entry returns success with
   `removed=false`.
-- Apply `codex://codex-app/apply-config` after a successful add or remove
-  write.
-- If the apply callback fails after the config file is written, return success
-  with `codex_app.apply_failed` in `success.meta.warnings[]`.
+- For add and remove, send one target-side mutation action. Acquire an exclusive
+  sibling lock before reading, then keep the lock while merging, replacing, and
+  applying the config.
+- Keep the lock file at `~/.codex/codex-app/config.json.lock`. Release its lock
+  and close its handle after every success or failure. Do not remove the lock
+  file because a replacement lock inode would not serialize existing waiters.
+- Replace a changed config through a mode `0600` temporary file in the same
+  directory and an atomic rename. Remove the temporary file after any failed
+  write or rename. A failure must preserve the current committed config and
+  must not expose a partial file.
+- Do not replace the config when the merged value is unchanged. Preserve its
+  bytes and inode, then apply it as usual.
+- Apply `codex://codex-app/apply-config` before releasing the mutation lock.
+- If the apply callback fails after a coherent config is committed, release the
+  lock and return success with `app_codex.apply_failed` in
+  `success.meta.warnings[]`.
 
 ### Scope Boundaries
 
@@ -130,8 +143,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Missing node | `--node` is absent. | `error.code=validation_failed`; `error.meta.field=node` |
 | Gateway target | The selected target node is the gateway. | `error.code=validation_failed`; `error.meta.field=node`; `error.meta.reason=gateway_not_tool_eligible` |
 | Unsupported node OS | The selected node platform does not resolve to macOS for `codex-app`. | `error.code=tool.unsupported_on_node` |
-| Config read failed | The target node config file could not be read. | `error.code=codex_app.config_read_failed` |
-| Config write failed | The target node config file could not be written. | `error.code=codex_app.config_write_failed` |
+| Config lock failed | The target node lock file could not be opened, acquired, or released. | `error.code=app_codex.config_lock_failed` |
+| Config read failed | The target node config file could not be read. | `error.code=app_codex.config_read_failed` |
+| Config write failed | The target node config file could not be written or atomically replaced. | `error.code=app_codex.config_write_failed` |
 
 ## Doctor Relationship
 
@@ -144,5 +158,6 @@ automation must use the same source-agnostic config services.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php` | CLI validation, request routing, JSON pass-through, and human progress output. |
-| `apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php` | Gateway authorization, target eligibility, config read/write/apply behavior, warning payloads in `success.meta.warnings[]`, and response shapes. |
+| `apps/cli/tests/Feature/InternalCodexAppConfigCommandTest.php` | Target-side locking, concurrent add/remove, unchanged config, safe write and replacement failures, apply warnings, temporary-file cleanup, and lock release. |
+| `apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php` | Gateway authorization, target eligibility, one-action add/remove dispatch, target failure mapping, warning payloads in `success.meta.warnings[]`, and response shapes. |
 | `apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php` | Preserves unrelated config keys, creates missing project arrays, updates duplicate project entries in place, and removes only matching entries. |

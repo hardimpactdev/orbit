@@ -15,7 +15,7 @@ final class CodexAppConfigCommand extends InternalExecutorCommand
     protected $signature = 'internal:codex-app-config {--operation-token=} {--json}';
 
     #[\Override]
-    protected $description = 'Read, write, or apply the local Codex App config';
+    protected $description = 'Read or atomically mutate the local Codex App config';
 
     public function handle(LocalCodexAppConfigAction $config): int
     {

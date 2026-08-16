@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 namespace App\Services\CodexApp;
 
-use Symfony\Component\Process\Process;
+use Illuminate\Filesystem\Filesystem;
+use Throwable;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class LocalCodexAppConfigAction
 {
-    private const array ACTIONS = ['read', 'write', 'apply'];
+    private const array ACTIONS = ['read', 'mutate'];
+
+    private const array MUTATIONS = ['add', 'remove'];
 
     private const string RELATIVE_CONFIG_PATH = '.codex/codex-app/config.json';
 
-    private const string APPLY_URL = 'codex://codex-app/apply-config';
+    public function __construct(
+        private Filesystem $files,
+        private LocalCodexAppConfigMutation $mutation,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -29,11 +35,13 @@ final readonly class LocalCodexAppConfigAction
             return $this->read();
         }
 
-        if ($action === 'write') {
-            return $this->write($this->contents($payload['contents'] ?? null));
-        }
+        $mutation = $this->mutation($payload['mutation'] ?? null);
 
-        return $this->apply();
+        return $this->mutation->run(
+            $this->configPath(),
+            $mutation,
+            $this->project($payload['project'] ?? null, $mutation),
+        );
     }
 
     /**
@@ -43,7 +51,7 @@ final readonly class LocalCodexAppConfigAction
     {
         $path = $this->configPath();
 
-        if (! is_file($path)) {
+        if (! $this->files->isFile($path)) {
             return [
                 'data' => [
                     'path' => $path,
@@ -54,13 +62,16 @@ final readonly class LocalCodexAppConfigAction
             ];
         }
 
-        $contents = file_get_contents($path);
-
-        if (! is_string($contents)) {
+        try {
+            $contents = $this->files->get($path);
+        } catch (Throwable $exception) {
             throw new LocalCodexAppConfigFailure(
                 errorCode: 'codex_app.config_read_failed',
                 message: 'Codex App config could not be read.',
-                meta: ['path' => $path],
+                meta: [
+                    'path' => $path,
+                    'reason' => $exception->getMessage(),
+                ],
             );
         }
 
@@ -69,103 +80,6 @@ final readonly class LocalCodexAppConfigAction
                 'path' => $path,
                 'contents' => $contents,
                 'exists' => true,
-            ],
-            'meta' => [],
-        ];
-    }
-
-    /**
-     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
-     */
-    private function write(string $contents): array
-    {
-        $path = $this->configPath();
-        $directory = dirname($path);
-
-        if (
-            ! is_dir($directory)
-            && ! mkdir(directory: $directory, permissions: 0o700, recursive: true)
-            && ! is_dir($directory)
-        ) {
-            throw new LocalCodexAppConfigFailure(
-                errorCode: 'codex_app.config_write_failed',
-                message: 'Codex App config directory could not be created.',
-                meta: ['path' => $path],
-            );
-        }
-
-        chmod(filename: $directory, permissions: 0o700);
-
-        $temporary = tempnam(directory: $directory, prefix: 'config.json.');
-
-        if (! is_string($temporary)) {
-            throw new LocalCodexAppConfigFailure(
-                errorCode: 'codex_app.config_write_failed',
-                message: 'Codex App config temporary file could not be created.',
-                meta: ['path' => $path],
-            );
-        }
-
-        try {
-            if (file_put_contents($temporary, $contents) === false) {
-                throw new LocalCodexAppConfigFailure(
-                    errorCode: 'codex_app.config_write_failed',
-                    message: 'Codex App config could not be written.',
-                    meta: ['path' => $path],
-                );
-            }
-
-            chmod(filename: $temporary, permissions: 0o600);
-
-            if (! rename($temporary, $path)) {
-                throw new LocalCodexAppConfigFailure(
-                    errorCode: 'codex_app.config_write_failed',
-                    message: 'Codex App config could not be moved into place.',
-                    meta: ['path' => $path],
-                );
-            }
-        } finally {
-            if (is_file($temporary)) {
-                unlink($temporary);
-            }
-        }
-
-        return [
-            'data' => [
-                'path' => $path,
-                'bytes' => strlen($contents),
-            ],
-            'meta' => [],
-        ];
-    }
-
-    /**
-     * @return array{data: array<string, mixed>, meta: array<string, mixed>}
-     */
-    private function apply(): array
-    {
-        $process = new Process(['open', self::APPLY_URL]);
-        $process->setTimeout(15);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            $stderr = trim($process->getErrorOutput());
-            $stdout = trim($process->getOutput());
-
-            throw new LocalCodexAppConfigFailure(
-                errorCode: 'codex_app.apply_failed',
-                message: 'Codex App config apply callback failed.',
-                meta: [
-                    'exit_code' => $process->getExitCode(),
-                    'stderr' => $stderr !== '' ? $stderr : $stdout,
-                ],
-            );
-        }
-
-        return [
-            'data' => [
-                'url' => self::APPLY_URL,
-                'exit_code' => $process->getExitCode(),
             ],
             'meta' => [],
         ];
@@ -184,16 +98,61 @@ final readonly class LocalCodexAppConfigAction
         );
     }
 
-    private function contents(mixed $value): string
+    private function mutation(mixed $value): string
     {
-        if (is_string($value)) {
+        if (is_string($value) && in_array($value, self::MUTATIONS, strict: true)) {
             return $value;
         }
 
         throw new LocalCodexAppConfigFailure(
             errorCode: 'validation_failed',
-            message: 'Codex App config contents must be a string.',
-            meta: ['field' => 'contents'],
+            message: 'Codex App config mutation is invalid.',
+            meta: ['field' => 'mutation'],
+        );
+    }
+
+    /**
+     * @return array{label: string, ssh_alias: string, remote_path?: string}
+     */
+    private function project(mixed $value, string $mutation): array
+    {
+        if (! is_array($value)) {
+            throw new LocalCodexAppConfigFailure(
+                errorCode: 'validation_failed',
+                message: 'Codex App config project is invalid.',
+                meta: ['field' => 'project'],
+            );
+        }
+
+        $project = [
+            'label' => $this->requiredString($value, 'label'),
+            'ssh_alias' => $this->requiredString($value, 'ssh_alias'),
+        ];
+
+        if ($mutation === 'add') {
+            $project['remote_path'] = $this->requiredString($value, 'remote_path');
+        }
+
+        return $project;
+    }
+
+    /**
+     * @param  array<mixed>  $values
+     *
+     * @mago-expect analysis:mixed-assignment
+     */
+    private function requiredString(array $values, string $field): string
+    {
+        $value = $values[$field] ?? null;
+
+        if (is_string($value) && trim($value) !== '') {
+            return trim($value);
+        }
+
+        throw new LocalCodexAppConfigFailure(
+            errorCode: 'validation_failed',
+            message: "Codex App config {$field} is required.",
+            meta: ['field' => "project.{$field}"],
         );
     }
 
