@@ -10,7 +10,11 @@ The terms below define the core identity vocabulary.
 
 - **App:** Logical application record owned by the gateway, with a stable
   identity slug, shared runtime policy, and optional repository. An app may
-  have multiple instances and owns no placement defaults.
+  have multiple instances and owns no placement defaults. The `apps` record
+  persists no placement fields: it has no serving node, environment, domain,
+  source path, document root, or adoption state, and it exposes no node
+  relation. Every placement fact is read from a concrete instance, never from
+  the app.
 - **Instance:** Concrete runtime or deployment target for one app. An
   instance belongs to exactly one app, has a name unique within that app, selects
   one driver, and owns driver configuration, instance env values, worker policy,
@@ -65,7 +69,9 @@ instance and its driver placement.
   version that new instances copy at creation. Each instance then owns the
   concrete version its FrankenPHP runtime container and command execution use,
   and each workspace copies its owning instance. Changing this template never
-  reaches an instance or workspace that already exists.
+  reaches an instance or workspace that already exists. This creation-time PHP
+  version is the only value an instance copies from its app; placement is never
+  inherited from the app, because the app record holds none.
 - **App runtime kind:** The runtime shape selected for an app. Instances of `php`
   apps run in a dedicated FrankenPHP container; `static` apps serve files directly
   through `orbit-caddy` without a PHP runtime container and have no PHP image,
