@@ -138,11 +138,21 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
     $gatewayBuildCommand = collect($commands)->first(
         fn (string $command): bool => str_contains($command, 'docker/orbit-gateway/Dockerfile'),
     );
+    $topologyBuildCommand = collect($commands)->first(
+        fn (string $command): bool => str_contains($command, 'docker/e2e/topology/Dockerfile'),
+    );
     $webSocketBuildCommand = collect($commands)->first(
         fn (string $command): bool => str_contains($command, 'docker/orbit-reverb/Dockerfile'),
     );
 
-    expect($gatewayBuildCommand)
+    expect($topologyBuildCommand)
+        ->toBe(sprintf(
+            'docker build -f %s -t %s %s',
+            escapeshellarg(repo_path('docker/e2e/topology/Dockerfile')),
+            escapeshellarg('orbit-e2e-topology-runtime:prepared-current'),
+            escapeshellarg(repo_path('docker/e2e/topology')),
+        ))
+        ->and($gatewayBuildCommand)
         ->toContain('orbit-gateway:prepared-current')
         ->not->toContain('apps/cli/orbit')->and($webSocketBuildCommand)->toContain('orbit-reverb:current')->and(implode(
             "\n",
@@ -150,6 +160,18 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         ))
         ->not->toContain('orbit'.'-runtime')
         ->not->toContain('apps/cli/orbit');
+});
+
+it('declares only the source-less Dockerfile as a topology runtime image build input', function (): void {
+    $context = repo_path('docker/e2e/topology');
+    $inputs = array_values(array_diff(scandir($context), ['.', '..']));
+    $dockerfile = file_get_contents("{$context}/Dockerfile");
+
+    expect($inputs)
+        ->toBe(['Dockerfile'])
+        ->and($dockerfile)
+        ->not->toContain('COPY ')
+        ->not->toContain('ADD ');
 });
 
 it('records the production artifact manifest with gateway image and cli hash metadata', function (): void {

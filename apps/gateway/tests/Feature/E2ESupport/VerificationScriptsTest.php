@@ -1079,20 +1079,8 @@ it('registers ephemeral e2e as a guarded Pest group', function (): void {
         ->toContain("->in('E2E')");
 });
 
-it('keeps persisted orbit certificate material out of the docker build context', function (): void {
-    $dockerignore = file_get_contents(repo_path('docker/e2e/topology/Dockerfile.dockerignore'));
-
-    expect($dockerignore)
-        ->toContain('apps/gateway/storage/app/orbit/ca/**')
-        ->toContain('apps/gateway/storage/app/orbit/certs/**')
-        ->toContain('apps/gateway/storage/app/orbit/keys/**');
-});
-
-it('keeps local composer dependencies in the docker topology build context', function (): void {
-    $dockerignore = file_get_contents(repo_path('docker/e2e/topology/Dockerfile.dockerignore'));
-    $ignoredPaths = preg_split('/\R/', trim($dockerignore));
-
-    expect(in_array('vendor', $ignoredPaths, true))->toBeFalse();
+it('does not need a repository-root ignore policy for the source-less docker topology image', function (): void {
+    expect(file_exists(repo_path('docker/e2e/topology/Dockerfile.dockerignore')))->toBeFalse();
 });
 
 it('keeps persisted orbit certificate material out of source-less docker topology preparation', function (): void {
