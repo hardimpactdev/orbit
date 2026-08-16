@@ -27,7 +27,7 @@ describe('explicit path adoption', function (): void {
         ]);
 
         [$workspace, $resolvedApp, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
-            name: 'Y-Fol-DNG-202603-020',
+            name: 'y-fol-dng-202603-020',
             appName: 'dngdmt',
             path: '/home/nckrtl/.codex/worktrees/9106/dngdmt',
         );
@@ -35,7 +35,7 @@ describe('explicit path adoption', function (): void {
         expect($workspace)
             ->toBeInstanceOf(Workspace::class)
             ->and($workspace->name)
-            ->toBe('Y-Fol-DNG-202603-020')
+            ->toBe('y-fol-dng-202603-020')
             ->and($workspace->path)
             ->toBe('/home/nckrtl/.codex/worktrees/9106/dngdmt')
             ->and($workspace->lifecycle_status)
@@ -93,6 +93,60 @@ describe('explicit path adoption', function (): void {
             ->toBeTrue();
     });
 
+    it('rejects an invalid explicit workspace identity before setup resolution', function (): void {
+        $app = workspaceSetupResolverApp([
+            'name' => 'happie',
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+
+        try {
+            app(WorkspaceSetupTargetResolver::class)->resolve(
+                name: "feature'; touch /tmp/orbit-invalid",
+                appName: 'happie.development',
+                path: '/home/nckrtl/apps/happie/.worktrees/feature-a',
+            );
+
+            $this->fail('Expected the invalid workspace identity to be rejected.');
+        } catch (WorkspaceSetupResolutionFailed $exception) {
+            expect($exception->errorCode)
+                ->toBe('validation_failed')
+                ->and($exception->meta)
+                ->toBe([
+                    'field' => 'name',
+                    'reason' => 'slug_regex',
+                ]);
+        }
+
+        expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
+
+    it('rejects an invalid basename-derived adoption identity before registration', function (): void {
+        $app = workspaceSetupResolverApp([
+            'name' => 'happie',
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+
+        try {
+            app(WorkspaceSetupTargetResolver::class)->resolve(
+                name: null,
+                appName: 'happie.development',
+                path: "/home/nckrtl/apps/happie/.worktrees/feature'; touch orbit-invalid",
+            );
+
+            $this->fail('Expected the basename-derived workspace identity to be rejected.');
+        } catch (WorkspaceSetupResolutionFailed $exception) {
+            expect($exception->errorCode)
+                ->toBe('validation_failed')
+                ->and($exception->meta)
+                ->toBe([
+                    'field' => 'name',
+                    'reason' => 'slug_regex',
+                ]);
+        }
+
+        expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
+    });
+
     it('rejects the parent project root as an explicit workspace path', function (): void {
         workspaceSetupResolverApp([
             'name' => 'dngdmt',
@@ -100,7 +154,7 @@ describe('explicit path adoption', function (): void {
         ]);
 
         expect(fn () => app(WorkspaceSetupTargetResolver::class)->resolve(
-            name: 'Y-Fol-DNG-202603-020',
+            name: 'y-fol-dng-202603-020',
             appName: 'dngdmt',
             path: '/home/nckrtl/apps/dngdmt',
         ))

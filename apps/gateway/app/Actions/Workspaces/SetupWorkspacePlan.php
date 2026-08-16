@@ -53,12 +53,14 @@ final class SetupWorkspacePlan
 
     private ?ProgressReporter $reporter = null;
 
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
         private readonly App $app,
         private readonly Node $node,
         private readonly bool $isAdoption,
+        private readonly WorkspaceSetupRetryCommandBuilder $retryCommands = new WorkspaceSetupRetryCommandBuilder,
     ) {
         $this->wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
     }
@@ -168,6 +170,7 @@ final class SetupWorkspacePlan
                                 'phase' => 'setup_steps',
                                 'node' => $this->node->name,
                                 'path' => $this->workspace->path,
+                                'reason' => 'setup_step_failed',
                             ],
                         ];
 
@@ -199,6 +202,7 @@ final class SetupWorkspacePlan
                             'meta' => [
                                 'phase' => 'processes',
                                 'node' => $this->node->name,
+                                'reason' => 'process_start_failed',
                             ],
                         ];
 
@@ -224,7 +228,11 @@ final class SetupWorkspacePlan
                         'code' => 'workspace.http_probe_unhealthy',
                         'family' => null,
                         'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
-                        'next_command' => "orbit workspace:setup {$this->workspace->name} --instance={$this->app->name}.{$this->workspace->instance->name}",
+                        'next_command' => $this->retryCommands->build(
+                            $this->workspace->name,
+                            $this->app->name,
+                            $this->workspace->instance->name,
+                        ),
                     ];
                     $this->warnings[] = $warning;
 
@@ -297,11 +305,10 @@ final class SetupWorkspacePlan
             return;
         }
 
-        $command = str($step->command)->squish()->limit(80)->toString();
         $message = match ($event) {
-            'completed' => "Completed setup step {$index}/{$count}: {$command}",
-            'failed' => "Failed setup step {$index}/{$count}: {$command}",
-            default => "Running setup step {$index}/{$count}: {$command}",
+            'completed' => "Completed setup step {$index}/{$count}",
+            'failed' => "Failed setup step {$index}/{$count}",
+            default => "Running setup step {$index}/{$count}",
         };
 
         $this->reporter->stepProgress('run_workspace_setup_steps', 'progress', $message);
@@ -319,40 +326,36 @@ final class SetupWorkspacePlan
 
     /**
      * @return array{
-     *     app: string,
-     *     instance: string,
-     *     workspace: string,
-     *     node: string,
-     *     path: string,
-     *     url: string,
-     *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, mixed>>,
-     *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>, message: string},
-     *     http_probe: array{reachable: bool, status: string},
+     *     result: array{action: 'set_up'|'adopted'|'converged'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
      * }
      */
     private function resultData(): array
     {
+        $this->workspace->refresh();
         $this->workspace->loadMissing('instance');
+        $this->workspace->setRelation('app', $this->app);
 
         return [
-            'app' => $this->app->name,
-            'instance' => $this->workspace->instance->name,
-            'workspace' => $this->workspace->name,
-            'node' => $this->node->name,
-            'path' => $this->workspace->path,
-            'url' => $this->workspace->url(),
-            'action' => $this->action(),
-            'warnings' => $this->warnings,
-            'setup_steps' => $this->setupResult,
-            'processes' => [
-                'status' => 'started',
-                'count' => $this->processResult['count'],
-                'names' => $this->processResult['names'],
-                'message' => $this->processResult['message'],
+            'result' => ['action' => $this->action()],
+            'workspace' => [
+                'name' => $this->workspace->name,
+                'app' => $this->app->name,
+                'instance' => $this->workspace->instance->name,
+                'node' => $this->node->name,
+                'path' => $this->workspace->path,
+                'url' => $this->workspace->url(),
+                'php_version' => $this->workspace->effectivePhpVersion(),
+                'php_inherited' => $this->workspace->php_version === null,
+                'adopted' => $this->isAdoption,
+                'lifecycle_status' => $this->workspace->lifecycle_status->value,
             ],
-            'http_probe' => $this->httpProbe,
+            'meta' => [
+                'node' => $this->node->name,
+                'http_probe' => $this->httpProbe,
+                'warnings' => $this->warnings,
+            ],
         ];
     }
 

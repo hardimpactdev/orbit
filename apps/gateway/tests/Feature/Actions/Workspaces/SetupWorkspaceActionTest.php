@@ -130,9 +130,9 @@ it('sets up a workspace and marks it active', function (): void {
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
 
-    expect($result['action'])->toBe('set_up');
-    expect($result['workspace'])->toBe('feature-a');
-    expect($result['app'])->toBe('demo');
+    expect($result['result']['action'])->toBe('set_up');
+    expect($result['workspace']['name'])->toBe('feature-a');
+    expect($result['workspace']['app'])->toBe('demo');
 
     $workspace->refresh();
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
@@ -417,9 +417,9 @@ it('sets up a Codex worktree against the selected app instance node', function (
     $result = app(SetupWorkspace::class)->handle($resolvedApp, $workspace, $resolvedNode, $isAdoption);
     $workspace->refresh();
 
-    expect($result['node'])
+    expect($result['workspace']['node'])
         ->toBe('NMBP')
-        ->and($result['url'])
+        ->and($result['workspace']['url'])
         ->toBe('https://recipes.happie.nmbp')
         ->and($workspace->lifecycle_status)
         ->toBe(WorkspaceLifecycleStatus::Active)
@@ -688,16 +688,10 @@ it('starts configured app processes for the workspace after rendering runtime un
             ])),
     ]);
 
-    $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
+    app(SetupWorkspace::class)->handle($app, $workspace, $node);
     $requests = setup_workspace_agent_requests('10.47.0.45');
 
-    expect($result['processes'])
-        ->toMatchArray([
-            'status' => 'started',
-            'count' => 1,
-            'names' => ['vite'],
-        ])
-        ->and($requests)
+    expect($requests)
         ->toHaveCount(9)
         ->and(array_slice($requests[7]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_development_feature-a_vite.service'])
@@ -725,7 +719,7 @@ it('reports converged for already-active workspace', function (): void {
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node);
 
-    expect($result['action'])->toBe('converged');
+    expect($result['result']['action'])->toBe('converged');
 });
 
 it('reports adopted for new workspace with adoption flag', function (): void {
@@ -743,7 +737,10 @@ it('reports adopted for new workspace with adoption flag', function (): void {
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node, isAdoption: true);
 
-    expect($result['action'])->toBe('adopted');
+    expect($result['result']['action'])
+        ->toBe('adopted')
+        ->and($result['workspace']['adopted'])
+        ->toBeTrue();
 });
 
 it('skips setup steps when none are configured', function (): void {
@@ -759,10 +756,9 @@ it('skips setup steps when none are configured', function (): void {
     $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
-    $result = $setup->handle($app, $workspace, $node);
+    $setup->handle($app, $workspace, $node);
 
-    expect($result['setup_steps']['status'])->toBe('skipped');
-    expect($result['setup_steps']['count'])->toBe(0);
+    expect(WorkspaceRun::query()->where('workspace_id', $workspace->id)->exists())->toBeFalse();
 });
 
 it('continues with workspace-owned env initialization after migration removes an unsafe legacy setup step', function (): void {
@@ -797,7 +793,7 @@ it('continues with workspace-owned env initialization after migration removes an
         $migration->up();
 
         $app = App::query()->firstOrFail();
-        $result = app(SetupWorkspace::class)->handle(
+        app(SetupWorkspace::class)->handle(
             $app,
             $workspace,
             Node::query()->where('name', 'gateway')->firstOrFail(),
@@ -805,8 +801,8 @@ it('continues with workspace-owned env initialization after migration removes an
 
         expect(WorkspaceStep::query()->whereKey($unsafeStep->id)->exists())
             ->toBeFalse()
-            ->and($result['setup_steps']['status'])
-            ->toBe('skipped')
+            ->and(WorkspaceRun::query()->where('workspace_id', $workspace->id)->exists())
+            ->toBeFalse()
             ->and(File::get("{$path}/.env"))
             ->toContain('APP_NAME=WorkspaceOwned');
     } finally {
@@ -836,17 +832,19 @@ it('runs setup steps when configured', function (): void {
     $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
-    $result = $setup->handle($app, $workspace, $node);
-
-    expect($result['setup_steps']['status'])->toBe('completed');
-    expect($result['setup_steps']['count'])->toBe(1);
+    $setup->handle($app, $workspace, $node);
 
     $run = WorkspaceRun::query()
         ->where('workspace_id', $workspace->id)
         ->first();
 
-    expect($run)->not->toBeNull();
-    expect($run->status)->toBe('completed');
+    expect($run)
+        ->not
+        ->toBeNull()
+        ->and($run->status)
+        ->toBe('completed')
+        ->and($run->runSteps()->count())
+        ->toBe(1);
 });
 
 it('runs instance-specific setup steps for workspaces bound to an app instance', function (): void {
@@ -886,13 +884,18 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
         'timeout_seconds' => 60,
     ]);
 
-    $result = app(SetupWorkspace::class)->handle(
+    app(SetupWorkspace::class)->handle(
         $app,
         $workspace,
         Node::query()->where('name', 'gateway')->firstOrFail(),
     );
 
-    expect($result['setup_steps']['status'])->toBe('completed')->and($result['setup_steps']['count'])->toBe(1);
+    $run = WorkspaceRun::query()->where('workspace_id', $workspace->id)->firstOrFail();
+
+    expect($run->status)
+        ->toBe('completed')
+        ->and($run->runSteps()->count())
+        ->toBe(1);
 });
 
 it('reports progress while setup steps are running', function (): void {
@@ -1129,9 +1132,7 @@ it(
         $shell = new SetupWorkspaceActionTestShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
-
-        expect($result['processes']['names'])->toBe(['queue']);
+        app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
         $joinedScripts = implode("\n", $shell->scripts);
 
@@ -1175,10 +1176,12 @@ it('skips setup steps when hash matches previous successful run', function (): v
     $node = Node::query()->where('name', 'gateway')->firstOrFail();
 
     $setup = app(SetupWorkspace::class);
-    $result = $setup->handle($app, $workspace, $node);
+    $setup->handle($app, $workspace, $node);
 
-    expect($result['setup_steps']['status'])->toBe('skipped');
-    expect($result['setup_steps']['message'])->toBe('Already up to date');
+    expect(WorkspaceRun::query()->where('workspace_id', $workspace->id)->count())
+        ->toBe(1)
+        ->and(WorkspaceRun::query()->where('workspace_id', $workspace->id)->value('status'))
+        ->toBe('completed');
 });
 
 it('throws when setup step fails', function (): void {
@@ -1207,7 +1210,7 @@ it('throws when setup step fails', function (): void {
     $setup = app(SetupWorkspace::class);
 
     expect(fn () => $setup->handle($app, $workspace, $node))
-        ->toThrow(RuntimeException::class, 'Setup step failed: exit 1');
+        ->toThrow(RuntimeException::class, 'Workspace setup step failed.');
 
     $workspace->refresh();
     expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::SetupPending);

@@ -115,28 +115,13 @@ final class WorkspaceSetupController implements Loggable
 
         $result = $outcome->data();
 
-        $data = [
-            'app' => $result['app'],
-            'instance' => $result['instance'],
-            'workspace' => $result['workspace'],
-            'node' => $result['node'],
-            'url' => $result['url'],
-            'action' => $result['action'],
-            'setup_steps' => $result['setup_steps'],
-            'processes' => $result['processes'],
-            'http_probe' => $result['http_probe'],
-        ];
-
-        $meta = [];
-
-        if ($result['warnings'] !== []) {
-            $meta['warnings'] = $result['warnings'];
-        }
-
         return response()->json([
             'success' => [
-                'data' => $data,
-                'meta' => $meta,
+                'data' => [
+                    'result' => $result['result'],
+                    'workspace' => $result['workspace'],
+                ],
+                'meta' => $result['meta'],
             ],
         ], 200);
     }
@@ -215,6 +200,7 @@ final class WorkspaceSetupController implements Loggable
                     'meta' => [
                         'phase' => 'artifacts',
                         'node' => $node->name,
+                        'reason' => 'unexpected_failure',
                     ],
                 ];
 

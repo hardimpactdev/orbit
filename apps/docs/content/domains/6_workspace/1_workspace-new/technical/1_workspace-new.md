@@ -203,8 +203,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Hard apply failure** — gateway workspace row was written but a
   downstream step failed in a way that cannot be retried through
   convergence (`error.code=workspace.enactment_failed`,
-  `error.meta.step`/`error.meta.reason`). Retryable conditions surface as
-  `success.meta.warnings[]` instead.
+  `error.meta.step`/`error.meta.reason`). Setup-step failures use the stable
+  reason `setup_step_failed`, process-start failures use
+  `process_start_failed`, and unclassified failures use `unexpected_failure`.
+  Public reasons do not contain command output or exception details. Retryable
+  conditions surface as `success.meta.warnings[]` instead.
 - **Exit status:** Uses the shared exit status policy. Success and
   success-with-warnings exit `0`; all documented command failures exit with the
   standard command failure status (`1`). This command defines no

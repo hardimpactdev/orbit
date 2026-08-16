@@ -8,17 +8,9 @@ final readonly class SetupWorkspaceResult
 {
     /**
      * @param  array{
-     *     app: string,
-     *     instance: string,
-     *     workspace: string,
-     *     node: string,
-     *     path: string,
-     *     url: string,
-     *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, mixed>>,
-     *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>, message: string},
-     *     http_probe: array{reachable: bool, status: string},
+     *     result: array{action: 'set_up'|'adopted'|'converged'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
      * }|null  $data
      * @param  array{code: string, message: string, meta: array<string, mixed>}|null  $failure
      * @param  list<string>  $completedSteps
@@ -32,17 +24,9 @@ final readonly class SetupWorkspaceResult
 
     /**
      * @param  array{
-     *     app: string,
-     *     instance: string,
-     *     workspace: string,
-     *     node: string,
-     *     path: string,
-     *     url: string,
-     *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, mixed>>,
-     *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>, message: string},
-     *     http_probe: array{reachable: bool, status: string},
+     *     result: array{action: 'set_up'|'adopted'|'converged'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
      * }  $data
      * @param  list<string>  $completedSteps
      */
@@ -67,17 +51,9 @@ final readonly class SetupWorkspaceResult
 
     /**
      * @return array{
-     *     app: string,
-     *     instance: string,
-     *     workspace: string,
-     *     node: string,
-     *     path: string,
-     *     url: string,
-     *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, mixed>>,
-     *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>, message: string},
-     *     http_probe: array{reachable: bool, status: string},
+     *     result: array{action: 'set_up'|'adopted'|'converged'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
      * }
      */
     public function data(): array

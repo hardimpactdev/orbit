@@ -221,14 +221,19 @@ Agent-push, or runtime effects. This failure uses
 - **Remote Failures**: Agent-push timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
-  `error.meta.node`). Retryable runtime container or runtime artifact drift is
-  reported as `success.meta.warnings[]` with the owning family code.
+  `error.meta.node`, and a stable `error.meta.reason`). Process-start failures
+  use `process_start_failed`; unclassified failures use `unexpected_failure`.
+  Retryable runtime container or runtime artifact drift is reported as
+  `success.meta.warnings[]` with the owning family code. Public warnings do not
+  contain raw exception details.
 - **Setup Step Failure**: A sequential setup step returned non-zero. Reported
   as `error.code=workspace.setup_step_failed` with
-  `error.meta.{step, exit_code, node, path, phase=setup_steps}`. **No
-  rollback**: registry, routing, and artifact phases that completed before
-  the step failure remain in place. The retry path is re-running
-  `workspace:setup`; app-side scripts are expected to be re-runnable.
+  `error.meta.{step, exit_code, node, path, phase=setup_steps,
+  reason=setup_step_failed}`. Detailed output remains in workspace run history
+  and is not returned in public JSON or stream JSON. **No rollback**: registry,
+  routing, and artifact phases that completed before the step failure remain in
+  place. The retry path is re-running `workspace:setup`; app-side scripts are
+  expected to be re-runnable.
 - **HTTP Probe Warning**: Workspace returns `>= 500` or times out. Reported as a
   non-fatal warning under `success.meta.warnings[]` with
   `code=workspace.http_probe_unhealthy` and a retry command. The command

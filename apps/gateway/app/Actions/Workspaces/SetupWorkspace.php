@@ -58,17 +58,9 @@ final readonly class SetupWorkspace
 
     /**
      * @return array{
-     *     app: string,
-     *     instance: string,
-     *     workspace: string,
-     *     node: string,
-     *     path: string,
-     *     url: string,
-     *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, mixed>>,
-     *     setup_steps: array{status: string, count: int, message: string},
-     *     processes: array{status: string, count: int, names: list<string>, message: string},
-     *     http_probe: array{reachable: bool, status: string},
+     *     result: array{action: 'set_up'|'adopted'|'converged'},
+     *     workspace: array<string, mixed>,
+     *     meta: array<string, mixed>,
      * }
      */
     public function handle(App $app, Workspace $workspace, Node $node, bool $isAdoption = false): array
@@ -156,6 +148,8 @@ final readonly class SetupWorkspace
                 'next_command' => 'doctor --family=workspace --restore',
             ];
         } catch (WorkspaceRuntimeContainerApplyException $exception) {
+            report($exception);
+
             $code = $exception->hadExistingContainer
                 ? 'process.runtime_unit_mismatch'
                 : 'process.runtime_unit_missing';
@@ -164,14 +158,16 @@ final readonly class SetupWorkspace
             return [
                 'code' => $code,
                 'family' => 'process',
-                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be {$action} on '{$node->name}': {$exception->getMessage()}",
+                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be {$action} on '{$node->name}'. Run doctor to converge process runtime units.",
                 'next_command' => 'doctor --family=process --restore',
             ];
         } catch (Throwable $exception) {
+            report($exception);
+
             return [
                 'code' => 'process.runtime_unit_missing',
                 'family' => 'process',
-                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be installed on '{$node->name}': {$exception->getMessage()}",
+                'message' => "FrankenPHP runtime container for workspace '{$workspace->name}' could not be installed on '{$node->name}'. Run doctor to converge process runtime units.",
                 'next_command' => 'doctor --family=process --restore',
             ];
         }
@@ -252,17 +248,9 @@ final readonly class SetupWorkspace
             $failedCommand = $failedStep->command ?? 'unknown';
             $failedExitCode = $failedStep->exit_code ?? 1;
 
-            $message = 'Workspace setup failed.';
-            if ($failedStep !== null) {
-                $message = "Setup step failed: {$failedCommand}";
-                if ($failedStep->output !== null && $failedStep->output !== '') {
-                    $message .= "\n{$failedStep->output}";
-                }
-            }
-
             return [
                 'status' => 'failed',
-                'message' => $message,
+                'message' => 'Workspace setup step failed.',
                 'count' => 0,
                 'step' => $failedCommand,
                 'exit_code' => $failedExitCode,
@@ -345,7 +333,14 @@ final readonly class SetupWorkspace
                     $runtimeUnit,
                 );
 
-                throw $exception;
+                report($exception);
+
+                return [
+                    'success' => false,
+                    'message' => "Failed to start process '{$process->name}'. Run doctor to converge process runtime units.",
+                    'count' => 0,
+                    'names' => [],
+                ];
             }
 
             if (! $started) {

@@ -6,22 +6,21 @@ namespace Orbit\Sdk\Laravel\Responses\Workspaces;
 
 final readonly class SetupWorkspaceResponse
 {
-    /**
-     * @param  list<array<string, string>>  $warnings
-     * @param  array<string, mixed>  $setupSteps
-     * @param  array<string, mixed>  $processes
-     * @param  array<string, mixed>  $httpProbe
-     */
     public function __construct(
+        public string $name,
         public string $app,
         public string $instance,
-        public string $workspace,
-        public string $node,
-        public string $url,
+        public ?string $node,
+        public ?string $path,
+        public ?string $url,
+        public ?string $phpVersion,
+        public bool $phpInherited,
+        public bool $adopted,
+        public string $lifecycleStatus,
         public string $action,
-        public array $warnings,
-        public array $setupSteps,
-        public array $processes,
+        /** @var array<string, mixed> */
         public array $httpProbe,
+        /** @var list<array<string, mixed>> */
+        public array $warnings,
     ) {}
 }

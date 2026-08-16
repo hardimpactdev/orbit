@@ -110,14 +110,16 @@ it('sets up an existing workspace path from a non-gateway caller through the gat
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $data = e2eJsonCommandResultData($payload);
 
-        expect($data['workspace'])
+        expect($data['workspace']['name'])
             ->toBe($workspaceName)
-            ->and($data['app'])
+            ->and($data['workspace']['app'])
             ->toBe('docs')
-            ->and($data['action'])
+            ->and($data['workspace']['path'])
+            ->toBe($workspacePath)
+            ->and($data['result']['action'])
             ->toBe('adopted')
-            ->and($data['setup_steps']['status'])
-            ->toBe('skipped');
+            ->and($data['workspace']['lifecycle_status'])
+            ->toBe('active');
 
         $gatewayRecord = $topology->ssh(
             'gateway',

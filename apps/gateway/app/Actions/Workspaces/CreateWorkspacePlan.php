@@ -46,6 +46,7 @@ final class CreateWorkspacePlan
         private readonly string $base,
         private readonly ?string $phpVersion,
         private readonly Instance $instance,
+        private readonly WorkspaceSetupRetryCommandBuilder $retryCommands = new WorkspaceSetupRetryCommandBuilder,
     ) {}
 
     public function title(): string
@@ -122,9 +123,12 @@ final class CreateWorkspacePlan
                                 'partial_state' => $this->workspace instanceof Workspace
                                     ? 'workspace_registered'
                                     : 'source_retained',
-                                'next_command' =>
-                                    "orbit workspace:setup {$this->name} --instance={$this->app->name}.{$this->instance->name} --path="
-                                        .escapeshellarg($this->provisionResult->path),
+                                'next_command' => $this->retryCommands->build(
+                                    $this->name,
+                                    $this->app->name,
+                                    $this->instance->name,
+                                    $this->provisionResult->path,
+                                ),
                             ],
                         ];
 
@@ -191,7 +195,7 @@ final class CreateWorkspacePlan
                             'meta' => [
                                 'step' => 'setup_pipeline',
                                 'node' => $this->node->name,
-                                'reason' => $setupResult['message'],
+                                'reason' => 'setup_step_failed',
                             ],
                         ];
 
@@ -216,7 +220,7 @@ final class CreateWorkspacePlan
                             'meta' => [
                                 'step' => 'processes',
                                 'node' => $this->node->name,
-                                'reason' => $processResult['message'],
+                                'reason' => 'process_start_failed',
                             ],
                         ];
 
@@ -242,7 +246,11 @@ final class CreateWorkspacePlan
                             'code' => 'workspace.http_probe_unhealthy',
                             'family' => null,
                             'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
-                            'next_command' => "orbit workspace:setup {$workspace->name} --instance={$this->app->name}.{$this->instance->name}",
+                            'next_command' => $this->retryCommands->build(
+                                $workspace->name,
+                                $this->app->name,
+                                $this->instance->name,
+                            ),
                         ];
                         $this->warnings[] = $warning;
 
