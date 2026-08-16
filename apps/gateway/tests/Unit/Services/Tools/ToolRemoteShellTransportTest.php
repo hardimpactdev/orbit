@@ -424,7 +424,7 @@ it('dispatches bulk tool update scripts through internal tool run without transi
     $executor = new ToolTransportRecordingInternalExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $result = app(ToolUpdater::class)->updateAll(node: 'tool-update-node');
+    $result = app(ToolUpdater::class)->updateAll($node);
 
     $payload = $executor->payloads()[0];
 

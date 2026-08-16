@@ -111,12 +111,12 @@ it('update corrects stale app-dev standard to coverage and persists it', functio
 });
 
 it('updateAll corrects stale role-owned php-cli variants before dispatch', function (): void {
-    [, $prodTool] = phpCliUpdaterTool(
+    [$prodNode, $prodTool] = phpCliUpdaterTool(
         NodeRoleName::AppProduction->value,
         'coverage',
         'phpcli-updall-prod',
     );
-    [, $devTool] = phpCliUpdaterTool(
+    [$devNode, $devTool] = phpCliUpdaterTool(
         NodeRoleName::AppDevelopment->value,
         'standard',
         'phpcli-updall-dev',
@@ -124,8 +124,8 @@ it('updateAll corrects stale role-owned php-cli variants before dispatch', funct
     $executor = new PhpCliUpdaterRecordingExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
 
-    $prodResult = app(ToolUpdater::class)->updateAll(node: 'phpcli-updall-prod');
-    $devResult = app(ToolUpdater::class)->updateAll(node: 'phpcli-updall-dev');
+    $prodResult = app(ToolUpdater::class)->updateAll($prodNode);
+    $devResult = app(ToolUpdater::class)->updateAll($devNode);
 
     $prodTool->refresh();
     $devTool->refresh();

@@ -58,6 +58,28 @@ function grantToolUpdateApiAccess(Node $caller, Node $node): void
     ]);
 }
 
+function assert_tool_update_api_bulk_did_not_mutate(ToolUpdateApiRecordingShell $shell, NodeTool ...$tools): void
+{
+    foreach ($tools as $tool) {
+        $expectedAttributes = $tool->getAttributes();
+        $freshTool = $tool->fresh();
+
+        assert(
+            $freshTool instanceof NodeTool,
+            description: 'Expected the selected tool row to still exist.',
+        );
+
+        $actualAttributes = $freshTool->getAttributes();
+
+        ksort($expectedAttributes);
+        ksort($actualAttributes);
+
+        expect($actualAttributes)->toBe($expectedAttributes);
+    }
+
+    expect($shell->scripts)->toBeEmpty();
+}
+
 it('updates host capability expected versions without service instance fields', function (): void {
     $caller = createToolUpdateApiCallerNode();
     $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
@@ -192,6 +214,242 @@ it('limits bulk updates to the selected instance node', function (): void {
         ->toBe('old');
 });
 
+it('limits bulk updates to the explicitly selected node for an authorized peer', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $targetNode = Node::factory()->appDev()->create(['name' => 'app-update-api-1']);
+    $otherNode = Node::factory()->appDev()->create(['name' => 'app-update-api-2']);
+    grantToolUpdateApiAccess($caller, $targetNode);
+    $targetTool = NodeTool::factory()->create([
+        'node_id' => $targetNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $otherTool = NodeTool::factory()->create([
+        'node_id' => $otherNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        ['node' => $targetNode->name],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonCount(1, 'success.data.updated')
+        ->assertJsonPath('success.data.updated.0.node', $targetNode->name);
+
+    expect($targetTool->fresh()->expected_version)
+        ->not
+        ->toBe('old')
+        ->and($otherTool->fresh()->expected_version)
+        ->toBe('old')
+        ->and($shell->scripts)
+        ->toHaveCount(1);
+});
+
+it('allows the gateway to bulk update an explicitly selected tool-host node', function (): void {
+    $gateway = createToolUpdateApiCallerNode();
+    assignToolUpdateApiRole($gateway, role: 'gateway');
+    $targetNode = Node::factory()->appDev()->create(['name' => 'app-update-api-1']);
+    $tool = NodeTool::factory()->create([
+        'node_id' => $targetNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        ['node' => $targetNode->name],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.updated.0.node', $targetNode->name);
+
+    expect($tool->fresh()->expected_version)
+        ->not
+        ->toBe('old')
+        ->and($shell->scripts)
+        ->toHaveCount(1);
+});
+
+it('rejects missing and invalid bulk update selectors before mutation', function (
+    array $payload,
+    ?string $field,
+): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->appDev()->create(['name' => 'app-update-api-1']);
+    grantToolUpdateApiAccess($caller, $node);
+    $tool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        $payload,
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed');
+
+    $response->assertJsonPath(
+        $field === null ? 'error.meta.fields.0' : 'error.meta.field',
+        $field ?? 'target',
+    );
+
+    assert_tool_update_api_bulk_did_not_mutate($shell, $tool);
+})->with([
+    'missing selector' => [[], null],
+    'invalid node selector' => [['node' => 'missing-node'], 'node'],
+    'invalid instance selector' => [['instance' => 'missing.development'], 'instance'],
+]);
+
+it('rejects conflicting bulk update selectors before mutation', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $selectedNode = Node::factory()->appDev()->create(['name' => 'app-update-api-1']);
+    $instanceNode = Node::factory()->appDev()->create(['name' => 'app-update-api-2']);
+    grantToolUpdateApiAccess($caller, $selectedNode);
+    grantToolUpdateApiAccess($caller, $instanceNode);
+    $app = App::factory()->create(['name' => 'docs']);
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    $selectedTool = NodeTool::factory()->create([
+        'node_id' => $selectedNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $instanceTool = NodeTool::factory()->create([
+        'node_id' => $instanceNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        [
+            'node' => $selectedNode->name,
+            'instance' => 'docs.development',
+        ],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'instance');
+
+    assert_tool_update_api_bulk_did_not_mutate($shell, $selectedTool, $instanceTool);
+});
+
+it('rejects an unauthorized bulk update target before mutation', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $visibleNode = Node::factory()->appDev()->create(['name' => 'app-update-api-visible']);
+    $unauthorizedNode = Node::factory()->appDev()->create(['name' => 'app-update-api-hidden']);
+    grantToolUpdateApiAccess($caller, $visibleNode);
+    $visibleTool = NodeTool::factory()->create([
+        'node_id' => $visibleNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $unauthorizedTool = NodeTool::factory()->create([
+        'node_id' => $unauthorizedNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        ['node' => $unauthorizedNode->name],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'authorization_failed')
+        ->assertJsonPath('error.meta.node', $unauthorizedNode->name);
+
+    assert_tool_update_api_bulk_did_not_mutate($shell, $visibleTool, $unauthorizedTool);
+});
+
+it('rejects a gateway instance target whose active node is not a tool host', function (): void {
+    $gateway = createToolUpdateApiCallerNode();
+    assignToolUpdateApiRole($gateway, role: 'gateway');
+    $rolelessNode = Node::factory()->create(['name' => 'roleless-instance-node']);
+    $app = App::factory()->create(['name' => 'docs']);
+    Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $rolelessNode->id,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+    $tool = NodeTool::factory()->create([
+        'node_id' => $rolelessNode->id,
+        'name' => 'node-exporter',
+        'expected_version' => 'old',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/update',
+        ['instance' => 'docs.development'],
+        [],
+        [],
+        tool_update_api_server_headers(),
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'instance');
+
+    assert_tool_update_api_bulk_did_not_mutate($shell, $tool);
+});
+
 it('requires agent-push transport before running tool update scripts', function (): void {
     $caller = createToolUpdateApiCallerNode();
     $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
@@ -224,7 +482,7 @@ it('requires agent-push transport before running tool update scripts', function 
         ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
         ->assertJsonPath('error.meta.node', 'app-update-api-1');
 
-    expect($shell->scripts)->toBe([]);
+    expect($shell->scripts)->toBeEmpty();
 });
 
 it('does not update database and cache services through tool updates', function (string $tool): void {

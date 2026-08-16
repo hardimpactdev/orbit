@@ -150,7 +150,7 @@ classes](../architecture.md#authorization-classes).
 | `tool:show` | `tool:read` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
 | `tool:start` | `tool:start` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit lifecycle capability | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
 | `tool:stop` | `tool:stop` | target node; active serving gateway for gateway-local tools | Tool must declare an explicit lifecycle capability | `authorization_failed` | Standard missing-permission meta plus tool and serving node |
-| `tool:update` | `tool:update` | target node | None | `authorization_failed` | Standard missing-permission meta plus tool |
+| `tool:update` | `tool:update` | target node | Bulk mode resolves and authorizes exactly one active tool-host node before mutation; node and instance selectors must agree when both are present | `authorization_failed` | Standard missing-permission meta plus selected node or instance |
 | `update` | n/a - local-only | n/a | Updates the caller's local Orbit installation; only the source-mounted branch updates a checkout | n/a | n/a |
 | `update:all` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
 | `version` | n/a - local-only | n/a | Reads local Orbit release metadata; optional public release lookup only | n/a | n/a |
