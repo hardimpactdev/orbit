@@ -44,7 +44,7 @@ Destructive consent is required before side effects. In interactive input mode, 
 1. Resolve a target node, concrete instance, or workspace context from supplied input or local context, and resolve the existing process definition within that owner scope. Reject a bare app selector with `validation_failed`, `field=instance`, and `reason=instance_required` unless that app has exactly one instance.
 2. Resolve destructive consent.
 3. Send the request to the gateway, which validates the authenticated peer's authorization.
-4. Stop and remove runtime units on the resolved node or instance serving node. Node-owned and workspace-owned processes normally derive one unit; instance-owned processes derive one main-instance unit plus one unit for each active workspace belonging to that same instance.
+4. Stop and remove runtime units on the resolved node or instance serving node. Node-owned and workspace-owned processes normally derive one unit; instance-owned processes derive one main-instance unit plus one unit for each registered workspace belonging to that same instance.
 5. Remove gateway-owned process configuration.
 6. Render the selected output.
 

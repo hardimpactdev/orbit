@@ -45,7 +45,10 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
                 'path' => $path,
                 'caller_cwd' => $this->hostCwd(),
             ],
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+            fn (ProgressEventType $type, array $payload): int => $this->renderCanonicalProgressTerminalFrame(
+                $type,
+                $payload,
+            ),
         );
     }
 }

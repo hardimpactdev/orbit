@@ -24,10 +24,12 @@ final class CreateWorkspacePlan
     /** @var list<array<string, mixed>> */
     private array $warnings = [];
 
-    /** @var array{reachable: bool, status: string} */
+    /** @var array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int} */
     private array $httpProbe = [
-        'reachable' => false,
-        'status' => 'not_run',
+        'url' => '',
+        'result' => 'unhealthy',
+        'status_code' => null,
+        'duration_ms' => 0,
     ];
 
     /** @var array{code: string, message: string, meta: array<string, mixed>}|null */
@@ -239,13 +241,13 @@ final class CreateWorkspacePlan
                 'run' => function (): string {
                     $workspace = $this->workspaceOrFail();
                     $this->httpProbe = $this->setupWorkspace->probeReadiness($workspace);
-                    $this->setupWorkspace->markActive($workspace);
+                    $this->setupWorkspace->markExpected($workspace);
 
-                    if (! $this->httpProbe['reachable']) {
+                    if ($this->httpProbe['result'] === 'unhealthy') {
                         $warning = [
                             'code' => 'workspace.http_probe_unhealthy',
                             'family' => null,
-                            'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
+                            'message' => "Setup completed, but the HTTP probe for '{$this->httpProbe['url']}' did not return a serving response within 10s.",
                             'next_command' => $this->retryCommands->build(
                                 $workspace->name,
                                 $this->app->name,
@@ -257,7 +259,7 @@ final class CreateWorkspacePlan
                         return 'skip:'.$warning['message'];
                     }
 
-                    return $this->httpProbe['status'];
+                    return (string) $this->httpProbe['status_code'];
                 },
             ],
         ];
@@ -265,13 +267,29 @@ final class CreateWorkspacePlan
 
     public function run(ProgressReporter $reporter): CreateWorkspaceResult
     {
-        $steps = $this->steps();
+        try {
+            $steps = $this->steps();
+        } catch (Throwable $exception) {
+            return $this->unexpectedFailure(
+                $exception,
+                step: 'planning',
+                reason: 'plan_construction_failed',
+            );
+        }
 
-        $reporter->tree($this->title(), array_map(static fn (array $step): array => [
-            'key' => $step['key'],
-            'label' => $step['label'],
-            'doneLabel' => $step['doneLabel'],
-        ], $steps));
+        try {
+            $reporter->tree($this->title(), array_map(static fn (array $step): array => [
+                'key' => $step['key'],
+                'label' => $step['label'],
+                'doneLabel' => $step['doneLabel'],
+            ], $steps));
+        } catch (Throwable $exception) {
+            return $this->unexpectedFailure(
+                $exception,
+                step: 'reporting',
+                reason: 'reporter_initialization_failed',
+            );
+        }
 
         foreach ($steps as $step) {
             $reporter->stepStart($step['key']);
@@ -280,17 +298,13 @@ final class CreateWorkspacePlan
                 $message = $step['run']();
             } catch (Throwable $exception) {
                 if ($this->failure === null) {
-                    report($exception);
-
-                    $this->failure = [
-                        'code' => 'workspace.enactment_failed',
-                        'message' => "Workspace application on node '{$this->node->name}' stopped before Orbit could classify remaining drift.",
-                        'meta' => [
-                            'step' => $step['key'],
-                            'node' => $this->node->name,
-                            'reason' => 'unexpected_failure',
-                        ],
-                    ];
+                    return $this->unexpectedFailure(
+                        $exception,
+                        step: $step['key'],
+                        reason: 'unexpected_failure',
+                        failedStep: $step['key'],
+                        reporter: $reporter,
+                    );
                 }
 
                 $reporter->stepFail($step['key'], $this->failure['message']);
@@ -310,6 +324,36 @@ final class CreateWorkspacePlan
         }
 
         return CreateWorkspaceResult::success($this->resultData(), $this->completedSteps);
+    }
+
+    private function unexpectedFailure(
+        Throwable $exception,
+        string $step,
+        string $reason,
+        ?string $failedStep = null,
+        ?ProgressReporter $reporter = null,
+    ): CreateWorkspaceResult {
+        report($exception);
+
+        $this->failure = [
+            'code' => 'workspace.enactment_failed',
+            'message' => "Workspace application on node '{$this->node->name}' stopped before Orbit could classify remaining drift.",
+            'meta' => [
+                'step' => $step,
+                'node' => $this->node->name,
+                'reason' => $reason,
+            ],
+        ];
+
+        if ($failedStep !== null && $reporter instanceof ProgressReporter) {
+            try {
+                $reporter->stepFail($failedStep, $this->failure['message']);
+            } catch (Throwable $reporterException) {
+                report($reporterException);
+            }
+        }
+
+        return CreateWorkspaceResult::failed($this->failure, $this->completedSteps);
     }
 
     public function doneFooter(): string

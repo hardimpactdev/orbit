@@ -89,11 +89,46 @@ final readonly class SetupWorkspace
         return new SetupWorkspacePlan($this, $workspace, $app, $node, $isAdoption);
     }
 
-    public function prepareWorkspaceState(Workspace $workspace): void
+    public function prepareWorkspaceState(Workspace $workspace, bool $isAdoption = false): void
     {
         $workspace->update([
+            'adopted' => $workspace->adopted || $isAdoption,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
+    }
+
+    /**
+     * @param list<string> $completedSteps
+     * @mago-expect lint:excessive-parameter-list
+     */
+    public function unexpectedFailure(
+        Workspace $workspace,
+        Node $node,
+        bool $isAdoption,
+        Throwable $exception,
+        string $phase,
+        string $reason,
+        array $completedSteps = [],
+    ): SetupWorkspaceResult {
+        report($exception);
+
+        $failure = [
+            'code' => 'workspace.enactment_failed',
+            'message' => "Workspace artifact application on node '{$node->name}' stopped before Orbit could classify remaining drift.",
+            'meta' => [
+                'phase' => $phase,
+                'node' => $node->name,
+                'reason' => $reason,
+            ],
+        ];
+
+        try {
+            $this->prepareWorkspaceState($workspace, $isAdoption);
+        } catch (Throwable $stateException) {
+            report($stateException);
+        }
+
+        return SetupWorkspaceResult::failed($failure, $completedSteps);
     }
 
     /**
@@ -401,16 +436,16 @@ final readonly class SetupWorkspace
     }
 
     /**
-     * @return array{reachable: bool, status: string}
+     * @return array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}
      */
     public function probeReadiness(Workspace $workspace): array
     {
         return $this->readinessProbe->probe($workspace);
     }
 
-    public function markActive(Workspace $workspace): void
+    public function markExpected(Workspace $workspace): void
     {
-        $workspace->update(['lifecycle_status' => WorkspaceLifecycleStatus::Active]);
+        $workspace->update(['lifecycle_status' => WorkspaceLifecycleStatus::Expected]);
     }
 
     /**

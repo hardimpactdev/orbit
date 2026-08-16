@@ -376,15 +376,21 @@ final readonly class WorkspaceSetupTargetResolver
 
     private function ensureValidWorkspaceName(string $name): void
     {
-        if (strlen($name) <= 63 && preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) === 1) {
-            return;
+        if (strlen($name) > 63 || preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) !== 1) {
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'Workspace name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and cannot exceed 63 characters.',
+                ['field' => 'name', 'reason' => 'slug_regex'],
+            );
         }
 
-        throw new WorkspaceSetupResolutionFailed(
-            'validation_failed',
-            'Workspace name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and cannot exceed 63 characters.',
-            ['field' => 'name', 'reason' => 'slug_regex'],
-        );
+        if ($name === 'main') {
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                "Workspace name '{$name}' is reserved.",
+                ['field' => 'name', 'reason' => 'reserved_name'],
+            );
+        }
     }
 
     private function resolveApp(?string $appName): ?App

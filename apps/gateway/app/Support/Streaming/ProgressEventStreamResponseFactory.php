@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace App\Support\Streaming;
 
 use App\Contracts\ProgressReporter;
+use Closure;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 final readonly class ProgressEventStreamResponseFactory
 {
+    /**
+     * @param null|Closure(ProgressEventStreamEmitter): ProgressReporter $reporterFactory
+     */
     public function __construct(
         private string $sapi = PHP_SAPI,
+        private ?Closure $reporterFactory = null,
     ) {}
 
     /**
@@ -24,7 +29,11 @@ final readonly class ProgressEventStreamResponseFactory
             function () use ($streamer): void {
                 $emitter = new ProgressEventStreamEmitter($this->sapi);
 
-                app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));
+                $reporter = $this->reporterFactory instanceof Closure
+                    ? ($this->reporterFactory)($emitter)
+                    : new SseProgressReporter($emitter);
+
+                app()->instance(ProgressReporter::class, $reporter);
                 $emitter->bufferingPrelude();
 
                 try {

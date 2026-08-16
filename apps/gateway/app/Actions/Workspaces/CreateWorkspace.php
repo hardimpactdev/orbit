@@ -167,7 +167,7 @@ final readonly class CreateWorkspace
     }
 
     /**
-     * @param  array{reachable: bool, status: string}  $httpProbe
+     * @param  array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}  $httpProbe
      * @param  list<array<string, mixed>>  $warnings
      * @return array{
      *     result: array{action: 'created'},
@@ -214,7 +214,7 @@ final readonly class CreateWorkspace
             'url' => $workspace->url(),
             'php_version' => $workspace->effectivePhpVersion(),
             'php_inherited' => $workspace->php_version === null,
-            'adopted' => false,
+            'adopted' => $workspace->adopted,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
     }

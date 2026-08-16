@@ -197,6 +197,60 @@ describe('explicit path adoption', function (): void {
     });
 });
 
+it('rejects the reserved explicit workspace identity main', function (): void {
+    $app = workspaceSetupResolverApp([
+        'name' => 'happie',
+        'path' => '/home/nckrtl/apps/happie',
+    ]);
+
+    try {
+        app(WorkspaceSetupTargetResolver::class)->resolve(
+            name: 'main',
+            appName: 'happie.development',
+            path: '/home/nckrtl/apps/happie/.worktrees/feature-a',
+        );
+
+        $this->fail('Expected the reserved workspace identity to be rejected.');
+    } catch (WorkspaceSetupResolutionFailed $exception) {
+        expect($exception->errorCode)
+            ->toBe('validation_failed')
+            ->and($exception->meta)
+            ->toBe([
+                'field' => 'name',
+                'reason' => 'reserved_name',
+            ]);
+    }
+
+    expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
+});
+
+it('rejects the reserved basename-derived workspace identity main', function (): void {
+    $app = workspaceSetupResolverApp([
+        'name' => 'happie',
+        'path' => '/home/nckrtl/apps/happie',
+    ]);
+
+    try {
+        app(WorkspaceSetupTargetResolver::class)->resolve(
+            name: null,
+            appName: 'happie.development',
+            path: '/home/nckrtl/apps/happie/.worktrees/main',
+        );
+
+        $this->fail('Expected the reserved basename-derived workspace identity to be rejected.');
+    } catch (WorkspaceSetupResolutionFailed $exception) {
+        expect($exception->errorCode)
+            ->toBe('validation_failed')
+            ->and($exception->meta)
+            ->toBe([
+                'field' => 'name',
+                'reason' => 'reserved_name',
+            ]);
+    }
+
+    expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
+});
+
 function workspaceSetupResolverApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(role: 'app-dev');

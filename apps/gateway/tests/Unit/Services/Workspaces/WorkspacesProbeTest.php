@@ -49,7 +49,6 @@ describe('interface contract', function (): void {
         expect(array_column(WorkspaceLifecycleStatus::cases(), 'value'))->toBe([
             'expected',
             'setup-pending',
-            'active',
         ]);
     });
 });
@@ -64,7 +63,7 @@ describe('source path reality', function (): void {
             ->create([
                 'name' => 'feature',
                 'path' => $workspacePath,
-                'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+                'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
 
@@ -216,7 +215,7 @@ describe('PHP runtime reality', function (): void {
         $workspace = workspaceFor($app, [
             'name' => 'feature',
             'php_version' => null,
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $snapshot = new ProbeSnapshot([
@@ -235,7 +234,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $snapshot = new ProbeSnapshot([
@@ -254,7 +253,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $snapshot = new ProbeSnapshot([
@@ -269,12 +268,12 @@ describe('PHP runtime reality', function (): void {
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
     });
 
-    it('does not report PHP runtime drift before a workspace is active', function (WorkspaceLifecycleStatus $lifecycleStatus): void {
+    it('does not report PHP runtime drift while workspace setup is pending', function (): void {
         $app = workspaceableApp(['php_version' => '7.4']);
         $workspace = workspaceFor($app, [
             'name' => 'feature',
             'php_version' => null,
-            'lifecycle_status' => $lifecycleStatus,
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
@@ -287,16 +286,13 @@ describe('PHP runtime reality', function (): void {
         ]));
 
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
-    })->with([
-        WorkspaceLifecycleStatus::Expected,
-        WorkspaceLifecycleStatus::SetupPending,
-    ]);
+    });
 
     it('hands missing PHP workspace runtime units to process doctor without duplicate workspace issues', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
@@ -317,7 +313,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
@@ -338,7 +334,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
 
@@ -362,7 +358,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
@@ -377,11 +373,11 @@ describe('PHP runtime reality', function (): void {
         expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
     });
 
-    it('does not require PHP workspace runtime containers before a workspace is active', function (WorkspaceLifecycleStatus $lifecycleStatus): void {
+    it('does not require PHP workspace runtime containers while workspace setup is pending', function (): void {
         $app = workspaceableApp();
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'lifecycle_status' => $lifecycleStatus,
+            'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
@@ -396,10 +392,7 @@ describe('PHP runtime reality', function (): void {
         ]));
 
         expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
-    })->with([
-        WorkspaceLifecycleStatus::Expected,
-        WorkspaceLifecycleStatus::SetupPending,
-    ]);
+    });
 });
 
 describe('workspace security reality', function (): void {

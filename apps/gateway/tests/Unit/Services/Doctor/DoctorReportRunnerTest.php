@@ -1632,7 +1632,7 @@ describe('DoctorReportRunner', function (): void {
                 'name' => 'feature-a',
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
                 'php_version' => '8.5',
-                'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+                'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
             ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
         $process = OrbitProcess::factory()
@@ -1735,7 +1735,7 @@ describe('DoctorReportRunner', function (): void {
                 'name' => 'feature-a',
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
                 'php_version' => '8.5',
-                'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+                'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
             ]);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(

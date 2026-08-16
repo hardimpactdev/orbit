@@ -51,7 +51,7 @@ These rules describe how runtime units are derived from process definitions.
 - Node-level and workspace-scoped process definitions normally render one
   runtime unit. Instance-scoped inherited process definitions may render
   one runtime unit for that instance's main context and one runtime unit for
-  each active workspace belonging to that same instance. These units all run
+  each registered workspace belonging to that same instance. These units all run
   on the instance's serving node.
 - Each rendered runtime unit is applied by its selected process runtime backend:
   `systemd` for Linux host commands, `launchd` for macOS host commands,

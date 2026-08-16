@@ -51,23 +51,39 @@ final class SetupWorkspaceRequest extends GatewayRequest implements HasBody
         $data = $this->unwrapData($response);
         $meta = $this->unwrapMeta($response);
         $workspace = $this->stringKeyedArray($data['workspace'] ?? []);
+        $name = is_string($workspace['name'] ?? null)
+            ? $workspace['name']
+            : (is_string($data['workspace'] ?? null) ? $data['workspace'] : $this->name ?? '');
 
         return new SetupWorkspaceResponse(
-            name: is_string($workspace['name'] ?? null) ? $workspace['name'] : $this->name ?? '',
-            app: is_string($workspace['app'] ?? null) ? $workspace['app'] : '',
-            instance: is_string($workspace['instance'] ?? null) ? $workspace['instance'] : '',
-            node: is_string($workspace['node'] ?? null) ? $workspace['node'] : null,
+            app: is_string($workspace['app'] ?? null)
+                ? $workspace['app']
+                : (is_string($data['app'] ?? null) ? $data['app'] : ''),
+            instance: is_string($workspace['instance'] ?? null)
+                ? $workspace['instance']
+                : (is_string($data['instance'] ?? null) ? $data['instance'] : ''),
+            workspace: $name,
+            node: is_string($workspace['node'] ?? null)
+                ? $workspace['node']
+                : (is_string($data['node'] ?? null) ? $data['node'] : ''),
+            url: is_string($workspace['url'] ?? null)
+                ? $workspace['url']
+                : (is_string($data['url'] ?? null) ? $data['url'] : ''),
+            action: is_string($data['result']['action'] ?? null)
+                ? $data['result']['action']
+                : (is_string($data['action'] ?? null) ? $data['action'] : 'set_up'),
+            warnings: $this->listOfStringKeyedArrays($meta['warnings'] ?? $data['warnings'] ?? []),
+            setupSteps: $this->stringKeyedArray($data['setup_steps'] ?? []),
+            processes: $this->stringKeyedArray($data['processes'] ?? []),
+            httpProbe: $this->stringKeyedArray($meta['http_probe'] ?? $data['http_probe'] ?? []),
+            name: $name,
             path: is_string($workspace['path'] ?? null) ? $workspace['path'] : null,
-            url: is_string($workspace['url'] ?? null) ? $workspace['url'] : null,
             phpVersion: is_string($workspace['php_version'] ?? null) ? $workspace['php_version'] : null,
             phpInherited: is_bool($workspace['php_inherited'] ?? null) ? $workspace['php_inherited'] : false,
             adopted: is_bool($workspace['adopted'] ?? null) ? $workspace['adopted'] : false,
             lifecycleStatus: is_string($workspace['lifecycle_status'] ?? null)
                 ? $workspace['lifecycle_status']
                 : 'setup-pending',
-            action: is_string($data['result']['action'] ?? null) ? $data['result']['action'] : 'set_up',
-            httpProbe: $this->stringKeyedArray($meta['http_probe'] ?? []),
-            warnings: $this->listOfStringKeyedArrays($meta['warnings'] ?? []),
         );
     }
 }

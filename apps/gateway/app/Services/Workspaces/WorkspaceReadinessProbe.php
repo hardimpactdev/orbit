@@ -19,25 +19,49 @@ final readonly class WorkspaceReadinessProbe
     ) {}
 
     /**
-     * @return array{reachable: bool, status: string}
+     * @return array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}
      */
     public function probe(Workspace $workspace): array
     {
-        return $this->probeWith(fn (): array => $this->probeOnce($workspace));
+        $url = $workspace->url();
+
+        if ($this->maxAttempts <= 0) {
+            return $this->result($url, 'unhealthy', null, 0);
+        }
+
+        $startedAt = (int) hrtime(true);
+        $result = $this->result($url, 'unhealthy', null, 0);
+
+        for ($attemptNumber = 1; $attemptNumber <= $this->maxAttempts; $attemptNumber++) {
+            $attempt = $this->probeOnce($workspace, $url);
+            $result = $attempt['result'];
+
+            if ($result['result'] === 'healthy' || ! $attempt['retryable']) {
+                break;
+            }
+
+            if ($attemptNumber < $this->maxAttempts && $this->retryDelayMilliseconds > 0) {
+                usleep($this->retryDelayMilliseconds * 1_000);
+            }
+        }
+
+        $result['duration_ms'] = $this->durationMilliseconds($startedAt);
+
+        return $result;
     }
 
     /**
-     * @param  callable(): array{reachable: bool, status: string}  $attempt
-     * @return array{reachable: bool, status: string}
+     * @param  callable(): array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}  $attempt
+     * @return array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}
      */
     public function probeWith(callable $attempt): array
     {
-        $result = ['reachable' => false, 'status' => 'not_run'];
+        $result = $this->result('', 'unhealthy', null, 0);
 
         for ($attemptNumber = 1; $attemptNumber <= $this->maxAttempts; $attemptNumber++) {
             $result = $attempt();
 
-            if ($result['reachable'] || ! $this->shouldRetry($result['status'])) {
+            if ($result['result'] === 'healthy' || ! $this->shouldRetry($result)) {
                 return $result;
             }
 
@@ -50,25 +74,26 @@ final readonly class WorkspaceReadinessProbe
     }
 
     /**
-     * @return array{reachable: bool, status: string}
+     * @return array{
+     *     result: array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int},
+     *     retryable: bool,
+     * }
      */
-    private function probeOnce(Workspace $workspace): array
+    private function probeOnce(Workspace $workspace, string $url): array
     {
         $workspace->loadMissing(['app']);
 
         $app = $workspace->app;
 
         if (! $app instanceof App) {
-            return ['reachable' => false, 'status' => 'no_app'];
+            return ['result' => $this->result($url, 'unhealthy'), 'retryable' => false];
         }
 
         $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
-            return ['reachable' => false, 'status' => 'no_node'];
+            return ['result' => $this->result($url, 'unhealthy'), 'retryable' => false];
         }
-
-        $url = $workspace->url();
 
         try {
             $response = Http::timeout(10)
@@ -76,12 +101,17 @@ final readonly class WorkspaceReadinessProbe
                 ->withoutVerifying()
                 ->get($url);
         } catch (Throwable $exception) {
-            return ['reachable' => false, 'status' => 'error: '.$exception->getMessage()];
+            report($exception);
+
+            return ['result' => $this->result($url, 'unhealthy'), 'retryable' => true];
         }
 
         $statusCode = $response->status();
         if ($statusCode >= 500) {
-            return ['reachable' => false, 'status' => (string) $statusCode];
+            return [
+                'result' => $this->result($url, 'unhealthy', $statusCode),
+                'retryable' => true,
+            ];
         }
 
         $assetStatus = $this->probeViteAssets($url, $response->body());
@@ -90,11 +120,17 @@ final readonly class WorkspaceReadinessProbe
             return $assetStatus;
         }
 
-        return ['reachable' => true, 'status' => (string) $statusCode];
+        return [
+            'result' => $this->result($url, 'healthy', $statusCode),
+            'retryable' => false,
+        ];
     }
 
     /**
-     * @return array{reachable: false, status: string}|null
+     * @return array{
+     *     result: array{url: string, result: 'unhealthy', status_code: int|null, duration_ms: int},
+     *     retryable: true,
+     * }|null
      */
     private function probeViteAssets(string $baseUrl, string $html): ?array
     {
@@ -105,11 +141,29 @@ final readonly class WorkspaceReadinessProbe
                     ->withoutVerifying()
                     ->get($assetUrl);
             } catch (Throwable $exception) {
-                return ['reachable' => false, 'status' => 'asset_error: '.$exception->getMessage()];
+                report($exception);
+
+                return [
+                    'result' => [
+                        'url' => $baseUrl,
+                        'result' => 'unhealthy',
+                        'status_code' => null,
+                        'duration_ms' => 0,
+                    ],
+                    'retryable' => true,
+                ];
             }
 
             if ($response->status() >= 400) {
-                return ['reachable' => false, 'status' => 'asset_'.$response->status()];
+                return [
+                    'result' => [
+                        'url' => $baseUrl,
+                        'result' => 'unhealthy',
+                        'status_code' => $response->status(),
+                        'duration_ms' => 0,
+                    ],
+                    'retryable' => true,
+                ];
             }
         }
 
@@ -155,21 +209,34 @@ final readonly class WorkspaceReadinessProbe
         return "{$scheme}://{$authority}/".ltrim($src, '/');
     }
 
-    private function shouldRetry(string $status): bool
+    /**
+     * @param  array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}  $result
+     */
+    private function shouldRetry(array $result): bool
     {
-        if (str_starts_with($status, 'asset_')) {
-            return true;
-        }
+        return $result['status_code'] === null || $result['status_code'] >= 500;
+    }
 
-        if (str_starts_with($status, 'error: ')) {
-            return (
-                str_contains($status, 'Operation timed out')
-                || str_contains($status, 'Connection refused')
-                || str_contains($status, 'Connection reset')
-                || str_contains($status, 'Empty reply from server')
-            );
-        }
+    /**
+     * @param  'healthy'|'unhealthy'  $result
+     * @return array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int}
+     */
+    private function result(
+        string $url,
+        string $result,
+        ?int $statusCode = null,
+        int $durationMilliseconds = 0,
+    ): array {
+        return [
+            'url' => $url,
+            'result' => $result,
+            'status_code' => $statusCode,
+            'duration_ms' => $durationMilliseconds,
+        ];
+    }
 
-        return in_array($status, ['000', '500', '502', '503', '504'], true);
+    private function durationMilliseconds(int $startedAt): int
+    {
+        return max(0, (int) round((hrtime(true) - $startedAt) / 1_000_000));
     }
 }

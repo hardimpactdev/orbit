@@ -86,7 +86,7 @@ commands.
 7. Re-render the runtime units that the process definition produces on the
    resolved node or instance serving node. Node-owned and workspace-owned
    processes normally derive one unit. Instance-owned processes derive one
-   main-instance unit plus one unit for each active workspace belonging to that
+   main-instance unit plus one unit for each registered workspace belonging to that
    same instance. Canonical identities include both app and instance slugs.
    Label-only updates do not require runtime-unit identity replacement.
 8. When identity changes, remove or replace derived runtime units for the

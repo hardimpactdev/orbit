@@ -51,7 +51,7 @@ to the latest mutation.
 It never targets the app's default path or a sibling instance. Running from
 inside a workspace does not infer its parent app: `instance:env` still
 requires explicit app and instance selectors; use `workspace:env` for the
-active workspace.
+registered workspace.
 
 ## Output
 

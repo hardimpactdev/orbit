@@ -38,24 +38,41 @@ function registryPromptE2ESeed(E2ETopologyHarness $topology): void
 
         $app = \App\Models\App::query()->create([
             'name' => 'docs',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'php_version' => '8.5',
-            'adopted' => true,
         ]);
 
-        \App\Models\App::query()->create([
-            'name' => 'api',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/home/orbit/apps/api',
-            'document_root' => 'public',
-            'php_version' => '8.5',
+        $instance = \App\Models\Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'php_version' => $app->php_version,
             'adopted' => true,
+            'driver_config' => new \App\Data\Apps\OrbitInstanceDriverConfigData(
+                node_id: $nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
+        ]);
+
+        $api = \App\Models\App::query()->create([
+            'name' => 'api',
+            'php_version' => '8.5',
+        ]);
+
+        \App\Models\Instance::factory()->for($api, 'app')->create([
+            'name' => 'development',
+            'php_version' => $api->php_version,
+            'adopted' => true,
+            'driver_config' => new \App\Data\Apps\OrbitInstanceDriverConfigData(
+                node_id: $nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/home/orbit/apps/api',
+                document_root: 'public',
+            ),
         ]);
 
         \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-docs',
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
             'php_version' => null,
@@ -64,6 +81,7 @@ function registryPromptE2ESeed(E2ETopologyHarness $topology): void
 
         \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'bugfix-docs',
             'path' => '/home/orbit/apps/docs/.worktrees/bugfix-docs',
             'php_version' => null,

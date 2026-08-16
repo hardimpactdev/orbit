@@ -138,8 +138,8 @@ result state, such as the git ref used by `workspace:new`, belongs beside the
 entity rather than inside it.
 
 List renderers are the one documented exception: `workspace:list` rows are
-summary rows carrying only `name`, `app`, `instance`, `node`, `url`, and
-`lifecycle_status`. Summary rows must be a strict subset of the canonical
+summary rows carrying only `name`, `app`, `instance`, `node`, `url`, `adopted`,
+and `lifecycle_status`. Summary rows must be a strict subset of the canonical
 entity fields with identical meanings; they never add fields the canonical
 entity does not define.
 

@@ -16,12 +16,12 @@ use App\Models\Workspace;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
-use App\Support\Streaming\NullProgressReporter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 #[RequiresPermission('workspace:setup', servingNode: ServingNode::WorkspaceOwning)]
 final class WorkspaceSetupController implements Loggable
@@ -99,8 +99,17 @@ final class WorkspaceSetupController implements Loggable
 
         $this->activitySubject = $workspace;
 
-        $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
-        $outcome = $plan->run(new NullProgressReporter);
+        try {
+            $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
+            $outcome = $plan->run(app(ProgressReporter::class));
+        } catch (Throwable $exception) {
+            $outcome = $setupProgress->planConstructionFailure(
+                $workspace,
+                $node,
+                $isAdoption,
+                $exception,
+            );
+        }
 
         if (! $outcome->isSuccessful()) {
             $failure = $outcome->failure();
@@ -190,8 +199,28 @@ final class WorkspaceSetupController implements Loggable
         $this->activitySubject = $workspace;
 
         return $streams->make(function ($emitter) use ($setupProgress, $workspace, $app, $node, $isAdoption): void {
-            $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
-            $outcome = $plan->run(app(ProgressReporter::class));
+            try {
+                $plan = $setupProgress->for($workspace, $app, $node, $isAdoption);
+                $outcome = $plan->run(app(ProgressReporter::class));
+            } catch (Throwable $exception) {
+                $outcome = $setupProgress->planConstructionFailure(
+                    $workspace,
+                    $node,
+                    $isAdoption,
+                    $exception,
+                );
+                $failure = $outcome->failure();
+                $message = $failure['message'] ?? 'Workspace setup failed.';
+
+                $emitter->error($message, 1, [
+                    'code' => $failure['code'] ?? 'workspace.enactment_failed',
+                    'message' => $message,
+                    'meta' => $failure['meta'] ?? [],
+                    'footer' => "Failed to set up workspace '{$workspace->name}'.",
+                ]);
+
+                return;
+            }
 
             if (! $outcome->isSuccessful()) {
                 $failure = $outcome->failure() ?? [
@@ -214,9 +243,17 @@ final class WorkspaceSetupController implements Loggable
                 return;
             }
 
+            $result = $outcome->data();
+
             $emitter->complete(0, [
                 'footer' => $plan->doneFooter(),
-                'result' => $outcome->data(),
+                'success' => [
+                    'data' => [
+                        'result' => $result['result'],
+                        'workspace' => $result['workspace'],
+                    ],
+                    'meta' => $result['meta'],
+                ],
             ]);
         });
     }

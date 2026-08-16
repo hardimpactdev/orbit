@@ -61,12 +61,12 @@ describe('app:show', function (): void {
                             [
                                 'name' => 'feature-a',
                                 'url' => 'https://feature-a.orbit-docs.test',
-                                'lifecycle_status' => 'active',
+                                'lifecycle_status' => 'expected',
                             ],
                             [
                                 'name' => 'feature-b',
                                 'url' => 'https://feature-b.orbit-docs.test',
-                                'lifecycle_status' => 'active',
+                                'lifecycle_status' => 'expected',
                             ],
                         ],
                     ],

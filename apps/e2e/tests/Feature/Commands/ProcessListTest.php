@@ -71,9 +71,17 @@ function processListSeed(E2ETopologyHarness $topology): void
 
         $app = \App\Models\App::query()->create([
             'name' => 'docs',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/srv/docs',
-            'document_root' => 'public',
+        ]);
+
+        $instance = \App\Models\Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'php_version' => $app->php_version,
+            'driver_config' => new \App\Data\Apps\OrbitInstanceDriverConfigData(
+                node_id: $nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/srv/docs',
+                document_root: 'public',
+            ),
         ]);
 
         $app->processes()->create([
@@ -100,6 +108,7 @@ function processListSeed(E2ETopologyHarness $topology): void
 
         $workspace = \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-docs',
             'path' => '/srv/docs/.worktrees/feature-docs',
             'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,

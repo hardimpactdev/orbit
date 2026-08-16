@@ -17,6 +17,7 @@ use App\Models\WorkspaceStep;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -39,10 +40,13 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'name' => 'feature-docs',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
         'php_version' => null,
+        'adopted' => true,
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    expect($workspace->app->is($app))
+    expect(Schema::hasColumn('workspaces', 'adopted'))
+        ->toBeTrue()
+        ->and($workspace->app->is($app))
         ->toBeTrue()
         ->and($app->workspaces()->pluck('name')->all())
         ->toBe(['feature-docs'])
@@ -50,6 +54,8 @@ it('stores workspace registry intent and derives canonical fields', function ():
         ->toBe('8.5')
         ->and($workspace->url())
         ->toBe('https://feature-docs.docs.test')
+        ->and($workspace->adopted)
+        ->toBeTrue()
         ->and($workspace->lifecycle_status)
         ->toBe(WorkspaceLifecycleStatus::SetupPending);
 });

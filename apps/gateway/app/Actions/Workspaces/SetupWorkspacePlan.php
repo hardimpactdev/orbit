@@ -37,10 +37,12 @@ final class SetupWorkspacePlan
         'names' => [],
     ];
 
-    /** @var array{reachable: bool, status: string} */
+    /** @var array{url: string, result: 'healthy'|'unhealthy', status_code: int|null, duration_ms: int} */
     private array $httpProbe = [
-        'reachable' => false,
-        'status' => 'not_run',
+        'url' => '',
+        'result' => 'unhealthy',
+        'status_code' => null,
+        'duration_ms' => 0,
     ];
 
     /** @var array{code: string, message: string, meta: array<string, mixed>}|null */
@@ -49,7 +51,7 @@ final class SetupWorkspacePlan
     /** @var list<string> */
     private array $completedSteps = [];
 
-    private readonly bool $wasAlreadyActive;
+    private readonly bool $wasAlreadyManaged;
 
     private ?ProgressReporter $reporter = null;
 
@@ -62,7 +64,9 @@ final class SetupWorkspacePlan
         private readonly bool $isAdoption,
         private readonly WorkspaceSetupRetryCommandBuilder $retryCommands = new WorkspaceSetupRetryCommandBuilder,
     ) {
-        $this->wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
+        $this->wasAlreadyManaged =
+            ! $isAdoption
+            && ($workspace->adopted || $workspace->lifecycle_status !== WorkspaceLifecycleStatus::SetupPending);
     }
 
     public function title(): string
@@ -89,7 +93,7 @@ final class SetupWorkspacePlan
                 'doneLabel' => 'Applied and verified workspace registration',
                 'phase' => 'registry',
                 'run' => function (): string {
-                    $this->setupWorkspace->prepareWorkspaceState($this->workspace);
+                    $this->setupWorkspace->prepareWorkspaceState($this->workspace, $this->isAdoption);
 
                     return $this->workspace->name;
                 },
@@ -221,13 +225,13 @@ final class SetupWorkspacePlan
             'phase' => 'http_probe',
             'run' => function (): string {
                 $this->httpProbe = $this->setupWorkspace->probeReadiness($this->workspace);
-                $this->setupWorkspace->markActive($this->workspace);
+                $this->setupWorkspace->markExpected($this->workspace);
 
-                if (! $this->httpProbe['reachable']) {
+                if ($this->httpProbe['result'] === 'unhealthy') {
                     $warning = [
                         'code' => 'workspace.http_probe_unhealthy',
                         'family' => null,
-                        'message' => "Workspace did not become reachable: {$this->httpProbe['status']}",
+                        'message' => "Setup completed, but the HTTP probe for '{$this->httpProbe['url']}' did not return a serving response within 10s.",
                         'next_command' => $this->retryCommands->build(
                             $this->workspace->name,
                             $this->app->name,
@@ -239,7 +243,7 @@ final class SetupWorkspacePlan
                     return 'skip:'.$warning['message'];
                 }
 
-                return $this->httpProbe['status'];
+                return (string) $this->httpProbe['status_code'];
             },
         ];
 
@@ -249,13 +253,30 @@ final class SetupWorkspacePlan
     public function run(ProgressReporter $reporter): SetupWorkspaceResult
     {
         $this->reporter = $reporter;
-        $steps = $this->steps();
 
-        $reporter->tree($this->title(), array_map(static fn (array $step): array => [
-            'key' => $step['key'],
-            'label' => $step['label'],
-            'doneLabel' => $step['doneLabel'],
-        ], $steps));
+        try {
+            $steps = $this->steps();
+        } catch (Throwable $exception) {
+            return $this->unexpectedFailure(
+                $exception,
+                phase: 'planning',
+                reason: 'plan_construction_failed',
+            );
+        }
+
+        try {
+            $reporter->tree($this->title(), array_map(static fn (array $step): array => [
+                'key' => $step['key'],
+                'label' => $step['label'],
+                'doneLabel' => $step['doneLabel'],
+            ], $steps));
+        } catch (Throwable $exception) {
+            return $this->unexpectedFailure(
+                $exception,
+                phase: 'reporting',
+                reason: 'reporter_initialization_failed',
+            );
+        }
 
         foreach ($steps as $step) {
             $reporter->stepStart($step['key']);
@@ -264,17 +285,12 @@ final class SetupWorkspacePlan
                 $message = $step['run']();
             } catch (Throwable $exception) {
                 if ($this->failure === null) {
-                    report($exception);
-
-                    $this->failure = [
-                        'code' => 'workspace.enactment_failed',
-                        'message' => "Workspace artifact application on node '{$this->node->name}' stopped before Orbit could classify remaining drift.",
-                        'meta' => [
-                            'phase' => $step['phase'],
-                            'node' => $this->node->name,
-                            'reason' => 'unexpected_failure',
-                        ],
-                    ];
+                    return $this->unexpectedFailure(
+                        $exception,
+                        phase: $step['phase'],
+                        reason: 'unexpected_failure',
+                        failedStep: $step['key'],
+                    );
                 }
 
                 $reporter->stepFail($step['key'], $this->failure['message']);
@@ -297,6 +313,39 @@ final class SetupWorkspacePlan
         $this->reporter = null;
 
         return SetupWorkspaceResult::success($this->resultData(), $this->completedSteps);
+    }
+
+    private function unexpectedFailure(
+        Throwable $exception,
+        string $phase,
+        string $reason,
+        ?string $failedStep = null,
+    ): SetupWorkspaceResult {
+        $result = $this->setupWorkspace->unexpectedFailure(
+            $this->workspace,
+            $this->node,
+            $this->isAdoption,
+            $exception,
+            $phase,
+            $reason,
+            $this->completedSteps,
+        );
+        $this->failure = $result->failure();
+
+        if ($failedStep !== null && $this->reporter !== null) {
+            try {
+                $this->reporter->stepFail(
+                    $failedStep,
+                    $this->failure['message'] ?? 'Workspace setup failed.',
+                );
+            } catch (Throwable $reporterException) {
+                report($reporterException);
+            }
+        }
+
+        $this->reporter = null;
+
+        return $result;
     }
 
     private function reportSetupStepProgress(string $event, WorkspaceStep $step, int $index, int $count): void
@@ -348,7 +397,7 @@ final class SetupWorkspacePlan
                 'url' => $this->workspace->url(),
                 'php_version' => $this->workspace->effectivePhpVersion(),
                 'php_inherited' => $this->workspace->php_version === null,
-                'adopted' => $this->isAdoption,
+                'adopted' => $this->workspace->adopted,
                 'lifecycle_status' => $this->workspace->lifecycle_status->value,
             ],
             'meta' => [
@@ -366,7 +415,7 @@ final class SetupWorkspacePlan
             return 'adopted';
         }
 
-        if ($this->wasAlreadyActive) {
+        if ($this->wasAlreadyManaged) {
             return 'converged';
         }
 

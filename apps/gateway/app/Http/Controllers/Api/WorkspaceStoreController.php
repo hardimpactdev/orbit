@@ -17,7 +17,6 @@ use App\Http\Authorization\ServingNode;
 use App\Models\Instance;
 use App\Models\Workspace;
 use App\Services\Apps\AppSelectorResolver;
-use App\Support\Streaming\NullProgressReporter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -126,7 +125,7 @@ final class WorkspaceStoreController implements Loggable
         }
 
         $plan = $createProgress->for($app, $name, $base, $phpVersion, $instance);
-        $outcome = $plan->run(new NullProgressReporter);
+        $outcome = $plan->run(app(ProgressReporter::class));
 
         if (! $outcome->isSuccessful()) {
             $failure = $outcome->failure();
@@ -287,7 +286,13 @@ final class WorkspaceStoreController implements Loggable
 
             $emitter->complete(0, [
                 'footer' => $plan->doneFooter(),
-                'result' => $result,
+                'success' => [
+                    'data' => [
+                        'result' => $result['result'],
+                        'workspace' => $result['workspace'],
+                    ],
+                    'meta' => $result['meta'],
+                ],
             ]);
         });
     }

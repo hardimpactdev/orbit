@@ -33,14 +33,23 @@ function phpRuntimeCommandsSeed(E2ETopologyHarness $topology): void
 
         $app = \App\Models\App::query()->create([
             'name' => 'docs',
-            'node_id' => $nodes->get('app-dev-1'),
-            'path' => '/home/orbit/apps/docs',
-            'document_root' => 'public',
             'php_version' => '8.4',
+        ]);
+
+        $instance = \App\Models\Instance::factory()->for($app, 'app')->create([
+            'name' => 'development',
+            'php_version' => $app->php_version,
+            'driver_config' => new \App\Data\Apps\OrbitInstanceDriverConfigData(
+                node_id: $nodes->get('app-dev-1'),
+                node: 'app-dev-1',
+                path: '/home/orbit/apps/docs',
+                document_root: 'public',
+            ),
         ]);
 
         \App\Models\Workspace::query()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature-docs',
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
             'php_version' => null,

@@ -53,6 +53,7 @@ class WorkspaceFactory extends Factory
             'name' => $name,
             'path' => "/home/orbit/apps/docs/workspaces/{$name}",
             'php_version' => null,
+            'adopted' => false,
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ];
     }

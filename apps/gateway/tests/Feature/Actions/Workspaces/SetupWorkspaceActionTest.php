@@ -115,7 +115,7 @@ function setup_workspace_use_agent_push(): void
     app()->instance(RunsInternalCommands::class, app(RemoteLocalExecutor::class));
 }
 
-it('sets up a workspace and marks it active', function (): void {
+it('sets up a workspace and restores expected lifecycle intent', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'instance_id' => 1,
@@ -135,7 +135,7 @@ it('sets up a workspace and marks it active', function (): void {
     expect($result['workspace']['app'])->toBe('demo');
 
     $workspace->refresh();
-    expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Active);
+    expect($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::Expected);
 });
 
 it('does not render PHP-FPM pool config for PHP workspaces in the steady-state path', function (): void {
@@ -422,7 +422,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
         ->and($result['workspace']['url'])
         ->toBe('https://recipes.happie.nmbp')
         ->and($workspace->lifecycle_status)
-        ->toBe(WorkspaceLifecycleStatus::Active)
+        ->toBe(WorkspaceLifecycleStatus::Expected)
         ->and($workspace->proxyRoutes()->where('domain', 'recipes.happie.nmbp')->exists())
         ->toBeTrue()
         ->and($shell->runs)
@@ -704,13 +704,13 @@ it('starts configured app processes for the workspace after rendering runtime un
         ->toBe(['feature-a.demo.beast']);
 });
 
-it('reports converged for already-active workspace', function (): void {
+it('reports converged for a workspace with expected lifecycle intent', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
-        'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
     ]);
 
     $app = App::query()->first();
@@ -736,10 +736,24 @@ it('reports adopted for new workspace with adoption flag', function (): void {
 
     $setup = app(SetupWorkspace::class);
     $result = $setup->handle($app, $workspace, $node, isAdoption: true);
+    $workspace->refresh();
 
     expect($result['result']['action'])
         ->toBe('adopted')
         ->and($result['workspace']['adopted'])
+        ->toBeTrue()
+        ->and($workspace->adopted)
+        ->toBeTrue()
+        ->and($workspace->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::Expected);
+
+    $converged = $setup->handle($app, $workspace, $node);
+
+    expect($converged['result']['action'])
+        ->toBe('converged')
+        ->and($converged['workspace']['adopted'])
+        ->toBeTrue()
+        ->and($workspace->refresh()->adopted)
         ->toBeTrue();
 });
 

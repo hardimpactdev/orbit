@@ -371,6 +371,7 @@ describe('WorkspaceListController', function (): void {
             'name' => 'feature-docs',
             'app_id' => $app->id,
             'instance_id' => $app->instances()->firstOrFail()->id,
+            'adopted' => true,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
@@ -383,6 +384,7 @@ describe('WorkspaceListController', function (): void {
                 'instance' => 'development',
                 'node' => 'app-1',
                 'url' => 'https://feature-docs.docs.test',
+                'adopted' => true,
                 'lifecycle_status' => 'setup-pending',
             ]);
     });

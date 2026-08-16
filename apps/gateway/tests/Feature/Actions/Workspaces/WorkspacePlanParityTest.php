@@ -28,8 +28,13 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Support\Streaming\NullProgressReporter;
+use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
@@ -271,7 +276,7 @@ it('returns matching create success envelopes and ordered state transitions thro
             ->assertCreated()
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.workspace.name', $name)
-            ->assertJsonPath('success.data.workspace.lifecycle_status', 'active')
+            ->assertJsonPath('success.data.workspace.lifecycle_status', 'expected')
             ->assertJsonPath('success.meta.base', 'main');
     }
 
@@ -302,20 +307,20 @@ it('returns matching create success envelopes and ordered state transitions thro
             expectedTerminalEvent: 'complete',
         );
 
-        expect($terminal['data']['result']['result']['action'] ?? null)
+        expect($terminal['data']['success']['data']['result']['action'] ?? null)
             ->toBe('created')
-            ->and($terminal['data']['result']['workspace']['name'] ?? null)
+            ->and($terminal['data']['success']['data']['workspace']['name'] ?? null)
             ->toBe($name)
-            ->and($terminal['data']['result']['workspace']['lifecycle_status'] ?? null)
-            ->toBe('active')
-            ->and($terminal['data']['result']['meta']['base'] ?? null)
+            ->and($terminal['data']['success']['data']['workspace']['lifecycle_status'] ?? null)
+            ->toBe('expected')
+            ->and($terminal['data']['success']['meta']['base'] ?? null)
             ->toBe('main');
     }
 
     $workspace = Workspace::query()->where('name', $name)->firstOrFail();
 
     expect($workspace->lifecycle_status)
-        ->toBe(WorkspaceLifecycleStatus::Active)
+        ->toBe(WorkspaceLifecycleStatus::Expected)
         ->and(ProxyRoute::query()->where('workspace_id', $workspace->id)->exists())
         ->toBeTrue();
 })->with(['json', 'sse']);
@@ -449,6 +454,322 @@ it('returns stable reasons for generic create and setup failures through JSON an
     ['setup', 'sse'],
 ]);
 
+it('normalizes setup plan-construction exceptions through JSON and SSE without exposing details', function (
+    string $adapter,
+): void {
+    $name = "plan-failure-{$adapter}";
+    $workspace = workspace_plan_parity_workspace($name);
+    $sentinel = "private-plan-construction-{$adapter}";
+    $failPlanConstruction = true;
+    Exceptions::fake();
+
+    DB::connection()->beforeExecuting(
+        function (string $query) use (&$failPlanConstruction, $sentinel): void {
+            if (! $failPlanConstruction || ! str_contains($query, 'workspace_steps')) {
+                return;
+            }
+
+            $failPlanConstruction = false;
+
+            throw new RuntimeException($sentinel);
+        },
+    );
+
+    $response = workspace_plan_parity_endpoint_request($adapter, uri: '/api/workspaces/setup', payload: [
+        'name' => $name,
+        'instance' => 'demo.development',
+    ]);
+    $error = workspace_plan_parity_endpoint_error($response, $adapter);
+
+    $expectedError = [
+        'code' => 'workspace.enactment_failed',
+        'message' => "Workspace artifact application on node 'app-1' stopped before Orbit could classify remaining drift.",
+        'meta' => [
+            'phase' => 'planning',
+            'node' => 'app-1',
+            'reason' => 'plan_construction_failed',
+        ],
+    ];
+
+    expect($error)
+        ->toMatchArray($expectedError)
+        ->and(workspace_plan_parity_response_content($response, $adapter))
+        ->not
+        ->toContain($sentinel)
+        ->and($workspace->refresh()->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::SetupPending);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $sentinel);
+})->with(['json', 'sse']);
+
+it('normalizes actual setup plan factory exceptions through JSON and SSE without exposing details', function (
+    string $adapter,
+): void {
+    $name = "factory-failure-{$adapter}";
+    $workspace = workspace_plan_parity_workspace($name);
+    $sentinel = 'active';
+    Exceptions::fake();
+    DB::table('workspaces')->where('id', $workspace->id)->update(['lifecycle_status' => $sentinel]);
+
+    $response = workspace_plan_parity_endpoint_request($adapter, uri: '/api/workspaces/setup', payload: [
+        'name' => $name,
+        'instance' => 'demo.development',
+    ]);
+    $error = workspace_plan_parity_endpoint_error($response, $adapter);
+    $expectedError = [
+        'code' => 'workspace.enactment_failed',
+        'message' => "Workspace artifact application on node 'app-1' stopped before Orbit could classify remaining drift.",
+        'meta' => [
+            'phase' => 'planning',
+            'node' => 'app-1',
+            'reason' => 'plan_construction_failed',
+        ],
+    ];
+
+    if ($adapter === 'sse') {
+        $expectedError['footer'] = "Failed to set up workspace '{$name}'.";
+    }
+
+    expect($error)
+        ->toBe($expectedError)
+        ->and(workspace_plan_parity_response_content($response, $adapter))
+        ->not
+        ->toContain($sentinel)
+        ->and(DB::table('workspaces')->where('id', $workspace->id)->value('lifecycle_status'))
+        ->toBe('setup-pending');
+})->with(['json', 'sse']);
+
+it('normalizes reporter initialization failures through literal JSON and SSE endpoints', function (
+    string $operation,
+    string $adapter,
+): void {
+    $name = "reporter-{$operation}-{$adapter}";
+    $sentinel = "private-{$operation}-reporter-{$adapter}";
+    Exceptions::fake();
+    $reporter = new WorkspacePlanParityFailingTreeReporter($sentinel);
+
+    if ($operation === 'setup') {
+        workspace_plan_parity_workspace($name);
+    }
+
+    if ($adapter === 'json') {
+        app()->instance(ProgressReporter::class, $reporter);
+    }
+
+    if ($adapter === 'sse') {
+        app()->instance(
+            ProgressEventStreamResponseFactory::class,
+            new ProgressEventStreamResponseFactory(
+                reporterFactory: static fn (): ProgressReporter => $reporter,
+            ),
+        );
+    }
+
+    $response = workspace_plan_parity_endpoint_request(
+        $adapter,
+        uri: $operation === 'create' ? '/api/workspaces' : '/api/workspaces/setup',
+        payload: [
+            'name' => $name,
+            'instance' => 'demo.development',
+        ],
+    );
+    $error = workspace_plan_parity_endpoint_error($response, $adapter);
+    $expectedError = $operation === 'create'
+        ? [
+            'code' => 'workspace.enactment_failed',
+            'message' => "Workspace application on node 'app-1' stopped before Orbit could classify remaining drift.",
+            'meta' => [
+                'step' => 'reporting',
+                'node' => 'app-1',
+                'reason' => 'reporter_initialization_failed',
+            ],
+        ]
+        : [
+            'code' => 'workspace.enactment_failed',
+            'message' => "Workspace artifact application on node 'app-1' stopped before Orbit could classify remaining drift.",
+            'meta' => [
+                'phase' => 'reporting',
+                'node' => 'app-1',
+                'reason' => 'reporter_initialization_failed',
+            ],
+        ];
+
+    if ($adapter === 'sse') {
+        $expectedError['footer'] = $operation === 'create'
+            ? "Failed to create workspace '{$name}'."
+            : "Failed to set up workspace '{$name}'.";
+    }
+
+    expect($error)
+        ->toBe($expectedError)
+        ->and(workspace_plan_parity_response_content($response, $adapter))
+        ->not
+        ->toContain($sentinel)
+        ->and(Workspace::query()->where('name', $name)->exists())
+        ->toBe($operation === 'setup');
+})->with([
+    ['create', 'json'],
+    ['create', 'sse'],
+    ['setup', 'json'],
+    ['setup', 'sse'],
+]);
+
+it('preserves adopted state across early setup failure, retry, list, and show through JSON and SSE', function (
+    string $failurePoint,
+    string $adapter,
+): void {
+    $name = "adoption-{$failurePoint}-{$adapter}";
+    $path = "/srv/external/{$name}";
+    $sentinel = "private-adoption-{$failurePoint}-{$adapter}";
+    Exceptions::fake();
+
+    if ($failurePoint === 'planning') {
+        $failPlanning = true;
+
+        DB::connection()->beforeExecuting(
+            function (string $query) use (&$failPlanning, $sentinel): void {
+                if (! $failPlanning || ! str_contains($query, 'workspace_steps')) {
+                    return;
+                }
+
+                $failPlanning = false;
+
+                throw new RuntimeException($sentinel);
+            },
+        );
+    }
+
+    if ($failurePoint === 'reporting') {
+        $reporter = new WorkspacePlanParityFailingTreeReporter($sentinel);
+
+        if ($adapter === 'json') {
+            app()->instance(ProgressReporter::class, $reporter);
+        }
+
+        if ($adapter === 'sse') {
+            app()->instance(
+                ProgressEventStreamResponseFactory::class,
+                new ProgressEventStreamResponseFactory(
+                    reporterFactory: static fn (): ProgressReporter => $reporter,
+                ),
+            );
+        }
+    }
+
+    $failureResponse = workspace_plan_parity_endpoint_request(
+        $adapter,
+        uri: '/api/workspaces/setup',
+        payload: [
+            'name' => $name,
+            'instance' => 'demo.development',
+            'path' => $path,
+        ],
+    );
+    $workspace = Workspace::query()->where('name', $name)->firstOrFail();
+
+    $failure = workspace_plan_parity_endpoint_error($failureResponse, $adapter);
+    $expectedReason = 'reporter_initialization_failed';
+
+    if ($failurePoint === 'planning') {
+        $expectedReason = 'plan_construction_failed';
+    }
+
+    expect($failure['code'] ?? null)
+        ->toBe('workspace.enactment_failed')
+        ->and($failure['meta']['phase'] ?? null)
+        ->toBe($failurePoint)
+        ->and($failure['meta']['reason'] ?? null)
+        ->toBe($expectedReason)
+        ->and($workspace->refresh()->adopted)
+        ->toBeTrue();
+
+    app()->instance(ProgressReporter::class, new NullProgressReporter);
+    app()->instance(ProgressEventStreamResponseFactory::class, new ProgressEventStreamResponseFactory);
+
+    $retryResponse = workspace_plan_parity_endpoint_request(
+        $adapter,
+        uri: '/api/workspaces/setup',
+        payload: [
+            'name' => $name,
+            'instance' => 'demo.development',
+        ],
+    );
+
+    if ($adapter === 'json') {
+        $retryResponse
+            ->assertSuccessful()
+            ->assertJsonPath('success.data.result.action', 'converged')
+            ->assertJsonPath('success.data.workspace.adopted', true);
+    }
+
+    if ($adapter === 'sse') {
+        $events = workspace_plan_parity_sse_events($retryResponse);
+        $terminal = $events[array_key_last($events)] ?? [];
+
+        expect($terminal['data']['data']['success']['data']['result']['action'] ?? null)
+            ->toBe('converged')
+            ->and($terminal['data']['data']['success']['data']['workspace']['adopted'] ?? null)
+            ->toBeTrue();
+    }
+
+    $listResponse = $this->call(
+        'GET',
+        '/api/workspaces?instance=demo.development',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_PLAN_PARITY_CALLER_WG_IP],
+    );
+    $showResponse = $this->call(
+        'GET',
+        "/api/workspaces/{$name}?instance=demo.development",
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_PLAN_PARITY_CALLER_WG_IP],
+    );
+
+    $listResponse
+        ->assertSuccessful()
+        ->assertJsonPath('success.data.workspaces.0.adopted', true);
+    $showResponse
+        ->assertSuccessful()
+        ->assertJsonPath('success.data.workspace.adopted', true);
+})->with([
+    ['planning', 'json'],
+    ['planning', 'sse'],
+    ['reporting', 'json'],
+    ['reporting', 'sse'],
+]);
+
+it('normalizes reporter tree initialization exceptions without exposing details', function (): void {
+    $workspace = workspace_plan_parity_workspace();
+    $app = App::query()->where('name', 'demo')->firstOrFail();
+    $node = Node::query()->where('name', 'app-1')->firstOrFail();
+    $sentinel = 'private-reporter-initialization';
+    Exceptions::fake();
+
+    $result = app(SetupWorkspace::class)
+        ->plan($app, $workspace, $node)
+        ->run(new WorkspacePlanParityFailingTreeReporter($sentinel));
+
+    expect($result->failure())
+        ->toBe([
+            'code' => 'workspace.enactment_failed',
+            'message' => "Workspace artifact application on node 'app-1' stopped before Orbit could classify remaining drift.",
+            'meta' => [
+                'phase' => 'reporting',
+                'node' => 'app-1',
+                'reason' => 'reporter_initialization_failed',
+            ],
+        ])
+        ->and(json_encode($result->failure(), JSON_THROW_ON_ERROR))
+        ->not
+        ->toContain($sentinel)
+        ->and($workspace->refresh()->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::SetupPending);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $sentinel);
+});
+
 it('returns the same complete canonical setup success payload through JSON and SSE endpoints', function (): void {
     $payloads = [];
 
@@ -460,19 +781,42 @@ it('returns the same complete canonical setup success payload through JSON and S
             'instance' => 'demo.development',
         ]);
 
-        $response->assertSuccessful();
+        if ($adapter === 'json') {
+            $response->assertSuccessful();
+            $payload = $response->json();
+        }
 
-        $payload = workspace_plan_parity_setup_success_payload($response, $adapter);
+        if ($adapter === 'sse') {
+            expect($response->getStatusCode())->toBe(200);
+            $payload = workspace_plan_parity_expect_sse_envelope(
+                $response,
+                [
+                    'apply_workspace_registration',
+                    'register_proxy_routes',
+                    'initialize_workspace_environment',
+                    'install_workspace_runtime_container',
+                    'check_workspace_readiness',
+                ],
+                [
+                    'apply_workspace_registration',
+                    'register_proxy_routes',
+                    'initialize_workspace_environment',
+                    'install_workspace_runtime_container',
+                    'check_workspace_readiness',
+                ],
+                expectedTerminalEvent: 'complete',
+            );
+        }
 
         $payloads[$adapter] = workspace_plan_parity_normalize_payload($payload, $name);
 
         expect($workspace->refresh()->lifecycle_status)
-            ->toBe(WorkspaceLifecycleStatus::Active)
+            ->toBe(WorkspaceLifecycleStatus::Expected)
             ->and(ProxyRoute::query()->where('workspace_id', $workspace->id)->exists())
             ->toBeTrue();
     }
 
-    $expected = [
+    $success = [
         'data' => [
             'result' => ['action' => 'set_up'],
             'workspace' => [
@@ -485,14 +829,16 @@ it('returns the same complete canonical setup success payload through JSON and S
                 'php_version' => '8.5',
                 'php_inherited' => true,
                 'adopted' => false,
-                'lifecycle_status' => 'active',
+                'lifecycle_status' => 'expected',
             ],
         ],
         'meta' => [
             'node' => 'app-1',
             'http_probe' => [
-                'reachable' => false,
-                'status' => 'not_run',
+                'url' => 'https://setup-adapter.demo.test',
+                'result' => 'unhealthy',
+                'status_code' => null,
+                'duration_ms' => 0,
             ],
             'warnings' => [
                 [
@@ -510,7 +856,7 @@ it('returns the same complete canonical setup success payload through JSON and S
                 [
                     'code' => 'workspace.http_probe_unhealthy',
                     'family' => null,
-                    'message' => 'Workspace did not become reachable: not_run',
+                    'message' => "Setup completed, but the HTTP probe for 'https://setup-adapter.demo.test' did not return a serving response within 10s.",
                     'next_command' => "orbit workspace:setup 'setup-adapter' --instance='demo.development'",
                 ],
             ],
@@ -518,11 +864,15 @@ it('returns the same complete canonical setup success payload through JSON and S
     ];
 
     expect($payloads['json'])
-        ->toBe($expected)
+        ->toBe(['success' => $success])
         ->and($payloads['sse'])
-        ->toBe($expected)
-        ->and($payloads['json'])
-        ->toBe($payloads['sse']);
+        ->toBe([
+            'exit_code' => 0,
+            'data' => [
+                'footer' => 'Workspace ready and available at: https://setup-adapter.demo.test',
+                'success' => $success,
+            ],
+        ]);
 });
 
 it('keeps setup-step output private and returns stable reasons through JSON and SSE endpoints', function (
@@ -607,7 +957,7 @@ it('reports runtime-container exceptions internally without exposing them throug
             'instance' => 'demo.development',
         ],
     );
-    $warnings = workspace_plan_parity_endpoint_warnings($response, $adapter, $operation);
+    $warnings = workspace_plan_parity_endpoint_warnings($response, $adapter);
     $warning = collect($warnings)->firstWhere('code', 'process.runtime_unit_missing');
 
     expect($response->isSuccessful())
@@ -844,7 +1194,7 @@ it('retains a registered workspace when preparation fails and converges it throu
         ->assertJsonPath('success.data.result.action', 'set_up');
 
     expect($retainedWorkspace->refresh()->lifecycle_status)
-        ->toBe(WorkspaceLifecycleStatus::Active)
+        ->toBe(WorkspaceLifecycleStatus::Expected)
         ->and(Workspace::query()->where('name', 'feature-a')->count())
         ->toBe(1);
 });
@@ -887,6 +1237,96 @@ it('returns command-owned readiness warnings from create and setup plans', funct
     ['create', 'sse'],
     ['setup', 'json'],
     ['setup', 'sse'],
+]);
+
+it('keeps page and vite readiness exceptions private in JSON and SSE setup results', function (
+    string $probeFailure,
+    string $adapter,
+): void {
+    $name = "probe-{$probeFailure}-{$adapter}";
+    $workspace = workspace_plan_parity_workspace($name);
+    $url = $workspace->url();
+    $sentinel = "private-{$probeFailure}-probe-{$adapter}";
+    Exceptions::fake();
+    app()->instance(
+        WorkspaceReadinessProbe::class,
+        new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0),
+    );
+    Http::swap(new HttpFactory);
+    Http::fake(function (Request $request) use ($probeFailure, $url, $sentinel) {
+        if ($probeFailure === 'vite' && $request->url() === $url) {
+            return Http::response('<script type="module" src="/@vite/client"></script>');
+        }
+
+        throw new RuntimeException($sentinel);
+    });
+
+    $response = workspace_plan_parity_endpoint_request($adapter, uri: '/api/workspaces/setup', payload: [
+        'name' => $name,
+        'instance' => 'demo.development',
+    ]);
+
+    $success = [];
+
+    if ($adapter === 'json') {
+        $response->assertSuccessful();
+        $success = $response->json('success');
+    }
+
+    if ($adapter === 'sse') {
+        expect($response->getStatusCode())->toBe(200);
+        $terminal = workspace_plan_parity_expect_sse_envelope(
+            $response,
+            [
+                'apply_workspace_registration',
+                'register_proxy_routes',
+                'initialize_workspace_environment',
+                'install_workspace_runtime_container',
+                'check_workspace_readiness',
+            ],
+            [
+                'apply_workspace_registration',
+                'register_proxy_routes',
+                'initialize_workspace_environment',
+                'install_workspace_runtime_container',
+                'check_workspace_readiness',
+            ],
+            expectedTerminalEvent: 'complete',
+        );
+        $success = $terminal['data']['success'] ?? [];
+    }
+
+    $httpProbe = $success['meta']['http_probe'] ?? null;
+    $warning = collect($success['meta']['warnings'] ?? [])
+        ->firstWhere('code', 'workspace.http_probe_unhealthy');
+
+    expect($httpProbe)
+        ->toHaveKeys(['url', 'result', 'status_code', 'duration_ms'])
+        ->and($httpProbe['url'] ?? null)
+        ->toBe($url)
+        ->and($httpProbe['result'] ?? null)
+        ->toBe('unhealthy')
+        ->and(array_key_exists('status_code', $httpProbe))
+        ->toBeTrue()
+        ->and($httpProbe['status_code'])
+        ->toBeNull()
+        ->and($httpProbe['duration_ms'] ?? null)
+        ->toBeInt()
+        ->and($warning)
+        ->toBe([
+            'code' => 'workspace.http_probe_unhealthy',
+            'family' => null,
+            'message' => "Setup completed, but the HTTP probe for '{$url}' did not return a serving response within 10s.",
+            'next_command' => "orbit workspace:setup '{$name}' --instance='demo.development'",
+        ])
+        ->and(workspace_plan_parity_response_content($response, $adapter))
+        ->not->toContain($sentinel);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $sentinel);
+})->with([
+    ['page', 'json'],
+    ['page', 'sse'],
+    ['vite', 'json'],
+    ['vite', 'sse'],
 ]);
 
 function workspace_plan_parity_workspace(string $name = 'feature-a'): Workspace
@@ -987,44 +1427,6 @@ function workspace_plan_parity_normalize_payload(mixed $payload, string $workspa
 }
 
 /** @return array<string, mixed> */
-function workspace_plan_parity_setup_success_payload(TestResponse $response, string $adapter): array
-{
-    if ($adapter === 'json') {
-        $payload = $response->json('success');
-
-        return is_array($payload) ? $payload : [];
-    }
-
-    $terminal = workspace_plan_parity_expect_sse_envelope(
-        $response,
-        [
-            'apply_workspace_registration',
-            'register_proxy_routes',
-            'initialize_workspace_environment',
-            'install_workspace_runtime_container',
-            'check_workspace_readiness',
-        ],
-        [
-            'apply_workspace_registration',
-            'register_proxy_routes',
-            'initialize_workspace_environment',
-            'install_workspace_runtime_container',
-            'check_workspace_readiness',
-        ],
-        expectedTerminalEvent: 'complete',
-    );
-    $result = $terminal['data']['result'] ?? [];
-
-    return [
-        'data' => [
-            'result' => $result['result'] ?? null,
-            'workspace' => $result['workspace'] ?? null,
-        ],
-        'meta' => $result['meta'] ?? null,
-    ];
-}
-
-/** @return array<string, mixed> */
 function workspace_plan_parity_endpoint_error(TestResponse $response, string $adapter): array
 {
     if ($adapter === 'json') {
@@ -1044,7 +1446,6 @@ function workspace_plan_parity_endpoint_error(TestResponse $response, string $ad
 function workspace_plan_parity_endpoint_warnings(
     TestResponse $response,
     string $adapter,
-    string $operation,
 ): array {
     if ($adapter === 'json') {
         $warnings = $response->json('success.meta.warnings');
@@ -1054,8 +1455,7 @@ function workspace_plan_parity_endpoint_warnings(
 
     $events = workspace_plan_parity_sse_events($response);
     $terminal = $events[array_key_last($events)] ?? [];
-    $result = $terminal['data']['data']['result'] ?? [];
-    $warnings = $result['meta']['warnings'] ?? ($operation === 'setup' ? $result['warnings'] ?? [] : []);
+    $warnings = $terminal['data']['data']['success']['meta']['warnings'] ?? [];
 
     return is_array($warnings) ? array_values($warnings) : [];
 }
@@ -1142,6 +1542,29 @@ final class WorkspacePlanParityReporter implements ProgressReporter
     {
         $this->terminalSteps[] = $key;
     }
+}
+
+/** @mago-expect lint:single-class-per-file */
+final readonly class WorkspacePlanParityFailingTreeReporter implements ProgressReporter
+{
+    public function __construct(
+        private string $message,
+    ) {}
+
+    public function tree(string $title, array $steps): void
+    {
+        throw new RuntimeException($this->message);
+    }
+
+    public function stepStart(string $key): void {}
+
+    public function stepProgress(string $key, string $status, ?string $message = null): void {}
+
+    public function stepDone(string $key, ?string $message = null): void {}
+
+    public function stepFail(string $key, string $message): void {}
+
+    public function stepSkip(string $key, ?string $message = null): void {}
 }
 
 /** @mago-expect lint:single-class-per-file */

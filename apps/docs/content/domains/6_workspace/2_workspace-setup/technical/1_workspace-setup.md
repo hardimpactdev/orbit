@@ -89,6 +89,10 @@ the parent app path, including external agent worktree directories.
    - Interactive prompt for missing `[name]` when no CWD outcome or local
      Codex/path resolution supplied it; non-interactive failure if no prompt
      is available.
+   - Explicit and derived workspace names must not be `main`. That name is
+     reserved for the parent app source. Validation fails before side effects
+     with `error.code=validation_failed`, `error.meta.field=name`, and
+     `error.meta.reason=reserved_name`.
 2. **Resolve Path**:
    - Explicit `--path` (must be absolute).
    - Workspace `path` returned by the CWD path-ownership lookup or stored on
@@ -222,7 +226,10 @@ Agent-push, or runtime effects. This failure uses
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
   `error.meta.node`, and a stable `error.meta.reason`). Process-start failures
-  use `process_start_failed`; unclassified failures use `unexpected_failure`.
+  use `process_start_failed`; plan construction uses
+  `plan_construction_failed`; progress-tree initialization uses
+  `reporter_initialization_failed`; other unclassified failures use
+  `unexpected_failure`.
   Retryable runtime container or runtime artifact drift is reported as
   `success.meta.warnings[]` with the owning family code. Public warnings do not
   contain raw exception details.
@@ -234,8 +241,9 @@ Agent-push, or runtime effects. This failure uses
   routing, and artifact phases that completed before the step failure remain in
   place. The retry path is re-running `workspace:setup`; app-side scripts are
   expected to be re-runnable.
-- **HTTP Probe Warning**: Workspace returns `>= 500` or times out. Reported as a
-  non-fatal warning under `success.meta.warnings[]` with
+- **HTTP Probe Warning**: The workspace page returns `>= 500`, a Vite asset
+  returns `>= 400`, or a page or asset request fails. Reported as a non-fatal
+  warning under `success.meta.warnings[]` with
   `code=workspace.http_probe_unhealthy` and a retry command. The command
   itself succeeds because management-command success does not assert
   application HTTP health. This warning is command-owned metadata, not a

@@ -9,7 +9,7 @@ describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
         fakeGatewayProgressStream(
             "event: complete\n"
-            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs","instance":"development"}}}}'
+            .'data: {"exit_code":0,"data":{"success":{"data":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs","instance":"development"}},"meta":{"node":"app-1","base":"main"}}}}'
             ."\n\n",
         );
 
@@ -38,10 +38,23 @@ describe('workspace write commands', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['event'])
-            ->toBe('complete')
-            ->and($decoded['data']['data']['result']['result']['action'])
-            ->toBe('created');
+            ->and($decoded)
+            ->toBe([
+                'success' => [
+                    'data' => [
+                        'result' => ['action' => 'created'],
+                        'workspace' => [
+                            'name' => 'feature-docs',
+                            'app' => 'docs',
+                            'instance' => 'development',
+                        ],
+                    ],
+                    'meta' => [
+                        'node' => 'app-1',
+                        'base' => 'main',
+                    ],
+                ],
+            ]);
     });
 
     it('validates workspace:new names before contacting the gateway', function (): void {
