@@ -7,6 +7,7 @@ namespace App\Services\Workspaces;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -40,12 +41,12 @@ final readonly class EnsureWorkspaceProxyRoute
      */
     public function handle(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.instances', 'instance']);
+        $workspace->loadMissing(['instance.app']);
+        $instance = $workspace->instance;
+        $app = $instance?->app;
 
-        $app = $workspace->app;
-
-        if (! $app instanceof App) {
-            throw new RuntimeException("Workspace '{$workspace->name}' has no parent app.");
+        if (! $instance instanceof Instance || ! $app instanceof App || $workspace->app_id !== $app->id) {
+            throw new RuntimeException("Workspace '{$workspace->name}' has no concrete Instance owner.");
         }
 
         $node = $this->placement->nodeForWorkspace($workspace);
@@ -65,6 +66,7 @@ final readonly class EnsureWorkspaceProxyRoute
                 'node_id' => $servingNode->id,
                 'app_id' => $app->id,
                 'workspace_id' => $workspace->id,
+                'instance_id' => $instance->id,
                 'owner_type' => 'workspace',
                 'kind' => 'workspace',
                 'config' => $config,
@@ -189,6 +191,7 @@ final readonly class EnsureWorkspaceProxyRoute
             'domain' => $domain,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $workspace->instance_id,
             'owner_type' => 'workspace',
             'kind' => 'workspace',
             'config' => $config,

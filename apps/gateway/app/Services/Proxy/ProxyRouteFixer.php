@@ -261,14 +261,13 @@ final readonly class ProxyRouteFixer
      */
     private function reenactAppRoute(ProxyRoute $route, DriftEntry $entry): ?array
     {
-        $route->loadMissing(['node', 'app']);
-        $app = $route->app;
+        $route->loadMissing(['node', 'instance.app']);
+        $instance = $this->appRouteTargets()->instanceForRoute($route);
+        $app = $this->appRouteTargets()->appForRoute($route, $instance);
 
-        if (! $app instanceof App) {
+        if (! $instance instanceof Instance || ! $app instanceof App) {
             return null;
         }
-
-        $instance = $this->appRouteTargets()->instanceForRoute($route);
 
         $this->executeAppRouteEnactment($app, $instance);
 
@@ -293,7 +292,7 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(App $app, ?Instance $instance): void
+    private function executeAppRouteEnactment(App $app, Instance $instance): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
             ($this->appRouteEnactor)($app, $instance);

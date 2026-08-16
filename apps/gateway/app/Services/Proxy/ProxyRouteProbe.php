@@ -9,6 +9,7 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -861,21 +862,26 @@ final readonly class ProxyRouteProbe
      */
     private function checkOwnerEligibility(ProxyRoute $route): array
     {
-        $route->loadMissing(['app', 'workspace']);
+        $route->loadMissing(['instance.app', 'workspace.instance']);
 
-        if ($route->owner_type === 'app' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app' && ! $this->hasInstanceOwner($route)) {
             return [$this->ownerInvalid($route, 'app')];
         }
 
-        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-analytics' && ! $this->hasInstanceOwner($route)) {
             return [$this->ownerInvalid($route, 'app-analytics')];
         }
 
-        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-websocket' && ! $this->hasInstanceOwner($route)) {
             return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
-        if ($route->owner_type === 'workspace' && ! $route->workspace instanceof Workspace) {
+        if (
+            $route->owner_type === 'workspace'
+            && (! $route->workspace instanceof Workspace
+            || ! $this->hasInstanceOwner($route)
+            || $route->workspace->instance_id !== $route->instance_id)
+        ) {
             return [$this->ownerInvalid($route, 'workspace')];
         }
 
@@ -884,6 +890,11 @@ final readonly class ProxyRouteProbe
         }
 
         return [];
+    }
+
+    private function hasInstanceOwner(ProxyRoute $route): bool
+    {
+        return $route->instance instanceof Instance && $route->instance->app instanceof App;
     }
 
     private function toolOwnerIsMissing(ProxyRoute $route): bool
@@ -1586,11 +1597,11 @@ final readonly class ProxyRouteProbe
         }
 
         if ($route->kind === 'app') {
-            return is_int($route->app_id);
+            return is_int($route->instance_id);
         }
 
         if ($route->kind === 'workspace') {
-            return is_int($route->workspace_id);
+            return is_int($route->workspace_id) && is_int($route->instance_id);
         }
 
         return true;
@@ -1679,7 +1690,7 @@ final readonly class ProxyRouteProbe
         }
 
         try {
-            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
+            $route->loadMissing(['instance.app', 'workspace.instance.app', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
 
@@ -1718,7 +1729,7 @@ final readonly class ProxyRouteProbe
         $config = is_array($route->config) ? $route->config : [];
 
         try {
-            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
+            $route->loadMissing(['instance.app', 'workspace.instance.app', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
             $this->renderer()->renderManagedPhpRuntimeIntent($expected);

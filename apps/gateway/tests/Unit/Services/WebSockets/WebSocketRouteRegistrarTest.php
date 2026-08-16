@@ -264,8 +264,9 @@ it('requires websocket backends to have a WireGuard address', function (): void 
 
 it('syncs public websocket hosts as ingress routes that target router and websocket.orbit', function (): void {
     [$app, $ingress, $router] = websocketRouteRegistrarAppWithIngress();
+    $instance = websocketRouteRegistrarInstance($app);
     $binding = AppWebSocketBinding::factory()->create([
-        'instance_id' => websocketRouteRegistrarInstance($app)->id,
+        'instance_id' => $instance->id,
         'public_hosts' => ['ws.example.com', 'events.example.com'],
     ]);
 
@@ -288,13 +289,14 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
         ->toBe($ingress->id)
         ->and($route->app_id)
         ->toBe($app->id)
+        ->and($route->instance_id)
+        ->toBe($instance->id)
         ->and($route->workspace_id)
         ->toBeNull()
         ->and($route->kind)
         ->toBe('proxy')
         ->and($route->config)
         ->toMatchArray([
-            'instance_id' => websocketRouteRegistrarInstance($app)->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'websocket',
@@ -336,6 +338,7 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
             'node_id' => $router->id,
             'domain' => 'ws.example.com',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $route->config,
@@ -352,13 +355,11 @@ it('removes stale public websocket routes for the binding app', function (): voi
     ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
+        'instance_id' => $binding->instance_id,
         'domain' => 'ws-old.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => [
-            'instance_id' => websocketRouteRegistrarInstance($app)->id,
-            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
-        ],
+        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
     ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
@@ -380,13 +381,11 @@ it('removes public websocket routes when the binding is disabled', function (): 
     ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
+        'instance_id' => $binding->instance_id,
         'domain' => 'ws.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => [
-            'instance_id' => websocketRouteRegistrarInstance($app)->id,
-            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
-        ],
+        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
     ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);

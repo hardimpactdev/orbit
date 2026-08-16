@@ -34,7 +34,7 @@ final readonly class ProcessAppHostnameResolver
         $domain = $this->assertStrictHostname($hostname);
 
         $route = ProxyRoute::query()
-            ->with(['app.instances', 'workspace.instance', 'workspace.app', 'node'])
+            ->with(['instance.app', 'workspace.instance.app', 'node'])
             ->where('domain', $domain)
             ->first();
 
@@ -188,8 +188,8 @@ final readonly class ProcessAppHostnameResolver
 
     private function contextForAppRoute(ProxyRoute $route, string $domain): ProcessOwnerContext
     {
-        $app = $route->app;
         $instance = $this->appRouteTargets->instanceForRoute($route);
+        $app = $this->appRouteTargets->appForRoute($route, $instance);
 
         if (! $app instanceof App || ! $instance instanceof Instance) {
             throw new GatewayApiException(
@@ -240,9 +240,22 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        $workspace->loadMissing(['app', 'instance']);
-        $app = $workspace->app;
-        $instance = $workspace->instance;
+        $route->loadMissing('instance.app');
+        $instance = $route->instance;
+
+        if (! $instance instanceof Instance || $workspace->instance_id !== $route->instance_id) {
+            throw new GatewayApiException(
+                "App hostname '{$domain}' workspace is not attached to its instance.",
+                'validation_failed',
+                [
+                    'field' => 'app',
+                    'value' => $domain,
+                    'reason' => 'instance_required',
+                ],
+            );
+        }
+
+        $app = $instance->app;
 
         if (! $app instanceof App) {
             throw new GatewayApiException(
@@ -255,19 +268,7 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        if (! $instance instanceof Instance) {
-            throw new GatewayApiException(
-                "App hostname '{$domain}' workspace is not attached to an instance.",
-                'validation_failed',
-                [
-                    'field' => 'app',
-                    'value' => $domain,
-                    'reason' => 'instance_required',
-                ],
-            );
-        }
-
-        $node = $this->placement->nodeForWorkspace($workspace) ?? $route->node;
+        $node = $this->placement->nodeForInstance($instance);
 
         if (! $node instanceof Node) {
             throw new GatewayApiException(

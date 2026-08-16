@@ -13,6 +13,7 @@ use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class AnalyticsProxyDoctorProbe
 {
     public const string RouterRouteKey = 'proxy.analytics.router_route_missing';
@@ -150,6 +151,7 @@ final readonly class AnalyticsProxyDoctorProbe
         return (
             $route->node_id === $intent->node_id
             && $route->app_id === $intent->app_id
+            && $route->instance_id === $intent->instance_id
             && $route->workspace_id === $intent->workspace_id
             && $route->owner_type === $intent->owner_type
             && $route->kind === $intent->kind

@@ -444,9 +444,11 @@ describe('proxy registry probe foundation', function (): void {
         $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['status' => 'active']);
         $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -474,6 +476,7 @@ describe('proxy registry probe foundation', function (): void {
         $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['status' => 'active']);
         $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $renderer = new ProxyRouteRenderer;
         $config = [
             'placement' => 'ingress',
@@ -508,6 +511,7 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -706,10 +710,12 @@ describe('proxy registry probe foundation', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+        $instance = $workspace->instance;
 
         $appRoute = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -718,6 +724,7 @@ describe('proxy registry probe foundation', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $instance->id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -822,13 +829,16 @@ describe('proxy backend and TLS reality', function (): void {
         $app = App::factory()
             ->placedOn($node)
             ->create([
-                'name' => 'happie-nmbp',
+                'name' => 'happie',
                 'runtime_config' => ['proxy_transport' => 'https'],
             ]);
+        $instance = $app->instances()->firstOrFail();
+        $instance->forceFill(['name' => 'nmbp'])->save();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -1328,7 +1338,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'kind' => 'app',
                 'config' => [
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                     'php_socket' => null,
                     'tls' => [
                         'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
@@ -1347,7 +1357,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
                 'cert_exists' => true,
                 'key_exists' => true,
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                 'runtime_upstream_reachable' => false,
                 'runtime_probe_error' => 'wget: bad address orbit-app-docs',
             ],
@@ -1357,7 +1367,7 @@ describe('proxy backend and TLS reality', function (): void {
             ->toBe(DriftKind::Divergent)
             ->and(proxyProbeIssue($drift, key: 'proxy.runtime_unreachable')?->detail)
             ->toMatchArray([
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                 'probe_error' => 'wget: bad address orbit-app-docs',
             ]);
     });
@@ -1378,7 +1388,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'kind' => 'app',
                 'config' => [
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                     'php_socket' => null,
                     'tls' => [
                         'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
@@ -1404,12 +1414,12 @@ describe('proxy backend and TLS reality', function (): void {
         $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
 
         expect(new ProxyRouteRenderer()->render($route))
-            ->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->toContain('reverse_proxy http://orbit-app-docs-development:8080')
             ->and($issue)
             ->toBeNull();
     });
 
-    it('reports route mismatch when a canonical app instance route still targets the bare app runtime', function (): void {
+    it('reports stale TLS identity while deriving runtime placement from persisted instance ownership', function (): void {
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = App::factory()
             ->placedOn($node, path: '/Users/nckrtl/apps/happie')
@@ -1417,10 +1427,23 @@ describe('proxy backend and TLS reality', function (): void {
                 'name' => 'happie',
                 'runtime_config' => ['proxy_transport' => 'https'],
             ]);
+        $instance = $app->instances()->firstOrFail();
+        $instance->forceFill([
+            'name' => 'nmbp',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ])->save();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -1442,19 +1465,8 @@ describe('proxy backend and TLS reality', function (): void {
         $renderer = new ProxyRouteRenderer;
         $staleCaddy = $renderer->render($route);
         $staleHash = hash('sha256', $staleCaddy);
-        Instance::factory()->for($app)->create([
-            'name' => 'nmbp',
-            'driver' => InstanceDriver::Orbit,
-            'driver_config' => new OrbitInstanceDriverConfigData(
-                node_id: $node->id,
-                node: 'nmbp',
-                path: '/Users/nckrtl/apps/happie',
-                document_root: 'public',
-                domain: 'happie.nmbp',
-            ),
-        ]);
         $route->forceFill(['source_hash' => $staleHash])->save();
-        $route = $route->fresh(['app.instances', 'node']);
+        $route = $route->fresh(['instance.app', 'node']);
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'happie.nmbp' => [
@@ -1472,7 +1484,7 @@ describe('proxy backend and TLS reality', function (): void {
         $expectedCaddy = $renderer->renderManagedPhpRuntimeIntent($route);
 
         expect($staleCaddy)
-            ->toContain('reverse_proxy https://orbit-app-happie:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
+            ->toContain('reverse_proxy https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
             ->toContain('tls_server_name happie.test')
             ->and($issue?->kind)
             ->toBe(DriftKind::Divergent)
@@ -1557,7 +1569,7 @@ describe('proxy backend and TLS reality', function (): void {
                 ->toBe($staleInnerTlsHash)
                 ->and($expectedHash)
                 ->not->toBe($staleInnerTlsHash)->and($expectedCaddy)->toContain(
-                    'reverse_proxy http://orbit-app-nckrtl:8080',
+                    'reverse_proxy http://orbit-app-nckrtl-development:8080',
                 )->and($expectedCaddy)
                 ->not->toContain('tls_trust_pool file '.AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath);
         },
@@ -2552,7 +2564,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
                     ],
                 ]);
 
-            $dockerFirstHash = hash('sha256', new ProxyRouteRenderer()->render($route));
+            $dockerFirstHash = new ProxyRouteRenderer()->managedPhpRuntimeIntentSourceHash($route);
             $route->forceFill(['source_hash' => $dockerFirstHash])->save();
 
             // The node returns a hash that represents the LEGACY php_fastcgi

@@ -6,7 +6,6 @@ namespace App\Actions\Apps;
 
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -50,9 +49,20 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return list<array<string, string>>
      */
-    public function handle(App $app, ?Instance $instance = null): array
+    public function handle(App $app, Instance $instance): array
     {
-        $instance ??= $this->routeInstance($app);
+        if ($instance->app_id !== $app->id) {
+            throw new RuntimeException("App '{$app->name}' proxy route requires one of its concrete Instances.");
+        }
+
+        $instance->loadMissing('app');
+        $instanceApp = $instance->app;
+
+        if (! $instanceApp instanceof App) {
+            throw new RuntimeException("Instance '{$instance->name}' has no parent App.");
+        }
+
+        $app = $instanceApp;
         $owningNode = $this->appOwningNodeResolver->resolve($app, $instance);
 
         $domain = $this->domain($app, $owningNode, $instance);
@@ -63,6 +73,7 @@ final readonly class EnsureAppProxyRoute
             [
                 'node_id' => $servingNode->id,
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => ProxyRouteEnactment::pending(
@@ -72,7 +83,7 @@ final readonly class EnsureAppProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
-        $warning = $this->removeStaleInstanceRoutes($route, $app, $instance, $domain);
+        $warning = $this->removeStaleInstanceRoutes($route, $instance, $domain);
 
         if ($warning !== null) {
             return [$warning];
@@ -87,6 +98,7 @@ final readonly class EnsureAppProxyRoute
             $warning = $this->enactProductionRoute(
                 route: $route,
                 app: $app,
+                instance: $instance,
                 owningNode: $owningNode,
                 servingNode: $servingNode,
                 domain: $domain,
@@ -169,6 +181,7 @@ final readonly class EnsureAppProxyRoute
     private function enactProductionRoute(
         ProxyRoute $route,
         App $app,
+        Instance $instance,
         Node $owningNode,
         Node $servingNode,
         string $domain,
@@ -183,6 +196,7 @@ final readonly class EnsureAppProxyRoute
                 'kind' => 'app',
                 'owner_type' => 'app',
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'config' => $config,
             ]),
             $backendArtifact,
@@ -191,6 +205,7 @@ final readonly class EnsureAppProxyRoute
             'node_id' => $routerNode->id,
             'domain' => $domain,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => $config,
@@ -589,7 +604,7 @@ final readonly class EnsureAppProxyRoute
         return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
-    private function domain(App $app, Node $owningNode, ?Instance $instance = null): string
+    private function domain(App $app, Node $owningNode, Instance $instance): string
     {
         $domain = $this->placement->runtimeDomain($app, $instance);
 
@@ -611,24 +626,20 @@ final readonly class EnsureAppProxyRoute
      */
     private function routeArtifact(
         App $app,
-        ?Instance $instance,
+        Instance $instance,
         Node $owningNode,
         string $domain,
     ): array {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->runtimeUpstream($app, $instance) : null;
-        $appInstanceConfig = $instance instanceof Instance
-            ? $this->appRouteRuntimeTargets->instanceConfig($app, $instance, $domain)
-            : null;
-        $instanceConfig = is_array($appInstanceConfig)
-            ? [
-                'target' => [
-                    'type' => 'instance',
-                    'value' => $appInstanceConfig['selector'],
-                ],
-                'instance' => $appInstanceConfig,
-            ]
-            : [];
+        $appInstanceConfig = $this->appRouteRuntimeTargets->instanceConfig($app, $instance, $domain);
+        $instanceConfig = [
+            'target' => [
+                'type' => 'instance',
+                'value' => $appInstanceConfig['selector'],
+            ],
+            'instance' => $appInstanceConfig,
+        ];
 
         if ($this->placement->runtimeEnvironment($app, $instance) !== 'production') {
             $certificatePaths = $this->siteCertificatePaths($owningNode, $domain);
@@ -651,6 +662,7 @@ final readonly class EnsureAppProxyRoute
                 'node_id' => $owningNode->id,
                 'domain' => $domain,
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => $config,
@@ -697,6 +709,7 @@ final readonly class EnsureAppProxyRoute
             'node_id' => $routerNode->id,
             'domain' => $domain,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => $config,
@@ -711,6 +724,7 @@ final readonly class EnsureAppProxyRoute
             'node_id' => $ingressNode->id,
             'domain' => $domain,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => $config,
@@ -720,6 +734,7 @@ final readonly class EnsureAppProxyRoute
             new ProxyRoute([
                 'domain' => $domain,
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => ['placement' => 'ingress'],
@@ -736,27 +751,15 @@ final readonly class EnsureAppProxyRoute
      */
     private function removeStaleInstanceRoutes(
         ProxyRoute $currentRoute,
-        App $app,
-        ?Instance $instance,
+        Instance $instance,
         string $domain,
     ): ?array {
         $staleRoutes = ProxyRoute::query()
-            ->where('app_id', $app->id)
+            ->where('instance_id', $instance->id)
             ->where('owner_type', 'app')
             ->where('kind', 'app')
             ->where('domain', '!=', $domain)
             ->get();
-
-        if ($instance instanceof Instance) {
-            $staleRoutes = $staleRoutes->filter(static function (ProxyRoute $route) use ($instance): bool {
-                $config = is_array($route->config) ? $route->config : [];
-                $instanceConfig = is_array($config['instance'] ?? null)
-                    ? $config['instance']
-                    : [];
-
-                return ($instanceConfig['id'] ?? null) === $instance->id;
-            });
-        }
 
         foreach ($staleRoutes as $staleRoute) {
             if (! $staleRoute instanceof ProxyRoute) {
@@ -819,18 +822,7 @@ final readonly class EnsureAppProxyRoute
         return array_values($nodes->all());
     }
 
-    private function routeInstance(App $app): ?Instance
-    {
-        // The app-level (bare-domain) route targets the app's primary concrete
-        // instance; App owns no environment column to key the instance on.
-        $instance = $this->placement->appPrimaryInstance($app);
-
-        return $instance instanceof Instance && $instance->driver === InstanceDriver::Orbit
-            ? $instance
-            : null;
-    }
-
-    private function runtimeUpstream(App $app, ?Instance $instance): string
+    private function runtimeUpstream(App $app, Instance $instance): string
     {
         if ($this->innerTlsPolicy->appliesToApp($app, $instance)) {
             return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);

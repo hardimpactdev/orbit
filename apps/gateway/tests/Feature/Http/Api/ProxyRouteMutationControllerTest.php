@@ -126,7 +126,7 @@ describe('ProxyRoute mutation API', function (): void {
         $response
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
-            ->assertJsonPath('error.meta.owner_type', 'app');
+            ->assertJsonPath('error.meta.owner_type', 'instance');
     });
 
     it('removes custom route intent with destructive consent', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -100,10 +101,12 @@ describe('ProxyRouteListController', function (): void {
         $hiddenNode = Node::factory()->create(['name' => 'app-2']);
         grantProxyRouteListAccess($caller, $visibleNode);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create(['name' => 'development']);
 
         ProxyRoute::factory()->create([
             'node_id' => $visibleNode->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -115,7 +118,7 @@ describe('ProxyRouteListController', function (): void {
 
         $response = $this->call(
             'GET',
-            '/api/proxy-routes?filter=app',
+            '/api/proxy-routes?filter=instance',
             [],
             [],
             [],
@@ -126,7 +129,12 @@ describe('ProxyRouteListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.routes')
             ->assertJsonPath('success.data.routes.0.domain', 'docs.test')
-            ->assertJsonPath('success.meta.filter', 'app')
+            ->assertJsonPath('success.data.routes.0.kind', 'instance')
+            ->assertJsonPath('success.data.routes.0.owner.type', 'instance')
+            ->assertJsonPath('success.data.routes.0.owner.name', 'docs.development')
+            ->assertJsonPath('success.data.routes.0.target.type', 'instance')
+            ->assertJsonPath('success.data.routes.0.target.value', 'docs.development')
+            ->assertJsonPath('success.meta.filter', 'instance')
             ->assertJsonPath('success.meta.node', null)
             ->assertJsonPath('success.meta.count', 1);
     });

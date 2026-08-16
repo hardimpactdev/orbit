@@ -9,12 +9,11 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Workspaces\WorkspacePlacement;
+use RuntimeException;
 
 final readonly class AppProxyRouteTargetResolver
 {
     public function __construct(
-        private AppProxyRouteConfiguredInstanceResolver $configuredInstances = new AppProxyRouteConfiguredInstanceResolver,
-        private AppProxyRouteDomainInstanceResolver $domainInstances = new AppProxyRouteDomainInstanceResolver,
         private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
@@ -24,43 +23,49 @@ final readonly class AppProxyRouteTargetResolver
             return null;
         }
 
-        $route->loadMissing('app.instances');
-        $app = $route->app;
+        $route->loadMissing('instance.app');
 
-        if (! $app instanceof App) {
+        return $route->instance;
+    }
+
+    public function appForRoute(ProxyRoute $route, ?Instance $instance = null): ?App
+    {
+        $instance ??= $this->instanceForRoute($route);
+
+        if (! $instance instanceof Instance) {
             return null;
         }
 
-        return (
-            $this->configuredInstances->resolve($app, $route) ?? $this->domainInstances->resolve($app, $route->domain)
-        );
+        $instance->loadMissing('app');
+
+        return $instance->app;
     }
 
     public function nodeForRoute(ProxyRoute $route, ?Instance $instance = null): ?Node
     {
         $instance ??= $this->instanceForRoute($route);
 
-        if ($instance instanceof Instance) {
-            $node = $this->placement->nodeForInstance($instance);
-
-            if ($node instanceof Node) {
-                return $node;
-            }
-        }
-
-        $route->loadMissing('node');
-
-        return $route->node;
+        return $instance instanceof Instance ? $this->placement->nodeForInstance($instance) : null;
     }
 
-    public function selector(App $app, Instance $instance): string
+    public function selector(Instance $instance): string
     {
+        $instance->loadMissing('app');
+        $app = $instance->app;
+
+        if (! $app instanceof App) {
+            throw new RuntimeException("Proxy route instance_id={$instance->id} has no parent App.");
+        }
+
         return "{$app->name}.{$instance->name}";
     }
 
-    public function routeDomain(ProxyRoute $route, App $app, ?Instance $instance = null): string
+    public function routeDomain(ProxyRoute $route, ?Instance $instance = null): string
     {
-        if ($instance instanceof Instance) {
+        $instance ??= $this->instanceForRoute($route);
+        $app = $instance instanceof Instance ? $this->appForRoute($route, $instance) : null;
+
+        if ($instance instanceof Instance && $app instanceof App) {
             $domain = $this->placement->instanceUrlHost($instance, $app);
 
             if ($domain !== '') {

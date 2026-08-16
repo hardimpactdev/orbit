@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -189,7 +190,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by instance.");
 
     it('removes custom route backend and TLS through the fixer in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -265,6 +266,7 @@ describe('ProxyRouteIntent', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $workspace->instance_id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -276,10 +278,12 @@ describe('ProxyRouteIntent', function (): void {
     it('removes orphaned workspace-owned routes when the workspace record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => null,
             'domain' => 'auth.craft-starterkit-react.test',
             'owner_type' => 'workspace',
@@ -322,7 +326,7 @@ describe('ProxyRouteIntent', function (): void {
         app(ProxyRouteIntent::class)->remove('docs.test');
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by");
 
-    it('removes orphaned app-owned routes when the app record is missing', function (): void {
+    it('removes orphaned instance-owned primary routes when the owner record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
 
         ProxyRoute::factory()->create([
@@ -338,7 +342,7 @@ describe('ProxyRouteIntent', function (): void {
         expect($result['meta']['removal_reason'])
             ->toBe('orphan_owner')
             ->and($result['meta']['owner_type'])
-            ->toBe('app')
+            ->toBe('instance')
             ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
             ->toBeFalse();
     });
@@ -381,7 +385,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by instance.");
 });
 
 /**

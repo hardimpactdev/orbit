@@ -278,6 +278,15 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    $legacyRoute = ProxyRoute::factory()->create([
+        'node_id' => 1,
+        'app_id' => $workspace->app_id,
+        'workspace_id' => $workspace->id,
+        'instance_id' => null,
+        'domain' => 'feature-a.demo.beast',
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+    ]);
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.41:9477/v1/commands' => Http::sequence()
@@ -340,7 +349,9 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ])->and($certificates->hosts)->toBe(['feature-a.demo.beast'])->and($route?->source_hash)->toBe(hash(
             'sha256',
             $caddySite,
-        ));
+        ))->and($route?->instance_id)->toBe($workspace->instance_id)->and(
+            $route?->instance?->is($workspace->instance),
+        )->toBeTrue()->and($route?->is($legacyRoute))->toBeTrue();
 });
 
 it('sets up a Codex worktree against the selected app instance node', function (): void {

@@ -859,7 +859,7 @@ describe('ProxyRouteRenderer', function (): void {
                 // Renderer must derive runtime_upstream from the app identity
                 // so legacy routes do not throw before ProxyRouteFixer can repair.
                 ->and($content)
-                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
                 ->and($content)
                 ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
                 // App routes never revert to php_fastcgi under the Docker-first model.
@@ -899,7 +899,7 @@ describe('ProxyRouteRenderer', function (): void {
         $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
         expect($content)
-            ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
             ->and($content)
             ->not->toContain('php_fastcgi')->and($content)
             ->not->toContain('file_server');
@@ -978,7 +978,7 @@ describe('ProxyRouteRenderer', function (): void {
         expect($content)
             ->toContain('docs.test {')
             ->and($content)
-            ->toContain('reverse_proxy https://orbit-app-docs:8443')
+            ->toContain('reverse_proxy https://orbit-app-docs-development:8443')
             ->and($content)
             ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($content)
@@ -1170,9 +1170,12 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'instance_id' => $workspace->instance_id,
             'domain' => 'feature-a.example.com',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -1315,9 +1318,12 @@ describe('ProxyRouteRenderer', function (): void {
             ->create([
                 'name' => 'marketing',
             ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'instance_id' => $workspace->instance_id,
             'domain' => 'feature-a.marketing.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',

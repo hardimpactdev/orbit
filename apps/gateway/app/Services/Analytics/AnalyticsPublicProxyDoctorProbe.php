@@ -159,7 +159,7 @@ final readonly class AnalyticsPublicProxyDoctorProbe
 
     private function routeMatchesIntent(ProxyRoute $route, ProxyRoute $intent): bool
     {
-        $keys = ['node_id', 'app_id', 'workspace_id', 'owner_type', 'kind', 'config', 'source_hash'];
+        $keys = ['node_id', 'app_id', 'workspace_id', 'instance_id', 'owner_type', 'kind', 'config', 'source_hash'];
 
         return $route->only($keys) === $intent->only($keys);
     }

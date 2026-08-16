@@ -53,6 +53,7 @@ class AnalyticsRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -127,6 +128,7 @@ class AnalyticsRouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -178,8 +180,7 @@ class AnalyticsRouteRegistrar
             if (
                 $existingRoute instanceof ProxyRoute
                 && ($existingRoute->owner_type !== 'app-analytics'
-                || $existingRoute->app_id !== $instance->app_id
-                || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+                || $existingRoute->instance_id !== $instance->id)
             ) {
                 throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
             }
@@ -191,15 +192,11 @@ class AnalyticsRouteRegistrar
      */
     public function removeObsoletePublicHosts(Instance $instance, array $desiredHosts): void
     {
-        $routes = ProxyRoute::all()
-            ->filter(
-                fn (ProxyRoute $route): bool => (
-                    $route->app_id === $instance->app_id
-                    && $route->owner_type === 'app-analytics'
-                    && data_get($route->config, 'instance_id') === $instance->id
-                    && ($desiredHosts === [] || ! in_array($route->domain, $desiredHosts, strict: true))
-                ),
-            )
+        $routes = ProxyRoute::query()
+            ->where('instance_id', $instance->id)
+            ->where('owner_type', 'app-analytics')
+            ->when($desiredHosts !== [], fn ($query) => $query->whereNotIn('domain', $desiredHosts))
+            ->get()
             ->sortBy('domain');
 
         foreach ($routes as $route) {
@@ -312,8 +309,7 @@ class AnalyticsRouteRegistrar
         if (
             $existingRoute instanceof ProxyRoute
             && ($existingRoute->owner_type !== 'app-analytics'
-            || $existingRoute->app_id !== $instance->app_id
-            || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+            || $existingRoute->instance_id !== $instance->id)
         ) {
             throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -326,6 +322,7 @@ class AnalyticsRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -369,6 +366,7 @@ class AnalyticsRouteRegistrar
             'domain' => $host,
             'app_id' => $instance->app_id,
             'workspace_id' => null,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,
@@ -383,7 +381,6 @@ class AnalyticsRouteRegistrar
     {
         $analyticsUpstreams = array_map($this->upstream(...), $this->analyticsBackends());
         $config = [
-            'instance_id' => $instance->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'analytics',
@@ -406,6 +403,7 @@ class AnalyticsRouteRegistrar
             'node_id' => $router->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,

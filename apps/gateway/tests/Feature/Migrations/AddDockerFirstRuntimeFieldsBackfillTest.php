@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppProxyRouteRuntimeUpstreamBackfill;
@@ -78,17 +79,19 @@ function legacyPhpFastCgiPrivateBackendCaddyfile(
  * could repair them.
  */
 it(
-    'backfills legacy app proxy route configs with a Docker-first runtime_upstream derived from the app identity and clears the legacy php_socket',
+    'backfills legacy app proxy route configs with a Docker-first runtime_upstream derived from the instance identity and clears the legacy php_socket',
     function (): void {
         $node = Node::factory()->appDev()->create();
         $app = App::factory()->create([
             'name' => 'legacy-docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = Instance::factory()->for($app)->create();
 
         $id = DB::table('proxy_routes')->insertGetId([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'domain' => 'legacy-docs.test',
@@ -111,7 +114,7 @@ it(
         $config = json_decode((string) $row->config, true);
 
         expect($config['runtime_upstream'] ?? null)
-            ->toBe('http://orbit-app-legacy-docs:8080')
+            ->toBe('http://orbit-app-legacy-docs-development:8080')
             ->and(array_key_exists('php_socket', $config))
             ->toBeTrue()
             ->and($config['php_socket'])
@@ -130,10 +133,12 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
         'name' => 'legacy-docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = Instance::factory()->for($app)->create();
 
     $id = DB::table('proxy_routes')->insertGetId([
         'node_id' => $edge->id,
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'legacy-docs.test',
@@ -161,11 +166,11 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
     $config = json_decode((string) $row->config, true);
 
     expect($config['runtime_upstream'] ?? null)
-        ->toBe('http://orbit-app-legacy-docs:8080')
+        ->toBe('http://orbit-app-legacy-docs-development:8080')
         ->and($config['php_socket'])
         ->toBeNull()
         ->and($config['backend_artifacts'][0]['runtime_upstream'] ?? null)
-        ->toBe('http://orbit-app-legacy-docs:8080')
+        ->toBe('http://orbit-app-legacy-docs-development:8080')
         ->and($config['backend_artifacts'][0]['php_socket'])
         ->toBeNull();
 });
@@ -177,10 +182,12 @@ it('does not backfill static app routes (they have no runtime_upstream)', functi
         ->create([
             'name' => 'legacy-marketing',
         ]);
+    $instance = Instance::factory()->for($app)->create();
 
     $id = DB::table('proxy_routes')->insertGetId([
         'node_id' => $node->id,
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'legacy-marketing.test',
@@ -239,10 +246,12 @@ it('is idempotent: re-running over already-backfilled rows does not mutate them'
         'name' => 'legacy-docs',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    $instance = Instance::factory()->for($app)->create();
 
     $id = DB::table('proxy_routes')->insertGetId([
         'node_id' => $node->id,
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'legacy-docs.test',
@@ -263,7 +272,7 @@ it('is idempotent: re-running over already-backfilled rows does not mutate them'
     $config = json_decode((string) $row->config, true);
 
     expect($config['runtime_upstream'])
-        ->toBe('http://orbit-app-legacy-docs:8080')
+        ->toBe('http://orbit-app-legacy-docs-development:8080')
         ->and($config['php_socket'])
         ->toBeNull();
 });
@@ -276,6 +285,7 @@ it(
             'name' => 'legacy-docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = Instance::factory()->for($app)->create();
 
         $documentRoot = '/home/orbit/apps/legacy-docs/public';
         $phpSocket = '/var/run/php/orbit-legacy-docs.sock';
@@ -294,6 +304,7 @@ it(
         $id = DB::table('proxy_routes')->insertGetId([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'domain' => 'legacy-docs.test',
@@ -325,7 +336,7 @@ it(
             ->toBe($dockerFirstHash)
             ->and($route->source_hash)
             ->not->toBe($legacyHash)->and($dockerFirstContent)->toContain(
-                'reverse_proxy http://orbit-app-legacy-docs:8080',
+                'reverse_proxy http://orbit-app-legacy-docs-development:8080',
             )->and($dockerFirstContent)
             ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($dockerFirstContent)
             ->not->toContain('php_fastcgi')->and($dockerFirstContent)
@@ -342,6 +353,7 @@ it(
             'name' => 'legacy-docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = Instance::factory()->for($app)->create();
 
         $documentRoot = '/home/orbit/apps/legacy-docs/public';
         $phpSocket = '/var/run/php/orbit-legacy-docs.sock';
@@ -360,6 +372,7 @@ it(
         $id = DB::table('proxy_routes')->insertGetId([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'domain' => 'legacy-docs.test',
@@ -395,14 +408,14 @@ it(
         $dockerFirstBackendHash = hash('sha256', $dockerFirstBackendContent);
 
         expect($artifact['runtime_upstream'])
-            ->toBe('http://orbit-app-legacy-docs:8080')
+            ->toBe('http://orbit-app-legacy-docs-development:8080')
             ->and($artifact['php_socket'])
             ->toBeNull()
             ->and($artifact['source_hash'])
             ->toBe($dockerFirstBackendHash)
             ->and($artifact['source_hash'])
             ->not->toBe($legacyBackendHash)->and($dockerFirstBackendContent)->toContain(
-                'reverse_proxy http://orbit-app-legacy-docs:8080',
+                'reverse_proxy http://orbit-app-legacy-docs-development:8080',
             )->and($dockerFirstBackendContent)
             ->not->toContain('php_fastcgi')->and($dockerFirstBackendContent)
             ->not->toContain($phpSocket);
@@ -417,10 +430,12 @@ it(
             'name' => 'legacy-docs',
             'runtime' => AppRuntimeKind::Php,
         ]);
+        $instance = Instance::factory()->for($app)->create();
 
         $id = DB::table('proxy_routes')->insertGetId([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'domain' => 'legacy-docs.test',

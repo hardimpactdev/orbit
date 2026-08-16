@@ -6,7 +6,6 @@ namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
-use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -22,7 +21,6 @@ class ProxyRouteQuery
 {
     public const array AllowedFilters = [
         'all',
-        'app',
         'instance',
         'workspace',
         'gateway',
@@ -73,7 +71,7 @@ class ProxyRouteQuery
         $nodeId = $this->resolveNodeId($node, $caller, $visibleNodeIds);
 
         /** @var Builder<ProxyRoute> $query */
-        $query = ProxyRoute::query()->with(['node', 'app', 'workspace']);
+        $query = ProxyRoute::query()->with(['node', 'instance.app', 'workspace.instance.app']);
 
         if ($caller instanceof Node && ! $callerIsGateway) {
             $query->whereIn('node_id', $visibleNodeIds);
@@ -100,22 +98,6 @@ class ProxyRouteQuery
             $proxyRoutes = $proxyRoutes
                 ->reject(fn (ProxyRoute $route): bool => ! $this->workspaceRouteIsSupported($route, $caller))
                 ->values();
-        }
-
-        if (in_array($filter, ['app', 'instance'], true)) {
-            foreach ($proxyRoutes as $index => $route) {
-                if (! $route instanceof ProxyRoute) {
-                    $proxyRoutes->forget($index);
-
-                    continue;
-                }
-
-                $hasInstance = $this->appRouteTargets->instanceForRoute($route) instanceof Instance;
-
-                if (($filter === 'instance') !== $hasInstance) {
-                    $proxyRoutes->forget($index);
-                }
-            }
         }
 
         /** @var list<ProxyRoute> $visibleRoutes */
@@ -283,7 +265,7 @@ class ProxyRouteQuery
             });
         }
 
-        return $query->where('owner_type', in_array($filter, ['app', 'instance'], true) ? 'app' : $filter);
+        return $query->where('owner_type', $filter === 'instance' ? 'app' : $filter);
     }
 
     /**
@@ -291,13 +273,13 @@ class ProxyRouteQuery
      */
     public function toRouteEntity(ProxyRoute $route, ?string $status = null): array
     {
-        $route->loadMissing(['node', 'app', 'workspace.instance', 'workspace.app']);
+        $route->loadMissing(['node', 'instance.app', 'workspace.instance.app']);
         $config = is_array($route->config) ? $route->config : [];
         $tlsManagedBy = $this->stringConfig($config, ['tls.managed_by', 'tls_managed_by']) ?? 'orbit';
 
         $entity = [
             'domain' => $route->domain,
-            'kind' => $route->kind === 'app' ? $this->appRouteTargetType($route) : $route->kind,
+            'kind' => $route->kind === 'app' ? $this->appRouteTargetType() : $route->kind,
             'owner' => [
                 'type' => $this->ownerType($route),
                 'name' => $this->ownerName($route, $config),
@@ -346,11 +328,11 @@ class ProxyRouteQuery
             return null;
         }
 
-        $workspace->loadMissing(['app', 'instance']);
-        $app = $workspace->app;
-        $instance = $workspace->instance;
+        $route->loadMissing('instance.app');
+        $instance = $route->instance;
+        $app = $instance?->app;
 
-        if ($app === null || $instance === null) {
+        if ($app === null || $instance === null || $workspace->instance_id !== $route->instance_id) {
             return null;
         }
 
@@ -376,8 +358,8 @@ class ProxyRouteQuery
     {
         return match ($route->owner_type) {
             'app' => $this->appRouteOwnerName($route),
-            'app-analytics' => $route->app?->name,
-            'app-websocket' => $route->app?->name,
+            'app-analytics' => $route->instance?->app?->name,
+            'app-websocket' => $route->instance?->app?->name,
             'workspace' => $route->workspace?->name,
             'router' => $route->domain,
             'gateway', 'tool', 's3' => $this->stringConfig($config, ['owner_name', 'tool']),
@@ -388,7 +370,7 @@ class ProxyRouteQuery
     private function ownerType(ProxyRoute $route): string
     {
         return match ($route->owner_type) {
-            'app' => $this->appRouteTargetType($route),
+            'app' => $this->appRouteTargetType(),
             'app-analytics' => 'analytics',
             'app-websocket' => 'websocket',
             default => $route->owner_type,
@@ -402,7 +384,7 @@ class ProxyRouteQuery
         }
 
         return match ($route->owner_type) {
-            'app' => $this->appRouteTargetType($route),
+            'app' => $this->appRouteTargetType(),
             'app-analytics' => 'analytics',
             'app-websocket' => 'websocket',
             'workspace' => 'workspace',
@@ -437,23 +419,16 @@ class ProxyRouteQuery
         return $this->appRouteTargetValue($route);
     }
 
-    private function appRouteTargetType(ProxyRoute $route): string
+    private function appRouteTargetType(): string
     {
-        return $this->appRouteTargets->instanceForRoute($route) instanceof Instance ? 'instance' : 'app';
+        return 'instance';
     }
 
     private function appRouteTargetValue(ProxyRoute $route): ?string
     {
-        $route->loadMissing('app.instances');
-        $app = $route->app;
-
-        if (! $app instanceof App) {
-            return null;
-        }
-
         $instance = $this->appRouteTargets->instanceForRoute($route);
 
-        return $instance instanceof Instance ? $this->appRouteTargets->selector($app, $instance) : $app->name;
+        return $instance instanceof Instance ? $this->appRouteTargets->selector($instance) : null;
     }
 
     /**

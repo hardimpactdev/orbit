@@ -186,7 +186,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.31');
@@ -200,6 +200,12 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 
     expect($route->domain)
         ->toBe('docs.test')
+        ->and($route->instance_id)
+        ->toBe($instance->id)
+        ->and($route->instance?->is($instance))
+        ->toBeTrue()
+        ->and($instance->proxyRoutes()->whereKey($route->getKey())->exists())
+        ->toBeTrue()
         ->and($route->config['runtime_upstream'])
         ->toBe('http://orbit-app-docs-development:8080')
         ->and($route->config['runtime_upstream_tls'] ?? null)
@@ -318,6 +324,8 @@ it('routes the explicitly selected instance, not the primary or a stale app envi
 
     expect($route->domain)
         ->toBe('docs-preview.test')
+        ->and($route->instance_id)
+        ->toBe($selected->id)
         ->and($route->config['runtime_upstream'])
         ->toContain('preview')
         ->and($route->config['runtime_upstream'])
@@ -376,7 +384,7 @@ it('creates a static app proxy route with file_server', function (): void {
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.32');
@@ -422,7 +430,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
-    Instance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
@@ -458,7 +466,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.33');
     $managedFilePayload = json_decode(
@@ -508,6 +516,7 @@ it('removes stale app-owned proxy routes for the same app when its domain change
     ProxyRoute::factory()->create([
         'node_id' => $node->id,
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'happie-nmbp.nmbp',
@@ -541,14 +550,14 @@ it('removes stale app-owned proxy routes for the same app when its domain change
 });
 
 it('converges production proxy artifacts in backend router ingress order', function (): void {
-    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+    [$app, $instance, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
 
     app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
     app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
     $executor = new EnsureAppProxyRouteTestInternalExecutor;
     app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
 
-    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app, $instance);
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $backendContent = $executor->calls[1]['payload']['content'] ?? null;
 
@@ -597,7 +606,7 @@ it('converges production proxy artifacts in backend router ingress order', funct
 });
 
 it('records partial production enactment and identifies the failed node and operation', function (): void {
-    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+    [$app, $instance, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
 
     app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
     app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
@@ -607,7 +616,7 @@ it('records partial production enactment and identifies the failed node and oper
     );
     app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
 
-    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app, $instance);
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $warning = collect($warnings)->firstWhere('code', 'proxy.enactment_failed');
 
@@ -672,7 +681,7 @@ function ensure_app_proxy_route_agent_requests(string $wireguardAddress): array
 }
 
 /**
- * @return array{App, Node, Node, Node}
+ * @return array{App, Instance, Node, Node, Node}
  */
 function ensure_app_proxy_route_production_topology(): array
 {
@@ -711,7 +720,7 @@ function ensure_app_proxy_route_production_topology(): array
         'name' => 'hauzer',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    Instance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $backend->id,
@@ -722,5 +731,5 @@ function ensure_app_proxy_route_production_topology(): array
         ),
     ]);
 
-    return [$app, $backend, $router, $ingress];
+    return [$app, $instance, $backend, $router, $ingress];
 }

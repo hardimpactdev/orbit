@@ -513,6 +513,7 @@ describe('ProxyRouteFixer', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $nmbpNode->id,
             'app_id' => $app->id,
+            'instance_id' => $nmbp->id,
             'domain' => 'docs.nmbp',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -968,7 +969,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
             ->and($caddySite)
-            ->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->toContain('reverse_proxy http://orbit-app-docs-development:8080')
             ->and($caddySite)
             ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
             ->not->toContain('php_fastcgi')->and($certificates->hosts)->toBe([
@@ -985,7 +986,7 @@ describe('ProxyRouteFixer', function (): void {
             'name' => 'happie',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -1000,6 +1001,7 @@ describe('ProxyRouteFixer', function (): void {
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -1161,12 +1163,12 @@ describe('ProxyRouteFixer', function (): void {
             expect($action['status'])
                 ->toBe('completed')
                 ->and($caddySite)
-                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
                 ->and($caddySite)
                 ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
                 ->not->toContain('php_fastcgi')->and($caddySite)
                 ->not->toContain('file_server')->and($route->refresh()->config['runtime_upstream'])->toBe(
-                    'http://orbit-app-legacy-docs:8080',
+                    'http://orbit-app-legacy-docs-development:8080',
                 )->and($route->refresh()->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
                     $route->refresh()->config['php_socket'],
                 )->toBeNull();
@@ -1596,7 +1598,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it(
-        'restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the app identity',
+        'restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the instance identity',
         function (): void {
             $edge = Node::factory()->create(['name' => 'edge-1']);
             $backend = Node::factory()->create(['name' => 'web-1']);
@@ -1649,7 +1651,7 @@ describe('ProxyRouteFixer', function (): void {
             expect($action['status'])
                 ->toBe('completed')
                 ->and($caddySite)
-                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
                 ->and($caddySite)
                 ->not->toContain('php_fastcgi');
         },

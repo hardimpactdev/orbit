@@ -4477,9 +4477,11 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             [$hauzer, 'hauzer.app'],
             [$mealou, 'mealou.app'],
         ] as [$app, $domain]) {
+            $instance = Instance::factory()->for($app)->create();
             ProxyRoute::factory()->create([
                 'node_id' => $ingress->id,
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'domain' => $domain,
                 'owner_type' => 'app',
                 'kind' => 'app',

@@ -42,6 +42,7 @@ use Override;
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppAnalyticsBinding|null $analyticsBinding
  * @property-read AppWebSocketBinding|null $webSocketBinding
+ * @property-read Collection<int, ProxyRoute> $proxyRoutes
  *
  * @mago-expect lint:too-many-methods
  */
@@ -166,6 +167,14 @@ class Instance extends Model
     public function latestDeploymentRun(): HasOne
     {
         return $this->hasOne(DeploymentRun::class)->latestOfMany();
+    }
+
+    /**
+     * @return HasMany<ProxyRoute, $this>
+     */
+    public function proxyRoutes(): HasMany
+    {
+        return $this->hasMany(ProxyRoute::class);
     }
 
     /**

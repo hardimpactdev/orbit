@@ -82,7 +82,7 @@ describe('AppAnalyticsBindingService', function (): void {
         expect(AppAnalyticsBinding::query()->where('instance_id', $app->id)->exists())->toBeFalse();
     });
 
-    it('scales the mutation lease for legacy bindings with more than the current route limit', function (): void {
+    it('scales the mutation lease for bindings with more than the current route limit', function (): void {
         $app = createAnalyticsApp();
         $config = $app->driver_config;
         assert($config instanceof OrbitInstanceDriverConfigData);
@@ -92,10 +92,11 @@ describe('AppAnalyticsBindingService', function (): void {
                 'node_id' => $config->node_id,
                 'domain' => "legacy-analytics-{$index}.docs.test",
                 'app_id' => $app->app_id,
+                'instance_id' => $app->id,
                 'owner_type' => 'app-analytics',
                 'kind' => 'proxy',
                 'source_hash' => hash('sha256', "legacy-analytics-{$index}.docs.test"),
-                'config' => ['instance_id' => $app->id],
+                'config' => [],
             ]);
         }
 
@@ -137,6 +138,8 @@ describe('AppAnalyticsBindingService', function (): void {
             ->toBeTrue()
             ->and($binding->public_hosts)
             ->toBe(['analytics.docs.test'])
+            ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('instance_id'))
+            ->toBe($app->id)
             ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
             ->toBeTrue()
             ->and(

@@ -132,7 +132,7 @@ describe('ServingNodeResolver', function (): void {
         $app = App::factory()->create([
             'name' => 'billing',
         ]);
-        Instance::factory()->create([
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'cloud',
             'driver' => 'laravel-cloud',
@@ -246,7 +246,7 @@ describe('ServingNodeResolver', function (): void {
         $targetNode = Node::factory()->create(['name' => 'target-node']);
         $targetApp = App::factory()->create(['name' => 'docs']);
         $otherApp = App::factory()->create(['name' => 'other']);
-        Instance::factory()->create([
+        $instance = Instance::factory()->create([
             'app_id' => $targetApp->id,
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
@@ -257,6 +257,7 @@ describe('ServingNodeResolver', function (): void {
             'node_id' => $targetNode->id,
             'domain' => 'docs-dev.example',
             'app_id' => $targetApp->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [

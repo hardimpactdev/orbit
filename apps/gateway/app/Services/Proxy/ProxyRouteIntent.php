@@ -8,6 +8,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -46,7 +47,7 @@ class ProxyRouteIntent
         $this->validateAddTarget($upstream, $redirect, $code);
 
         $existing = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
+            ->with(['node', 'instance.app', 'workspace.instance.app'])
             ->where('domain', $domain)
             ->first();
 
@@ -105,6 +106,7 @@ class ProxyRouteIntent
                 'node_id' => $node->id,
                 'app_id' => null,
                 'workspace_id' => null,
+                'instance_id' => null,
                 'owner_type' => 'custom',
                 'kind' => $kind,
                 'config' => $config,
@@ -135,7 +137,7 @@ class ProxyRouteIntent
     public function remove(string $domain, ?Node $caller = null): array
     {
         $route = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
+            ->with(['node', 'instance.app', 'workspace.instance.app'])
             ->where('domain', $domain)
             ->first();
 
@@ -288,11 +290,14 @@ class ProxyRouteIntent
      */
     private function hasMissingOwner(ProxyRoute $route): bool
     {
-        $route->loadMissing(['app', 'workspace']);
+        $route->loadMissing(['instance.app', 'workspace.instance']);
 
         return match ($route->owner_type) {
-            'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof App,
-            'workspace' => ! $route->workspace instanceof Workspace,
+            'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance
+                || ! $route->instance->app instanceof App,
+            'workspace' => ! $route->workspace instanceof Workspace
+                || ! $route->instance instanceof Instance
+                || $route->workspace->instance_id !== $route->instance_id,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };

@@ -46,6 +46,7 @@ class WebSocketRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -74,6 +75,7 @@ class WebSocketRouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -139,9 +141,8 @@ class WebSocketRouteRegistrar
     private function deletePublicRoutes(Instance $instance): void
     {
         ProxyRoute::query()
-            ->where('app_id', $instance->app_id)
+            ->where('instance_id', $instance->id)
             ->where('owner_type', 'app-websocket')
-            ->where('config->instance_id', $instance->id)
             ->delete();
     }
 
@@ -151,9 +152,8 @@ class WebSocketRouteRegistrar
     private function deleteStalePublicRoutes(Instance $instance, array $hosts): void
     {
         ProxyRoute::query()
-            ->where('app_id', $instance->app_id)
+            ->where('instance_id', $instance->id)
             ->where('owner_type', 'app-websocket')
-            ->where('config->instance_id', $instance->id)
             ->whereNotIn('domain', $hosts)
             ->delete();
     }
@@ -167,8 +167,7 @@ class WebSocketRouteRegistrar
         if (
             $existingRoute instanceof ProxyRoute
             && ($existingRoute->owner_type !== 'app-websocket'
-            || $existingRoute->app_id !== $instance->app_id
-            || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+            || $existingRoute->instance_id !== $instance->id)
         ) {
             throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -181,6 +180,7 @@ class WebSocketRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -235,6 +235,7 @@ class WebSocketRouteRegistrar
             'domain' => $host,
             'app_id' => $instance->app_id,
             'workspace_id' => null,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,
@@ -250,7 +251,6 @@ class WebSocketRouteRegistrar
         $certificatePaths = $this->certificatePaths($host);
         $webSocketUpstreams = array_map($this->upstream(...), $this->webSocketBackends());
         $config = [
-            'instance_id' => $instance->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'websocket',
@@ -278,6 +278,7 @@ class WebSocketRouteRegistrar
             'node_id' => $router->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,
@@ -301,6 +302,7 @@ class WebSocketRouteRegistrar
             'node_id' => $ingress->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,
