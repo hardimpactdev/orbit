@@ -14,6 +14,7 @@ use App\Models\NodeBootstrap;
 use App\Models\NodeRoleAssignment;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\S3\S3RouteRegistrar;
 use App\Services\Support\GatewayActionResult;
 use Closure;
@@ -36,6 +37,7 @@ final readonly class NodeBootstrapCompletion
         private DnsmasqReconciler $dnsmasqReconciler,
         private ProvisioningAgentReadinessProbe $readinessProbe,
         private NodeRoleAssignmentService $roleAssignmentService,
+        private NodeRoleRegistry $roleRegistry,
         private NodeConverger $nodeConverger,
         private NodeAgentProvisioning $agentProvisioning,
         private NodeSecurityBaseline $securityBaseline,
@@ -83,6 +85,12 @@ final readonly class NodeBootstrapCompletion
         NodeBootstrap $bootstrap,
         NodeCreationInput $input,
     ): GatewayActionResult {
+        $roleSelectionFailure = $this->prevalidateWorkloadRoles($roles);
+
+        if ($roleSelectionFailure instanceof GatewayActionResult) {
+            return $roleSelectionFailure;
+        }
+
         $node = Node::query()->find($bootstrap->node_id);
 
         if (! $node instanceof Node || $node->name !== $name) {
@@ -148,6 +156,38 @@ final readonly class NodeBootstrapCompletion
         return GatewayActionResult::success(
             $this->completedNodePayload($node, $inputs->host, $roles),
             $warnings !== [] ? ['warnings' => $warnings] : [],
+        );
+    }
+
+    /** @param list<string> $roles */
+    private function prevalidateWorkloadRoles(array $roles): ?GatewayActionResult
+    {
+        foreach ($roles as $role) {
+            if ($this->roleRegistry->roleIsEligibleForWorkloadNodeCreation($role)) {
+                continue;
+            }
+
+            $exception = NodeCreationRoleInputException::unsupportedWorkloadRole();
+
+            return GatewayActionResult::error(
+                code: $exception->errorCode,
+                message: $exception->getMessage(),
+                meta: $exception->meta,
+            );
+        }
+
+        $conflictingPair = $this->roleRegistry->firstConflictingRolePair($roles);
+
+        if ($conflictingPair === null) {
+            return null;
+        }
+
+        $exception = NodeCreationRoleInputException::conflictingWorkloadRoles($conflictingPair);
+
+        return GatewayActionResult::error(
+            code: $exception->errorCode,
+            message: $exception->getMessage(),
+            meta: $exception->meta,
         );
     }
 

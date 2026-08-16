@@ -268,6 +268,13 @@ host requires `--host`. `--roles` is mutually exclusive with `--template` and
 
 **Role composition rules**
 
+The code-defined node-role registry is the single authority for creation-role
+eligibility and compatibility. Orbit validates the complete role set after
+template expansion and validates it again before a pending bootstrap performs
+readiness checks, role assignment, remote dispatch, convergence, or security
+setup. Named templates and their implementation status remain command
+concepts, not node roles.
+
 `app-dev` and `app-prod` are mutually exclusive. In v1, `gateway`, `vpn`, and
 `router` are gateway-coupled and conflict with `app-dev`, `app-prod`,
 `database`, `agent`, `ingress`, `websocket`, `s3`, and `analytics`; `metrics`

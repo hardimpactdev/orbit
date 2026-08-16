@@ -108,6 +108,11 @@ creation path for that role.
      with no assigned roles.
    - `--roles` values must already be canonical.
    - Gateway bootstrap/convergence is selected only by `--template=gateway`.
+   - Validate every expanded workload role against the code-defined node-role
+     registry's workload-creation eligibility.
+   - Ask that registry for the first conflicting pair in the complete role set
+     and reject the pair before checking template implementation status or
+     starting provisioning.
 8. Resolve role-specific inputs.
    - For `app-dev`, resolve `node_new.host` and `node_new.user`.
    - For `app-prod`, resolve `node_new.host`, `node_new.user`, and the
@@ -207,9 +212,14 @@ Caller-path behavior is split out into:
 - Ask the gateway to reserve a pending host-capable identity and WireGuard peer,
   then stream the returned minimal bootstrap bundle through initiating-client
   SSH before initial role assignments converge through Agent push.
-- Validate conflicts before side effects where possible. For example,
-  `app-dev` plus `app-prod` must fail before node creation or
-  provisioning.
+- Treat the code-defined node-role registry as the single authority for
+  workload creation eligibility and compatibility. Validate the complete role
+  set before reserving node identity or opening the provisioning path. At
+  bootstrap completion, validate the same role set again before Agent
+  readiness, role-assignment writes, remote dispatch, convergence, or security
+  setup. Every registry conflict pair, including `app-dev` plus `app-prod`,
+  fails before those effects. Sequential role assignment is not a substitute
+  for this prevalidation.
 - Create the node identity first, then add each requested role. Role settings
   stay minimal: `app-prod` assignments store `settings.ingress_node_id`,
   `websocket` assignments store `settings.valkey_node_id`, `s3` assignments
@@ -413,6 +423,9 @@ Primary test owners:
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Canonical input contract validation, role mutual exclusion, canonical role validation, non-interactive normalization, and JSON complete frames. |
 | `apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php` | Gateway node store authorization and app-dev provisioning. |
 | `apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php` | Gateway streamed node creation and SSE creation frames. |
+| `apps/gateway/tests/Unit/Services/Nodes/NodeRoleRegistryTest.php` | Exhaustive conflicting and compatible workload-creation role pairs plus registry-owned creation eligibility. |
+| `apps/gateway/tests/Unit/Services/Nodes/NodeCreationRoleResolverTest.php` | Registry-backed conflict rejection and acceptance of every implemented compatible workload-role pair. |
+| `apps/gateway/tests/Feature/Http/Api/NodeBootstrapControllerTest.php` | Bootstrap completion rejects every registry conflict pair before database mutation, role assignment, readiness HTTP, process dispatch, convergence, and security setup. |
 
 There is no routine test mapping for E2E smoke coverage: retained-topology proof and artifact-backed end-to-end lanes are manual-only and must not be linked from product docs.
 

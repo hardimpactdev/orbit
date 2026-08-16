@@ -10,9 +10,13 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\OperationRun;
 use App\Models\WireGuardPeer;
+use App\Services\Nodes\NodeBootstrapCompletion;
 use App\Services\Nodes\NodeBootstrapCompletionLock;
 use App\Services\Nodes\NodeBootstrapCompletionResult;
+use App\Services\Nodes\NodeCreationInput;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
+use App\Services\Nodes\Roles\NodeRoleRegistry;
+use App\Services\Nodes\WorkloadNodeProvisioningInput;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
 use Illuminate\Database\QueryException;
@@ -225,6 +229,123 @@ it('keeps bootstrap pending when the WireGuard-bound Agent is not ready', functi
         fn ($process): bool => preg_match('/(?:^|\s)(?:ssh|scp)(?:\s|$)/', (string) $process->command) === 1,
         0,
     );
+});
+
+it('rejects every conflicting creation role pair before bootstrap side effects', function (): void {
+    $registry = app(NodeRoleRegistry::class);
+    $roles = [
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
+        'metrics',
+        'analytics',
+    ];
+    $contexts = [];
+
+    foreach ($roles as $index => $firstRole) {
+        foreach (array_slice($roles, $index + 1) as $secondRole) {
+            $pair = $registry->firstConflictingRolePair([$firstRole, $secondRole]);
+
+            if ($pair === null) {
+                continue;
+            }
+
+            $node = Node::factory()->create([
+                'name' => "conflict-{$index}-".count($contexts),
+                'status' => 'provisioning',
+            ]);
+            $bootstrap = NodeBootstrap::query()->create([
+                'node_id' => $node->id,
+                'initiating_node_id' => $node->id,
+                'request' => [],
+                'status' => 'pending',
+            ]);
+            $contexts[] = [$node, $bootstrap, $pair];
+        }
+    }
+
+    $roleAssignments = new class extends NodeRoleAssignmentService {
+        public int $calls = 0;
+
+        public function __construct() {}
+
+        public function addDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            $this->calls++;
+
+            return $node->roleAssignments()->create([
+                'role' => $role,
+                'status' => NodeRoleStatus::Error,
+                'settings' => $settings,
+                'last_error' => 'unexpected role assignment',
+                'converged_at' => null,
+            ]);
+        }
+
+        public function retryDuringCreation(Node $node, string $role, array $settings): NodeRoleAssignment
+        {
+            $this->calls++;
+
+            return $node->roleAssignments()->where('role', $role)->firstOrFail();
+        }
+    };
+    app()->instance(NodeRoleAssignmentService::class, $roleAssignments);
+    app()->forgetInstance(NodeBootstrapCompletion::class);
+
+    Http::fake(['*' => Http::response([], 405)]);
+    $mutatingQueries = [];
+    DB::listen(function ($query) use (&$mutatingQueries): void {
+        if (preg_match('/^(insert|update|delete)\b/i', ltrim($query->sql)) === 1) {
+            $mutatingQueries[] = $query->sql;
+        }
+    });
+    $completion = app(NodeBootstrapCompletion::class);
+    $inputs = new WorkloadNodeProvisioningInput(
+        host: '192.0.2.80',
+        tld: 'conflict',
+        sshUser: 'root',
+        gatewayEndpoint: null,
+        hostKeyFingerprint: null,
+        platform: 'ubuntu_24-04',
+        architecture: 'amd64',
+        postgresNodeId: null,
+        postgresProcessId: null,
+        clickhouseNodeId: null,
+        s3DataPath: null,
+    );
+
+    foreach ($contexts as [$node, $bootstrap, $pair]) {
+        $result = $completion->convergePrepared(
+            name: $node->name,
+            roles: $pair,
+            inputs: $inputs,
+            appProductionIngressNodeId: null,
+            bootstrap: $bootstrap,
+            input: new NodeCreationInput([]),
+        );
+
+        expect($result->payload['error'] ?? null)->toBe([
+            'code' => 'validation_failed',
+            'message' => "Workload roles {$pair[0]} and {$pair[1]} cannot be combined.",
+            'meta' => [
+                'field' => 'roles',
+                'conflicts' => $pair,
+            ],
+        ]);
+    }
+
+    expect($contexts)
+        ->toHaveCount(18)
+        ->and($roleAssignments->calls)
+        ->toBe(0)
+        ->and($mutatingQueries)
+        ->toBe([]);
+    Http::assertNothingSent();
+    Process::assertRanTimes(fn (): bool => true, 0);
 });
 
 it('completes through the WireGuard Agent once and then returns the active result idempotently', function (): void {

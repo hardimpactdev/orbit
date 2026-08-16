@@ -31,6 +31,48 @@ final class NodeRoleRegistry
         return $this->definitionMap()[$role] ?? throw new InvalidArgumentException("Unknown node role [{$role}].");
     }
 
+    public function roleIsEligibleForWorkloadNodeCreation(string $role): bool
+    {
+        $definition = $this->definitionMap()[$role] ?? null;
+
+        return $role !== NodeRoleName::Gateway->value && $definition?->assignableByNodeNew === true;
+    }
+
+    /**
+     * @param  list<string>  $roles
+     * @return array{0: string, 1: string}|null
+     */
+    public function firstConflictingRolePair(array $roles): ?array
+    {
+        $definitions = $this->definitionMap();
+        $roles = array_values(array_unique($roles));
+
+        foreach ($roles as $index => $firstRole) {
+            $firstDefinition = $definitions[$firstRole] ?? null;
+
+            if (! $firstDefinition instanceof NodeRoleDefinition) {
+                continue;
+            }
+
+            foreach (array_slice($roles, $index + 1) as $secondRole) {
+                $secondDefinition = $definitions[$secondRole] ?? null;
+
+                if (! $secondDefinition instanceof NodeRoleDefinition) {
+                    continue;
+                }
+
+                if (
+                    in_array($secondRole, $firstDefinition->conflictsWith, true)
+                    || in_array($firstRole, $secondDefinition->conflictsWith, true)
+                ) {
+                    return [$firstRole, $secondRole];
+                }
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @return array<string, NodeRoleDefinition>
      */
