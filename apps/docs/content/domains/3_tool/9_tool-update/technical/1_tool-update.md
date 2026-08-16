@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
 | `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | Supported version string for the selected tool definition. |
-| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise none.` | Visible active non-gateway node slug; bulk mode requires an active tool-host node; selected tool must support the node operating system. |
 | `instance` | `--instance` | `Optional.` | `Never.` | `None.` | `Visible instance selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
@@ -34,6 +34,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Tool configuration and apply rules
 
 - Selects one tool or all update-capable managed tools on the target node.
+- Before bulk selection or mutation, resolves the request to exactly one active
+  tool-host `Node` and authorizes the caller's `tool:update` permission for that
+  node. Explicit `node` and concrete `instance` selectors remain valid. Two
+  selectors are valid only when both resolve to the same node.
+- Bulk selection is always constrained to the resolved node. Missing, invalid,
+  conflicting, inactive, non-tool-host, or unauthorized targets produce no
+  expected-version write and no Agent dispatch.
 - Verifies update support before writing.
 - Keeps expected-version writes gateway-local and dispatches target-node update
   actions through Agent push. The command exposes no node transport selector
@@ -66,6 +73,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
+| Bulk target required | Bulk mode receives no node or instance after local default resolution. | `error.code=validation_failed`; `error.meta.fields=[target]` |
+| Invalid bulk target | A selector does not resolve to an active visible tool-host node. | `error.code=validation_failed`; `error.meta.field=node|instance` |
+| Conflicting bulk targets | `node` and `instance` resolve to different nodes. | `error.code=validation_failed`; `error.meta.field=instance` |
+| Unauthorized bulk target | The selected active tool-host exists, but the caller lacks `tool:update` for it. | `error.code=authorization_failed` |
 | Remote action failed | Gateway configuration was readable, but node inspection or apply failed. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship
@@ -79,5 +90,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:update` stream request forwarding for single-tool and bulk payloads, and gateway error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for update: final complete frame in `--json` mode, canonical stream request shape, human progress rendering, and pre-stream gateway error pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php` | CLI stream requests omit node transport preference headers because `tool:update` has no public transport selector. |
-| `apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php` | Gateway update API expected-version writes, unsupported service-tool rejection, and service-style instance selector rejection. |
+| `apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php` | Bulk targeting and fail-closed selector errors with zero mutation or dispatch; single-tool version writes and unsupported action errors. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php` | Concrete-node bulk updater dispatch through the internal tool-run transport. |
+| `apps/gateway/tests/Unit/Services/Tools/PhpCliToolUpdaterTest.php` | Concrete-node bulk updater scoping while correcting role-owned PHP CLI variants. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

@@ -41,11 +41,17 @@ orbit tool:update hermes --instance=docs --stream-json
 Target context is required when neither `--node`, `--instance`, nor local
 `node:default` resolves a node.
 
+Bulk updates resolve the request to exactly one active tool-host node and
+authorize `tool:update` for that node before selecting or changing tool rows.
+Missing, invalid, conflicting, and unauthorized selectors stop before any
+gateway write or Agent dispatch.
+
 ## What Happens
 
 `tool:update`:
 
-1. Resolves the target node and selected managed tools.
+1. Resolves and authorizes exactly one active target node, then selects its
+   managed tools.
 2. Verifies each selected tool supports updates.
 3. Updates the gateway expected version.
 4. Applies the version update through the gateway.
@@ -78,6 +84,7 @@ when some selected tools cannot be updated.
   gateway.
 - The current node identity is authorized to manage tools for the selected node
   or instance.
+- The resolved bulk target is one active tool-host node.
 - Selected tools are already registered and managed for the resolved node.
 - The tool definitions support updates.
 - The gateway can reach the target node through Orbit's node execution

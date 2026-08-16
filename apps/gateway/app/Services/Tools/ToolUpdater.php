@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteSecretFile;
 
@@ -18,8 +16,6 @@ final readonly class ToolUpdater
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private ToolScriptDispatcher $toolScriptDispatcher,
-        private ToolAppNodeResolver $instanceNodes,
-        private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
     ) {}
@@ -102,29 +98,11 @@ final readonly class ToolUpdater
     /**
      * @return array{updated: list<array<string, mixed>>, skipped: list<array<string, mixed>>, failed: list<array<string, mixed>>}
      */
-    public function updateAll(?string $node = null, ?string $app = null): array
+    public function updateAll(Node $node): array
     {
-        $query = NodeTool::query()->with('node');
-
-        if ($node !== null) {
-            $nodeModel = Node::query()
-                ->where('name', $node)
-                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
-                ->where('status', NodeStatus::Active->value)
-                ->first();
-
-            if ($nodeModel instanceof Node) {
-                $query->where('node_id', $nodeModel->id);
-            }
-        }
-
-        if ($app !== null) {
-            $instanceNode = $this->instanceNodes->resolve($app);
-
-            if ($instanceNode instanceof Node) {
-                $query->where('node_id', $instanceNode->id);
-            }
-        }
+        $query = NodeTool::query()
+            ->with('node')
+            ->whereBelongsTo($node);
 
         $updated = [];
         $skipped = [];

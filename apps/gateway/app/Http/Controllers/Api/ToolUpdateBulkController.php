@@ -41,10 +41,13 @@ final class ToolUpdateBulkController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $node = $this->requestString($request, 'node');
-        $app = $this->requestString($request, 'instance');
+        $targetNode = $this->resolveTargetNode($request, $caller, $visibleNodeIds);
 
-        $operation = fn (): array => $updater->updateAll(node: $node, app: $app);
+        if ($targetNode instanceof JsonResponse) {
+            return $targetNode;
+        }
+
+        $operation = fn (): array => $updater->updateAll($targetNode);
 
         if ($this->wantsEventStream($request)) {
             return $this->streamToolAction(
@@ -75,6 +78,54 @@ final class ToolUpdateBulkController implements Loggable
         $value = $request->input($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @param  list<int>  $visibleNodeIds
+     */
+    private function resolveTargetNode(Request $request, Node $caller, array $visibleNodeIds): Node|JsonResponse
+    {
+        $node = $this->requestString($request, 'node');
+        $instance = $this->requestString($request, 'instance');
+
+        if ($node === null && $instance === null) {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'A node or instance target is required.',
+                    'meta' => [
+                        'fields' => ['target'],
+                    ],
+                ],
+            ], 422);
+        }
+
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowOnlyVisibleFallback: false,
+        );
+
+        if ($target instanceof JsonResponse) {
+            return $target;
+        }
+
+        $targetNode = $node !== null
+            ? $this->resolveNodeFilter($node, $caller, $visibleNodeIds)
+            : $this->resolveAppNodeFilter((string) $instance, $caller, $visibleNodeIds);
+
+        if (
+            $targetNode instanceof Node
+            && in_array($targetNode->id, $this->nodeRoleAssignments()->activeToolHostNodeIds(), true)
+        ) {
+            return $targetNode;
+        }
+
+        $field = $node !== null ? 'node' : 'instance';
+        $value = $node ?? (string) $instance;
+
+        return $this->toolTargetFailure($value, $field, $caller, $visibleNodeIds);
     }
 
     private function authorizationFailed(string $message): JsonResponse
