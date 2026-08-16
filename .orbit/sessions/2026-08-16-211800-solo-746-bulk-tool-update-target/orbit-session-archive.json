@@ -1,0 +1,34 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-16T19:18:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-746-bulk-tool-update-target/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-16-211800-solo-746-bulk-tool-update-target",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-746-proof-3252ebab00f4.txt",
+        "evidence/solo-746-retained-incus-3252ebab00f4.json",
+        "evidence/solo-746-review-3252ebab00f4.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-16T190441Z-50fe519b5bcb.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-746-proof-3252ebab00f4.txt": "eca921bacbf1ac732d5be785b00cfbb1dde1138658656833585a93225eb32058",
+        "evidence/solo-746-retained-incus-3252ebab00f4.json": "5265077528d8fb644952d665a009bd94451987cb1d6a2af7f2095fe58e95b6d5",
+        "evidence/solo-746-review-3252ebab00f4.txt": "bb136b232b2a59e473d12383bb57ee5d218ecc0cb6bccad77650413356a38b36",
+        "loop.md": "11ae75f26b808cbf03c27a7b12aff70c9f37265462f6806b8431ece0d1632696",
+        "quality-gates/quality-check-2026-08-16T190441Z-50fe519b5bcb.json": "2d9d5deacbd738006bbcd3200d53dac25ea4dcc414ae8a0520b74351907a8773"
+    },
+    "slug": "solo-746-bulk-tool-update-target",
+    "requested_slug": "solo-746-bulk-tool-update-target",
+    "compatible_slugs": [
+        "solo-746-bulk-tool-update-target"
+    ],
+    "branch": "solo-746-bulk-tool-update-target",
+    "candidate_commit": "3252ebab00f49365295256732e592423d74a8ec2",
+    "accepted_feature_tip": "3252ebab00f49365295256732e592423d74a8ec2",
+    "accepted_main_tip": "f0cd3ac4a2d0707bfd20dbec68f1a66e6638a694",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

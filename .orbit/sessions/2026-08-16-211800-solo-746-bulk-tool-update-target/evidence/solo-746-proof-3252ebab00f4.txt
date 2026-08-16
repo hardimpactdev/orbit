@@ -1,0 +1,21 @@
+Candidate: 3252ebab00f49365295256732e592423d74a8ec2
+
+Focused verification:
+  command: bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolUpdateControllerTest.php tests/Unit/Services/Tools/PhpCliToolUpdaterTest.php tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php
+  result: passed
+  tests: 31
+  assertions: 209
+
+Broader verification:
+  receipt: .orbit/quality-gates/quality-check-2026-08-16T190441Z-50fe519b5bcb.json
+  candidate: 3252ebab00f49365295256732e592423d74a8ec2
+  dirty: false
+  exit_code: 0
+  subgates: 45/45 passed
+  duration_seconds: 128
+
+Blast-radius inventory:
+  rg -n 'updateAll\(' apps/gateway --glob '*.php'
+  result: one Node-typed implementation and four call sites; every call passes a concrete Node model. No optional or string overload remains.
+
+Manual E2E lanes were not run.

@@ -1,0 +1,53 @@
+{
+  "candidate": "3252ebab00f49365295256732e592423d74a8ec2",
+  "result": "passed",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology": {
+    "id": "dev-259f9f",
+    "kind": "operator_gateway_app-dev",
+    "provider": "incus",
+    "host": "beast",
+    "gateway": "orbit-e2e-dev-259f9f-gateway",
+    "operator": "orbit-e2e-dev-259f9f-operator",
+    "dev": "orbit-e2e-dev-259f9f-dev"
+  },
+  "sync": {
+    "command": "composer e2e:incus -- --sync --id=dev-259f9f --json --no-interaction",
+    "exit_code": 0,
+    "controller_sha256": "57fd2558eff1450462d708366eae004a4545e0e6ba28305c64b0ca3fc8ed1155",
+    "updater_sha256": "04a22013ade650a26c5cb39edfd050446bf9e44e8afcf48db08a56b1b25ab4be",
+    "source_hashes_match_candidate": true
+  },
+  "observed": {
+    "valid_node": {
+      "command": "orbit tool:update --node=app-dev-1 --json --no-interaction",
+      "exit_code": 0,
+      "updated": ["php-cli@app-dev-1"],
+      "failed": []
+    },
+    "omitted_target": {
+      "exit_code": 1,
+      "error_code": "validation_failed",
+      "field": "target"
+    },
+    "invalid_node": {
+      "exit_code": 1,
+      "error_code": "validation_failed",
+      "field": "node"
+    },
+    "invalid_instance": {
+      "exit_code": 1,
+      "error_code": "validation_failed",
+      "field": "instance"
+    },
+    "unauthorized_caller": {
+      "caller": "app-dev-1",
+      "exit_code": 1,
+      "error_code": "authorization_failed"
+    },
+    "rejected_request_inventory_unchanged": true,
+    "final_php_cli_version": "8.5.8"
+  },
+  "release_command": "composer e2e:incus -- --stop --id=dev-259f9f"
+}
