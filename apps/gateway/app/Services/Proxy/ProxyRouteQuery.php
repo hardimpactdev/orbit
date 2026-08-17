@@ -107,7 +107,7 @@ class ProxyRouteQuery
         if ($filter === 'instance') {
             $visibleRoutes = array_values(array_filter(
                 $visibleRoutes,
-                fn (ProxyRoute $route): bool => $this->appRouteIsValid($route),
+                $this->appRouteIsValid(...),
             ));
         }
 
