@@ -12,16 +12,18 @@ it('keeps the runner Pest support tree byte-identical to the canonical tree', fu
     $runnerFiles = e2ePestSupportPhpBasenames($runnerDirectory);
     $commandSource = file_get_contents(repo_path('apps/e2e/app/Console/Commands/E2ETestCommand.php'));
 
+    $syncHint = 'Regenerate the runner support tree with `php artisan e2e:support-tree:sync`.';
+
     expect($canonicalDirectory)->toBe(repo_path('apps/e2e/tests/E2E/Support'));
     expect($runnerDirectory)->toBe(repo_path('apps/e2e/tests/Feature/Commands/Support'));
     expect($canonicalDirectory)->not->toBe($runnerDirectory);
     expect($commandSource)->toContain('E2EPestSupportTree::copyTo');
     expect($commandSource)->not->toContain('tests/Feature/Commands/Support');
-    expect($runnerFiles)->toBe($canonicalFiles);
+    expect($runnerFiles)->toBe($canonicalFiles, $syncHint);
     expect(file_get_contents($runnerDirectory.'/Pest.php'))
-        ->toBe(file_get_contents($canonicalDirectory.'/Pest.php'));
+        ->toBe(file_get_contents($canonicalDirectory.'/Pest.php'), $syncHint);
     expect(file_get_contents($runnerDirectory.'/SqliteDatabaseFixture.php'))
-        ->toBe(file_get_contents($canonicalDirectory.'/SqliteDatabaseFixture.php'));
+        ->toBe(file_get_contents($canonicalDirectory.'/SqliteDatabaseFixture.php'), $syncHint);
 });
 
 it('stages runner support files from the canonical Pest support tree', function (): void {
