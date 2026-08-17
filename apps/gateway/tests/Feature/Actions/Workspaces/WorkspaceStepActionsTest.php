@@ -46,7 +46,7 @@ it('orders workspace setup and teardown steps independently', function (): void 
 
     expect(
         WorkspaceStep::query()
-            ->where('app_id', $app->id)
+            ->where('instance_id', $instance->id)
             ->where('phase', WorkspaceLifecyclePhase::Setup)
             ->orderBy('sort_order')
             ->pluck('command')
@@ -66,7 +66,7 @@ it('orders workspace setup and teardown steps independently', function (): void 
 
     expect(
         WorkspaceStep::query()
-            ->where('app_id', $app->id)
+            ->where('instance_id', $instance->id)
             ->where('phase', WorkspaceLifecyclePhase::Setup)
             ->orderBy('sort_order')
             ->pluck('sort_order', 'command')

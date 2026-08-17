@@ -32,8 +32,8 @@ class WorkspaceStepListPayload
      */
     public function forStep(WorkspaceStep $step, ?App $app = null): array
     {
-        $step->loadMissing(['app', 'instance']);
-        $app ??= $step->app;
+        $step->loadMissing(['instance.app']);
+        $app ??= $step->instance?->app;
 
         return [
             'id' => $step->id,

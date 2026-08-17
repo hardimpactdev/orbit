@@ -11,6 +11,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * @extends Factory<WorkspaceStep>
@@ -22,23 +23,22 @@ class WorkspaceStepFactory extends Factory
     public function definition(): array
     {
         return [
-            'app_id' => App::factory(),
             'instance_id' => static function (array $attributes): int {
-                $appId = (int) $attributes['app_id'];
-                $app = App::query()->findOrFail($appId);
-                $existing = Instance::query()->where('app_id', $appId)->value('id');
+                /** @var App $app */
+                $app = isset($attributes['app_id'])
+                    ? App::query()->findOrFail((int) $attributes['app_id'])
+                    : App::factory()->create();
+                $existing = Instance::query()->where('app_id', $app->id)->value('id');
 
                 if ($existing !== null) {
                     return (int) $existing;
                 }
 
-                // Logical-only App: mint a default Orbit placement so the
-                // workspace step has a concrete instance to belong to.
                 /** @var Node $node */
                 $node = Node::factory()->create();
 
                 return (int) Instance::factory()->create([
-                    'app_id' => $appId,
+                    'app_id' => $app->id,
                     'driver_config' => new OrbitInstanceDriverConfigData(
                         node_id: $node->id,
                         node: $node->name,
@@ -53,5 +53,24 @@ class WorkspaceStepFactory extends Factory
             'command' => 'composer install',
             'timeout_seconds' => WorkspaceStep::DEFAULT_TIMEOUT_SECONDS,
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterMaking(function (WorkspaceStep $step): void {
+            if (! Schema::hasColumn($step->getTable(), 'app_id')) {
+                $step->offsetUnset('app_id');
+
+                return;
+            }
+
+            $appId = Instance::query()->whereKey($step->instance_id)->value('app_id');
+
+            if (! is_numeric($appId)) {
+                return;
+            }
+
+            $step->forceFill(['app_id' => (int) $appId]);
+        });
     }
 }

@@ -8,12 +8,12 @@ use App\Enums\WorkspaceLifecyclePhase;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Carbon;
 use Override;
 
 /**
  * @property int $id
- * @property int $app_id
  * @property int $instance_id
  * @property WorkspaceLifecyclePhase $phase
  * @property int $sort_order
@@ -34,7 +34,6 @@ class WorkspaceStep extends Model
 
     #[Override]
     protected $fillable = [
-        'app_id',
         'instance_id',
         'phase',
         'sort_order',
@@ -52,11 +51,18 @@ class WorkspaceStep extends Model
     }
 
     /**
-     * @return BelongsTo<App, $this>
+     * @return HasOneThrough<App, Instance, $this>
      */
-    public function app(): BelongsTo
+    public function app(): HasOneThrough
     {
-        return $this->belongsTo(App::class, 'app_id');
+        return $this->hasOneThrough(
+            App::class,
+            Instance::class,
+            'id',
+            'id',
+            'instance_id',
+            'app_id',
+        );
     }
 
     /**

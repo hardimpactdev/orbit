@@ -8,9 +8,8 @@ use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\WorkspaceStep;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Query\Builder as QueryBuilder;
-use Illuminate\Support\Facades\DB;
 
 final readonly class WorkspaceStepPolicyService
 {
@@ -42,7 +41,9 @@ final readonly class WorkspaceStepPolicyService
             return null;
         }
 
-        if ($step->app_id !== $app->id) {
+        $ownerAppId = Instance::query()->whereKey($step->instance_id)->value('app_id');
+
+        if ($ownerAppId === null || (int) $ownerAppId !== $app->id) {
             return null;
         }
 
@@ -109,10 +110,12 @@ final readonly class WorkspaceStepPolicyService
         return $this->scopedTableQuery($app, $phase, $instanceId)->exists();
     }
 
-    private function scopedTableQuery(App $app, WorkspaceLifecyclePhase $phase, int $instanceId): QueryBuilder
+    private function scopedTableQuery(App $app, WorkspaceLifecyclePhase $phase, int $instanceId): Builder
     {
-        return DB::table('workspace_steps')
-            ->where('app_id', $app->id)
+        return WorkspaceStep::query()
+            ->whereHas('instance', function (Builder $query) use ($app): void {
+                $query->where('app_id', $app->id);
+            })
             ->where('phase', $phase->value)
             ->where('instance_id', $instanceId);
     }

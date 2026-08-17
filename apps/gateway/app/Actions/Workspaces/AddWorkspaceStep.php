@@ -6,7 +6,9 @@ namespace App\Actions\Workspaces;
 
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\WorkspaceStep;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 final readonly class AddWorkspaceStep
@@ -30,7 +32,9 @@ final readonly class AddWorkspaceStep
             $instanceId,
         ): WorkspaceStep {
             $phaseSteps = WorkspaceStep::query()
-                ->where('app_id', $appId)
+                ->whereHas('instance', function (Builder $query) use ($appId): void {
+                    $query->where('app_id', $appId);
+                })
                 ->where('phase', $phase)
                 ->where('instance_id', $instanceId);
 
@@ -56,14 +60,21 @@ final readonly class AddWorkspaceStep
                 $sortOrder = ((clone $phaseSteps)->max('sort_order') ?? 0) + 1;
             }
 
-            return WorkspaceStep::query()->create([
-                'app_id' => $appId,
+            $step = new WorkspaceStep([
                 'instance_id' => $instanceId,
                 'phase' => $phase,
                 'sort_order' => $sortOrder,
                 'command' => $command,
                 'timeout_seconds' => $timeoutSeconds,
             ]);
+
+            if (Schema::hasColumn($step->getTable(), 'app_id')) {
+                $step->forceFill(['app_id' => $appId]);
+            }
+
+            $step->save();
+
+            return $step;
         });
     }
 }
