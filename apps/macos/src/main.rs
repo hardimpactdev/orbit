@@ -1,6 +1,6 @@
 use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
-    GatewayClient, ServiceStatusSnapshot,
+    GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -474,37 +474,54 @@ fn load_menu_state_from_agent_service() -> Option<MenuState> {
         .ok()?;
     let body = response.into_string().ok()?;
     let snapshot: ServiceStatusSnapshot = serde_json::from_str(&body).ok()?;
+    let mut state = menu_state_from_service_status_snapshot(snapshot);
 
-    if !snapshot.config_loaded {
-        return Some(MenuState {
-            status: ConnectionStatus::Disconnected(snapshot.connection),
-            gateway_ip: snapshot.gateway_ip,
-            ..MenuState::default()
-        });
+    if !matches!(state.status, ConnectionStatus::Connected) {
+        return Some(state);
     }
 
     let config = AgentConfig::load_default().ok()?;
 
-    if !snapshot.connection.starts_with("Connected") {
-        return Some(MenuState {
-            gateway_ip: snapshot.gateway_ip,
-            status: ConnectionStatus::Disconnected(snapshot.connection),
-            ..MenuState::default()
-        });
-    }
-
     match fetch_topology_menu_data(&config) {
-        Ok(topology) => Some(MenuState {
-            node_ip: topology.node_ip.or(snapshot.node_ip),
-            gateway_ip: snapshot.gateway_ip,
-            granted_nodes: topology.granted_nodes,
-            status: ConnectionStatus::Connected,
-        }),
+        Ok(topology) => {
+            state.node_ip = topology.node_ip.or(state.node_ip);
+            state.granted_nodes = topology.granted_nodes;
+            Some(state)
+        }
         Err(error) => Some(MenuState {
-            gateway_ip: snapshot.gateway_ip,
+            gateway_ip: state.gateway_ip,
             status: ConnectionStatus::Disconnected(format!("{error:?}")),
             ..MenuState::default()
         }),
+    }
+}
+
+fn menu_state_from_service_status_snapshot(snapshot: ServiceStatusSnapshot) -> MenuState {
+    match snapshot {
+        ServiceStatusSnapshot::Loaded {
+            gateway_ip,
+            node_ip,
+            node_name: _,
+            connection,
+        } => MenuState {
+            status: match connection {
+                GatewayConnection::Connected => ConnectionStatus::Connected,
+                GatewayConnection::Disconnected { reason } => {
+                    ConnectionStatus::Disconnected(reason)
+                }
+            },
+            node_ip,
+            gateway_ip,
+            granted_nodes: Vec::new(),
+        },
+        ServiceStatusSnapshot::MissingConfig { path } => MenuState {
+            status: ConnectionStatus::MissingConfig(path),
+            ..MenuState::default()
+        },
+        ServiceStatusSnapshot::InvalidConfig { reason } => MenuState {
+            status: ConnectionStatus::Disconnected(reason),
+            ..MenuState::default()
+        },
     }
 }
 
@@ -864,6 +881,106 @@ mod tests {
         let wildcard_bind = ["0.0.0.0", ":9477"].concat();
 
         assert!(!source.contains(&wildcard_bind));
+    }
+
+    #[test]
+    fn menu_state_from_tagged_connected_snapshot_renders_connected_label() {
+        let state = menu_state_from_tagged_json(
+            r#"{
+                "kind": "loaded",
+                "gateway_ip": "gateway.test",
+                "node_ip": "10.6.0.3",
+                "node_name": "NMBP",
+                "connection": { "state": "connected" }
+            }"#,
+        );
+
+        assert_eq!(state.status, ConnectionStatus::Connected);
+        assert_eq!(state.status.label(), "Connected");
+        assert_eq!(state.gateway_ip, "gateway.test");
+        assert_eq!(state.node_ip.as_deref(), Some("10.6.0.3"));
+        assert!(!state.status.label().contains("Disconnected: Disconnected:"));
+    }
+
+    #[test]
+    fn menu_state_from_tagged_disconnected_snapshot_renders_single_label() {
+        let state = menu_state_from_tagged_json(
+            r#"{
+                "kind": "loaded",
+                "gateway_ip": "gateway.test",
+                "node_ip": "10.6.0.3",
+                "node_name": "NMBP",
+                "connection": {
+                    "state": "disconnected",
+                    "reason": "gateway returned HTTP 503"
+                }
+            }"#,
+        );
+
+        assert_eq!(
+            state.status,
+            ConnectionStatus::Disconnected("gateway returned HTTP 503".to_string())
+        );
+        assert_eq!(
+            state.status.label(),
+            "Disconnected: gateway returned HTTP 503"
+        );
+        assert!(!state.status.label().contains("Disconnected: Disconnected:"));
+        assert_eq!(state.gateway_ip, "gateway.test");
+        assert_eq!(state.node_ip.as_deref(), Some("10.6.0.3"));
+    }
+
+    #[test]
+    fn menu_state_from_tagged_missing_config_snapshot_renders_single_label() {
+        let state = menu_state_from_tagged_json(
+            r#"{
+                "kind": "missing_config",
+                "path": "/tmp/orbit-agent.toml"
+            }"#,
+        );
+
+        assert_eq!(
+            state.status,
+            ConnectionStatus::MissingConfig(std::path::PathBuf::from("/tmp/orbit-agent.toml"))
+        );
+        assert_eq!(
+            state.status.label(),
+            "Disconnected: missing config at /tmp/orbit-agent.toml"
+        );
+        assert!(!state.status.label().contains("Disconnected: Disconnected:"));
+        assert_eq!(state.gateway_ip, "unknown");
+        assert_eq!(state.node_ip, None);
+    }
+
+    #[test]
+    fn menu_state_from_tagged_invalid_config_snapshot_renders_single_label() {
+        let state = menu_state_from_tagged_json(
+            r#"{
+                "kind": "invalid_config",
+                "reason": "managed must be true for the Orbit Agent command listener"
+            }"#,
+        );
+
+        assert_eq!(
+            state.status,
+            ConnectionStatus::Disconnected(
+                "managed must be true for the Orbit Agent command listener".to_string()
+            )
+        );
+        assert_eq!(
+            state.status.label(),
+            "Disconnected: managed must be true for the Orbit Agent command listener"
+        );
+        assert!(!state.status.label().contains("Disconnected: Disconnected:"));
+        assert_eq!(state.gateway_ip, "unknown");
+        assert_eq!(state.node_ip, None);
+    }
+
+    fn menu_state_from_tagged_json(json: &str) -> MenuState {
+        let snapshot: ServiceStatusSnapshot =
+            serde_json::from_str(json).expect("tagged service status should deserialize");
+
+        menu_state_from_service_status_snapshot(snapshot)
     }
 
     fn node_list_payload(name: &str, ip: &str) -> NodeListPayload {
