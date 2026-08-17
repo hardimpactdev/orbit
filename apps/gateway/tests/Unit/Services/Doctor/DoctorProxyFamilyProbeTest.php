@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorProxyFamilyProbe;
@@ -25,21 +26,27 @@ it('keeps app scope, row order, issue payloads, and progress inside the proxy fa
     $firstApp = App::factory()->create(['name' => 'first-app']);
     /** @var App $secondApp */
     $secondApp = App::factory()->create(['name' => 'second-app']);
+    $firstInstance = Instance::factory()->for($firstApp, 'app')->create();
+    $secondInstance = Instance::factory()->for($secondApp, 'app')->create();
     /** @var ProxyRoute $firstRoute */
-    $firstRoute = ProxyRoute::factory()->create([
-        'node_id' => $node->id,
-        'app_id' => $firstApp->id,
-        'domain' => 'zulu.example.test',
-        'owner_type' => 'app',
-        'kind' => 'app',
-    ]);
-    ProxyRoute::factory()->create([
-        'node_id' => $node->id,
-        'app_id' => $secondApp->id,
-        'domain' => 'alpha.example.test',
-        'owner_type' => 'app',
-        'kind' => 'app',
-    ]);
+    $firstRoute = ProxyRoute::factory()
+        ->forApp($firstInstance, $firstApp)
+        ->create([
+            'node_id' => $node->id,
+            'app_id' => $firstApp->id,
+            'domain' => 'zulu.example.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+    ProxyRoute::factory()
+        ->forApp($secondInstance, $secondApp)
+        ->create([
+            'node_id' => $node->id,
+            'app_id' => $secondApp->id,
+            'domain' => 'alpha.example.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
     app()->instance(RunsInternalCommands::class, new DoctorProxyFamilyExecutor);
     $events = [];
 

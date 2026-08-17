@@ -6,7 +6,9 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -33,6 +35,35 @@ function grantProxyRouteIntentAccess(Node $caller, Node $servingNode): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+function invalidate_proxy_route_intent_ownership(
+    ProxyRoute $route,
+    App $app,
+    Instance $instance,
+    string $validKind,
+    string $invalidity,
+): void {
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
 }
 
 describe('ProxyRouteIntent', function (): void {
@@ -169,13 +200,69 @@ describe('ProxyRouteIntent', function (): void {
         );
     })->throws(GatewayApiException::class, 'Existing custom proxy route differs from requested intent.');
 
+    it('does not claim malformed custom route ownership even with force', function (array $attributes): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+        $original = $route->fresh()->getAttributes();
+
+        expect(fn () => app(ProxyRouteIntent::class)->add(
+            domain: 'vite.docs.test',
+            nodeName: 'app-1',
+            upstream: 'http://127.0.0.1:5174',
+            redirect: null,
+            code: null,
+            force: true,
+        ))
+            ->toThrow(GatewayApiException::class, "Domain 'vite.docs.test' has invalid custom ownership.");
+
+        expect($route->fresh()?->getAttributes())->toBe($original);
+    })->with([
+        'incomplete config' => [['config' => []]],
+        'wrong stable target' => [[
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://wrong.test'],
+                'code' => 302,
+            ],
+        ]],
+        'inactive serving node' => [
+            fn (): array => [
+                'node_id' => createTestAppHostNode(['name' => 'inactive-app', 'status' => 'inactive'])->id,
+            ],
+        ],
+        'node without a serving role' => [
+            fn (): array => [
+                'node_id' => Node::factory()->create(['name' => 'unassigned-app', 'status' => 'active'])->id,
+            ],
+        ],
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'app']],
+    ]);
+
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -189,7 +276,114 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by instance.");
+
+    it('reports the stored owner type for malformed direct-owner conflict metadata', function (
+        string $ownerType,
+        string $validKind,
+        string $invalidity,
+    ): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => $ownerType,
+            'kind' => $validKind,
+        ]);
+
+        invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, $invalidity);
+
+        try {
+            app(ProxyRouteIntent::class)->add(
+                domain: 'docs.test',
+                nodeName: 'app-1',
+                upstream: 'http://127.0.0.1:5173',
+                redirect: null,
+                code: null,
+                force: true,
+            );
+            $this->fail('Expected a proxy domain conflict.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('proxy.domain_conflict')
+                ->and($exception->errorMeta())
+                ->toMatchArray([
+                    'domain' => 'docs.test',
+                    'owner_type' => $ownerType,
+                ]);
+        }
+    })->with([
+        'primary app missing app' => ['app', 'app', 'missing app'],
+        'primary app missing instance' => ['app', 'app', 'missing instance'],
+        'primary app conflicting app' => ['app', 'app', 'conflicting app'],
+        'primary app wrong kind' => ['app', 'app', 'wrong kind'],
+        'primary app workspace identity' => ['app', 'app', 'workspace identity'],
+        'analytics missing app' => ['app-analytics', 'proxy', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'proxy', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'proxy', 'conflicting app'],
+        'analytics wrong kind' => ['app-analytics', 'proxy', 'wrong kind'],
+        'analytics workspace identity' => ['app-analytics', 'proxy', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'proxy', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'proxy', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'proxy', 'conflicting app'],
+        'websocket wrong kind' => ['app-websocket', 'proxy', 'wrong kind'],
+        'websocket workspace identity' => ['app-websocket', 'proxy', 'workspace identity'],
+    ]);
+
+    it('fails closed for every malformed direct-owner removal tuple', function (
+        string $ownerType,
+        string $validKind,
+        string $invalidity,
+    ): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => $ownerType,
+            'kind' => $validKind,
+        ]);
+
+        invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, $invalidity);
+
+        try {
+            app(ProxyRouteIntent::class)->remove('docs.test');
+            $this->fail('Expected owned route removal to be denied.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('proxy.owned_route_denied')
+                ->and($exception->errorMeta())
+                ->toMatchArray([
+                    'domain' => 'docs.test',
+                    'owner_type' => $ownerType,
+                ]);
+        }
+
+        expect(ProxyRoute::query()->whereKey($route->id)->exists())->toBeTrue();
+    })->with([
+        'primary app missing app' => ['app', 'app', 'missing app'],
+        'primary app missing instance' => ['app', 'app', 'missing instance'],
+        'primary app conflicting app' => ['app', 'app', 'conflicting app'],
+        'primary app wrong kind' => ['app', 'app', 'wrong kind'],
+        'primary app workspace identity' => ['app', 'app', 'workspace identity'],
+        'analytics missing app' => ['app-analytics', 'proxy', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'proxy', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'proxy', 'conflicting app'],
+        'analytics wrong kind' => ['app-analytics', 'proxy', 'wrong kind'],
+        'analytics workspace identity' => ['app-analytics', 'proxy', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'proxy', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'proxy', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'proxy', 'conflicting app'],
+        'websocket wrong kind' => ['app-websocket', 'proxy', 'wrong kind'],
+        'websocket workspace identity' => ['app-websocket', 'proxy', 'workspace identity'],
+    ]);
 
     it('removes custom route backend and TLS through the fixer in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -219,6 +413,140 @@ describe('ProxyRouteIntent', function (): void {
             ->toBeEmpty()
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
             ->toBeFalse();
+    });
+
+    it('does not remove malformed custom ownership', function (array $attributes): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'old.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 302],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+
+        expect(fn () => app(ProxyRouteIntent::class)->remove('old.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'old.test' has invalid custom ownership.");
+
+        expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+    })->with([
+        'incomplete stable config' => [['config' => []]],
+        'wrong stable target' => [[
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://wrong.test'],
+                'code' => 302,
+                'unexpected' => true,
+            ],
+        ]],
+        'inactive serving node' => [
+            fn (): array => [
+                'node_id' => createTestAppHostNode(['name' => 'inactive-remove-app', 'status' => 'inactive'])->id,
+            ],
+        ],
+        'node without a serving role' => [
+            fn (): array => [
+                'node_id' => Node::factory()->create(['name' => 'unassigned-remove-app', 'status' => 'active'])->id,
+            ],
+        ],
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'internal']],
+    ]);
+
+    it('does not remove malformed or differently hosted tool ownership', function (array $attributes): void {
+        $routeNode = createTestAppHostNode(['name' => 'app-1']);
+        $toolNode = createTestAppHostNode(['name' => 'app-2']);
+        NodeTool::factory()->for($toolNode)->create([
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $routeNode->id,
+            'domain' => 'hermes.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => ['owner_name' => 'hermes'],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+
+        expect(fn () => app(ProxyRouteIntent::class)->remove('hermes.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'hermes.test' is owned by tool.");
+
+        expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+    })->with([
+        'wrong tool host identity' => [[]],
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'redirect']],
+        'missing owner identity' => [['config' => []]],
+    ]);
+
+    it('removes an orphaned tool route only when its complete ownership tuple is valid', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'tld' => 'test']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $result = app(ProxyRouteIntent::class)->remove('hermes.test');
+
+        expect($result['meta'])
+            ->toMatchArray([
+                'removal_reason' => 'orphan_owner',
+                'owner_type' => 'tool',
+            ])
+            ->and($route->fresh())
+            ->toBeNull();
+    });
+
+    it('removes an orphaned tool route when the same tool name exists on another node', function (): void {
+        $routeNode = createTestAppHostNode(['name' => 'agent-1', 'tld' => 'agent']);
+        $otherNode = createTestAppHostNode(['name' => 'agent-2', 'tld' => 'other']);
+        NodeTool::factory()->for($otherNode)->create([
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $routeNode->id,
+            'domain' => 'hermes.agent',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        app(ProxyRouteIntent::class)->remove('hermes.agent');
+
+        expect($route->fresh())->toBeNull();
     });
 
     it('keeps registry row and returns hard proxy.cleanup_failed when cleanup throws', function (): void {
@@ -265,6 +593,7 @@ describe('ProxyRouteIntent', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $workspace->instance_id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -273,47 +602,83 @@ describe('ProxyRouteIntent', function (): void {
         app(ProxyRouteIntent::class)->remove('feature.docs.test');
     })->throws(GatewayApiException::class, "Domain 'feature.docs.test' is owned by workspace.");
 
-    it('removes orphaned workspace-owned routes when the workspace record is missing', function (): void {
+    it('keeps an incomplete workspace ownership tuple when the workspace relation is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => null,
             'domain' => 'auth.craft-starterkit-react.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
         ]);
 
-        $result = app(ProxyRouteIntent::class)->remove('auth.craft-starterkit-react.test');
-
-        expect($result['data']['route'])
-            ->toMatchArray([
-                'domain' => 'auth.craft-starterkit-react.test',
-                'status' => 'removed',
-            ])
-            ->and($result['meta']['removal_reason'])
-            ->toBe('orphan_owner')
-            ->and($result['meta']['owner_type'])
-            ->toBe('workspace')
-            ->and($result['meta']['backend_removed'])
-            ->toBeTrue()
-            ->and($result['meta']['tls_removed'])
-            ->toBeTrue()
-            ->and($result['meta']['warnings'])
-            ->toBeEmpty()
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('auth.craft-starterkit-react.test'))
+            ->toThrow(
+                GatewayApiException::class,
+                "Domain 'auth.craft-starterkit-react.test' is owned by workspace.",
+            )
             ->and(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())
-            ->toBeFalse();
+            ->toBeTrue();
+    });
+
+    it('denies removal when a living instance owner has mismatched app compatibility', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $compatibility = App::factory()->create(['name' => 'other']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $route->forceFill(['app_id' => $compatibility->id])->save();
+
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('docs.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'docs.test' is owned by app.")
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeTrue();
+    });
+
+    it('denies removal when a living workspace owner has a mismatched instance tuple', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $otherInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'instance_id' => $instance->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('feature.docs.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'feature.docs.test' is owned by workspace.")
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeTrue();
     });
 
     it('denies removal when an app owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -322,25 +687,25 @@ describe('ProxyRouteIntent', function (): void {
         app(ProxyRouteIntent::class)->remove('docs.test');
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by");
 
-    it('removes orphaned app-owned routes when the app record is missing', function (): void {
+    it('keeps an incomplete direct ownership tuple when the instance relation is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'app_id' => null,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'orphan-app.test',
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
+        $instance->delete();
 
-        $result = app(ProxyRouteIntent::class)->remove('orphan-app.test');
-
-        expect($result['meta']['removal_reason'])
-            ->toBe('orphan_owner')
-            ->and($result['meta']['owner_type'])
-            ->toBe('app')
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('orphan-app.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'orphan-app.test' is owned by app.")
             ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
-            ->toBeFalse();
+            ->toBeTrue();
     });
 
     it('authorizes non-gateway callers by serving node grant', function (): void {
@@ -364,10 +729,12 @@ describe('ProxyRouteIntent', function (): void {
     it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -381,7 +748,7 @@ describe('ProxyRouteIntent', function (): void {
             code: null,
             force: true,
         );
-    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by app.");
+    })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by instance.");
 });
 
 /**

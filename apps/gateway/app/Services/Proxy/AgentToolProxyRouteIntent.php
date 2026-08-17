@@ -91,6 +91,7 @@ final readonly class AgentToolProxyRouteIntent
             'domain' => "{$tool->name}.{$tld}",
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'config' => $config,
@@ -111,6 +112,7 @@ final readonly class AgentToolProxyRouteIntent
             $actual->node_id === $expected->node_id
             && $actual->app_id === null
             && $actual->workspace_id === null
+            && $actual->instance_id === null
             && $actual->owner_type === $expected->owner_type
             && $actual->kind === $expected->kind
             && $actual->config === $expected->config
@@ -120,14 +122,7 @@ final readonly class AgentToolProxyRouteIntent
 
     public function hasOwnershipConflict(ProxyRoute $actual, ProxyRoute $expected): bool
     {
-        if ($actual->owner_type !== 'tool') {
-            return true;
-        }
-
-        $actualConfig = is_array($actual->config) ? $actual->config : [];
-        $expectedConfig = is_array($expected->config) ? $expected->config : [];
-
-        return ($actualConfig['owner_name'] ?? null) !== ($expectedConfig['owner_name'] ?? null);
+        return ! ProxyRouteOwnershipCompatibility::matches($actual, $expected, ['owner_name']);
     }
 
     /**
@@ -187,6 +182,7 @@ final readonly class AgentToolProxyRouteIntent
                 'node_id' => $expected->node_id,
                 'app_id' => null,
                 'workspace_id' => null,
+                'instance_id' => null,
                 'owner_type' => $expected->owner_type,
                 'kind' => $expected->kind,
                 'config' => $expected->config,

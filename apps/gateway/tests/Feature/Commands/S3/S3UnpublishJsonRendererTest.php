@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -255,13 +256,15 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
             'status' => 'active',
         ]);
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
-        ]);
+        ProxyRoute::factory()
+            ->forApp(Instance::factory()->create())
+            ->create([
+                'domain' => 's3.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
+            ]);
 
         $response = $this->call(
             'DELETE',

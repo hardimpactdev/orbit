@@ -132,7 +132,7 @@ describe('ServingNodeResolver', function (): void {
         $app = App::factory()->create([
             'name' => 'billing',
         ]);
-        Instance::factory()->create([
+        $instance = Instance::factory()->create([
             'app_id' => $app->id,
             'name' => 'cloud',
             'driver' => 'laravel-cloud',
@@ -246,7 +246,7 @@ describe('ServingNodeResolver', function (): void {
         $targetNode = Node::factory()->create(['name' => 'target-node']);
         $targetApp = App::factory()->create(['name' => 'docs']);
         $otherApp = App::factory()->create(['name' => 'other']);
-        Instance::factory()->create([
+        $instance = Instance::factory()->create([
             'app_id' => $targetApp->id,
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
@@ -257,6 +257,7 @@ describe('ServingNodeResolver', function (): void {
             'node_id' => $targetNode->id,
             'domain' => 'docs-dev.example',
             'app_id' => $targetApp->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [
@@ -278,6 +279,31 @@ describe('ServingNodeResolver', function (): void {
         expect($resolved?->is($targetNode))->toBeTrue();
     });
 
+    it('does not resolve an app hostname whose compatibility app_id disagrees with its instance', function (): void {
+        $targetNode = Node::factory()->create(['name' => 'target-node-mismatch']);
+        $owner = App::factory()->create(['name' => 'owner']);
+        $compatibility = App::factory()->create(['name' => 'compatibility']);
+        $instance = Instance::factory()->for($owner)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $targetNode->id),
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'mismatch.example',
+            'app_id' => $owner->id,
+            'instance_id' => $instance->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $route->forceFill(['app_id' => $compatibility->id])->save();
+
+        $resolved = new ServingNodeResolver()->resolve(
+            servingNodeRequest([], ['app' => 'mismatch.example']),
+            ServingNode::AppOwning,
+        );
+
+        expect($resolved)->toBeNull();
+    });
+
     it('resolves app-owning nodes from a registered workspace hostname selector', function (): void {
         $targetNode = Node::factory()->create(['name' => 'workspace-node']);
         $app = App::factory()->create(['name' => 'docs']);
@@ -296,6 +322,7 @@ describe('ServingNodeResolver', function (): void {
             'domain' => 'feature-docs.example',
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'workspace',
             'kind' => 'workspace',
         ]);

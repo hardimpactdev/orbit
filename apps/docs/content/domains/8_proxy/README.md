@@ -11,18 +11,30 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has a public owner: `app`, `instance`, `analytics`, `websocket`,
-  `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value
-  classifies which domain's convergence edits the route record; the private
+- Every proxy route has a public owner: `instance`, `analytics`, `websocket`,
+  `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. Persisted primary
+  routes use `owner_type=app` and `kind=app`; the registry projects both as
+  `instance` only when the complete App, Instance, kind, and null Workspace
+  ownership tuple is valid. Invalid tuples retain their stored owner type in
+  registry and conflict/removal metadata. Persisted `owner_type=instance` is
+  invalid. Convergence and destructive cleanup accept a route only when its
+  complete ownership tuple resolves to the intended owner; a domain collision
+  with invalid or different ownership is a conflict. The owner value classifies
+  which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
-  by `router`.
-- Every proxy route has a kind: `app`, `instance`, `workspace`, `internal`, `proxy`, or
-  `redirect`.
-- `proxy:list` shows all proxy routes by default, including app routes,
+  by `router`. Router, gateway, tool, S3, and custom tuples require
+  `app_id=null`, `workspace_id=null`, and `instance_id=null`. They also require
+  the intended serving node and kind. Tool and service families require their
+  stable `config.owner_name`, `config.protocol`, and placement identity where
+  applicable. Convergence, cleanup, migration normalization, and Doctor restore
+  preserve a malformed or differently owned row at the requested domain.
+- Every proxy route has a public kind: `instance`, `workspace`, `internal`,
+  `proxy`, or `redirect`.
+- `proxy:list` shows all proxy routes by default, including instance routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
 - `proxy:list --filter=<filter>` narrows the unified view. Supported filters are
-  `all`, `app`, `instance`, `workspace`, `gateway`,
+  `all`, `instance`, `workspace`, `gateway`,
   `websocket`, `s3`, `analytics`, `tool`, `custom`, and `redirect`.
   `websocket`, `s3`, and `analytics` are service filters:
   `websocket` selects the router-owned `websocket.orbit` service route, and
@@ -37,7 +49,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes. An explicit `proxy:list --filter=workspace` request fails with
   `workspace.unsupported_for_production` before route facts are returned when
   either side crosses that boundary.
-- App, instance, workspace, gateway, and tool-owned routes are visible through proxy
+- Instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - Every instance-primary route targets one concrete instance. The route uses
   `owner.type=instance` and `owner.name=<app.instance>`, with

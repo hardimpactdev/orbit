@@ -34,6 +34,7 @@ use Override;
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, WorkspaceEnvVariable> $envVariables
  * @property-read Collection<int, Process> $processes
+ * @property-read Collection<int, ProxyRoute> $proxyRoutes
  * @property-read Collection<int, WorkspaceRun> $runs
  * @mago-expect lint:too-many-methods
  */

@@ -84,15 +84,9 @@ function wsProbeActiveWebSocketNode(): Node
 
 it('ws router_route_orphaned when websocket.orbit route exists and no active websocket role remains', function (): void {
     $router = wsProbeRouter();
-    // No active websocket role assignment
-
-    ProxyRoute::factory()->create([
-        'domain' => WebSocketRouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['protocol' => 'websocket'],
-    ]);
+    $backend = wsProbeActiveWebSocketNode();
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+    $backend->roleAssignments()->where('role', 'websocket')->update(['status' => 'removing']);
 
     $probe = app(WebSocketProxyDoctorProbe::class);
     $drift = $probe->drift($router);
@@ -201,14 +195,9 @@ it('limits app-scoped public websocket drift to the selected app', function (): 
 
 it('ws restore router_route_orphaned removes the websocket.orbit service route row', function (): void {
     $router = wsProbeRouter();
-
-    ProxyRoute::factory()->create([
-        'domain' => WebSocketRouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['protocol' => 'websocket'],
-    ]);
+    $backend = wsProbeActiveWebSocketNode();
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+    $backend->roleAssignments()->where('role', 'websocket')->update(['status' => 'removing']);
 
     $probe = app(WebSocketProxyDoctorProbe::class);
     $entry = new DriftEntry(
@@ -231,6 +220,62 @@ it('ws restore router_route_orphaned removes the websocket.orbit service route r
         ->toBe('fix')
         ->and(ProxyRoute::query()->where('domain', WebSocketRouteRegistrar::ServiceDomain)->exists())
         ->toBeFalse();
+})->group('websocket', 'proxy-doctor');
+
+it('ws doctor does not classify or remove another owner at the reserved service domain', function (): void {
+    $router = wsProbeRouter();
+    $route = ProxyRoute::factory()->create([
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
+    ]);
+    $probe = app(WebSocketProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: WebSocketProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned websocket.orbit route.',
+    );
+
+    $drift = $probe->drift($router);
+    $result = $probe->restore($router, $entry);
+
+    expect(collect($drift)->pluck('key')->all())
+        ->not
+        ->toContain(WebSocketProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result)
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('websocket', 'proxy-doctor');
+
+it('ws doctor does not restore active drift by converting another owner', function (): void {
+    $router = wsProbeRouter();
+    wsProbeActiveWebSocketNode();
+    $route = ProxyRoute::factory()->create([
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
+    ]);
+    $probe = app(WebSocketProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+    $entry = collect($drift)->firstWhere('key', WebSocketProxyDoctorProbe::RouterRouteKey);
+
+    expect($entry)->toBeInstanceOf(DriftEntry::class);
+    assert($entry instanceof DriftEntry);
+
+    expect($entry->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($entry->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($router, $entry))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
 })->group('websocket', 'proxy-doctor');
 
 it('ws restore returns null for unknown key', function (): void {

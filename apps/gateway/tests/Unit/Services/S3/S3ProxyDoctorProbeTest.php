@@ -186,7 +186,7 @@ it('s3 no router drift when there are no active s3 nodes', function (): void {
 // routerBackendDrift — router_backend_invalid
 // ---------------------------------------------------------------------------
 
-it('s3 router_backend_invalid when the upstreams list is empty', function (): void {
+it('s3 reports an ownership conflict when the stable upstream list is empty', function (): void {
     $router = s3ProxyRouter();
     s3ProxyStorageNode();
 
@@ -208,13 +208,18 @@ it('s3 router_backend_invalid when the upstreams list is empty', function (): vo
     $drift = $probe->drift($router);
 
     $keys = array_map(fn ($e) => $e->key, $drift);
-    expect($keys)->toContain(S3ProxyDoctorProbe::RouterBackendKey);
+    expect($keys)
+        ->toContain(S3ProxyDoctorProbe::RouterRouteKey)
+        ->not->toContain(S3ProxyDoctorProbe::RouterBackendKey);
 
-    $entry = $drift[array_search(S3ProxyDoctorProbe::RouterBackendKey, $keys)];
-    expect($entry->kind)->toBe(DriftKind::Divergent);
+    $entry = $drift[array_search(S3ProxyDoctorProbe::RouterRouteKey, $keys)];
+    expect($entry->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($entry->detail['reason'] ?? null)
+        ->toBe('ownership_conflict');
 })->group('s3', 'proxy-doctor');
 
-it('s3 router_backend_invalid when upstreams point to a raw IP (non-.s3.orbit host)', function (): void {
+it('s3 reports an ownership conflict when upstreams point to a raw IP', function (): void {
     $router = s3ProxyRouter();
     s3ProxyIngress();
     s3ProxyStorageNode();
@@ -241,10 +246,12 @@ it('s3 router_backend_invalid when upstreams point to a raw IP (non-.s3.orbit ho
     $drift = $probe->drift($router);
 
     $keys = array_map(fn ($e) => $e->key, $drift);
-    expect($keys)->toContain(S3ProxyDoctorProbe::RouterBackendKey);
+    expect($keys)
+        ->toContain(S3ProxyDoctorProbe::RouterRouteKey)
+        ->not->toContain(S3ProxyDoctorProbe::RouterBackendKey);
 })->group('s3', 'proxy-doctor');
 
-it('s3 router_backend_invalid when upstreams point to a host not ending with .s3.orbit', function (): void {
+it('s3 reports an ownership conflict when upstreams point outside s3.orbit', function (): void {
     $router = s3ProxyRouter();
     s3ProxyStorageNode();
 
@@ -268,7 +275,9 @@ it('s3 router_backend_invalid when upstreams point to a host not ending with .s3
     $drift = $probe->drift($router);
 
     $keys = array_map(fn ($e) => $e->key, $drift);
-    expect($keys)->toContain(S3ProxyDoctorProbe::RouterBackendKey);
+    expect($keys)
+        ->toContain(S3ProxyDoctorProbe::RouterRouteKey)
+        ->not->toContain(S3ProxyDoctorProbe::RouterBackendKey);
 })->group('s3', 'proxy-doctor');
 
 it('s3 router_backend_invalid not emitted when route is absent (router_route_missing covers it)', function (): void {
@@ -320,7 +329,7 @@ it('s3 pure intent-drift reports router_route_missing not router_backend_invalid
     expect($keys)->not->toContain(S3ProxyDoctorProbe::RouterBackendKey);
 })->group('s3', 'proxy-doctor');
 
-it('s3 bad-backend case reports router_backend_invalid not router_route_missing', function (): void {
+it('s3 bad-backend case fails closed as an ownership conflict', function (): void {
     $router = s3ProxyRouter();
     s3ProxyStorageNode();
 
@@ -337,10 +346,9 @@ it('s3 bad-backend case reports router_backend_invalid not router_route_missing'
     $drift = $probe->drift($router);
 
     $keys = array_map(fn ($e) => $e->key, $drift);
-    // Empty backend pool → backend_invalid fires
-    expect($keys)->toContain(S3ProxyDoctorProbe::RouterBackendKey);
-    // route exists → router_route_missing must NOT fire
-    expect($keys)->not->toContain(S3ProxyDoctorProbe::RouterRouteKey);
+    expect($keys)
+        ->toContain(S3ProxyDoctorProbe::RouterRouteKey)
+        ->not->toContain(S3ProxyDoctorProbe::RouterBackendKey);
 })->group('s3', 'proxy-doctor');
 
 // ---------------------------------------------------------------------------
@@ -598,15 +606,9 @@ it('s3 node categories for s3 role node includes proxy', function (): void {
 
 it('s3 router_route_orphaned when s3.orbit route exists and no active s3 role remains', function (): void {
     $router = s3ProxyRouter();
-    // No active s3 role assignment
-
-    ProxyRoute::factory()->create([
-        'domain' => S3RouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
-    ]);
+    [$storage] = s3ProxyStorageNode();
+    app(S3RouteRegistrar::class)->syncServiceRoute();
+    $storage->roleAssignments()->where('role', 's3')->update(['status' => 'removing']);
 
     $probe = app(S3ProxyDoctorProbe::class);
     $drift = $probe->drift($router);
@@ -669,14 +671,9 @@ it('s3 router_route_orphaned not emitted for non-router nodes', function (): voi
 
 it('s3 restore router_route_orphaned removes the s3.orbit service route row', function (): void {
     $router = s3ProxyRouter();
-
-    ProxyRoute::factory()->create([
-        'domain' => S3RouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
-    ]);
+    [$storage] = s3ProxyStorageNode();
+    app(S3RouteRegistrar::class)->syncServiceRoute();
+    $storage->roleAssignments()->where('role', 's3')->update(['status' => 'removing']);
 
     $probe = app(S3ProxyDoctorProbe::class);
     $entry = new DriftEntry(
@@ -699,4 +696,60 @@ it('s3 restore router_route_orphaned removes the s3.orbit service route row', fu
         ->toBe('fix')
         ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())
         ->toBeFalse();
+})->group('s3', 'proxy-doctor');
+
+it('s3 doctor does not classify or remove another owner at the reserved service domain', function (): void {
+    $router = s3ProxyRouter();
+    $route = ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8333']],
+    ]);
+    $probe = app(S3ProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: S3ProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned s3.orbit route.',
+    );
+
+    $drift = $probe->drift($router);
+    $result = $probe->restore($router, $entry);
+
+    expect(collect($drift)->pluck('key')->all())
+        ->not
+        ->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result)
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('s3', 'proxy-doctor');
+
+it('s3 doctor does not restore active drift by converting another owner', function (): void {
+    $router = s3ProxyRouter();
+    s3ProxyStorageNode();
+    $route = ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8333']],
+    ]);
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+    $entry = collect($drift)->firstWhere('key', S3ProxyDoctorProbe::RouterRouteKey);
+
+    expect($entry)->toBeInstanceOf(DriftEntry::class);
+    assert($entry instanceof DriftEntry);
+
+    expect($entry->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($entry->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($router, $entry))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
 })->group('s3', 'proxy-doctor');

@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceEnvInheritanceGuard;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -60,10 +61,16 @@ final readonly class RemoveWorkspace
         $appName = (string) $app?->name;
         $appInstanceName = $workspace->instance->name;
         $isPhpWorkspace = $app?->runtime === AppRuntimeKind::Php;
-        $proxyRouteIds = ProxyRoute::query()
-            ->where('workspace_id', $workspace->id)
-            ->pluck('id')
-            ->all();
+        $proxyRouteIds = [];
+        $routeOwnership = new WorkspaceProxyRouteOwnershipResolver;
+
+        foreach ($workspace->proxyRoutes()->get() as $route) {
+            assert($route instanceof ProxyRoute, 'Workspace proxy route relation returns ProxyRoute models.');
+
+            if ($routeOwnership->resolve($route)?->workspace->is($workspace) === true) {
+                $proxyRouteIds[] = $route->id;
+            }
+        }
         $processCleanupScripts = $this->processCleanupScripts($workspace, $app);
         $workspace->loadMissing(['instance', 'app']);
         assert($workspace->app instanceof App, 'Workspace removal requires a parent app.');

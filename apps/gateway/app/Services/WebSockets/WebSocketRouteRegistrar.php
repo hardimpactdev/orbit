@@ -13,12 +13,18 @@ use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-/** @mago-expect lint:excessive-parameter-list */
+/**
+ * @mago-expect lint:excessive-parameter-list
+ * @mago-expect lint:kan-defect
+ */
 class WebSocketRouteRegistrar
 {
     public const string ServiceDomain = 'websocket.orbit';
@@ -34,11 +40,22 @@ class WebSocketRouteRegistrar
         private readonly WebSocketBackendName $backendName,
         private readonly DnsmasqReconciler $dnsmasqReconciler,
         private readonly WorkspacePlacement $placement,
+        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     public function syncServiceRoute(): ProxyRoute
     {
         $intent = $this->serviceRouteIntent();
+        $existingRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
+        ) {
+            throw new RuntimeException(
+                "WebSocket service route '".self::ServiceDomain."' conflicts with existing ownership.",
+            );
+        }
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
@@ -46,6 +63,7 @@ class WebSocketRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -60,8 +78,19 @@ class WebSocketRouteRegistrar
 
     public function removeServiceRoute(): void
     {
-        ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
+        $route = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (! $route instanceof ProxyRoute || ! $this->ownsServiceRoute($route)) {
+            return;
+        }
+
+        $route->delete();
         $this->dnsmasqReconciler->reconcileProxyRecords();
+    }
+
+    public function ownsServiceRoute(ProxyRoute $route): bool
+    {
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
     }
 
     public function serviceRouteIntent(): ProxyRoute
@@ -74,6 +103,7 @@ class WebSocketRouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -138,11 +168,18 @@ class WebSocketRouteRegistrar
 
     private function deletePublicRoutes(Instance $instance): void
     {
-        ProxyRoute::query()
-            ->where('app_id', $instance->app_id)
+        $routes = $instance
+            ->proxyRoutes()
             ->where('owner_type', 'app-websocket')
-            ->where('config->instance_id', $instance->id)
-            ->delete();
+            ->get();
+
+        foreach ($routes as $route) {
+            assert($route instanceof ProxyRoute, 'Instance proxy route relation returns ProxyRoute models.');
+
+            if ($this->isOwnedPublicRoute($route, $instance)) {
+                $route->delete();
+            }
+        }
     }
 
     /**
@@ -150,30 +187,37 @@ class WebSocketRouteRegistrar
      */
     private function deleteStalePublicRoutes(Instance $instance, array $hosts): void
     {
-        ProxyRoute::query()
-            ->where('app_id', $instance->app_id)
+        $routes = $instance
+            ->proxyRoutes()
             ->where('owner_type', 'app-websocket')
-            ->where('config->instance_id', $instance->id)
-            ->whereNotIn('domain', $hosts)
-            ->delete();
+            ->get();
+
+        foreach ($routes as $route) {
+            assert($route instanceof ProxyRoute, 'Instance proxy route relation returns ProxyRoute models.');
+
+            if (in_array($route->domain, $hosts, true)) {
+                continue;
+            }
+
+            if ($this->isOwnedPublicRoute($route, $instance)) {
+                $route->delete();
+            }
+        }
     }
 
     private function syncPublicHost(Instance $instance, Node $ingress, Node $router, string $host): void
     {
+        $intent = $this->publicRouteIntent($instance, $ingress, $router, $host);
         $existingRoute = ProxyRoute::query()
             ->where('domain', $host)
             ->first();
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ($existingRoute->owner_type !== 'app-websocket'
-            || $existingRoute->app_id !== $instance->app_id
-            || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($existingRoute)
         ) {
             throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
         }
-
-        $intent = $this->publicRouteIntent($instance, $ingress, $router, $host);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],
@@ -181,11 +225,20 @@ class WebSocketRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
                 'source_hash' => $intent->source_hash,
             ],
+        );
+    }
+
+    private function isOwnedPublicRoute(ProxyRoute $route, Instance $instance): bool
+    {
+        return (
+            $this->routeOwnership->resolve($route)?->is($instance) === true
+            && app(PublicBindingProxyRouteOwnership::class)->matches($route)
         );
     }
 
@@ -235,6 +288,7 @@ class WebSocketRouteRegistrar
             'domain' => $host,
             'app_id' => $instance->app_id,
             'workspace_id' => null,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,
@@ -250,7 +304,6 @@ class WebSocketRouteRegistrar
         $certificatePaths = $this->certificatePaths($host);
         $webSocketUpstreams = array_map($this->upstream(...), $this->webSocketBackends());
         $config = [
-            'instance_id' => $instance->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'websocket',
@@ -278,6 +331,7 @@ class WebSocketRouteRegistrar
             'node_id' => $router->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,
@@ -301,6 +355,7 @@ class WebSocketRouteRegistrar
             'node_id' => $ingress->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
             'config' => $config,

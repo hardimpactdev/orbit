@@ -165,9 +165,8 @@ final readonly class AppAnalyticsBindingService
     {
         $instance->loadMissing('app');
         $existingRouteCount = ProxyRoute::query()
-            ->where('app_id', $instance->app_id)
+            ->where('instance_id', $instance->id)
             ->where('owner_type', 'app-analytics')
-            ->where('config->instance_id', $instance->id)
             ->count();
 
         $routeBudgetSeconds =

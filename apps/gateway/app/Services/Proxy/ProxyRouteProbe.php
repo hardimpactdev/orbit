@@ -10,7 +10,6 @@ use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
-use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -47,6 +46,7 @@ final readonly class ProxyRouteProbe
         private ?ProxyRouteRenderer $renderer = null,
         private ?AgentToolProxyRouteIntent $agentToolRoutes = null,
         private ?ProxyRouteFileProbeContract $routeFileProbeContract = null,
+        private ?WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership = null,
     ) {}
 
     public function key(): string
@@ -861,45 +861,41 @@ final readonly class ProxyRouteProbe
      */
     private function checkOwnerEligibility(ProxyRoute $route): array
     {
-        $route->loadMissing(['app', 'workspace']);
+        $route->loadMissing(['instance.app', 'workspace.instance']);
+        $nonInstanceOwnership = app(NonInstanceProxyRouteOwnership::class);
 
-        if ($route->owner_type === 'app' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'instance') {
+            return [$this->ownerInvalid($route, 'instance')];
+        }
+
+        if ($route->owner_type === 'app' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app')];
         }
 
-        if ($route->owner_type === 'app-analytics' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-analytics' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app-analytics')];
         }
 
-        if ($route->owner_type === 'app-websocket' && ! $route->app instanceof App) {
+        if ($route->owner_type === 'app-websocket' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
-        if ($route->owner_type === 'workspace' && ! $route->workspace instanceof Workspace) {
+        if (
+            $route->owner_type === 'workspace'
+            && $this->workspaceRouteOwnership()->resolve($route) === null
+        ) {
             return [$this->ownerInvalid($route, 'workspace')];
         }
 
-        if ($route->owner_type === 'tool' && $this->toolOwnerIsMissing($route)) {
-            return [$this->ownerInvalid($route, 'tool')];
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! $nonInstanceOwnership->matches($route)
+            && $nonInstanceOwnership->matchesNodeSelection($route)
+        ) {
+            return [$this->ownerInvalid($route, $route->owner_type)];
         }
 
         return [];
-    }
-
-    private function toolOwnerIsMissing(ProxyRoute $route): bool
-    {
-        $config = is_array($route->config) ? $route->config : [];
-        $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
-
-        if ($ownerName === null || $ownerName === '') {
-            return true;
-        }
-
-        return ! NodeTool::query()
-            ->where('node_id', $route->node_id)
-            ->where('name', $ownerName)
-            ->where('expected_state', 'installed')
-            ->exists();
     }
 
     /**
@@ -908,6 +904,7 @@ final readonly class ProxyRouteProbe
     private function checkNodeEligibility(ProxyRoute $route): array
     {
         $route->loadMissing('node');
+        $nonInstanceOwnership = app(NonInstanceProxyRouteOwnership::class);
 
         if (! $route->node instanceof Node) {
             return [
@@ -932,6 +929,20 @@ final readonly class ProxyRouteProbe
                         'role' => $route->node->displayRole(),
                         'status' => $route->node->status,
                     ],
+                ),
+            ];
+        }
+
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! $nonInstanceOwnership->matchesNodeSelection($route)
+        ) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.node_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy route {$route->domain} does not use the intended active canonical serving node.",
                 ),
             ];
         }
@@ -1586,11 +1597,11 @@ final readonly class ProxyRouteProbe
         }
 
         if ($route->kind === 'app') {
-            return is_int($route->app_id);
+            return is_int($route->instance_id);
         }
 
         if ($route->kind === 'workspace') {
-            return is_int($route->workspace_id);
+            return is_int($route->workspace_id) && is_int($route->instance_id);
         }
 
         return true;
@@ -1679,7 +1690,7 @@ final readonly class ProxyRouteProbe
         }
 
         try {
-            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
+            $route->loadMissing(['instance.app', 'workspace.instance.app', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
 
@@ -1692,6 +1703,16 @@ final readonly class ProxyRouteProbe
     private function renderer(): ProxyRouteRenderer
     {
         return $this->renderer ?? app(ProxyRouteRenderer::class);
+    }
+
+    private function workspaceRouteOwnership(): WorkspaceProxyRouteOwnershipResolver
+    {
+        return $this->workspaceRouteOwnership ?? app(WorkspaceProxyRouteOwnershipResolver::class);
+    }
+
+    private function instanceRouteOwnership(): InstanceProxyRouteOwnershipResolver
+    {
+        return app(InstanceProxyRouteOwnershipResolver::class);
     }
 
     private function scripts(): ToolScriptDispatcher
@@ -1718,7 +1739,7 @@ final readonly class ProxyRouteProbe
         $config = is_array($route->config) ? $route->config : [];
 
         try {
-            $route->loadMissing(['app.instances', 'workspace.app.instances', 'node']);
+            $route->loadMissing(['instance.app', 'workspace.instance.app', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
             $this->renderer()->renderManagedPhpRuntimeIntent($expected);

@@ -11,6 +11,7 @@ final readonly class ApplicationLogProxyRouteOwner
 {
     public function __construct(
         private ApplicationLogProxyWorkspaceOwner $workspace = new ApplicationLogProxyWorkspaceOwner,
+        private ApplicationLogInstanceSelector $instanceSelector = new ApplicationLogInstanceSelector,
     ) {}
 
     /**
@@ -39,13 +40,12 @@ final readonly class ApplicationLogProxyRouteOwner
             return $this->workspace->resolve($host, $ownerName, $route);
         }
 
-        if (
-            is_string($ownerName)
-            && $ownerName !== ''
-            && ($ownerType === 'instance'
-            || str_contains($ownerName, '.'))
-        ) {
-            return $this->instanceTarget($ownerName);
+        if ($ownerType === 'instance' && is_string($ownerName)) {
+            $selector = $this->instanceSelector->parse($ownerName);
+
+            if ($selector['ok']) {
+                return $this->instanceTarget($selector['selector']);
+            }
         }
 
         return [
@@ -62,12 +62,20 @@ final readonly class ApplicationLogProxyRouteOwner
      */
     private function ownerIdentity(array $route): array
     {
-        $owner = is_array($route['owner'] ?? null) ? $route['owner'] : [];
+        if (array_key_exists('owner', $route)) {
+            $owner = is_array($route['owner']) ? $route['owner'] : [];
+
+            return [
+                $owner['type'] ?? null,
+                $owner['name'] ?? null,
+            ];
+        }
+
         $target = is_array($route['target'] ?? null) ? $route['target'] : [];
 
         return [
-            $owner['type'] ?? $target['type'] ?? null,
-            $owner['name'] ?? $target['value'] ?? null,
+            $target['type'] ?? null,
+            $target['value'] ?? null,
         ];
     }
 

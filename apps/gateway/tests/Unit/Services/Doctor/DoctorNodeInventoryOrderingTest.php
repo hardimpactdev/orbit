@@ -182,6 +182,38 @@ it('reads every node inventory in stable row identity order', function (): void 
     }
 });
 
+it('scopes proxy routes through the concrete instance app instead of compatibility app_id', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'doctor-instance-owner']);
+    $owner = App::factory()->create(['name' => 'owner']);
+    $compatibility = App::factory()->create(['name' => 'compatibility']);
+    $instance = Instance::factory()->for($owner)->create([
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $node->id),
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $owner->id,
+        'instance_id' => $instance->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+    ]);
+    $route->forceFill(['app_id' => $compatibility->id])->save();
+    $inventory = app(DoctorProxyRouteInventory::class);
+
+    expect($inventory->forScope($node, DoctorTargetScope::from(app: null, workspace: null))->modelKeys())
+        ->toBe([$route->id])
+        ->and($inventory->forScope($node, DoctorTargetScope::from(app: 'owner', workspace: null))->modelKeys())
+        ->toBe([])
+        ->and(
+            $inventory
+                ->forScope(
+                    $node,
+                    DoctorTargetScope::from(app: 'compatibility', workspace: null),
+                )
+                ->modelKeys(),
+        )
+        ->toBe([]);
+});
+
 it('reads the gateway schedule inventory in stable row identity order', function (): void {
     /** @var Node $gateway */
     $gateway = Node::factory()->create([

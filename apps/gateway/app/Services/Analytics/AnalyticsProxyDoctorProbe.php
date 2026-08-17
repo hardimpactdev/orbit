@@ -13,6 +13,7 @@ use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class AnalyticsProxyDoctorProbe
 {
     public const string RouterRouteKey = 'proxy.analytics.router_route_missing';
@@ -48,7 +49,7 @@ final readonly class AnalyticsProxyDoctorProbe
             ->activeNodeIdsForRole(NodeRoleName::Analytics->value);
 
         if ($activeAnalyticsNodeIds === []) {
-            return $this->orphanedRouteDrift();
+            return $this->orphanedRouteDrift($node);
         }
 
         try {
@@ -84,6 +85,19 @@ final readonly class AnalyticsProxyDoctorProbe
             )];
         }
 
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
+            return [new DriftEntry(
+                family: 'proxy',
+                key: self::RouterRouteKey,
+                kind: DriftKind::Unverifiable,
+                summary: 'Analytics service route analytics.orbit conflicts with another ownership tuple.',
+                detail: [
+                    'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+                    'reason' => 'ownership_conflict',
+                ],
+            )];
+        }
+
         if ($this->routeMatchesIntent($route, $intent)) {
             return [];
         }
@@ -102,7 +116,22 @@ final readonly class AnalyticsProxyDoctorProbe
      */
     public function restore(Node $node, DriftEntry $entry): ?array
     {
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         if ($entry->key === self::RouterRouteKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', AnalyticsRouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                $existingRoute instanceof ProxyRoute
+                && ! $this->hasServiceOwnership($existingRoute, $node)
+            ) {
+                return null;
+            }
+
             $route = $this->routeRegistrar->convergeServiceRoute();
 
             return $this->completed(
@@ -114,6 +143,14 @@ final readonly class AnalyticsProxyDoctorProbe
         }
 
         if ($entry->key !== self::RouterRouteOrphanedKey) {
+            return null;
+        }
+
+        $route = ProxyRoute::query()
+            ->where('domain', AnalyticsRouteRegistrar::ServiceDomain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute || ! $this->hasServiceOwnership($route, $node)) {
             return null;
         }
 
@@ -130,9 +167,13 @@ final readonly class AnalyticsProxyDoctorProbe
     /**
      * @return list<DriftEntry>
      */
-    private function orphanedRouteDrift(): array
+    private function orphanedRouteDrift(Node $node): array
     {
-        if (! ProxyRoute::query()->where('domain', AnalyticsRouteRegistrar::ServiceDomain)->exists()) {
+        $route = ProxyRoute::query()
+            ->where('domain', AnalyticsRouteRegistrar::ServiceDomain)
+            ->first();
+
+        if (! $route instanceof ProxyRoute || ! $this->hasServiceOwnership($route, $node)) {
             return [];
         }
 
@@ -145,11 +186,17 @@ final readonly class AnalyticsProxyDoctorProbe
         )];
     }
 
+    private function hasServiceOwnership(ProxyRoute $route, Node $node): bool
+    {
+        return $route->node_id === $node->id && $this->routeRegistrar->ownsServiceRoute($route);
+    }
+
     private function routeMatchesIntent(ProxyRoute $route, ProxyRoute $intent): bool
     {
         return (
             $route->node_id === $intent->node_id
             && $route->app_id === $intent->app_id
+            && $route->instance_id === $intent->instance_id
             && $route->workspace_id === $intent->workspace_id
             && $route->owner_type === $intent->owner_type
             && $route->kind === $intent->kind

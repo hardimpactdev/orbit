@@ -7,6 +7,8 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\App;
+use App\Models\AppAnalyticsBinding;
+use App\Models\AppWebSocketBinding;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -17,6 +19,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
@@ -31,6 +34,8 @@ use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\S3\S3RouteRegistrar;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1092,7 +1097,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1124,8 +1129,11 @@ describe('node role assignment service', function (): void {
                 return $this->calls === 1 ? [] : ['1 development app record'];
             }
 
-            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
-            {
+            public function removeOrbitOwnedDependents(
+                Node $node,
+                NodeRoleAssignment $assignment,
+                array $ingressRouteIds = [],
+            ): void {
                 $this->removed = true;
             }
         };
@@ -1165,7 +1173,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1174,7 +1182,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',
@@ -1230,7 +1238,7 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
                 node: $backendNode->name,
@@ -1248,7 +1256,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'kind' => 'app',
@@ -1258,6 +1266,7 @@ describe('node role assignment service', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $workspace->id,
             'kind' => 'workspace',
             'owner_type' => 'workspace',
@@ -1299,7 +1308,7 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
                 node: $backendNode->name,
@@ -1317,7 +1326,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'kind' => 'app',
@@ -1327,6 +1336,7 @@ describe('node role assignment service', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $workspace->id,
             'kind' => 'workspace',
             'owner_type' => 'workspace',
@@ -1351,12 +1361,14 @@ describe('node role assignment service', function (): void {
                 'code' => 302,
             ],
         ]);
-        ProxyRoute::factory()->create([
-            'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
-            'kind' => 'app',
-            'owner_type' => 'app',
-            'config' => ['placement' => 'ingress'],
-        ]);
+        ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
+                'kind' => 'app',
+                'owner_type' => 'app',
+                'config' => ['placement' => 'ingress'],
+            ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'ingress', force: true);
 
@@ -1369,6 +1381,126 @@ describe('node role assignment service', function (): void {
             ->and($node->fresh()->roleAssignments)
             ->toHaveCount(0);
     });
+
+    it('forces ingress removal by deleting a valid public service route after ingress enters removing', function (string $family): void {
+        $ingress = Node::factory()->create([
+            'name' => 'edge-1',
+            'platform' => 'ubuntu',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.10',
+        ]);
+        NodeRoleAssignment::factory()->for($ingress)->create([
+            'role' => 'ingress',
+            'status' => NodeRoleStatus::Active,
+        ]);
+        $router = Node::factory()->create([
+            'name' => 'router-1',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+        NodeRoleAssignment::factory()->for($router)->create([
+            'role' => 'router',
+            'status' => NodeRoleStatus::Active,
+        ]);
+
+        if ($family === 's3') {
+            $backend = Node::factory()->create([
+                'name' => 'storage-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+            NodeRoleAssignment::factory()->for($backend)->create([
+                'role' => 's3',
+                'status' => NodeRoleStatus::Active,
+            ]);
+            $tool = NodeTool::factory()->for($backend)->create([
+                'name' => 'seaweedfs',
+                'config' => [
+                    'backend_host' => 'storage-1.s3.orbit',
+                    'public_hosts' => ['s3.example.test'],
+                ],
+            ]);
+            app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+            $route = ProxyRoute::query()->where('domain', 's3.example.test')->firstOrFail();
+        } else {
+            $backend = Node::factory()->create([
+                'name' => "{$family}-1",
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+            NodeRoleAssignment::factory()->for($backend)->create([
+                'role' => $family,
+                'status' => NodeRoleStatus::Active,
+            ]);
+            $appNode = Node::factory()->create([
+                'name' => 'app-prod-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.21',
+            ]);
+            NodeRoleAssignment::factory()->for($appNode)->create([
+                'role' => 'app-prod',
+                'status' => NodeRoleStatus::Active,
+                'settings' => ['ingress_node_id' => $ingress->id],
+            ]);
+            $app = App::factory()->create(['name' => 'docs']);
+            $instance = Instance::factory()->for($app)->create([
+                'driver_config' => new OrbitInstanceDriverConfigData(
+                    node_id: $appNode->id,
+                    domain: 'docs.example.test',
+                ),
+            ]);
+
+            if ($family === 'analytics') {
+                $binding = AppAnalyticsBinding::query()->create([
+                    'instance_id' => $instance->id,
+                    'enabled' => true,
+                    'public_hosts' => ['analytics.example.test'],
+                ]);
+                app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding);
+                $route = ProxyRoute::query()->where('domain', 'analytics.example.test')->firstOrFail();
+            } else {
+                $binding = AppWebSocketBinding::factory()->create([
+                    'instance_id' => $instance->id,
+                    'enabled' => true,
+                    'public_hosts' => ['websocket.example.test'],
+                ]);
+                app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
+                $route = ProxyRoute::query()->where('domain', 'websocket.example.test')->firstOrFail();
+            }
+        }
+
+        $malformed = $route->replicate();
+        $malformed->domain = "malformed-{$family}.example.test";
+        $malformed->save();
+        $custom = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'domain' => "custom-{$family}.example.test",
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['placement' => 'ingress'],
+        ]);
+
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
+            public function __construct() {}
+
+            public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
+            {
+                expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Removing);
+            }
+        });
+
+        app(NodeRoleAssignmentService::class)->remove($ingress, 'ingress', force: true);
+
+        expect($route->fresh())
+            ->toBeNull()
+            ->and($malformed->fresh())
+            ->not->toBeNull()->and($custom->fresh())
+            ->not->toBeNull();
+    })->with([
+        'analytics',
+        'websocket',
+        's3',
+    ]);
 
     it('removes role baselines before deleting Orbit-owned dependents', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
@@ -1395,8 +1527,11 @@ describe('node role assignment service', function (): void {
                 return ['1 development app record'];
             }
 
-            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
-            {
+            public function removeOrbitOwnedDependents(
+                Node $node,
+                NodeRoleAssignment $assignment,
+                array $ingressRouteIds = [],
+            ): void {
                 $this->events->append('dependents');
             }
         });
@@ -1430,7 +1565,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1439,7 +1574,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',
@@ -1524,7 +1659,7 @@ describe('node role assignment service', function (): void {
             'settings' => [],
         ]);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1533,7 +1668,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',
@@ -1546,8 +1681,11 @@ describe('node role assignment service', function (): void {
                 return ['1 development app record'];
             }
 
-            public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
-            {
+            public function removeOrbitOwnedDependents(
+                Node $node,
+                NodeRoleAssignment $assignment,
+                array $ingressRouteIds = [],
+            ): void {
                 $this->removed = true;
             }
         };

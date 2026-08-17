@@ -10,10 +10,12 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
 
+/** @mago-expect lint:kan-defect */
 final readonly class S3RouteRegistrar
 {
     public const string ServiceDomain = 's3.orbit';
@@ -36,6 +38,14 @@ final readonly class S3RouteRegistrar
     public function syncServiceRoute(): ProxyRoute
     {
         $intent = $this->serviceRouteIntent();
+        $existingRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
+        ) {
+            throw new RuntimeException("S3 service route 's3.orbit' conflicts with existing ownership.");
+        }
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
@@ -43,6 +53,7 @@ final readonly class S3RouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => null,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -63,7 +74,12 @@ final readonly class S3RouteRegistrar
             return;
         }
 
-        ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
+        $route = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if ($route instanceof ProxyRoute && $this->ownsServiceRoute($route)) {
+            $route->delete();
+        }
+
         $this->dnsmasqReconciler->reconcileProxyRecords();
     }
 
@@ -94,6 +110,7 @@ final readonly class S3RouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -172,6 +189,7 @@ final readonly class S3RouteRegistrar
             'domain' => $host,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => $config,
@@ -181,17 +199,59 @@ final readonly class S3RouteRegistrar
 
     /**
      * Remove the ingress route for a single public host when it is owned by
-     * the seaweedfs tool. Ownership is confirmed by owner_type, owner_name, and
-     * the protocol discriminator so unrelated tool routes are never removed.
+     * the seaweedfs tool. Ownership must match the complete current ingress
+     * route intent so unrelated or malformed routes are never removed.
      */
     public function removePublicHost(NodeTool $seaweedfs, string $host): void
     {
-        ProxyRoute::query()
-            ->where('domain', $host)
-            ->where('owner_type', 's3')
-            ->whereJsonContains('config->owner_name', 'seaweedfs')
-            ->whereJsonContains('config->protocol', 's3')
-            ->delete();
+        $route = ProxyRoute::query()->where('domain', $host)->first();
+
+        if (! $route instanceof ProxyRoute || ! $this->ownsPublicRoute($route, $host)) {
+            return;
+        }
+
+        $route->delete();
+    }
+
+    public function ownsServiceRoute(ProxyRoute $route): bool
+    {
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
+    }
+
+    public function ownsPublicRoute(ProxyRoute $route, string $host): bool
+    {
+        return $route->domain === $host && app(NonInstanceProxyRouteOwnership::class)->matches($route);
+    }
+
+    /**
+     * @param  list<string>  $hosts
+     */
+    public function assertPublishAvailable(array $hosts): void
+    {
+        $this->serviceRouteIntent();
+        $existingServiceRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingServiceRoute instanceof ProxyRoute
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingServiceRoute)
+        ) {
+            throw new RuntimeException("S3 service route 's3.orbit' conflicts with existing ownership.");
+        }
+
+        $ingress = $this->ingressNode();
+        $router = $this->routerNode();
+
+        foreach ($hosts as $host) {
+            $this->publicRouteIntent($ingress, $router, $host);
+            $existingPublicRoute = ProxyRoute::query()->where('domain', $host)->first();
+
+            if (
+                $existingPublicRoute instanceof ProxyRoute
+                && ! $this->ownsPublicRoute($existingPublicRoute, $host)
+            ) {
+                throw new RuntimeException("S3 public route '{$host}' conflicts with existing ownership.");
+            }
+        }
     }
 
     private function routerNode(): Node
@@ -303,6 +363,14 @@ final readonly class S3RouteRegistrar
     private function syncPublicHost(Node $ingress, Node $router, NodeTool $seaweedfs, string $host): void
     {
         $intent = $this->publicRouteIntent($ingress, $router, $host);
+        $existingRoute = ProxyRoute::query()->where('domain', $host)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! $this->ownsPublicRoute($existingRoute, $host)
+        ) {
+            throw new RuntimeException("S3 public route '{$host}' conflicts with existing ownership.");
+        }
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],
@@ -310,6 +378,7 @@ final readonly class S3RouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => null,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,

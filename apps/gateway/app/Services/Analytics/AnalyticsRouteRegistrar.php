@@ -7,6 +7,7 @@ namespace App\Services\Analytics;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Instance;
 use App\Models\Node;
@@ -14,8 +15,11 @@ use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -41,11 +45,22 @@ class AnalyticsRouteRegistrar
         private readonly ProxyRouteFixer $proxyRouteFixer,
         private readonly DnsmasqReconciler $dnsmasqReconciler,
         private readonly WorkspacePlacement $placement,
+        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     public function syncServiceRoute(?Node $backend = null): ProxyRoute
     {
         $intent = $this->serviceRouteIntent($backend);
+        $existingRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
+        ) {
+            throw new RuntimeException(
+                "Analytics service route '".self::ServiceDomain."' conflicts with existing ownership.",
+            );
+        }
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
@@ -53,6 +68,7 @@ class AnalyticsRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
@@ -87,10 +103,9 @@ class AnalyticsRouteRegistrar
     {
         $route = ProxyRoute::query()
             ->where('domain', self::ServiceDomain)
-            ->where('owner_type', 'router')
             ->first();
 
-        if (! $route instanceof ProxyRoute) {
+        if (! $route instanceof ProxyRoute || ! $this->ownsServiceRoute($route)) {
             throw new RuntimeException('The analytics role must be deployed before enabling app analytics.');
         }
 
@@ -108,6 +123,10 @@ class AnalyticsRouteRegistrar
             return;
         }
 
+        if (! $this->ownsServiceRoute($route)) {
+            return;
+        }
+
         if (! $route->node instanceof Node) {
             throw new RuntimeException('The private analytics route has no serving router node.');
         }
@@ -115,6 +134,11 @@ class AnalyticsRouteRegistrar
         $this->proxyRouteFixer->removeExtra($route->node, self::ServiceDomain);
         $route->delete();
         $this->dnsmasqReconciler->reconcileProxyRecords();
+    }
+
+    public function ownsServiceRoute(ProxyRoute $route): bool
+    {
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
     }
 
     public function serviceRouteIntent(?Node $backend = null): ProxyRoute
@@ -127,6 +151,7 @@ class AnalyticsRouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -177,9 +202,7 @@ class AnalyticsRouteRegistrar
 
             if (
                 $existingRoute instanceof ProxyRoute
-                && ($existingRoute->owner_type !== 'app-analytics'
-                || $existingRoute->app_id !== $instance->app_id
-                || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+                && ! $this->isOwnedPublicRoute($existingRoute, $instance)
             ) {
                 throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
             }
@@ -191,19 +214,19 @@ class AnalyticsRouteRegistrar
      */
     public function removeObsoletePublicHosts(Instance $instance, array $desiredHosts): void
     {
-        $routes = ProxyRoute::all()
-            ->filter(
-                fn (ProxyRoute $route): bool => (
-                    $route->app_id === $instance->app_id
-                    && $route->owner_type === 'app-analytics'
-                    && data_get($route->config, 'instance_id') === $instance->id
-                    && ($desiredHosts === [] || ! in_array($route->domain, $desiredHosts, strict: true))
-                ),
-            )
+        $routes = ProxyRoute::query()
+            ->where('instance_id', $instance->id)
+            ->where('owner_type', 'app-analytics')
+            ->when($desiredHosts !== [], fn ($query) => $query->whereNotIn('domain', $desiredHosts))
+            ->get()
             ->sortBy('domain');
 
         foreach ($routes as $route) {
             /** @var ProxyRoute $route */
+            if (! $this->isOwnedPublicRoute($route, $instance)) {
+                continue;
+            }
+
             $route->loadMissing('node');
 
             if (! $route->node instanceof Node) {
@@ -305,20 +328,17 @@ class AnalyticsRouteRegistrar
 
     private function syncPublicHost(Instance $instance, Node $ingress, Node $router, string $host): void
     {
+        $intent = $this->publicRouteIntent($instance, $ingress, $router, $host);
         $existingRoute = ProxyRoute::query()
             ->where('domain', $host)
             ->first();
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ($existingRoute->owner_type !== 'app-analytics'
-            || $existingRoute->app_id !== $instance->app_id
-            || data_get($existingRoute->config, 'instance_id') !== $instance->id)
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($existingRoute)
         ) {
             throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
         }
-
-        $intent = $this->publicRouteIntent($instance, $ingress, $router, $host);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],
@@ -326,11 +346,20 @@ class AnalyticsRouteRegistrar
                 'node_id' => $intent->node_id,
                 'app_id' => $intent->app_id,
                 'workspace_id' => $intent->workspace_id,
+                'instance_id' => $intent->instance_id,
                 'owner_type' => $intent->owner_type,
                 'kind' => $intent->kind,
                 'config' => $intent->config,
                 'source_hash' => $intent->source_hash,
             ],
+        );
+    }
+
+    private function isOwnedPublicRoute(ProxyRoute $route, Instance $instance): bool
+    {
+        return (
+            $this->routeOwnership->resolve($route)?->is($instance) === true
+            && app(PublicBindingProxyRouteOwnership::class)->matches($route)
         );
     }
 
@@ -369,6 +398,7 @@ class AnalyticsRouteRegistrar
             'domain' => $host,
             'app_id' => $instance->app_id,
             'workspace_id' => null,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,
@@ -383,7 +413,6 @@ class AnalyticsRouteRegistrar
     {
         $analyticsUpstreams = array_map($this->upstream(...), $this->analyticsBackends());
         $config = [
-            'instance_id' => $instance->id,
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'analytics',
@@ -406,6 +435,7 @@ class AnalyticsRouteRegistrar
             'node_id' => $router->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,
@@ -446,11 +476,18 @@ class AnalyticsRouteRegistrar
     private function analyticsBackends(?Node $backend = null): array
     {
         if ($backend instanceof Node) {
+            if ($backend->status !== NodeStatus::Active) {
+                throw new RuntimeException(
+                    'The analytics service route requires at least one active analytics backend.',
+                );
+            }
+
             return [$backend];
         }
 
         /** @var list<Node> $nodes */
         $nodes = Node::query()
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::Analytics->value))
             ->orderBy('name')
             ->get()
@@ -582,6 +619,7 @@ class AnalyticsRouteRegistrar
             'node_id' => $ingress->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,

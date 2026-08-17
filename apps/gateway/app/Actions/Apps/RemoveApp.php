@@ -18,9 +18,12 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\InstancePayloads;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Tools\CaddyTool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -29,6 +32,7 @@ use Throwable;
  *
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
  */
 final readonly class RemoveApp
 {
@@ -84,8 +88,13 @@ final readonly class RemoveApp
         $cleanupWarnings = $this->unresolvedOrbitCleanupWarnings($app);
         $occupiedAppPlacements = $this->occupiedAppPlacements($app);
         $proxyRoutes = ProxyRoute::query()
-            ->where('app_id', $app->id)
-            ->get();
+            ->whereHas(
+                'instance',
+                static fn (Builder $query): Builder => $query->where('app_id', $app->id),
+            )
+            ->get()
+            ->filter(fn (ProxyRoute $route): bool => $this->routeBelongsToApp($route, $app));
+        /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
         [$instanceCleanupRows, $cleanupRowIndexByInstanceId] = $this->instanceCleanupInventory($app, $proxyRoutes);
         $proxyRouteIds = $proxyRoutes->pluck('id')->all();
         $workspacesRemoved = $app->workspaces->count();
@@ -235,6 +244,15 @@ final readonly class RemoveApp
             ],
             'warnings' => $warnings,
         ];
+    }
+
+    private function routeBelongsToApp(ProxyRoute $route, App $app): bool
+    {
+        if ($route->owner_type === 'workspace') {
+            return new WorkspaceProxyRouteOwnershipResolver()->resolve($route)?->app->is($app) === true;
+        }
+
+        return new InstanceProxyRouteOwnershipResolver()->resolve($route)?->app?->is($app) === true;
     }
 
     /**

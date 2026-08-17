@@ -8,21 +8,62 @@ These terms define the types of routes that the proxy family owns and manages.
 
 - **Proxy route:** Gateway-owned record of one hostname or host/path Orbit
   exposes through its HTTP ingress, with an owner, a kind, a serving node, a
-  target, and TLS configuration.
-- **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
-  `tool`, or `custom`. The `owner` value classifies which domain's convergence
-  edits the route record; it is not necessarily the role that owns the hostname
-  or artifact.
-- **Route kind:** Route behavior at ingress. One of `app`, `instance`, `workspace`,
-  `internal`, `proxy`, or `redirect`.
-- **App route:** Proxy route whose owner is the app and whose kind is
-  `instance`, and whose target is always one concrete instance. The route stores
-  the app slug as `owner.name`, the dotted instance selector as
-  `target.value`, and that instance's serving node as `node`. Edited through
-  app and instance commands.
+  target, and TLS configuration. App primary, workspace, public analytics, and
+  public WebSocket route rows store one non-null `instance_id`. App identity
+  and workload placement come only from that Instance relation. Runtime readers
+  do not resolve configured IDs, selectors, domains, or App instance
+  candidates. Router, gateway, tool, S3, and custom routes keep
+  `instance_id=null`. Retained `app_id` is compatibility data. It must equal
+  the concrete Instance's `app_id` and never selects the App or placement.
+
+  Ownership migration validates every non-empty route `config` and
+  Instance `driver_config` as syntactically valid JSON before it adds or
+  updates the `instance_id` schema. Malformed JSON stops migration with the
+  affected route or Instance identity. Empty and null configuration values
+  keep their documented no-evidence behavior. A present, non-null
+  `config.instance_id` or `config.instance.id` ownership hint must be a JSON
+  positive integer. Decimal values, numeric strings, zero, negative values,
+  whitespace, junk, and all other types stop migration before schema
+  mutation. Before rollback removes the durable `instance_id` column, it writes
+  the positive Instance ID for every validated owner that uses an Instance to
+  `config.instance_id`. Reapplying the migration consumes that compatibility
+  hint. Workspace, analytics, and WebSocket routes then keep the same owner
+  when an App has multiple instances.
+- **Route owner:** The domain that owns route lifecycle. Persisted
+  `owner_type` values are `app`, `app-analytics`, `app-websocket`, `workspace`,
+  `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored
+  app-route value `app` to the public owner `instance`, and maps the two binding
+  values to `analytics` and `websocket`, only when the complete ownership tuple
+  is valid. Invalid tuples retain their stored owner type in conflict, removal,
+  and registry metadata. A stored `owner_type=instance` is invalid. Direct rows
+  use only `app` + `app`, `app-analytics` + `proxy`, or `app-websocket` +
+  `proxy`. Each tuple requires one matching App and Instance, matching `app_id`,
+  and `workspace_id=null`. Query and Doctor do not present incomplete tuples as
+  valid owners. Render and repair reject them. Ingress cleanup ignores them.
+  Domain convergence updates an existing row only when its complete tuple
+  resolves to the intended owner. Invalid ownership and another valid owner at
+  the same domain are conflicts. Destructive lifecycle cleanup applies the same
+  resolver rule before it removes route artifacts or registry rows.
+  Non-Instance tuples require `app_id=null`, `workspace_id=null`, and
+  `instance_id=null`, plus the intended serving node and kind. Custom routes use
+  `custom` plus `proxy` or `redirect`. Tool routes use `tool` plus `proxy` and a
+  stable `config.owner_name`. Public S3 routes use `s3` plus `proxy`, ingress
+  placement, `owner_name=seaweedfs`, and `protocol=s3`. Router service routes
+  use `router` plus `proxy` and their stable family protocol or owner identity:
+  analytics, WebSocket, SeaweedFS S3, or Grafana metrics. Convergence and
+  cleanup do not clear stray foreign keys or replace another node, kind, owner,
+  or family identity.
+- **Route kind:** Route behavior at ingress. Persisted kinds are `app`,
+  `workspace`, `internal`, `proxy`, and `redirect`. The registry maps a stored
+  primary `app` route to public kind `instance`.
+- **App route:** Instance-owned primary route whose public owner and kind are
+  `instance`. Its `owner.name` and `target.value` are the dotted instance
+  selector. Its persisted tuple is `owner_type=app`, `kind=app`, one matching
+  App and Instance, and `workspace_id=null`. Edited through app and instance
+  commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
-  `workspace`. Edited through workspace commands.
+  `workspace`. Its route row stores the same Instance owner as its Workspace.
+  Edited through workspace commands.
 - **Internal route:** Proxy route with kind `internal`. Currently always paired
   with owner `gateway` and used for gateway API ingress; bound to the gateway
   Orbit network address and never a public application route.
@@ -35,11 +76,12 @@ These terms define the types of routes that the proxy family owns and manages.
   not HTTP proxy routes.
 - **Instance WebSocket route:** Public WebSocket route whose public owner is
   `websocket` and whose kind is `proxy`. It is created from an instance
-  WebSocket binding, rendered on an `ingress` node, and forwards to `router`;
+  WebSocket binding, stores that binding's `instance_id`, is rendered on an
+  `ingress` node, and forwards to `router`;
   it must not target a concrete websocket node.
 - **App analytics route:** Public analytics tracking route whose public
   owner is `analytics` and whose kind is `proxy`. It is created from an
-  instance analytics binding (instance-owned placement), rendered on an
+  instance analytics binding, stores that binding's `instance_id`, is rendered on an
   `ingress` node, forwards to `router`, and proxies only Plausible script and
   event-ingest paths. It must not expose the Plausible dashboard or target a
   concrete analytics node.

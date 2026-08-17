@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteQuery;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -28,11 +29,41 @@ function grantProxyRouteQueryAccess(Node $caller, Node $servingNode): void
     ]);
 }
 
+function invalidate_proxy_route_query_ownership(
+    ProxyRoute $route,
+    App $app,
+    Instance $instance,
+    string $validKind,
+    string $invalidity,
+): void {
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+}
+
 describe('ProxyRouteQuery', function (): void {
     it('normalizes proxy route entities and sorts them by node then domain', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node']);
         $aNode = Node::factory()->create(['name' => 'a-node']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create(['name' => 'primary']);
 
         ProxyRoute::factory()->create([
             'node_id' => $zNode->id,
@@ -48,6 +79,7 @@ describe('ProxyRouteQuery', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $aNode->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -72,10 +104,10 @@ describe('ProxyRouteQuery', function (): void {
             ->and($result['routes'][0])
             ->toMatchArray([
                 'domain' => 'docs.test',
-                'kind' => 'app',
-                'owner' => ['type' => 'app', 'name' => 'docs'],
+                'kind' => 'instance',
+                'owner' => ['type' => 'instance', 'name' => 'docs.primary'],
                 'node' => 'a-node',
-                'target' => ['type' => 'app', 'value' => 'docs'],
+                'target' => ['type' => 'instance', 'value' => 'docs.primary'],
                 'redirect_code' => null,
                 'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
                 'status' => 'unknown',
@@ -131,6 +163,17 @@ describe('ProxyRouteQuery', function (): void {
             ]);
         $app = App::factory()->create(['name' => 'happie']);
         Instance::factory()->for($app)->create([
+            'name' => 'development',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie-development',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -145,6 +188,7 @@ describe('ProxyRouteQuery', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'happie.nmbp',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -170,15 +214,128 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('does not project invalid app routes as instance-owned registry entities', function (string $invalidity): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create(['name' => 'development']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        $query = app(ProxyRouteQuery::class);
+        $entity = $query->toRouteEntity($route->fresh());
+
+        expect($entity['kind'])
+            ->not
+            ->toBe('instance')
+            ->and($entity['owner'])
+            ->toBe(['type' => 'app', 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'upstream', 'value' => null])
+            ->and($query->list(filter: 'instance')['routes'])
+            ->toBeEmpty();
+    })->with([
+        'missing instance',
+        'conflicting app',
+        'malformed kind',
+    ]);
+
+    it('fails closed when workspace ownership cannot be resolved', function (string $invalidity): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        if ($invalidity === 'missing workspace') {
+            $route->forceFill(['workspace_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create(['name' => 'other'])->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        $entity = app(ProxyRouteQuery::class)->toRouteEntity($route->fresh());
+
+        expect($entity)
+            ->not
+            ->toHaveKey('instance')
+            ->and($entity['owner'])
+            ->toBe(['type' => 'workspace', 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'workspace', 'value' => null]);
+    })->with([
+        'missing workspace',
+        'conflicting app',
+        'malformed kind',
+    ]);
+
+    it('rejects workspace owner and kind tuple mismatches in the centralized resolver', function (
+        string $ownerType,
+        string $kind,
+    ): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => $ownerType,
+            'kind' => $kind,
+        ]);
+
+        expect(app(WorkspaceProxyRouteOwnershipResolver::class)->resolve($route))->toBeNull();
+    })->with([
+        'owner mismatch' => ['app', 'workspace'],
+        'kind mismatch' => ['workspace', 'proxy'],
+    ]);
+
     it('includes ingress placement and router backend pool metadata for production routes', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -287,10 +444,12 @@ describe('ProxyRouteQuery', function (): void {
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -337,6 +496,110 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('does not project invalid public binding tuples as analytics or websocket owners and targets', function (
+        string $ownerType,
+        string $filter,
+        string $invalidity,
+    ): void {
+        $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$filter}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => $filter, 'value' => "https://{$filter}.orbit"],
+                'upstream' => "https://{$filter}.orbit",
+            ],
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'app'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $query = app(ProxyRouteQuery::class);
+        $entity = $query->toRouteEntity($route->fresh());
+        $listed = $query->list(filter: $filter)['routes'][0];
+
+        expect($entity['owner'])
+            ->toBe(['type' => $ownerType, 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'upstream', 'value' => "https://{$filter}.orbit"])
+            ->and($listed['owner']['type'])
+            ->toBe($ownerType)
+            ->and($listed['target']['type'])
+            ->toBe('upstream');
+    })->with([
+        'analytics missing app' => ['app-analytics', 'analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'analytics', 'conflicting app'],
+        'analytics malformed kind' => ['app-analytics', 'analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'analytics', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'websocket', 'conflicting app'],
+        'websocket malformed kind' => ['app-websocket', 'websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'websocket', 'workspace identity'],
+    ]);
+
+    it('uses stored direct owner types for malformed public ownership metadata', function (
+        string $ownerType,
+        string $validKind,
+        string $invalidity,
+    ): void {
+        $node = Node::factory()->create();
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'owner_type' => $ownerType,
+            'kind' => $validKind,
+        ]);
+
+        invalidate_proxy_route_query_ownership($route, $app, $instance, $validKind, $invalidity);
+
+        expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($ownerType);
+    })->with([
+        'primary app missing app' => ['app', 'app', 'missing app'],
+        'primary app missing instance' => ['app', 'app', 'missing instance'],
+        'primary app conflicting app' => ['app', 'app', 'conflicting app'],
+        'primary app wrong kind' => ['app', 'app', 'wrong kind'],
+        'primary app workspace identity' => ['app', 'app', 'workspace identity'],
+        'analytics missing app' => ['app-analytics', 'proxy', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'proxy', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'proxy', 'conflicting app'],
+        'analytics wrong kind' => ['app-analytics', 'proxy', 'wrong kind'],
+        'analytics workspace identity' => ['app-analytics', 'proxy', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'proxy', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'proxy', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'proxy', 'conflicting app'],
+        'websocket wrong kind' => ['app-websocket', 'proxy', 'wrong kind'],
+        'websocket workspace identity' => ['app-websocket', 'proxy', 'workspace identity'],
+    ]);
+
     it('enriches workspace route entities with canonical parent app.instance from the FK workspace only', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
         $app = App::factory()->create(['name' => 'docs']);
@@ -373,6 +636,7 @@ describe('ProxyRouteQuery', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspaceDevelopment->id,
+            'instance_id' => $development->id,
             'domain' => 'feature.docs.development.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -381,6 +645,7 @@ describe('ProxyRouteQuery', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspaceStaging->id,
+            'instance_id' => $staging->id,
             'domain' => 'feature.docs.staging.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -399,11 +664,17 @@ describe('ProxyRouteQuery', function (): void {
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
-        $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
+        $instance = $app->instances()->sole();
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature',
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+        ]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -411,6 +682,7 @@ describe('ProxyRouteQuery', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
@@ -432,7 +704,9 @@ describe('ProxyRouteQuery', function (): void {
 
         $query = app(ProxyRouteQuery::class);
 
-        expect(array_column($query->list(filter: 'app')['routes'], 'domain'))
+        expect(fn (): array => $query->list(filter: 'app'))
+            ->toThrow(GatewayApiException::class)
+            ->and(array_column($query->list(filter: 'instance')['routes'], 'domain'))
             ->toBe(['docs.test'])
             ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))
             ->toBe(['feature.docs.test'])
@@ -445,6 +719,8 @@ describe('ProxyRouteQuery', function (): void {
     it('s3 service filter selects router-owned s3.orbit route and public s3 host routes', function (): void {
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         // The router-owned s3.orbit service route
         ProxyRoute::factory()->create([
@@ -467,6 +743,8 @@ describe('ProxyRouteQuery', function (): void {
         // A route with a different owner — must NOT appear
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'app.example.com',
             'owner_type' => 'app',
             'kind' => 'app',

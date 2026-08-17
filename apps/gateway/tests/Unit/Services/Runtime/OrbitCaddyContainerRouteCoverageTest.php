@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -45,29 +46,32 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [[
-                    'node_id' => $appNode->id,
-                    'domain' => 'docs.test',
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('a', 64),
-                ]],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [[
+                        'node_id' => $appNode->id,
+                        'domain' => 'docs.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/docs/current/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('a', 64),
+                    ]],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
                 ],
-            ],
-        ]);
+            ]);
 
         $artifact = $route->config['backend_artifacts'][0];
 
@@ -142,27 +146,29 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('renders router routes without binding to a node-only WireGuard address', function (): void {
         $renderer = new ProxyRouteRenderer;
         $router = Node::factory()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'web-1',
-                        'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort,
+        $route = ProxyRoute::factory()
+            ->forApp(Instance::factory()->create())
+            ->create([
+                'node_id' => $router->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'web-1',
+                            'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort,
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         expect($renderer->renderRouterRoute($route))
             ->toContain('http://docs.test {')
@@ -176,25 +182,28 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [[
-                    'node_id' => $appNode->id,
-                    'domain' => 'docs.test',
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('a', 64),
-                ]],
-            ],
-        ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [[
+                        'node_id' => $appNode->id,
+                        'domain' => 'docs.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/docs/current/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('a', 64),
+                    ]],
+                ],
+            ]);
 
         $coLocated = OrbitCaddyContainer::forPublicIngress('10.6.0.21');
         $privateOnlyPort = (string) OrbitCaddyContainer::PrivateBackendPort;
@@ -215,10 +224,12 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     });
 
     it('derives agent tool routes through proxy-owned intent with a container-reachable upstream', function (): void {
-        $node = Node::factory()->create([
-            'status' => 'active',
-            'tld' => 'agent',
-        ]);
+        $node = Node::factory()
+            ->agent()
+            ->create([
+                'status' => 'active',
+                'tld' => 'agent',
+            ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'hermes',
@@ -237,18 +248,85 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             ->toContain('reverse_proxy http://host.docker.internal:8080');
     });
 
+    it('does not claim malformed agent tool route ownership', function (array $attributes): void {
+        $node = Node::factory()
+            ->agent()
+            ->create([
+                'status' => 'active',
+                'tld' => 'agent',
+            ]);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $intent = app(AgentToolProxyRouteIntent::class);
+        $expected = $intent->expectedRoute($tool);
+
+        expect($expected)->toBeInstanceOf(ProxyRoute::class);
+
+        ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => $expected->domain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => $expected->config,
+            'source_hash' => $expected->source_hash,
+            ...$attributes,
+        ]);
+
+        expect($intent->persist($expected))
+            ->toBeNull()
+            ->and(ProxyRoute::query()
+                ->where('domain', $expected->domain)
+                ->sole()
+                ->only([
+                    'node_id',
+                    'app_id',
+                    'workspace_id',
+                    'instance_id',
+                    'owner_type',
+                    'kind',
+                    'config',
+                ]))
+            ->toBe([
+                'node_id' => $attributes['node_id'] ?? $node->id,
+                'app_id' => $attributes['app_id'] ?? null,
+                'workspace_id' => $attributes['workspace_id'] ?? null,
+                'instance_id' => $attributes['instance_id'] ?? null,
+                'owner_type' => $attributes['owner_type'] ?? 'tool',
+                'kind' => $attributes['kind'] ?? 'proxy',
+                'config' => $attributes['config'] ?? $expected->config,
+            ]);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+        'wrong kind' => [['kind' => 'redirect']],
+        'wrong owner identity' => [[
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+                'upstream' => 'http://host.docker.internal:8080',
+                'owner_name' => 'other',
+            ],
+        ]],
+    ]);
+
     it('rewrites pre-existing loopback custom proxy routes when rendering them through orbit-caddy', function (): void {
         $renderer = new ProxyRouteRenderer;
-        $node = Node::factory()->create(['name' => 'gateway-1']);
+        $node = createTestAppHostNode(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'tool.docs.test',
-            'owner_type' => 'tool',
+            'owner_type' => 'custom',
             'kind' => 'proxy',
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
                 'upstream' => 'http://127.0.0.1:8080',
-                'owner_name' => 'agent-ide',
             ],
         ]);
 

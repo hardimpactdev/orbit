@@ -12,10 +12,15 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:kan-defect */
 class NodeRoleDependencyInspector
 {
     /**
@@ -56,8 +61,14 @@ class NodeRoleDependencyInspector
         return [];
     }
 
-    public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
-    {
+    /**
+     * @param  list<int>  $ingressRouteIds
+     */
+    public function removeOrbitOwnedDependents(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        array $ingressRouteIds = [],
+    ): void {
         if (array_key_exists($assignment->role, self::AppRoleEnvironments)) {
             $this->removeAppRoleDependents($node, $assignment->role);
 
@@ -71,7 +82,7 @@ class NodeRoleDependencyInspector
         }
 
         if ($assignment->role === NodeRoleName::Ingress->value) {
-            $this->removeIngressDependents($node);
+            $this->removeIngressDependents($node, $ingressRouteIds);
         }
     }
 
@@ -158,10 +169,28 @@ class NodeRoleDependencyInspector
 
             // Remove the node-bound instances and their routes served on this
             // node; the logical App and any instances on other nodes survive.
-            ProxyRoute::query()
-                ->whereIn('app_id', $appIds)
-                ->where('node_id', $node->id)
-                ->delete();
+            $instanceRouteOwnership = new InstanceProxyRouteOwnershipResolver;
+            $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver;
+
+            $routeIds = [];
+
+            foreach ($instances as $candidateInstance) {
+                foreach ($candidateInstance->proxyRoutes()->get() as $route) {
+                    assert($route instanceof ProxyRoute, 'Instance proxy route relation returns ProxyRoute models.');
+
+                    $instance = $route->owner_type === 'workspace'
+                        ? $workspaceRouteOwnership->resolve($route)?->instance
+                        : $instanceRouteOwnership->resolve($route);
+
+                    if ($instance instanceof Instance && in_array($instance->id, $instanceIds, true)) {
+                        $routeIds[] = $route->id;
+                    }
+                }
+            }
+
+            if ($routeIds !== []) {
+                ProxyRoute::query()->whereIn('id', $routeIds)->delete();
+            }
 
             Instance::query()
                 ->whereIn('id', $instanceIds)
@@ -170,7 +199,6 @@ class NodeRoleDependencyInspector
             // Only delete an App once it has no remaining concrete instances.
             foreach ($appIds as $appId) {
                 if (Instance::query()->where('app_id', $appId)->doesntExist()) {
-                    ProxyRoute::query()->where('app_id', $appId)->delete();
                     App::query()->whereKey($appId)->delete();
                 }
             }
@@ -199,9 +227,15 @@ class NodeRoleDependencyInspector
         return ["{$count} public proxy route ".($count === 1 ? 'record' : 'records')];
     }
 
-    private function removeIngressDependents(Node $node): void
+    /**
+     * @param  list<int>  $capturedRouteIds
+     */
+    private function removeIngressDependents(Node $node, array $capturedRouteIds): void
     {
-        $routeIds = $this->ingressDependentRouteIds($node);
+        $routeIds = array_values(array_unique([
+            ...$capturedRouteIds,
+            ...$this->ingressDependentRouteIds($node),
+        ]));
 
         if ($routeIds === []) {
             return;
@@ -211,14 +245,17 @@ class NodeRoleDependencyInspector
     }
 
     /**
-     * Public ingress routes on the node whose app resolves to production via its
-     * concrete instance placement (App owns no environment column).
+     * Valid public routes served by this ingress node. Primary App and
+     * Workspace routes also require production placement through their
+     * concrete Instance because App owns no environment column.
      *
      * @return list<int>
      */
-    private function ingressDependentRouteIds(Node $node): array
+    public function ingressDependentRouteIds(Node $node): array
     {
         $placement = app(WorkspacePlacement::class);
+        $instanceRouteOwnership = new InstanceProxyRouteOwnershipResolver;
+        $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver;
 
         $ingressRouteIds = ProxyRoute::query()
             ->where('node_id', $node->id)
@@ -234,21 +271,39 @@ class NodeRoleDependencyInspector
                         $query
                             ->where('owner_type', 'workspace')
                             ->where('kind', 'workspace');
-                    });
+                    })
+                    ->orWhereIn('owner_type', ['app-analytics', 'app-websocket', 's3']);
             })
-            ->with('app.instances')
+            ->with(['instance.app', 'workspace'])
             ->get()
-            ->filter(static function (ProxyRoute $route) use ($placement): bool {
-                $app = $route->app;
+            ->filter(static function (ProxyRoute $route) use (
+                $instanceRouteOwnership,
+                $placement,
+                $workspaceRouteOwnership,
+            ): bool {
+                if ($route->owner_type === 'workspace') {
+                    $ownership = $workspaceRouteOwnership->resolve($route);
 
-                return $app instanceof App
-                && $app->instances->contains(
-                    static fn (Instance $instance): bool => (
-                        $placement->runtimeEnvironment(
-                            $app,
-                            $instance,
-                        ) === 'production'
-                    ),
+                    if ($ownership === null) {
+                        return false;
+                    }
+
+                    return $placement->runtimeEnvironment($ownership->app, $ownership->instance) === 'production';
+                }
+
+                if (InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)) {
+                    return app(PublicBindingProxyRouteOwnership::class)->matches($route);
+                }
+
+                if ($route->owner_type === 's3') {
+                    return app(S3RouteRegistrar::class)->ownsPublicRoute($route, $route->domain);
+                }
+
+                $instance = $instanceRouteOwnership->resolve($route);
+
+                return (
+                    $instance instanceof Instance
+                    && $placement->runtimeEnvironment($instance->app, $instance) === 'production'
                 );
             })
             ->pluck('id')

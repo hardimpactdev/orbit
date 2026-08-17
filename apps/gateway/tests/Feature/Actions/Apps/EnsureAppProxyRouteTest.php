@@ -13,6 +13,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\RemoteCaddyConfig;
@@ -157,7 +158,6 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
-
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -186,7 +186,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.31');
@@ -200,6 +200,14 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 
     expect($route->domain)
         ->toBe('docs.test')
+        ->and($route->instance_id)
+        ->toBe($instance->id)
+        ->and($route->instance?->is($instance))
+        ->toBeTrue()
+        ->and($route->workspace_id)
+        ->toBeNull()
+        ->and($instance->proxyRoutes()->whereKey($route->getKey())->exists())
+        ->toBeTrue()
         ->and($route->config['runtime_upstream'])
         ->toBe('http://orbit-app-docs-development:8080')
         ->and($route->config['runtime_upstream_tls'] ?? null)
@@ -318,11 +326,87 @@ it('routes the explicitly selected instance, not the primary or a stale app envi
 
     expect($route->domain)
         ->toBe('docs-preview.test')
+        ->and($route->instance_id)
+        ->toBe($selected->id)
         ->and($route->config['runtime_upstream'])
         ->toContain('preview')
         ->and($route->config['runtime_upstream'])
         ->not->toContain('development');
 });
+
+it('rejects malformed or differently-owned app routes at the target domain', function (string $invalidity): void {
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+        ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'runtime' => AppRuntimeKind::Static,
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            domain: 'docs.test',
+        ),
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'workspace_id' => null,
+        'domain' => 'docs.test',
+        'owner_type' => 'app',
+        'kind' => 'app',
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'proxy'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+
+    if ($invalidity === 'different valid owner') {
+        $route->forceFill([
+            'instance_id' => Instance::factory()->for($app)->create(['name' => 'preview'])->id,
+        ])->save();
+    }
+
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => app(EnsureAppProxyRoute::class)->handle($app, $instance))
+        ->toThrow(
+            RuntimeException::class,
+            "App proxy route 'docs.test' conflicts with existing ownership.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'workspace identity',
+    'different valid owner',
+]);
 
 it('creates a static app proxy route with file_server', function (): void {
     Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
@@ -376,7 +460,7 @@ it('creates a static app proxy route with file_server', function (): void {
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.32');
@@ -422,7 +506,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
-    Instance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
@@ -458,7 +542,7 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
             ])),
     ]);
 
-    app(EnsureAppProxyRoute::class)->handle($app);
+    app(EnsureAppProxyRoute::class)->handle($app, $instance);
 
     $requests = ensure_app_proxy_route_agent_requests('10.47.0.33');
     $managedFilePayload = json_decode(
@@ -505,9 +589,10 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         ),
     ]);
 
-    ProxyRoute::factory()->create([
+    $validStaleRoute = ProxyRoute::factory()->create([
         'node_id' => $node->id,
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'domain' => 'happie-nmbp.nmbp',
@@ -522,6 +607,25 @@ it('removes stale app-owned proxy routes for the same app when its domain change
             ],
         ],
     ]);
+    $malformedStaleRoute = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'domain' => 'malformed-happie.nmbp',
+    ]);
+    $malformedStaleRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => null,
+        'instance_id' => $instance->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'domain' => 'custom-happie.nmbp',
+    ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -534,6 +638,12 @@ it('removes stale app-owned proxy routes for the same app when its domain change
 
     expect(ProxyRoute::query()->where('app_id', $app->id)->pluck('domain')->all())
         ->toBe(['happie.nmbp'])
+        ->and(ProxyRoute::query()->whereKey($validStaleRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedStaleRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+        ->toBeTrue()
         ->and(array_column($executor->calls, 'action'))
         ->toContain('remove-site')
         ->and(collect($executor->calls)->firstWhere('action', 'remove-site')['payload'])
@@ -541,14 +651,14 @@ it('removes stale app-owned proxy routes for the same app when its domain change
 });
 
 it('converges production proxy artifacts in backend router ingress order', function (): void {
-    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+    [$app, $instance, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
 
     app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
     app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
     $executor = new EnsureAppProxyRouteTestInternalExecutor;
     app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
 
-    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app, $instance);
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $backendContent = $executor->calls[1]['payload']['content'] ?? null;
 
@@ -597,7 +707,7 @@ it('converges production proxy artifacts in backend router ingress order', funct
 });
 
 it('records partial production enactment and identifies the failed node and operation', function (): void {
-    [$app, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
+    [$app, $instance, $backend, $router, $ingress] = ensure_app_proxy_route_production_topology();
 
     app()->instance(RemoteShell::class, new EnsureAppProxyRouteTestShell);
     app()->instance(SiteCertificateInstaller::class, new EnsureAppProxyRouteTestCertificateInstaller);
@@ -607,7 +717,7 @@ it('records partial production enactment and identifies the failed node and oper
     );
     app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
 
-    $warnings = app(EnsureAppProxyRoute::class)->handle($app);
+    $warnings = app(EnsureAppProxyRoute::class)->handle($app, $instance);
     $route = ProxyRoute::query()->where('app_id', $app->id)->firstOrFail();
     $warning = collect($warnings)->firstWhere('code', 'proxy.enactment_failed');
 
@@ -672,7 +782,7 @@ function ensure_app_proxy_route_agent_requests(string $wireguardAddress): array
 }
 
 /**
- * @return array{App, Node, Node, Node}
+ * @return array{App, Instance, Node, Node, Node}
  */
 function ensure_app_proxy_route_production_topology(): array
 {
@@ -711,7 +821,7 @@ function ensure_app_proxy_route_production_topology(): array
         'name' => 'hauzer',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    Instance::factory()->for($app)->create([
+    $instance = Instance::factory()->for($app)->create([
         'name' => 'production',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $backend->id,
@@ -722,5 +832,5 @@ function ensure_app_proxy_route_production_topology(): array
         ),
     ]);
 
-    return [$app, $backend, $router, $ingress];
+    return [$app, $instance, $backend, $router, $ingress];
 }

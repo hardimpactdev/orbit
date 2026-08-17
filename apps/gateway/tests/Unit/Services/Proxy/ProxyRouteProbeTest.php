@@ -21,7 +21,9 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -63,6 +65,40 @@ function assignProxyProbeRole(Node $node, string $role): void
         'status' => 'active',
         'settings' => [],
     ]);
+}
+
+function persistProxyProbeIntent(ProxyRoute $intent): ProxyRoute
+{
+    return ProxyRoute::query()->create([
+        'node_id' => $intent->node_id,
+        'domain' => $intent->domain,
+        'app_id' => $intent->app_id,
+        'workspace_id' => $intent->workspace_id,
+        'instance_id' => $intent->instance_id,
+        'owner_type' => $intent->owner_type,
+        'kind' => $intent->kind,
+        'config' => $intent->config,
+        'source_hash' => $intent->source_hash,
+    ]);
+}
+
+function proxyProbeS3ServiceRoute(): ProxyRoute
+{
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+    $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'expected_state' => 'installed',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+
+    return persistProxyProbeIntent(app(S3RouteRegistrar::class)->serviceRouteIntent());
 }
 
 describe('ProxyRouteProbe interface', function (): void {
@@ -377,23 +413,19 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('passes websocket service routes on active router role assignments', function (): void {
-        $node = Node::factory()->router()->create(['status' => 'active']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'websocket.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'websocket',
-                'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'app-dev-1', 'url' => 'https://10.6.0.44:8080'],
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                ],
-            ],
-        ]);
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $route = persistProxyProbeIntent(app(WebSocketRouteRegistrar::class)->serviceRouteIntent());
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
@@ -401,29 +433,19 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('passes observed websocket service route artifacts rendered with long lived upgrade settings', function (): void {
-        $node = Node::factory()->router()->create(['status' => 'active']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'websocket.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'websocket',
-                'router_upstream' => [
-                    'node_id' => $node->id,
-                    'node' => 'router-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'app-dev-1', 'url' => 'https://10.6.0.44:8080'],
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                ],
-            ],
-        ]);
-        $route->forceFill(['source_hash' => new ProxyRouteRenderer()->sourceHash($route)])->save();
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $route = persistProxyProbeIntent(app(WebSocketRouteRegistrar::class)->serviceRouteIntent());
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'websocket.orbit' => [
@@ -444,9 +466,11 @@ describe('proxy registry probe foundation', function (): void {
         $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
         $appNode = Node::factory()->appProd()->create(['status' => 'active']);
         $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -471,30 +495,60 @@ describe('proxy registry probe foundation', function (): void {
 
     it('passes observed app websocket public and router artifacts rendered with long lived upgrade settings', function (): void {
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
-        $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
-        $appNode = Node::factory()->appProd()->create(['status' => 'active']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'status' => 'active',
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backend = Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'status' => 'active',
+                'name' => 'websocket-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $appNode = Node::factory()->create(['status' => 'active']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $edge->id],
+        ]);
         $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         $renderer = new ProxyRouteRenderer;
         $config = [
             'placement' => 'ingress',
+            'ingress_node_id' => $edge->id,
             'protocol' => 'websocket',
             'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+            'upstream' => 'https://websocket.orbit',
             'router_upstream' => [
                 'node_id' => $router->id,
                 'node' => 'router-1',
                 'url' => 'http://10.6.0.2:80',
             ],
             'router_backend_pool' => [
-                ['node_id' => $router->id, 'node' => 'router-1', 'url' => 'https://websocket.orbit'],
+                ['node_id' => $backend->id, 'node' => 'websocket-1', 'url' => 'https://10.6.0.44:8080'],
+            ],
+            'router_backend_tls' => [
+                'trusted_by_gateway_ca' => true,
+                'ca_path' => '/etc/orbit/ca/root.crt',
             ],
             'tls' => [
-                'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                'cert_path' => '/etc/orbit/certs/ws.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/ws.docs.test.key',
             ],
         ];
         $routerRoute = new ProxyRoute([
             'node_id' => $router->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -508,6 +562,7 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'ws.docs.test',
             'owner_type' => 'app-websocket',
             'kind' => 'proxy',
@@ -520,8 +575,8 @@ describe('proxy registry probe foundation', function (): void {
                 'public' => [
                     'route_exists' => true,
                     'route_hash' => $route->source_hash,
-                    'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                    'cert_path' => '/etc/orbit/certs/ws.docs.test.crt',
+                    'key_path' => '/etc/orbit/certs/ws.docs.test.key',
                     'cert_exists' => true,
                     'key_exists' => true,
                 ],
@@ -552,30 +607,128 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::findOrFail($id);
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
-        expect(proxyProbeIssue($drift, 'proxy.record_incomplete')?->kind)->toBe(DriftKind::Missing);
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
+        $route = ProxyRoute::factory()->create([
+            'node_id' => createTestAppHostNode()->id,
+            'domain' => 'invalid.docs.test',
+            'owner_type' => 'instance',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.record_incomplete'))
+            ->toBeNull();
     });
 
     it('requires app owners to resolve', function (): void {
         $node = createTestAppHostNode();
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'app_id' => null,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
+        $route->forceFill(['app_id' => null])->save();
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
-    it('requires workspace owners to resolve', function (): void {
+    it('flags incomplete public binding ownership tuples', function (string $ownerType, string $invalidity): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$ownerType}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => ['upstream' => 'https://router.orbit'],
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'app'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $drift = new ProxyRouteProbe()->diff($route->fresh(), new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
+    })->with([
+        'analytics missing app' => ['app-analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'conflicting app'],
+        'analytics malformed kind' => ['app-analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'conflicting app'],
+        'websocket malformed kind' => ['app-websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'workspace identity'],
+    ]);
+
+    it('rejects app_id compatibility that disagrees with the concrete instance owner', function (): void {
+        $node = createTestAppHostNode();
+        $owner = App::factory()->create();
+        $compatibility = App::factory()->create();
+        $instance = Instance::factory()->for($owner)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $owner->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $route->forceFill(['app_id' => $compatibility->id])->save();
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
+
+    it('requires workspace owners to resolve', function (): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => null,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
@@ -585,6 +738,28 @@ describe('proxy registry probe foundation', function (): void {
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('rejects workspace ownership when the workspace app disagrees with the concrete instance', function (): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create();
+        $otherApp = App::factory()->create();
+        $workspace = Workspace::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $workspace->forceFill(['app_id' => $otherApp->id])->save();
+
+        $drift = new ProxyRouteProbe()->diff($route->refresh(), new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent);
     });
 
     it('classifies tool-owned routes without a matching installed NodeTool as owner invalid', function (): void {
@@ -643,6 +818,135 @@ describe('proxy registry probe foundation', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid'))
             ->toBeNull();
     });
+
+    it('classifies malformed non-instance family ownership before ordinary drift', function (
+        string $case,
+        string $key,
+    ): void {
+        $route = match ($case) {
+            'custom stray fk' => ProxyRoute::query()->create([
+                'node_id' => createTestAppHostNode()->id,
+                'domain' => 'custom-stray.test',
+                'app_id' => App::factory()->create()->id,
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('a', 64),
+                'config' => ['upstream' => 'http://127.0.0.1:5173'],
+            ]),
+            'custom wrong role' => ProxyRoute::query()->create([
+                'node_id' => Node::factory()->create()->id,
+                'domain' => 'custom-role.test',
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('b', 64),
+                'config' => ['upstream' => 'http://127.0.0.1:5173'],
+            ]),
+            'custom wrong stable config' => ProxyRoute::query()->create([
+                'node_id' => createTestAppHostNode()->id,
+                'domain' => 'custom-config.test',
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('c', 64),
+                'config' => [
+                    'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                    'upstream' => 'http://127.0.0.1:5173',
+                ],
+            ]),
+            'tool wrong stable config' => (function (): ProxyRoute {
+                $node = Node::factory()->agent()->create(['tld' => 'agent']);
+                NodeTool::factory()->create([
+                    'node_id' => $node->id,
+                    'name' => 'hermes',
+                    'expected_state' => 'installed',
+                ]);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $node->id,
+                    'domain' => 'hermes.agent',
+                    'owner_type' => 'tool',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('d', 64),
+                    'config' => [
+                        'owner_name' => 'hermes',
+                        'upstream' => 'http://host.docker.internal:9999',
+                        'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:9999'],
+                    ],
+                ]);
+            })(),
+            'router non-canonical node' => (function (): ProxyRoute {
+                Node::factory()->router()->create(['name' => 'router-1']);
+                $otherRouter = Node::factory()->router()->create(['name' => 'router-2']);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $otherRouter->id,
+                    'domain' => 'metrics.orbit',
+                    'owner_type' => 'router',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('e', 64),
+                    'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
+                ]);
+            })(),
+            's3 wrong canonical ingress' => (function (): ProxyRoute {
+                Node::factory()->ingress()->create(['name' => 'ingress-1']);
+                $otherIngress = Node::factory()->ingress()->create(['name' => 'ingress-2']);
+                $router = Node::factory()
+                    ->router()
+                    ->create([
+                        'name' => 'router-1',
+                        'wireguard_address' => '10.6.0.1',
+                    ]);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $otherIngress->id,
+                    'domain' => 'objects.example.test',
+                    'owner_type' => 's3',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('f', 64),
+                    'config' => [
+                        'placement' => 'ingress',
+                        'owner_name' => 'seaweedfs',
+                        'protocol' => 's3',
+                        'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+                        'router_upstream' => [
+                            'node_id' => $router->id,
+                            'node' => $router->name,
+                            'url' => 'http://10.6.0.1:80',
+                        ],
+                        'tls' => [
+                            'cert_path' => '/etc/orbit/certs/objects.example.test.crt',
+                            'key_path' => '/etc/orbit/certs/objects.example.test.key',
+                        ],
+                    ],
+                ]);
+            })(),
+            'gateway wrong kind' => (function (): ProxyRoute {
+                $gateway = Node::factory()->gateway()->create();
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $gateway->id,
+                    'domain' => 'gateway.orbit',
+                    'owner_type' => 'gateway',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('0', 64),
+                    'config' => ['target' => ['type' => 'upstream', 'value' => 'http://orbit-gateway:80']],
+                ]);
+            })(),
+            default => throw new LogicException("Unknown non-instance ownership case: {$case}"),
+        };
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, $key)?->kind)
+            ->toBe(DriftKind::Divergent);
+    })->with([
+        'custom stray fk' => ['custom stray fk', 'proxy.owner_invalid'],
+        'custom wrong role' => ['custom wrong role', 'proxy.node_invalid'],
+        'custom wrong stable config' => ['custom wrong stable config', 'proxy.owner_invalid'],
+        'tool wrong stable config' => ['tool wrong stable config', 'proxy.owner_invalid'],
+        'router non-canonical node' => ['router non-canonical node', 'proxy.node_invalid'],
+        's3 wrong canonical ingress' => ['s3 wrong canonical ingress', 'proxy.node_invalid'],
+        'gateway wrong kind' => ['gateway wrong kind', 'proxy.owner_invalid'],
+    ]);
 
     it('requires active gateway or app serving nodes', function (callable $createNode): void {
         $node = $createNode();
@@ -706,10 +1010,12 @@ describe('proxy registry probe foundation', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();
         $workspace = Workspace::factory()->create(['app_id' => $app->id]);
+        $instance = $workspace->instance;
 
         $appRoute = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -718,6 +1024,7 @@ describe('proxy registry probe foundation', function (): void {
             'node_id' => $node->id,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $instance->id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -822,13 +1129,16 @@ describe('proxy backend and TLS reality', function (): void {
         $app = App::factory()
             ->placedOn($node)
             ->create([
-                'name' => 'happie-nmbp',
+                'name' => 'happie',
                 'runtime_config' => ['proxy_transport' => 'https'],
             ]);
+        $instance = $app->instances()->firstOrFail();
+        $instance->forceFill(['name' => 'nmbp'])->save();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -885,13 +1195,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -959,13 +1272,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1020,13 +1336,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1088,13 +1407,16 @@ describe('proxy backend and TLS reality', function (): void {
         $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active']);
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1119,13 +1441,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1174,13 +1499,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
@@ -1233,13 +1561,16 @@ describe('proxy backend and TLS reality', function (): void {
         assignProxyProbeRole($edge, 'ingress');
         assignProxyProbeRole($router, 'router');
         assignProxyProbeRole($backend, 'app-prod');
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         $route = ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
-            'app_id' => App::factory()->create()->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'config' => [
                 'placement' => 'ingress',
                 'router_artifact' => [
@@ -1319,16 +1650,18 @@ describe('proxy backend and TLS reality', function (): void {
                 'name' => 'docs',
                 'runtime_config' => ['proxy_transport' => 'http'],
             ]);
+        $instance = $app->instances()->sole();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'docs.test',
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => [
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                     'php_socket' => null,
                     'tls' => [
                         'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
@@ -1347,7 +1680,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
                 'cert_exists' => true,
                 'key_exists' => true,
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                 'runtime_upstream_reachable' => false,
                 'runtime_probe_error' => 'wget: bad address orbit-app-docs',
             ],
@@ -1357,7 +1690,7 @@ describe('proxy backend and TLS reality', function (): void {
             ->toBe(DriftKind::Divergent)
             ->and(proxyProbeIssue($drift, key: 'proxy.runtime_unreachable')?->detail)
             ->toMatchArray([
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                 'probe_error' => 'wget: bad address orbit-app-docs',
             ]);
     });
@@ -1369,16 +1702,18 @@ describe('proxy backend and TLS reality', function (): void {
             ->create([
                 'name' => 'docs',
             ]);
+        $instance = $app->instances()->sole();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'docs.test',
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => [
                     'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'runtime_upstream' => 'http://orbit-app-docs-development:8080',
                     'php_socket' => null,
                     'tls' => [
                         'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
@@ -1404,12 +1739,12 @@ describe('proxy backend and TLS reality', function (): void {
         $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
 
         expect(new ProxyRouteRenderer()->render($route))
-            ->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->toContain('reverse_proxy http://orbit-app-docs-development:8080')
             ->and($issue)
             ->toBeNull();
     });
 
-    it('reports route mismatch when a canonical app instance route still targets the bare app runtime', function (): void {
+    it('reports stale TLS identity while deriving runtime placement from persisted instance ownership', function (): void {
         $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
         $app = App::factory()
             ->placedOn($node, path: '/Users/nckrtl/apps/happie')
@@ -1417,10 +1752,23 @@ describe('proxy backend and TLS reality', function (): void {
                 'name' => 'happie',
                 'runtime_config' => ['proxy_transport' => 'https'],
             ]);
+        $instance = $app->instances()->firstOrFail();
+        $instance->forceFill([
+            'name' => 'nmbp',
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ])->save();
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -1442,19 +1790,8 @@ describe('proxy backend and TLS reality', function (): void {
         $renderer = new ProxyRouteRenderer;
         $staleCaddy = $renderer->render($route);
         $staleHash = hash('sha256', $staleCaddy);
-        Instance::factory()->for($app)->create([
-            'name' => 'nmbp',
-            'driver' => InstanceDriver::Orbit,
-            'driver_config' => new OrbitInstanceDriverConfigData(
-                node_id: $node->id,
-                node: 'nmbp',
-                path: '/Users/nckrtl/apps/happie',
-                document_root: 'public',
-                domain: 'happie.nmbp',
-            ),
-        ]);
         $route->forceFill(['source_hash' => $staleHash])->save();
-        $route = $route->fresh(['app.instances', 'node']);
+        $route = $route->fresh(['instance.app', 'node']);
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'happie.nmbp' => [
@@ -1472,7 +1809,7 @@ describe('proxy backend and TLS reality', function (): void {
         $expectedCaddy = $renderer->renderManagedPhpRuntimeIntent($route);
 
         expect($staleCaddy)
-            ->toContain('reverse_proxy https://orbit-app-happie:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
+            ->toContain('reverse_proxy https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
             ->toContain('tls_server_name happie.test')
             ->and($issue?->kind)
             ->toBe(DriftKind::Divergent)
@@ -1499,10 +1836,12 @@ describe('proxy backend and TLS reality', function (): void {
                     'runtime' => AppRuntimeKind::Php,
                     'runtime_config' => ['proxy_transport' => 'http'],
                 ]);
+            $instance = $app->instances()->sole();
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
                 ->for($app, 'app')
                 ->create([
+                    'instance_id' => $instance->id,
                     'domain' => 'nckrtl.test',
                     'owner_type' => 'app',
                     'kind' => 'app',
@@ -1557,7 +1896,7 @@ describe('proxy backend and TLS reality', function (): void {
                 ->toBe($staleInnerTlsHash)
                 ->and($expectedHash)
                 ->not->toBe($staleInnerTlsHash)->and($expectedCaddy)->toContain(
-                    'reverse_proxy http://orbit-app-nckrtl:8080',
+                    'reverse_proxy http://orbit-app-nckrtl-development:8080',
                 )->and($expectedCaddy)
                 ->not->toContain('tls_trust_pool file '.AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath);
         },
@@ -1846,6 +2185,7 @@ describe('proxy backend and TLS reality', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $ownerType === 'workspace' ? $workspace->id : null,
             'domain' => "{$kind}.docs.test",
             'owner_type' => $ownerType,
@@ -2073,13 +2413,16 @@ describe('proxy node-level diff', function (): void {
             ->create([
                 'name' => 'docs',
             ]);
+        $instance = $app->instances()->sole();
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'name' => 'feature',
         ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.prod',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -2096,6 +2439,7 @@ describe('proxy node-level diff', function (): void {
             ProxyRoute::factory()->create([
                 'node_id' => $node->id,
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'workspace_id' => $workspaceId,
                 'domain' => $domain,
                 'owner_type' => $ownerType,
@@ -2391,23 +2735,8 @@ describe('orbit-caddy container readiness', function (): void {
 
 describe('s3 upload-safe proxy route probe', function (): void {
     it('passes s3 service route when the observed file hash matches the upload-safe rendered source hash', function (): void {
-        $node = createTestAppHostNode();
         $renderer = new ProxyRouteRenderer;
-        $config = [
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
-            'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]);
+        $route = proxyProbeS3ServiceRoute();
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
@@ -2429,23 +2758,8 @@ describe('s3 upload-safe proxy route probe', function (): void {
     });
 
     it('detects drift when the s3 service route on disk lacks upload-safe streaming directives', function (): void {
-        $node = createTestAppHostNode();
         $renderer = new ProxyRouteRenderer;
-        $config = [
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
-            'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]);
+        $route = proxyProbeS3ServiceRoute();
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
@@ -2471,30 +2785,24 @@ describe('s3 upload-safe proxy route probe', function (): void {
     });
 
     it('passes observed s3 ingress route artifact rendered with upload-safe streaming settings', function (): void {
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.1',
+            ]);
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
-        $renderer = new ProxyRouteRenderer;
-        $config = [
-            'placement' => 'ingress',
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-            'router_upstream' => [
-                'node_id' => 12,
-                'node' => 'gateway-1',
-                'url' => 'http://10.6.0.1:80',
-            ],
-            'tls' => [
-                'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
-                'key_path' => '/etc/orbit/certs/s3.example.com.key',
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'domain' => 's3.example.com',
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => $config,
+        $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+        NodeTool::factory()->create([
+            'node_id' => $storage->id,
+            'name' => 'seaweedfs',
+            'expected_state' => 'installed',
+            'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
         ]);
+        $renderer = new ProxyRouteRenderer;
+        $route = persistProxyProbeIntent(
+            app(S3RouteRegistrar::class)->publicRouteIntent($edge, $router, 's3.example.com'),
+        );
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
@@ -2533,11 +2841,13 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             $app = App::factory()->create([
                 'name' => 'legacy-docs',
             ]);
+            $instance = Instance::factory()->for($app)->create();
 
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
                 ->for($app, 'app')
                 ->create([
+                    'instance_id' => $instance->id,
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
                     'kind' => 'app',
@@ -2552,7 +2862,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
                     ],
                 ]);
 
-            $dockerFirstHash = hash('sha256', new ProxyRouteRenderer()->render($route));
+            $dockerFirstHash = new ProxyRouteRenderer()->managedPhpRuntimeIntentSourceHash($route);
             $route->forceFill(['source_hash' => $dockerFirstHash])->save();
 
             // The node returns a hash that represents the LEGACY php_fastcgi
@@ -2592,6 +2902,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
             $app = App::factory()->create([
                 'name' => 'legacy-docs',
             ]);
+            $instance = Instance::factory()->for($app)->create();
 
             // Build a route with Docker-first backend_artifact source_hash (the
             // value the backfill would have written for an ingress topology).
@@ -2608,6 +2919,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'source_hash' => str_repeat('a', 64),
                 'config' => [
                     'placement' => 'ingress',

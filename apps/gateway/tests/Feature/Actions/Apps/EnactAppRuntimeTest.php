@@ -431,13 +431,13 @@ it('seeds one FrankenPHP process definition per concrete app instance', function
         ->toBe(2);
 });
 
-it('keeps logical app runtime enactment safe after the app gains multiple instances', function (): void {
+it('preserves a different valid domain owner while enacting multiple app instances', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
     $nmbpNode = createTestAppHostNode([
         'name' => 'nmbp',
         'tld' => 'nmbp',
     ]);
-    $nmbp = Instance::factory()->for($app)->create([
+    Instance::factory()->for($app)->create([
         'name' => 'nmbp',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nmbpNode->id,
@@ -447,7 +447,7 @@ it('keeps logical app runtime enactment safe after the app gains multiple instan
             domain: 'docs.nmbp',
         ),
     ]);
-    ProxyRoute::factory()->create([
+    $customRoute = ProxyRoute::factory()->create([
         'node_id' => $nmbpNode->id,
         'domain' => 'docs.nmbp',
         'app_id' => null,
@@ -459,25 +459,28 @@ it('keeps logical app runtime enactment safe after the app gains multiple instan
     Http::preventStrayRequests();
     Http::fake(['*' => enact_app_runtime_caddy_sequence('docs.test')]);
 
-    expect(app(EnactAppRuntime::class)->handle($app))->toBe([]);
+    expect(fn (): array => app(EnactAppRuntime::class)->handle($app))
+        ->toThrow(RuntimeException::class, "App proxy route 'docs.nmbp' conflicts with existing ownership.");
 
-    $routes = ProxyRoute::query()
-        ->where('app_id', $app->id)
-        ->orderBy('domain')
-        ->get();
+    $customRoute->refresh();
+    $developmentRoute = ProxyRoute::query()->where('domain', 'docs.test')->firstOrFail();
 
-    expect($routes)
-        ->toHaveCount(2)
-        ->and($routes->pluck('domain')->all())
-        ->toBe(['docs.nmbp', 'docs.test'])
-        ->and($routes->firstWhere('domain', 'docs.nmbp')?->owner_type)
+    expect($customRoute->owner_type)
+        ->toBe('custom')
+        ->and($customRoute->kind)
+        ->toBe('proxy')
+        ->and($customRoute->app_id)
+        ->toBeNull()
+        ->and($customRoute->instance_id)
+        ->toBeNull()
+        ->and($customRoute->config)
+        ->toBe(['upstream' => 'https://docs.nmbp:8443'])
+        ->and($developmentRoute->owner_type)
         ->toBe('app')
-        ->and($routes->firstWhere('domain', 'docs.nmbp')?->kind)
-        ->toBe('app')
-        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['instance']['id'] ?? null)
-        ->toBe($nmbp->id)
-        ->and($routes->firstWhere('domain', 'docs.nmbp')?->config['runtime_upstream'])
-        ->toBeNull();
+        ->and($developmentRoute->instance_id)
+        ->toBe($app->instances()->where('name', 'development')->value('id'))
+        ->and(ProxyRoute::query()->where('domain', 'docs.nmbp')->count())
+        ->toBe(1);
 });
 
 it('returns app.php_version_unavailable when the selected FrankenPHP image is missing on the owning node', function (): void {

@@ -146,11 +146,40 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
-        if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
+        if ($route->owner_type === 'instance') {
             return null;
         }
 
         $route->loadMissing('node');
+
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! app(NonInstanceProxyRouteOwnership::class)->matches($route)
+        ) {
+            return null;
+        }
+
+        if ($route->owner_type === 'workspace' || $route->kind === 'workspace') {
+            new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
+        }
+
+        if (
+            InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)
+            && app(InstanceProxyRouteOwnershipResolver::class)->resolve($route) === null
+        ) {
+            return null;
+        }
+
+        if (
+            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($route)
+        ) {
+            return null;
+        }
+
+        if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
+            return null;
+        }
 
         if ($entry->key === 'proxy.enactment_incomplete') {
             if ($route->owner_type === 'custom') {
@@ -261,14 +290,13 @@ final readonly class ProxyRouteFixer
      */
     private function reenactAppRoute(ProxyRoute $route, DriftEntry $entry): ?array
     {
-        $route->loadMissing(['node', 'app']);
-        $app = $route->app;
+        $route->loadMissing(['node', 'instance.app']);
+        $instance = $this->appRouteTargets()->instanceForRoute($route);
+        $app = $this->appRouteTargets()->appForRoute($route, $instance);
 
-        if (! $app instanceof App) {
+        if (! $instance instanceof Instance || ! $app instanceof App) {
             return null;
         }
-
-        $instance = $this->appRouteTargets()->instanceForRoute($route);
 
         $this->executeAppRouteEnactment($app, $instance);
 
@@ -293,7 +321,7 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function executeAppRouteEnactment(App $app, ?Instance $instance): void
+    private function executeAppRouteEnactment(App $app, Instance $instance): void
     {
         if ($this->appRouteEnactor instanceof Closure) {
             ($this->appRouteEnactor)($app, $instance);

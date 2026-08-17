@@ -15,7 +15,7 @@ orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
 ## Description
 
 `proxy:list` shows the unified HTTP ingress registry. By default it includes
-app routes, instance routes, WebSocket routes, workspace routes, gateway/internal routes,
+instance routes, WebSocket routes, workspace routes, gateway/internal routes,
 websocket service routes, S3 service and public host routes, tool-owned routes,
 custom upstream routes, and redirects.
 
@@ -25,7 +25,6 @@ Use `--filter` to narrow the list:
 | --- | --- |
 | `all` | All visible proxy routes. |
 | `instance` | Instance-owned hostnames. |
-| `app` | App-owned primary hostnames; every row reports its concrete instance target. |
 | `workspace` | Workspace-owned hostnames. |
 | `gateway` | Gateway-owned internal routes such as the gateway API ingress. |
 | `websocket` | Instance-owned public WebSocket hosts and router-owned private service routes such as `websocket.orbit`. |
@@ -38,10 +37,9 @@ Use `--filter` to narrow the list:
 `proxy:list` reads gateway configuration only. It does not probe node proxy backends or verify TLS files. Use `doctor --family=proxy` for drift verification.
 
 Every instance-owned primary route reports a concrete instance target. A route
-such as `happie.nmbp` keeps the app slug `happie` in `owner.name`,
-reports `target.type=instance` and `target.value=happie.nmbp`, and reports
-the selected instance's serving node in `node`. Apps are not route
-targets.
+such as `happie.nmbp` reports `owner.type=instance`,
+`owner.name=happie.nmbp`, `target.type=instance`, and
+`target.value=happie.nmbp`. Apps are not route targets or proxy-list filters.
 
 ## Examples
 

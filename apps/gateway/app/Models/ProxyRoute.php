@@ -16,6 +16,7 @@ use Override;
  * @property string $domain
  * @property int|null $app_id
  * @property int|null $workspace_id
+ * @property int|null $instance_id
  * @property string $owner_type
  * @property string $kind
  * @property string $source_hash
@@ -25,6 +26,10 @@ use Override;
  * @property-read Node $node
  * @property-read App|null $app
  * @property-read Workspace|null $workspace
+ * @property-read Instance|null $instance
+ *
+ * Instance-backed routes derive App ownership through instance.app. The
+ * retained app_id must match instance.app_id and is compatibility data only.
  */
 class ProxyRoute extends Model
 {
@@ -36,6 +41,7 @@ class ProxyRoute extends Model
         'domain',
         'app_id',
         'workspace_id',
+        'instance_id',
         'owner_type',
         'kind',
         'source_hash',
@@ -72,5 +78,13 @@ class ProxyRoute extends Model
     public function workspace(): BelongsTo
     {
         return $this->belongsTo(Workspace::class);
+    }
+
+    /**
+     * @return BelongsTo<Instance, $this>
+     */
+    public function instance(): BelongsTo
+    {
+        return $this->belongsTo(Instance::class);
     }
 }

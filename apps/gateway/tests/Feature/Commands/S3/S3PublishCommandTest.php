@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\S3\S3PublishAction;
+use App\Services\S3\S3RouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
@@ -286,13 +289,15 @@ describe('S3Publish domain conflict', function (): void {
         s3PublishRouterNode();
         $ingress = s3PublishIngressNode();
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
-        ]);
+        ProxyRoute::factory()
+            ->forApp(Instance::factory()->create())
+            ->create([
+                'domain' => 's3.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
+            ]);
 
         $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
@@ -310,24 +315,49 @@ describe('S3Publish domain conflict', function (): void {
         $storage = s3PublishStorageNode();
         s3PublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
         s3PublishRouterNode();
-        $ingress = s3PublishIngressNode();
+        s3PublishIngressNode();
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => [
-                'owner_name' => 'seaweedfs',
-                'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-            ],
-        ]);
+        app(S3RouteRegistrar::class)->syncPublicHosts(
+            NodeTool::query()->where('name', 'seaweedfs')->firstOrFail(),
+        );
 
         $response = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
         $content = $response->streamedContent();
         expect($content)->toContain('event: complete')->and($content)->toContain('"already_published":true');
+    });
+
+    it('rejects malformed S3 ownership before changing publication intent', function (): void {
+        s3PublishCallerNode(role: 'gateway');
+        $storage = s3PublishStorageNode();
+        $tool = s3PublishSeaweedfsTool($storage);
+        s3PublishRouterNode();
+        $ingress = s3PublishIngressNode();
+        $instance = Instance::factory()->create();
+        $route = ProxyRoute::factory()->create([
+            'domain' => 's3.example.com',
+            'node_id' => $ingress->id,
+            'instance_id' => $instance->id,
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'seaweedfs',
+                'protocol' => 's3',
+            ],
+        ]);
+
+        $content = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1'])
+            ->streamedContent();
+
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('proxy.domain_conflict')
+            ->and($tool->fresh()?->config['public_hosts'] ?? null)
+            ->toBe([])
+            ->and($route->fresh())
+            ->toBeInstanceOf(ProxyRoute::class);
     });
 
     it('accepts re-publishing an already-S3-owned route idempotently', function (): void {
@@ -346,6 +376,95 @@ describe('S3Publish domain conflict', function (): void {
             ->toContain('"already_published":true')
             ->and($content)
             ->toContain('"action":"published"');
+    });
+
+    it('does not mutate publication intent when the private service route conflicts', function (): void {
+        s3PublishCallerNode(role: 'gateway');
+        $storage = s3PublishStorageNode();
+        $tool = s3PublishSeaweedfsTool($storage);
+        $router = s3PublishRouterNode();
+        s3PublishIngressNode();
+        ProxyRoute::factory()->create([
+            'domain' => 's3.orbit',
+            'node_id' => $router->id,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['upstream' => 'http://unrelated.test'],
+        ]);
+
+        $content = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1'])
+            ->streamedContent();
+
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('s3.publish_failed')
+            ->and($tool->fresh()?->config['public_hosts'] ?? null)
+            ->toBe([]);
+    });
+
+    it('preflights every intended public host before any publication mutation', function (): void {
+        $caller = s3PublishCallerNode(role: 'gateway');
+        $storage = s3PublishStorageNode();
+        $tool = s3PublishSeaweedfsTool($storage, [
+            'public_hosts' => ['safe.example.com', 'conflict.example.com'],
+        ]);
+        s3PublishRouterNode();
+        $ingress = s3PublishIngressNode();
+        $conflict = ProxyRoute::factory()
+            ->forApp(Instance::factory()->create())
+            ->create([
+                'domain' => 'conflict.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+            ]);
+        $originalToolConfig = $tool->fresh()?->config;
+        $originalConflict = $conflict->fresh()?->getAttributes();
+
+        $result = app(S3PublishAction::class)->publish($caller, $storage->name, 'new.example.com');
+
+        expect($result['error']['code'] ?? null)
+            ->toBe('s3.publish_failed')
+            ->and($tool->fresh()?->config)
+            ->toBe($originalToolConfig)
+            ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'safe.example.com')->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'new.example.com')->exists())
+            ->toBeFalse()
+            ->and($conflict->fresh()?->getAttributes())
+            ->toBe($originalConflict);
+    });
+
+    it('uses complete S3 public ownership in the non-streaming publish path', function (): void {
+        $caller = s3PublishCallerNode(role: 'gateway');
+        $storage = s3PublishStorageNode();
+        $tool = s3PublishSeaweedfsTool($storage);
+        s3PublishRouterNode();
+        $ingress = s3PublishIngressNode();
+        $wrongIngress = Node::factory()->ingress()->create(['name' => 'edge-2']);
+        ProxyRoute::factory()->create([
+            'domain' => 's3.example.com',
+            'node_id' => $wrongIngress->id,
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'seaweedfs',
+                'protocol' => 's3',
+            ],
+        ]);
+
+        $result = app(S3PublishAction::class)->publish($caller, $storage->name, 's3.example.com');
+
+        expect($result['error']['code'] ?? null)
+            ->toBe('proxy.domain_conflict')
+            ->and($tool->fresh()?->config['public_hosts'] ?? null)
+            ->toBe([])
+            ->and($ingress->is($wrongIngress))
+            ->toBeFalse();
     });
 });
 

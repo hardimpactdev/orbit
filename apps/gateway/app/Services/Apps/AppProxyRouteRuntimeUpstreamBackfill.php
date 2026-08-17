@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 
 /**
  * Normalize legacy app proxy route configs (and nested backend artifacts) so
- * they carry a Docker-first `runtime_upstream` derived from the app identity,
+ * they carry a Docker-first `runtime_upstream` derived from concrete instance
+ * identity when the ownership column exists,
  * AND persist the expected source hashes of the Docker-first rendered routes.
  *
  * Used by the 2026_05_21_130000 migration to convert origin/main rows that
@@ -22,6 +27,8 @@ use App\Services\Proxy\ProxyRouteRenderer;
  *
  * Static apps are skipped (their routes have no runtime_upstream — they serve
  * via file_server / document_root and were never rendered with php_fastcgi).
+ *
+ * @mago-expect lint:kan-defect
  */
 final readonly class AppProxyRouteRuntimeUpstreamBackfill
 {
@@ -29,21 +36,56 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
         private ?ProxyRouteRenderer $renderer = null,
     ) {}
 
-    public function run(): void
+    public function run(?string $connection = null): void
     {
+        $connection ??= DB::getDefaultConnection();
         $renderer = $this->renderer ?? new ProxyRouteRenderer;
+        $hasInstanceOwnership = Schema::connection($connection)->hasColumn('proxy_routes', 'instance_id');
+        $relations = $hasInstanceOwnership
+            ? ['app', 'instance.app']
+            : ['app'];
 
-        ProxyRoute::query()
+        $query = ProxyRoute::on($connection)
             ->where('kind', 'app')
-            ->whereNotNull('app_id')
-            ->with('app')
+            ->with($relations);
+
+        if ($hasInstanceOwnership) {
+            $query->whereNotNull('instance_id');
+        } else {
+            $query->whereNotNull('app_id');
+        }
+
+        /** @mago-expect analyzer:invalid-argument */
+        $query
             ->orderBy('id')
-            ->cursor()
-            ->each(function (ProxyRoute $route) use ($renderer): void {
-                $app = $route->app;
+            ->eachById(function (ProxyRoute $route) use ($hasInstanceOwnership, $renderer): void {
+                if (
+                    $hasInstanceOwnership
+                    && ($route->owner_type !== 'app'
+                    || $route->kind !== 'app'
+                    || $route->workspace_id !== null)
+                ) {
+                    throw new RuntimeException("App proxy route '{$route->domain}' has invalid app ownership.");
+                }
+
+                $instance = $hasInstanceOwnership ? $route->instance : null;
+                $app = $instance instanceof Instance ? $instance->app : $route->app;
 
                 if (! $app instanceof App) {
                     return;
+                }
+
+                if ($hasInstanceOwnership && ! $instance instanceof Instance) {
+                    throw new RuntimeException("App proxy route '{$route->domain}' has no concrete Instance owner.");
+                }
+
+                if (
+                    $instance instanceof Instance
+                    && $route->app_id !== $instance->app_id
+                ) {
+                    throw new RuntimeException(
+                        "App proxy route '{$route->domain}' app_id={$route->app_id} conflicts with instance_id={$instance->id} app_id={$instance->app_id}.",
+                    );
                 }
 
                 $runtimeKindValue = $app->runtimeKind()->value;
@@ -58,13 +100,17 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                     return;
                 }
 
-                $upstream = "http://orbit-app-{$app->name}:".AppRuntimeContainerRenderer::InternalPort;
+                $runtimeSlug = $instance instanceof Instance ? "{$app->name}-{$instance->name}" : $app->name;
+                $upstream = "http://orbit-app-{$runtimeSlug}:".AppRuntimeContainerRenderer::InternalPort;
+                $legacyAppUpstream = "http://orbit-app-{$app->name}:".AppRuntimeContainerRenderer::InternalPort;
                 $configChanged = false;
 
                 if (
                     ! isset($config['runtime_upstream'])
                     || ! is_string($config['runtime_upstream'])
                     || $config['runtime_upstream'] === ''
+                    || $hasInstanceOwnership
+                    && $config['runtime_upstream'] === $legacyAppUpstream
                 ) {
                     $config['runtime_upstream'] = $upstream;
                     $configChanged = true;
@@ -85,6 +131,8 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                             ! isset($artifact['runtime_upstream'])
                             || ! is_string($artifact['runtime_upstream'])
                             || $artifact['runtime_upstream'] === ''
+                            || $hasInstanceOwnership
+                            && $artifact['runtime_upstream'] === $legacyAppUpstream
                         ) {
                             $config['backend_artifacts'][$index]['runtime_upstream'] = $upstream;
                             $configChanged = true;
@@ -144,12 +192,17 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
         $transient = new ProxyRoute([
             'node_id' => $route->node_id,
             'app_id' => $route->app_id,
+            'instance_id' => $route->instance_id,
             'domain' => $route->domain,
             'owner_type' => $route->owner_type,
             'kind' => $route->kind,
             'config' => $config,
         ]);
         $transient->setRelation('app', $app);
+
+        if ($route->relationLoaded('instance')) {
+            $transient->setRelation('instance', $route->instance);
+        }
 
         return $transient;
     }

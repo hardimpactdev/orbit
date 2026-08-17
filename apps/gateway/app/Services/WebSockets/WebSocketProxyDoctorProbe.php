@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
@@ -39,6 +40,7 @@ final readonly class WebSocketProxyDoctorProbe
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private WebSocketRouteRegistrar $routeRegistrar,
+        private PublicBindingProxyRouteOwnership $routeOwnership,
     ) {}
 
     /**
@@ -62,7 +64,22 @@ final readonly class WebSocketProxyDoctorProbe
      */
     public function restore(Node $node, DriftEntry $entry): ?array
     {
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         if ($entry->key === self::RouterRouteKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', WebSocketRouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                $existingRoute instanceof ProxyRoute
+                && ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $route = $this->routeRegistrar->syncServiceRoute();
 
             return [
@@ -80,6 +97,17 @@ final readonly class WebSocketProxyDoctorProbe
         }
 
         if ($entry->key === self::RouterRouteOrphanedKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', WebSocketRouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                ! $existingRoute instanceof ProxyRoute
+                || ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $this->routeRegistrar->removeServiceRoute();
 
             return [
@@ -110,6 +138,14 @@ final readonly class WebSocketProxyDoctorProbe
 
         if (! $binding instanceof AppWebSocketBinding) {
             return null;
+        }
+
+        foreach ($this->routeRegistrar->publicRouteIntents($binding) as $intent) {
+            $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
+
+            if ($route instanceof ProxyRoute && ! $this->routeOwnership->matches($route)) {
+                return null;
+            }
         }
 
         $this->routeRegistrar->syncPublicHosts($binding);
@@ -193,6 +229,10 @@ final readonly class WebSocketProxyDoctorProbe
             ->first();
 
         if (! $route instanceof ProxyRoute) {
+            return [];
+        }
+
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
             return [];
         }
 
@@ -299,6 +339,28 @@ final readonly class WebSocketProxyDoctorProbe
             ];
         }
 
+        $ownershipMatches = $intent->owner_type === 'router'
+            ? $this->routeRegistrar->ownsServiceRoute($route)
+            : $this->routeOwnership->matches($route);
+
+        if (! $ownershipMatches) {
+            return [
+                new DriftEntry(
+                    family: 'proxy',
+                    key: $key,
+                    kind: DriftKind::Unverifiable,
+                    summary: $mismatchSummary,
+                    detail: [
+                        ...$baseDetail,
+                        'reason' => 'ownership_conflict',
+                        'observed_node_id' => $route->node_id,
+                        'observed_owner_type' => $route->owner_type,
+                        'observed_kind' => $route->kind,
+                    ],
+                ),
+            ];
+        }
+
         $reason = $this->mismatchReason($route, $intent);
 
         if ($reason === null) {
@@ -332,6 +394,10 @@ final readonly class WebSocketProxyDoctorProbe
 
         if ($route->app_id !== $intent->app_id) {
             return 'app_mismatch';
+        }
+
+        if ($route->instance_id !== $intent->instance_id) {
+            return 'instance_mismatch';
         }
 
         if ($route->workspace_id !== $intent->workspace_id) {

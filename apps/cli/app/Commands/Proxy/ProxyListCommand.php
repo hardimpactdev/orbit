@@ -17,7 +17,7 @@ final class ProxyListCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'proxy:list
         {--node= : Filter by serving node}
-        {--filter=all : Filter routes by all, app, instance, workspace, gateway, analytics, websocket, s3, tool, custom, or redirect}
+        {--filter=all : Filter routes by all, instance, workspace, gateway, analytics, websocket, s3, tool, custom, or redirect}
         {--json}';
 
     #[\Override]
@@ -31,7 +31,7 @@ final class ProxyListCommand extends GatewayCommand
                 'filter' => $this->stringOption('filter'),
             ]));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         if ($this->wantsJson()) {

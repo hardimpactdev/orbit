@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -295,13 +296,15 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonRouterNode();
         $ingress = s3JsonIngressNode();
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
-        ]);
+        ProxyRoute::factory()
+            ->forApp(Instance::factory()->create())
+            ->create([
+                'domain' => 's3.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
+            ]);
 
         $response = $this->call(
             'POST',

@@ -7,11 +7,9 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
-use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -46,9 +44,21 @@ class ProxyRouteIntent
         $this->validateAddTarget($upstream, $redirect, $code);
 
         $existing = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
+            ->with(['node', 'instance.app', 'workspace.instance.app'])
             ->where('domain', $domain)
             ->first();
+
+        if (
+            $existing instanceof ProxyRoute
+            && $existing->owner_type === 'custom'
+            && ! $this->hasValidCustomOwnership($existing)
+        ) {
+            throw new GatewayApiException(
+                "Domain '{$domain}' has invalid custom ownership.",
+                'proxy.owner_invalid',
+                ['domain' => $domain, 'owner_type' => 'custom'],
+            );
+        }
 
         if ($existing instanceof ProxyRoute && $existing->owner_type !== 'custom') {
             $ownerType = $this->publicOwnerType($existing);
@@ -105,6 +115,7 @@ class ProxyRouteIntent
                 'node_id' => $node->id,
                 'app_id' => null,
                 'workspace_id' => null,
+                'instance_id' => null,
                 'owner_type' => 'custom',
                 'kind' => $kind,
                 'config' => $config,
@@ -135,7 +146,7 @@ class ProxyRouteIntent
     public function remove(string $domain, ?Node $caller = null): array
     {
         $route = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
+            ->with(['node', 'instance.app', 'workspace.instance.app'])
             ->where('domain', $domain)
             ->first();
 
@@ -143,6 +154,14 @@ class ProxyRouteIntent
             throw new GatewayApiException("Proxy route '{$domain}' not found.", 'proxy.not_found', [
                 'domain' => $domain,
             ]);
+        }
+
+        if ($route->owner_type === 'custom' && ! $this->hasValidCustomOwnership($route)) {
+            throw new GatewayApiException(
+                "Domain '{$domain}' has invalid custom ownership.",
+                'proxy.owner_invalid',
+                ['domain' => $domain, 'owner_type' => 'custom'],
+            );
         }
 
         $orphanOwner = false;
@@ -282,17 +301,13 @@ class ProxyRouteIntent
     }
 
     /**
-     * Owner missing proof mirrors proxy doctor `proxy.owner_invalid` for
-     * FK-backed owners. Non-FK owners (gateway, tool, s3, router) cannot be
-     * proven missing here and stay denied.
+     * An incomplete FK-backed tuple cannot prove which owner lifecycle may
+     * remove it. Tool ownership is removable only when its complete stable
+     * tuple identifies an absent tool on the same node.
      */
     private function hasMissingOwner(ProxyRoute $route): bool
     {
-        $route->loadMissing(['app', 'workspace']);
-
         return match ($route->owner_type) {
-            'app', 'app-analytics', 'app-websocket' => ! $route->app instanceof App,
-            'workspace' => ! $route->workspace instanceof Workspace,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };
@@ -307,8 +322,12 @@ class ProxyRouteIntent
         $config = is_array($route->config) ? $route->config : [];
         $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
 
-        if ($ownerName === null || $ownerName === '') {
-            return true;
+        if (
+            ! app(NonInstanceProxyRouteOwnership::class)->matchesToolOrphan($route)
+            || $ownerName === null
+            || $ownerName === ''
+        ) {
+            return false;
         }
 
         return ! NodeTool::query()
@@ -391,10 +410,18 @@ class ProxyRouteIntent
 
         return (
             $route->node_id === $node->id
+            && $route->app_id === null
+            && $route->workspace_id === null
+            && $route->instance_id === null
             && $route->owner_type === 'custom'
             && $route->kind === $kind
             && $storedConfig === $config
         );
+    }
+
+    private function hasValidCustomOwnership(ProxyRoute $route): bool
+    {
+        return app(NonInstanceProxyRouteOwnership::class)->matches($route);
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -29,6 +30,7 @@ final readonly class AnalyticsPublicProxyDoctorProbe
 
     public function __construct(
         private AnalyticsRouteRegistrar $routeRegistrar,
+        private PublicBindingProxyRouteOwnership $routeOwnership,
     ) {}
 
     /**
@@ -85,10 +87,22 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             return null;
         }
 
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         $binding = AppAnalyticsBinding::query()->find((int) ($entry->detail['binding_id'] ?? 0));
 
         if (! $binding instanceof AppAnalyticsBinding || ! $binding->enabled) {
             return null;
+        }
+
+        foreach ($this->routeRegistrar->publicRouteIntents($binding) as $intent) {
+            $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
+
+            if ($route instanceof ProxyRoute && ! $this->routeOwnership->matches($route)) {
+                return null;
+            }
         }
 
         $this->routeRegistrar->syncPublicHosts($binding);
@@ -128,6 +142,16 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             );
         }
 
+        if (! $this->routeOwnership->matches($route)) {
+            return new DriftEntry(
+                family: 'proxy',
+                key: self::PUBLIC_ROUTE_KEY,
+                kind: DriftKind::Unverifiable,
+                summary: "Public analytics route {$intent->domain} conflicts with another ownership tuple.",
+                detail: [...$detail, 'reason' => 'ownership_conflict'],
+            );
+        }
+
         if (! $this->routeMatchesIntent($route, $intent)) {
             return new DriftEntry(
                 family: 'proxy',
@@ -159,7 +183,7 @@ final readonly class AnalyticsPublicProxyDoctorProbe
 
     private function routeMatchesIntent(ProxyRoute $route, ProxyRoute $intent): bool
     {
-        $keys = ['node_id', 'app_id', 'workspace_id', 'owner_type', 'kind', 'config', 'source_hash'];
+        $keys = ['node_id', 'app_id', 'workspace_id', 'instance_id', 'owner_type', 'kind', 'config', 'source_hash'];
 
         return $route->only($keys) === $intent->only($keys);
     }

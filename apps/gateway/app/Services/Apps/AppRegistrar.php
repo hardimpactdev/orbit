@@ -18,6 +18,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Support\GatewayActionResult;
 use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
@@ -43,6 +44,7 @@ final class AppRegistrar
         private readonly RemoteAppSourcePathProbe $sourcePathProbe,
         private readonly AppRegistrationResultAction $resultAction,
         private readonly WorkspacePlacement $placement = new WorkspacePlacement,
+        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     /**
@@ -171,7 +173,7 @@ final class AppRegistrar
             );
         }
 
-        $routeConflict = $this->routeConflict($effectiveDomain, $input['app'], $node, $existingApp);
+        $routeConflict = $this->routeConflict($effectiveDomain, $input['app'], $node, $existingApp, $selected);
 
         if ($routeConflict instanceof ProxyRoute) {
             return $this->failCommand(
@@ -692,6 +694,7 @@ final class AppRegistrar
         string $appName,
         Node $node,
         ?App $existingApp,
+        ?Instance $selectedInstance,
     ): ?ProxyRoute {
         $domain = $effectiveDomain ?? $this->developmentDomain($appName, $node);
 
@@ -701,7 +704,13 @@ final class AppRegistrar
             return null;
         }
 
-        if ($existingApp instanceof App && $route->app_id === $existingApp->id) {
+        if (
+            $existingApp instanceof App
+            && $selectedInstance instanceof Instance
+            && $selectedInstance->app_id === $existingApp->id
+            && $route->owner_type === 'app'
+            && $this->routeOwnership->resolve($route)?->is($selectedInstance)
+        ) {
             return null;
         }
 

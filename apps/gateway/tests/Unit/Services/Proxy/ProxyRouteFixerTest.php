@@ -14,11 +14,13 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -29,6 +31,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe('ProxyRouteFixer', function (): void {
     beforeEach(function (): void {});
 
@@ -200,6 +203,80 @@ describe('ProxyRouteFixer', function (): void {
             ))->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
 
+    it('does not repair malformed custom route ownership', function (array $attributes): void {
+        $node = createTestAppHostNode(['name' => 'gateway-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'custom.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+            ...$attributes,
+        ]);
+        $original = $route->fresh()->getAttributes();
+
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Malformed custom route.',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($route->fresh()->getAttributes())
+            ->toBe($original);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'wrong kind' => [['kind' => 'app']],
+        'wrong serving role' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+        'wrong stable config' => [[
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]],
+    ]);
+
+    it('does not repair a complete router family route on a non-canonical router', function (): void {
+        Node::factory()->router()->create(['name' => 'router-1']);
+        $otherRouter = Node::factory()->router()->create(['name' => 'router-2']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $otherRouter->id,
+            'domain' => 'metrics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
+        ]);
+
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Wrong canonical router.',
+        ));
+
+        expect($result)->toBeNull();
+    });
+
     it('repairs proxy routes without explicit transitional SSH fallback', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
@@ -234,6 +311,450 @@ describe('ProxyRouteFixer', function (): void {
             ->not->toBe(str_repeat('0', 64));
     });
 
+    it('does not mutate or render a workspace route with conflicting ownership', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $otherInstance = Instance::factory()->for($app, 'app')->create(['name' => 'production']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'tls' => ['managed_by' => 'orbit'],
+                ],
+            ]);
+        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+        $originalConfig = $route->config;
+        $originalSourceHash = $route->source_hash;
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        expect(fn (): ?array => $fixer->fix($route->refresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        )))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+
+        expect($route->refresh()->config)
+            ->toBe($originalConfig)
+            ->and($route->source_hash)
+            ->toBe($originalSourceHash)
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    });
+
+    it('does not fix workspace owner and kind tuple mismatches', function (string $ownerType, string $kind): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => $ownerType,
+                'kind' => $kind,
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'upstream' => 'http://orbit-ws-docs-feature-a',
+                    'tls' => ['managed_by' => 'orbit'],
+                ],
+            ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        expect(fn (): ?array => $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        )))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+
+        expect($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'owner mismatch' => ['app', 'workspace'],
+        'kind mismatch' => ['workspace', 'proxy'],
+        'unsupported kind mismatch' => ['workspace', 'internal'],
+    ]);
+
+    it('does not repair invalid public binding ownership tuples', function (
+        string $ownerType,
+        string $invalidity,
+    ): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$ownerType}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => $invalidity === 'malformed kind' ? 'app' : 'proxy',
+            'config' => ['upstream' => 'https://router.orbit'],
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'analytics missing app' => ['app-analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'conflicting app'],
+        'analytics malformed kind' => ['app-analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'conflicting app'],
+        'websocket malformed kind' => ['app-websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'workspace identity'],
+    ]);
+
+    it('does not render or generically repair public family routes with invalid family tuples', function (
+        string $ownerType,
+        string $invalidity,
+    ): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $otherIngress = Node::factory()->ingress()->create(['name' => 'edge-2']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backendRole = $ownerType === 'app-analytics' ? 'analytics' : 'websocket';
+        $backend = Node::factory()
+            ->withActiveRole($backendRole)
+            ->create([
+                'name' => "{$backendRole}-1",
+                'wireguard_address' => '10.6.0.50',
+            ]);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $ingress->id],
+        ]);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        $protocol = $ownerType === 'app-analytics' ? 'analytics' : 'websocket';
+        $serviceTarget = "https://{$protocol}.orbit";
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$protocol}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => array_filter(
+                [
+                    'placement' => 'ingress',
+                    'ingress_node_id' => $ingress->id,
+                    'protocol' => $protocol,
+                    'target' => ['type' => $protocol, 'value' => $serviceTarget],
+                    'upstream' => $serviceTarget,
+                    'tracking_paths' => $protocol === 'analytics' ? ['/js/*', '/api/event'] : null,
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => $backend->name,
+                        'url' => $protocol === 'analytics' ? 'http://10.6.0.50:8000' : 'https://10.6.0.50:8080',
+                    ]],
+                    'router_backend_tls' => $protocol === 'websocket'
+                        ? ['trusted_by_gateway_ca' => true, 'ca_path' => '/etc/orbit/ca/root.crt']
+                        : null,
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'source_hash' => str_repeat('a', 64),
+                    ],
+                    'tls' => [
+                        'cert_path' => "/etc/orbit/certs/{$protocol}.docs.test.crt",
+                        'key_path' => "/etc/orbit/certs/{$protocol}.docs.test.key",
+                    ],
+                ],
+                static fn (mixed $value): bool => $value !== null,
+            ),
+        ]);
+        $config = $route->config;
+
+        if ($invalidity === 'unsupported backend topology') {
+            $extraBackend = Node::factory()
+                ->withActiveRole($backendRole)
+                ->create([
+                    'name' => "{$backendRole}-2",
+                    'wireguard_address' => '10.6.0.51',
+                ]);
+            $config['router_backend_pool'][] = [
+                'node_id' => $extraBackend->id,
+                'node' => $extraBackend->name,
+                'url' => $protocol === 'analytics' ? 'http://10.6.0.51:8000' : 'https://10.6.0.51:8080',
+            ];
+        }
+
+        if ($invalidity === 'inactive websocket backend') {
+            $backend->forceFill(['status' => 'inactive'])->save();
+        }
+
+        match ($invalidity) {
+            'wrong node' => $route->forceFill(['node_id' => $otherIngress->id])->save(),
+            'wrong placement' => $config['placement'] = 'backend',
+            'wrong ingress identity' => $config['ingress_node_id'] = $otherIngress->id,
+            'wrong protocol' => $config['protocol'] = 'http',
+            'wrong target' => $config['target']['value'] = 'https://unrelated.orbit',
+            'wrong router identity' => $config['router_upstream']['node_id'] = $otherIngress->id,
+            'wrong backend pool' => $config['router_backend_pool'][0]['node_id'] = $otherIngress->id,
+            'wrong tls identity' => $config['tls']['cert_path'] = '/etc/orbit/certs/unrelated.crt',
+            'wrong family config' => $protocol === 'analytics'
+                ? ($config['tracking_paths'] = ['/admin/*'])
+                : ($config['router_backend_tls']['ca_path'] = '/tmp/untrusted.crt'),
+            'unsupported backend topology', 'inactive websocket backend' => null,
+        };
+
+        if ($invalidity !== 'wrong node') {
+            $route->forceFill(['config' => $config])->save();
+        }
+
+        $rendererRejected = false;
+
+        try {
+            new ProxyRouteRenderer()->render($route->fresh());
+        } catch (RuntimeException) {
+            $rendererRejected = true;
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route->fresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($rendererRejected)
+            ->toBeTrue()
+            ->and($result)
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
+    })->with([
+        'analytics wrong node' => ['app-analytics', 'wrong node'],
+        'analytics wrong placement' => ['app-analytics', 'wrong placement'],
+        'analytics wrong ingress identity' => ['app-analytics', 'wrong ingress identity'],
+        'analytics wrong protocol' => ['app-analytics', 'wrong protocol'],
+        'analytics wrong target' => ['app-analytics', 'wrong target'],
+        'analytics wrong router identity' => ['app-analytics', 'wrong router identity'],
+        'analytics wrong backend pool' => ['app-analytics', 'wrong backend pool'],
+        'analytics wrong tls identity' => ['app-analytics', 'wrong tls identity'],
+        'analytics wrong family config' => ['app-analytics', 'wrong family config'],
+        'websocket wrong node' => ['app-websocket', 'wrong node'],
+        'websocket wrong placement' => ['app-websocket', 'wrong placement'],
+        'websocket wrong ingress identity' => ['app-websocket', 'wrong ingress identity'],
+        'websocket wrong protocol' => ['app-websocket', 'wrong protocol'],
+        'websocket wrong target' => ['app-websocket', 'wrong target'],
+        'websocket wrong router identity' => ['app-websocket', 'wrong router identity'],
+        'websocket wrong backend pool' => ['app-websocket', 'wrong backend pool'],
+        'websocket wrong tls identity' => ['app-websocket', 'wrong tls identity'],
+        'websocket wrong family config' => ['app-websocket', 'wrong family config'],
+        'websocket unsupported backend topology' => ['app-websocket', 'unsupported backend topology'],
+        'websocket inactive backend' => ['app-websocket', 'inactive websocket backend'],
+    ]);
+
+    it('does not fix a proxy route that persists the public instance projection label', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'invalid.docs.test',
+            'owner_type' => 'instance',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($route->refresh()->source_hash)
+            ->toBe(str_repeat('0', 64))
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    });
+
+    it('does not repair invalid primary app ownership tuples', function (string $invalidity): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'wrong kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route->fresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'missing app',
+        'missing instance',
+        'conflicting app',
+        'wrong kind',
+        'workspace identity',
+    ]);
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()
@@ -247,23 +768,18 @@ describe('ProxyRouteFixer', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.2')->spec()],
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $router->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'metrics.orbit',
             'owner_type' => 'router',
             'kind' => 'proxy',
             'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'owner_name' => 'grafana',
-                'protocol' => 'http',
-                'target' => [
-                    'type' => 'upstream',
-                    'value' => 'http://gateway.metrics.orbit:3000',
-                ],
-                'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000],
-                ],
-            ],
+            'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $renderer = new ProxyRouteRenderer;
@@ -299,7 +815,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/metrics.orbit.crt /etc/orbit/certs/metrics.orbit.key')
             ->and($caddySite)
-            ->toContain('reverse_proxy http://gateway.metrics.orbit:3000')
+            ->toContain('reverse_proxy http://host.docker.internal:3000')
             ->and($route->refresh()->source_hash)
             ->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)
@@ -358,35 +874,42 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
-                'router_artifact' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'source_hash' => str_repeat('c', 64),
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'source_hash' => str_repeat('c', 64),
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
                 ],
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -424,34 +947,41 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
-                'router_artifact' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'source_hash' => str_repeat('c', 64),
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'source_hash' => str_repeat('c', 64),
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
                 ],
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -513,6 +1043,7 @@ describe('ProxyRouteFixer', function (): void {
         $route = ProxyRoute::factory()->create([
             'node_id' => $nmbpNode->id,
             'app_id' => $app->id,
+            'instance_id' => $nmbp->id,
             'domain' => 'docs.nmbp',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -591,37 +1122,20 @@ describe('ProxyRouteFixer', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => ['name' => 'orbit-e2e-gateway-orbit-caddy']],
         ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $intent = app(WebSocketRouteRegistrar::class)->serviceRouteIntent();
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
             'owner_type' => 'router',
             'kind' => 'proxy',
             'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'protocol' => 'websocket',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'app-dev-1',
-                        'url' => 'https://10.6.0.44:8080',
-                    ],
-                ],
-                'router_backend_tls' => [
-                    'trusted_by_gateway_ca' => true,
-                    'ca_path' => '/etc/orbit/ca/root.crt',
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
-                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
-                ],
-            ],
+            'config' => $intent->config,
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         app()->instance(RemoteShell::class, $shell);
@@ -693,29 +1207,32 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -759,28 +1276,31 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'active',
         ]);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -926,20 +1446,23 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'document_root' => '/home/orbit/apps/docs/public',
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
-                'php_socket' => null,
-                'tls' => 'internal',
-            ],
-        ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $node->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'php_socket' => null,
+                    'tls' => 'internal',
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
 
@@ -968,7 +1491,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
             ->and($caddySite)
-            ->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->toContain('reverse_proxy http://orbit-app-docs-development:8080')
             ->and($caddySite)
             ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
             ->not->toContain('php_fastcgi')->and($certificates->hosts)->toBe([
@@ -985,7 +1508,7 @@ describe('ProxyRouteFixer', function (): void {
             'name' => 'happie',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -1000,6 +1523,7 @@ describe('ProxyRouteFixer', function (): void {
             ->for($node, 'node')
             ->for($app, 'app')
             ->create([
+                'instance_id' => $instance->id,
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
                 'kind' => 'app',
@@ -1063,21 +1587,24 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'document_root' => '/home/orbit/apps/docs/public',
-                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+        $instance = Instance::factory()->for($app, 'app')->create();
+        $route = ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $node->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
 
@@ -1122,9 +1649,10 @@ describe('ProxyRouteFixer', function (): void {
         function (): void {
             $node = createTestAppHostNode(['name' => 'app-1']);
             $app = App::factory()->create(['name' => 'legacy-docs']);
+            $instance = Instance::factory()->for($app, 'app')->create();
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
-                ->for($app, 'app')
+                ->forApp($instance, $app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -1161,12 +1689,12 @@ describe('ProxyRouteFixer', function (): void {
             expect($action['status'])
                 ->toBe('completed')
                 ->and($caddySite)
-                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
                 ->and($caddySite)
                 ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
                 ->not->toContain('php_fastcgi')->and($caddySite)
                 ->not->toContain('file_server')->and($route->refresh()->config['runtime_upstream'])->toBe(
-                    'http://orbit-app-legacy-docs:8080',
+                    'http://orbit-app-legacy-docs-development:8080',
                 )->and($route->refresh()->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
                     $route->refresh()->config['php_socket'],
                 )->toBeNull();
@@ -1596,7 +2124,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it(
-        'restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the app identity',
+        'restores a legacy private backend artifact persisted with only php_socket by deriving runtime_upstream from the instance identity',
         function (): void {
             $edge = Node::factory()->create(['name' => 'edge-1']);
             $backend = Node::factory()->create(['name' => 'web-1']);
@@ -1606,9 +2134,10 @@ describe('ProxyRouteFixer', function (): void {
                 'status' => 'active',
             ]);
             $app = App::factory()->create(['name' => 'legacy-docs']);
+            $instance = Instance::factory()->for($app, 'app')->create();
             $route = ProxyRoute::factory()
                 ->for($edge, 'node')
-                ->for($app, 'app')
+                ->forApp($instance, $app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -1649,7 +2178,7 @@ describe('ProxyRouteFixer', function (): void {
             expect($action['status'])
                 ->toBe('completed')
                 ->and($caddySite)
-                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs-development:8080')
                 ->and($caddySite)
                 ->not->toContain('php_fastcgi');
         },

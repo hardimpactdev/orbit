@@ -12,6 +12,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
@@ -87,7 +88,22 @@ final readonly class S3ProxyDoctorProbe
      */
     public function restore(Node $node, DriftEntry $entry): ?array
     {
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         if ($entry->key === self::RouterRouteKey || $entry->key === self::RouterBackendKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', S3RouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                $existingRoute instanceof ProxyRoute
+                && ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $route = $this->routeRegistrar->syncServiceRoute();
 
             return [
@@ -105,6 +121,17 @@ final readonly class S3ProxyDoctorProbe
         }
 
         if ($entry->key === self::RouterRouteOrphanedKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', S3RouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                ! $existingRoute instanceof ProxyRoute
+                || ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $this->routeRegistrar->syncServiceRouteAfterBackendChange();
 
             return [
@@ -206,6 +233,22 @@ final readonly class S3ProxyDoctorProbe
             ->where('domain', S3RouteRegistrar::ServiceDomain)
             ->first();
 
+        if (
+            $route instanceof ProxyRoute
+            && ! $this->routeRegistrar->ownsServiceRoute($route)
+        ) {
+            return [new DriftEntry(
+                family: 'proxy',
+                key: self::RouterRouteKey,
+                kind: DriftKind::Unverifiable,
+                summary: 'S3 service route s3.orbit conflicts with another ownership tuple.',
+                detail: [
+                    'domain' => S3RouteRegistrar::ServiceDomain,
+                    'reason' => 'ownership_conflict',
+                ],
+            )];
+        }
+
         // If the route exists and has an invalid backend pool, routerBackendDrift
         // will classify this as router_backend_invalid. Do not double-report here.
         if ($route instanceof ProxyRoute && $this->hasInvalidBackendPool($route)) {
@@ -248,6 +291,10 @@ final readonly class S3ProxyDoctorProbe
 
         if (! $route instanceof ProxyRoute) {
             // Absent route is covered by router_route_missing — do not emit backend_invalid.
+            return [];
+        }
+
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
             return [];
         }
 
@@ -352,6 +399,10 @@ final readonly class S3ProxyDoctorProbe
             ->first();
 
         if (! $route instanceof ProxyRoute) {
+            return [];
+        }
+
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
             return [];
         }
 
@@ -469,6 +520,28 @@ final readonly class S3ProxyDoctorProbe
             ];
         }
 
+        $ownershipKeys = $intent->owner_type === 's3'
+            ? ['placement', 'owner_name', 'protocol']
+            : ['owner_name', 'protocol'];
+
+        if (! ProxyRouteOwnershipCompatibility::matches($route, $intent, $ownershipKeys)) {
+            return [
+                new DriftEntry(
+                    family: 'proxy',
+                    key: $key,
+                    kind: DriftKind::Unverifiable,
+                    summary: $mismatchSummary,
+                    detail: [
+                        ...$baseDetail,
+                        'reason' => 'ownership_conflict',
+                        'observed_node_id' => $route->node_id,
+                        'observed_owner_type' => $route->owner_type,
+                        'observed_kind' => $route->kind,
+                    ],
+                ),
+            ];
+        }
+
         $reason = $this->mismatchReason($route, $intent);
 
         if ($reason === null) {
@@ -502,6 +575,10 @@ final readonly class S3ProxyDoctorProbe
 
         if ($route->app_id !== $intent->app_id) {
             return 'app_mismatch';
+        }
+
+        if ($route->instance_id !== $intent->instance_id) {
+            return 'instance_mismatch';
         }
 
         if ($route->workspace_id !== $intent->workspace_id) {
