@@ -104,6 +104,7 @@ describe('AppRemoveController', function (): void {
                 'node_id' => $node->id,
                 'domain' => $config instanceof OrbitInstanceDriverConfigData ? (string) $config->domain : '',
                 'app_id' => $app->id,
+                'instance_id' => $instance->id,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'source_hash' => str_repeat('a', times: 64),
@@ -181,7 +182,7 @@ describe('AppRemoveController', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'development',
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $targetNode->id,
@@ -191,11 +192,13 @@ describe('AppRemoveController', function (): void {
                 domain: 'docs.test',
             ),
         ]);
+        $compatibilityApp = App::factory()->create(['name' => 'compatibility']);
 
         ProxyRoute::query()->create([
             'node_id' => $targetNode->id,
             'domain' => 'docs.test',
-            'app_id' => $app->id,
+            'app_id' => $compatibilityApp->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'source_hash' => str_repeat('a', times: 64),
@@ -277,7 +280,7 @@ describe('AppRemoveController', function (): void {
             'name' => 'docs',
             'runtime' => 'static',
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'production',
             'adopted' => false,
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -293,6 +296,7 @@ describe('AppRemoveController', function (): void {
             'node_id' => $targetNode->id,
             'domain' => 'docs.test',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'source_hash' => str_repeat('a', times: 64),

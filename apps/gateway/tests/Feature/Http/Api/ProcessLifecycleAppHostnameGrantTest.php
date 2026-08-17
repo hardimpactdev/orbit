@@ -71,6 +71,7 @@ function processLifecycleHostnameGrantFixture(): array
         'node_id' => $grantedNode->id,
         'domain' => 'docs-dev.example',
         'app_id' => $grantedApp->id,
+        'instance_id' => $grantedInstance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'config' => [
@@ -84,6 +85,7 @@ function processLifecycleHostnameGrantFixture(): array
         'node_id' => $grantedNode->id,
         'domain' => 'feature-docs.example',
         'app_id' => $grantedApp->id,
+        'instance_id' => $grantedInstance->id,
         'workspace_id' => $workspace->id,
         'owner_type' => 'workspace',
         'kind' => 'workspace',

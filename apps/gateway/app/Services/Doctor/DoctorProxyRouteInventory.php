@@ -27,7 +27,7 @@ final readonly class DoctorProxyRouteInventory
     public function forScope(Node $node, DoctorTargetScope $scope): Collection
     {
         $query = ProxyRoute::query()
-            ->with(['node', 'app', 'workspace'])
+            ->with(['node', 'instance.app', 'workspace.instance.app'])
             ->where('node_id', $node->id);
 
         if ($this->nodeExcludesWorkspaces($node)) {
@@ -38,7 +38,17 @@ final readonly class DoctorProxyRouteInventory
         }
 
         if ($scope->app !== null) {
-            $query->whereHas('app', static fn (Builder $appQuery): Builder => $appQuery->where('name', $scope->app));
+            $query
+                ->whereHas(
+                    'instance',
+                    static function (Builder $instanceQuery): void {
+                        $instanceQuery->whereColumn('instances.app_id', 'proxy_routes.app_id');
+                    },
+                )
+                ->whereHas(
+                    'instance.app',
+                    static fn (Builder $appQuery): Builder => $appQuery->where('name', $scope->app),
+                );
         }
 
         if ($scope->workspace !== null) {

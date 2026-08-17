@@ -504,6 +504,10 @@ final readonly class S3ProxyDoctorProbe
             return 'app_mismatch';
         }
 
+        if ($route->instance_id !== $intent->instance_id) {
+            return 'instance_mismatch';
+        }
+
         if ($route->workspace_id !== $intent->workspace_id) {
             return 'workspace_mismatch';
         }

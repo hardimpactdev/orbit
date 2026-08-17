@@ -173,10 +173,12 @@ describe('ProxyRouteIntent', function (): void {
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -311,13 +313,38 @@ describe('ProxyRouteIntent', function (): void {
             ->toBeFalse();
     });
 
+    it('treats mismatched app_id compatibility as an orphaned instance owner', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $compatibility = App::factory()->create(['name' => 'other']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $route->forceFill(['app_id' => $compatibility->id])->save();
+
+        $result = app(ProxyRouteIntent::class)->remove('docs.test');
+
+        expect($result['meta']['removal_reason'])
+            ->toBe('orphan_owner')
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeFalse();
+    });
+
     it('denies removal when an app owner still exists', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -328,14 +355,18 @@ describe('ProxyRouteIntent', function (): void {
 
     it('removes orphaned instance-owned primary routes when the owner record is missing', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'app_id' => null,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'orphan-app.test',
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
+        $instance->delete();
 
         $result = app(ProxyRouteIntent::class)->remove('orphan-app.test');
 
@@ -368,10 +399,12 @@ describe('ProxyRouteIntent', function (): void {
     it('rejects custom proxy:add on php app-owned domains so frankenphp routes are not overwritten', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',

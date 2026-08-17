@@ -234,6 +234,7 @@ describe('process key and label contract', function (): void {
             'node_id' => $fixture['appNode']->id,
             'domain' => 'test.app.example',
             'app_id' => $fixture['app']->id,
+            'instance_id' => $fixture['instance']->id,
             'owner_type' => 'app',
             'kind' => 'app',
             'config' => [

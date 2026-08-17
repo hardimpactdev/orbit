@@ -8,7 +8,6 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
-use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use RuntimeException;
 
@@ -20,6 +19,35 @@ class ProxyRouteFactory extends Factory
 {
     protected $model = ProxyRoute::class;
 
+    public function configure(): static
+    {
+        return $this->afterMaking(static function (ProxyRoute $route): void {
+            if (! in_array($route->owner_type, ['app', 'workspace', 'app-analytics', 'app-websocket'], true)) {
+                return;
+            }
+
+            if (! is_int($route->instance_id)) {
+                throw new RuntimeException(
+                    "ProxyRoute factory requires an explicit instance_id for owner_type={$route->owner_type}.",
+                );
+            }
+
+            $instance = Instance::query()->find($route->instance_id);
+
+            if (! $instance instanceof Instance) {
+                throw new RuntimeException(
+                    "ProxyRoute factory instance_id={$route->instance_id} does not identify an Instance.",
+                );
+            }
+
+            if ($route->app_id !== $instance->app_id) {
+                throw new RuntimeException(
+                    "ProxyRoute factory app_id={$route->app_id} conflicts with instance_id={$instance->id} app_id={$instance->app_id}.",
+                );
+            }
+        });
+    }
+
     public function definition(): array
     {
         return [
@@ -27,37 +55,7 @@ class ProxyRouteFactory extends Factory
             'domain' => fake()->unique()->bothify('route-####.test'),
             'app_id' => null,
             'workspace_id' => null,
-            'instance_id' => static function (array $attributes): ?int {
-                $ownerType = $attributes['owner_type'] ?? 'custom';
-
-                if ($ownerType === 'workspace' && is_numeric($attributes['workspace_id'] ?? null)) {
-                    $instanceId = Workspace::query()
-                        ->whereKey((int) $attributes['workspace_id'])
-                        ->value('instance_id');
-
-                    return is_numeric($instanceId) ? (int) $instanceId : null;
-                }
-
-                if (! in_array($ownerType, ['app', 'app-analytics', 'app-websocket'], true)) {
-                    return null;
-                }
-
-                $appId = is_numeric($attributes['app_id'] ?? null) ? (int) $attributes['app_id'] : null;
-
-                if ($appId === null) {
-                    return null;
-                }
-
-                $existing = Instance::query()->where('app_id', $appId)->value('id');
-
-                if (is_numeric($existing)) {
-                    return (int) $existing;
-                }
-
-                $instance = Instance::factory()->create(['app_id' => $appId]);
-
-                return $instance instanceof Instance ? $instance->id : null;
-            },
+            'instance_id' => null,
             'owner_type' => 'custom',
             'kind' => 'proxy',
             'source_hash' => hash('sha256', fake()->uuid()),
@@ -69,6 +67,11 @@ class ProxyRouteFactory extends Factory
 
     public function forApp(?App $app = null, ?Instance $instance = null): self
     {
+        if ($instance instanceof Instance && ! $app instanceof App) {
+            $instance->loadMissing('app');
+            $app = $instance->app;
+        }
+
         if (! $app instanceof App) {
             $createdApp = App::factory()->create();
 
@@ -80,7 +83,15 @@ class ProxyRouteFactory extends Factory
         }
 
         if (! $instance instanceof Instance) {
-            $instance = $app->instances()->first();
+            $instances = $app->instances()->get();
+
+            if ($instances->count() > 1) {
+                throw new RuntimeException(
+                    'ProxyRoute factory forApp state requires an explicit Instance when the App has multiple instances.',
+                );
+            }
+
+            $instance = $instances->first();
         }
 
         if (! $instance instanceof Instance) {
@@ -91,6 +102,10 @@ class ProxyRouteFactory extends Factory
             }
 
             $instance = $createdInstance;
+        }
+
+        if ($instance->app_id !== $app->id) {
+            throw new RuntimeException('ProxyRoute factory forApp state received an Instance owned by another App.');
         }
 
         return $this->state(fn (): array => [

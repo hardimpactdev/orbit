@@ -11,13 +11,15 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - The proxy command family owns the `proxy:*` command prefix.
 - The `proxy` state family is the canonical registry of every hostname Orbit
   exposes.
-- Every proxy route has a public owner: `app`, `instance`, `analytics`, `websocket`,
-  `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. The owner value
+- Every proxy route has a public owner: `instance`, `analytics`, `websocket`,
+  `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. Persisted primary
+  routes use `owner_type=app` and `kind=app`; the registry projects both as
+  `instance`. Persisted `owner_type=instance` is invalid. The owner value
   classifies which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
   by `router`.
-- Every proxy route has a kind: `app`, `instance`, `workspace`, `internal`, `proxy`, or
-  `redirect`.
+- Every proxy route has a public kind: `instance`, `workspace`, `internal`,
+  `proxy`, or `redirect`.
 - `proxy:list` shows all proxy routes by default, including instance routes,
   workspace routes, gateway/internal routes, tool-owned routes, custom upstream
   routes, and redirects.
@@ -37,7 +39,7 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   routes. An explicit `proxy:list --filter=workspace` request fails with
   `workspace.unsupported_for_production` before route facts are returned when
   either side crosses that boundary.
-- App, instance, workspace, gateway, and tool-owned routes are visible through proxy
+- Instance, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
 - Every instance-primary route targets one concrete instance. The route uses
   `owner.type=instance` and `owner.name=<app.instance>`, with

@@ -27,6 +27,9 @@ use Override;
  * @property-read App|null $app
  * @property-read Workspace|null $workspace
  * @property-read Instance|null $instance
+ *
+ * Instance-backed routes derive App ownership through instance.app. The
+ * retained app_id must match instance.app_id and is compatibility data only.
  */
 class ProxyRoute extends Model
 {

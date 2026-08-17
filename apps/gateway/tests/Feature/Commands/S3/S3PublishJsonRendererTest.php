@@ -295,13 +295,15 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonRouterNode();
         $ingress = s3JsonIngressNode();
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
-        ]);
+        ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'domain' => 's3.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
+            ]);
 
         $response = $this->call(
             'POST',

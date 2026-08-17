@@ -243,7 +243,11 @@ final readonly class ProcessAppHostnameResolver
         $route->loadMissing('instance.app');
         $instance = $route->instance;
 
-        if (! $instance instanceof Instance || $workspace->instance_id !== $route->instance_id) {
+        if (
+            ! $instance instanceof Instance
+            || $workspace->instance_id !== $route->instance_id
+            || $route->app_id !== $instance->app_id
+        ) {
             throw new GatewayApiException(
                 "App hostname '{$domain}' workspace is not attached to its instance.",
                 'validation_failed',

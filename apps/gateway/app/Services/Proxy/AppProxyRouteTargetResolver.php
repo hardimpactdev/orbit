@@ -25,6 +25,13 @@ final readonly class AppProxyRouteTargetResolver
 
         $route->loadMissing('instance.app');
 
+        if (
+            ! $route->instance instanceof Instance
+            || $route->app_id !== $route->instance->app_id
+        ) {
+            return null;
+        }
+
         return $route->instance;
     }
 

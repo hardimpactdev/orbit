@@ -282,11 +282,12 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         'node_id' => 1,
         'app_id' => $workspace->app_id,
         'workspace_id' => $workspace->id,
-        'instance_id' => null,
+        'instance_id' => $workspace->instance_id,
         'domain' => 'feature-a.demo.beast',
         'owner_type' => 'workspace',
         'kind' => 'workspace',
     ]);
+    $legacyRoute->forceFill(['instance_id' => null])->save();
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.41:9477/v1/commands' => Http::sequence()

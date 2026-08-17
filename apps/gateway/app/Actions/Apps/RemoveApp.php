@@ -21,6 +21,7 @@ use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Tools\CaddyTool;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -84,7 +85,10 @@ final readonly class RemoveApp
         $cleanupWarnings = $this->unresolvedOrbitCleanupWarnings($app);
         $occupiedAppPlacements = $this->occupiedAppPlacements($app);
         $proxyRoutes = ProxyRoute::query()
-            ->where('app_id', $app->id)
+            ->whereHas(
+                'instance',
+                static fn (Builder $query): Builder => $query->where('app_id', $app->id),
+            )
             ->get();
         [$instanceCleanupRows, $cleanupRowIndexByInstanceId] = $this->instanceCleanupInventory($app, $proxyRoutes);
         $proxyRouteIds = $proxyRoutes->pluck('id')->all();

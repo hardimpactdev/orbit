@@ -255,13 +255,15 @@ describe('S3Unpublish owned-route denial', function (): void {
         s3UnpublishRouterNode();
         $ingress = s3UnpublishIngressNode();
 
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
-        ]);
+        ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'domain' => 's3.example.com',
+                'node_id' => $ingress->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
+            ]);
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 

@@ -72,11 +72,12 @@ it('keeps custom route lookup read-only in verify mode', function (): void {
 });
 
 it('identifies workspace-owned proxy issues by their stored route', function (): void {
-    ProxyRoute::factory()->create([
+    $workspaceRoute = ProxyRoute::factory()->create([
         'node_id' => $this->node->id,
         'domain' => 'workspace.test',
-        'owner_type' => 'workspace',
+        'owner_type' => 'custom',
     ]);
+    $workspaceRoute->forceFill(['owner_type' => 'workspace'])->save();
     ProxyRoute::factory()->create([
         'node_id' => $this->node->id,
         'domain' => 'custom.test',

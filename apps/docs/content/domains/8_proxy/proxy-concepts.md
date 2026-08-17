@@ -13,14 +13,17 @@ These terms define the types of routes that the proxy family owns and manages.
   and workload placement come only from that Instance relation. Runtime readers
   do not resolve configured IDs, selectors, domains, or App instance
   candidates. Router, gateway, tool, S3, and custom routes keep
-  `instance_id=null`.
-- **Route owner:** The domain that owns route lifecycle. One of `app`,
-  `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`,
-  `tool`, or `custom`. The `owner` value classifies which domain's convergence
-  edits the route record; it is not necessarily the role that owns the hostname
-  or artifact.
-- **Route kind:** Route behavior at ingress. One of `app`, `instance`, `workspace`,
-  `internal`, `proxy`, or `redirect`.
+  `instance_id=null`. Retained `app_id` is compatibility data. It must equal
+  the concrete Instance's `app_id` and never selects the App or placement.
+- **Route owner:** The domain that owns route lifecycle. Persisted
+  `owner_type` values are `app`, `app-analytics`, `app-websocket`, `workspace`,
+  `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored
+  app-route value `app` to the public owner `instance`, and maps the two binding
+  values to `analytics` and `websocket`. A stored `owner_type=instance` is not
+  valid route ownership vocabulary.
+- **Route kind:** Route behavior at ingress. Persisted kinds are `app`,
+  `workspace`, `internal`, `proxy`, and `redirect`. The registry maps a stored
+  primary `app` route to public kind `instance`.
 - **App route:** Instance-owned primary route whose public owner and kind are
   `instance`. Its `owner.name` and `target.value` are the dotted instance
   selector. Edited through app and instance commands.

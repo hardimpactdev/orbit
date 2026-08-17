@@ -497,4 +497,21 @@ describe('AppAnalyticsController', function (): void {
         expect(ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('source_hash'))
             ->toBe('divergent');
     });
+
+    it('reports a route assigned to the wrong sibling instance as divergent', function (): void {
+        $caller = createAppAnalyticsCallerNode();
+        createAppAnalyticsRoutePrerequisites();
+        $app = createAppAnalyticsApp();
+        grantAppAnalyticsAccess($caller, appAnalyticsNode($app), ['instance:read', 'instance:write']);
+
+        app(AppAnalyticsBindingService::class)->enable(appAnalyticsInstance($app), ['analytics.docs.test']);
+        $sibling = Instance::factory()->for($app)->create(['name' => 'sibling']);
+        ProxyRoute::query()
+            ->where('domain', 'analytics.docs.test')
+            ->update(['instance_id' => $sibling->id]);
+
+        getAppAnalyticsJson('/api/instances/docs.production/analytics/verify')
+            ->assertOk()
+            ->assertJsonPath('success.data.verification_context.routes.0.status', 'divergent');
+    });
 });

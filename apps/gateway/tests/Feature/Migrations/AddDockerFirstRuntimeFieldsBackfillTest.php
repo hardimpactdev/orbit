@@ -175,6 +175,35 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
         ->toBeNull();
 });
 
+it('rejects compatibility app_id that disagrees with the concrete instance owner', function (): void {
+    $node = Node::factory()->appDev()->create();
+    $owner = App::factory()->create(['name' => 'owner', 'runtime' => AppRuntimeKind::Php]);
+    $compatibility = App::factory()->create(['name' => 'compatibility', 'runtime' => AppRuntimeKind::Php]);
+    $instance = Instance::factory()->for($owner)->create();
+
+    DB::table('proxy_routes')->insert([
+        'node_id' => $node->id,
+        'app_id' => $compatibility->id,
+        'instance_id' => $instance->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'domain' => 'owner.test',
+        'source_hash' => str_repeat('0', 64),
+        'config' => json_encode([
+            'document_root' => '/srv/owner/public',
+            'runtime_upstream' => 'http://orbit-app-compatibility:8080',
+        ], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    expect(fn (): mixed => new AppProxyRouteRuntimeUpstreamBackfill()->run())
+        ->toThrow(
+            RuntimeException::class,
+            "App proxy route 'owner.test' app_id={$compatibility->id} conflicts with instance_id={$instance->id} app_id={$owner->id}.",
+        );
+});
+
 it('does not backfill static app routes (they have no runtime_upstream)', function (): void {
     $node = Node::factory()->appDev()->create();
     $app = App::factory()

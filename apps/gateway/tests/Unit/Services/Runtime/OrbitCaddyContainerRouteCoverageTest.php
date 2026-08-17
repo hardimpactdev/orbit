@@ -45,29 +45,31 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [[
-                    'node_id' => $appNode->id,
-                    'domain' => 'docs.test',
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('a', 64),
-                ]],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [[
+                        'node_id' => $appNode->id,
+                        'domain' => 'docs.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/docs/current/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('a', 64),
+                    ]],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
                 ],
-            ],
-        ]);
+            ]);
 
         $artifact = $route->config['backend_artifacts'][0];
 
@@ -142,27 +144,29 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     it('renders router routes without binding to a node-only WireGuard address', function (): void {
         $renderer = new ProxyRouteRenderer;
         $router = Node::factory()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'web-1',
-                        'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort,
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $router->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'web-1',
+                            'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort,
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         expect($renderer->renderRouterRoute($route))
             ->toContain('http://docs.test {')
@@ -176,25 +180,27 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [[
-                    'node_id' => $appNode->id,
-                    'domain' => 'docs.test',
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/sites/docs/current/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('a', 64),
-                ]],
-            ],
-        ]);
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [[
+                        'node_id' => $appNode->id,
+                        'domain' => 'docs.test',
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/sites/docs/current/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('a', 64),
+                    ]],
+                ],
+            ]);
 
         $coLocated = OrbitCaddyContainer::forPublicIngress('10.6.0.21');
         $privateOnlyPort = (string) OrbitCaddyContainer::PrivateBackendPort;

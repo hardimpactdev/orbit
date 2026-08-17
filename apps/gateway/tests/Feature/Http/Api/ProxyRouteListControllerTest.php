@@ -166,6 +166,7 @@ describe('ProxyRouteListController', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $workspaceNode->id,
             'app_id' => $workspace->app_id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $workspace->id,
             'domain' => 'feature-docs.test',
             'owner_type' => 'workspace',
@@ -218,9 +219,13 @@ describe('ProxyRouteListController', function (): void {
         $caller = createProxyRouteListCallerNode();
         assignProxyRouteListRole($caller);
         $workspaceNode = Node::factory()->appProd()->create(['name' => 'workspace-prod']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $workspaceNode->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => null,
             'domain' => 'orphaned-workspace.test',
             'owner_type' => 'workspace',

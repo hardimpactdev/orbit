@@ -159,8 +159,7 @@ class NodeRoleDependencyInspector
             // Remove the node-bound instances and their routes served on this
             // node; the logical App and any instances on other nodes survive.
             ProxyRoute::query()
-                ->whereIn('app_id', $appIds)
-                ->where('node_id', $node->id)
+                ->whereIn('instance_id', $instanceIds)
                 ->delete();
 
             Instance::query()
@@ -170,7 +169,6 @@ class NodeRoleDependencyInspector
             // Only delete an App once it has no remaining concrete instances.
             foreach ($appIds as $appId) {
                 if (Instance::query()->where('app_id', $appId)->doesntExist()) {
-                    ProxyRoute::query()->where('app_id', $appId)->delete();
                     App::query()->whereKey($appId)->delete();
                 }
             }
@@ -236,19 +234,17 @@ class NodeRoleDependencyInspector
                             ->where('kind', 'workspace');
                     });
             })
-            ->with('app.instances')
+            ->with('instance.app')
             ->get()
             ->filter(static function (ProxyRoute $route) use ($placement): bool {
-                $app = $route->app;
+                $instance = $route->instance;
+                $app = $instance?->app;
 
-                return $app instanceof App
-                && $app->instances->contains(
-                    static fn (Instance $instance): bool => (
-                        $placement->runtimeEnvironment(
-                            $app,
-                            $instance,
-                        ) === 'production'
-                    ),
+                return (
+                    $app instanceof App
+                    && $instance instanceof Instance
+                    && $route->app_id === $instance->app_id
+                    && $placement->runtimeEnvironment($app, $instance) === 'production'
                 );
             })
             ->pluck('id')

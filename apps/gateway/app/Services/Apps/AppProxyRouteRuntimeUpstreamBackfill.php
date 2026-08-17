@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
@@ -26,6 +27,8 @@ use RuntimeException;
  *
  * Static apps are skipped (their routes have no runtime_upstream — they serve
  * via file_server / document_root and were never rendered with php_fastcgi).
+ *
+ * @mago-expect lint:kan-defect
  */
 final readonly class AppProxyRouteRuntimeUpstreamBackfill
 {
@@ -33,21 +36,29 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
         private ?ProxyRouteRenderer $renderer = null,
     ) {}
 
-    public function run(): void
+    public function run(?string $connection = null): void
     {
+        $connection ??= DB::getDefaultConnection();
         $renderer = $this->renderer ?? new ProxyRouteRenderer;
-        $hasInstanceOwnership = Schema::hasColumn('proxy_routes', 'instance_id');
+        $hasInstanceOwnership = Schema::connection($connection)->hasColumn('proxy_routes', 'instance_id');
         $relations = $hasInstanceOwnership
             ? ['app', 'instance.app']
             : ['app'];
 
-        ProxyRoute::query()
+        $query = ProxyRoute::on($connection)
             ->where('kind', 'app')
-            ->whereNotNull('app_id')
-            ->with($relations)
+            ->with($relations);
+
+        if ($hasInstanceOwnership) {
+            $query->whereNotNull('instance_id');
+        } else {
+            $query->whereNotNull('app_id');
+        }
+
+        /** @mago-expect analyzer:invalid-argument */
+        $query
             ->orderBy('id')
-            ->cursor()
-            ->each(function (ProxyRoute $route) use ($hasInstanceOwnership, $renderer): void {
+            ->eachById(function (ProxyRoute $route) use ($hasInstanceOwnership, $renderer): void {
                 $instance = $hasInstanceOwnership ? $route->instance : null;
                 $app = $instance instanceof Instance ? $instance->app : $route->app;
 
@@ -57,6 +68,15 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
 
                 if ($hasInstanceOwnership && ! $instance instanceof Instance) {
                     throw new RuntimeException("App proxy route '{$route->domain}' has no concrete Instance owner.");
+                }
+
+                if (
+                    $instance instanceof Instance
+                    && $route->app_id !== $instance->app_id
+                ) {
+                    throw new RuntimeException(
+                        "App proxy route '{$route->domain}' app_id={$route->app_id} conflicts with instance_id={$instance->id} app_id={$instance->app_id}.",
+                    );
                 }
 
                 $runtimeKindValue = $app->runtimeKind()->value;

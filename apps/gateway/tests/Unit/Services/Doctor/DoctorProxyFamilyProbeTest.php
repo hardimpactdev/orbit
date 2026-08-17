@@ -26,20 +26,24 @@ it('keeps app scope, row order, issue payloads, and progress inside the proxy fa
     /** @var App $secondApp */
     $secondApp = App::factory()->create(['name' => 'second-app']);
     /** @var ProxyRoute $firstRoute */
-    $firstRoute = ProxyRoute::factory()->create([
-        'node_id' => $node->id,
-        'app_id' => $firstApp->id,
-        'domain' => 'zulu.example.test',
-        'owner_type' => 'app',
-        'kind' => 'app',
-    ]);
-    ProxyRoute::factory()->create([
-        'node_id' => $node->id,
-        'app_id' => $secondApp->id,
-        'domain' => 'alpha.example.test',
-        'owner_type' => 'app',
-        'kind' => 'app',
-    ]);
+    $firstRoute = ProxyRoute::factory()
+        ->forApp($firstApp)
+        ->create([
+            'node_id' => $node->id,
+            'app_id' => $firstApp->id,
+            'domain' => 'zulu.example.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+    ProxyRoute::factory()
+        ->forApp($secondApp)
+        ->create([
+            'node_id' => $node->id,
+            'app_id' => $secondApp->id,
+            'domain' => 'alpha.example.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
     app()->instance(RunsInternalCommands::class, new DoctorProxyFamilyExecutor);
     $events = [];
 

@@ -7,6 +7,7 @@ use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\NodeRoleAssignment;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -85,4 +86,65 @@ it('deletes the app only once its final instance is removed with the node role',
         ->toBeFalse()
         ->and(Instance::query()->where('app_id', $app->id)->exists())
         ->toBeFalse();
+});
+
+it('classifies ingress routes by their concrete instance instead of any app sibling', function (): void {
+    $ingress = createTestAppHostNode(['name' => 'ingress-node', 'tld' => 'edge'], 'ingress');
+    $productionNode = createTestAppHostNode(['name' => 'production-node', 'tld' => 'prod'], 'app-prod');
+    $developmentNode = createTestAppHostNode(['name' => 'development-node', 'tld' => 'dev']);
+    $app = App::factory()->create(['name' => 'multi']);
+    $compatibilityApp = App::factory()->create(['name' => 'compatibility']);
+    $production = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $productionNode->id,
+            domain: 'multi.example.com',
+        ),
+    ]);
+    $development = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $developmentNode->id),
+    ]);
+    $developmentRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $development->id,
+        'domain' => 'development.example.com',
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'config' => ['placement' => 'ingress'],
+    ]);
+    $validProductionRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $production->id,
+        'domain' => 'valid-production.example.com',
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'config' => ['placement' => 'ingress'],
+    ]);
+    $productionRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $production->id,
+        'domain' => 'production.example.com',
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'config' => ['placement' => 'ingress'],
+    ]);
+    $productionRoute->forceFill(['app_id' => $compatibilityApp->id])->save();
+
+    new NodeRoleDependencyInspector()->removeOrbitOwnedDependents(
+        $ingress,
+        new NodeRoleAssignment(['role' => 'ingress']),
+    );
+
+    expect(ProxyRoute::query()->whereKey($developmentRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($validProductionRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($productionRoute->id)->exists())
+        ->toBeTrue();
 });

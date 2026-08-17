@@ -177,7 +177,7 @@ final readonly class AppAnalyticsPayloadFactory
                 return ['host' => $host, 'status' => 'missing'];
             }
 
-            $keys = ['node_id', 'app_id', 'workspace_id', 'owner_type', 'kind', 'config', 'source_hash'];
+            $keys = ['node_id', 'app_id', 'workspace_id', 'instance_id', 'owner_type', 'kind', 'config', 'source_hash'];
             $status = $route->only($keys) === $intent->only($keys) ? 'registered' : 'divergent';
 
             return ['host' => $host, 'status' => $status];

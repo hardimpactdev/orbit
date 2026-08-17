@@ -580,6 +580,7 @@ class AnalyticsRouteRegistrar
             'node_id' => $ingress->id,
             'domain' => $host,
             'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app-analytics',
             'kind' => 'proxy',
             'config' => $config,

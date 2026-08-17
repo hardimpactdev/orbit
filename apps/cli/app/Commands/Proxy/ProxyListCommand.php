@@ -31,7 +31,7 @@ final class ProxyListCommand extends GatewayCommand
                 'filter' => $this->stringOption('filter'),
             ]));
         } catch (GatewayApiException $exception) {
-            return $this->renderFailure($exception->cliFailureCode(), $exception->getMessage());
+            return $this->renderGatewayFailure($exception);
         }
 
         if ($this->wantsJson()) {

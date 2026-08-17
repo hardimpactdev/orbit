@@ -67,6 +67,7 @@ function processStreamAppFixture(): array
         'node_id' => $appNode->id,
         'domain' => 'test.app.example',
         'app_id' => $app->id,
+        'instance_id' => $instance->id,
         'owner_type' => 'app',
         'kind' => 'app',
         'config' => [
@@ -201,13 +202,15 @@ describe('ProcessStreamController', function (): void {
         createProcessStreamCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
-        ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'domain' => 'test.app.example',
-            'app_id' => $app->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'domain' => 'test.app.example',
+                'app_id' => $app->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+            ]);
 
         $response = $this->call(
             'GET',
@@ -480,6 +483,7 @@ describe('ProcessStreamController', function (): void {
             'node_id' => $appNode->id,
             'domain' => 'feature-docs.app.example',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -610,13 +614,15 @@ describe('ProcessStreamController', function (): void {
     it('admits browser CORS preflight for the stream path including Last-Event-ID', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
-        ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'domain' => 'test.app.example',
-            'app_id' => $app->id,
-            'owner_type' => 'app',
-            'kind' => 'app',
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'domain' => 'test.app.example',
+                'app_id' => $app->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+            ]);
 
         $response = $this->call(
             'OPTIONS',

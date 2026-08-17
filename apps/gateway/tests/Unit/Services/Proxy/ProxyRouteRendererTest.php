@@ -181,37 +181,39 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders ingress routes through the router upstream with public ACME TLS and forwarded headers', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => 12,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
-                ],
-                'backend_artifacts' => [
-                    [
-                        'node_id' => 42,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21',
-                        'document_root' => '/home/orbit/sites/example/current/public',
-                        'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
-                        'source_hash' => str_repeat('a', 64),
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $ingress->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => 12,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        ['node_id' => 42, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
+                    ],
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => 42,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/sites/example/current/public',
+                            'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
+                            'source_hash' => str_repeat('a', 64),
+                        ],
+                    ],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/example.com.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
                     ],
                 ],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/example.com.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
-                ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderIngress($route);
 
@@ -235,27 +237,29 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders router routes with private backend pools and forwarded headers', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'web-1',
-                        'url' => 'http://10.6.0.21:80',
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $router->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'web-1',
+                            'url' => 'http://10.6.0.21:80',
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
@@ -276,38 +280,40 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('keeps router routes pointed at app-role backend routes instead of app runtime containers', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'web-1',
-                        'url' => 'http://10.6.0.21:8081',
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $router->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'web-1',
+                            'url' => 'http://10.6.0.21:8081',
+                        ],
+                    ],
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => 42,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/sites/example/current/public',
+                            'runtime_upstream' => 'http://orbit-app-example:8080',
+                            'php_socket' => null,
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-                'backend_artifacts' => [
-                    [
-                        'node_id' => 42,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21',
-                        'document_root' => '/home/orbit/sites/example/current/public',
-                        'runtime_upstream' => 'http://orbit-app-example:8080',
-                        'php_socket' => null,
-                        'source_hash' => str_repeat('b', 64),
-                    ],
-                ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
@@ -381,38 +387,40 @@ describe('ProxyRouteRenderer', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'app_id' => $app->id,
-            'domain' => 'ws.docs.test',
-            'owner_type' => 'app-websocket',
-            'kind' => 'proxy',
-            'config' => [
-                'placement' => 'ingress',
-                'protocol' => 'websocket',
-                'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'app-dev-1',
-                        'url' => 'https://10.6.0.44:8080',
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $ingress->id,
+                'app_id' => $app->id,
+                'domain' => 'ws.docs.test',
+                'owner_type' => 'app-websocket',
+                'kind' => 'proxy',
+                'config' => [
+                    'placement' => 'ingress',
+                    'protocol' => 'websocket',
+                    'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'app-dev-1',
+                            'url' => 'https://10.6.0.44:8080',
+                        ],
+                    ],
+                    'router_backend_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => '/etc/orbit/ca/root.crt',
+                    ],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
                     ],
                 ],
-                'router_backend_tls' => [
-                    'trusted_by_gateway_ca' => true,
-                    'ca_path' => '/etc/orbit/ca/root.crt',
-                ],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
-                ],
-            ],
-        ]);
+            ]);
 
         $renderer = new ProxyRouteRenderer;
 
@@ -455,35 +463,37 @@ describe('ProxyRouteRenderer', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'app_id' => $app->id,
-            'domain' => 'analytics.docs.test',
-            'owner_type' => 'app-analytics',
-            'kind' => 'proxy',
-            'config' => [
-                'placement' => 'ingress',
-                'protocol' => 'analytics',
-                'target' => ['type' => 'analytics', 'value' => 'https://analytics.orbit'],
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'analytics-1',
-                        'url' => 'http://10.6.0.50:8000',
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $ingress->id,
+                'app_id' => $app->id,
+                'domain' => 'analytics.docs.test',
+                'owner_type' => 'app-analytics',
+                'kind' => 'proxy',
+                'config' => [
+                    'placement' => 'ingress',
+                    'protocol' => 'analytics',
+                    'target' => ['type' => 'analytics', 'value' => 'https://analytics.orbit'],
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'analytics-1',
+                            'url' => 'http://10.6.0.50:8000',
+                        ],
+                    ],
+                    'tracking_paths' => ['/js/*', '/api/event'],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.key',
                     ],
                 ],
-                'tracking_paths' => ['/js/*', '/api/event'],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.key',
-                ],
-            ],
-        ]);
+            ]);
 
         $renderer = new ProxyRouteRenderer;
 
@@ -574,75 +584,81 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('rejects router routes whose upstream host is not a valid IP address', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://gateway:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'web-1',
-                        'url' => 'http://10.6.0.21:80',
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $router->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://gateway:80',
+                    ],
+                    'router_backend_pool' => [
+                        [
+                            'node_id' => 42,
+                            'node' => 'web-1',
+                            'url' => 'http://10.6.0.21:80',
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         new ProxyRouteRenderer()->renderRouterRoute($route);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
 
     it('rejects ingress routes with invalid router upstream urls', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => 12,
-                    'node' => 'gateway-1',
-                    'url' => "http://10.6.0.2:80\nmalicious",
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $ingress->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => 12,
+                        'node' => 'gateway-1',
+                        'url' => "http://10.6.0.2:80\nmalicious",
+                    ],
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/example.com.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
+                    ],
                 ],
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/example.com.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
-                ],
-            ],
-        ]);
+            ]);
 
         new ProxyRouteRenderer()->renderIngress($route);
     })->throws(RuntimeException::class, 'Proxy route router upstream requires a valid http or https url.');
 
     it('ignores persisted internal tls paths on public ingress routes', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => [
-                    'node_id' => 12,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $ingress->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => 12,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'tls' => [
+                        'cert_path' => "relative/example.com.crt\n",
+                        'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
+                    ],
                 ],
-                'tls' => [
-                    'cert_path' => "relative/example.com.crt\n",
-                    'key_path' => '/home/orbit/.config/orbit/certs/example.com.key',
-                ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderIngress($route);
 
@@ -657,27 +673,29 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [
-                    [
-                        'node_id' => $appNode->id,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21',
-                        'document_root' => '/home/orbit/sites/example/current/public',
-                        'runtime_upstream' => 'http://orbit-app-example:8080',
-                        'php_socket' => null,
-                        'source_hash' => str_repeat('b', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/sites/example/current/public',
+                            'runtime_upstream' => 'http://orbit-app-example:8080',
+                            'php_socket' => null,
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
@@ -708,27 +726,29 @@ describe('ProxyRouteRenderer', function (): void {
             ->create([
                 'name' => 'marketing',
             ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'marketing.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [
-                    [
-                        'node_id' => $appNode->id,
-                        'domain' => 'marketing.test',
-                        'bind' => '10.6.0.21',
-                        'document_root' => '/home/orbit/sites/marketing/current/public',
-                        'runtime_upstream' => null,
-                        'php_socket' => null,
-                        'source_hash' => str_repeat('b', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'marketing.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'domain' => 'marketing.test',
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/sites/marketing/current/public',
+                            'runtime_upstream' => null,
+                            'php_socket' => null,
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
@@ -743,25 +763,27 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('rejects private backend routes with invalid bind addresses', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [
-                    [
-                        'node_id' => $appNode->id,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21 bad',
-                        'document_root' => '/home/orbit/sites/example/current/public',
-                        'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
-                        'source_hash' => str_repeat('b', 64),
+        $route = ProxyRoute::factory()
+            ->forApp()
+            ->create([
+                'node_id' => $appNode->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21 bad',
+                            'document_root' => '/home/orbit/sites/example/current/public',
+                            'php_socket' => '/home/orbit/.config/orbit/php/example.sock',
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
@@ -773,27 +795,29 @@ describe('ProxyRouteRenderer', function (): void {
             ->create([
                 'name' => 'example',
             ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [
-                    [
-                        'node_id' => $appNode->id,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21',
-                        'document_root' => "relative/path\n",
-                        'runtime_upstream' => null,
-                        'php_socket' => null,
-                        'source_hash' => str_repeat('b', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21',
+                            'document_root' => "relative/path\n",
+                            'runtime_upstream' => null,
+                            'php_socket' => null,
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid document root.");
@@ -803,27 +827,29 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'backend_artifacts' => [
-                    [
-                        'node_id' => $appNode->id,
-                        'domain' => 'example.com',
-                        'bind' => '10.6.0.21',
-                        'document_root' => '/home/orbit/sites/example/current/public',
-                        'runtime_upstream' => "http://orbit-app-example:8080\r\n",
-                        'php_socket' => null,
-                        'source_hash' => str_repeat('b', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'backend_artifacts' => [
+                        [
+                            'node_id' => $appNode->id,
+                            'domain' => 'example.com',
+                            'bind' => '10.6.0.21',
+                            'document_root' => '/home/orbit/sites/example/current/public',
+                            'runtime_upstream' => "http://orbit-app-example:8080\r\n",
+                            'php_socket' => null,
+                            'source_hash' => str_repeat('b', 64),
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
 
         new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid runtime container upstream.");
@@ -836,7 +862,7 @@ describe('ProxyRouteRenderer', function (): void {
 
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
-                ->for($app, 'app')
+                ->forApp($app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -877,7 +903,7 @@ describe('ProxyRouteRenderer', function (): void {
 
         $route = ProxyRoute::factory()
             ->for($appNode, 'node')
-            ->for($app, 'app')
+            ->forApp($app)
             ->create([
                 'domain' => 'legacy-docs.test',
                 'owner_type' => 'app',
@@ -911,7 +937,7 @@ describe('ProxyRouteRenderer', function (): void {
 
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->for($app, 'app')
+            ->forApp($app)
             ->create([
                 'domain' => 'legacy-marketing.test',
                 'owner_type' => 'app',
@@ -941,7 +967,7 @@ describe('ProxyRouteRenderer', function (): void {
             'name' => 'docs',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -952,7 +978,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->for($app, 'app')
+            ->forApp($app, $instance)
             ->create([
                 'domain' => 'docs.test',
                 'owner_type' => 'app',
@@ -998,7 +1024,7 @@ describe('ProxyRouteRenderer', function (): void {
             'name' => 'happie',
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
-        Instance::factory()->for($app)->create([
+        $instance = Instance::factory()->for($app)->create([
             'name' => 'nmbp',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
@@ -1011,7 +1037,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->for($app, 'app')
+            ->forApp($app, $instance)
             ->create([
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
@@ -1089,6 +1115,7 @@ describe('ProxyRouteRenderer', function (): void {
             ->for($app, 'app')
             ->for($workspace, 'workspace')
             ->create([
+                'instance_id' => $workspace->instance_id,
                 'domain' => 'feature-a.docs.test',
                 'owner_type' => 'workspace',
                 'kind' => 'workspace',
@@ -1138,6 +1165,7 @@ describe('ProxyRouteRenderer', function (): void {
                 ->for($app, 'app')
                 ->for($workspace, 'workspace')
                 ->create([
+                    'instance_id' => $workspace->instance_id,
                     'domain' => 'feature-a.legacy-docs.test',
                     'owner_type' => 'workspace',
                     'kind' => 'workspace',
@@ -1256,6 +1284,7 @@ describe('ProxyRouteRenderer', function (): void {
             'node_id' => $appNode->id,
             'app_id' => $app->id,
             'workspace_id' => $workspace->id,
+            'instance_id' => $workspaceInstance->id,
             'domain' => 'feature-a.example.com',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -1293,13 +1322,15 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $appNode->id,
-            'app_id' => $app->id,
-            'domain' => 'example.com',
-            'owner_type' => 'app',
-            'kind' => 'app',
-        ]);
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $appNode->id,
+                'app_id' => $app->id,
+                'domain' => 'example.com',
+                'owner_type' => 'app',
+                'kind' => 'app',
+            ]);
 
         $content = new ProxyRouteRenderer()->renderPrivateBackend($route, [
             'bind' => '10.6.0.21',

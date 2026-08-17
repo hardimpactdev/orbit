@@ -358,35 +358,41 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
-                'router_artifact' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'source_hash' => str_repeat('c', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'source_hash' => str_repeat('c', 64),
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
                 ],
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -424,34 +430,40 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_upstream' => ['node_id' => $router->id, 'node' => 'gateway-1', 'url' => 'http://10.6.0.2:80'],
-                'router_artifact' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'source_hash' => str_repeat('c', 64),
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => 'gateway-1',
+                        'source_hash' => str_repeat('c', 64),
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
                 ],
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -694,29 +706,31 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'runtime_upstream' => 'http://orbit-app-docs:8080',
-                    'php_socket' => null,
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'runtime_upstream' => 'http://orbit-app-docs:8080',
+                        'php_socket' => null,
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -760,28 +774,30 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'active',
         ]);
         $app = App::factory()->create(['name' => 'docs']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'placement' => 'ingress',
-                'router_backend_pool' => [[
-                    'node_id' => $backend->id,
-                    'node' => 'web-1',
-                    'url' => 'http://10.6.0.21:80',
-                ]],
-                'backend_artifacts' => [[
-                    'node_id' => $backend->id,
-                    'bind' => '10.6.0.21',
-                    'document_root' => '/home/orbit/apps/docs/public',
-                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                    'source_hash' => str_repeat('b', 64),
-                ]],
-            ],
-        ]);
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $edge->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'placement' => 'ingress',
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [[
+                        'node_id' => $backend->id,
+                        'bind' => '10.6.0.21',
+                        'document_root' => '/home/orbit/apps/docs/public',
+                        'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                        'source_hash' => str_repeat('b', 64),
+                    ]],
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
@@ -927,20 +943,22 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'document_root' => '/home/orbit/apps/docs/public',
-                'runtime_upstream' => 'http://orbit-app-docs:8080',
-                'php_socket' => null,
-                'tls' => 'internal',
-            ],
-        ]);
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'php_socket' => null,
+                    'tls' => 'internal',
+                ],
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
 
@@ -1065,21 +1083,23 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
-            'domain' => 'docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'config' => [
-                'document_root' => '/home/orbit/apps/docs/public',
-                'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
-                'tls' => [
-                    'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+        $route = ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'app_id' => $app->id,
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'php_socket' => '/home/orbit/.config/orbit/php/docs.sock',
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
 
@@ -1126,7 +1146,7 @@ describe('ProxyRouteFixer', function (): void {
             $app = App::factory()->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
-                ->for($app, 'app')
+                ->forApp($app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -1610,7 +1630,7 @@ describe('ProxyRouteFixer', function (): void {
             $app = App::factory()->create(['name' => 'legacy-docs']);
             $route = ProxyRoute::factory()
                 ->for($edge, 'node')
-                ->for($app, 'app')
+                ->forApp($app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',

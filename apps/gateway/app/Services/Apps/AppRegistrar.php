@@ -701,8 +701,17 @@ final class AppRegistrar
             return null;
         }
 
-        if ($existingApp instanceof App && $route->app_id === $existingApp->id) {
-            return null;
+        if ($existingApp instanceof App) {
+            $route->loadMissing('instance');
+            $instance = $route->instance;
+
+            if (
+                $instance instanceof Instance
+                && $instance->app_id === $existingApp->id
+                && $route->app_id === $instance->app_id
+            ) {
+                return null;
+            }
         }
 
         return $route;

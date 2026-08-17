@@ -294,10 +294,14 @@ class ProxyRouteIntent
 
         return match ($route->owner_type) {
             'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance
-                || ! $route->instance->app instanceof App,
+                || ! $route->instance->app instanceof App
+                || $route->app_id !== $route->instance->app_id,
             'workspace' => ! $route->workspace instanceof Workspace
                 || ! $route->instance instanceof Instance
-                || $route->workspace->instance_id !== $route->instance_id,
+                || ! $route->instance->app instanceof App
+                || $route->workspace->instance_id !== $route->instance_id
+                || $route->workspace->app_id !== $route->instance->app_id
+                || $route->app_id !== $route->instance->app_id,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };

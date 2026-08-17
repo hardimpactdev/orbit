@@ -332,7 +332,13 @@ class ProxyRouteQuery
         $instance = $route->instance;
         $app = $instance?->app;
 
-        if ($app === null || $instance === null || $workspace->instance_id !== $route->instance_id) {
+        if (
+            $app === null
+            || $instance === null
+            || $workspace->instance_id !== $route->instance_id
+            || $workspace->app_id !== $instance->app_id
+            || $route->app_id !== $instance->app_id
+        ) {
             return null;
         }
 

@@ -130,17 +130,26 @@ describe('proxy:list', function (): void {
         expect($exitCode)->toBe(0)->and($output)->toBe('No proxy routes found.');
     });
 
-    it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
-        fakeGateway(fakeErrorEnvelope('validation_failed', 'The selected proxy route filter is invalid.'), 400);
+    it('preserves the gateway validation envelope for a removed app filter', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'validation_failed',
+            'The selected proxy route filter is invalid.',
+            ['field' => 'filter', 'value' => 'app'],
+        ), 400);
 
         [$exitCode, $output] = runCommand($this, 'proxy:list', [
-            '--filter' => 'bad',
+            '--filter' => 'app',
             '--json' => true,
         ]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toBe(['field' => 'filter', 'value' => 'app']);
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {

@@ -184,15 +184,36 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
+    it('does not expose a workspace instance selector when app_id compatibility disagrees', function (): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $compatibility = App::factory()->create(['name' => 'other']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $route->forceFill(['app_id' => $compatibility->id])->save();
+
+        expect(app(ProxyRouteQuery::class)->toRouteEntity($route->fresh()))->not->toHaveKey('instance');
+    });
+
     it('includes ingress placement and router backend pool metadata for production routes', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $backend = Node::factory()->create(['name' => 'web-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
 
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -417,11 +438,17 @@ describe('ProxyRouteQuery', function (): void {
     it('applies route filters after visibility is resolved', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->placedOn($node)->create(['name' => 'docs']);
-        $workspace = Workspace::factory()->create(['name' => 'feature', 'app_id' => $app->id]);
+        $instance = $app->instances()->sole();
+        $workspace = Workspace::factory()->create([
+            'name' => 'feature',
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+        ]);
 
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
             'kind' => 'app',
@@ -429,6 +456,7 @@ describe('ProxyRouteQuery', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
@@ -465,6 +493,8 @@ describe('ProxyRouteQuery', function (): void {
     it('s3 service filter selects router-owned s3.orbit route and public s3 host routes', function (): void {
         $router = Node::factory()->router()->create(['name' => 'router-1']);
         $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
 
         // The router-owned s3.orbit service route
         ProxyRoute::factory()->create([
@@ -487,6 +517,8 @@ describe('ProxyRouteQuery', function (): void {
         // A route with a different owner — must NOT appear
         ProxyRoute::factory()->create([
             'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'domain' => 'app.example.com',
             'owner_type' => 'app',
             'kind' => 'app',

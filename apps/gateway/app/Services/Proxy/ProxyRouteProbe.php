@@ -894,7 +894,11 @@ final readonly class ProxyRouteProbe
 
     private function hasInstanceOwner(ProxyRoute $route): bool
     {
-        return $route->instance instanceof Instance && $route->instance->app instanceof App;
+        return (
+            $route->instance instanceof Instance
+            && $route->instance->app instanceof App
+            && $route->app_id === $route->instance->app_id
+        );
     }
 
     private function toolOwnerIsMissing(ProxyRoute $route): bool

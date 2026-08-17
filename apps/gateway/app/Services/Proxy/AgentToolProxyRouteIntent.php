@@ -111,6 +111,7 @@ final readonly class AgentToolProxyRouteIntent
             $actual->node_id === $expected->node_id
             && $actual->app_id === null
             && $actual->workspace_id === null
+            && $actual->instance_id === null
             && $actual->owner_type === $expected->owner_type
             && $actual->kind === $expected->kind
             && $actual->config === $expected->config

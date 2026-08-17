@@ -4648,6 +4648,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'node_id' => $node->id,
             'domain' => 'docs.example.test',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
@@ -4661,16 +4662,18 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'node_id' => $node->id,
             'domain' => 'feature.docs.example.test',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'owner_type' => 'workspace',
             'kind' => 'workspace',
         ]);
-        ProxyRoute::factory()->create([
+        $legacyWorkspaceRoute = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'legacy-owner.docs.example.test',
-            'owner_type' => 'workspace',
+            'owner_type' => 'custom',
             'kind' => 'proxy',
         ]);
+        $legacyWorkspaceRoute->forceFill(['owner_type' => 'workspace'])->save();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'legacy-kind.docs.example.test',
@@ -4760,6 +4763,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'node_id' => $node->id,
             'domain' => 'feature.docs.example.test',
             'app_id' => $app->id,
+            'instance_id' => $instance->id,
             'workspace_id' => $workspace->id,
             'owner_type' => 'workspace',
             'kind' => 'workspace',
@@ -4846,22 +4850,25 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'name' => 'feature',
         ]);
         $routes = [
-            ['docs.example.test', 'app', 'app', $app->id, null],
-            ['node.example.test', 'custom', 'proxy', null, null],
-            ['feature.docs.example.test', 'workspace', 'workspace', $app->id, $workspace->id],
-            ['legacy-owner.docs.example.test', 'workspace', 'proxy', null, null],
-            ['legacy-kind.docs.example.test', 'custom', 'workspace', null, null],
+            ['docs.example.test', 'app', 'app', 'app', $app->id, null],
+            ['node.example.test', 'custom', 'custom', 'proxy', null, null],
+            ['feature.docs.example.test', 'workspace', 'workspace', 'workspace', $app->id, $workspace->id],
+            ['legacy-owner.docs.example.test', 'workspace', 'custom', 'proxy', null, null],
+            ['legacy-kind.docs.example.test', 'custom', 'custom', 'workspace', null, null],
         ];
 
-        foreach ($routes as [$domain, $ownerType, $kind, $appId, $workspaceId]) {
-            ProxyRoute::factory()->create([
+        foreach ($routes as [$domain, $ownerType, $persistedOwnerType, $kind, $appId, $workspaceId]) {
+            $route = ProxyRoute::factory()->create([
                 'node_id' => $node->id,
                 'domain' => $domain,
                 'app_id' => $appId,
+                'instance_id' => $appId !== null ? $instance->id : null,
                 'workspace_id' => $workspaceId,
-                'owner_type' => $ownerType,
+                'owner_type' => $persistedOwnerType,
                 'kind' => $kind,
             ]);
+
+            $route->forceFill(['owner_type' => $ownerType])->save();
         }
 
         $shell = new DoctorProductionProxyAdoptRemoteShell(array_column($routes, 0));

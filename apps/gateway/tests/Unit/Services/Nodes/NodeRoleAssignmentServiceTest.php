@@ -1258,6 +1258,7 @@ describe('node role assignment service', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $workspace->id,
             'kind' => 'workspace',
             'owner_type' => 'workspace',
@@ -1327,6 +1328,7 @@ describe('node role assignment service', function (): void {
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
             'workspace_id' => $workspace->id,
             'kind' => 'workspace',
             'owner_type' => 'workspace',
@@ -1351,12 +1353,14 @@ describe('node role assignment service', function (): void {
                 'code' => 302,
             ],
         ]);
-        ProxyRoute::factory()->create([
-            'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
-            'kind' => 'app',
-            'owner_type' => 'app',
-            'config' => ['placement' => 'ingress'],
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
+                'kind' => 'app',
+                'owner_type' => 'app',
+                'config' => ['placement' => 'ingress'],
+            ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'ingress', force: true);
 

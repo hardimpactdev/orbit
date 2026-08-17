@@ -137,6 +137,44 @@ it('fails when configured route identities point at competing instances', functi
     });
 });
 
+it('fails when a configured instance and the route domain identify different instances', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertProxyRouteOwnershipInstance(11, 'preview', 'preview.docs.test');
+        insertHistoricalProxyRoute(100, 'preview.docs.test', 'app', 'app', 1, null, [
+            'instance' => ['id' => 10],
+        ]);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='preview.docs.test' owner_type='app' has competing instance identities: instance.id=>10, route.domain=>11",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
+it('fails when a configured instance competes with an ambiguous matching route domain', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'shared.docs.test');
+        insertProxyRouteOwnershipInstance(11, 'preview', 'shared.docs.test');
+        insertHistoricalProxyRoute(100, 'shared.docs.test', 'app', 'app', 1, null, [
+            'instance' => ['id' => 10],
+        ]);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='shared.docs.test' owner_type='app' has ambiguous domain ownership candidates [10, 11]",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
 it('fails when a workspace route points at a deleted or missing workspace owner', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();
@@ -159,11 +197,10 @@ it('fails closed on rerun when an owner was deleted after a successful backfill'
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();
         insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
-        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1, null, [
-            'instance' => ['id' => 10],
-        ]);
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1);
 
         proxyRouteInstanceOwnershipMigration()->up();
+        insertProxyRouteOwnershipInstance(11, 'preview', 'preview.docs.test');
         DB::table('instances')->where('id', 10)->delete();
 
         expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
@@ -171,7 +208,106 @@ it('fails closed on rerun when an owner was deleted after a successful backfill'
             ->and(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
             ->toThrow(
                 RuntimeException::class,
-                "proxy_routes#100 domain='docs.test' owner_type='app' has null instance_id in an already-migrated schema",
+                "proxy_routes#100 domain='docs.test' owner_type='app' has no positive legacy evidence for an existing Instance owner",
+            );
+    });
+});
+
+it('recomputes valid legacy ownership when the schema exists but DML was interrupted', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1, null, [
+            'instance' => ['id' => 10],
+        ]);
+        addProxyRouteInstanceOwnershipColumn();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBeNull();
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(10);
+    });
+});
+
+it('does not treat the public instance label as a persisted instance owner type', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertHistoricalProxyRoute(100, 'docs.test', 'instance', 'app', 1);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBeNull()
+            ->and(DB::table('proxy_routes')->where('id', 100)->value('owner_type'))
+            ->toBe('instance');
+    });
+});
+
+it('rewrites legacy runtime targets and hashes on the migration connection idempotently', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        $legacyUpstream = 'http://orbit-app-docs:8080';
+
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1, null, [
+            'instance' => ['id' => 10],
+            'document_root' => '/srv/docs-development/public',
+            'runtime_upstream' => $legacyUpstream,
+            'tls' => [
+                'cert_path' => '/etc/orbit/certs/docs.test.crt',
+                'key_path' => '/etc/orbit/certs/docs.test.key',
+            ],
+        ]);
+        insertHistoricalProxyRoute(101, 'public.docs.test', 'app', 'app', 1, null, [
+            'instance' => ['id' => 10],
+            'placement' => 'ingress',
+            'document_root' => '/srv/docs-development/public',
+            'runtime_upstream' => $legacyUpstream,
+            'backend_artifacts' => [[
+                'node_id' => 1,
+                'bind' => '10.6.0.21',
+                'document_root' => '/srv/docs-development/public',
+                'runtime_upstream' => $legacyUpstream,
+            ]],
+        ]);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        $firstRows = DB::table('proxy_routes')->orderBy('id')->get()->keyBy('id');
+        $directConfig = json_decode((string) $firstRows[100]->config, true, flags: JSON_THROW_ON_ERROR);
+        $ingressConfig = json_decode((string) $firstRows[101]->config, true, flags: JSON_THROW_ON_ERROR);
+
+        expect($directConfig['runtime_upstream'])
+            ->toBe('http://orbit-app-docs-development:8080')
+            ->and($firstRows[100]->source_hash)
+            ->not
+            ->toBe(str_repeat('a', 64))
+            ->and($ingressConfig['runtime_upstream'])
+            ->toBe('http://orbit-app-docs-development:8080')
+            ->and($ingressConfig['backend_artifacts'][0]['runtime_upstream'])
+            ->toBe('http://orbit-app-docs-development:8080')
+            ->and($ingressConfig['backend_artifacts'][0]['source_hash'])
+            ->toHaveLength(64);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        expect(
+            DB::table('proxy_routes')
+                ->orderBy('id')
+                ->get()
+                ->mapWithKeys(
+                    static fn (object $row): array => [(int) $row->id => [$row->source_hash, $row->config]],
+                )
+                ->all(),
+        )
+            ->toBe(
+                $firstRows->mapWithKeys(
+                    static fn (object $row): array => [(int) $row->id => [$row->source_hash, $row->config]],
+                )->all(),
             );
     });
 });
@@ -197,9 +333,17 @@ function withHistoricalProxyRouteOwnershipSchema(Closure $callback): void
         $table->id();
         $table->string('name')->unique();
     });
+    Schema::create('node_role', function (Blueprint $table): void {
+        $table->id();
+        $table->foreignId('node_id')->constrained('nodes')->cascadeOnDelete();
+        $table->string('role');
+        $table->string('status');
+        $table->json('settings')->nullable();
+    });
     Schema::create('apps', function (Blueprint $table): void {
         $table->id();
         $table->string('name')->unique();
+        $table->string('runtime')->default('php');
     });
     Schema::create('instances', function (Blueprint $table): void {
         $table->id();
@@ -228,6 +372,12 @@ function withHistoricalProxyRouteOwnershipSchema(Closure $callback): void
     });
 
     DB::table('nodes')->insert(['id' => 1, 'name' => 'app-dev-1']);
+    DB::table('node_role')->insert([
+        'node_id' => 1,
+        'role' => 'app-dev',
+        'status' => 'active',
+        'settings' => json_encode([], JSON_THROW_ON_ERROR),
+    ]);
 
     try {
         $callback();
@@ -241,7 +391,20 @@ function withHistoricalProxyRouteOwnershipSchema(Closure $callback): void
 
 function insertProxyRouteOwnershipApp(): void
 {
-    DB::table('apps')->insert(['id' => 1, 'name' => 'docs']);
+    DB::table('apps')->insert(['id' => 1, 'name' => 'docs', 'runtime' => 'php']);
+}
+
+function addProxyRouteInstanceOwnershipColumn(): void
+{
+    Schema::table('proxy_routes', static function (Blueprint $table): void {
+        $table
+            ->foreignId('instance_id')
+            ->nullable()
+            ->after('workspace_id')
+            ->constrained('instances')
+            ->nullOnDelete();
+        $table->index(['instance_id', 'owner_type']);
+    });
 }
 
 function insertProxyRouteOwnershipInstance(int $id, string $name, string $domain): void
@@ -252,7 +415,7 @@ function insertProxyRouteOwnershipInstance(int $id, string $name, string $domain
         'name' => $name,
         'driver' => 'orbit',
         'driver_config' => json_encode([
-            'type' => 'orbit_app_instance_driver_config',
+            'type' => 'orbit_instance_driver_config',
             'data' => [
                 'node_id' => 1,
                 'node' => 'app-dev-1',

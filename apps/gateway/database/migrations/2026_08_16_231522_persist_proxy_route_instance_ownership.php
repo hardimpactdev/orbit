@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Apps\AppProxyRouteRuntimeUpstreamBackfill;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,6 @@ return new class extends Migration {
     /** @var list<string> */
     private const array INSTANCE_OWNER_TYPES = [
         'app',
-        'instance',
         'workspace',
         'app-analytics',
         'app-websocket',
@@ -45,6 +45,8 @@ return new class extends Migration {
                     ->update(['instance_id' => $instanceId]);
             }
         });
+
+        app(AppProxyRouteRuntimeUpstreamBackfill::class)->run(DB::getDefaultConnection());
     }
 
     public function down(): void
@@ -72,17 +74,10 @@ return new class extends Migration {
                 continue;
             }
 
-            if ($instanceColumnExists && $this->rowNullableInteger($route, 'instance_id') === null) {
-                throw $this->ownershipException(
-                    $route,
-                    'has null instance_id in an already-migrated schema; restore the deleted owner or remove the route',
-                );
-            }
-
             $routeId = $this->rowInteger($route, 'id');
             $assignments[$routeId] = $ownerType === 'workspace'
                 ? $this->workspaceInstanceId($route)
-                : $this->configuredInstanceId($route);
+                : $this->configuredInstanceId($route, $instanceColumnExists);
         }
 
         return $assignments;
@@ -119,7 +114,7 @@ return new class extends Migration {
         return $instanceId;
     }
 
-    private function configuredInstanceId(object $route): int
+    private function configuredInstanceId(object $route, bool $requirePositiveEvidence): int
     {
         $appId = $this->rowNullableInteger($route, 'app_id');
 
@@ -206,6 +201,25 @@ return new class extends Migration {
             $identities[$label] = $matches[0];
         }
 
+        $domain = $this->rowString($route, 'domain');
+        $domainMatches = $instances
+            ->filter(fn (object $instance): bool => $this->instanceDomain($instance) === mb_strtolower($domain))
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if (count($domainMatches) > 1) {
+            throw $this->ownershipException(
+                $route,
+                'has ambiguous domain ownership candidates ['.implode(', ', $domainMatches).']',
+            );
+        }
+
+        if (count($domainMatches) === 1) {
+            $identities['route.domain'] = $domainMatches[0];
+        }
+
         if ($identities !== []) {
             $instanceIds = array_values(array_unique($identities));
 
@@ -220,22 +234,10 @@ return new class extends Migration {
             return $instanceIds[0];
         }
 
-        $domain = $this->rowString($route, 'domain');
-        $domainMatches = $instances
-            ->filter(fn (object $instance): bool => $this->instanceDomain($instance) === mb_strtolower($domain))
-            ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
-
-        if (count($domainMatches) === 1) {
-            return $domainMatches[0];
-        }
-
-        if (count($domainMatches) > 1) {
+        if ($requirePositiveEvidence) {
             throw $this->ownershipException(
                 $route,
-                'has ambiguous domain ownership candidates ['.implode(', ', $domainMatches).']',
+                'has no positive legacy evidence for an existing Instance owner',
             );
         }
 
