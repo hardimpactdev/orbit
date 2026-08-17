@@ -463,7 +463,7 @@ Primary existing test owners:
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI fleet update contract: local update preflight, durable operation start, event-stream following and reconnects, terminal operation errors, and JSON/human rendering. |
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php` | Gateway start API contract: authorization, durable operation creation, and attempt activity logging via route middleware. |
-| `apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php` | Gateway operation read/event API contract for durable fleet updates. |
+| `apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php` | Direct `POST /api/update/all` is absent while `POST /api/update/all/start` remains. |
 | `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
 | `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, and installed artifact tracking. |

@@ -11,7 +11,6 @@ use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Contracts\ToolDefinition;
-use App\Contracts\UpdateAllGatewayStream;
 use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
@@ -31,7 +30,6 @@ use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Doctor\NodeDnsProjectionProbe;
 use App\Services\Doctor\ProxyDnsProjectionProbe;
-use App\Services\Gateway\SdkUpdateAllGatewayStream;
 use App\Services\NodeCommandTransport\NodeAgentPushDispatcher;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
@@ -225,7 +223,6 @@ class AppServiceProvider extends ServiceProvider
         });
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(SoloUpstreamClient::class, HttpSoloUpstreamClient::class);
-        $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
         $this->app->singleton(
             ToolDefinitionRegistry::class,
             static function (Application $app): ToolDefinitionRegistry {

@@ -2473,42 +2473,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "halstead"
-message = "Method has a high halstead difficulty"
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 8
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/UpdateAllController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/UpdateAllStartController.php"
 code = "final-controller"
 message = "Controller classes should be declared as `final`."
@@ -20897,18 +20861,6 @@ file = "tests/Feature/Http/Api/ToolUpdateControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 3
-
-[[issues]]
-file = "tests/Feature/Http/Api/UpdateAllControllerTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/UpdateAllControllerTest.php"
-code = "prefer-dedicated-status-assertion"
-message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
-count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/UpdateAllStartControllerTest.php"

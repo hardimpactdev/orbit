@@ -106,7 +106,6 @@ use App\Http\Controllers\Api\ToolRemoveController;
 use App\Http\Controllers\Api\ToolShowController;
 use App\Http\Controllers\Api\ToolUpdateBulkController;
 use App\Http\Controllers\Api\ToolUpdateController;
-use App\Http\Controllers\Api\UpdateAllController;
 use App\Http\Controllers\Api\UpdateAllStartController;
 use App\Http\Controllers\Api\UpdateArtifactDownloadController;
 use App\Http\Controllers\Api\VpnClientCreateController;
@@ -335,7 +334,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/tools/{tool}/reconfigure', ToolReconfigureController::class);
         Route::get('/tools/{tool}', ToolShowController::class);
         Route::post('/update/all/start', UpdateAllStartController::class)->name('api.update.all.start');
-        Route::post('/update/all', UpdateAllController::class);
         Route::get('/vpn/clients', VpnClientListController::class);
         Route::post('/vpn/clients', VpnClientCreateController::class);
         Route::post('/vpn/clients/{name}/enable', VpnClientEnableController::class);
