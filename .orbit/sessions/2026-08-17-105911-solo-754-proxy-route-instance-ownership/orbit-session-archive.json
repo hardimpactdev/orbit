@@ -1,0 +1,34 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T08:59:11+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-754-proxy-route-instance-ownership/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-105911-solo-754-proxy-route-instance-ownership",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-754-blast-radius-inventory.md",
+        "evidence/solo-754-retained-incus-proof-plan.md",
+        "evidence/solo-754-retained-incus-receipt.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T084544Z-0ad71ee4c826.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-754-blast-radius-inventory.md": "051683298aaf64a246b73df1fdcff37f1eb5859c5676e61d35e55d8bf27aef3f",
+        "evidence/solo-754-retained-incus-proof-plan.md": "d2bc47be55747ee1070911e7bce6d023daa0d2efcd3717eea0ff48e6fb93bae3",
+        "evidence/solo-754-retained-incus-receipt.md": "3840454ef2d86f77d033c955674fa28fd3879358ea22447a81a7a4a81740858e",
+        "loop.md": "d4b146c93678d0ff7660cfdfc5bc0446f60956131aa2127d8d109fd2e38d323d",
+        "quality-gates/quality-check-2026-08-17T084544Z-0ad71ee4c826.json": "530a0fcd6c2216159bd35cbab30bc98d6a340b25538daaf6d686f03c6105a44e"
+    },
+    "slug": "solo-754-proxy-route-instance-ownership",
+    "requested_slug": "solo-754-proxy-route-instance-ownership",
+    "compatible_slugs": [
+        "solo-754-proxy-route-instance-ownership"
+    ],
+    "branch": "solo-754-proxy-route-instance-ownership",
+    "candidate_commit": "3761c3ec015a642c6d0efa885bfe847eb6ea51a6",
+    "accepted_feature_tip": "3761c3ec015a642c6d0efa885bfe847eb6ea51a6",
+    "accepted_main_tip": "c8ed09c595b18a84ac5d1bf1a4b7df859bed9d2b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
