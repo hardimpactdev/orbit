@@ -1,0 +1,29 @@
+{
+  "todo": "solo://proj/2/todo/i08-b-give-the-exter--759",
+  "candidate": "5e8b9ee2a28cc721adac27488e0a459f219a85f3",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology_id": "dev-b797f5",
+  "topology_kind": "operator_gateway_app-dev",
+  "host": "beast",
+  "node": "orbit-e2e-dev-b797f5-operator",
+  "candidate_binding": {
+    "E2EPestSupportTree.php": "8b8f001f8bd8ec50698cc159ddc2820bf74c682d4c80b3a02499a94bf050c63e",
+    "E2ESupportTreeSyncCommand.php": "34125d9698d8fe277a2885943eefdf0472079d791b5dc84e8f15fccda9441eb8",
+    "method": "sha256 worktree==operator-node mount match"
+  },
+  "recorded_at": "2026-08-17T19:40:32Z",
+  "method": "on the retained topology operator node (PHP 8.5): ran E2EPestSupportTree::copyTo staging into a writable dest and verified identity + helper resolution; confirmed the new hidden e2e:support-tree:sync command is registered/resolvable (php artisan e2e:support-tree:sync --help)",
+  "expected": "runner support tree is generated from canonical (regeneration command present), staged/generated trees are byte-identical to canonical, and e2eJsonCommandError resolves for staged runs",
+  "observed": {
+    "staging_checks_all_pass": true,
+    "file_list_identical": true,
+    "staged_pest_byte_identical_to_canonical": true,
+    "staged_fixture_byte_identical_to_canonical": true,
+    "runner_snapshot_matches_canonical": true,
+    "staged_pest_resolves_e2eJsonCommandError_subprocess": {"exit": 0, "stdout": "yes"},
+    "e2e_support_tree_sync_command_registered_on_node": true
+  },
+  "checks_all_pass": true,
+  "result": "passed"
+}

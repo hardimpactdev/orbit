@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T19:46:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-759-canonical-e2e-support/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-214620-solo-759-canonical-e2e-support",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-759-retained-incus-support-tree-proof.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T194115Z-25bcaf4359fc.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-759-retained-incus-support-tree-proof.json": "c4adc00d0545537f20cba9acca64f63d6371d968b05a3f7419530fd54c02a5f6",
+        "loop.md": "7572592530e622c243fe77f3db0040ea6dc6dad2273e65c23b93e20170f6029c",
+        "quality-gates/quality-check-2026-08-17T194115Z-25bcaf4359fc.json": "b3c8566d08e47b0be78a72ee8c9323dde84476eb862e5a9ab6efcbe8b90a5975"
+    },
+    "slug": "solo-759-canonical-e2e-support",
+    "requested_slug": "solo-759-canonical-e2e-support",
+    "compatible_slugs": [
+        "solo-759-canonical-e2e-support"
+    ],
+    "branch": "solo-759-canonical-e2e-support",
+    "candidate_commit": "5e8b9ee2a28cc721adac27488e0a459f219a85f3",
+    "accepted_feature_tip": "5e8b9ee2a28cc721adac27488e0a459f219a85f3",
+    "accepted_main_tip": "7751aef8b1565bec92f19fbe2d79d1732becc2ab",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
