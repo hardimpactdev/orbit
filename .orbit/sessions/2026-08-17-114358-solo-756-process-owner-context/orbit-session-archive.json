@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T09:43:58+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-756-process-owner-context/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-114358-solo-756-process-owner-context",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-756-retained-incus-receipt.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T093803Z-24aa2bebec85.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-756-retained-incus-receipt.md": "67047a60ab3b6e0afabb059f0a03455d24fe6e8aa5166ab7fa587d1437c3c2da",
+        "loop.md": "8cbe46f66ebda1ae028aed637e917bf2e62c64f8319bedc0576ed3f447a68307",
+        "quality-gates/quality-check-2026-08-17T093803Z-24aa2bebec85.json": "4372ae37b79b80fc36a58147fc611629a62e05abcfa5628dab3d6703b511d4cf"
+    },
+    "slug": "solo-756-process-owner-context",
+    "requested_slug": "solo-756-process-owner-context",
+    "compatible_slugs": [
+        "solo-756-process-owner-context"
+    ],
+    "branch": "solo-756-process-owner-context",
+    "candidate_commit": "a06d8d465e8bb1c38cc5ead7e2db73b5356879e5",
+    "accepted_feature_tip": "a06d8d465e8bb1c38cc5ead7e2db73b5356879e5",
+    "accepted_main_tip": "11109039f3af0c52d5adac96e850821ae4e6ce07",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
