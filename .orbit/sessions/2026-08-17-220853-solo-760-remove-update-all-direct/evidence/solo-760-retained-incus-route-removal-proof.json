@@ -1,0 +1,25 @@
+{
+  "todo": "solo://proj/2/todo/p11-a-delete-the-obs--760",
+  "candidate": "98148e077bf377907d6d3a86c9b178f60b16f48b",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology_id": "dev-56ff19",
+  "topology_kind": "operator_gateway_app-dev",
+  "host": "beast",
+  "gateway_container": "orbit-gateway",
+  "candidate_binding": {
+    "routes/api.php": "8104bfa43d62ccb9c620b861df28bb7bb8e0614aefd18f141ee887f925882aa3",
+    "method": "sha256 worktree==gateway-container mount match"
+  },
+  "recorded_at": "2026-08-17T20:04:50Z",
+  "method": "on the retained topology gateway (docker orbit-gateway): route:list, class_exists via tinker, and live HTTP POST from the gateway node against http://10.6.0.2",
+  "expected": "obsolete POST /api/update/all removed (route unregistered, controller+contract classes gone) while POST /api/update/all/start durable lane keeps working",
+  "observed": {
+    "route_list_update_all": "only POST api/update/all/start (api.update.all.start -> UpdateAllStartController); bare /api/update/all absent",
+    "class_exists": {"UpdateAllController": false, "UpdateAllGatewayStream_contract": false, "UpdateAllStartController": true},
+    "http_post_api_update_all": 404,
+    "http_post_api_update_all_start": 202
+  },
+  "checks_all_pass": true,
+  "result": "passed"
+}

@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T20:08:53+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-760-remove-update-all-direct/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-220853-solo-760-remove-update-all-direct",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-760-retained-incus-route-removal-proof.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T200454Z-40b7aefdf612.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-760-retained-incus-route-removal-proof.json": "988d9f25d66566d41730e9566cad128fb4544c5238499e729575d4967b0ca570",
+        "loop.md": "ec4fe7173957daf782f6442632d773be8abd4525adea7291fbf360bca4f58978",
+        "quality-gates/quality-check-2026-08-17T200454Z-40b7aefdf612.json": "8e97afe72191c4450ea3eb9c4dfae0e91d4fd87cd4ecd33297e173435b7c82dc"
+    },
+    "slug": "solo-760-remove-update-all-direct",
+    "requested_slug": "solo-760-remove-update-all-direct",
+    "compatible_slugs": [
+        "solo-760-remove-update-all-direct"
+    ],
+    "branch": "solo-760-remove-update-all-direct",
+    "candidate_commit": "98148e077bf377907d6d3a86c9b178f60b16f48b",
+    "accepted_feature_tip": "98148e077bf377907d6d3a86c9b178f60b16f48b",
+    "accepted_main_tip": "42a0073d4481001da11623460ace97987712dfe1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
