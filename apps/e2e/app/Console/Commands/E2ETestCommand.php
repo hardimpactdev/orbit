@@ -9,6 +9,7 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
+use App\E2E\Support\E2EPestSupportTree;
 use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
 use App\E2E\Support\E2ETopologyCapabilities;
@@ -2074,25 +2075,7 @@ class E2ETestCommand extends Command
                 throw new \RuntimeException("Could not create E2E test suite directory [{$directory}].");
             }
 
-            $supportDirectory = repo_path('apps/e2e/tests/Feature/Commands/Support');
-
-            if (is_dir($supportDirectory)) {
-                $generatedSupportDirectory = $directory.'/Support';
-
-                if (! mkdir($generatedSupportDirectory, 0777, true) && ! is_dir($generatedSupportDirectory)) {
-                    throw new \RuntimeException(
-                        "Could not create E2E support directory [{$generatedSupportDirectory}].",
-                    );
-                }
-
-                foreach (glob($supportDirectory.'/*.php') ?: [] as $supportFile) {
-                    $supportTarget = $generatedSupportDirectory.'/'.basename($supportFile);
-
-                    if (! copy($supportFile, $supportTarget)) {
-                        throw new \RuntimeException("Could not copy E2E support file [{$supportFile}].");
-                    }
-                }
-            }
+            E2EPestSupportTree::copyTo($directory.'/Support');
 
             foreach ($testFiles as $index => $testFile) {
                 $target = base_path($testFile);
