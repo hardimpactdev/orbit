@@ -1,0 +1,30 @@
+{
+  "todo": "solo://proj/2/todo/p04-a-derive-firewal--758",
+  "candidate": "8727b62cc402561d0832731061510234cdbdd563",
+  "venue": "retained-incus",
+  "environment": "dev-fixture",
+  "topology_id": "dev-4f814a",
+  "topology_kind": "operator_gateway_app-dev",
+  "host": "beast",
+  "gateway_container": "orbit-gateway",
+  "candidate_binding": {
+    "FirewallRule.php": "4bb262ed71974f264002a7e87f83e261330a581d8e5de8352339976ace553d42",
+    "FirewallRuleProbe.php": "8446440c0830c5b11dc18ae6ce61087f792f4b50d36e8acf7fe8fc0496a50c23",
+    "method": "sha256 worktree==VM mount match"
+  },
+  "recorded_at": "2026-08-17T18:57:19Z",
+  "method": "disposable copy of live gateway.sqlite; DB_DATABASE override; legacy protected column restored, contradictory rows seeded, candidate drop-column migration run, derived accessor + write-block + serializer asserted",
+  "expected": "protected column removed; protection derived as owner!='user'; legacy contradictory stored values overridden by derivation; forced protected write blocked; API serializer emits derived value",
+  "observed": {
+    "post_migration_column_present": false,
+    "column_dropped_after_migration": true,
+    "legacy_contradiction_resolved_system": "stored false -> derived true",
+    "legacy_contradiction_resolved_user": "stored true -> derived false",
+    "derived_protection": {"system": true, "user": false, "node-security": true},
+    "write_block_system_still_protected": true,
+    "write_block_no_column_readded": true,
+    "api_output": {"system": true, "user": false}
+  },
+  "checks_all_pass": true,
+  "result": "passed"
+}

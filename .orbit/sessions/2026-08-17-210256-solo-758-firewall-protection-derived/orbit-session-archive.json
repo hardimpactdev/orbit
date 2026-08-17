@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T19:02:56+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-758-firewall-protection-derived/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-210256-solo-758-firewall-protection-derived",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-758-retained-incus-firewall-proof.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T185709Z-69d0fb6ac872.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-758-retained-incus-firewall-proof.json": "4f9f0c3ed171b99c16773994df877fac04e0370884ecdf168245efb9be2fbb65",
+        "loop.md": "dcdca260299a383974131f21b7c4f6001cadd2a71a34eed2deb0bf52fed224bf",
+        "quality-gates/quality-check-2026-08-17T185709Z-69d0fb6ac872.json": "fe232a60dc0679aa814de7dd999f0413ae06d0f773983635e579370352494278"
+    },
+    "slug": "solo-758-firewall-protection-derived",
+    "requested_slug": "solo-758-firewall-protection-derived",
+    "compatible_slugs": [
+        "solo-758-firewall-protection-derived"
+    ],
+    "branch": "solo-758-firewall-protection-derived",
+    "candidate_commit": "8727b62cc402561d0832731061510234cdbdd563",
+    "accepted_feature_tip": "8727b62cc402561d0832731061510234cdbdd563",
+    "accepted_main_tip": "6bcf2ede64aed6ec1915a6aec2ab0d96585e724a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
