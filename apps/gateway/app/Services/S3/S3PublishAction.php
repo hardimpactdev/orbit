@@ -104,14 +104,7 @@ final readonly class S3PublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool =
-                $existing->owner_type === 's3'
-                && isset($existing->config['owner_name'])
-                && $existing->config['owner_name'] === 'seaweedfs'
-                && isset($existing->config['protocol'])
-                && $existing->config['protocol'] === 's3';
-
-            if (! $isS3Tool) {
+            if (! $this->routeRegistrar->ownsPublicRoute($existing, $host)) {
                 $emitter->stepEvent('check_router_ingress', 'failed', "Host '{$host}' is owned by a non-S3 route.");
 
                 return $this->error(

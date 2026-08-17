@@ -5,11 +5,14 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Tools\HermesTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -391,6 +394,58 @@ describe('ToolRemoveController', function (): void {
                 ))
             ->toBeTrue();
     });
+
+    it('preserves malformed tool-owned proxy routes during stale cleanup', function (array $attributes): void {
+        $caller = createToolRemoveApiCallerNode();
+        $node = createTestAppHostNode([
+            'name' => 'nmbp',
+            'platform' => 'macos_26-5-1',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.nmbp.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://host.docker.internal:8080',
+                ],
+            ],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+        app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => 'nmbp',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
+
+        $response->assertBadRequest();
+
+        expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'wrong kind' => [['kind' => 'redirect']],
+    ]);
 
     it('runs removal-only openclaw legacy cleanup for detached runtime without NodeTool intent', function (): void {
         // Live residual shape: process/tool intent gone, proxy may remain, daemon

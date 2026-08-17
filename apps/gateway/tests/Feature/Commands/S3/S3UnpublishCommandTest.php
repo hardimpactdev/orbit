@@ -276,6 +276,39 @@ describe('S3Unpublish owned-route denial', function (): void {
             ->and($content)
             ->toContain('"owner_type":"app"');
     });
+
+    it('rejects malformed S3 ownership before changing publication intent', function (): void {
+        s3UnpublishCallerNode(role: 'gateway');
+        $storage = s3UnpublishStorageNode();
+        $tool = s3UnpublishSeaweedfsTool($storage, ['public_hosts' => ['s3.example.com']]);
+        s3UnpublishRouterNode();
+        $ingress = s3UnpublishIngressNode();
+        $instance = Instance::factory()->create();
+        $route = ProxyRoute::factory()->create([
+            'domain' => 's3.example.com',
+            'node_id' => $ingress->id,
+            'instance_id' => $instance->id,
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'seaweedfs',
+                'protocol' => 's3',
+            ],
+        ]);
+
+        $content = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1'])
+            ->streamedContent();
+
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('proxy.owned_route_denied')
+            ->and($tool->fresh()?->config['public_hosts'] ?? null)
+            ->toBe(['s3.example.com'])
+            ->and($route->fresh())
+            ->toBeInstanceOf(ProxyRoute::class);
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -365,6 +398,7 @@ describe('S3Unpublish success', function (): void {
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
+                'placement' => 'ingress',
                 'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],

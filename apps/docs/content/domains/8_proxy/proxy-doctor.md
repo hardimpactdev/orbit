@@ -157,6 +157,12 @@ then the global Caddy config, and then routes that need a live Caddy reload.
 Doctor keeps the reported issue order unchanged. A dry run shows the same
 recovery action order as a real restore.
 
+Doctor treats a row at an intended domain with an incompatible complete
+ownership tuple as `Unverifiable` ownership conflict. It does not convert that
+row, classify it as a removable service orphan, or report a restore as
+completed. This rule applies to router service routes, public analytics and
+WebSocket routes, public S3 routes, tool routes, and custom routes.
+
 For an instance primary route, restoring a mismatch also persists its app
 owner, concrete instance target, serving node, runtime upstream, and inner-TLS
 server name before rendering.

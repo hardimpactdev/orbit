@@ -700,3 +700,59 @@ it('s3 restore router_route_orphaned removes the s3.orbit service route row', fu
         ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())
         ->toBeFalse();
 })->group('s3', 'proxy-doctor');
+
+it('s3 doctor does not classify or remove another owner at the reserved service domain', function (): void {
+    $router = s3ProxyRouter();
+    $route = ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8333']],
+    ]);
+    $probe = app(S3ProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: S3ProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned s3.orbit route.',
+    );
+
+    $drift = $probe->drift($router);
+    $result = $probe->restore($router, $entry);
+
+    expect(collect($drift)->pluck('key')->all())
+        ->not
+        ->toContain(S3ProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result)
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('s3', 'proxy-doctor');
+
+it('s3 doctor does not restore active drift by converting another owner', function (): void {
+    $router = s3ProxyRouter();
+    s3ProxyStorageNode();
+    $route = ProxyRoute::factory()->create([
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8333']],
+    ]);
+    $probe = app(S3ProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+    $entry = collect($drift)->firstWhere('key', S3ProxyDoctorProbe::RouterRouteKey);
+
+    expect($entry)->toBeInstanceOf(DriftEntry::class);
+    assert($entry instanceof DriftEntry);
+
+    expect($entry->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($entry->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($router, $entry))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('s3', 'proxy-doctor');

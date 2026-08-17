@@ -321,6 +321,7 @@ describe('S3Publish domain conflict', function (): void {
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => [
+                'placement' => 'ingress',
                 'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
                 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
@@ -331,6 +332,39 @@ describe('S3Publish domain conflict', function (): void {
 
         $content = $response->streamedContent();
         expect($content)->toContain('event: complete')->and($content)->toContain('"already_published":true');
+    });
+
+    it('rejects malformed S3 ownership before changing publication intent', function (): void {
+        s3PublishCallerNode(role: 'gateway');
+        $storage = s3PublishStorageNode();
+        $tool = s3PublishSeaweedfsTool($storage);
+        s3PublishRouterNode();
+        $ingress = s3PublishIngressNode();
+        $instance = Instance::factory()->create();
+        $route = ProxyRoute::factory()->create([
+            'domain' => 's3.example.com',
+            'node_id' => $ingress->id,
+            'instance_id' => $instance->id,
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'seaweedfs',
+                'protocol' => 's3',
+            ],
+        ]);
+
+        $content = s3PublishStream($this, ['host' => 's3.example.com', 'node' => 'storage-1'])
+            ->streamedContent();
+
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('proxy.domain_conflict')
+            ->and($tool->fresh()?->config['public_hosts'] ?? null)
+            ->toBe([])
+            ->and($route->fresh())
+            ->toBeInstanceOf(ProxyRoute::class);
     });
 
     it('accepts re-publishing an already-S3-owned route idempotently', function (): void {

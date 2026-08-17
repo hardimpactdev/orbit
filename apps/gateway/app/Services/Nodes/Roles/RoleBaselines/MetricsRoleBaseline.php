@@ -30,6 +30,7 @@ use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeServiceMetadata;
 use App\Services\Processes\ProcessServiceCatalog;
+use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolsFixer;
@@ -109,11 +110,11 @@ class MetricsRoleBaseline implements RoleBaseline
             $this->removeNodeExporterFirewallRules([$node->id]);
         }
 
-        ProxyRoute::query()
-            ->where('domain', self::ServiceDomain)
-            ->where('owner_type', 'router')
-            ->whereJsonContains('config->owner_name', 'grafana')
-            ->delete();
+        $route = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if ($route instanceof ProxyRoute && $this->ownsMetricsRoute($route)) {
+            $route->delete();
+        }
 
         $this->dnsmasqReconciler()->reconcileProxyRecords();
     }
@@ -780,29 +781,68 @@ class MetricsRoleBaseline implements RoleBaseline
         }
 
         $config = MetricsServiceRoute::config();
-        $sourceHash = $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
+        $intent = new ProxyRoute([
             'node_id' => $router->id,
             'domain' => self::ServiceDomain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
-        ]));
+        ]);
+        $intent->source_hash = $this->proxyRouteRenderer->sourceHash($intent);
+        $existingRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! ProxyRouteOwnershipCompatibility::matches($existingRoute, $intent, ['owner_name', 'protocol'])
+        ) {
+            throw new RuntimeException("Metrics service route 'metrics.orbit' conflicts with existing ownership.");
+        }
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
             [
-                'node_id' => $router->id,
+                'node_id' => $intent->node_id,
                 'app_id' => null,
                 'workspace_id' => null,
                 'instance_id' => null,
-                'owner_type' => 'router',
-                'kind' => 'proxy',
-                'config' => $config,
-                'source_hash' => $sourceHash,
+                'owner_type' => $intent->owner_type,
+                'kind' => $intent->kind,
+                'config' => $intent->config,
+                'source_hash' => $intent->source_hash,
             ],
         );
 
         $this->dnsmasqReconciler()->reconcileProxyRecords();
+    }
+
+    private function ownsMetricsRoute(ProxyRoute $route): bool
+    {
+        /** @var Node|null $router */
+        $router = $this
+            ->nodeRoleAssignments()
+            ->activeRouterNodeQuery()
+            ->orderBy('id')
+            ->first();
+
+        if (! $router instanceof Node) {
+            return false;
+        }
+
+        $expected = new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => self::ServiceDomain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => MetricsServiceRoute::config(),
+        ]);
+
+        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['owner_name', 'protocol']);
     }
 
     /**

@@ -246,7 +246,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             ->toContain('reverse_proxy http://host.docker.internal:8080');
     });
 
-    it('clears stale instance ownership when persisting an agent tool route', function (): void {
+    it('does not claim malformed agent tool route ownership', function (array $attributes): void {
         $node = Node::factory()->create([
             'status' => 'active',
             'tld' => 'agent',
@@ -256,7 +256,6 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
-        $instance = Instance::factory()->create();
         $intent = app(AgentToolProxyRouteIntent::class);
         $expected = $intent->expectedRoute($tool);
 
@@ -265,15 +264,53 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         ProxyRoute::query()->create([
             'node_id' => $node->id,
             'domain' => $expected->domain,
-            'instance_id' => $instance->id,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'config' => $expected->config,
             'source_hash' => $expected->source_hash,
+            ...$attributes,
         ]);
 
-        expect($intent->persist($expected)?->instance_id)->toBeNull();
-    });
+        expect($intent->persist($expected))
+            ->toBeNull()
+            ->and(ProxyRoute::query()
+                ->where('domain', $expected->domain)
+                ->sole()
+                ->only([
+                    'node_id',
+                    'app_id',
+                    'workspace_id',
+                    'instance_id',
+                    'owner_type',
+                    'kind',
+                    'config',
+                ]))
+            ->toBe([
+                'node_id' => $attributes['node_id'] ?? $node->id,
+                'app_id' => $attributes['app_id'] ?? null,
+                'workspace_id' => $attributes['workspace_id'] ?? null,
+                'instance_id' => $attributes['instance_id'] ?? null,
+                'owner_type' => $attributes['owner_type'] ?? 'tool',
+                'kind' => $attributes['kind'] ?? 'proxy',
+                'config' => $attributes['config'] ?? $expected->config,
+            ]);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+        'wrong kind' => [['kind' => 'redirect']],
+        'wrong owner identity' => [[
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+                'upstream' => 'http://host.docker.internal:8080',
+                'owner_name' => 'other',
+            ],
+        ]],
+    ]);
 
     it('rewrites pre-existing loopback custom proxy routes when rendering them through orbit-caddy', function (): void {
         $renderer = new ProxyRouteRenderer;

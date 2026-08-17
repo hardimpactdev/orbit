@@ -202,6 +202,47 @@ describe('ProxyRouteFixer', function (): void {
             ))->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
 
+    it('does not repair malformed custom route ownership', function (array $attributes): void {
+        $node = Node::factory()->create(['name' => 'gateway-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'custom.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+            ...$attributes,
+        ]);
+        $original = $route->fresh()->getAttributes();
+
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Malformed custom route.',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($route->fresh()->getAttributes())
+            ->toBe($original);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'wrong kind' => [['kind' => 'app']],
+    ]);
+
     it('repairs proxy routes without explicit transitional SSH fallback', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([

@@ -43,6 +43,15 @@ These terms define the types of routes that the proxy family owns and manages.
   resolves to the intended owner. Invalid ownership and another valid owner at
   the same domain are conflicts. Destructive lifecycle cleanup applies the same
   resolver rule before it removes route artifacts or registry rows.
+  Non-Instance tuples require `app_id=null`, `workspace_id=null`, and
+  `instance_id=null`, plus the intended serving node and kind. Custom routes use
+  `custom` plus `proxy` or `redirect`. Tool routes use `tool` plus `proxy` and a
+  stable `config.owner_name`. Public S3 routes use `s3` plus `proxy`, ingress
+  placement, `owner_name=seaweedfs`, and `protocol=s3`. Router service routes
+  use `router` plus `proxy` and their stable family protocol or owner identity:
+  analytics, WebSocket, SeaweedFS S3, or Grafana metrics. Convergence and
+  cleanup do not clear stray foreign keys or replace another node, kind, owner,
+  or family identity.
 - **Route kind:** Route behavior at ingress. Persisted kinds are `app`,
   `workspace`, `internal`, `proxy`, and `redirect`. The registry maps a stored
   primary `app` route to public kind `instance`.

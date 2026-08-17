@@ -10,6 +10,7 @@ use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
+use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -85,6 +86,10 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             return null;
         }
 
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         $binding = AppAnalyticsBinding::query()->find((int) ($entry->detail['binding_id'] ?? 0));
 
         if (! $binding instanceof AppAnalyticsBinding || ! $binding->enabled) {
@@ -125,6 +130,20 @@ final readonly class AnalyticsPublicProxyDoctorProbe
                 kind: DriftKind::Missing,
                 summary: "Public analytics route {$intent->domain} is missing from gateway proxy registry.",
                 detail: $detail,
+            );
+        }
+
+        if (! ProxyRouteOwnershipCompatibility::matches(
+            $route,
+            $intent,
+            ['placement', 'ingress_node_id', 'protocol'],
+        )) {
+            return new DriftEntry(
+                family: 'proxy',
+                key: self::PUBLIC_ROUTE_KEY,
+                kind: DriftKind::Unverifiable,
+                summary: "Public analytics route {$intent->domain} conflicts with another ownership tuple.",
+                detail: [...$detail, 'reason' => 'ownership_conflict'],
             );
         }
 

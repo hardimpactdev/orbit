@@ -186,7 +186,7 @@ it('updates the service route when called again', function (): void {
     expect(ProxyRoute::query()->where('domain', 's3.orbit')->count())->toBe(1);
 })->group('service');
 
-it('clears stale instance ownership when syncing the service route', function (): void {
+it('does not clear malformed ownership when syncing the service route', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
 
@@ -206,11 +206,73 @@ it('clears stale instance ownership when syncing the service route', function ()
         'kind' => 'proxy',
     ]);
 
-    app(S3RouteRegistrar::class)->syncServiceRoute();
+    expect(fn () => app(S3RouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(RuntimeException::class, "S3 service route 's3.orbit' conflicts with existing ownership.");
 
     expect(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->sole()->instance_id)
-        ->toBeNull();
+        ->toBe($instance->id);
 })->group('service');
+
+it('does not overwrite a custom route at the reserved s3 service domain', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $router->id,
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8333']],
+    ]);
+
+    expect(fn () => app(S3RouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(RuntimeException::class, "S3 service route 's3.orbit' conflicts with existing ownership.");
+
+    expect($route->fresh()?->owner_type)->toBe('custom');
+})->group('service');
+
+it('does not overwrite mismatched s3 service ownership', function (array $attributes): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
+        'source_hash' => str_repeat('a', 64),
+        ...$attributes,
+    ]);
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn () => app(S3RouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(RuntimeException::class, "S3 service route 's3.orbit' conflicts with existing ownership.");
+
+    expect($route->fresh()?->getAttributes())->toBe($original);
+})->with([
+    'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+    'wrong kind' => [['kind' => 'redirect']],
+    'wrong owner identity' => [['config' => ['owner_name' => 'other', 'protocol' => 's3']]],
+    'wrong protocol' => [['config' => ['owner_name' => 'seaweedfs', 'protocol' => 'websocket']]],
+    'stray app identity' => [fn (): array => ['app_id' => \App\Models\App::factory()->create()->id]],
+    'stray workspace identity' => [fn (): array => ['workspace_id' => \App\Models\Workspace::factory()->create()->id]],
+]);
 
 it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
@@ -244,7 +306,7 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
         ]);
 })->group('service');
 
-it('clears stale instance ownership when syncing a public host route', function (): void {
+it('does not clear malformed ownership when syncing a public host route', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
 
@@ -270,9 +332,10 @@ it('clears stale instance ownership when syncing a public host route', function 
         'kind' => 'proxy',
     ]);
 
-    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+    expect(fn () => app(S3RouteRegistrar::class)->syncPublicHosts($tool))
+        ->toThrow(RuntimeException::class, "S3 public route 's3.example.com' conflicts with existing ownership.");
 
-    expect(ProxyRoute::query()->where('domain', 's3.example.com')->sole()->instance_id)->toBeNull();
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->sole()->instance_id)->toBe($instance->id);
 })->group('service');
 
 it('skips ingress route sync when there are no public hosts', function (): void {
@@ -289,7 +352,7 @@ it('skips ingress route sync when there are no public hosts', function (): void 
     expect(ProxyRoute::query()->where('owner_type', 's3')->count())->toBe(0);
 })->group('service');
 
-it('removes the public host route when owner_type is tool and owner_name is seaweedfs', function (): void {
+it('removes the public host route with complete S3 ownership', function (): void {
     $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
     s3AssignRole($edge, 'ingress');
 
@@ -307,6 +370,7 @@ it('removes the public host route when owner_type is tool and owner_name is seaw
         'owner_type' => 's3',
         'kind' => 'proxy',
         'config' => [
+            'placement' => 'ingress',
             'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
@@ -562,6 +626,40 @@ it('removePublicHost does not remove a non-s3 tool route at the same domain', fu
     // The non-s3 tool route must survive.
     expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeTrue();
 })->group('public');
+
+it('removePublicHost does not remove malformed s3 ownership at the same domain', function (array $attributes): void {
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $edge->id,
+        'domain' => 's3.example.com',
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 's3',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
+        'source_hash' => str_repeat('a', 64),
+        ...$attributes,
+    ]);
+
+    app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
+
+    expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+})->with([
+    'stray app identity' => [fn (): array => ['app_id' => \App\Models\App::factory()->create()->id]],
+    'stray workspace identity' => [fn (): array => ['workspace_id' => \App\Models\Workspace::factory()->create()->id]],
+    'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+    'wrong kind' => [['kind' => 'redirect']],
+    'wrong owner identity' => [['config' => ['owner_name' => 'other', 'protocol' => 's3']]],
+]);
 
 it('fails clearly when the router node has no WireGuard address', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => null]);

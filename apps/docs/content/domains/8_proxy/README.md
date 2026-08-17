@@ -22,7 +22,12 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   with invalid or different ownership is a conflict. The owner value classifies
   which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
-  by `router`.
+  by `router`. Router, gateway, tool, S3, and custom tuples require
+  `app_id=null`, `workspace_id=null`, and `instance_id=null`. They also require
+  the intended serving node and kind. Tool and service families require their
+  stable `config.owner_name`, `config.protocol`, and placement identity where
+  applicable. Convergence, cleanup, migration normalization, and Doctor restore
+  preserve a malformed or differently owned row at the requested domain.
 - Every proxy route has a public kind: `instance`, `workspace`, `internal`,
   `proxy`, or `redirect`.
 - `proxy:list` shows all proxy routes by default, including instance routes,

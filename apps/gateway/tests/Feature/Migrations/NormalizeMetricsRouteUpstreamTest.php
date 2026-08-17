@@ -59,3 +59,38 @@ it('normalizes legacy metrics route upstream intent for Caddy host access', func
         ->and($route->source_hash)
         ->toBe(app(ProxyRouteRenderer::class)->sourceHash($route));
 });
+
+it('does not normalize malformed metrics route ownership', function (array $attributes): void {
+    $migrationPath = database_path('migrations/2026_06_17_010000_normalize_metrics_route_upstream.php');
+    $node = Node::factory()->router()->create(['name' => 'gateway']);
+    $config = [
+        'owner_name' => 'grafana',
+        'protocol' => 'http',
+        'target' => ['type' => 'upstream', 'value' => 'http://gateway.metrics.orbit:3000'],
+        'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
+    ];
+    $route = ProxyRoute::query()->create([
+        'node_id' => $node->id,
+        'domain' => 'metrics.orbit',
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'source_hash' => str_repeat('0', 64),
+        'config' => $config,
+        ...$attributes,
+    ]);
+
+    $migration = require $migrationPath;
+    $migration->up();
+
+    expect($route->fresh()?->config)
+        ->toBe($config)
+        ->and($route->fresh()?->source_hash)
+        ->toBe(str_repeat('0', 64));
+})->with([
+    'stray app identity' => [fn (): array => ['app_id' => \App\Models\App::factory()->create()->id]],
+    'stray workspace identity' => [fn (): array => ['workspace_id' => \App\Models\Workspace::factory()->create()->id]],
+    'stray instance identity' => [fn (): array => ['instance_id' => \App\Models\Instance::factory()->create()->id]],
+]);

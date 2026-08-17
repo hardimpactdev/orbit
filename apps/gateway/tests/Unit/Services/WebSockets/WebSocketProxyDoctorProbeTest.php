@@ -233,6 +233,62 @@ it('ws restore router_route_orphaned removes the websocket.orbit service route r
         ->toBeFalse();
 })->group('websocket', 'proxy-doctor');
 
+it('ws doctor does not classify or remove another owner at the reserved service domain', function (): void {
+    $router = wsProbeRouter();
+    $route = ProxyRoute::factory()->create([
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
+    ]);
+    $probe = app(WebSocketProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: WebSocketProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned websocket.orbit route.',
+    );
+
+    $drift = $probe->drift($router);
+    $result = $probe->restore($router, $entry);
+
+    expect(collect($drift)->pluck('key')->all())
+        ->not
+        ->toContain(WebSocketProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result)
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('websocket', 'proxy-doctor');
+
+it('ws doctor does not restore active drift by converting another owner', function (): void {
+    $router = wsProbeRouter();
+    wsProbeActiveWebSocketNode();
+    $route = ProxyRoute::factory()->create([
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
+    ]);
+    $probe = app(WebSocketProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+    $entry = collect($drift)->firstWhere('key', WebSocketProxyDoctorProbe::RouterRouteKey);
+
+    expect($entry)->toBeInstanceOf(DriftEntry::class);
+    assert($entry instanceof DriftEntry);
+
+    expect($entry->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($entry->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($router, $entry))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+})->group('websocket', 'proxy-doctor');
+
 it('ws restore returns null for unknown key', function (): void {
     $router = wsProbeRouter();
 

@@ -179,8 +179,8 @@ it('fails clearly when more than one websocket backend is active', function (): 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket service route supports one active websocket backend.');
 
-it('updates the service route when websocket backends change', function (): void {
-    Node::factory()
+it('does not overwrite a custom route at the reserved websocket service domain', function (): void {
+    $router = Node::factory()
         ->router()
         ->create([
             'name' => 'router-1',
@@ -208,21 +208,69 @@ it('updates the service route when websocket backends change', function (): void
         'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
     ]);
 
-    $route = app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+    $stored = ProxyRoute::query()->where('domain', 'websocket.orbit')->sole();
 
-    expect($route->owner_type)
-        ->toBe('router')
-        ->and($route->config['router_backend_pool'])
+    expect(fn () => app(WebSocketRouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(
+            RuntimeException::class,
+            "WebSocket service route 'websocket.orbit' conflicts with existing ownership.",
+        );
+
+    expect($stored->fresh()?->only(['node_id', 'owner_type', 'kind', 'config']))
         ->toBe([
-            [
-                'node_id' => $activeBackend->id,
-                'node' => 'app-dev-1',
-                'url' => 'https://10.6.0.41:8080',
-            ],
+            'node_id' => $staleBackend->id,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080']],
         ])
-        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())
-        ->toBe(1);
+        ->and($activeBackend->exists)
+        ->toBeTrue()
+        ->and($router->exists)
+        ->toBeTrue();
 });
+
+it('does not overwrite malformed websocket service ownership', function (array $attributes): void {
+    $router = Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.41',
+        ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['protocol' => 'websocket'],
+        'source_hash' => str_repeat('a', 64),
+        ...$attributes,
+    ]);
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn () => app(WebSocketRouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(
+            RuntimeException::class,
+            "WebSocket service route 'websocket.orbit' conflicts with existing ownership.",
+        );
+
+    expect($route->fresh()?->getAttributes())->toBe($original);
+})->with([
+    'wrong kind' => [['kind' => 'redirect']],
+    'wrong protocol' => [['config' => ['protocol' => 'analytics']]],
+    'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+    'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+    'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+    'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+]);
 
 it('requires an active router node before syncing the service route', function (): void {
     Node::factory()
@@ -361,7 +409,12 @@ it('rejects malformed or differently-owned routes at a public websocket host', f
         'domain' => 'ws.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        'config' => [
+            'placement' => 'ingress',
+            'ingress_node_id' => $ingress->id,
+            'protocol' => 'websocket',
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+        ],
     ]);
 
     if ($invalidity === 'missing app') {
@@ -391,6 +444,14 @@ it('rejects malformed or differently-owned routes at a public websocket host', f
         ])->save();
     }
 
+    if ($invalidity === 'wrong node') {
+        $route->forceFill(['node_id' => Node::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong protocol') {
+        $route->forceFill(['config' => ['protocol' => 'analytics']])->save();
+    }
+
     $original = $route->fresh()->getAttributes();
 
     expect(fn (): mixed => app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding))
@@ -407,6 +468,8 @@ it('rejects malformed or differently-owned routes at a public websocket host', f
     'wrong kind',
     'workspace identity',
     'different valid owner',
+    'wrong node',
+    'wrong protocol',
 ]);
 
 it('removes stale public websocket routes for the binding app', function (): void {
@@ -423,7 +486,12 @@ it('removes stale public websocket routes for the binding app', function (): voi
         'domain' => 'ws-old.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        'config' => [
+            'placement' => 'ingress',
+            'ingress_node_id' => $ingress->id,
+            'protocol' => 'websocket',
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+        ],
     ]);
     $malformedStaleRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
@@ -472,7 +540,12 @@ it('removes public websocket routes when the binding is disabled', function (): 
         'domain' => 'ws.example.com',
         'owner_type' => 'app-websocket',
         'kind' => 'proxy',
-        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+        'config' => [
+            'placement' => 'ingress',
+            'ingress_node_id' => $ingress->id,
+            'protocol' => 'websocket',
+            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+        ],
     ]);
     $malformedRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,

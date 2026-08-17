@@ -204,6 +204,40 @@ it('rejects compatibility app_id that disagrees with the concrete instance owner
         );
 });
 
+it('rejects malformed app route tuples before runtime upstream backfill', function (array $attributes): void {
+    $node = Node::factory()->appDev()->create();
+    $app = App::factory()->create(['name' => 'owner', 'runtime' => AppRuntimeKind::Php]);
+    $instance = Instance::factory()->for($app)->create();
+    $route = ProxyRoute::query()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'workspace_id' => null,
+        'instance_id' => $instance->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'domain' => 'owner.test',
+        'source_hash' => str_repeat('0', 64),
+        'config' => [
+            'document_root' => '/srv/owner/public',
+            'php_socket' => '/var/run/php/orbit-owner.sock',
+        ],
+        ...$attributes,
+    ]);
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => new AppProxyRouteRuntimeUpstreamBackfill()->run())
+        ->toThrow(RuntimeException::class, "App proxy route 'owner.test' has invalid app ownership.");
+
+    expect($route->fresh()->getAttributes())->toBe($original);
+})->with([
+    'wrong owner type' => [['owner_type' => 'custom']],
+    'stray workspace identity' => [
+        fn (): array => [
+            'workspace_id' => \App\Models\Workspace::factory()->for(App::factory()->create())->create()->id,
+        ],
+    ],
+]);
+
 it('does not backfill static app routes (they have no runtime_upstream)', function (): void {
     $node = Node::factory()->appDev()->create();
     $app = App::factory()

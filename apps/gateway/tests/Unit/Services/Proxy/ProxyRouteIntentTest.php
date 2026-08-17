@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -199,6 +200,43 @@ describe('ProxyRouteIntent', function (): void {
         );
     })->throws(GatewayApiException::class, 'Existing custom proxy route differs from requested intent.');
 
+    it('does not claim malformed custom route ownership even with force', function (array $attributes): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+        $original = $route->fresh()->getAttributes();
+
+        expect(fn () => app(ProxyRouteIntent::class)->add(
+            domain: 'vite.docs.test',
+            nodeName: 'app-1',
+            upstream: 'http://127.0.0.1:5174',
+            redirect: null,
+            code: null,
+            force: true,
+        ))
+            ->toThrow(GatewayApiException::class, "Domain 'vite.docs.test' has invalid custom ownership.");
+
+        expect($route->fresh()?->getAttributes())->toBe($original);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'app']],
+    ]);
+
     it('rejects domains owned by another route family', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
@@ -368,6 +406,90 @@ describe('ProxyRouteIntent', function (): void {
             ->toBeEmpty()
             ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
             ->toBeFalse();
+    });
+
+    it('does not remove malformed custom ownership', function (array $attributes): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'old.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'redirect',
+            'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 302],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+
+        expect(fn () => app(ProxyRouteIntent::class)->remove('old.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'old.test' has invalid custom ownership.");
+
+        expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+    })->with([
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'internal']],
+    ]);
+
+    it('does not remove malformed or differently hosted tool ownership', function (array $attributes): void {
+        $routeNode = createTestAppHostNode(['name' => 'app-1']);
+        $toolNode = createTestAppHostNode(['name' => 'app-2']);
+        NodeTool::factory()->for($toolNode)->create([
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $routeNode->id,
+            'domain' => 'hermes.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => ['owner_name' => 'hermes'],
+            'source_hash' => str_repeat('a', 64),
+            ...$attributes,
+        ]);
+
+        expect(fn () => app(ProxyRouteIntent::class)->remove('hermes.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'hermes.test' is owned by tool.");
+
+        expect($route->fresh())->toBeInstanceOf(ProxyRoute::class);
+    })->with([
+        'wrong tool host identity' => [[]],
+        'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+        'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+        'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+        'invalid kind' => [['kind' => 'redirect']],
+        'missing owner identity' => [['config' => []]],
+    ]);
+
+    it('removes an orphaned tool route only when its complete ownership tuple is valid', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.test',
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => ['owner_name' => 'hermes'],
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $result = app(ProxyRouteIntent::class)->remove('hermes.test');
+
+        expect($result['meta'])
+            ->toMatchArray([
+                'removal_reason' => 'orphan_owner',
+                'owner_type' => 'tool',
+            ])
+            ->and($route->fresh())
+            ->toBeNull();
     });
 
     it('keeps registry row and returns hard proxy.cleanup_failed when cleanup throws', function (): void {

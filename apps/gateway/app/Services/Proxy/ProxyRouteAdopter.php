@@ -117,6 +117,9 @@ final readonly class ProxyRouteAdopter
             ProxyRoute::query()->create([
                 'node_id' => $node->id,
                 'domain' => $domain,
+                'app_id' => null,
+                'workspace_id' => null,
+                'instance_id' => null,
                 'owner_type' => 'custom',
                 'kind' => $kind,
                 'source_hash' => $hash,

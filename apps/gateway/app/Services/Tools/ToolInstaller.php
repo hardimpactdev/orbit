@@ -154,7 +154,7 @@ final readonly class ToolInstaller
         }
 
         if ($this->catalog->category($tool) === 'agent') {
-            $routeConflict = $this->checkToolProxyRouteConflict($tool, $targetNode, $scriptConfig);
+            $routeConflict = $this->checkToolProxyRouteConflict($tool, $targetNode);
 
             if ($routeConflict instanceof ToolRegistryFailure) {
                 return $routeConflict;
@@ -374,10 +374,7 @@ final readonly class ToolInstaller
         return app(PhpCliVariantResolver::class)->appRoleForNode($node);
     }
 
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function checkToolProxyRouteConflict(string $tool, Node $node, array $config): ?ToolRegistryFailure
+    private function checkToolProxyRouteConflict(string $tool, Node $node): ?ToolRegistryFailure
     {
         $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
         $domain = $tld !== '' ? "{$tool}.{$tld}" : $tool;
@@ -390,23 +387,23 @@ final readonly class ToolInstaller
             return null;
         }
 
-        if ($existing->owner_type !== 'tool') {
+        $expected = new ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => $domain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => ['owner_name' => $tool],
+        ]);
+
+        if (app(AgentToolProxyRouteIntent::class)->hasOwnershipConflict($existing, $expected)) {
             return ToolRegistryFailure::validation(
                 'domain',
                 $domain,
-                "Proxy route '{$domain}' is already owned by {$existing->owner_type}.",
+                "Proxy route '{$domain}' conflicts with the complete '{$tool}' tool ownership tuple.",
                 ['domain' => $domain, 'owner_type' => $existing->owner_type],
-            );
-        }
-
-        $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
-
-        if ($existingOwner !== $tool) {
-            return ToolRegistryFailure::validation(
-                'domain',
-                $domain,
-                "Proxy route '{$domain}' is already owned by tool '{$existingOwner}'.",
-                ['domain' => $domain, 'existing_tool' => $existingOwner],
             );
         }
 
@@ -447,29 +444,26 @@ final readonly class ToolInstaller
             ->where('domain', $domain)
             ->first();
 
-        if ($existing instanceof ProxyRoute) {
-            if ($existing->owner_type !== 'tool') {
-                return ToolRegistryFailure::validation(
-                    'domain',
-                    $domain,
-                    "Proxy route '{$domain}' is already owned by {$existing->owner_type}.",
-                    ['domain' => $domain, 'owner_type' => $existing->owner_type],
-                );
-            }
-
-            $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
-
-            if ($existingOwner !== $tool) {
-                return ToolRegistryFailure::validation(
-                    'domain',
-                    $domain,
-                    "Proxy route '{$domain}' is already owned by tool '{$existingOwner}'.",
-                    ['domain' => $domain, 'existing_tool' => $existingOwner],
-                );
-            }
+        if (
+            $existing instanceof ProxyRoute
+            && app(AgentToolProxyRouteIntent::class)->hasOwnershipConflict($existing, $expected)
+        ) {
+            return ToolRegistryFailure::validation(
+                'domain',
+                $domain,
+                "Proxy route '{$domain}' conflicts with the complete '{$tool}' tool ownership tuple.",
+                ['domain' => $domain, 'owner_type' => $existing->owner_type],
+            );
         }
 
-        app(AgentToolProxyRouteIntent::class)->persist($expected);
+        if (! app(AgentToolProxyRouteIntent::class)->persist($expected) instanceof ProxyRoute) {
+            return ToolRegistryFailure::validation(
+                'domain',
+                $domain,
+                "Proxy route '{$domain}' conflicts with the complete '{$tool}' tool ownership tuple.",
+                ['domain' => $domain],
+            );
+        }
 
         return null;
     }

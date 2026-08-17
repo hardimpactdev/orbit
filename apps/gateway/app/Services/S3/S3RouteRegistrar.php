@@ -10,6 +10,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
@@ -36,6 +37,14 @@ final readonly class S3RouteRegistrar
     public function syncServiceRoute(): ProxyRoute
     {
         $intent = $this->serviceRouteIntent();
+        $existingRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! ProxyRouteOwnershipCompatibility::matches($existingRoute, $intent, ['owner_name', 'protocol'])
+        ) {
+            throw new RuntimeException("S3 service route 's3.orbit' conflicts with existing ownership.");
+        }
 
         $route = ProxyRoute::query()->updateOrCreate(
             ['domain' => self::ServiceDomain],
@@ -64,7 +73,12 @@ final readonly class S3RouteRegistrar
             return;
         }
 
-        ProxyRoute::query()->where('domain', self::ServiceDomain)->delete();
+        $route = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
+
+        if ($route instanceof ProxyRoute && $this->ownsServiceRoute($route)) {
+            $route->delete();
+        }
+
         $this->dnsmasqReconciler->reconcileProxyRecords();
     }
 
@@ -95,6 +109,7 @@ final readonly class S3RouteRegistrar
             'domain' => self::ServiceDomain,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 'router',
             'kind' => 'proxy',
             'config' => $config,
@@ -173,6 +188,7 @@ final readonly class S3RouteRegistrar
             'domain' => $host,
             'app_id' => null,
             'workspace_id' => null,
+            'instance_id' => null,
             'owner_type' => 's3',
             'kind' => 'proxy',
             'config' => $config,
@@ -187,12 +203,55 @@ final readonly class S3RouteRegistrar
      */
     public function removePublicHost(NodeTool $seaweedfs, string $host): void
     {
-        ProxyRoute::query()
-            ->where('domain', $host)
-            ->where('owner_type', 's3')
-            ->whereJsonContains('config->owner_name', 'seaweedfs')
-            ->whereJsonContains('config->protocol', 's3')
-            ->delete();
+        $route = ProxyRoute::query()->where('domain', $host)->first();
+
+        if (! $route instanceof ProxyRoute || ! $this->ownsPublicRoute($route, $host)) {
+            return;
+        }
+
+        $route->delete();
+    }
+
+    public function ownsServiceRoute(ProxyRoute $route): bool
+    {
+        $router = $this->routerNode();
+        $expected = new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => self::ServiceDomain,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
+        ]);
+
+        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['owner_name', 'protocol']);
+    }
+
+    public function ownsPublicRoute(ProxyRoute $route, string $host): bool
+    {
+        $ingress = $this->ingressNode();
+        $expected = new ProxyRoute([
+            'node_id' => $ingress->id,
+            'domain' => $host,
+            'app_id' => null,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 's3',
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'owner_name' => 'seaweedfs',
+                'protocol' => 's3',
+            ],
+        ]);
+
+        return ProxyRouteOwnershipCompatibility::matches(
+            $route,
+            $expected,
+            ['placement', 'owner_name', 'protocol'],
+        );
     }
 
     private function routerNode(): Node
@@ -304,6 +363,18 @@ final readonly class S3RouteRegistrar
     private function syncPublicHost(Node $ingress, Node $router, NodeTool $seaweedfs, string $host): void
     {
         $intent = $this->publicRouteIntent($ingress, $router, $host);
+        $existingRoute = ProxyRoute::query()->where('domain', $host)->first();
+
+        if (
+            $existingRoute instanceof ProxyRoute
+            && ! ProxyRouteOwnershipCompatibility::matches(
+                $existingRoute,
+                $intent,
+                ['placement', 'owner_name', 'protocol'],
+            )
+        ) {
+            throw new RuntimeException("S3 public route '{$host}' conflicts with existing ownership.");
+        }
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $host],

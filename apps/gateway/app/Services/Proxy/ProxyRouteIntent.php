@@ -51,6 +51,18 @@ class ProxyRouteIntent
             ->where('domain', $domain)
             ->first();
 
+        if (
+            $existing instanceof ProxyRoute
+            && $existing->owner_type === 'custom'
+            && ! $this->hasValidCustomOwnership($existing)
+        ) {
+            throw new GatewayApiException(
+                "Domain '{$domain}' has invalid custom ownership.",
+                'proxy.owner_invalid',
+                ['domain' => $domain, 'owner_type' => 'custom'],
+            );
+        }
+
         if ($existing instanceof ProxyRoute && $existing->owner_type !== 'custom') {
             $ownerType = $this->publicOwnerType($existing);
 
@@ -145,6 +157,14 @@ class ProxyRouteIntent
             throw new GatewayApiException("Proxy route '{$domain}' not found.", 'proxy.not_found', [
                 'domain' => $domain,
             ]);
+        }
+
+        if ($route->owner_type === 'custom' && ! $this->hasValidCustomOwnership($route)) {
+            throw new GatewayApiException(
+                "Domain '{$domain}' has invalid custom ownership.",
+                'proxy.owner_invalid',
+                ['domain' => $domain, 'owner_type' => 'custom'],
+            );
         }
 
         $orphanOwner = false;
@@ -311,12 +331,19 @@ class ProxyRouteIntent
         $config = is_array($route->config) ? $route->config : [];
         $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
 
-        if ($ownerName === null || $ownerName === '') {
-            return true;
+        if (
+            ! $route->node instanceof Node
+            || $route->app_id !== null
+            || $route->workspace_id !== null
+            || $route->instance_id !== null
+            || $route->kind !== 'proxy'
+            || $ownerName === null
+            || $ownerName === ''
+        ) {
+            return false;
         }
 
         return ! NodeTool::query()
-            ->where('node_id', $route->node_id)
             ->where('name', $ownerName)
             ->where('expected_state', 'installed')
             ->exists();
@@ -395,9 +422,24 @@ class ProxyRouteIntent
 
         return (
             $route->node_id === $node->id
+            && $route->app_id === null
+            && $route->workspace_id === null
+            && $route->instance_id === null
             && $route->owner_type === 'custom'
             && $route->kind === $kind
             && $storedConfig === $config
+        );
+    }
+
+    private function hasValidCustomOwnership(ProxyRoute $route): bool
+    {
+        return (
+            $route->node instanceof Node
+            && $route->app_id === null
+            && $route->workspace_id === null
+            && $route->instance_id === null
+            && $route->owner_type === 'custom'
+            && in_array($route->kind, ['proxy', 'redirect'], true)
         );
     }
 

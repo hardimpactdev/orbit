@@ -83,6 +83,87 @@ it('reports divergent private analytics route intent', function (): void {
         ->toBe(DriftKind::Divergent);
 });
 
+it('does not overwrite another owner at the reserved analytics service domain', function (): void {
+    $router = analyticsProxyRouter();
+    analyticsProxyBackend();
+    $route = ProxyRoute::factory()->create([
+        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8000']],
+    ]);
+
+    expect(fn () => app(AnalyticsRouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(
+            RuntimeException::class,
+            "Analytics service route 'analytics.orbit' conflicts with existing ownership.",
+        );
+
+    expect($route->fresh()?->owner_type)
+        ->toBe('custom')
+        ->and($route->fresh()?->config)
+        ->toBe(['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8000']]);
+});
+
+it('does not restore active analytics drift by converting another owner', function (): void {
+    $router = analyticsProxyRouter();
+    analyticsProxyBackend();
+    $route = ProxyRoute::factory()->create([
+        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8000']],
+    ]);
+    $probe = app(AnalyticsProxyDoctorProbe::class);
+    $drift = $probe->drift($router);
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($drift[0]->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($router, $drift[0]))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+});
+
+it('does not overwrite malformed analytics service ownership', function (array $attributes): void {
+    $router = analyticsProxyRouter();
+    analyticsProxyBackend();
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['protocol' => 'analytics'],
+        'source_hash' => str_repeat('a', 64),
+        ...$attributes,
+    ]);
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn () => app(AnalyticsRouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(
+            RuntimeException::class,
+            "Analytics service route 'analytics.orbit' conflicts with existing ownership.",
+        );
+
+    expect($route->fresh()?->getAttributes())->toBe($original);
+})->with([
+    'wrong kind' => [['kind' => 'redirect']],
+    'wrong protocol' => [['config' => ['protocol' => 'websocket']]],
+    'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+    'stray app identity' => [fn (): array => ['app_id' => App::factory()->create()->id]],
+    'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
+    'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
+]);
+
 it('reports and removes an orphaned private analytics route', function (): void {
     $router = analyticsProxyRouter();
     ProxyRoute::factory()->create([
@@ -125,6 +206,35 @@ it('reports and removes an orphaned private analytics route', function (): void 
         ->toBe('completed')
         ->and(ProxyRoute::query()->where('domain', AnalyticsRouteRegistrar::ServiceDomain)->exists())
         ->toBeFalse();
+});
+
+it('does not classify or remove another owner at the reserved analytics service domain', function (): void {
+    $router = analyticsProxyRouter();
+    $route = ProxyRoute::factory()->create([
+        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+        'node_id' => $router->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8000']],
+    ]);
+    $probe = app(AnalyticsProxyDoctorProbe::class);
+    $entry = new DriftEntry(
+        family: 'proxy',
+        key: AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey,
+        kind: DriftKind::Extra,
+        summary: 'Orphaned analytics route.',
+    );
+
+    $drift = $probe->drift($router);
+    $result = $probe->restore($router, $entry);
+
+    expect(collect($drift)->pluck('key')->all())
+        ->not
+        ->toContain(AnalyticsProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result)
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
 });
 
 it('reports a missing public analytics route for an enabled app binding', function (): void {
@@ -171,6 +281,32 @@ it('restores public analytics route intent from the enabled app binding', functi
         ->toBeTrue();
 });
 
+it('does not restore public analytics drift by converting another owner', function (): void {
+    analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'domain' => 'analytics.docs.test',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8000']],
+    ]);
+    $probe = app(AnalyticsPublicProxyDoctorProbe::class);
+    $drift = $probe->drift($ingress, $app->name);
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($drift[0]->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($ingress, $drift[0]))
+        ->toBeNull()
+        ->and($route->fresh()?->owner_type)
+        ->toBe('custom');
+});
+
 it('rejects malformed or differently-owned routes at a public analytics host', function (string $invalidity): void {
     analyticsProxyRouter();
     analyticsProxyBackend();
@@ -213,6 +349,14 @@ it('rejects malformed or differently-owned routes at a public analytics host', f
         ])->save();
     }
 
+    if ($invalidity === 'wrong node') {
+        $route->forceFill(['node_id' => Node::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong protocol') {
+        $route->forceFill(['config' => ['protocol' => 'websocket']])->save();
+    }
+
     $original = $route->fresh()->getAttributes();
 
     expect(fn (): mixed => app(AnalyticsRouteRegistrar::class)->assertPublicHostsAvailable(
@@ -237,6 +381,8 @@ it('rejects malformed or differently-owned routes at a public analytics host', f
     'wrong kind',
     'workspace identity',
     'different valid owner',
+    'wrong node',
+    'wrong protocol',
 ]);
 
 it('removes only valid obsolete public analytics ownership', function (): void {
@@ -244,7 +390,12 @@ it('removes only valid obsolete public analytics ownership', function (): void {
     analyticsProxyBackend();
     [$ingress, $app, $binding] = analyticsPublicBinding();
     $instance = $binding->instance()->firstOrFail();
-    $routeConfig = ['router_artifact' => ['node_id' => $router->id]];
+    $routeConfig = [
+        'placement' => 'ingress',
+        'ingress_node_id' => $ingress->id,
+        'protocol' => 'analytics',
+        'router_artifact' => ['node_id' => $router->id],
+    ];
     $validRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,

@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
@@ -62,7 +63,22 @@ final readonly class WebSocketProxyDoctorProbe
      */
     public function restore(Node $node, DriftEntry $entry): ?array
     {
+        if (($entry->detail['reason'] ?? null) === 'ownership_conflict') {
+            return null;
+        }
+
         if ($entry->key === self::RouterRouteKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', WebSocketRouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                $existingRoute instanceof ProxyRoute
+                && ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $route = $this->routeRegistrar->syncServiceRoute();
 
             return [
@@ -80,6 +96,17 @@ final readonly class WebSocketProxyDoctorProbe
         }
 
         if ($entry->key === self::RouterRouteOrphanedKey) {
+            $existingRoute = ProxyRoute::query()
+                ->where('domain', WebSocketRouteRegistrar::ServiceDomain)
+                ->first();
+
+            if (
+                ! $existingRoute instanceof ProxyRoute
+                || ! $this->routeRegistrar->ownsServiceRoute($existingRoute)
+            ) {
+                return null;
+            }
+
             $this->routeRegistrar->removeServiceRoute();
 
             return [
@@ -196,6 +223,10 @@ final readonly class WebSocketProxyDoctorProbe
             return [];
         }
 
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
+            return [];
+        }
+
         return [
             new DriftEntry(
                 family: 'proxy',
@@ -295,6 +326,28 @@ final readonly class WebSocketProxyDoctorProbe
                     kind: DriftKind::Missing,
                     summary: $missingSummary,
                     detail: $baseDetail,
+                ),
+            ];
+        }
+
+        $ownershipKeys = $intent->owner_type === 'app-websocket'
+            ? ['placement', 'ingress_node_id', 'protocol']
+            : ['protocol'];
+
+        if (! ProxyRouteOwnershipCompatibility::matches($route, $intent, $ownershipKeys)) {
+            return [
+                new DriftEntry(
+                    family: 'proxy',
+                    key: $key,
+                    kind: DriftKind::Unverifiable,
+                    summary: $mismatchSummary,
+                    detail: [
+                        ...$baseDetail,
+                        'reason' => 'ownership_conflict',
+                        'observed_node_id' => $route->node_id,
+                        'observed_owner_type' => $route->owner_type,
+                        'observed_kind' => $route->kind,
+                    ],
                 ),
             ];
         }

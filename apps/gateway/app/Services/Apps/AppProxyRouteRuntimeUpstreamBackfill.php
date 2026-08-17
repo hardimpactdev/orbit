@@ -59,6 +59,15 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
         $query
             ->orderBy('id')
             ->eachById(function (ProxyRoute $route) use ($hasInstanceOwnership, $renderer): void {
+                if (
+                    $hasInstanceOwnership
+                    && ($route->owner_type !== 'app'
+                    || $route->kind !== 'app'
+                    || $route->workspace_id !== null)
+                ) {
+                    throw new RuntimeException("App proxy route '{$route->domain}' has invalid app ownership.");
+                }
+
                 $instance = $hasInstanceOwnership ? $route->instance : null;
                 $app = $instance instanceof Instance ? $instance->app : $route->app;
 

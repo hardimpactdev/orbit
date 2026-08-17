@@ -10,6 +10,7 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteFixer;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -80,10 +81,18 @@ final readonly class StaleToolIntentRemover
     {
         $removed = 0;
 
-        foreach (ProxyRoute::query()
+        /** @mago-expect analyzer:docblock-type-mismatch */
+        /** @var Collection<int, ProxyRoute> $routes */
+        $routes = ProxyRoute::query()
             ->where('node_id', $node->id)
             ->where('owner_type', 'tool')
-            ->get() as $route) {
+            ->where('kind', 'proxy')
+            ->whereNull('app_id')
+            ->whereNull('workspace_id')
+            ->whereNull('instance_id')
+            ->get();
+
+        foreach ($routes as $route) {
             $config = is_array($route->config) ? $route->config : [];
 
             if (($config['owner_name'] ?? null) !== $tool) {
