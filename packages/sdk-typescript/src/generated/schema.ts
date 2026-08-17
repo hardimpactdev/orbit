@@ -1287,22 +1287,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/update/all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["updateAll"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/vpn/clients": {
         parameters: {
             query?: never;
@@ -6667,67 +6651,6 @@ export interface operations {
                             /** @constant */
                             message: "Peer identity unknown.";
                             meta: string[];
-                        };
-                    };
-                };
-            };
-        };
-    };
-    updateAll: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The fleet update results and summary. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                updates: {
-                                    target: string;
-                                    node: string;
-                                    roles: string[];
-                                    status: string;
-                                    output?: string;
-                                }[];
-                            };
-                            meta: {
-                                summary: {
-                                    total: number;
-                                    completed: number;
-                                    failed: number;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "local_update_failed";
-                            /** @constant */
-                            message: "Failed to update local Orbit checkout.";
-                            data: {
-                                output: string;
-                            };
-                            meta: {
-                                /** @constant */
-                                failed_step: "local_checkout";
-                            };
                         };
                     };
                 };

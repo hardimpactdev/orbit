@@ -13055,7 +13055,7 @@
                 "apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php",
                 "apps/cli/tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php",
                 "apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php",
-                "apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php",
                 "apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php",
                 "apps/gateway/tests/Feature/Services/Operations/FleetVersionProbeTest.php",
                 "apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php",
@@ -13085,11 +13085,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/UpdateAllControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/UpdateAllControllerTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php",

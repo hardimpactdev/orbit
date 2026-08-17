@@ -271,12 +271,6 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 2
 
 [[issues]]
-file = "src/Requests/Operations/UpdateAllRequest.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 2
-
-[[issues]]
 file = "src/Requests/Php/ShowPhpRuntimeRequest.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."

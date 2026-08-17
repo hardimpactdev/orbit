@@ -725,21 +725,3 @@ file = "tests/Unit/Requests/Instances/ListInstancesRequestTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
-
-[[issues]]
-file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
-code = "no-empty-comment"
-message = "Empty comments are not allowed."
-count = 1
-
-[[issues]]
-file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OneByteOnlyUpdateAllStream` but class `OneByteOnlyUpdateAllStreamResponse` is already defined in this file."
-count = 1
-
-[[issues]]
-file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1

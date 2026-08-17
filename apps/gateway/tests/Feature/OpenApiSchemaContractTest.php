@@ -254,16 +254,8 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         ));
     }
 
-    /** @var array<string, mixed>|null $updateAllItem */
-    $updateAllItem = data_get(
-        target: $schema,
-        key: 'paths./update/all.post.responses.200.content.application/json.schema.properties.success.properties.data.properties.updates.items',
-    );
-
-    Assert::assertIsArray($updateAllItem);
-    Assert::assertSame('array', data_get($updateAllItem, 'properties.roles.type'));
-    Assert::assertSame('string', data_get($updateAllItem, 'properties.roles.items.type'));
-    Assert::assertContains('roles', $updateAllItem['required'] ?? []);
+    Assert::assertArrayNotHasKey('/update/all', data_get($schema, 'paths', []) ?? []);
+    Assert::assertIsArray(data_get($schema, 'paths./update/all/start.post'));
 
     /** @var array<string, mixed>|null $activityListItem */
     $activityListItem = data_get(

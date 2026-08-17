@@ -96,7 +96,7 @@ it('serializes manifest cli artifacts and role image references exactly', functi
 });
 
 it('builds a digest-pinned update plan snapshot from request manifest data', function (): void {
-    $request = Request::create('/api/update/all', 'POST', [
+    $request = Request::create('/api/update/all/start', 'POST', [
         'target_version' => '1.2.3',
         'manifest_source' => 'github-release',
         'manifest_version' => '1.2.3',
@@ -128,7 +128,7 @@ it('builds a digest-pinned update plan snapshot from request manifest data', fun
 it('rejects raw request gateway image overrides unless explicitly allowed', function (): void {
     config()->set('orbit.updates.allow_request_image_override', false);
 
-    $request = Request::create('/api/update/all', 'POST', [
+    $request = Request::create('/api/update/all/start', 'POST', [
         'target_version' => '1.2.3',
         'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'manifest' => operationUpdateReleaseManifest(),
@@ -141,7 +141,7 @@ it('rejects raw request gateway image overrides unless explicitly allowed', func
 it('allows configured local testing gateway image overrides when digest pinned', function (): void {
     config()->set('orbit.updates.allow_request_image_override', true);
 
-    $request = Request::create('/api/update/all', 'POST', [
+    $request = Request::create('/api/update/all/start', 'POST', [
         'target_version' => '1.2.3',
         'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
         'manifest' => operationUpdateReleaseManifest(),
@@ -162,7 +162,7 @@ it('rejects gateway images that are not digest pinned', function (): void {
         ],
     ]);
 
-    $request = Request::create('/api/update/all', 'POST', [
+    $request = Request::create('/api/update/all/start', 'POST', [
         'target_version' => '1.2.3',
         'manifest' => $manifest,
     ]);
