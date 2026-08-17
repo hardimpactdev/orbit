@@ -39,13 +39,7 @@ function editProcessRestartFixture(string $processName = 'vite'): array
         ]);
 
     return [
-        'context' => new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: null,
-            owner: $app,
-            instance: $instance,
-        ),
+        'context' => ProcessOwnerContext::forInstance($node, $instance),
         'process' => $process,
     ];
 }
@@ -236,13 +230,7 @@ it('scopes multi-context process:update --restart events per runtime unit worksp
             'instance_id' => $instance->id,
             'name' => 'vite',
         ]);
-    $context = new ProcessOwnerContext(
-        node: $node,
-        app: $app,
-        workspace: null,
-        owner: $app,
-        instance: $instance,
-    );
+    $context = ProcessOwnerContext::forInstance($node, $instance);
 
     bindEditProcessRestartShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

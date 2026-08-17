@@ -40,13 +40,7 @@ function lifecycleTransitionFixture(): array
         ]);
 
     return [
-        'context' => new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: null,
-            owner: $app,
-            instance: $instance,
-        ),
+        'context' => ProcessOwnerContext::forInstance($node, $instance),
         'process' => $process,
     ];
 }

@@ -185,12 +185,7 @@ final readonly class ProcessOwnerContextResolver
             ]);
         }
 
-        return new ProcessOwnerContext(
-            node: $node,
-            app: null,
-            workspace: null,
-            owner: $node,
-        );
+        return ProcessOwnerContext::forNode($node);
     }
 
     /**
@@ -310,19 +305,26 @@ final readonly class ProcessOwnerContextResolver
             ]);
         }
 
-        return new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: $workspace,
-            owner: $workspace,
-            instance: $instance,
-        );
+        return ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
     }
 
     private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
         $selection ??= $this->requireInstance(new AppSelection(app: $app));
         $instance = $selection->instance;
+
+        if (! $instance instanceof Instance) {
+            throw new GatewayApiException(
+                'A concrete instance is required for project and workspace process ownership.',
+                'validation_failed',
+                [
+                    'field' => 'instance',
+                    'reason' => 'instance_required',
+                    'app' => $app->name,
+                ],
+            );
+        }
+
         $node = $this->placement->runtimeNode($app, $instance);
 
         if (! $node instanceof Node) {
@@ -332,13 +334,7 @@ final readonly class ProcessOwnerContextResolver
             ]);
         }
 
-        return new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: null,
-            owner: $app,
-            instance: $instance,
-        );
+        return ProcessOwnerContext::forInstance($node, $instance);
     }
 
     private function resolveRequiredInstance(string $appName): AppSelection

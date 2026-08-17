@@ -90,13 +90,7 @@ final readonly class RuntimeHibernationScopes
             type: 'app-instance',
             id: $instance->id,
             node: $node,
-            context: new ProcessOwnerContext(
-                node: $node,
-                app: $app,
-                workspace: null,
-                owner: $app,
-                instance: $instance,
-            ),
+            context: ProcessOwnerContext::forInstance($node, $instance),
         );
     }
 
@@ -124,13 +118,7 @@ final readonly class RuntimeHibernationScopes
             type: 'workspace',
             id: $workspace->id,
             node: $node,
-            context: new ProcessOwnerContext(
-                node: $node,
-                app: $app,
-                workspace: $workspace,
-                owner: $workspace,
-                instance: $instance,
-            ),
+            context: ProcessOwnerContext::forWorkspace($node, $workspace, $instance),
         );
     }
 }

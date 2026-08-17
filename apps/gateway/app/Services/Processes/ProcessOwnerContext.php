@@ -14,18 +14,114 @@ use App\Services\Nodes\NodeHostPaths;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use InvalidArgumentException;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 /** @mago-expect lint:kan-defect */
 final readonly class ProcessOwnerContext
 {
-    public function __construct(
+    public static function forNode(Node $node): self
+    {
+        return new self(
+            node: $node,
+            app: null,
+            workspace: null,
+            owner: $node,
+        );
+    }
+
+    public static function forInstance(Node $node, Instance $instance): self
+    {
+        $app = $instance->app;
+
+        if (! $app instanceof App) {
+            throw new InvalidArgumentException(
+                'An app-owned process context requires an instance attached to an app.',
+            );
+        }
+
+        return new self(
+            node: $node,
+            app: $app,
+            workspace: null,
+            owner: $app,
+            instance: $instance,
+        );
+    }
+
+    public static function forWorkspace(Node $node, Workspace $workspace, Instance $instance): self
+    {
+        $app = $instance->app;
+
+        if (! $app instanceof App) {
+            throw new InvalidArgumentException(
+                'A workspace-owned process context requires an instance attached to an app.',
+            );
+        }
+
+        if ((int) $workspace->instance_id !== (int) $instance->id) {
+            throw new InvalidArgumentException(
+                'A workspace-owned process context requires the workspace instance.',
+            );
+        }
+
+        return new self(
+            node: $node,
+            app: $app,
+            workspace: $workspace,
+            owner: $workspace,
+            instance: $instance,
+        );
+    }
+
+    private function __construct(
         public Node $node,
         public ?App $app,
         public ?Workspace $workspace,
         public Model $owner,
         public ?Instance $instance = null,
-    ) {}
+    ) {
+        $this->assertValidOwnerShape();
+    }
+
+    private function assertValidOwnerShape(): void
+    {
+        if ($this->owner instanceof Node) {
+            if ($this->app !== null || $this->workspace !== null || $this->instance !== null) {
+                throw new InvalidArgumentException(
+                    'A node-owned process context cannot include app, workspace, or instance ownership.',
+                );
+            }
+
+            return;
+        }
+
+        if ($this->owner instanceof App) {
+            if (! $this->app instanceof App || $this->workspace !== null || ! $this->instance instanceof Instance) {
+                throw new InvalidArgumentException(
+                    'An app-owned process context requires an app, a concrete instance, and no workspace.',
+                );
+            }
+
+            return;
+        }
+
+        if ($this->owner instanceof Workspace) {
+            if (
+                ! $this->app instanceof App
+                || ! $this->workspace instanceof Workspace
+                || ! $this->instance instanceof Instance
+            ) {
+                throw new InvalidArgumentException(
+                    'A workspace-owned process context requires an app, workspace, and concrete instance.',
+                );
+            }
+
+            return;
+        }
+
+        throw new InvalidArgumentException('Process owner is not lifecycle-addressable.');
+    }
 
     /**
      * The logical app for app/workspace-owned processes, or null for

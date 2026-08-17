@@ -419,12 +419,7 @@ it('renders metrics node processes after syncing role-derived node fields', func
         ->where('node_id', $node->id)
         ->where('name', 'node-exporter')
         ->sole();
-    $context = new ProcessOwnerContext(
-        node: $node->refresh(),
-        app: null,
-        workspace: null,
-        owner: $node,
-    );
+    $context = ProcessOwnerContext::forNode($node->refresh());
     $unitContent = app(SystemdUnitRenderer::class)->render($node, $context->runtimeApp(), $process);
 
     expect($node->refresh()->tld)

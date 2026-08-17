@@ -29,7 +29,7 @@ it('does not start a process runtime unit after apply fails', function (): void 
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.4',
         ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
 
     $result = app(AddProcess::class)->handle(
         context: $context,
@@ -65,7 +65,7 @@ it('does not restart a process runtime unit after apply fails', function (): voi
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.4',
         ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
     $descriptor = app(ProcessServiceCatalog::class)->resolve(
         service: 'mysql',
         version: '8',

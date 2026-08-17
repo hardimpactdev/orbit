@@ -26,7 +26,7 @@ it('uses the macos node user home for node-owned runtime apps', function (): voi
         'user' => 'nckrtl',
     ]);
 
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
     $process = Process::factory()->create([
         'owner_type' => $node->getMorphClass(),
         'owner_id' => $node->id,
@@ -73,7 +73,7 @@ it('uses selected app instance placement for app-owned runtime apps', function (
         ),
     ]);
 
-    $logicalApp = new ProcessOwnerContext($nmbp, $app, null, $app, instance: $instance)->runtimeApp();
+    $logicalApp = ProcessOwnerContext::forInstance($nmbp, $instance)->runtimeApp();
     $process = Process::factory()->create([
         'owner_type' => App::class,
         'owner_id' => $app->id,
@@ -155,7 +155,7 @@ it('rejects systemd process runtimes on macos nodes', function (): void {
         'name' => 'mac-app-dev-1',
         'platform' => 'macos_14',
     ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
 
     expect(fn () => $context->assertRuntimeAllowed(ProcessRuntime::Systemd))
         ->toThrow(GatewayApiException::class, 'The systemd runtime is only supported on Linux nodes.');
@@ -168,7 +168,7 @@ it('accepts launchd runtime on macos nodes for host-command processes', function
         'platform' => 'darwin',
         'user' => 'nckrtl',
     ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
 
     // should not throw; launchd allowed on mac for host commands
     $context->assertRuntimeAllowed(ProcessRuntime::Launchd);
@@ -183,7 +183,7 @@ it('defaults node-owned host commands to launchd on macos nodes', function (): v
         'platform' => 'macos_14',
         'user' => 'nckrtl',
     ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
 
     expect($context->defaultRuntime())->toBe(ProcessRuntime::Launchd);
 });
@@ -194,7 +194,7 @@ it('rejects launchd runtime on linux nodes with launchd_runtime_requires_macos',
         'name' => 'linux-app-dev-1',
         'platform' => 'ubuntu_24-04',
     ]);
-    $context = new ProcessOwnerContext($node, null, null, $node);
+    $context = ProcessOwnerContext::forNode($node);
 
     try {
         $context->assertRuntimeAllowed(ProcessRuntime::Launchd);
