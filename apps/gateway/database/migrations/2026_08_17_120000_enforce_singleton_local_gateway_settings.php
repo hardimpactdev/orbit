@@ -38,9 +38,12 @@ return new class extends Migration {
 
     private function singletonKeyIsNullable(): bool
     {
-        foreach (DB::select('PRAGMA table_info(local_gateway_settings)') as $column) {
-            if ($column->name === 'singleton_key') {
-                return (int) $column->notnull === 0;
+        /** @var list<array{name: string, nullable: bool}> $columns */
+        $columns = Schema::getColumns('local_gateway_settings');
+
+        foreach ($columns as $column) {
+            if ($column['name'] === 'singleton_key') {
+                return $column['nullable'];
             }
         }
 
