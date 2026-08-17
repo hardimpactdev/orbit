@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Override;
 
@@ -105,12 +106,12 @@ class App extends Model
     }
 
     /**
-     * @return HasMany<Schedule, $this>
+     * @return HasManyThrough<Schedule, Instance, $this>
      */
-    public function schedules(): HasMany
+    public function schedules(): HasManyThrough
     {
-        $schedules = $this->hasMany(Schedule::class, 'app_id');
-        $schedules->orderBy('name');
+        $schedules = $this->hasManyThrough(Schedule::class, Instance::class);
+        $schedules->orderBy('schedules.name');
 
         return $schedules;
     }

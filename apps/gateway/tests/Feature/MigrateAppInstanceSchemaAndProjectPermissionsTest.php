@@ -83,11 +83,11 @@ it('keeps apps and app_id logical storage while FK ownership points at instances
         'instance_id' => $instance->id,
         'name' => 'feature',
     ]);
-    $schedule = Schedule::factory()->create([
-        'app_id' => $app->id,
-        'instance_id' => $instance->id,
-        'name' => 'nightly',
-    ]);
+    $schedule = Schedule::factory()
+        ->forInstance($instance)
+        ->create([
+            'name' => 'nightly',
+        ]);
 
     expect(Schema::hasTable('apps'))
         ->toBeTrue()

@@ -7667,7 +7667,9 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php",
-                "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php"
+                "apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php",
+                "apps/gateway/tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php",
+                "apps/gateway/tests/Feature/Models/ScheduleOwnerInvariantTest.php"
             ],
             "verification_hints": [
                 {
@@ -7690,6 +7692,20 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Models/ScheduleOwnerInvariantTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Models/ScheduleOwnerInvariantTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Models/ScheduleOwnerInvariantTest.php"
                 }
             ],
             "p4_mapping": {

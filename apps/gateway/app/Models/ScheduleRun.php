@@ -13,6 +13,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $node_id
  * @property string $schedule_key
+ * @property string|null $target_name
  * @property string $status
  * @property int|null $exit_code
  * @property string|null $stdout
@@ -31,6 +32,7 @@ class ScheduleRun extends Model
     protected $fillable = [
         'node_id',
         'schedule_key',
+        'target_name',
         'status',
         'exit_code',
         'stdout',

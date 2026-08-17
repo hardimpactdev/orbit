@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Schedule;
@@ -95,11 +96,13 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects incomplete schedule records', function (): void {
-        $schedule = Schedule::factory()->create([
-            'scope' => 'app',
-            'app_id' => null,
-            'target_name' => '',
-        ]);
+        $schedule = Schedule::factory()
+            ->forNode()
+            ->create([
+                'name' => '',
+                'interval' => '',
+                'execution_value' => '',
+            ]);
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
 
         $drift = $probe->diff($schedule, $probe->introspect($schedule));
@@ -108,11 +111,8 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects invalid app targets', function (): void {
-        $schedule = Schedule::factory()->create([
-            'scope' => 'app',
-            'app_id' => null,
-            'target_name' => 'missing-app',
-        ]);
+        $instance = Instance::factory()->create();
+        $schedule = Schedule::factory()->forInstance($instance)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
 
         $drift = $probe->diff($schedule, $probe->introspect($schedule));

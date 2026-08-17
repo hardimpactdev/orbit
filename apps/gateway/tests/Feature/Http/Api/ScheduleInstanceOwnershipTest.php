@@ -47,10 +47,10 @@ it('creates same-named schedules for explicit concrete instances', function (): 
     expect(Schedule::query()->count())
         ->toBe(2)
         ->and(Schedule::query()->where('instance_id', $production->id)->value('schedule_key'))
-        ->toBe('app:docs.production:nightly')
+        ->toBe('instance:docs.production:nightly')
         ->and(Schedule::query()->where('instance_id', $development->id)->value('schedule_key'))
-        ->toBe('app:docs.development:nightly')
-        ->and(Schedule::query()->where('app_id', $app->id)->count())
+        ->toBe('instance:docs.development:nightly')
+        ->and($app->schedules()->count())
         ->toBe(2);
 });
 

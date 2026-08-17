@@ -93,7 +93,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->forInstance($instance)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs.production:laravel-scheduler',
+            'schedule_key' => 'instance:docs.production:laravel-scheduler',
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
             'timeout_seconds' => 7200,
@@ -142,7 +142,7 @@ it('dispatches due app schedules with gateway authority on the instance current 
         ->and($run->node_id)
         ->toBe($currentInstanceNode->id)
         ->and($run->schedule_key)
-        ->toBe('app:docs.production:laravel-scheduler')
+        ->toBe('instance:docs.production:laravel-scheduler')
         ->and($run->status)
         ->toBe('completed')
         ->and($run->stdout)
@@ -163,7 +163,7 @@ it('dispatches remote schedules through the internal schedule command without tr
         ->forApp($app)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs.development:laravel-scheduler',
+            'schedule_key' => 'instance:docs.development:laravel-scheduler',
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
@@ -251,7 +251,7 @@ it('dispatches multiple remote schedules through the internal schedule command',
             ->forApp($app)
             ->create([
                 'name' => 'scheduler',
-                'schedule_key' => "app:{$name}:scheduler",
+                'schedule_key' => "instance:{$name}.development:scheduler",
                 'execution_value' => "echo {$name}",
                 'interval' => 'every minute',
             ]);
@@ -324,7 +324,7 @@ it('records remote dispatch failures as failed gateway history', function (): vo
         ->forApp($app)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs.development:laravel-scheduler',
+            'schedule_key' => 'instance:docs.development:laravel-scheduler',
             'interval' => 'every minute',
         ]);
     app()->instance(

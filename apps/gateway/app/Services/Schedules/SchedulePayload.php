@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Schedules;
 
 use App\Enums\Nodes\NodeStatus;
+use App\Enums\Schedules\ScheduleScope;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
@@ -50,7 +51,7 @@ class SchedulePayload
         $query = $this
             ->visibleSchedules($caller, $visibleNodeIds, $visibleInstanceIds)
             ->when(is_int($instanceId), fn (Builder $query): Builder => $query
-                ->where('scope', 'app')
+                ->where('scope', 'instance')
                 ->where('instance_id', $instanceId))
             ->when($node !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
@@ -133,7 +134,7 @@ class SchedulePayload
             ->visibleSchedules($caller, $visibleNodeIds, $visibleInstanceIds)
             ->where('name', $name)
             ->when(is_int($instanceId), fn (Builder $query): Builder => $query
-                ->where('scope', 'app')
+                ->where('scope', 'instance')
                 ->where('instance_id', $instanceId))
             ->when($node !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
@@ -270,19 +271,19 @@ class SchedulePayload
     private function serialize(Schedule $schedule): array
     {
         $gatewayNode = $this->gatewayNode();
-        $targetNode = match ($schedule->scope) {
-            'app' => app(ScheduleInstanceResolver::class)->targetNode($schedule),
-            'node' => $schedule->node,
-            'orbit' => $gatewayNode,
-            default => null,
+        $scope = $schedule->ownerScope()->value;
+        $targetNode = match ($schedule->ownerScope()) {
+            ScheduleScope::Instance => app(ScheduleInstanceResolver::class)->targetNode($schedule),
+            ScheduleScope::Node => $schedule->node,
+            ScheduleScope::Orbit => $gatewayNode,
         };
 
         return [
             'name' => $schedule->name,
-            'scope' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
+            'scope' => $scope,
             'target' => [
-                'type' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
-                'name' => $schedule->target_name,
+                'type' => $scope,
+                'name' => $schedule->liveTargetName(),
                 'node' => $targetNode?->name,
             ],
             'interval' => $schedule->interval,
