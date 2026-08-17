@@ -221,6 +221,26 @@ function e2eJsonCommandData(array $payload): array
  * @param  array<string, mixed>  $payload
  * @return array<string, mixed>
  */
+function e2eJsonCommandError(array $payload): array
+{
+    $result = e2eJsonCommandTerminalResult($payload);
+    $error = $result['error'];
+
+    if (is_array($error)) {
+        return $error;
+    }
+
+    if ($result['event'] !== 'error') {
+        return [];
+    }
+
+    return $result['data'];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
 function e2eJsonCommandResultData(array $payload): array
 {
     $data = e2eJsonCommandData($payload);
