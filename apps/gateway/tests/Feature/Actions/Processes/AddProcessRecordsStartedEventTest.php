@@ -27,13 +27,7 @@ it('records a started process event when AddProcess successfully starts runtime 
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
-    $context = new ProcessOwnerContext(
-        node: $appNode,
-        app: $app,
-        workspace: null,
-        owner: $app,
-        instance: $instance,
-    );
+    $context = ProcessOwnerContext::forInstance($appNode, $instance);
 
     app()->instance(RemoteShell::class, new class implements RemoteShell {
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
@@ -74,13 +68,7 @@ it('records starting then failed when the runtime backend fails to start', funct
         'name' => 'development',
         'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
     ]);
-    $context = new ProcessOwnerContext(
-        node: $appNode,
-        app: $app,
-        workspace: null,
-        owner: $app,
-        instance: $instance,
-    );
+    $context = ProcessOwnerContext::forInstance($appNode, $instance);
 
     app()->instance(RemoteShell::class, new class implements RemoteShell {
         public function run(Node $node, string $script, array $options = []): RemoteShellResult

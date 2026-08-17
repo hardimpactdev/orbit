@@ -201,13 +201,7 @@ it('brackets a development workspace bulk restart with its asleep and awake mark
     app()->instance(RunsInternalCommands::class, $executor);
 
     app(ProcessLifecycle::class)->restart(
-        new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: $workspace,
-            owner: $workspace,
-            instance: $instance,
-        ),
+        ProcessOwnerContext::forWorkspace($node, $workspace, $instance),
         null,
     );
 
@@ -1214,13 +1208,7 @@ function create_runtime_hibernation_instance(): array
 
 function runtime_hibernation_context(Node $node, App $app, Instance $instance): ProcessOwnerContext
 {
-    return new ProcessOwnerContext(
-        node: $node,
-        app: $app,
-        workspace: null,
-        owner: $app,
-        instance: $instance,
-    );
+    return ProcessOwnerContext::forInstance($node, $instance);
 }
 
 /**

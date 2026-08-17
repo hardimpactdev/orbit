@@ -459,12 +459,7 @@ final readonly class DoctorProcessRestorer
         $process->loadMissing(['owner', 'instance']);
 
         if ($process->owner instanceof Node) {
-            return new ProcessOwnerContext(
-                node: $node,
-                app: null,
-                workspace: null,
-                owner: $process->owner,
-            );
+            return ProcessOwnerContext::forNode($node);
         }
 
         if ($process->owner instanceof App) {
@@ -472,13 +467,7 @@ final readonly class DoctorProcessRestorer
                 return null;
             }
 
-            return new ProcessOwnerContext(
-                node: $node,
-                app: $process->owner,
-                workspace: null,
-                owner: $process->owner,
-                instance: $process->instance,
-            );
+            return ProcessOwnerContext::forInstance($node, $process->instance);
         }
 
         if ($process->owner instanceof Workspace) {
@@ -493,13 +482,7 @@ final readonly class DoctorProcessRestorer
                 return null;
             }
 
-            return new ProcessOwnerContext(
-                node: $node,
-                app: $process->owner->app,
-                workspace: $process->owner,
-                owner: $process->owner,
-                instance: $process->instance,
-            );
+            return ProcessOwnerContext::forWorkspace($node, $process->owner, $process->instance);
         }
 
         return null;

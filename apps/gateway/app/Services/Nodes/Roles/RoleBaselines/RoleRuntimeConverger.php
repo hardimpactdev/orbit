@@ -64,12 +64,7 @@ class RoleRuntimeConverger
             );
         }
 
-        $context = new ProcessOwnerContext(
-            node: $node,
-            app: null,
-            workspace: null,
-            owner: $node,
-        );
+        $context = ProcessOwnerContext::forNode($node);
         $runtimeApp = $context->runtimeApp();
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers()->forProcess($process);
@@ -175,12 +170,7 @@ class RoleRuntimeConverger
 
     public function removeProcess(Node $node, Process $process, string $role): void
     {
-        $context = new ProcessOwnerContext(
-            node: $node,
-            app: null,
-            workspace: null,
-            owner: $node,
-        );
+        $context = ProcessOwnerContext::forNode($node);
         $runtimeApp = $context->runtimeApp();
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers()->forProcess($process);

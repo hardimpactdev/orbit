@@ -44,14 +44,10 @@ class WorkspaceShowPayload
 
         $context = null;
 
-        if ($app !== null && $node !== null) {
-            $context = new ProcessOwnerContext(
-                node: $node,
-                app: $app,
-                workspace: $workspace,
-                owner: $workspace,
-                instance: $workspace->instance,
-            );
+        $instance = $workspace->instance;
+
+        if ($app !== null && $node !== null && $instance !== null) {
+            $context = ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
         }
 
         $inheritedProcesses = array_values($context

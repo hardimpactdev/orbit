@@ -387,12 +387,7 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private function convergeProcessRuntime(Node $node, Process $process): void
     {
-        $context = new ProcessOwnerContext(
-            node: $node,
-            app: null,
-            workspace: null,
-            owner: $node,
-        );
+        $context = ProcessOwnerContext::forNode($node);
         $runtimeApp = $context->runtimeApp();
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers()->forProcess($process);

@@ -217,13 +217,7 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        return new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: null,
-            owner: $app,
-            instance: $instance,
-        );
+        return ProcessOwnerContext::forInstance($node, $instance);
     }
 
     private function contextForWorkspaceRoute(ProxyRoute $route, string $domain): ProcessOwnerContext
@@ -259,12 +253,6 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        return new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: $workspace,
-            owner: $workspace,
-            instance: $instance,
-        );
+        return ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
     }
 }

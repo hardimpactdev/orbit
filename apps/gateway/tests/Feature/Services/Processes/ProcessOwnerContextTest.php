@@ -70,13 +70,7 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
 
     $workspaceRuntime = app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
 
-    $context = new ProcessOwnerContext(
-        node: $node,
-        app: $app,
-        workspace: $workspace,
-        owner: $workspace,
-        instance: $instance,
-    );
+    $context = ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
 
     $processes = $context->lifecycleProcesses(null);
 

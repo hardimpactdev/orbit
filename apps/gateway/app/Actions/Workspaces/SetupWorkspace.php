@@ -34,6 +34,7 @@ use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
 use App\Support\Streaming\NullProgressReporter;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
@@ -426,13 +427,15 @@ final readonly class SetupWorkspace
 
     private function processOwnerContext(App $app, Workspace $workspace, Node $node): ProcessOwnerContext
     {
-        return new ProcessOwnerContext(
-            node: $node,
-            app: $app,
-            workspace: $workspace,
-            owner: $workspace,
-            instance: $workspace->instance,
-        );
+        $instance = $workspace->instance;
+
+        if ($instance->app_id !== $app->id) {
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' is not attached to app '{$app->name}'.",
+            );
+        }
+
+        return ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
     }
 
     /**
