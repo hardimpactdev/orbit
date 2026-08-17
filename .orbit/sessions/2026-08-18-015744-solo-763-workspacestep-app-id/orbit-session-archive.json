@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T23:57:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-763-workspacestep-app-id/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-015744-solo-763-workspacestep-app-id",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-763-blast-radius-inventory.md",
+        "evidence/solo-763-retained-incus-proof.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/solo-763-blast-radius-inventory.md": "fcd26a2f6dcdafd255c6d7fa8d83260f99496dec1b87e3e2d5be1ebd56839136",
+        "evidence/solo-763-retained-incus-proof.md": "3de6a787660151a98b8923b1c32d0498497b3ad6c3b2a55584cf7a6cb50c10bd",
+        "loop.md": "6a318ae9d94a7cf8e057867d7aee4723e3eb59c653674facfa5d83fe0804aab8"
+    },
+    "slug": "solo-763-workspacestep-app-id",
+    "requested_slug": "solo-763-workspacestep-app-id",
+    "compatible_slugs": [
+        "solo-763-workspacestep-app-id"
+    ],
+    "branch": "solo-763-workspacestep-app-id",
+    "candidate_commit": "1d57dcb41193c168e7e7392d383605224a963cf2",
+    "accepted_feature_tip": "1d57dcb41193c168e7e7392d383605224a963cf2",
+    "accepted_main_tip": "e8ba9fbb77f9aa7becf6ca2fb37a7ac8fc859dd8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
