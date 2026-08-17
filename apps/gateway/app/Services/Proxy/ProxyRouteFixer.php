@@ -146,12 +146,12 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
-        if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
-            return null;
+        if ($route->owner_type === 'workspace' || $route->kind === 'workspace') {
+            new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
         }
 
-        if ($route->kind === 'workspace') {
-            new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
+        if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
+            return null;
         }
 
         $route->loadMissing('node');

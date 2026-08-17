@@ -61,7 +61,7 @@ return new class extends Migration {
         });
     }
 
-    /** @return array<int, int> */
+    /** @return array<int, int|null> */
     private function assignments(): array
     {
         $assignments = [];
@@ -69,12 +69,23 @@ return new class extends Migration {
 
         foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
             $ownerType = $this->rowString($route, 'owner_type');
+            $kind = $this->rowString($route, 'kind');
+            $routeId = $this->rowInteger($route, 'id');
+
+            if ($ownerType === 'app' && $kind !== 'app') {
+                throw $this->ownershipException($route, "requires kind='app' but found kind='{$kind}'");
+            }
+
+            if ($ownerType === 'workspace' && $kind !== 'workspace') {
+                throw $this->ownershipException($route, "requires kind='workspace' but found kind='{$kind}'");
+            }
 
             if (! in_array($ownerType, self::INSTANCE_OWNER_TYPES, true)) {
+                $assignments[$routeId] = null;
+
                 continue;
             }
 
-            $routeId = $this->rowInteger($route, 'id');
             $assignments[$routeId] = $ownerType === 'workspace'
                 ? $this->workspaceInstanceId($route)
                 : $this->configuredInstanceId($route, $instanceColumnExists);

@@ -171,7 +171,7 @@ final class AppRegistrar
             );
         }
 
-        $routeConflict = $this->routeConflict($effectiveDomain, $input['app'], $node, $existingApp);
+        $routeConflict = $this->routeConflict($effectiveDomain, $input['app'], $node, $existingApp, $selected);
 
         if ($routeConflict instanceof ProxyRoute) {
             return $this->failCommand(
@@ -692,6 +692,7 @@ final class AppRegistrar
         string $appName,
         Node $node,
         ?App $existingApp,
+        ?Instance $selectedInstance,
     ): ?ProxyRoute {
         $domain = $effectiveDomain ?? $this->developmentDomain($appName, $node);
 
@@ -701,17 +702,16 @@ final class AppRegistrar
             return null;
         }
 
-        if ($existingApp instanceof App) {
-            $route->loadMissing('instance');
-            $instance = $route->instance;
-
-            if (
-                $instance instanceof Instance
-                && $instance->app_id === $existingApp->id
-                && $route->app_id === $instance->app_id
-            ) {
-                return null;
-            }
+        if (
+            $existingApp instanceof App
+            && $selectedInstance instanceof Instance
+            && $selectedInstance->app_id === $existingApp->id
+            && $route->owner_type === 'app'
+            && $route->kind === 'app'
+            && $route->instance_id === $selectedInstance->id
+            && $route->app_id === $selectedInstance->app_id
+        ) {
+            return null;
         }
 
         return $route;

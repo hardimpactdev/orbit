@@ -290,6 +290,58 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe([]);
     });
 
+    it('does not fix workspace owner and kind tuple mismatches', function (string $ownerType, string $kind): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => $ownerType,
+                'kind' => $kind,
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'upstream' => 'http://orbit-ws-docs-feature-a',
+                    'tls' => ['managed_by' => 'orbit'],
+                ],
+            ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        expect(fn (): ?array => $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        )))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+
+        expect($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'owner mismatch' => ['app', 'workspace'],
+        'kind mismatch' => ['workspace', 'proxy'],
+        'unsupported kind mismatch' => ['workspace', 'internal'],
+    ]);
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()

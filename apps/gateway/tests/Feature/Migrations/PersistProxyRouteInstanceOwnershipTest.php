@@ -64,6 +64,51 @@ it('backfills every instance-backed route and preserves routes without instance 
     });
 });
 
+it('fails before schema mutation when an instance-backed owner has the wrong route kind', function (
+    string $ownerType,
+    string $kind,
+): void {
+    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType, $kind): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+
+        $workspaceId = null;
+
+        if ($ownerType === 'workspace') {
+            insertProxyRouteOwnershipWorkspace(20, 10);
+            $workspaceId = 20;
+        }
+
+        insertHistoricalProxyRoute(100, 'docs.test', $ownerType, $kind, 1, $workspaceId);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='docs.test' owner_type='{$ownerType}' requires kind='{$ownerType}' but found kind='{$kind}'",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+})->with([
+    'app owner with proxy kind' => ['app', 'proxy'],
+    'workspace owner with proxy kind' => ['workspace', 'proxy'],
+]);
+
+it('clears stale instance ownership from non-instance routes when rerun', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertHistoricalProxyRoute(100, 'custom.test', 'custom', 'proxy', null);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+        DB::table('proxy_routes')->where('id', 100)->update(['instance_id' => 10]);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))->toBeNull();
+    });
+});
+
 it('fails before schema mutation when an instance-backed route has no possible owner', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();

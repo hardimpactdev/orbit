@@ -1190,6 +1190,36 @@ describe('ProxyRouteRenderer', function (): void {
             );
     });
 
+    it('rejects workspace owner and kind tuple mismatches', function (string $ownerType, string $kind): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => $ownerType,
+                'kind' => $kind,
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'upstream' => 'http://orbit-ws-docs-feature-a',
+                ],
+            ]);
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+    })->with([
+        'owner mismatch' => ['app', 'workspace'],
+        'kind mismatch' => ['workspace', 'proxy'],
+    ]);
+
     it('rejects conflicting workspace compatibility App ownership', function (string $compatibilityOwner): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs']);

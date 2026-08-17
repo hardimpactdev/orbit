@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteQuery;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -184,10 +185,52 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
-    it('does not expose a workspace instance selector when app_id compatibility disagrees', function (): void {
+    it('does not project invalid app routes as instance-owned registry entities', function (string $invalidity): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
-        $compatibility = App::factory()->create(['name' => 'other']);
+        $instance = Instance::factory()->for($app)->create(['name' => 'development']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        $query = app(ProxyRouteQuery::class);
+        $entity = $query->toRouteEntity($route->fresh());
+
+        expect($entity['kind'])
+            ->not
+            ->toBe('instance')
+            ->and($entity['owner'])
+            ->toBe(['type' => 'app', 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'upstream', 'value' => null])
+            ->and($query->list(filter: 'instance')['routes'])
+            ->toBeEmpty();
+    })->with([
+        'missing instance',
+        'conflicting app',
+        'malformed kind',
+    ]);
+
+    it('fails closed when workspace ownership cannot be resolved', function (string $invalidity): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -198,10 +241,56 @@ describe('ProxyRouteQuery', function (): void {
             'owner_type' => 'workspace',
             'kind' => 'workspace',
         ]);
-        $route->forceFill(['app_id' => $compatibility->id])->save();
 
-        expect(app(ProxyRouteQuery::class)->toRouteEntity($route->fresh()))->not->toHaveKey('instance');
-    });
+        if ($invalidity === 'missing workspace') {
+            $route->forceFill(['workspace_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create(['name' => 'other'])->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        $entity = app(ProxyRouteQuery::class)->toRouteEntity($route->fresh());
+
+        expect($entity)
+            ->not
+            ->toHaveKey('instance')
+            ->and($entity['owner'])
+            ->toBe(['type' => 'workspace', 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'workspace', 'value' => null]);
+    })->with([
+        'missing workspace',
+        'conflicting app',
+        'malformed kind',
+    ]);
+
+    it('rejects workspace owner and kind tuple mismatches in the centralized resolver', function (
+        string $ownerType,
+        string $kind,
+    ): void {
+        $node = Node::factory()->create(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => $ownerType,
+            'kind' => $kind,
+        ]);
+
+        expect(app(WorkspaceProxyRouteOwnershipResolver::class)->resolve($route))->toBeNull();
+    })->with([
+        'owner mismatch' => ['app', 'workspace'],
+        'kind mismatch' => ['workspace', 'proxy'],
+    ]);
 
     it('includes ingress placement and router backend pool metadata for production routes', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1']);

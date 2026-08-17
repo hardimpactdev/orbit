@@ -20,7 +20,9 @@ final readonly class WorkspaceProxyRouteOwnershipResolver
         $app = $instance?->app;
 
         if (
-            ! $workspace instanceof Workspace
+            $route->owner_type !== 'workspace'
+            || $route->kind !== 'workspace'
+            || ! $workspace instanceof Workspace
             || ! $instance instanceof Instance
             || ! $app instanceof App
             || $route->instance_id !== $workspace->instance_id

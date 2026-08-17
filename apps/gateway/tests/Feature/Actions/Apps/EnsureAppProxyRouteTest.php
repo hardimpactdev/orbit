@@ -13,6 +13,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\RemoteCaddyConfig;
@@ -157,6 +158,19 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+    ]);
+    ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'workspace_id' => $workspace->id,
+        'domain' => 'docs.test',
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+    ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -204,6 +218,8 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->toBe($instance->id)
         ->and($route->instance?->is($instance))
         ->toBeTrue()
+        ->and($route->workspace_id)
+        ->toBeNull()
         ->and($instance->proxyRoutes()->whereKey($route->getKey())->exists())
         ->toBeTrue()
         ->and($route->config['runtime_upstream'])

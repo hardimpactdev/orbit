@@ -1171,7 +1171,7 @@ final readonly class ProxyRouteRenderer
 
     public function workspaceForRoute(ProxyRoute $route): ?Workspace
     {
-        if ($route->kind !== 'workspace') {
+        if ($route->owner_type !== 'workspace' && $route->kind !== 'workspace') {
             return null;
         }
 

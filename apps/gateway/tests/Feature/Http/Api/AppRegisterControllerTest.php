@@ -10,6 +10,8 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Access\NodePermissionPresets;
@@ -354,6 +356,86 @@ describe('AppRegisterController', function (): void {
         expect(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
             ->toBeNull();
     });
+
+    it('rejects protected proxy routes when re-registering a concrete instance', function (string $routeType): void {
+        createTestGatewayNode(['name' => 'gateway-1']);
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.49',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.49');
+
+        $app = App::factory()->create(['name' => 'docs']);
+        $selected = app_register_instance(
+            $app,
+            'development',
+            $targetNode,
+            '/home/orbit/apps/docs',
+            domain: 'docs.test',
+        );
+        $sibling = app_register_instance($app, 'preview', $targetNode, '/home/orbit/apps/docs-preview');
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'instance_id' => $selected->id,
+        ]);
+        $attributes = match ($routeType) {
+            'sibling app' => [
+                'instance_id' => $sibling->id,
+                'owner_type' => 'app',
+                'kind' => 'app',
+            ],
+            'workspace' => [
+                'instance_id' => $selected->id,
+                'workspace_id' => $workspace->id,
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+            ],
+            'analytics' => [
+                'instance_id' => $selected->id,
+                'owner_type' => 'app-analytics',
+                'kind' => 'proxy',
+            ],
+            'websocket' => [
+                'instance_id' => $selected->id,
+                'owner_type' => 'app-websocket',
+                'kind' => 'proxy',
+            ],
+        };
+        ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'app_id' => $app->id,
+            'domain' => 'docs.test',
+            ...$attributes,
+        ]);
+        app()->instance(RemoteShell::class, new AppRegisterApiSequencedRemoteShell([]));
+
+        $this
+            ->call(
+                'POST',
+                '/api/instances/register',
+                [
+                    'name' => 'docs.development',
+                    'node' => 'app-1',
+                    'path' => '/home/orbit/apps/docs',
+                ],
+                [],
+                [],
+                app_register_fallback_server(),
+            )
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'proxy.domain_conflict')
+            ->assertJsonPath('error.meta.domain', 'docs.test');
+    })->with([
+        'sibling app',
+        'workspace',
+        'analytics',
+        'websocket',
+    ]);
 
     it('rejects invalid runtime proxy transport values before registration', function (): void {
         createTestGatewayNode([

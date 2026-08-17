@@ -74,6 +74,7 @@ final readonly class EnsureAppProxyRoute
                 'node_id' => $servingNode->id,
                 'app_id' => $app->id,
                 'instance_id' => $instance->id,
+                'workspace_id' => null,
                 'owner_type' => 'app',
                 'kind' => 'app',
                 'config' => ProxyRouteEnactment::pending(
