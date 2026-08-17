@@ -106,7 +106,7 @@ it('enacts Docker, Plausible, and the private route before activating the analyt
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
         'wireguard_address' => '10.6.0.8',
-        'status' => NodeStatus::Provisioning,
+        'status' => NodeStatus::Active,
     ]);
 
     $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation(
@@ -178,7 +178,7 @@ it('keeps analytics provisioning incomplete when the private route cannot be ena
         'name' => 'services1',
         'platform' => 'ubuntu_26-04',
         'wireguard_address' => '10.6.0.14',
-        'status' => NodeStatus::Provisioning,
+        'status' => NodeStatus::Active,
     ]);
 
     $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation(
