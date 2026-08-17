@@ -6,7 +6,6 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use RuntimeException;
 
 uses(RefreshDatabase::class);
 
@@ -19,7 +18,7 @@ it('requires explicit instance ownership for an instance-backed generic route', 
         'kind' => 'app',
     ]))
         ->toThrow(
-            RuntimeException::class,
+            \RuntimeException::class,
             'ProxyRoute factory requires an explicit instance_id for owner_type=app.',
         );
 });
@@ -31,7 +30,7 @@ it('rejects an ambiguous forApp state unless the instance is explicit', function
 
     expect(fn (): ProxyRoute => ProxyRoute::factory()->forApp($app)->create())
         ->toThrow(
-            RuntimeException::class,
+            \RuntimeException::class,
             'ProxyRoute factory forApp state requires an explicit Instance when the App has multiple instances.',
         );
 });
