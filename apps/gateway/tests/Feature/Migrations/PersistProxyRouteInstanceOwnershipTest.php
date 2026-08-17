@@ -193,6 +193,25 @@ it('fails when a workspace route points at a deleted or missing workspace owner'
     });
 });
 
+it('fails before schema mutation when a workspace app conflicts with its selected instance app', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        DB::table('apps')->insert(['id' => 2, 'name' => 'store', 'runtime' => 'php']);
+        insertProxyRouteOwnershipInstance(10, 'development', 'store.test');
+        DB::table('instances')->where('id', 10)->update(['app_id' => 2]);
+        insertProxyRouteOwnershipWorkspace(20, 10);
+        insertHistoricalProxyRoute(100, 'feature.store.test', 'workspace', 'workspace', 2, 20);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "ProxyRoute instance ownership migration blocked by proxy_routes#100 domain='feature.store.test' owner_type='workspace' workspace_id=20 app_id=1 conflicts with instance_id=10 app_id=2. Repair or remove this legacy route, then rerun migrations.",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
 it('fails closed on rerun when an owner was deleted after a successful backfill', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();

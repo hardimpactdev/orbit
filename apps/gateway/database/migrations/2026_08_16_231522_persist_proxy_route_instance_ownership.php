@@ -108,10 +108,29 @@ return new class extends Migration {
             );
         }
 
+        $this->assertWorkspaceAppIdentityMatches($route, $workspace, $instanceId);
         $this->assertAppIdentityMatches($route, $instanceId);
         $this->assertConfiguredIdsMatch($route, $instanceId);
 
         return $instanceId;
+    }
+
+    private function assertWorkspaceAppIdentityMatches(object $route, object $workspace, int $instanceId): void
+    {
+        $workspaceId = $this->rowInteger($workspace, 'id');
+        $workspaceAppId = $this->rowInteger($workspace, 'app_id');
+        $instanceAppId = DB::table('instances')->where('id', $instanceId)->value('app_id');
+
+        if (! is_int($instanceAppId) && ! is_numeric($instanceAppId)) {
+            throw $this->ownershipException($route, "identifies missing instance_id={$instanceId}");
+        }
+
+        if ((int) $instanceAppId !== $workspaceAppId) {
+            throw $this->ownershipException(
+                $route,
+                "workspace_id={$workspaceId} app_id={$workspaceAppId} conflicts with instance_id={$instanceId} app_id={$instanceAppId}",
+            );
+        }
     }
 
     private function configuredInstanceId(object $route, bool $requirePositiveEvidence): int
