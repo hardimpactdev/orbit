@@ -150,6 +150,7 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
+        $this->renderer->workspaceForRoute($route);
         $route->loadMissing('node');
 
         if ($entry->key === 'proxy.enactment_incomplete') {

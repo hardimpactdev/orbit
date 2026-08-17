@@ -48,6 +48,8 @@ final readonly class ProxyRouteRenderer
 
     public function render(ProxyRoute $route): string
     {
+        $this->workspaceForRoute($route);
+
         if ($this->usesIngressPlacement($route)) {
             return $this->renderIngress($route);
         }
@@ -73,6 +75,7 @@ final readonly class ProxyRouteRenderer
 
     public function renderManagedPhpRuntimeIntent(ProxyRoute $route): string
     {
+        $this->workspaceForRoute($route);
         $this->normalizeManagedPhpRuntimeConfig($route);
 
         return $this->render($route);
@@ -89,10 +92,11 @@ final readonly class ProxyRouteRenderer
             return;
         }
 
-        $route->loadMissing(['instance.app', 'workspace.instance.app']);
+        $route->loadMissing('instance.app');
+        $workspace = $this->workspaceForRoute($route);
 
-        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
-            $this->normalizeWorkspacePhpRuntimeConfig($route);
+        if ($workspace instanceof Workspace) {
+            $this->normalizeWorkspacePhpRuntimeConfig($route, $workspace);
 
             return;
         }
@@ -100,15 +104,13 @@ final readonly class ProxyRouteRenderer
         $this->normalizeAppPhpRuntimeConfig($route);
     }
 
-    private function normalizeWorkspacePhpRuntimeConfig(ProxyRoute $route): void
+    private function normalizeWorkspacePhpRuntimeConfig(ProxyRoute $route, Workspace $workspace): void
     {
-        $route->workspace?->loadMissing('instance.app');
-        $workspace = $route->workspace;
-        $app = $workspace?->instance?->app;
+        $workspace->loadMissing('instance.app');
+        $app = $workspace->instance?->app;
 
         if (
-            ! $workspace instanceof Workspace
-            || ! $app instanceof App
+            ! $app instanceof App
             || $app->runtimeKind() !== AppRuntimeKind::Php
         ) {
             return;
@@ -180,6 +182,8 @@ final readonly class ProxyRouteRenderer
 
     public function renderIngress(ProxyRoute $route): string
     {
+        $this->workspaceForRoute($route);
+
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
@@ -238,6 +242,8 @@ final readonly class ProxyRouteRenderer
 
     public function renderRouterRoute(ProxyRoute $route): string
     {
+        $this->workspaceForRoute($route);
+
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
         $backendPool = $config['router_backend_pool'] ?? null;
@@ -330,7 +336,8 @@ final readonly class ProxyRouteRenderer
      */
     public function renderPrivateBackend(ProxyRoute $route, array $backendArtifact): string
     {
-        $route->loadMissing(['instance.app', 'workspace.instance.app']);
+        $this->workspaceForRoute($route);
+        $route->loadMissing('instance.app');
 
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
@@ -648,10 +655,12 @@ final readonly class ProxyRouteRenderer
      */
     private function developmentRuntimeScope(ProxyRoute $route): ?array
     {
-        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
+        $workspace = $this->workspaceForRoute($route);
+
+        if ($workspace instanceof Workspace) {
             return [
                 'type' => 'workspace',
-                'id' => $route->workspace->id,
+                'id' => $workspace->id,
             ];
         }
 
@@ -955,7 +964,8 @@ final readonly class ProxyRouteRenderer
             return $current;
         }
 
-        $route->loadMissing(['instance.app', 'workspace.instance.app']);
+        $route->loadMissing('instance.app');
+        $workspace = $this->workspaceForRoute($route);
         $app = $this->owningAppForRoute($route);
 
         if (! $app instanceof App) {
@@ -971,8 +981,8 @@ final readonly class ProxyRouteRenderer
         $instance = $this->appRouteTargets->instanceForRoute($route);
 
         if ($this->usesIngressPlacement($route)) {
-            if ($route->kind === 'workspace' && $route->workspace !== null) {
-                return "http://orbit-ws-{$slug}-{$route->workspace->name}";
+            if ($workspace instanceof Workspace) {
+                return "http://orbit-ws-{$slug}-{$workspace->name}";
             }
 
             return $instance instanceof Instance
@@ -980,14 +990,12 @@ final readonly class ProxyRouteRenderer
                 : null;
         }
 
-        if ($route->kind === 'workspace' && $route->workspace !== null) {
-            if ($this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
-                return (
-                    "https://orbit-ws-{$slug}-{$route->workspace?->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort
-                );
+        if ($workspace instanceof Workspace) {
+            if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
+                return "https://orbit-ws-{$slug}-{$workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
             }
 
-            return "http://orbit-ws-{$slug}-{$route->workspace?->name}";
+            return "http://orbit-ws-{$slug}-{$workspace->name}";
         }
 
         $node = $this->appRouteTargets->nodeForRoute($route, $instance);
@@ -1008,17 +1016,18 @@ final readonly class ProxyRouteRenderer
     private function runtimeUpstreamForRoute(ProxyRoute $route, mixed $current): ?string
     {
         if (! $this->usesIngressPlacement($route)) {
-            if ($route->kind === 'workspace') {
+            $workspace = $this->workspaceForRoute($route);
+
+            if ($workspace instanceof Workspace) {
                 if (
-                    $route->workspace instanceof Workspace
-                    && $this->innerTlsPolicy->appliesToWorkspace($route->workspace)
+                    $this->innerTlsPolicy->appliesToWorkspace($workspace)
                 ) {
-                    $route->workspace->loadMissing('instance.app');
-                    $app = $route->workspace?->instance?->app;
+                    $workspace->loadMissing('instance.app');
+                    $app = $workspace->instance?->app;
 
                     if ($app instanceof App && is_string($app->name) && $app->name !== '') {
                         return (
-                            "https://orbit-ws-{$app->name}-{$route->workspace?->name}:"
+                            "https://orbit-ws-{$app->name}-{$workspace->name}:"
                             .AppDevelopmentInnerTlsPolicy::InternalTlsPort
                         );
                     }
@@ -1044,10 +1053,12 @@ final readonly class ProxyRouteRenderer
 
     private function owningAppForRoute(ProxyRoute $route): ?App
     {
-        if ($route->kind === 'workspace') {
-            $route->loadMissing('workspace.instance.app');
+        $workspace = $this->workspaceForRoute($route);
 
-            return $route->workspace?->instance?->app;
+        if ($workspace instanceof Workspace) {
+            $workspace->loadMissing('instance.app');
+
+            return $workspace->instance?->app;
         }
 
         $instance = $this->appRouteTargets->instanceForRoute($route);
@@ -1090,9 +1101,9 @@ final readonly class ProxyRouteRenderer
 
     private function routeDocumentRoot(ProxyRoute $route): string
     {
-        $workspace = $route->workspace;
+        $workspace = $this->workspaceForRoute($route);
 
-        if ($route->kind === 'workspace' && $workspace instanceof Workspace) {
+        if ($workspace instanceof Workspace) {
             return $this->placement->documentRootForWorkspace($workspace);
         }
 
@@ -1111,11 +1122,10 @@ final readonly class ProxyRouteRenderer
      */
     private function deriveRuntimeUpstreamTls(ProxyRoute $route): ?array
     {
-        $route->loadMissing(['instance.app', 'workspace.instance.app', 'node']);
+        $route->loadMissing(['instance.app', 'node']);
+        $workspace = $this->workspaceForRoute($route);
 
-        $workspace = $route->workspace;
-
-        if ($route->kind === 'workspace' && $workspace instanceof Workspace) {
+        if ($workspace instanceof Workspace) {
             if (! $this->innerTlsPolicy->appliesToWorkspace($workspace)) {
                 return null;
             }
@@ -1157,6 +1167,29 @@ final readonly class ProxyRouteRenderer
         }
 
         return null;
+    }
+
+    public function workspaceForRoute(ProxyRoute $route): ?Workspace
+    {
+        if ($route->kind !== 'workspace') {
+            return null;
+        }
+
+        $route->loadMissing('workspace.instance');
+        $workspace = $route->workspace;
+        $instance = $workspace?->instance;
+
+        if (
+            ! $workspace instanceof Workspace
+            || ! $instance instanceof Instance
+            || $route->instance_id !== $workspace->instance_id
+            || $route->app_id !== $instance->app_id
+            || $workspace->app_id !== $instance->app_id
+        ) {
+            throw new RuntimeException("Proxy route '{$route->domain}' has conflicting workspace ownership.");
+        }
+
+        return $workspace;
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

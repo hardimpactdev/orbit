@@ -682,7 +682,7 @@ describe('ProcessListController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'test.app.example',
@@ -722,7 +722,7 @@ describe('ProcessListController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'test.app.example',
@@ -771,7 +771,7 @@ describe('ProcessListController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'test.app.example',
@@ -907,7 +907,7 @@ describe('ProcessListController', function (): void {
         grantProcessListAccess($caller, $appNode);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'test.app.example',
@@ -916,7 +916,7 @@ describe('ProcessListController', function (): void {
                 'kind' => 'app',
             ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'other.app.example',
@@ -947,7 +947,7 @@ describe('ProcessListController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($app->instances()->sole(), $app)
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'test.app.example',

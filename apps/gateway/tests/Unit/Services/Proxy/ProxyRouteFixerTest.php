@@ -14,6 +14,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteFixer;
@@ -234,6 +235,61 @@ describe('ProxyRouteFixer', function (): void {
             ->not->toBe(str_repeat('0', 64));
     });
 
+    it('does not mutate or render a workspace route with conflicting ownership', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $otherInstance = Instance::factory()->for($app, 'app')->create(['name' => 'production']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                    'tls' => ['managed_by' => 'orbit'],
+                ],
+            ]);
+        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+        $originalConfig = $route->config;
+        $originalSourceHash = $route->source_hash;
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        expect(fn (): ?array => $fixer->fix($route->refresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        )))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+
+        expect($route->refresh()->config)
+            ->toBe($originalConfig)
+            ->and($route->source_hash)
+            ->toBe($originalSourceHash)
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    });
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()
@@ -358,8 +414,9 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $edge->id,
                 'app_id' => $app->id,
@@ -430,8 +487,9 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $router->id, 'role' => 'router', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $edge->id,
                 'app_id' => $app->id,
@@ -706,8 +764,9 @@ describe('ProxyRouteFixer', function (): void {
         NodeRoleAssignment::factory()->create(['node_id' => $edge->id, 'role' => 'ingress', 'status' => 'active']);
         NodeRoleAssignment::factory()->create(['node_id' => $backend->id, 'role' => 'app-prod', 'status' => 'active']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $edge->id,
                 'app_id' => $app->id,
@@ -774,8 +833,9 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'active',
         ]);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $edge->id,
                 'app_id' => $app->id,
@@ -943,8 +1003,9 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'app_id' => $app->id,
@@ -1083,8 +1144,9 @@ describe('ProxyRouteFixer', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'app_id' => $app->id,
@@ -1144,9 +1206,10 @@ describe('ProxyRouteFixer', function (): void {
         function (): void {
             $node = createTestAppHostNode(['name' => 'app-1']);
             $app = App::factory()->create(['name' => 'legacy-docs']);
+            $instance = Instance::factory()->for($app, 'app')->create();
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
-                ->forApp($app)
+                ->forApp($instance, $app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -1628,9 +1691,10 @@ describe('ProxyRouteFixer', function (): void {
                 'status' => 'active',
             ]);
             $app = App::factory()->create(['name' => 'legacy-docs']);
+            $instance = Instance::factory()->for($app, 'app')->create();
             $route = ProxyRoute::factory()
                 ->for($edge, 'node')
-                ->forApp($app)
+                ->forApp($instance, $app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',

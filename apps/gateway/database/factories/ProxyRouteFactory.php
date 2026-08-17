@@ -65,46 +65,9 @@ class ProxyRouteFactory extends Factory
         ];
     }
 
-    public function forApp(?App $app = null, ?Instance $instance = null): self
+    public function forApp(Instance $instance, ?App $app = null): self
     {
-        if ($instance instanceof Instance && ! $app instanceof App) {
-            $instance->loadMissing('app');
-            $app = $instance->app;
-        }
-
-        if (! $app instanceof App) {
-            $createdApp = App::factory()->create();
-
-            if (! $createdApp instanceof App) {
-                throw new RuntimeException('ProxyRoute factory could not create an App.');
-            }
-
-            $app = $createdApp;
-        }
-
-        if (! $instance instanceof Instance) {
-            $instances = $app->instances()->get();
-
-            if ($instances->count() > 1) {
-                throw new RuntimeException(
-                    'ProxyRoute factory forApp state requires an explicit Instance when the App has multiple instances.',
-                );
-            }
-
-            $instance = $instances->first();
-        }
-
-        if (! $instance instanceof Instance) {
-            $createdInstance = Instance::factory()->for($app)->create();
-
-            if (! $createdInstance instanceof Instance) {
-                throw new RuntimeException('ProxyRoute factory could not create an Instance.');
-            }
-
-            $instance = $createdInstance;
-        }
-
-        if ($instance->app_id !== $app->id) {
+        if ($app instanceof App && $instance->app_id !== $app->id) {
             throw new RuntimeException('ProxyRoute factory forApp state received an Instance owned by another App.');
         }
 

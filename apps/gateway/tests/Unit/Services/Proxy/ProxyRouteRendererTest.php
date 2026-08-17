@@ -182,7 +182,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('renders ingress routes through the router upstream with public ACME TLS and forwarded headers', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $ingress->id,
                 'domain' => 'example.com',
@@ -238,7 +238,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('renders router routes with private backend pools and forwarded headers', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $router->id,
                 'domain' => 'example.com',
@@ -281,7 +281,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('keeps router routes pointed at app-role backend routes instead of app runtime containers', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $router->id,
                 'domain' => 'example.com',
@@ -387,8 +387,9 @@ describe('ProxyRouteRenderer', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $ingress->id,
                 'app_id' => $app->id,
@@ -463,8 +464,9 @@ describe('ProxyRouteRenderer', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $ingress->id,
                 'app_id' => $app->id,
@@ -585,7 +587,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('rejects router routes whose upstream host is not a valid IP address', function (): void {
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $router->id,
                 'domain' => 'example.com',
@@ -614,7 +616,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('rejects ingress routes with invalid router upstream urls', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $ingress->id,
                 'domain' => 'example.com',
@@ -640,7 +642,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('ignores persisted internal tls paths on public ingress routes', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $ingress->id,
                 'domain' => 'example.com',
@@ -673,8 +675,9 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,
@@ -726,8 +729,9 @@ describe('ProxyRouteRenderer', function (): void {
             ->create([
                 'name' => 'marketing',
             ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,
@@ -764,7 +768,7 @@ describe('ProxyRouteRenderer', function (): void {
     it('rejects private backend routes with invalid bind addresses', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $appNode->id,
                 'domain' => 'example.com',
@@ -795,8 +799,9 @@ describe('ProxyRouteRenderer', function (): void {
             ->create([
                 'name' => 'example',
             ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,
@@ -827,8 +832,9 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,
@@ -859,10 +865,11 @@ describe('ProxyRouteRenderer', function (): void {
         function (): void {
             $node = createTestAppHostNode();
             $app = App::factory()->create(['name' => 'legacy-docs']);
+            $instance = Instance::factory()->for($app, 'app')->create();
 
             $route = ProxyRoute::factory()
                 ->for($node, 'node')
-                ->forApp($app)
+                ->forApp($instance, $app)
                 ->create([
                     'domain' => 'legacy-docs.test',
                     'owner_type' => 'app',
@@ -900,10 +907,11 @@ describe('ProxyRouteRenderer', function (): void {
     it('derives a FrankenPHP runtime upstream from the app identity for a legacy private backend artifact (no runtime_upstream)', function (): void {
         $appNode = createTestAppHostNode(['wireguard_address' => '10.6.0.21']);
         $app = App::factory()->create(['name' => 'legacy-docs']);
+        $instance = Instance::factory()->for($app, 'app')->create();
 
         $route = ProxyRoute::factory()
             ->for($appNode, 'node')
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'domain' => 'legacy-docs.test',
                 'owner_type' => 'app',
@@ -934,10 +942,11 @@ describe('ProxyRouteRenderer', function (): void {
     it('still renders static app routes with file_server even when the persisted config carries a legacy php_socket', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->static()->create(['name' => 'legacy-marketing']);
+        $instance = Instance::factory()->for($app, 'app')->create();
 
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'domain' => 'legacy-marketing.test',
                 'owner_type' => 'app',
@@ -978,7 +987,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->forApp($app, $instance)
+            ->forApp($instance, $app)
             ->create([
                 'domain' => 'docs.test',
                 'owner_type' => 'app',
@@ -1037,7 +1046,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
-            ->forApp($app, $instance)
+            ->forApp($instance, $app)
             ->create([
                 'domain' => 'happie.nmbp',
                 'owner_type' => 'app',
@@ -1152,6 +1161,69 @@ describe('ProxyRouteRenderer', function (): void {
             ->not->toContain('php_fastcgi')->and($content)
             ->not->toContain('file_server');
     });
+
+    it('rejects a workspace route whose concrete Instance conflicts with the Workspace', function (): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $otherInstance = Instance::factory()->for($app, 'app')->create(['name' => 'production']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                ],
+            ]);
+        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route->refresh()))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+    });
+
+    it('rejects conflicting workspace compatibility App ownership', function (string $compatibilityOwner): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs']);
+        $otherApp = App::factory()->create(['name' => 'marketing']);
+        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->for($workspace, 'workspace')
+            ->create([
+                'instance_id' => $workspace->instance_id,
+                'domain' => 'feature-a.docs.test',
+                'owner_type' => 'workspace',
+                'kind' => 'workspace',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/.worktrees/feature-a/public',
+                    'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
+                ],
+            ]);
+
+        if ($compatibilityOwner === 'route') {
+            $route->forceFill(['app_id' => $otherApp->id])->save();
+        }
+
+        if ($compatibilityOwner === 'workspace') {
+            $workspace->forceFill(['app_id' => $otherApp->id])->save();
+        }
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route->refresh()))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'feature-a.docs.test' has conflicting workspace ownership.",
+            );
+    })->with(['route', 'workspace']);
 
     it(
         'derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket',
@@ -1322,8 +1394,9 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->create([
             'name' => 'example',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,

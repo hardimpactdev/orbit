@@ -23,25 +23,46 @@ it('requires explicit instance ownership for an instance-backed generic route', 
         );
 });
 
-it('rejects an ambiguous forApp state unless the instance is explicit', function (): void {
+it('does not create ownership when forApp receives no concrete instance', function (): void {
+    expect(fn (): ProxyRoute => ProxyRoute::factory()->forApp()->create())
+        ->toThrow(ArgumentCountError::class)
+        ->and(App::query()->count())
+        ->toBe(0)
+        ->and(Instance::query()->count())
+        ->toBe(0);
+});
+
+it('does not select an App sole Instance in place of a concrete owner', function (): void {
     $app = App::factory()->create();
     Instance::factory()->for($app)->create(['name' => 'development']);
-    Instance::factory()->for($app)->create(['name' => 'production']);
 
     expect(fn (): ProxyRoute => ProxyRoute::factory()->forApp($app)->create())
-        ->toThrow(
-            \RuntimeException::class,
-            'ProxyRoute factory forApp state requires an explicit Instance when the App has multiple instances.',
-        );
+        ->toThrow(TypeError::class)
+        ->and(ProxyRoute::query()->count())
+        ->toBe(0)
+        ->and(Instance::query()->count())
+        ->toBe(1);
 });
 
 it('creates an instance-backed route when the owner is explicit', function (): void {
     $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create();
-    $route = ProxyRoute::factory()->forApp($app, $instance)->create();
+    $route = ProxyRoute::factory()->forApp($instance, $app)->create();
 
     expect($route->app_id)
         ->toBe($app->id)
         ->and($route->instance_id)
         ->toBe($instance->id);
+});
+
+it('rejects a compatibility App that conflicts with the concrete Instance', function (): void {
+    $app = App::factory()->create();
+    $otherApp = App::factory()->create();
+    $instance = Instance::factory()->for($app)->create();
+
+    expect(fn (): ProxyRoute => ProxyRoute::factory()->forApp($instance, $otherApp)->create())
+        ->toThrow(
+            RuntimeException::class,
+            'ProxyRoute factory forApp state received an Instance owned by another App.',
+        );
 });

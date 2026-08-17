@@ -108,7 +108,7 @@ describe('ProxyRoute mutation API', function (): void {
         $app = App::factory()->create(['name' => 'docs']);
 
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp(Instance::factory()->for($app, 'app')->create(), $app)
             ->create([
                 'node_id' => $servingNode->id,
                 'app_id' => $app->id,

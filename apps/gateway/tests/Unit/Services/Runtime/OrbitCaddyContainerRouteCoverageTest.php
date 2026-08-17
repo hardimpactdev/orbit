@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -45,8 +46,9 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,
@@ -145,7 +147,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $renderer = new ProxyRouteRenderer;
         $router = Node::factory()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'node_id' => $router->id,
                 'domain' => 'docs.test',
@@ -180,8 +182,9 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $app = App::factory()->create([
             'name' => 'docs',
         ]);
+        $instance = Instance::factory()->for($app, 'app')->create();
         $route = ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $appNode->id,
                 'app_id' => $app->id,

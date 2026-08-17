@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -256,7 +257,7 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
         ]);
 
         ProxyRoute::factory()
-            ->forApp()
+            ->forApp(Instance::factory()->create())
             ->create([
                 'domain' => 's3.example.com',
                 'node_id' => $ingress->id,

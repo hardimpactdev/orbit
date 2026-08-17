@@ -1092,7 +1092,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1165,7 +1165,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1174,7 +1174,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',
@@ -1230,7 +1230,7 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
                 node: $backendNode->name,
@@ -1248,7 +1248,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'kind' => 'app',
@@ -1300,7 +1300,7 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
         $backendNode = Node::factory()->create(['platform' => 'ubuntu']);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $backendNode->id,
                 node: $backendNode->name,
@@ -1318,7 +1318,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'kind' => 'app',
@@ -1354,7 +1354,7 @@ describe('node role assignment service', function (): void {
             ],
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => Node::factory()->create(['platform' => 'ubuntu'])->id,
                 'kind' => 'app',
@@ -1434,7 +1434,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1443,7 +1443,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',
@@ -1528,7 +1528,7 @@ describe('node role assignment service', function (): void {
             'settings' => [],
         ]);
         $app = App::factory()->create();
-        Instance::factory()->for($app, 'app')->create([
+        $instance = Instance::factory()->for($app, 'app')->create([
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -1537,7 +1537,7 @@ describe('node role assignment service', function (): void {
             ),
         ]);
         ProxyRoute::factory()
-            ->forApp($app)
+            ->forApp($instance, $app)
             ->create([
                 'node_id' => $node->id,
                 'domain' => 'docs.test',

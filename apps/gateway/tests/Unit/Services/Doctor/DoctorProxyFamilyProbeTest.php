@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorProxyFamilyProbe;
@@ -25,9 +26,11 @@ it('keeps app scope, row order, issue payloads, and progress inside the proxy fa
     $firstApp = App::factory()->create(['name' => 'first-app']);
     /** @var App $secondApp */
     $secondApp = App::factory()->create(['name' => 'second-app']);
+    $firstInstance = Instance::factory()->for($firstApp, 'app')->create();
+    $secondInstance = Instance::factory()->for($secondApp, 'app')->create();
     /** @var ProxyRoute $firstRoute */
     $firstRoute = ProxyRoute::factory()
-        ->forApp($firstApp)
+        ->forApp($firstInstance, $firstApp)
         ->create([
             'node_id' => $node->id,
             'app_id' => $firstApp->id,
@@ -36,7 +39,7 @@ it('keeps app scope, row order, issue payloads, and progress inside the proxy fa
             'kind' => 'app',
         ]);
     ProxyRoute::factory()
-        ->forApp($secondApp)
+        ->forApp($secondInstance, $secondApp)
         ->create([
             'node_id' => $node->id,
             'app_id' => $secondApp->id,
