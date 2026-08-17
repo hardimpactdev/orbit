@@ -107,7 +107,11 @@ final readonly class ProcessOwnerContext
         }
 
         if ($this->owner instanceof Workspace) {
-            if (! $this->app instanceof App || ! $this->workspace instanceof Workspace || ! $this->instance instanceof Instance) {
+            if (
+                ! $this->app instanceof App
+                || ! $this->workspace instanceof Workspace
+                || ! $this->instance instanceof Instance
+            ) {
                 throw new InvalidArgumentException(
                     'A workspace-owned process context requires an app, workspace, and concrete instance.',
                 );

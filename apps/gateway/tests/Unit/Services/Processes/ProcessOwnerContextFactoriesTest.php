@@ -20,16 +20,26 @@ it('constructs a node-owned host process context', function (): void {
 
     $context = ProcessOwnerContext::forNode($node);
 
-    expect($context->node->is($node))->toBeTrue()
-        ->and($context->app)->toBeNull()
-        ->and($context->workspace)->toBeNull()
-        ->and($context->instance)->toBeNull()
-        ->and($context->owner->is($node))->toBeTrue()
-        ->and($context->runtimeApp())->toBeNull()
-        ->and($context->eventApp())->toBeNull()
-        ->and($context->subject()->is($node))->toBeTrue()
-        ->and($context->label())->toBe("node 'app-host-1'")
-        ->and($context->payloadContext())->toBe([
+    expect($context->node->is($node))
+        ->toBeTrue()
+        ->and($context->app)
+        ->toBeNull()
+        ->and($context->workspace)
+        ->toBeNull()
+        ->and($context->instance)
+        ->toBeNull()
+        ->and($context->owner->is($node))
+        ->toBeTrue()
+        ->and($context->runtimeApp())
+        ->toBeNull()
+        ->and($context->eventApp())
+        ->toBeNull()
+        ->and($context->subject()->is($node))
+        ->toBeTrue()
+        ->and($context->label())
+        ->toBe("node 'app-host-1'")
+        ->and($context->payloadContext())
+        ->toBe([
             'node' => 'app-host-1',
             'app' => null,
             'instance' => null,
@@ -44,15 +54,24 @@ it('constructs an instance-owned context and derives the app from the instance',
 
     $context = ProcessOwnerContext::forInstance($node, $instance);
 
-    expect($context->node->is($node))->toBeTrue()
-        ->and($context->app?->is($app))->toBeTrue()
-        ->and($context->workspace)->toBeNull()
-        ->and($context->instance?->is($instance))->toBeTrue()
-        ->and($context->owner->is($app))->toBeTrue()
-        ->and($context->runtimeApp()?->is($app))->toBeTrue()
-        ->and($context->eventApp()?->is($app))->toBeTrue()
-        ->and($context->subject()->is($instance))->toBeTrue()
-        ->and($context->label())->toBe("instance 'docs.development'");
+    expect($context->node->is($node))
+        ->toBeTrue()
+        ->and($context->app?->is($app))
+        ->toBeTrue()
+        ->and($context->workspace)
+        ->toBeNull()
+        ->and($context->instance?->is($instance))
+        ->toBeTrue()
+        ->and($context->owner->is($app))
+        ->toBeTrue()
+        ->and($context->runtimeApp()?->is($app))
+        ->toBeTrue()
+        ->and($context->eventApp()?->is($app))
+        ->toBeTrue()
+        ->and($context->subject()->is($instance))
+        ->toBeTrue()
+        ->and($context->label())
+        ->toBe("instance 'docs.development'");
 });
 
 it('constructs a workspace-owned context and derives the app from the instance', function (): void {
@@ -66,21 +85,32 @@ it('constructs a workspace-owned context and derives the app from the instance',
 
     $context = ProcessOwnerContext::forWorkspace($node, $workspace, $instance);
 
-    expect($context->node->is($node))->toBeTrue()
-        ->and($context->app?->is($app))->toBeTrue()
-        ->and($context->workspace?->is($workspace))->toBeTrue()
-        ->and($context->instance?->is($instance))->toBeTrue()
-        ->and($context->owner->is($workspace))->toBeTrue()
-        ->and($context->runtimeApp()?->is($app))->toBeTrue()
-        ->and($context->subject()->is($instance))->toBeTrue()
-        ->and($context->label())->toBe("workspace 'feature-docs' on instance 'docs.development'");
+    expect($context->node->is($node))
+        ->toBeTrue()
+        ->and($context->app?->is($app))
+        ->toBeTrue()
+        ->and($context->workspace?->is($workspace))
+        ->toBeTrue()
+        ->and($context->instance?->is($instance))
+        ->toBeTrue()
+        ->and($context->owner->is($workspace))
+        ->toBeTrue()
+        ->and($context->runtimeApp()?->is($app))
+        ->toBeTrue()
+        ->and($context->subject()->is($instance))
+        ->toBeTrue()
+        ->and($context->label())
+        ->toBe("workspace 'feature-docs' on instance 'docs.development'");
 });
 
 it('keeps the constructor private so mixed ownership cannot be constructed', function (): void {
-    $constructor = (new ReflectionClass(ProcessOwnerContext::class))->getConstructor();
+    $constructor = new ReflectionClass(ProcessOwnerContext::class)->getConstructor();
 
-    expect($constructor)->not->toBeNull()
-        ->and($constructor->isPrivate())->toBeTrue();
+    expect($constructor)
+        ->not
+        ->toBeNull()
+        ->and($constructor->isPrivate())
+        ->toBeTrue();
 });
 
 it('rejects an instance-owned context when the instance has no app', function (): void {
@@ -88,7 +118,10 @@ it('rejects an instance-owned context when the instance has no app', function ()
     $instance = new Instance(['name' => 'orphan']);
 
     expect(fn (): ProcessOwnerContext => ProcessOwnerContext::forInstance($node, $instance))
-        ->toThrow(InvalidArgumentException::class, 'An app-owned process context requires an instance attached to an app.');
+        ->toThrow(
+            InvalidArgumentException::class,
+            'An app-owned process context requires an instance attached to an app.',
+        );
 });
 
 it('rejects a workspace-owned context when the instance has no app', function (): void {
@@ -98,7 +131,10 @@ it('rejects a workspace-owned context when the instance has no app', function ()
     $instance = new Instance(['name' => 'orphan']);
 
     expect(fn (): ProcessOwnerContext => ProcessOwnerContext::forWorkspace($node, $workspace, $instance))
-        ->toThrow(InvalidArgumentException::class, 'A workspace-owned process context requires an instance attached to an app.');
+        ->toThrow(
+            InvalidArgumentException::class,
+            'A workspace-owned process context requires an instance attached to an app.',
+        );
 });
 
 it('rejects a workspace-owned context when the instance does not belong to the workspace', function (): void {
@@ -112,5 +148,8 @@ it('rejects a workspace-owned context when the instance does not belong to the w
     ]);
 
     expect(fn (): ProcessOwnerContext => ProcessOwnerContext::forWorkspace($node, $workspace, $otherInstance))
-        ->toThrow(InvalidArgumentException::class, 'A workspace-owned process context requires the workspace instance.');
+        ->toThrow(
+            InvalidArgumentException::class,
+            'A workspace-owned process context requires the workspace instance.',
+        );
 });
