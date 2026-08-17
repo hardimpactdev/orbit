@@ -41,9 +41,8 @@ These rules define the analytics command domain and its role boundary.
   well as the backing node identities and does not install or own either
   database. Assignment-time creation requires that stored identity. A one-time
   migration may backfill an unambiguous assignment. Multiple candidates without
-  a stored identity fail clearly. A residual runtime single-candidate fallback
-  still exists when stored identity is absent and exactly one PostgreSQL
-  candidate is visible; that fallback remains until removed. Both services use
+  a stored identity fail clearly. Runtime resolution now requires a stored
+  `postgres_process_id` and fails closed when it is missing. Both services use
   generated credentials encrypted in gateway storage and publish only on
   WireGuard.
 - The default deployment follows the official Plausible CE 3.2.1 composition:

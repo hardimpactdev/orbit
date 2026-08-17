@@ -59,6 +59,10 @@ final readonly class AnalyticsProcessEndpointResolver
                 );
             }
 
+            if ($processIdSetting !== null) {
+                throw new RuntimeException("The analytics role requires a {$processIdSetting} setting.");
+            }
+
             /** @var Process|null $process */
             $process = $processes->first();
         }
