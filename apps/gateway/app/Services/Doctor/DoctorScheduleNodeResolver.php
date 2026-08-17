@@ -21,7 +21,7 @@ final readonly class DoctorScheduleNodeResolver
     {
         $schedule->loadMissing(['app', 'instance', 'node']);
 
-        if ($schedule->scope === 'app') {
+        if ($schedule->scope === 'instance') {
             return $schedule->instance instanceof Instance
                 ? $this->workspacePlacement->nodeForInstance($schedule->instance)?->name
                 : null;

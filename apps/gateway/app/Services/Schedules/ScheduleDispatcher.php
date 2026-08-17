@@ -6,6 +6,7 @@ namespace App\Services\Schedules;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Schedules\ScheduleDispatchResult;
+use App\Enums\Schedules\ScheduleScope;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
@@ -231,19 +232,11 @@ final readonly class ScheduleDispatcher
 
     private function targetNode(Schedule $schedule): ?Node
     {
-        if ($schedule->scope === 'app') {
-            return $this->instances->targetNode($schedule);
-        }
-
-        if ($schedule->scope === 'node') {
-            return $schedule->node;
-        }
-
-        if ($schedule->scope === 'orbit') {
-            return $this->gatewayNode();
-        }
-
-        return null;
+        return match ($schedule->ownerScope()) {
+            ScheduleScope::Instance => $this->instances->targetNode($schedule),
+            ScheduleScope::Node => $schedule->node,
+            ScheduleScope::Orbit => $this->gatewayNode(),
+        };
     }
 
     private function gatewayNode(): ?Node
@@ -286,7 +279,7 @@ final readonly class ScheduleDispatcher
     {
         $options = ['timeout' => $this->executionTimeout($schedule)];
 
-        $path = $schedule->scope === 'app' ? $this->instances->executionPath($schedule) : null;
+        $path = $schedule->isInstanceOwned() ? $this->instances->executionPath($schedule) : null;
 
         if (is_string($path) && $path !== '') {
             $options['cwd'] = $path;
@@ -345,6 +338,7 @@ final readonly class ScheduleDispatcher
         return ScheduleRun::query()->create([
             'node_id' => $targetNode->id,
             'schedule_key' => $schedule->schedule_key,
+            'target_name' => $schedule->liveTargetName(),
             'status' => $status,
             'exit_code' => $exitCode,
             'stdout' => $stdout,

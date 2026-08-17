@@ -32,17 +32,20 @@ final readonly class ScheduleLogsPayload
         $run = $this->resolveRun($schedule, $runId);
         [$stdout, $stdoutTruncated] = $this->limitLines($run->stdout ?? '', $lines);
         [$stderr, $stderrTruncated] = $this->limitLines($run->stderr ?? '', $lines);
-        $targetNode = $schedule->scope === 'app' ? $this->instances->targetNode($schedule) : $schedule->node;
+        $scope = $schedule->ownerScope()->value;
+        $targetNode = $schedule->isInstanceOwned()
+            ? $this->instances->targetNode($schedule)
+            : $schedule->node;
 
         return [
             'data' => [
                 'run' => [
                     'id' => $run->id,
                     'schedule' => $schedule->name,
-                    'scope' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
+                    'scope' => $scope,
                     'target' => [
-                        'type' => $schedule->scope === 'app' ? 'instance' : $schedule->scope,
-                        'name' => $schedule->target_name,
+                        'type' => $scope,
+                        'name' => $run->target_name ?? $schedule->liveTargetName(),
                         'node' => $targetNode?->name,
                     ],
                     'status' => $run->status,

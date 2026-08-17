@@ -285,7 +285,7 @@ trait PromptsForRegistryEntities
             ->with(['app', 'instance', 'node'])
             ->when($app !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
-                'app',
+                'instance',
             )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
             ->when($node !== null, fn (Builder $query): Builder => $query->where(
                 'scope',
@@ -601,7 +601,7 @@ trait PromptsForRegistryEntities
      */
     private function schedulePromptPayload(Schedule $schedule): array
     {
-        $targetNode = $schedule->scope === 'app'
+        $targetNode = $schedule->isInstanceOwned()
             ? app(ScheduleInstanceResolver::class)->targetNode($schedule)
             : $schedule->node;
 
@@ -676,7 +676,7 @@ trait PromptsForRegistryEntities
 
         return [
             'name' => $name,
-            'app' => $scope === 'app' && $target !== '' ? $target : null,
+            'app' => $scope === 'instance' && $target !== '' ? $target : null,
             'node' => $scope === 'node' && $target !== '' ? $target : null,
         ];
     }

@@ -57,10 +57,10 @@ final readonly class RunSchedule
         return [
             'id' => $run->id,
             'schedule' => $schedule->name,
-            'scope' => $schedule->scope,
+            'scope' => $schedule->ownerScope()->value,
             'target' => [
-                'type' => $schedule->scope,
-                'name' => $schedule->target_name,
+                'type' => $schedule->ownerScope()->value,
+                'name' => $run->target_name ?? $schedule->liveTargetName(),
                 'node' => $targetNode->name,
             ],
             'status' => $run->status,

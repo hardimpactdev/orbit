@@ -104,7 +104,6 @@ it('reads every node inventory in stable row identity order', function (): void 
     $firstSchedule = Schedule::factory()->create([
         'name' => 'zulu',
         'scope' => 'node',
-        'app_id' => null,
         'instance_id' => null,
         'node_id' => $node->id,
         'target_name' => $node->name,
@@ -114,7 +113,6 @@ it('reads every node inventory in stable row identity order', function (): void 
     $secondSchedule = Schedule::factory()->create([
         'name' => 'alpha',
         'scope' => 'node',
-        'app_id' => null,
         'instance_id' => null,
         'node_id' => $node->id,
         'target_name' => $node->name,
@@ -229,7 +227,6 @@ it('reads the gateway schedule inventory in stable row identity order', function
     $firstSchedule = Schedule::factory()->create([
         'name' => 'zulu',
         'scope' => 'orbit',
-        'app_id' => null,
         'instance_id' => null,
         'node_id' => null,
         'target_name' => 'gateway',
@@ -239,7 +236,6 @@ it('reads the gateway schedule inventory in stable row identity order', function
     $secondSchedule = Schedule::factory()->create([
         'name' => 'alpha',
         'scope' => 'orbit',
-        'app_id' => null,
         'instance_id' => null,
         'node_id' => null,
         'target_name' => 'gateway',

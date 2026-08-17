@@ -21,7 +21,7 @@ it('stores app scoped schedule intent and relates latest run history', function 
         ->forInstance($instance)
         ->create([
             'name' => 'laravel-scheduler',
-            'schedule_key' => 'app:docs.development:laravel-scheduler',
+            'schedule_key' => 'instance:docs.development:laravel-scheduler',
             'interval' => 'every minute',
             'timezone' => 'Europe/Amsterdam',
             'execution_type' => 'command',
@@ -29,13 +29,13 @@ it('stores app scoped schedule intent and relates latest run history', function 
         ]);
 
     ScheduleRun::factory()->create([
-        'schedule_key' => 'app:docs.development:laravel-scheduler',
+        'schedule_key' => 'instance:docs.development:laravel-scheduler',
         'started_at' => '2026-05-06 12:00:00',
         'status' => 'failed',
         'exit_code' => 1,
     ]);
     $latestRun = ScheduleRun::factory()->create([
-        'schedule_key' => 'app:docs.development:laravel-scheduler',
+        'schedule_key' => 'instance:docs.development:laravel-scheduler',
         'started_at' => '2026-05-06 12:01:00',
         'status' => 'completed',
         'exit_code' => 0,
@@ -80,16 +80,16 @@ it('stores node scoped schedule intent', function (): void {
 });
 
 it('keeps schedule keys globally unique', function (): void {
-    Schedule::factory()->create(['schedule_key' => 'app:docs.development:laravel-scheduler']);
+    Schedule::factory()->create(['schedule_key' => 'instance:docs.development:laravel-scheduler']);
 
-    expect(fn () => Schedule::factory()->create(['schedule_key' => 'app:docs.development:laravel-scheduler']))
+    expect(fn () => Schedule::factory()->create(['schedule_key' => 'instance:docs.development:laravel-scheduler']))
         ->toThrow(QueryException::class);
 });
 
 it('removes gateway schedule intent without requiring scheduler reachability', function (): void {
     $schedule = Schedule::factory()->create([
         'name' => 'nightly',
-        'schedule_key' => 'app:docs.development:nightly',
+        'schedule_key' => 'instance:docs.development:nightly',
     ]);
 
     $result = app(RemoveSchedule::class)->handle($schedule);

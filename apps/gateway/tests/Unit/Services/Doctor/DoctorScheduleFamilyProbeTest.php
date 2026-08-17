@@ -33,7 +33,6 @@ it('keeps node scope, row order, issue details, and progress inside the schedule
         ->create([
             'name' => 'zulu',
             'scope' => 'node',
-            'app_id' => null,
             'instance_id' => null,
             'node_id' => $node->id,
             'target_name' => $node->name,
@@ -45,7 +44,6 @@ it('keeps node scope, row order, issue details, and progress inside the schedule
         ->create([
             'name' => 'alpha',
             'scope' => 'node',
-            'app_id' => null,
             'instance_id' => null,
             'node_id' => $node->id,
             'target_name' => $node->name,
@@ -56,7 +54,6 @@ it('keeps node scope, row order, issue details, and progress inside the schedule
         ->create([
             'name' => 'excluded',
             'scope' => 'node',
-            'app_id' => null,
             'instance_id' => null,
             'node_id' => $otherNode->id,
             'target_name' => $otherNode->name,

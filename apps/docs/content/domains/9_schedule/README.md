@@ -40,7 +40,10 @@ the gateway always dispatches.
 
 - Instance-scoped schedules belong to exactly one instance and execute on that
   instance's serving node and path using its host PHP toolchain (the same
-  placement contract deploy steps use).
+  placement contract deploy steps use). The persisted owner is that Instance;
+  App and the live target label are derived from it. Contradictory owners
+  cannot be stored.
+
 - Node-scoped schedules execute on the selected node.
 - Orbit-scoped maintenance schedules execute inside the gateway container
   boundary by default. A command may override that default by documenting

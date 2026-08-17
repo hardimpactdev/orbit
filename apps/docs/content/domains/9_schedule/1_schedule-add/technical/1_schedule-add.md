@@ -49,9 +49,11 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
   dotted selector addresses that instance; a bare app selector succeeds only
   when exactly one eligible instance is visible for `schedule:add`.
 - Creates one gateway schedule-configuration row in the `schedule` state family.
-- Stores the schedule name, scope, concrete `instance_id` when applicable,
-  target, interval, timezone, execution source, execution timeout, enabled state, and initial
-  status.
+- Stores the schedule name, closed owner scope (`instance` or `node`),
+  concrete `instance_id` or `node_id` matching that scope, derived live target
+  label, interval, timezone, execution source, execution timeout, enabled state, and initial
+  status. App is not stored as an owner.
+
 - Rejects ambiguous instance selectors and writes that collide with an existing
   schedule name in the selected concrete target before any side effects.
 
@@ -116,5 +118,7 @@ schedule creation attempts.
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI `schedule:add` POST payload, target and execution-source validation, default node when no target is supplied, and gateway error passthrough. |
 | `apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php` | Explicit and bare instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
 | `apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php` | Existing app-schedule ownership backfill and ambiguous migration stop. |
+| `apps/gateway/tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php` | Closed Orbit/Node/Instance owner backfill, deleted-owner run retention, and fail-closed contradictory rows. |
+| `apps/gateway/tests/Feature/Models/ScheduleOwnerInvariantTest.php` | Persist/reject closed owners, lock identity, and historical run labels. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

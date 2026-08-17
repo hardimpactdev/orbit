@@ -794,7 +794,7 @@ describe('AppRemoveController', function (): void {
             ->assertJsonPath('success.meta.warnings.1.next_command', 'doctor --family=instance --restore')
             ->assertJsonCount(2, 'success.meta.warnings');
 
-        expect(Schedule::query()->where('app_id', $app->id)->exists())->toBeFalse();
+        expect($app->schedules()->exists())->toBeFalse();
     });
 
     it('requires destructive consent before removing app intent', function (): void {

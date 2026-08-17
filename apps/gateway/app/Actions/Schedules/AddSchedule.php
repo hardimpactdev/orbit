@@ -30,8 +30,7 @@ final readonly class AddSchedule
         string $executionValue,
         int $timeoutSeconds,
     ): array {
-        $scope = $target instanceof Instance ? 'app' : 'node';
-        $publicScope = $target instanceof Instance ? 'instance' : 'node';
+        $scope = $target instanceof Instance ? 'instance' : 'node';
         $targetName = $target instanceof Instance
             ? "{$target->app->name}.{$target->name}"
             : $target->name;
@@ -39,11 +38,11 @@ final readonly class AddSchedule
 
         if (Schedule::query()->where('schedule_key', $scheduleKey)->exists()) {
             throw new GatewayApiException(
-                "Schedule '{$name}' already exists for {$publicScope} '{$targetName}'.",
+                "Schedule '{$name}' already exists for {$scope} '{$targetName}'.",
                 'schedule.name_collision',
                 [
                     'name' => $name,
-                    $publicScope => $targetName,
+                    $scope => $targetName,
                 ],
             );
         }
@@ -52,7 +51,6 @@ final readonly class AddSchedule
             'schedule_key' => $scheduleKey,
             'name' => $name,
             'scope' => $scope,
-            'app_id' => $target instanceof Instance ? $target->app_id : null,
             'instance_id' => $target instanceof Instance ? $target->id : null,
             'node_id' => $target instanceof Node ? $target->id : null,
             'target_name' => $targetName,

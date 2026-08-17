@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Schedules\ScheduleScope;
+use App\Exceptions\ScheduleOwnerInvariantViolation;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Carbon;
 use Override;
 
@@ -18,7 +21,6 @@ use Override;
  * @property string $schedule_key
  * @property string $name
  * @property string $scope
- * @property int|null $app_id
  * @property int|null $instance_id
  * @property int|null $node_id
  * @property string $target_name
@@ -36,17 +38,27 @@ use Override;
  * @property-read Node|null $node
  * @property-read ScheduleRun|null $latestRun
  * @property-read Collection<int, ScheduleRun> $runs
+ *
+ * @mago-expect lint:too-many-methods
  */
 class Schedule extends Model
 {
     use HasFactory;
 
     #[Override]
+    protected static function booted(): void
+    {
+        static::saving(static function (Schedule $schedule): void {
+            $schedule->assertOwnerInvariant();
+            $schedule->target_name = $schedule->liveTargetName();
+        });
+    }
+
+    #[Override]
     protected $fillable = [
         'schedule_key',
         'name',
         'scope',
-        'app_id',
         'instance_id',
         'node_id',
         'target_name',
@@ -68,12 +80,73 @@ class Schedule extends Model
         ];
     }
 
-    /**
-     * @return BelongsTo<App, $this>
-     */
-    public function app(): BelongsTo
+    public function ownerScope(): ScheduleScope
     {
-        return $this->belongsTo(App::class, 'app_id');
+        $scope = ScheduleScope::tryFrom($this->scope);
+
+        if (! $scope instanceof ScheduleScope) {
+            throw new ScheduleOwnerInvariantViolation(
+                "Schedule '{$this->name}' has an unknown owner scope '{$this->scope}'.",
+            );
+        }
+
+        return $scope;
+    }
+
+    public function isInstanceOwned(): bool
+    {
+        return ScheduleScope::tryFrom($this->scope) === ScheduleScope::Instance;
+    }
+
+    public function liveTargetName(): string
+    {
+        return match ($this->ownerScope()) {
+            ScheduleScope::Orbit => 'gateway',
+            ScheduleScope::Node => $this->ownedNodeName(),
+            ScheduleScope::Instance => $this->ownedInstanceTargetName(),
+        };
+    }
+
+    public function assertOwnerInvariant(): void
+    {
+        $scope = ScheduleScope::tryFrom($this->scope);
+
+        if (! $scope instanceof ScheduleScope) {
+            throw new ScheduleOwnerInvariantViolation(
+                "Schedule '{$this->name}' owner must be orbit, node, or instance.",
+            );
+        }
+
+        $instanceId = $this->instance_id;
+        $nodeId = $this->node_id;
+        $valid = match ($scope) {
+            ScheduleScope::Orbit => $instanceId === null && $nodeId === null,
+            ScheduleScope::Node => $nodeId !== null && $instanceId === null,
+            ScheduleScope::Instance => $instanceId !== null && $nodeId === null,
+        };
+
+        if ($valid) {
+            return;
+        }
+
+        throw new ScheduleOwnerInvariantViolation(
+            "Schedule '{$this->name}' owner is {$scope->value} but the persisted foreign keys are contradictory.",
+        );
+    }
+
+    /**
+     * @return HasOneThrough<App, Instance, $this>
+     */
+    public function app(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            App::class,
+            Instance::class,
+            'id',
+            'id',
+            'instance_id',
+            'app_id',
+        );
     }
 
     /**
@@ -108,5 +181,34 @@ class Schedule extends Model
     {
         return $this->hasOne(ScheduleRun::class, 'schedule_key', 'schedule_key')
             ->latestOfMany('started_at');
+    }
+
+    private function ownedNodeName(): string
+    {
+        $this->loadMissing('node');
+        $name = $this->node?->name;
+
+        if (! is_string($name) || $name === '') {
+            throw new ScheduleOwnerInvariantViolation(
+                "Schedule '{$this->name}' is node-owned but has no node target.",
+            );
+        }
+
+        return $name;
+    }
+
+    private function ownedInstanceTargetName(): string
+    {
+        $this->loadMissing(['instance.app']);
+        $instance = $this->instance;
+        $app = $instance?->app;
+
+        if (! $instance instanceof Instance || ! $app instanceof App) {
+            throw new ScheduleOwnerInvariantViolation(
+                "Schedule '{$this->name}' is instance-owned but has no instance target.",
+            );
+        }
+
+        return "{$app->name}.{$instance->name}";
     }
 }

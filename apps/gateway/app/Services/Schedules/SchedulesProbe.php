@@ -7,6 +7,7 @@ namespace App\Services\Schedules;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleLock;
@@ -195,19 +196,17 @@ final readonly class SchedulesProbe
      */
     private function checkRecordCompleteness(Schedule $schedule): array
     {
-        $validScope = in_array($schedule->scope, ['app', 'node', 'orbit'], true);
+        $validScope = in_array($schedule->scope, ['instance', 'node', 'orbit'], true);
         $validExecution = in_array($schedule->execution_type, ['command', 'script'], true);
-        $validAppOwnership =
-            $schedule->scope !== 'app'
-            || $schedule->app_id !== null
-            && $schedule->instance_id !== null
-            && $schedule->instance?->app_id === $schedule->app_id;
+        $validInstanceOwnership =
+            $schedule->scope !== 'instance'
+            || $schedule->instance_id !== null && $schedule->instance instanceof Instance;
 
         if (
             $schedule->schedule_key === ''
             || $schedule->name === ''
             || ! $validScope
-            || ! $validAppOwnership
+            || ! $validInstanceOwnership
             || $schedule->target_name === ''
             || $schedule->interval === ''
             || $schedule->timezone === ''
@@ -527,12 +526,10 @@ final readonly class SchedulesProbe
     {
         $schedule->loadMissing(['app', 'instance', 'node']);
 
-        if ($schedule->scope === 'app') {
-            if ($schedule->instance?->app_id !== $schedule->app_id) {
-                return null;
-            }
-
-            return $this->instanceResolver()->targetNode($schedule);
+        if ($schedule->scope === 'instance') {
+            return $schedule->instance instanceof Instance
+                ? $this->instanceResolver()->targetNode($schedule)
+                : null;
         }
 
         if ($schedule->scope === 'node') {
