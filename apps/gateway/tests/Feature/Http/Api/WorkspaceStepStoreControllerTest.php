@@ -143,7 +143,7 @@ describe('WorkspaceStepStoreController', function (): void {
 
         expect($stored->instance_id)
             ->toBe($nmbpInstance->id)
-            ->and(WorkspaceStep::query()->where('app_id', $app->id)->whereNull('instance_id')->count())
+            ->and(WorkspaceStep::query()->whereNull('instance_id')->count())
             ->toBe(0);
 
         $developmentList = $this->call(
