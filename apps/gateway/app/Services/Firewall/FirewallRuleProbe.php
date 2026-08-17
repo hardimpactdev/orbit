@@ -186,7 +186,6 @@ final readonly class FirewallRuleProbe
                 'address_family' => $observed['address_family'] ?? 'both',
                 'interface' => $observed['interface'] ?? null,
                 'owner' => 'user',
-                'protected' => false,
             ]);
 
             $results[] = new AdoptResult(
