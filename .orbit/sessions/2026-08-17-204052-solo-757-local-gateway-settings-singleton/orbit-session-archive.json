@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T18:40:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-757-local-gateway-settings-singleton/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-204052-solo-757-local-gateway-settings-singleton",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-757-retained-incus-receipt.md",
+        "feedback.jsonl",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T100922Z-9912383c051c.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-757-retained-incus-receipt.md": "521e5603da532a7e6bb80241674667a4d5a7aa4d45715724685e71144f44fad7",
+        "feedback.jsonl": "20831ec351fe077167e75a022cbf3179194aa5ed3908cdf23a2f0ef097d06a2a",
+        "loop.md": "3e1562a68c37aee8b4d47605110f748c8d29dead53f51034ebceb7ae64fc7848",
+        "quality-gates/quality-check-2026-08-17T100922Z-9912383c051c.json": "207bc55f41f848890cf987553d3bb854f059494d5241ff212659a57dbfb136c8"
+    },
+    "slug": "solo-757-local-gateway-settings-singleton",
+    "requested_slug": "solo-757-local-gateway-settings-singleton",
+    "compatible_slugs": [
+        "solo-757-local-gateway-settings-singleton"
+    ],
+    "branch": "solo-757-local-gateway-settings-singleton",
+    "candidate_commit": "99522c332ba63cf350f1753ba7db58d3d4510429",
+    "accepted_feature_tip": "99522c332ba63cf350f1753ba7db58d3d4510429",
+    "accepted_main_tip": "d0683c8c405857ae708255b7adcbaa67221003dc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
