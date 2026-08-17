@@ -222,7 +222,14 @@ describe('security installers', function (): void {
             ->toBeTrue()
             ->and(FirewallRule::query()->where('node_id', $node->id)->count())
             ->toBe(3)
-            ->and(FirewallRule::query()->where('owner', 'node-security')->where('protected', true)->count())
+            ->and(FirewallRule::query()
+                ->where('owner', 'node-security')
+                ->get()
+                ->every(
+                    static fn (FirewallRule $rule): bool => $rule->protected,
+                ))
+            ->toBeTrue()
+            ->and(FirewallRule::query()->where('owner', 'node-security')->count())
             ->toBe(3)
             ->and(FirewallRule::query()->pluck('address_family')->sort()->values()->all())
             ->toBe(['v4', 'v4', 'v6'])

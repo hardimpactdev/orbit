@@ -401,7 +401,6 @@ function markNodeSecurityBaselineClean(Node $node): Node
                 'address_family' => $addressFamily,
                 'interface' => 'public',
                 'owner' => 'node-security',
-                'protected' => true,
             ],
         );
     }

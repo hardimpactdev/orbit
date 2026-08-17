@@ -137,7 +137,6 @@ final readonly class NodeSecurityPostureProbe
         $rules = FirewallRule::query()
             ->where('node_id', $node->id)
             ->where('owner', 'node-security')
-            ->where('protected', true)
             ->where('action', 'deny')
             ->where('direction', 'incoming')
             ->where('protocol', 'tcp')

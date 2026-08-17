@@ -310,7 +310,6 @@ class MetricsRoleBaseline implements RoleBaseline
                 'address_family' => 'v4',
                 'interface' => 'wireguard',
                 'owner' => self::NodeExporterFirewallOwner,
-                'protected' => true,
             ],
         );
 
