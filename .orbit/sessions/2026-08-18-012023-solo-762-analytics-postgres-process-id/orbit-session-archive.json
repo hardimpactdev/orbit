@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T23:20:23+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-762-analytics-postgres-process-id/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-012023-solo-762-analytics-postgres-process-id",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-762-blast-radius-inventory.md",
+        "evidence/solo-762-retained-incus-proof.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/solo-762-blast-radius-inventory.md": "6e73749cf51bfc0260ae04081ccdf6b7ae6797ac9f0971180348dafd6b702331",
+        "evidence/solo-762-retained-incus-proof.md": "afae24a27e1211fd2e92b36992a766c65d3b70ab93d4a08f451fba834014ea39",
+        "loop.md": "290d55bfe05b6ae1214f9deab3df0ba1b5ea72c2737934cd21a64d504ba8aa97"
+    },
+    "slug": "solo-762-analytics-postgres-process-id",
+    "requested_slug": "solo-762-analytics-postgres-process-id",
+    "compatible_slugs": [
+        "solo-762-analytics-postgres-process-id"
+    ],
+    "branch": "solo-762-analytics-postgres-process-id",
+    "candidate_commit": "380deb1c350da11032c439ac4da26ed398a67b69",
+    "accepted_feature_tip": "380deb1c350da11032c439ac4da26ed398a67b69",
+    "accepted_main_tip": "a9afe594f89f202841398a4c04b3f54892706556",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
