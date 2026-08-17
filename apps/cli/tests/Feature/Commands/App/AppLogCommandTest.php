@@ -208,14 +208,14 @@ describe('app:log host resolution', function (): void {
                 return Http::response(fakeSuccessEnvelope([
                     'routes' => [[
                         'domain' => 'workspace.example.test',
-                        'owner' => ['type' => 'workspace', 'name' => 'feature.docs'],
+                        'owner' => ['type' => 'workspace', 'name' => 'feature-docs'],
                         'instance' => 'docs.development',
-                        'target' => ['type' => 'workspace', 'value' => 'feature.docs'],
+                        'target' => ['type' => 'workspace', 'value' => 'feature-docs'],
                     ]],
                 ]));
             }
 
-            if (str_contains($url, '/api/workspaces/feature.docs/log')) {
+            if (str_contains($url, '/api/workspaces/feature-docs/log')) {
                 return Http::response(fakeSuccessEnvelope([
                     'path' => 'storage/logs/laravel.log',
                     'file_exists' => false,
@@ -235,11 +235,11 @@ describe('app:log host resolution', function (): void {
 
         Http::assertSent(fn (Request $request): bool => str_contains(
             urldecode($request->url()),
-            '/api/workspaces/feature.docs/log',
+            '/api/workspaces/feature-docs/log',
         ));
         Http::assertNotSent(fn (Request $request): bool => str_contains(
             urldecode($request->url()),
-            '/api/instances/feature.docs/log',
+            '/api/instances/feature-docs/log',
         ));
     });
 

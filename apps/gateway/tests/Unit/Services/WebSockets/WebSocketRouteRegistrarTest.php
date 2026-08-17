@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
+use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Instance;
@@ -11,6 +13,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -496,6 +499,50 @@ it('rejects malformed or differently-owned routes at a public websocket host', f
     'wrong node',
     'wrong protocol',
 ]);
+
+it('treats a stable public websocket config mismatch as an ownership conflict', function (): void {
+    [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
+    $binding = AppWebSocketBinding::factory()->create([
+        'instance_id' => websocketRouteRegistrarInstance($app)->id,
+        'public_hosts' => ['ws.example.com'],
+    ]);
+    app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
+    $route = ProxyRoute::query()->where('domain', 'ws.example.com')->firstOrFail();
+    $config = $route->config;
+    $config['target']['value'] = 'https://custom.example.test';
+    $route->forceFill(['config' => $config])->save();
+    $original = $route->fresh()->getAttributes();
+    $probe = app(WebSocketProxyDoctorProbe::class);
+    $drift = $probe->drift($ingress, $app->name);
+    $staleEntry = new DriftEntry(
+        family: 'proxy',
+        key: WebSocketProxyDoctorProbe::PublicRouteKey,
+        kind: DriftKind::Divergent,
+        summary: 'Stale public WebSocket repair entry.',
+        detail: [
+            'binding_id' => $binding->id,
+            'domain' => 'ws.example.com',
+        ],
+    );
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($drift[0]->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($ingress, $drift[0]))
+        ->toBeNull()
+        ->and($probe->restore($ingress, $staleEntry))
+        ->toBeNull()
+        ->and(fn (): mixed => app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding))
+        ->toThrow(
+            RuntimeException::class,
+            "WebSocket public host 'ws.example.com' conflicts with an existing proxy route.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+});
 
 it('removes stale public websocket routes for the binding app', function (): void {
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();

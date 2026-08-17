@@ -12,7 +12,7 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Throwable;
@@ -40,6 +40,7 @@ final readonly class WebSocketProxyDoctorProbe
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private WebSocketRouteRegistrar $routeRegistrar,
+        private PublicBindingProxyRouteOwnership $routeOwnership,
     ) {}
 
     /**
@@ -137,6 +138,14 @@ final readonly class WebSocketProxyDoctorProbe
 
         if (! $binding instanceof AppWebSocketBinding) {
             return null;
+        }
+
+        foreach ($this->routeRegistrar->publicRouteIntents($binding) as $intent) {
+            $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
+
+            if ($route instanceof ProxyRoute && ! $this->routeOwnership->matches($route)) {
+                return null;
+            }
         }
 
         $this->routeRegistrar->syncPublicHosts($binding);
@@ -332,11 +341,7 @@ final readonly class WebSocketProxyDoctorProbe
 
         $ownershipMatches = $intent->owner_type === 'router'
             ? $this->routeRegistrar->ownsServiceRoute($route)
-            : ProxyRouteOwnershipCompatibility::matches(
-                $route,
-                $intent,
-                ['placement', 'ingress_node_id', 'protocol'],
-            );
+            : $this->routeOwnership->matches($route);
 
         if (! $ownershipMatches) {
             return [

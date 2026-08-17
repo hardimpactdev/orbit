@@ -61,8 +61,14 @@ class NodeRoleDependencyInspector
         return [];
     }
 
-    public function removeOrbitOwnedDependents(Node $node, NodeRoleAssignment $assignment): void
-    {
+    /**
+     * @param  list<int>  $ingressRouteIds
+     */
+    public function removeOrbitOwnedDependents(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        array $ingressRouteIds = [],
+    ): void {
         if (array_key_exists($assignment->role, self::AppRoleEnvironments)) {
             $this->removeAppRoleDependents($node, $assignment->role);
 
@@ -76,7 +82,7 @@ class NodeRoleDependencyInspector
         }
 
         if ($assignment->role === NodeRoleName::Ingress->value) {
-            $this->removeIngressDependents($node);
+            $this->removeIngressDependents($node, $ingressRouteIds);
         }
     }
 
@@ -221,9 +227,15 @@ class NodeRoleDependencyInspector
         return ["{$count} public proxy route ".($count === 1 ? 'record' : 'records')];
     }
 
-    private function removeIngressDependents(Node $node): void
+    /**
+     * @param  list<int>  $capturedRouteIds
+     */
+    private function removeIngressDependents(Node $node, array $capturedRouteIds): void
     {
-        $routeIds = $this->ingressDependentRouteIds($node);
+        $routeIds = array_values(array_unique([
+            ...$capturedRouteIds,
+            ...$this->ingressDependentRouteIds($node),
+        ]));
 
         if ($routeIds === []) {
             return;
@@ -239,7 +251,7 @@ class NodeRoleDependencyInspector
      *
      * @return list<int>
      */
-    private function ingressDependentRouteIds(Node $node): array
+    public function ingressDependentRouteIds(Node $node): array
     {
         $placement = app(WorkspacePlacement::class);
         $instanceRouteOwnership = new InstanceProxyRouteOwnershipResolver;

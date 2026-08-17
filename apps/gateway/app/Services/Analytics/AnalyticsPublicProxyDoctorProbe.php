@@ -10,7 +10,7 @@ use App\Models\AppAnalyticsBinding;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -30,6 +30,7 @@ final readonly class AnalyticsPublicProxyDoctorProbe
 
     public function __construct(
         private AnalyticsRouteRegistrar $routeRegistrar,
+        private PublicBindingProxyRouteOwnership $routeOwnership,
     ) {}
 
     /**
@@ -96,6 +97,14 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             return null;
         }
 
+        foreach ($this->routeRegistrar->publicRouteIntents($binding) as $intent) {
+            $route = ProxyRoute::query()->where('domain', $intent->domain)->first();
+
+            if ($route instanceof ProxyRoute && ! $this->routeOwnership->matches($route)) {
+                return null;
+            }
+        }
+
         $this->routeRegistrar->syncPublicHosts($binding);
         $this->routeRegistrar->convergePublicHosts($binding);
 
@@ -133,11 +142,7 @@ final readonly class AnalyticsPublicProxyDoctorProbe
             );
         }
 
-        if (! ProxyRouteOwnershipCompatibility::matches(
-            $route,
-            $intent,
-            ['placement', 'ingress_node_id', 'protocol'],
-        )) {
+        if (! $this->routeOwnership->matches($route)) {
             return new DriftEntry(
                 family: 'proxy',
                 key: self::PUBLIC_ROUTE_KEY,

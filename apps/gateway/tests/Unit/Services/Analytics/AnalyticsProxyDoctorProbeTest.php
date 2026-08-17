@@ -6,6 +6,7 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Instance;
@@ -17,6 +18,7 @@ use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -82,6 +84,42 @@ it('reports divergent private analytics route intent', function (): void {
         ->and($drift[0]->kind)
         ->toBe(DriftKind::Divergent);
 });
+
+it('allows an active analytics node during its pending role transition', function (): void {
+    analyticsProxyRouter();
+    $backend = Node::factory()->create([
+        'name' => 'services1',
+        'wireguard_address' => '10.6.0.14',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->for($backend)->create([
+        'role' => 'analytics',
+        'status' => NodeRoleStatus::Pending,
+    ]);
+
+    $route = app(AnalyticsRouteRegistrar::class)->syncServiceRoute($backend);
+
+    expect($route->config['router_backend_pool'])->toBe([[
+        'node_id' => $backend->id,
+        'node' => 'services1',
+        'url' => 'http://10.6.0.14:8000',
+    ]]);
+});
+
+it('rejects an inactive analytics backend during its pending role transition', function (): void {
+    analyticsProxyRouter();
+    $backend = Node::factory()->create([
+        'name' => 'services1',
+        'wireguard_address' => '10.6.0.14',
+        'status' => 'inactive',
+    ]);
+    NodeRoleAssignment::factory()->for($backend)->create([
+        'role' => 'analytics',
+        'status' => NodeRoleStatus::Pending,
+    ]);
+
+    app(AnalyticsRouteRegistrar::class)->syncServiceRoute($backend);
+})->throws(RuntimeException::class, 'The analytics service route requires at least one active analytics backend.');
 
 it('does not overwrite another owner at the reserved analytics service domain', function (): void {
     $router = analyticsProxyRouter();
@@ -321,6 +359,59 @@ it('does not restore public analytics drift by converting another owner', functi
         ->toBeNull()
         ->and($route->fresh()?->owner_type)
         ->toBe('custom');
+});
+
+it('treats a stable public analytics config mismatch as an ownership conflict', function (): void {
+    analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding);
+    $route = ProxyRoute::query()->where('domain', 'analytics.docs.test')->firstOrFail();
+    $config = $route->config;
+    $config['target']['value'] = 'https://custom.example.test';
+    $route->forceFill(['config' => $config])->save();
+    $original = $route->fresh()->getAttributes();
+    $probe = app(AnalyticsPublicProxyDoctorProbe::class);
+    $drift = $probe->drift($ingress, $app->name);
+    $staleEntry = new DriftEntry(
+        family: 'proxy',
+        key: AnalyticsPublicProxyDoctorProbe::PUBLIC_ROUTE_KEY,
+        kind: DriftKind::Divergent,
+        summary: 'Stale public analytics repair entry.',
+        detail: [
+            'binding_id' => $binding->id,
+            'domain' => 'analytics.docs.test',
+        ],
+    );
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Unverifiable)
+        ->and($drift[0]->detail['reason'] ?? null)
+        ->toBe('ownership_conflict')
+        ->and($probe->restore($ingress, $drift[0]))
+        ->toBeNull()
+        ->and($probe->restore($ingress, $staleEntry))
+        ->toBeNull()
+        ->and(fn (): mixed => app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding))
+        ->toThrow(
+            RuntimeException::class,
+            "Analytics public host 'analytics.docs.test' conflicts with an existing proxy route.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+});
+
+it('does not validate public analytics ownership through an inactive backend node', function (): void {
+    analyticsProxyRouter();
+    $backend = analyticsProxyBackend();
+    [, , $binding] = analyticsPublicBinding();
+    app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding);
+    $route = ProxyRoute::query()->where('domain', 'analytics.docs.test')->firstOrFail();
+    $backend->forceFill(['status' => 'inactive'])->save();
+
+    expect(app(PublicBindingProxyRouteOwnership::class)->matches($route->refresh()))->toBeFalse();
 });
 
 it('rejects malformed or differently-owned routes at a public analytics host', function (string $invalidity): void {

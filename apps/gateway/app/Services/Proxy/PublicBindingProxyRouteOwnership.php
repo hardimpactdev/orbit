@@ -126,7 +126,7 @@ final readonly class PublicBindingProxyRouteOwnership
                 return [];
             }
 
-            if ($protocol === 'websocket' && $node->status !== NodeStatus::Active) {
+            if ($node->status !== NodeStatus::Active) {
                 return [];
             }
 

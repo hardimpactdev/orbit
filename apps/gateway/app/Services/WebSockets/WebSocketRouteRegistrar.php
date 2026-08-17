@@ -15,7 +15,6 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\NonInstanceProxyRouteOwnership;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -215,11 +214,7 @@ class WebSocketRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches(
-                $existingRoute,
-                $intent,
-                ['placement', 'ingress_node_id', 'protocol'],
-            )
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($existingRoute)
         ) {
             throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
         }

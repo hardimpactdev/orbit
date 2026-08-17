@@ -204,7 +204,8 @@ class NodeRoleAssignmentService
         }
 
         $dependentPolicy = $force ? 'remove' : 'block';
-        $removingAssignment = $this->markAssignmentRemoving($node, $assignment, $dependentPolicy, $role);
+        $removal = $this->markAssignmentRemoving($node, $assignment, $dependentPolicy, $role);
+        $removingAssignment = $removal['assignment'];
 
         try {
             $this->converger->remove($node, $removingAssignment, $purgeData);
@@ -217,7 +218,13 @@ class NodeRoleAssignmentService
                 $this->s3RouteRegistrar->syncServiceRouteAfterBackendChange();
             }
 
-            $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
+            $this->completeRemoval(
+                $node,
+                $assignment,
+                $dependentPolicy,
+                $role,
+                $removal['ingress_route_ids'],
+            );
 
             if ($this->roleChangesWildcardDns($role)) {
                 $this->dnsmasqReconciler->reconcileNodeRecords();
@@ -234,19 +241,17 @@ class NodeRoleAssignmentService
         }
     }
 
+    /**
+     * @return array{assignment: NodeRoleAssignment, ingress_route_ids: list<int>}
+     */
     private function markAssignmentRemoving(
         Node $node,
         NodeRoleAssignment $assignment,
         string $dependentPolicy,
         string $role,
-    ): NodeRoleAssignment {
-        /** @var NodeRoleAssignment $removingAssignment */
-        $removingAssignment = DB::transaction(function () use (
-            $node,
-            $assignment,
-            $dependentPolicy,
-            $role,
-        ): NodeRoleAssignment {
+    ): array {
+        /** @var array{assignment: NodeRoleAssignment, ingress_route_ids: list<int>} $removal */
+        $removal = DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): array {
             /** @var NodeRoleAssignment $transactionAssignment */
             $transactionAssignment = NodeRoleAssignment::query()
                 ->lockForUpdate()
@@ -257,25 +262,37 @@ class NodeRoleAssignmentService
             if ($transactionDependents !== [] && $dependentPolicy === 'block') {
                 throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
             }
+
+            $ingressRouteIds =
+                $dependentPolicy === 'remove' && $role === NodeRoleName::Ingress->value
+                    ? $this->dependencyInspector->ingressDependentRouteIds($node)
+                    : [];
 
             $transactionAssignment->forceFill([
                 'status' => NodeRoleStatus::Removing->value,
                 'last_error' => null,
             ])->save();
 
-            return $transactionAssignment;
+            return [
+                'assignment' => $transactionAssignment,
+                'ingress_route_ids' => $ingressRouteIds,
+            ];
         });
 
-        return $removingAssignment;
+        return $removal;
     }
 
+    /**
+     * @param  list<int>  $ingressRouteIds
+     */
     private function completeRemoval(
         Node $node,
         NodeRoleAssignment $assignment,
         string $dependentPolicy,
         string $role,
+        array $ingressRouteIds,
     ): void {
-        DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role): void {
+        DB::transaction(function () use ($node, $assignment, $dependentPolicy, $role, $ingressRouteIds): void {
             /** @var NodeRoleAssignment $transactionAssignment */
             $transactionAssignment = NodeRoleAssignment::query()
                 ->lockForUpdate()
@@ -286,8 +303,16 @@ class NodeRoleAssignmentService
                 throw new InvalidArgumentException("Role '{$role}' cannot be removed while dependents exist.");
             }
 
-            if ($dependentPolicy === 'remove' && $transactionDependents !== []) {
-                $this->dependencyInspector->removeOrbitOwnedDependents($node, $transactionAssignment);
+            if (
+                $dependentPolicy === 'remove'
+                && ($transactionDependents !== []
+                || $ingressRouteIds !== [])
+            ) {
+                $this->dependencyInspector->removeOrbitOwnedDependents(
+                    $node,
+                    $transactionAssignment,
+                    $ingressRouteIds,
+                );
             }
 
             $transactionAssignment->delete();

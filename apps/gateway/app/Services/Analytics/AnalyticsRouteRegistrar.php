@@ -7,6 +7,7 @@ namespace App\Services\Analytics;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\AppAnalyticsBinding;
 use App\Models\Instance;
 use App\Models\Node;
@@ -17,7 +18,6 @@ use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteFixer;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -335,11 +335,7 @@ class AnalyticsRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches(
-                $existingRoute,
-                $intent,
-                ['placement', 'ingress_node_id', 'protocol'],
-            )
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($existingRoute)
         ) {
             throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -480,11 +476,18 @@ class AnalyticsRouteRegistrar
     private function analyticsBackends(?Node $backend = null): array
     {
         if ($backend instanceof Node) {
+            if ($backend->status !== NodeStatus::Active) {
+                throw new RuntimeException(
+                    'The analytics service route requires at least one active analytics backend.',
+                );
+            }
+
             return [$backend];
         }
 
         /** @var list<Node> $nodes */
         $nodes = Node::query()
+            ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->nodeRoleAssignments->activeNodeIdsForRole(NodeRoleName::Analytics->value))
             ->orderBy('name')
             ->get()
