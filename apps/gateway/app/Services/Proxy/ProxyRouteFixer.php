@@ -151,7 +151,7 @@ final readonly class ProxyRouteFixer
         }
 
         if (
-            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)
             && app(InstanceProxyRouteOwnershipResolver::class)->resolve($route) === null
         ) {
             return null;

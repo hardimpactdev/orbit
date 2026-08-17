@@ -14,7 +14,9 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
 - Every proxy route has a public owner: `instance`, `analytics`, `websocket`,
   `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. Persisted primary
   routes use `owner_type=app` and `kind=app`; the registry projects both as
-  `instance`. Persisted `owner_type=instance` is invalid. The owner value
+  `instance` only when the complete App, Instance, kind, and null Workspace
+  ownership tuple is valid. Invalid tuples retain their stored owner type in
+  registry and conflict/removal metadata. Persisted `owner_type=instance` is invalid. The owner value
   classifies which domain's convergence edits the route record; the private
   `websocket.orbit`, `s3.orbit`, and `analytics.orbit` service routes are owned
   by `router`.

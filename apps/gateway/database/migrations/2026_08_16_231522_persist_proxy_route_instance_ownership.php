@@ -176,8 +176,13 @@ return new class extends Migration {
 
         foreach ([
             'instance_id' => $this->rowNullableInteger($route, 'instance_id'),
-            'config.instance_id' => $this->nullableInteger($config['instance_id'] ?? null),
-            'instance.id' => $this->nullableInteger($instanceConfig['id'] ?? null),
+            'config.instance_id' => $this->configuredOwnershipId(
+                $route,
+                $config,
+                'instance_id',
+                'config.instance_id',
+            ),
+            'instance.id' => $this->configuredOwnershipId($route, $instanceConfig, 'id', 'instance.id'),
         ] as $label => $instanceId) {
             if ($instanceId === null) {
                 continue;
@@ -309,8 +314,8 @@ return new class extends Migration {
         $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
 
         foreach ([
-            $this->nullableInteger($config['instance_id'] ?? null),
-            $this->nullableInteger($instanceConfig['id'] ?? null),
+            $this->configuredOwnershipId($route, $config, 'instance_id', 'config.instance_id'),
+            $this->configuredOwnershipId($route, $instanceConfig, 'id', 'instance.id'),
         ] as $configuredId) {
             if ($configuredId !== null && $configuredId !== $instanceId) {
                 throw $this->ownershipException(
@@ -450,12 +455,36 @@ return new class extends Migration {
 
     private function rowNullableInteger(object $row, string $key): ?int
     {
-        return $this->nullableInteger($row->{$key} ?? null);
+        $value = $row->{$key} ?? null;
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_int($value) || $value < 1) {
+            throw new RuntimeException("ProxyRoute instance ownership migration expected positive integer {$key}.");
+        }
+
+        return $value;
     }
 
-    private function nullableInteger(mixed $value): ?int
+    /** @param array<array-key, mixed> $config */
+    private function configuredOwnershipId(object $route, array $config, string $key, string $path): ?int
     {
-        return is_int($value) || is_numeric($value) ? (int) $value : null;
+        if (! array_key_exists($key, $config) || $config[$key] === null) {
+            return null;
+        }
+
+        $value = $config[$key];
+
+        if (! is_int($value) || $value < 1) {
+            throw $this->ownershipException(
+                $route,
+                "configured ownership hint {$path} must be a positive integer",
+            );
+        }
+
+        return $value;
     }
 
     private function rowString(object $row, string $key): string

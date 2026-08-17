@@ -48,8 +48,8 @@ final readonly class ProxyRouteRenderer
 
     public function render(ProxyRoute $route): string
     {
-        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
+        $this->assertDirectInstanceOwnership($route);
 
         if ($this->usesIngressPlacement($route)) {
             return $this->renderIngress($route);
@@ -183,8 +183,8 @@ final readonly class ProxyRouteRenderer
 
     public function renderIngress(ProxyRoute $route): string
     {
-        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
+        $this->assertDirectInstanceOwnership($route);
 
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
@@ -244,8 +244,8 @@ final readonly class ProxyRouteRenderer
 
     public function renderRouterRoute(ProxyRoute $route): string
     {
-        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
+        $this->assertDirectInstanceOwnership($route);
 
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
@@ -339,8 +339,8 @@ final readonly class ProxyRouteRenderer
      */
     public function renderPrivateBackend(ProxyRoute $route, array $backendArtifact): string
     {
-        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
+        $this->assertDirectInstanceOwnership($route);
         $route->loadMissing('instance.app');
 
         $bind = $backendArtifact['bind'] ?? null;
@@ -1182,9 +1182,9 @@ final readonly class ProxyRouteRenderer
         return new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route)->workspace;
     }
 
-    private function assertPublicBindingOwnership(ProxyRoute $route): void
+    private function assertDirectInstanceOwnership(ProxyRoute $route): void
     {
-        if (! InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)) {
+        if (! InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
             return;
         }
 

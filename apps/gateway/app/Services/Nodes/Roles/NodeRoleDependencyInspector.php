@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
@@ -218,6 +219,7 @@ class NodeRoleDependencyInspector
     private function ingressDependentRouteIds(Node $node): array
     {
         $placement = app(WorkspacePlacement::class);
+        $instanceRouteOwnership = new InstanceProxyRouteOwnershipResolver;
         $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver;
 
         $ingressRouteIds = ProxyRoute::query()
@@ -238,7 +240,11 @@ class NodeRoleDependencyInspector
             })
             ->with(['instance.app', 'workspace'])
             ->get()
-            ->filter(static function (ProxyRoute $route) use ($placement, $workspaceRouteOwnership): bool {
+            ->filter(static function (ProxyRoute $route) use (
+                $instanceRouteOwnership,
+                $placement,
+                $workspaceRouteOwnership,
+            ): bool {
                 if ($route->owner_type === 'workspace') {
                     $ownership = $workspaceRouteOwnership->resolve($route);
 
@@ -249,14 +255,11 @@ class NodeRoleDependencyInspector
                     return $placement->runtimeEnvironment($ownership->app, $ownership->instance) === 'production';
                 }
 
-                $instance = $route->instance;
-                $app = $instance?->app;
+                $instance = $instanceRouteOwnership->resolve($route);
 
                 return (
-                    $app instanceof App
-                    && $instance instanceof Instance
-                    && $route->app_id === $instance->app_id
-                    && $placement->runtimeEnvironment($app, $instance) === 'production'
+                    $instance instanceof Instance
+                    && $placement->runtimeEnvironment($instance->app, $instance) === 'production'
                 );
             })
             ->pluck('id')

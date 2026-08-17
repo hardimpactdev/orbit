@@ -187,3 +187,62 @@ it('does not classify or remove a workspace ingress route with conflicting app o
 
     expect(ProxyRoute::query()->whereKey($route->id)->exists())->toBeTrue();
 });
+
+it('does not summarize or remove an ingress app route with invalid ownership', function (string $invalidity): void {
+    $ingress = createTestAppHostNode(['name' => 'ingress-node', 'tld' => 'edge'], 'ingress');
+    $productionNode = createTestAppHostNode(['name' => 'production-node', 'tld' => 'prod'], 'app-prod');
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $productionNode->id,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'docs.example.com',
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'config' => ['placement' => 'ingress'],
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'proxy'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+
+    $assignment = new NodeRoleAssignment(['role' => 'ingress']);
+    $inspector = new NodeRoleDependencyInspector;
+
+    expect($inspector->dependentSummaries($ingress, $assignment))->toBe([]);
+
+    $inspector->removeOrbitOwnedDependents($ingress, $assignment);
+
+    expect(ProxyRoute::query()->whereKey($route->id)->exists())->toBeTrue();
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'workspace identity',
+]);

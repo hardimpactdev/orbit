@@ -355,7 +355,7 @@ class ProxyRouteQuery
 
     public function publicOwnerType(ProxyRoute $route): string
     {
-        return $this->ownerType($route);
+        return $this->registryOwnerType($route);
     }
 
     /**

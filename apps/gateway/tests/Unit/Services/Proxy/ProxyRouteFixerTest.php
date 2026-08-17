@@ -393,6 +393,71 @@ describe('ProxyRouteFixer', function (): void {
         'websocket malformed kind' => ['app-websocket', 'malformed kind'],
     ]);
 
+    it('does not repair invalid primary app ownership tuples', function (string $invalidity): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'wrong kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route->fresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'missing app',
+        'missing instance',
+        'conflicting app',
+        'wrong kind',
+        'workspace identity',
+    ]);
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()

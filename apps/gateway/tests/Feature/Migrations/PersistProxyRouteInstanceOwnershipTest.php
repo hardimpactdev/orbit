@@ -224,6 +224,72 @@ it('fails before schema mutation when a configured instance owner was deleted or
     });
 });
 
+it('fails before schema mutation when a configured ownership id is not a strict positive integer', function (
+    string $ownerType,
+    string $path,
+    mixed $value,
+): void {
+    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType, $path, $value): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+
+        $workspaceId = null;
+
+        if ($ownerType === 'workspace') {
+            insertProxyRouteOwnershipWorkspace(20, 10);
+            $workspaceId = 20;
+        }
+
+        $config = $path === 'config.instance_id'
+            ? ['instance_id' => $value]
+            : ['instance' => ['id' => $value]];
+
+        insertHistoricalProxyRoute(
+            100,
+            $ownerType === 'workspace' ? 'feature.docs.test' : 'docs.test',
+            $ownerType,
+            $ownerType === 'workspace' ? 'workspace' : 'app',
+            1,
+            $workspaceId,
+            $config,
+        );
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(RuntimeException::class, "configured ownership hint {$path} must be a positive integer")
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+})->with([
+    'app direct decimal' => ['app', 'config.instance_id', 10.5],
+    'app direct numeric string' => ['app', 'config.instance_id', '10'],
+    'app direct zero' => ['app', 'config.instance_id', 0],
+    'app direct negative' => ['app', 'config.instance_id', -10],
+    'app direct whitespace' => ['app', 'config.instance_id', ' 10 '],
+    'app direct junk' => ['app', 'config.instance_id', '10junk'],
+    'app direct non-numeric' => ['app', 'config.instance_id', 'invalid'],
+    'app nested decimal' => ['app', 'instance.id', 10.5],
+    'app nested numeric string' => ['app', 'instance.id', '10'],
+    'app nested zero' => ['app', 'instance.id', 0],
+    'app nested negative' => ['app', 'instance.id', -10],
+    'app nested whitespace' => ['app', 'instance.id', ' 10 '],
+    'app nested junk' => ['app', 'instance.id', '10junk'],
+    'app nested non-numeric' => ['app', 'instance.id', 'invalid'],
+    'workspace direct decimal' => ['workspace', 'config.instance_id', 10.5],
+    'workspace direct numeric string' => ['workspace', 'config.instance_id', '10'],
+    'workspace direct zero' => ['workspace', 'config.instance_id', 0],
+    'workspace direct negative' => ['workspace', 'config.instance_id', -10],
+    'workspace direct whitespace' => ['workspace', 'config.instance_id', ' 10 '],
+    'workspace direct junk' => ['workspace', 'config.instance_id', '10junk'],
+    'workspace direct non-numeric' => ['workspace', 'config.instance_id', 'invalid'],
+    'workspace nested decimal' => ['workspace', 'instance.id', 10.5],
+    'workspace nested numeric string' => ['workspace', 'instance.id', '10'],
+    'workspace nested zero' => ['workspace', 'instance.id', 0],
+    'workspace nested negative' => ['workspace', 'instance.id', -10],
+    'workspace nested whitespace' => ['workspace', 'instance.id', ' 10 '],
+    'workspace nested junk' => ['workspace', 'instance.id', '10junk'],
+    'workspace nested non-numeric' => ['workspace', 'instance.id', 'invalid'],
+]);
+
 it('fails when duplicate instance domains make legacy route ownership ambiguous', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();

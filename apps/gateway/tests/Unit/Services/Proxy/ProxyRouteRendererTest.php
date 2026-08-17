@@ -1275,6 +1275,50 @@ describe('ProxyRouteRenderer', function (): void {
         'kind mismatch' => ['workspace', 'proxy'],
     ]);
 
+    it('rejects invalid primary app ownership tuples before rendering', function (string $invalidity): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'wrong kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route->fresh()))
+            ->toThrow(RuntimeException::class, "Proxy route 'docs.test' has invalid app ownership.");
+    })->with([
+        'missing app',
+        'missing instance',
+        'conflicting app',
+        'wrong kind',
+        'workspace identity',
+    ]);
+
     it('rejects conflicting workspace compatibility App ownership', function (string $compatibilityOwner): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs']);

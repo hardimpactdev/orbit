@@ -20,24 +20,30 @@ These terms define the types of routes that the proxy family owns and manages.
   Instance `driver_config` as syntactically valid JSON before it adds or
   updates the `instance_id` schema. Malformed JSON stops migration with the
   affected route or Instance identity. Empty and null configuration values
-  keep their documented no-evidence behavior.
+  keep their documented no-evidence behavior. A present, non-null
+  `config.instance_id` or `config.instance.id` ownership hint must be a JSON
+  positive integer. Decimal values, numeric strings, zero, negative values,
+  whitespace, junk, and all other types stop migration before schema
+  mutation.
 - **Route owner:** The domain that owns route lifecycle. Persisted
   `owner_type` values are `app`, `app-analytics`, `app-websocket`, `workspace`,
   `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored
   app-route value `app` to the public owner `instance`, and maps the two binding
-  values to `analytics` and `websocket`. A stored `owner_type=instance` is not
-  valid route ownership vocabulary. Public instance binding rows use only the
-  complete `app-analytics` + `proxy` or `app-websocket` + `proxy` tuple. Both
-  tuples require a non-null App, a non-null Instance owned by that App, an
-  `app_id` equal to the Instance's `app_id`, and `workspace_id=null`. Query and
-  Doctor surfaces do not present an incomplete tuple as a valid analytics or
-  WebSocket owner. Render and repair paths reject it.
+  values to `analytics` and `websocket`, only when the complete ownership tuple
+  is valid. Invalid tuples retain their stored owner type in conflict, removal,
+  and registry metadata. A stored `owner_type=instance` is invalid. Direct rows
+  use only `app` + `app`, `app-analytics` + `proxy`, or `app-websocket` +
+  `proxy`. Each tuple requires one matching App and Instance, matching `app_id`,
+  and `workspace_id=null`. Query and Doctor do not present incomplete tuples as
+  valid owners. Render and repair reject them. Ingress cleanup ignores them.
 - **Route kind:** Route behavior at ingress. Persisted kinds are `app`,
   `workspace`, `internal`, `proxy`, and `redirect`. The registry maps a stored
   primary `app` route to public kind `instance`.
 - **App route:** Instance-owned primary route whose public owner and kind are
   `instance`. Its `owner.name` and `target.value` are the dotted instance
-  selector. Edited through app and instance commands.
+  selector. Its persisted tuple is `owner_type=app`, `kind=app`, one matching
+  App and Instance, and `workspace_id=null`. Edited through app and instance
+  commands.
 - **Workspace route:** Proxy route whose owner is a workspace and whose kind is
   `workspace`. Its route row stores the same Instance owner as its Workspace.
   Edited through workspace commands.
