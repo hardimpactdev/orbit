@@ -6,6 +6,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -35,6 +36,38 @@ function grantFirewallRuleListAccess(Node $caller, Node $servingNode): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function insertFirewallRuleListRow(int $nodeId, array $overrides = []): int
+{
+    $now = now();
+    $row = array_merge([
+        'node_id' => $nodeId,
+        'name' => 'vite',
+        'direction' => 'incoming',
+        'action' => 'allow',
+        'source' => 'any',
+        'destination' => null,
+        'port' => '443',
+        'protocol' => 'tcp',
+        'reason' => 'legacy list row',
+        'source_hash' => hash('sha256', 'legacy-list-row'),
+        'address_family' => 'v4',
+        'interface' => 'public',
+        'owner' => 'user',
+        'protected' => false,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ], $overrides);
+
+    if (! Schema::hasColumn('firewall_rules', 'protected')) {
+        unset($row['protected']);
+    }
+
+    return DB::table('firewall_rules')->insertGetId($row);
 }
 
 describe('FirewallRuleListController', function (): void {
@@ -134,5 +167,32 @@ describe('FirewallRuleListController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'firewall_rule:read');
+    });
+
+    it('serializes protected from ownership even when a stored boolean contradicts owner', function (): void {
+        $caller = createFirewallRuleListCallerNode();
+        $visibleNode = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
+        grantFirewallRuleListAccess($caller, $visibleNode);
+
+        insertFirewallRuleListRow($visibleNode->id, [
+            'name' => 'vite',
+            'owner' => 'system',
+            'protected' => false,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/firewall-rules',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.rules')
+            ->assertJsonPath('success.data.rules.0.owner', 'system')
+            ->assertJsonPath('success.data.rules.0.protected', true);
     });
 });

@@ -8,6 +8,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -41,6 +42,38 @@ function grantFirewallRuleMutationAccess(Node $caller, Node $servingNode): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function insertFirewallRuleMutationRow(int $nodeId, array $overrides = []): int
+{
+    $now = now();
+    $row = array_merge([
+        'node_id' => $nodeId,
+        'name' => 'local-vite',
+        'direction' => 'incoming',
+        'action' => 'allow',
+        'source' => '10.6.0.0/24',
+        'destination' => null,
+        'port' => '5173',
+        'protocol' => 'tcp',
+        'reason' => 'legacy row',
+        'source_hash' => hash('sha256', 'legacy-mutation-row'),
+        'address_family' => 'both',
+        'interface' => null,
+        'owner' => 'user',
+        'protected' => false,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ], $overrides);
+
+    if (! Schema::hasColumn('firewall_rules', 'protected')) {
+        unset($row['protected']);
+    }
+
+    return DB::table('firewall_rules')->insertGetId($row);
 }
 
 describe('FirewallRule mutation controllers', function (): void {
@@ -176,6 +209,107 @@ describe('FirewallRule mutation controllers', function (): void {
             ->assertJsonPath('error.code', 'firewall_rule.protected');
 
         expect(FirewallRule::query()->where('name', 'orbit-public-ssh-deny-v4')->exists())->toBeTrue();
+    });
+
+    it('lets callers mutate and delete user-owned rules even when a stored protected flag is true', function (): void {
+        $caller = createFirewallRuleMutationCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
+        grantFirewallRuleMutationAccess($caller, $node);
+        insertFirewallRuleMutationRow($node->id, [
+            'name' => 'local-vite',
+            'owner' => 'user',
+            'protected' => true,
+        ]);
+
+        $update = $this->call(
+            'POST',
+            '/api/firewall-rules',
+            [
+                'action' => 'allow',
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'source' => '10.6.0.0/24',
+                'port' => '5173',
+                'protocol' => 'tcp',
+                'reason' => 'updated note',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
+
+        $update
+            ->assertOk()
+            ->assertJsonPath('success.data.rule.owner', 'user')
+            ->assertJsonPath('success.data.rule.protected', false)
+            ->assertJsonPath('success.meta.action', 'converged');
+
+        $delete = $this->call(
+            'DELETE',
+            '/api/firewall-rules/local-vite?node=app-1&destructive_consent=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
+
+        $delete->assertOk();
+
+        expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeFalse();
+    });
+
+    it('rejects mutation and deletion of system-owned rules even when a stored protected flag is false', function (): void {
+        $caller = createFirewallRuleMutationCallerNode();
+        $gateway = createFirewallRuleMutationCallerNode([
+            'name' => 'gateway-caller',
+            'host' => '10.6.0.100',
+            'wireguard_address' => '10.6.0.100',
+        ], 'gateway');
+        $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
+        grantFirewallRuleMutationAccess($caller, $node);
+        insertFirewallRuleMutationRow($node->id, [
+            'name' => 'orbit-system-ssh',
+            'action' => 'deny',
+            'source' => 'any',
+            'port' => '22',
+            'owner' => 'system',
+            'protected' => false,
+        ]);
+
+        $update = $this->call(
+            'POST',
+            '/api/firewall-rules',
+            [
+                'action' => 'deny',
+                'name' => 'orbit-system-ssh',
+                'node' => 'app-1',
+                'source' => 'any',
+                'port' => '22',
+                'protocol' => 'tcp',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
+
+        $update
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'firewall_rule.protected');
+
+        $delete = $this->call(
+            'DELETE',
+            '/api/firewall-rules/orbit-system-ssh?node=app-1&destructive_consent=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => $gateway->wireguard_address],
+        );
+
+        $delete
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'firewall_rule.protected');
+
+        expect(FirewallRule::query()->where('name', 'orbit-system-ssh')->exists())->toBeTrue();
     });
 });
 

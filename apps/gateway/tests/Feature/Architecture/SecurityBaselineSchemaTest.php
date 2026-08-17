@@ -23,8 +23,10 @@ it('has firewall rule ownership and network-scope columns', function (): void {
         'address_family',
         'interface',
         'owner',
-        'protected',
-    ]))->toBeTrue();
+    ]))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('firewall_rules', 'protected'))
+        ->toBeFalse();
 });
 
 it('documents provisioning as a transient node status', function (): void {

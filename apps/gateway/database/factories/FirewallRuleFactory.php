@@ -36,7 +36,6 @@ class FirewallRuleFactory extends Factory
             'address_family' => 'v4',
             'interface' => null,
             'owner' => 'user',
-            'protected' => false,
         ];
     }
 }

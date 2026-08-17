@@ -50,24 +50,26 @@ class FirewallRule extends Model
         'address_family',
         'interface',
         'owner',
-        'protected',
     ];
-
-    #[\Override]
-    protected function casts(): array
-    {
-        return [
-            'protected' => 'bool',
-        ];
-    }
 
     #[\Override]
     protected static function booted(): void
     {
         static::saving(function (FirewallRule $rule): void {
             $rule->owner = $rule->owner ?: 'user';
-            $rule->protected = $rule->owner !== 'user';
         });
+    }
+
+    public function getProtectedAttribute(): bool
+    {
+        $owner = $this->owner ?: 'user';
+
+        return $owner !== 'user';
+    }
+
+    public function setProtectedAttribute(mixed $value): void
+    {
+        unset($this->attributes['protected']);
     }
 
     /**

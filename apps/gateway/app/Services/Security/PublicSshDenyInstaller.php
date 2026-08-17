@@ -46,7 +46,6 @@ final class PublicSshDenyInstaller implements SecurityInstaller
                 'address_family' => 'v4',
                 'interface' => 'wireguard',
                 'owner' => 'node-security',
-                'protected' => true,
             ],
         );
 
@@ -68,7 +67,6 @@ final class PublicSshDenyInstaller implements SecurityInstaller
                     'address_family' => $family,
                     'interface' => 'public',
                     'owner' => 'node-security',
-                    'protected' => true,
                 ],
             );
         }
