@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property string $singleton_key
  * @property string|null $gateway_url
  * @property string|null $gateway_wg_ip
  * @property string|null $ca_sha256
@@ -19,8 +21,19 @@ use Illuminate\Support\Carbon;
  */
 class LocalGatewaySettings extends Model
 {
+    public const string SINGLETON_KEY = 'default';
+
+    /**
+     * @var array<string, mixed>
+     */
+    #[\Override]
+    protected $attributes = [
+        'singleton_key' => self::SINGLETON_KEY,
+    ];
+
     #[\Override]
     protected $fillable = [
+        'singleton_key',
         'gateway_url',
         'gateway_wg_ip',
         'ca_sha256',
@@ -38,12 +51,21 @@ class LocalGatewaySettings extends Model
 
     public static function current(): self
     {
-        $record = self::query()->first();
+        try {
+            return self::query()
+                ->firstOrCreate(
+                    ['singleton_key' => self::SINGLETON_KEY],
+                );
+        } catch (UniqueConstraintViolationException $exception) {
+            $record = self::query()
+                ->where('singleton_key', self::SINGLETON_KEY)
+                ->first();
 
-        if ($record === null) {
-            $record = self::query()->create([]);
+            if ($record instanceof self) {
+                return $record;
+            }
+
+            throw $exception;
         }
-
-        return $record;
     }
 }

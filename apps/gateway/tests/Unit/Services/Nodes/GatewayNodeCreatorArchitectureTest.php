@@ -188,6 +188,15 @@ it('delegates workload request validation to a typed resolver', function (): voi
         ->toContain('WorkloadNodeCreationRequest');
 });
 
+it('reads local gateway settings through the canonical accessor', function (): void {
+    $source = (string) file_get_contents(dirname(__DIR__, 4).'/app/Services/Nodes/GatewayNodeCreator.php');
+
+    expect($source)
+        ->toContain('LocalGatewaySettings::current()')
+        ->and($source)
+        ->not->toContain('LocalGatewaySettings::query()');
+});
+
 it('delegates bootstrap resume lookup and readiness', function (): void {
     $services = dirname(__DIR__, 4).'/app/Services/Nodes';
     $creator = (string) file_get_contents($services.'/GatewayNodeCreator.php');
