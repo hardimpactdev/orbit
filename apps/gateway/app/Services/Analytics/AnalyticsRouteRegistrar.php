@@ -15,6 +15,7 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -54,7 +55,7 @@ class AnalyticsRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches($existingRoute, $intent, ['protocol'])
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
         ) {
             throw new RuntimeException(
                 "Analytics service route '".self::ServiceDomain."' conflicts with existing ownership.",
@@ -137,19 +138,7 @@ class AnalyticsRouteRegistrar
 
     public function ownsServiceRoute(ProxyRoute $route): bool
     {
-        $router = $this->routerNode();
-        $expected = new ProxyRoute([
-            'node_id' => $router->id,
-            'domain' => self::ServiceDomain,
-            'app_id' => null,
-            'workspace_id' => null,
-            'instance_id' => null,
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => ['protocol' => 'analytics'],
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['protocol']);
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
     }
 
     public function serviceRouteIntent(?Node $backend = null): ProxyRoute

@@ -84,15 +84,9 @@ function wsProbeActiveWebSocketNode(): Node
 
 it('ws router_route_orphaned when websocket.orbit route exists and no active websocket role remains', function (): void {
     $router = wsProbeRouter();
-    // No active websocket role assignment
-
-    ProxyRoute::factory()->create([
-        'domain' => WebSocketRouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['protocol' => 'websocket'],
-    ]);
+    $backend = wsProbeActiveWebSocketNode();
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+    $backend->roleAssignments()->where('role', 'websocket')->update(['status' => 'removing']);
 
     $probe = app(WebSocketProxyDoctorProbe::class);
     $drift = $probe->drift($router);
@@ -201,14 +195,9 @@ it('limits app-scoped public websocket drift to the selected app', function (): 
 
 it('ws restore router_route_orphaned removes the websocket.orbit service route row', function (): void {
     $router = wsProbeRouter();
-
-    ProxyRoute::factory()->create([
-        'domain' => WebSocketRouteRegistrar::ServiceDomain,
-        'node_id' => $router->id,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => ['protocol' => 'websocket'],
-    ]);
+    $backend = wsProbeActiveWebSocketNode();
+    app(WebSocketRouteRegistrar::class)->syncServiceRoute();
+    $backend->roleAssignments()->where('role', 'websocket')->update(['status' => 'removing']);
 
     $probe = app(WebSocketProxyDoctorProbe::class);
     $entry = new DriftEntry(

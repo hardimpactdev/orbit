@@ -139,11 +139,16 @@ final readonly class S3PublishAction
 
         $emitter->stepEvent('ensure_credentials', 'done', 'SeaweedFS credentials found');
 
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
+        $storedPublicHosts = $this->storedPublicHosts($config);
+        $publicHosts = $this->intendedPublicHosts($config, $host);
+        $alreadyPublished = in_array($host, $storedPublicHosts, true);
+
         // Step 4: Ensure private s3.orbit route.
         $emitter->stepEvent('ensure_private_route', 'running', 'Ensuring private s3.orbit service route');
 
         try {
-            $this->routeRegistrar->assertPublishAvailable($host);
+            $this->routeRegistrar->assertPublishAvailable($publicHosts);
         } catch (\RuntimeException $e) {
             $emitter->stepEvent('ensure_private_route', 'failed', $e->getMessage());
 
@@ -151,16 +156,9 @@ final readonly class S3PublishAction
         }
 
         // Determine whether the host was already published.
-        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
-        $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
-
-        /** @var list<string> $publicHosts */
-        $publicHosts = array_values(array_filter($publicHosts, is_string(...)));
-        $alreadyPublished = in_array($host, $publicHosts, true);
         $action = 'published';
 
         if (! $alreadyPublished) {
-            $publicHosts[] = $host;
             $seaweedfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
             $seaweedfs->save();
         }
@@ -334,8 +332,13 @@ final readonly class S3PublishAction
             );
         }
 
+        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
+        $storedPublicHosts = $this->storedPublicHosts($config);
+        $publicHosts = $this->intendedPublicHosts($config, $host);
+        $alreadyPublished = in_array($host, $storedPublicHosts, true);
+
         try {
-            $this->routeRegistrar->assertPublishAvailable($host);
+            $this->routeRegistrar->assertPublishAvailable($publicHosts);
         } catch (\RuntimeException $e) {
             return $this->error(
                 's3.publish_failed',
@@ -346,17 +349,10 @@ final readonly class S3PublishAction
         }
 
         // Determine whether the host was already published.
-        $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
-        $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
-
-        /** @var list<string> $publicHosts */
-        $publicHosts = array_values(array_filter($publicHosts, is_string(...)));
-        $alreadyPublished = in_array($host, $publicHosts, true);
         $action = $alreadyPublished ? 'published' : 'published';
 
         if (! $alreadyPublished) {
             // Record the host on the seaweedfs tool row.
-            $publicHosts[] = $host;
             $seaweedfs->config = array_merge($config, ['public_hosts' => $publicHosts]);
             $seaweedfs->save();
             $action = 'published';
@@ -439,6 +435,32 @@ final readonly class S3PublishAction
             ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $s3NodeIds)
             ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function intendedPublicHosts(array $config, string $host): array
+    {
+        $hosts = $this->storedPublicHosts($config);
+
+        if (! in_array($host, $hosts, true)) {
+            $hosts[] = $host;
+        }
+
+        return $hosts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function storedPublicHosts(array $config): array
+    {
+        $hosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
+
+        return array_values(array_filter($hosts, is_string(...)));
     }
 
     /**

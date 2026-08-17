@@ -156,6 +156,7 @@ it('does not overwrite malformed analytics service ownership', function (array $
 
     expect($route->fresh()?->getAttributes())->toBe($original);
 })->with([
+    'incomplete stable config' => [[]],
     'wrong kind' => [['kind' => 'redirect']],
     'wrong protocol' => [['config' => ['protocol' => 'websocket']]],
     'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
@@ -164,15 +165,30 @@ it('does not overwrite malformed analytics service ownership', function (array $
     'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
 ]);
 
-it('reports and removes an orphaned private analytics route', function (): void {
+it('does not remove incomplete analytics service ownership', function (): void {
     $router = analyticsProxyRouter();
-    ProxyRoute::factory()->create([
-        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+    $route = ProxyRoute::query()->create([
         'node_id' => $router->id,
+        'domain' => AnalyticsRouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
         'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => ['protocol' => 'analytics'],
+        'source_hash' => str_repeat('a', 64),
     ]);
+
+    app(AnalyticsRouteRegistrar::class)->removeServiceRoute();
+
+    expect($route->fresh())->not->toBeNull();
+});
+
+it('reports and removes an orphaned private analytics route', function (): void {
+    $router = analyticsProxyRouter();
+    $backend = analyticsProxyBackend();
+    app(AnalyticsRouteRegistrar::class)->syncServiceRoute($backend);
+    $backend->roleAssignments()->where('role', 'analytics')->update(['status' => 'removing']);
 
     $registrar = new class extends AnalyticsRouteRegistrar {
         public bool $removed = false;

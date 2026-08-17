@@ -10,11 +10,12 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
 
+/** @mago-expect lint:kan-defect */
 final readonly class S3RouteRegistrar
 {
     public const string ServiceDomain = 's3.orbit';
@@ -41,7 +42,7 @@ final readonly class S3RouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches($existingRoute, $intent, ['owner_name', 'protocol'])
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
         ) {
             throw new RuntimeException("S3 service route 's3.orbit' conflicts with existing ownership.");
         }
@@ -214,74 +215,42 @@ final readonly class S3RouteRegistrar
 
     public function ownsServiceRoute(ProxyRoute $route): bool
     {
-        $router = $this->routerNode();
-        $expected = new ProxyRoute([
-            'node_id' => $router->id,
-            'domain' => self::ServiceDomain,
-            'app_id' => null,
-            'workspace_id' => null,
-            'instance_id' => null,
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['owner_name', 'protocol']);
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
     }
 
     public function ownsPublicRoute(ProxyRoute $route, string $host): bool
     {
-        try {
-            $ingress = $this->ingressNode();
-            $router = $this->routerNode();
-            $config = $this->publicRouteConfig($router, $host);
-        } catch (RuntimeException) {
-            return false;
-        }
-        $expected = new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'app_id' => null,
-            'workspace_id' => null,
-            'instance_id' => null,
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches(
-            $route,
-            $expected,
-            array_keys($config),
-        );
+        return $route->domain === $host && app(NonInstanceProxyRouteOwnership::class)->matches($route);
     }
 
-    public function assertPublishAvailable(string $host): void
+    /**
+     * @param  list<string>  $hosts
+     */
+    public function assertPublishAvailable(array $hosts): void
     {
-        $serviceIntent = $this->serviceRouteIntent();
+        $this->serviceRouteIntent();
         $existingServiceRoute = ProxyRoute::query()->where('domain', self::ServiceDomain)->first();
 
         if (
             $existingServiceRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches(
-                $existingServiceRoute,
-                $serviceIntent,
-                ['owner_name', 'protocol'],
-            )
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingServiceRoute)
         ) {
             throw new RuntimeException("S3 service route 's3.orbit' conflicts with existing ownership.");
         }
 
         $ingress = $this->ingressNode();
         $router = $this->routerNode();
-        $this->publicRouteIntent($ingress, $router, $host);
-        $existingPublicRoute = ProxyRoute::query()->where('domain', $host)->first();
 
-        if (
-            $existingPublicRoute instanceof ProxyRoute
-            && ! $this->ownsPublicRoute($existingPublicRoute, $host)
-        ) {
-            throw new RuntimeException("S3 public route '{$host}' conflicts with existing ownership.");
+        foreach ($hosts as $host) {
+            $this->publicRouteIntent($ingress, $router, $host);
+            $existingPublicRoute = ProxyRoute::query()->where('domain', $host)->first();
+
+            if (
+                $existingPublicRoute instanceof ProxyRoute
+                && ! $this->ownsPublicRoute($existingPublicRoute, $host)
+            ) {
+                throw new RuntimeException("S3 public route '{$host}' conflicts with existing ownership.");
+            }
         }
     }
 

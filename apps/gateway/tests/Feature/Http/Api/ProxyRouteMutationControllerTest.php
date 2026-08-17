@@ -203,7 +203,7 @@ describe('ProxyRoute mutation API', function (): void {
         expect(ProxyRoute::query()->where('domain', 'feature.docs.test')->exists())->toBeTrue();
     });
 
-    it('force-removes an orphaned workspace-owned route and reports why it was safe', function (): void {
+    it('fails closed when a workspace-owned route has no workspace relation', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
@@ -226,13 +226,11 @@ describe('ProxyRoute mutation API', function (): void {
         ]);
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.route.domain', 'auth.craft-starterkit-react.test')
-            ->assertJsonPath('success.meta.removal_reason', 'orphan_owner')
-            ->assertJsonPath('success.meta.owner_type', 'workspace')
-            ->assertJsonPath('success.meta.backend_removed', true);
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'proxy.owned_route_denied')
+            ->assertJsonPath('error.meta.owner_type', 'workspace');
 
-        expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeFalse();
+        expect(ProxyRoute::query()->where('domain', 'auth.craft-starterkit-react.test')->exists())->toBeTrue();
     });
 
     it('force-removes an orphaned tool-owned route when the NodeTool is gone', function (): void {

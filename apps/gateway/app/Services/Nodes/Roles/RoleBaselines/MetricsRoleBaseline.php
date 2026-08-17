@@ -30,7 +30,7 @@ use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeServiceMetadata;
 use App\Services\Processes\ProcessServiceCatalog;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolsFixer;
@@ -796,7 +796,7 @@ class MetricsRoleBaseline implements RoleBaseline
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches($existingRoute, $intent, ['owner_name', 'protocol'])
+            && ! app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($existingRoute)
         ) {
             throw new RuntimeException("Metrics service route 'metrics.orbit' conflicts with existing ownership.");
         }
@@ -820,29 +820,7 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private function ownsMetricsRoute(ProxyRoute $route): bool
     {
-        /** @var Node|null $router */
-        $router = $this
-            ->nodeRoleAssignments()
-            ->activeRouterNodeQuery()
-            ->orderBy('id')
-            ->first();
-
-        if (! $router instanceof Node) {
-            return false;
-        }
-
-        $expected = new ProxyRoute([
-            'node_id' => $router->id,
-            'domain' => self::ServiceDomain,
-            'app_id' => null,
-            'workspace_id' => null,
-            'instance_id' => null,
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => MetricsServiceRoute::config(),
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['owner_name', 'protocol']);
+        return app(NonInstanceProxyRouteOwnership::class)->matchesStableServiceFamily($route);
     }
 
     /**

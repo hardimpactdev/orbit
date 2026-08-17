@@ -264,6 +264,7 @@ it('does not overwrite malformed websocket service ownership', function (array $
 
     expect($route->fresh()?->getAttributes())->toBe($original);
 })->with([
+    'incomplete stable config' => [[]],
     'wrong kind' => [['kind' => 'redirect']],
     'wrong protocol' => [['config' => ['protocol' => 'analytics']]],
     'wrong node identity' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
@@ -271,6 +272,30 @@ it('does not overwrite malformed websocket service ownership', function (array $
     'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
     'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
 ]);
+
+it('does not remove incomplete websocket service ownership', function (): void {
+    $router = Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => WebSocketRouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['protocol' => 'websocket'],
+        'source_hash' => str_repeat('a', 64),
+    ]);
+
+    app(WebSocketRouteRegistrar::class)->removeServiceRoute();
+
+    expect($route->fresh())->not->toBeNull();
+});
 
 it('requires an active router node before syncing the service route', function (): void {
     Node::factory()

@@ -7,11 +7,9 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
-use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -303,17 +301,13 @@ class ProxyRouteIntent
     }
 
     /**
-     * Owner missing proof mirrors proxy doctor `proxy.owner_invalid` for
-     * FK-backed owners. Non-FK owners (gateway, tool, s3, router) cannot be
-     * proven missing here and stay denied.
+     * An incomplete FK-backed tuple cannot prove which owner lifecycle may
+     * remove it. Tool ownership is removable only when its complete stable
+     * tuple identifies an absent tool on the same node.
      */
     private function hasMissingOwner(ProxyRoute $route): bool
     {
-        $route->loadMissing(['instance', 'workspace']);
-
         return match ($route->owner_type) {
-            'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance,
-            'workspace' => ! $route->workspace instanceof Workspace,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };
@@ -329,11 +323,7 @@ class ProxyRouteIntent
         $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
 
         if (
-            ! $route->node instanceof Node
-            || $route->app_id !== null
-            || $route->workspace_id !== null
-            || $route->instance_id !== null
-            || $route->kind !== 'proxy'
+            ! app(NonInstanceProxyRouteOwnership::class)->matchesToolOrphan($route)
             || $ownerName === null
             || $ownerName === ''
         ) {
@@ -341,6 +331,7 @@ class ProxyRouteIntent
         }
 
         return ! NodeTool::query()
+            ->where('node_id', $route->node_id)
             ->where('name', $ownerName)
             ->where('expected_state', 'installed')
             ->exists();
@@ -430,14 +421,7 @@ class ProxyRouteIntent
 
     private function hasValidCustomOwnership(ProxyRoute $route): bool
     {
-        return (
-            $route->node instanceof Node
-            && $route->app_id === null
-            && $route->workspace_id === null
-            && $route->instance_id === null
-            && $route->owner_type === 'custom'
-            && in_array($route->kind, ['proxy', 'redirect'], true)
-        );
+        return app(NonInstanceProxyRouteOwnership::class)->matches($route);
     }
 
     /**

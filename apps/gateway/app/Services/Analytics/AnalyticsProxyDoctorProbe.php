@@ -11,7 +11,6 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Doctor\DoctorRestoreActionId;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -86,7 +85,7 @@ final readonly class AnalyticsProxyDoctorProbe
             )];
         }
 
-        if (! ProxyRouteOwnershipCompatibility::matches($route, $intent, ['protocol'])) {
+        if (! $this->routeRegistrar->ownsServiceRoute($route)) {
             return [new DriftEntry(
                 family: 'proxy',
                 key: self::RouterRouteKey,
@@ -189,18 +188,7 @@ final readonly class AnalyticsProxyDoctorProbe
 
     private function hasServiceOwnership(ProxyRoute $route, Node $node): bool
     {
-        $expected = new ProxyRoute([
-            'node_id' => $node->id,
-            'domain' => AnalyticsRouteRegistrar::ServiceDomain,
-            'app_id' => null,
-            'workspace_id' => null,
-            'instance_id' => null,
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => ['protocol' => 'analytics'],
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches($route, $expected, ['protocol']);
+        return $route->node_id === $node->id && $this->routeRegistrar->ownsServiceRoute($route);
     }
 
     private function routeMatchesIntent(ProxyRoute $route, ProxyRoute $intent): bool

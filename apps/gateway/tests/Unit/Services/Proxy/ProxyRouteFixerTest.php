@@ -20,6 +20,7 @@ use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -767,6 +768,11 @@ describe('ProxyRouteFixer', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.2')->spec()],
         ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $router->id,
+            'role' => 'metrics',
+            'status' => 'active',
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'metrics.orbit',
@@ -1116,37 +1122,20 @@ describe('ProxyRouteFixer', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => ['name' => 'orbit-e2e-gateway-orbit-caddy']],
         ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $intent = app(WebSocketRouteRegistrar::class)->serviceRouteIntent();
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
             'owner_type' => 'router',
             'kind' => 'proxy',
             'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'protocol' => 'websocket',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'app-dev-1',
-                        'url' => 'https://10.6.0.44:8080',
-                    ],
-                ],
-                'router_backend_tls' => [
-                    'trusted_by_gateway_ca' => true,
-                    'ca_path' => '/etc/orbit/ca/root.crt',
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
-                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
-                ],
-            ],
+            'config' => $intent->config,
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         app()->instance(RemoteShell::class, $shell);

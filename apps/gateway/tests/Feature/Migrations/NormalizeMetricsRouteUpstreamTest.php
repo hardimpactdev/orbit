@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -16,6 +17,10 @@ it('normalizes legacy metrics route upstream intent for Caddy host access', func
     expect(is_file($migrationPath))->toBeTrue();
 
     $node = Node::factory()->router()->create(['name' => 'gateway']);
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'metrics',
+        'status' => 'active',
+    ]);
     $routeId = DB::table('proxy_routes')->insertGetId([
         'node_id' => $node->id,
         'app_id' => null,

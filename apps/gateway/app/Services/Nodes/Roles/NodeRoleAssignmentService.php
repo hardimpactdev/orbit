@@ -213,14 +213,14 @@ class NodeRoleAssignmentService
                 $this->analyticsRouteRegistrar->removeServiceRoute();
             }
 
+            if ($role === NodeRoleName::S3->value && $this->hasActiveRouter()) {
+                $this->s3RouteRegistrar->syncServiceRouteAfterBackendChange();
+            }
+
             $this->completeRemoval($node, $assignment, $dependentPolicy, $role);
 
             if ($this->roleChangesWildcardDns($role)) {
                 $this->dnsmasqReconciler->reconcileNodeRecords();
-            }
-
-            if ($role === NodeRoleName::S3->value && $this->hasActiveRouter()) {
-                $this->s3RouteRegistrar->syncServiceRouteAfterBackendChange();
             }
         } catch (Throwable $throwable) {
             NodeRoleAssignment::query()

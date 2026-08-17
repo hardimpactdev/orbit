@@ -235,7 +235,7 @@ final readonly class S3ProxyDoctorProbe
 
         if (
             $route instanceof ProxyRoute
-            && ! ProxyRouteOwnershipCompatibility::matches($route, $intent, ['owner_name', 'protocol'])
+            && ! $this->routeRegistrar->ownsServiceRoute($route)
         ) {
             return [new DriftEntry(
                 family: 'proxy',

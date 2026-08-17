@@ -213,6 +213,54 @@ it('does not clear malformed ownership when syncing the service route', function
         ->toBe($instance->id);
 })->group('service');
 
+it('does not rewrite incomplete s3 service ownership', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
+        'source_hash' => str_repeat('a', 64),
+    ]);
+
+    expect(fn () => app(S3RouteRegistrar::class)->syncServiceRoute())
+        ->toThrow(RuntimeException::class, "S3 service route 's3.orbit' conflicts with existing ownership.");
+
+    expect($route->fresh()?->config)->toBe(['owner_name' => 'seaweedfs', 'protocol' => 's3']);
+})->group('service');
+
+it('does not delete incomplete s3 service ownership after a backend change', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+    $route = ProxyRoute::query()->create([
+        'node_id' => $router->id,
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3'],
+        'source_hash' => str_repeat('a', 64),
+    ]);
+
+    app(S3RouteRegistrar::class)->syncServiceRouteAfterBackendChange();
+
+    expect($route->fresh())->not->toBeNull();
+})->group('service');
+
 it('does not overwrite a custom route at the reserved s3 service domain', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');

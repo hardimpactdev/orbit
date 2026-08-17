@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteFixer;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -94,8 +95,12 @@ final readonly class StaleToolIntentRemover
 
         foreach ($routes as $route) {
             $config = is_array($route->config) ? $route->config : [];
+            $ownership = app(NonInstanceProxyRouteOwnership::class);
 
-            if (($config['owner_name'] ?? null) !== $tool) {
+            if (
+                ($config['owner_name'] ?? null) !== $tool
+                || ! $ownership->matchesToolOrphan($route)
+            ) {
                 continue;
             }
 

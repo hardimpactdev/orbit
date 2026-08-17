@@ -11,6 +11,7 @@ final readonly class ApplicationLogProxyRouteOwner
 {
     public function __construct(
         private ApplicationLogProxyWorkspaceOwner $workspace = new ApplicationLogProxyWorkspaceOwner,
+        private ApplicationLogInstanceSelector $instanceSelector = new ApplicationLogInstanceSelector,
     ) {}
 
     /**
@@ -39,12 +40,12 @@ final readonly class ApplicationLogProxyRouteOwner
             return $this->workspace->resolve($host, $ownerName, $route);
         }
 
-        if (
-            $ownerType === 'instance'
-            && is_string($ownerName)
-            && $ownerName !== ''
-        ) {
-            return $this->instanceTarget($ownerName);
+        if ($ownerType === 'instance' && is_string($ownerName)) {
+            $selector = $this->instanceSelector->parse($ownerName);
+
+            if ($selector['ok']) {
+                return $this->instanceTarget($selector['selector']);
+            }
         }
 
         return [

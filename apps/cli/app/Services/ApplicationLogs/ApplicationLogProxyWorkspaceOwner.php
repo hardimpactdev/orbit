@@ -9,6 +9,10 @@ namespace App\Services\ApplicationLogs;
  */
 final readonly class ApplicationLogProxyWorkspaceOwner
 {
+    public function __construct(
+        private ApplicationLogInstanceSelector $instanceSelector = new ApplicationLogInstanceSelector,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $route
      * @return array{
@@ -26,9 +30,10 @@ final readonly class ApplicationLogProxyWorkspaceOwner
     public function resolve(string $host, string $workspace, array $route): array
     {
         // Parent app.instance is route-entity authority (ProxyRouteQuery FK enrichment).
-        $instance = $route['instance'] ?? null;
+        $instance = is_string($route['instance'] ?? null) ? $route['instance'] : null;
+        $selector = $instance !== null ? $this->instanceSelector->parse($instance) : ['ok' => false];
 
-        if (! is_string($instance) || trim($instance) === '' || ! str_contains($instance, '.')) {
+        if (! $selector['ok']) {
             return [
                 'ok' => false,
                 'field' => 'instance',
@@ -41,7 +46,7 @@ final readonly class ApplicationLogProxyWorkspaceOwner
             'ok' => true,
             'type' => 'workspace',
             'workspace' => $workspace,
-            'instance' => trim($instance),
+            'instance' => $selector['selector'],
         ];
     }
 }

@@ -281,6 +281,71 @@ describe('ToolRemoveController', function (): void {
             ->toBeTrue();
     });
 
+    it('does not remove a Hermes route with invalid stable ownership', function (array $routeAttributes): void {
+        $caller = createToolRemoveApiCallerNode();
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $caller->id,
+            'role' => 'gateway',
+            'status' => 'active',
+        ]);
+        $node = Node::factory()->create([
+            'name' => 'agent-hermes-remove',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'tld' => 'agent',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'agent',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'hermes',
+            'expected_state' => 'installed',
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.agent',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
+            ],
+            ...$routeAttributes,
+        ]);
+        app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => $node->name,
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            tool_remove_api_server_headers(),
+        );
+
+        $response->assertOk();
+
+        expect($route->fresh())->not->toBeNull();
+    })->with([
+        'wrong stable domain' => [['domain' => 'other.agent']],
+        'wrong stable upstream' => [[
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:9999',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:9999'],
+            ],
+        ]],
+    ]);
+
     it('does not remove a same-name process owned by a different tool', function (): void {
         $caller = createToolRemoveApiCallerNode();
         NodeRoleAssignment::factory()->create([
@@ -342,11 +407,12 @@ describe('ToolRemoveController', function (): void {
             'name' => 'nmbp',
             'platform' => 'macos_26-5-1',
             'status' => 'active',
+            'tld' => 'nmbp',
         ]);
         grantToolRemoveApiAccess($caller, $node);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
-            'domain' => 'hermes.nmbp.test',
+            'domain' => 'hermes.nmbp',
             'owner_type' => 'tool',
             'kind' => 'proxy',
             'config' => [
@@ -385,7 +451,7 @@ describe('ToolRemoveController', function (): void {
             ->toBeNull()
             ->and($shell->proxyRemoveSiteObservations)
             ->toBe([[
-                'domain' => 'hermes.nmbp.test',
+                'domain' => 'hermes.nmbp',
                 'route_present' => true,
             ]])
             ->and(collect($shell->scripts)

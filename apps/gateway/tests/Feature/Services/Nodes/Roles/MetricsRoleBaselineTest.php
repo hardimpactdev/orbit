@@ -296,6 +296,7 @@ it('does not rewrite malformed metrics service route ownership when the baseline
 
     expect($route->fresh()->getAttributes())->toBe($original);
 })->with([
+    'incomplete stable config' => [['config' => ['owner_name' => 'grafana', 'protocol' => 'http']]],
     'stray app identity' => [fn (): array => ['app_id' => \App\Models\App::factory()->create()->id]],
     'stray workspace identity' => [fn (): array => ['workspace_id' => \App\Models\Workspace::factory()->create()->id]],
     'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
@@ -303,6 +304,46 @@ it('does not rewrite malformed metrics service route ownership when the baseline
     'wrong kind' => [['kind' => 'redirect']],
     'wrong owner identity' => [['config' => ['owner_name' => 'other', 'protocol' => 'http']]],
 ]);
+
+it('does not remove incomplete metrics service ownership', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.1',
+            'status' => NodeStatus::Active,
+            'managed' => true,
+        ]);
+    NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'router',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    $otherMetricsNode = Node::factory()->create(['status' => NodeStatus::Active]);
+    NodeRoleAssignment::factory()->for($otherMetricsNode)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Active,
+    ]);
+    $route = ProxyRoute::query()->create([
+        'node_id' => $gateway->id,
+        'domain' => 'metrics.orbit',
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'config' => ['owner_name' => 'grafana', 'protocol' => 'http'],
+        'source_hash' => str_repeat('a', 64),
+    ]);
+
+    app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
+
+    expect($route->fresh())->not->toBeNull();
+});
 
 it('adds the metrics role through the role assignment service', function (): void {
     $node = Node::factory()->create([

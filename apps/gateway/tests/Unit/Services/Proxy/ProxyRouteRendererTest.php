@@ -8,9 +8,13 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\S3\S3RouteRegistrar;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -205,7 +209,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
 
         new ProxyRouteRenderer()->render($route);
-    })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
+    })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has invalid custom ownership.");
 
     it('rejects redirect codes outside the 3xx range', function (): void {
         $node = createTestAppHostNode();
@@ -218,7 +222,7 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
 
         new ProxyRouteRenderer()->render($route);
-    })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
+    })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has invalid custom ownership.");
 
     it('renders ingress routes through the router upstream with public ACME TLS and forwarded headers', function (): void {
         $ingress = Node::factory()->create(['name' => 'edge-1']);
@@ -371,37 +375,13 @@ describe('ProxyRouteRenderer', function (): void {
                 'name' => 'gateway-1',
                 'wireguard_address' => '10.6.0.2',
             ]);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'websocket.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'websocket',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'app-dev-1',
-                        'url' => 'https://10.6.0.44:8080',
-                    ],
-                ],
-                'router_backend_tls' => [
-                    'trusted_by_gateway_ca' => true,
-                    'ca_path' => '/etc/orbit/ca/root.crt',
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                    'cert_path' => '/etc/orbit/certs/websocket.orbit.crt',
-                    'key_path' => '/etc/orbit/certs/websocket.orbit.key',
-                ],
-            ],
-        ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $route = app(WebSocketRouteRegistrar::class)->serviceRouteIntent();
 
         $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
@@ -702,34 +682,19 @@ describe('ProxyRouteRenderer', function (): void {
     ])->throws(RuntimeException::class);
 
     it('renders the private analytics service route without tracking-only path restrictions', function (): void {
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 'analytics.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'analytics',
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => 'gateway-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    [
-                        'node_id' => 42,
-                        'node' => 'analytics-1',
-                        'url' => 'http://10.6.0.50:8000',
-                    ],
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                    'cert_path' => '/etc/orbit/certs/analytics.orbit.crt',
-                    'key_path' => '/etc/orbit/certs/analytics.orbit.key',
-                ],
-            ],
-        ]);
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backend = Node::factory()
+            ->withActiveRole('analytics')
+            ->create([
+                'name' => 'analytics-1',
+                'wireguard_address' => '10.6.0.50',
+            ]);
+        $route = app(AnalyticsRouteRegistrar::class)->serviceRouteIntent($backend);
 
         $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
@@ -1692,24 +1657,15 @@ describe('ProxyRouteRenderer', function (): void {
 
 describe('s3 upload-safe proxy rendering', function (): void {
     it('renders the private s3.orbit service route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'owner_name' => 'seaweedfs',
-                'protocol' => 's3',
-                'target' => [
-                    'type' => 'upstream',
-                    'value' => 'http://storage-1.s3.orbit:8333',
-                ],
-                'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-                ],
-            ],
+        Node::factory()->router()->create(['name' => 'gateway-1']);
+        $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+        NodeTool::factory()->create([
+            'node_id' => $storage->id,
+            'name' => 'seaweedfs',
+            'expected_state' => 'installed',
+            'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
         ]);
+        $route = app(S3RouteRegistrar::class)->serviceRouteIntent();
 
         $content = new ProxyRouteRenderer()->render($route);
 
@@ -1740,30 +1696,14 @@ describe('s3 upload-safe proxy rendering', function (): void {
                 'wireguard_address' => '10.6.0.1',
             ]);
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $ingress->id,
-            'domain' => 's3.example.com',
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => [
-                'placement' => 'ingress',
-                'owner_name' => 'seaweedfs',
-                'protocol' => 's3',
-                'target' => [
-                    'type' => 'upstream',
-                    'value' => 'https://s3.orbit',
-                ],
-                'router_upstream' => [
-                    'node_id' => $router->id,
-                    'node' => $router->name,
-                    'url' => 'http://10.6.0.1:80',
-                ],
-                'tls' => [
-                    'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
-                    'key_path' => '/etc/orbit/certs/s3.example.com.key',
-                ],
-            ],
+        $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+        NodeTool::factory()->create([
+            'node_id' => $storage->id,
+            'name' => 'seaweedfs',
+            'expected_state' => 'installed',
+            'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
         ]);
+        $route = app(S3RouteRegistrar::class)->publicRouteIntent($ingress, $router, 's3.example.com');
 
         $content = new ProxyRouteRenderer()->renderIngress($route);
 
@@ -1790,21 +1730,15 @@ describe('s3 upload-safe proxy rendering', function (): void {
     });
 
     it('s3 service route source hash is stable and reflects upload-safe streaming directives', function (): void {
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $router->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'owner_name' => 'seaweedfs',
-                'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
-                'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-                ],
-            ],
+        Node::factory()->router()->create(['name' => 'gateway-1']);
+        $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+        NodeTool::factory()->create([
+            'node_id' => $storage->id,
+            'name' => 'seaweedfs',
+            'expected_state' => 'installed',
+            'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
         ]);
+        $route = app(S3RouteRegistrar::class)->serviceRouteIntent();
 
         $renderer = new ProxyRouteRenderer;
         $content = $renderer->render($route);

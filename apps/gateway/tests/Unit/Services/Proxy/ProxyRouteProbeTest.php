@@ -21,7 +21,9 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\Tools\ToolScriptDispatcher;
+use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -63,6 +65,40 @@ function assignProxyProbeRole(Node $node, string $role): void
         'status' => 'active',
         'settings' => [],
     ]);
+}
+
+function persistProxyProbeIntent(ProxyRoute $intent): ProxyRoute
+{
+    return ProxyRoute::query()->create([
+        'node_id' => $intent->node_id,
+        'domain' => $intent->domain,
+        'app_id' => $intent->app_id,
+        'workspace_id' => $intent->workspace_id,
+        'instance_id' => $intent->instance_id,
+        'owner_type' => $intent->owner_type,
+        'kind' => $intent->kind,
+        'config' => $intent->config,
+        'source_hash' => $intent->source_hash,
+    ]);
+}
+
+function proxyProbeS3ServiceRoute(): ProxyRoute
+{
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+    $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'expected_state' => 'installed',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+
+    return persistProxyProbeIntent(app(S3RouteRegistrar::class)->serviceRouteIntent());
 }
 
 describe('ProxyRouteProbe interface', function (): void {
@@ -377,23 +413,19 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('passes websocket service routes on active router role assignments', function (): void {
-        $node = Node::factory()->router()->create(['status' => 'active']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'websocket.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'websocket',
-                'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'app-dev-1', 'url' => 'https://10.6.0.44:8080'],
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                ],
-            ],
-        ]);
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $route = persistProxyProbeIntent(app(WebSocketRouteRegistrar::class)->serviceRouteIntent());
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
@@ -401,29 +433,19 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('passes observed websocket service route artifacts rendered with long lived upgrade settings', function (): void {
-        $node = Node::factory()->router()->create(['status' => 'active']);
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'websocket.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => [
-                'protocol' => 'websocket',
-                'router_upstream' => [
-                    'node_id' => $node->id,
-                    'node' => 'router-1',
-                    'url' => 'http://10.6.0.2:80',
-                ],
-                'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'app-dev-1', 'url' => 'https://10.6.0.44:8080'],
-                ],
-                'tls' => [
-                    'managed_by' => 'internal',
-                    'trusted_by_gateway_ca' => true,
-                ],
-            ],
-        ]);
-        $route->forceFill(['source_hash' => new ProxyRouteRenderer()->sourceHash($route)])->save();
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'app-dev-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $route = persistProxyProbeIntent(app(WebSocketRouteRegistrar::class)->serviceRouteIntent());
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'websocket.orbit' => [
@@ -2713,23 +2735,8 @@ describe('orbit-caddy container readiness', function (): void {
 
 describe('s3 upload-safe proxy route probe', function (): void {
     it('passes s3 service route when the observed file hash matches the upload-safe rendered source hash', function (): void {
-        $node = Node::factory()->router()->create();
         $renderer = new ProxyRouteRenderer;
-        $config = [
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
-            'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]);
+        $route = proxyProbeS3ServiceRoute();
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
@@ -2751,23 +2758,8 @@ describe('s3 upload-safe proxy route probe', function (): void {
     });
 
     it('detects drift when the s3 service route on disk lacks upload-safe streaming directives', function (): void {
-        $node = Node::factory()->router()->create();
         $renderer = new ProxyRouteRenderer;
-        $config = [
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
-            'upstreams' => [
-                ['scheme' => 'http', 'host' => 'storage-1.s3.orbit', 'port' => 8333],
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 's3.orbit',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-            'config' => $config,
-        ]);
+        $route = proxyProbeS3ServiceRoute();
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
@@ -2800,29 +2792,17 @@ describe('s3 upload-safe proxy route probe', function (): void {
                 'wireguard_address' => '10.6.0.1',
             ]);
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
-        $renderer = new ProxyRouteRenderer;
-        $config = [
-            'placement' => 'ingress',
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-            'router_upstream' => [
-                'node_id' => $router->id,
-                'node' => $router->name,
-                'url' => 'http://10.6.0.1:80',
-            ],
-            'tls' => [
-                'cert_path' => '/etc/orbit/certs/s3.example.com.crt',
-                'key_path' => '/etc/orbit/certs/s3.example.com.key',
-            ],
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'domain' => 's3.example.com',
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => $config,
+        $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+        NodeTool::factory()->create([
+            'node_id' => $storage->id,
+            'name' => 'seaweedfs',
+            'expected_state' => 'installed',
+            'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
         ]);
+        $renderer = new ProxyRouteRenderer;
+        $route = persistProxyProbeIntent(
+            app(S3RouteRegistrar::class)->publicRouteIntent($edge, $router, 's3.example.com'),
+        );
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 

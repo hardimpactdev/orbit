@@ -330,11 +330,15 @@ final readonly class WebSocketProxyDoctorProbe
             ];
         }
 
-        $ownershipKeys = $intent->owner_type === 'app-websocket'
-            ? ['placement', 'ingress_node_id', 'protocol']
-            : ['protocol'];
+        $ownershipMatches = $intent->owner_type === 'router'
+            ? $this->routeRegistrar->ownsServiceRoute($route)
+            : ProxyRouteOwnershipCompatibility::matches(
+                $route,
+                $intent,
+                ['placement', 'ingress_node_id', 'protocol'],
+            );
 
-        if (! ProxyRouteOwnershipCompatibility::matches($route, $intent, $ownershipKeys)) {
+        if (! $ownershipMatches) {
             return [
                 new DriftEntry(
                     family: 'proxy',
