@@ -13,17 +13,38 @@ return new class extends Migration {
     {
         if (! Schema::hasColumn('local_gateway_settings', 'singleton_key')) {
             Schema::table('local_gateway_settings', static function (Blueprint $table): void {
-                $table->string('singleton_key')->default(LocalGatewaySettings::SINGLETON_KEY);
+                $table->string('singleton_key')->nullable()->default(LocalGatewaySettings::SINGLETON_KEY);
             });
         }
 
         $this->consolidateToCanonicalRow();
+
+        if ($this->singletonKeyIsNullable()) {
+            Schema::table('local_gateway_settings', static function (Blueprint $table): void {
+                $table
+                    ->string('singleton_key')
+                    ->default(LocalGatewaySettings::SINGLETON_KEY)
+                    ->nullable(false)
+                    ->change();
+            });
+        }
 
         if (! Schema::hasIndex('local_gateway_settings', ['singleton_key'], 'unique')) {
             Schema::table('local_gateway_settings', static function (Blueprint $table): void {
                 $table->unique('singleton_key', 'local_gateway_settings_singleton_key_unique');
             });
         }
+    }
+
+    private function singletonKeyIsNullable(): bool
+    {
+        foreach (DB::select('PRAGMA table_info(local_gateway_settings)') as $column) {
+            if ($column->name === 'singleton_key') {
+                return (int) $column->notnull === 0;
+            }
+        }
+
+        return false;
     }
 
     private function consolidateToCanonicalRow(): void

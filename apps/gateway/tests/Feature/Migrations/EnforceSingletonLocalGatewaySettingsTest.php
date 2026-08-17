@@ -46,6 +46,41 @@ function run_enforce_singleton_local_gateway_settings_migration(): void
     $migration->up();
 }
 
+function local_gateway_settings_singleton_key_pragma(): ?object
+{
+    foreach (DB::select('PRAGMA table_info(local_gateway_settings)') as $column) {
+        if ($column->name === 'singleton_key') {
+            return $column;
+        }
+    }
+
+    return null;
+}
+
+it('adds singleton_key as nullable with a default, then makes it not null and unique', function (): void {
+    $source = (string) file_get_contents(enforce_singleton_local_gateway_settings_migration_path());
+
+    expect($source)
+        ->toContain('->nullable()')
+        ->toContain('nullable(false)')
+        ->toContain("->unique('singleton_key'");
+
+    restore_pre_singleton_local_gateway_settings_schema();
+    run_enforce_singleton_local_gateway_settings_migration();
+
+    $column = local_gateway_settings_singleton_key_pragma();
+
+    expect($column)
+        ->not
+        ->toBeNull()
+        ->and((int) $column?->notnull)
+        ->toBe(1)
+        ->and((string) $column?->dflt_value)
+        ->toContain(LocalGatewaySettings::SINGLETON_KEY)
+        ->and(Schema::hasIndex('local_gateway_settings', ['singleton_key'], 'unique'))
+        ->toBeTrue();
+});
+
 it('is a no-op when the table has zero rows', function (): void {
     restore_pre_singleton_local_gateway_settings_schema();
 
