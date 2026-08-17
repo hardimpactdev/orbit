@@ -224,10 +224,12 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     });
 
     it('derives agent tool routes through proxy-owned intent with a container-reachable upstream', function (): void {
-        $node = Node::factory()->create([
-            'status' => 'active',
-            'tld' => 'agent',
-        ]);
+        $node = Node::factory()
+            ->agent()
+            ->create([
+                'status' => 'active',
+                'tld' => 'agent',
+            ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'hermes',
@@ -247,10 +249,12 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
     });
 
     it('does not claim malformed agent tool route ownership', function (array $attributes): void {
-        $node = Node::factory()->create([
-            'status' => 'active',
-            'tld' => 'agent',
-        ]);
+        $node = Node::factory()
+            ->agent()
+            ->create([
+                'status' => 'active',
+                'tld' => 'agent',
+            ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'hermes',
@@ -314,16 +318,15 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
 
     it('rewrites pre-existing loopback custom proxy routes when rendering them through orbit-caddy', function (): void {
         $renderer = new ProxyRouteRenderer;
-        $node = Node::factory()->create(['name' => 'gateway-1']);
+        $node = createTestAppHostNode(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'tool.docs.test',
-            'owner_type' => 'tool',
+            'owner_type' => 'custom',
             'kind' => 'proxy',
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:8080'],
                 'upstream' => 'http://127.0.0.1:8080',
-                'owner_name' => 'agent-ide',
             ],
         ]);
 
