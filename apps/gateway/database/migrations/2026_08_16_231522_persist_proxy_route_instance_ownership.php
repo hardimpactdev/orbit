@@ -271,7 +271,7 @@ return new class extends Migration {
                 ->all();
 
             if ($matches === []) {
-                throw $this->ownershipException($route, "configured identity {$label}='{$value}' matches no Instance");
+                continue;
             }
 
             if (count($matches) > 1) {

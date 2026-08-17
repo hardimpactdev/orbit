@@ -553,6 +553,86 @@ it('preserves public binding instance ownership through an up down up cycle', fu
     'websocket route' => 'app-websocket',
 ]);
 
+it('migrates app and workspace routes when a cached instance domain is the route host of a domainless dev instance', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        DB::table('apps')->insert(['id' => 1, 'name' => 'proofapp', 'runtime' => 'php']);
+        DB::table('instances')->insert([
+            'id' => 2,
+            'app_id' => 1,
+            'name' => 'development',
+            'driver' => 'orbit',
+            'driver_config' => json_encode([
+                'type' => 'orbit_instance_driver_config',
+                'data' => [
+                    'node_id' => 1,
+                    'node' => 'app-dev-1',
+                    'path' => '/srv/proofapp-development',
+                    'document_root' => 'public',
+                    'domain' => null,
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ]);
+        insertProxyRouteOwnershipWorkspace(1, 2);
+
+        $liveInstanceConfig = [
+            'id' => 2,
+            'name' => 'development',
+            'selector' => 'proofapp.development',
+            'domain' => 'proofapp.test',
+            'node' => 'app-dev-1',
+            'node_id' => 1,
+        ];
+        $liveTarget = [
+            'type' => 'instance',
+            'value' => 'proofapp.development',
+        ];
+
+        insertHistoricalProxyRoute(2, 'proofapp.test', 'app', 'app', 1, null, [
+            'target' => $liveTarget,
+            'instance' => $liveInstanceConfig,
+        ]);
+        insertHistoricalProxyRoute(3, 'proofapp-feature.test', 'workspace', 'workspace', 1, 1, [
+            'target' => $liveTarget,
+            'instance' => [
+                ...$liveInstanceConfig,
+                'domain' => 'proofapp-feature.test',
+            ],
+        ]);
+
+        $migration = proxyRouteInstanceOwnershipMigration();
+        $migration->up();
+
+        expect(DB::table('proxy_routes')->orderBy('id')->pluck('instance_id', 'id')->all())
+            ->toBe([
+                2 => 2,
+                3 => 2,
+            ]);
+
+        $migration->down();
+
+        expect(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+
+        foreach ([2, 3] as $routeId) {
+            $rolledBackConfig = json_decode(
+                (string) DB::table('proxy_routes')->where('id', $routeId)->value('config'),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+
+            expect($rolledBackConfig['instance_id'] ?? null)->toBe(2);
+        }
+
+        $migration->up();
+
+        expect(DB::table('proxy_routes')->orderBy('id')->pluck('instance_id', 'id')->all())
+            ->toBe([
+                2 => 2,
+                3 => 2,
+            ]);
+    });
+});
+
 it('preserves workspace instance ownership through an up down up cycle', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();
