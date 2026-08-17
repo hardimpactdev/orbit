@@ -390,21 +390,9 @@ it('removes only valid obsolete public analytics ownership', function (): void {
     analyticsProxyBackend();
     [$ingress, $app, $binding] = analyticsPublicBinding();
     $instance = $binding->instance()->firstOrFail();
-    $routeConfig = [
-        'placement' => 'ingress',
-        'ingress_node_id' => $ingress->id,
-        'protocol' => 'analytics',
-        'router_artifact' => ['node_id' => $router->id],
-    ];
-    $validRoute = ProxyRoute::factory()->create([
-        'node_id' => $ingress->id,
-        'app_id' => $app->id,
-        'instance_id' => $instance->id,
-        'domain' => 'valid-analytics.docs.test',
-        'owner_type' => 'app-analytics',
-        'kind' => 'proxy',
-        'config' => $routeConfig,
-    ]);
+    $binding->forceFill(['public_hosts' => ['valid-analytics.docs.test']])->save();
+    app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding);
+    $validRoute = ProxyRoute::query()->where('domain', 'valid-analytics.docs.test')->firstOrFail();
     $malformedRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
@@ -412,7 +400,7 @@ it('removes only valid obsolete public analytics ownership', function (): void {
         'domain' => 'malformed-analytics.docs.test',
         'owner_type' => 'app-analytics',
         'kind' => 'proxy',
-        'config' => $routeConfig,
+        'config' => $validRoute->config,
     ]);
     $malformedRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,

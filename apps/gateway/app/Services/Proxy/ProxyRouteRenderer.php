@@ -1195,6 +1195,15 @@ final readonly class ProxyRouteRenderer
         }
 
         new InstanceProxyRouteOwnershipResolver()->resolveOrFail($route);
+
+        if (
+            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($route)
+        ) {
+            throw new RuntimeException(
+                "Proxy route '{$route->domain}' has invalid {$route->owner_type} family ownership.",
+            );
+        }
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

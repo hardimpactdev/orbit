@@ -7,11 +7,11 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
-use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -28,7 +28,6 @@ class ProxyRouteIntent
         private readonly ProxyRouteQuery $query,
         private readonly ProxyRouteRenderer $renderer,
         private readonly ProxyRouteFixer $fixer,
-        private readonly WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver,
     ) {}
 
     /**
@@ -310,13 +309,11 @@ class ProxyRouteIntent
      */
     private function hasMissingOwner(ProxyRoute $route): bool
     {
-        $route->loadMissing(['instance.app', 'workspace.instance']);
+        $route->loadMissing(['instance', 'workspace']);
 
         return match ($route->owner_type) {
-            'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance
-                || ! $route->instance->app instanceof App
-                || $route->app_id !== $route->instance->app_id,
-            'workspace' => $this->workspaceRouteOwnership->resolve($route) === null,
+            'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance,
+            'workspace' => ! $route->workspace instanceof Workspace,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };

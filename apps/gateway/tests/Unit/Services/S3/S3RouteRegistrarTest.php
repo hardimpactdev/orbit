@@ -353,6 +353,8 @@ it('skips ingress route sync when there are no public hosts', function (): void 
 })->group('service');
 
 it('removes the public host route with complete S3 ownership', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
     $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
     s3AssignRole($edge, 'ingress');
 
@@ -364,18 +366,7 @@ it('removes the public host route with complete S3 ownership', function (): void
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
     ]);
 
-    ProxyRoute::factory()->create([
-        'domain' => 's3.example.com',
-        'node_id' => $edge->id,
-        'owner_type' => 's3',
-        'kind' => 'proxy',
-        'config' => [
-            'placement' => 'ingress',
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-        ],
-    ]);
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
 
     app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
 
@@ -558,6 +549,8 @@ it('re-syncing a public host is idempotent and does not create duplicate routes'
 })->group('public');
 
 it('removePublicHost removes only the seaweedfs s3 owned route and leaves unrelated routes intact', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
     $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
     s3AssignRole($edge, 'ingress');
 
@@ -569,19 +562,7 @@ it('removePublicHost removes only the seaweedfs s3 owned route and leaves unrela
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.example.com']],
     ]);
 
-    // The route owned by this seaweedfs S3 publication.
-    ProxyRoute::factory()->create([
-        'domain' => 's3.example.com',
-        'node_id' => $edge->id,
-        'owner_type' => 's3',
-        'kind' => 'proxy',
-        'config' => [
-            'placement' => 'ingress',
-            'owner_name' => 'seaweedfs',
-            'protocol' => 's3',
-            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-        ],
-    ]);
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
 
     // An unrelated custom route sharing the same node — must not be touched.
     ProxyRoute::factory()->create([

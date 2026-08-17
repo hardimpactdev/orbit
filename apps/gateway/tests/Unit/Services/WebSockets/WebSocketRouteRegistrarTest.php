@@ -476,23 +476,11 @@ it('removes stale public websocket routes for the binding app', function (): voi
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
         'instance_id' => websocketRouteRegistrarInstance($app)->id,
-        'public_hosts' => ['ws-new.example.com'],
+        'public_hosts' => ['ws-old.example.com'],
     ]);
-
-    $validStaleRoute = ProxyRoute::factory()->create([
-        'node_id' => $ingress->id,
-        'app_id' => $app->id,
-        'instance_id' => $binding->instance_id,
-        'domain' => 'ws-old.example.com',
-        'owner_type' => 'app-websocket',
-        'kind' => 'proxy',
-        'config' => [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingress->id,
-            'protocol' => 'websocket',
-            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
-        ],
-    ]);
+    app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
+    $validStaleRoute = ProxyRoute::query()->where('domain', 'ws-old.example.com')->firstOrFail();
+    $binding->forceFill(['public_hosts' => ['ws-new.example.com']])->save();
     $malformedStaleRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
@@ -529,24 +517,12 @@ it('removes public websocket routes when the binding is disabled', function (): 
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
         'instance_id' => websocketRouteRegistrarInstance($app)->id,
-        'enabled' => false,
+        'enabled' => true,
         'public_hosts' => ['ws.example.com'],
     ]);
-
-    $validRoute = ProxyRoute::factory()->create([
-        'node_id' => $ingress->id,
-        'app_id' => $app->id,
-        'instance_id' => $binding->instance_id,
-        'domain' => 'ws.example.com',
-        'owner_type' => 'app-websocket',
-        'kind' => 'proxy',
-        'config' => [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingress->id,
-            'protocol' => 'websocket',
-            'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
-        ],
-    ]);
+    app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
+    $validRoute = ProxyRoute::query()->where('domain', 'ws.example.com')->firstOrFail();
+    $binding->forceFill(['enabled' => false])->save();
     $malformedRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,

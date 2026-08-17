@@ -7,6 +7,7 @@ use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -343,7 +344,12 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('renders websocket service router routes with long lived upgrade settings', function (): void {
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'websocket.orbit',
@@ -404,9 +410,30 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders app websocket public ingress and router routes with long lived upgrade settings', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backend = Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'name' => 'websocket-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $ingress->id],
+        ]);
         $app = App::factory()->create(['name' => 'docs']);
-        $instance = Instance::factory()->for($app, 'app')->create();
+        $instance = Instance::factory()->for($app, 'app')->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         $route = ProxyRoute::factory()
             ->forApp($instance, $app)
             ->create([
@@ -417,8 +444,10 @@ describe('ProxyRouteRenderer', function (): void {
                 'kind' => 'proxy',
                 'config' => [
                     'placement' => 'ingress',
+                    'ingress_node_id' => $ingress->id,
                     'protocol' => 'websocket',
                     'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+                    'upstream' => 'https://websocket.orbit',
                     'router_upstream' => [
                         'node_id' => $router->id,
                         'node' => 'gateway-1',
@@ -426,8 +455,8 @@ describe('ProxyRouteRenderer', function (): void {
                     ],
                     'router_backend_pool' => [
                         [
-                            'node_id' => 42,
-                            'node' => 'app-dev-1',
+                            'node_id' => $backend->id,
+                            'node' => $backend->name,
                             'url' => 'https://10.6.0.44:8080',
                         ],
                     ],
@@ -436,8 +465,13 @@ describe('ProxyRouteRenderer', function (): void {
                         'ca_path' => '/etc/orbit/ca/root.crt',
                     ],
                     'tls' => [
-                        'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                        'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                        'cert_path' => '/etc/orbit/certs/ws.docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/ws.docs.test.key',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'source_hash' => str_repeat('a', 64),
                     ],
                 ],
             ]);
@@ -481,9 +515,30 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('renders app analytics public ingress and router routes as tracking-only proxies preserving forwarding identity', function (): void {
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
-        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backend = Node::factory()
+            ->withActiveRole('analytics')
+            ->create([
+                'name' => 'analytics-1',
+                'wireguard_address' => '10.6.0.50',
+            ]);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $ingress->id],
+        ]);
         $app = App::factory()->create(['name' => 'docs']);
-        $instance = Instance::factory()->for($app, 'app')->create();
+        $instance = Instance::factory()->for($app, 'app')->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         $route = ProxyRoute::factory()
             ->forApp($instance, $app)
             ->create([
@@ -494,8 +549,10 @@ describe('ProxyRouteRenderer', function (): void {
                 'kind' => 'proxy',
                 'config' => [
                     'placement' => 'ingress',
+                    'ingress_node_id' => $ingress->id,
                     'protocol' => 'analytics',
                     'target' => ['type' => 'analytics', 'value' => 'https://analytics.orbit'],
+                    'upstream' => 'https://analytics.orbit',
                     'router_upstream' => [
                         'node_id' => $router->id,
                         'node' => 'gateway-1',
@@ -503,15 +560,20 @@ describe('ProxyRouteRenderer', function (): void {
                     ],
                     'router_backend_pool' => [
                         [
-                            'node_id' => 42,
-                            'node' => 'analytics-1',
+                            'node_id' => $backend->id,
+                            'node' => $backend->name,
                             'url' => 'http://10.6.0.50:8000',
                         ],
                     ],
                     'tracking_paths' => ['/js/*', '/api/event'],
                     'tls' => [
-                        'cert_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.crt',
-                        'key_path' => '/home/orbit/.config/orbit/certs/analytics.docs.test.key',
+                        'cert_path' => '/etc/orbit/certs/analytics.docs.test.crt',
+                        'key_path' => '/etc/orbit/certs/analytics.docs.test.key',
+                    ],
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'source_hash' => str_repeat('a', 64),
                     ],
                 ],
             ]);

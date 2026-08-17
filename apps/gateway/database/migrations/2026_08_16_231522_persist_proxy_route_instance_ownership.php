@@ -85,6 +85,17 @@ return new class extends Migration {
             }
 
             if ($expectedKind === null) {
+                $persistedInstanceId = $instanceColumnExists
+                    ? $this->rowNullableInteger($route, 'instance_id')
+                    : null;
+
+                if ($persistedInstanceId !== null) {
+                    throw $this->ownershipException(
+                        $route,
+                        "must not identify instance_id={$persistedInstanceId}",
+                    );
+                }
+
                 $assignments[$routeId] = null;
 
                 continue;
@@ -112,7 +123,7 @@ return new class extends Migration {
             foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
                 $ownerType = $this->rowString($route, 'owner_type');
 
-                if (! InstanceProxyRouteOwnershipResolver::isDirectOwner($ownerType)) {
+                if (InstanceProxyRouteOwnershipResolver::expectedKind($ownerType) === null) {
                     continue;
                 }
 

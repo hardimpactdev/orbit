@@ -25,9 +25,10 @@ These terms define the types of routes that the proxy family owns and manages.
   positive integer. Decimal values, numeric strings, zero, negative values,
   whitespace, junk, and all other types stop migration before schema
   mutation. Before rollback removes the durable `instance_id` column, it writes
-  each validated direct owner's positive Instance ID to `config.instance_id`.
-  Reapplying the migration consumes that compatibility hint, so analytics and
-  WebSocket routes keep the same owner when an App has multiple instances.
+  the positive Instance ID for every validated owner that uses an Instance to
+  `config.instance_id`. Reapplying the migration consumes that compatibility
+  hint. Workspace, analytics, and WebSocket routes then keep the same owner
+  when an App has multiple instances.
 - **Route owner:** The domain that owns route lifecycle. Persisted
   `owner_type` values are `app`, `app-analytics`, `app-websocket`, `workspace`,
   `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored

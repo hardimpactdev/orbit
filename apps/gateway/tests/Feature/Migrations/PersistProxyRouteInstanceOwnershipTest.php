@@ -176,7 +176,7 @@ it('fails before schema mutation when a public binding route has incomplete App 
     'websocket workspace identity' => ['app-websocket', 'workspace identity', 'must not identify a workspace_id'],
 ]);
 
-it('clears stale instance ownership from non-instance routes when rerun', function (): void {
+it('fails closed without mutating stray instance ownership on non-instance routes when rerun', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();
         insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
@@ -185,9 +185,13 @@ it('clears stale instance ownership from non-instance routes when rerun', functi
         proxyRouteInstanceOwnershipMigration()->up();
         DB::table('proxy_routes')->where('id', 100)->update(['instance_id' => 10]);
 
-        proxyRouteInstanceOwnershipMigration()->up();
-
-        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))->toBeNull();
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='custom.test' owner_type='custom' must not identify instance_id=10",
+            )
+            ->and(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(10);
     });
 });
 
@@ -548,6 +552,52 @@ it('preserves public binding instance ownership through an up down up cycle', fu
     'analytics route' => 'app-analytics',
     'websocket route' => 'app-websocket',
 ]);
+
+it('preserves workspace instance ownership through an up down up cycle', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertProxyRouteOwnershipWorkspace(20, 10);
+
+        $migration = proxyRouteInstanceOwnershipMigration();
+        $migration->up();
+
+        DB::table('proxy_routes')->insert([
+            'id' => 100,
+            'node_id' => 1,
+            'domain' => 'feature.docs.test',
+            'app_id' => 1,
+            'workspace_id' => 20,
+            'instance_id' => 10,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'source_hash' => str_repeat('a', 64),
+            'config' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $migration->down();
+
+        $rolledBackConfig = json_decode(
+            (string) DB::table('proxy_routes')->where('id', 100)->value('config'),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse()
+            ->and($rolledBackConfig['instance_id'] ?? null)
+            ->toBe(10);
+
+        $migration->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(10)
+            ->and(fn (): mixed => $migration->up())
+            ->not->toThrow(Throwable::class);
+    });
+});
 
 it('rewrites legacy runtime targets and hashes on the migration connection idempotently', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {

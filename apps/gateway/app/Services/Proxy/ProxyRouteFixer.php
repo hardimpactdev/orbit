@@ -167,6 +167,13 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
+        if (
+            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            && ! app(PublicBindingProxyRouteOwnership::class)->matches($route)
+        ) {
+            return null;
+        }
+
         if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
             return null;
         }

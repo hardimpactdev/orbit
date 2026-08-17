@@ -6,7 +6,9 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
@@ -294,3 +296,192 @@ it('does not summarize or remove an ingress app route with invalid ownership', f
     'wrong kind',
     'workspace identity',
 ]);
+
+it('reports and removes valid analytics websocket and s3 ingress dependents', function (): void {
+    $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+    $router = Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $appNode = Node::factory()->create(['name' => 'app-1']);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $appNode->id,
+        'role' => 'app-prod',
+        'status' => 'active',
+        'settings' => ['ingress_node_id' => $ingress->id],
+    ]);
+    $analyticsBackend = Node::factory()
+        ->withActiveRole('analytics')
+        ->create([
+            'name' => 'analytics-1',
+            'wireguard_address' => '10.6.0.50',
+        ]);
+    $websocketBackend = Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'websocket-1',
+            'wireguard_address' => '10.6.0.51',
+        ]);
+    $storage = Node::factory()->withActiveRole('s3')->create(['name' => 'storage-1']);
+    NodeTool::factory()->for($storage)->create([
+        'name' => 'seaweedfs',
+        'expected_state' => 'installed',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => ['s3.docs.test']],
+    ]);
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+    ]);
+
+    $analyticsRoute = proxyRolePublicBindingRoute(
+        $ingress,
+        $router,
+        $analyticsBackend,
+        $app,
+        $instance,
+        'analytics',
+    );
+    $websocketRoute = proxyRolePublicBindingRoute(
+        $ingress,
+        $router,
+        $websocketBackend,
+        $app,
+        $instance,
+        'websocket',
+    );
+    $s3Route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'domain' => 's3.docs.test',
+        'owner_type' => 's3',
+        'kind' => 'proxy',
+        'config' => [
+            'placement' => 'ingress',
+            'owner_name' => 'seaweedfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+            'router_upstream' => [
+                'node_id' => $router->id,
+                'node' => $router->name,
+                'url' => 'http://10.6.0.2:80',
+            ],
+            'tls' => [
+                'cert_path' => '/etc/orbit/certs/s3.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/s3.docs.test.key',
+            ],
+        ],
+    ]);
+    $malformedAnalyticsRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'malformed-analytics.docs.test',
+        'owner_type' => 'app-analytics',
+        'kind' => 'proxy',
+        'config' => [
+            ...$analyticsRoute->config,
+            'protocol' => 'websocket',
+        ],
+    ]);
+    $malformedS3Route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'domain' => 'malformed-s3.docs.test',
+        'owner_type' => 's3',
+        'kind' => 'proxy',
+        'config' => [
+            ...$s3Route->config,
+            'target' => ['type' => 'upstream', 'value' => 'https://unrelated.orbit'],
+        ],
+    ]);
+    $customRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'domain' => 'custom.docs.test',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'config' => [
+            'placement' => 'ingress',
+            'target' => ['type' => 'upstream', 'value' => 'https://custom.test'],
+        ],
+    ]);
+    $assignment = new NodeRoleAssignment(['role' => 'ingress']);
+    $inspector = new NodeRoleDependencyInspector;
+
+    expect($inspector->dependentSummaries($ingress, $assignment))
+        ->toBe(['3 public proxy route records']);
+
+    $inspector->removeOrbitOwnedDependents($ingress, $assignment);
+
+    expect(ProxyRoute::query()->whereKey($analyticsRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($websocketRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($s3Route->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedAnalyticsRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($malformedS3Route->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($customRoute->id)->exists())
+        ->toBeTrue();
+});
+
+/**
+ * @mago-expect lint:excessive-parameter-list
+ */
+function proxyRolePublicBindingRoute(
+    Node $ingress,
+    Node $router,
+    Node $backend,
+    App $app,
+    Instance $instance,
+    string $protocol,
+): ProxyRoute {
+    $domain = "{$protocol}.docs.test";
+    $config = [
+        'placement' => 'ingress',
+        'ingress_node_id' => $ingress->id,
+        'protocol' => $protocol,
+        'target' => ['type' => $protocol, 'value' => "https://{$protocol}.orbit"],
+        'upstream' => "https://{$protocol}.orbit",
+        'router_upstream' => [
+            'node_id' => $router->id,
+            'node' => $router->name,
+            'url' => 'http://10.6.0.2:80',
+        ],
+        'router_backend_pool' => [[
+            'node_id' => $backend->id,
+            'node' => $backend->name,
+            'url' => $protocol === 'analytics' ? 'http://10.6.0.50:8000' : 'https://10.6.0.51:8080',
+        ]],
+        'router_artifact' => [
+            'node_id' => $router->id,
+            'node' => $router->name,
+            'source_hash' => str_repeat('a', 64),
+        ],
+        'tls' => [
+            'cert_path' => "/etc/orbit/certs/{$domain}.crt",
+            'key_path' => "/etc/orbit/certs/{$domain}.key",
+        ],
+    ];
+
+    if ($protocol === 'analytics') {
+        $config['tracking_paths'] = ['/js/*', '/api/event'];
+    } else {
+        $config['router_backend_tls'] = [
+            'trusted_by_gateway_ca' => true,
+            'ca_path' => '/etc/orbit/ca/root.crt',
+        ];
+    }
+
+    return ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => $domain,
+        'owner_type' => "app-{$protocol}",
+        'kind' => 'proxy',
+        'config' => $config,
+    ]);
+}

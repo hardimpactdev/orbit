@@ -454,6 +454,168 @@ describe('ProxyRouteFixer', function (): void {
         'websocket workspace identity' => ['app-websocket', 'workspace identity'],
     ]);
 
+    it('does not render or generically repair public family routes with invalid family tuples', function (
+        string $ownerType,
+        string $invalidity,
+    ): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $otherIngress = Node::factory()->ingress()->create(['name' => 'edge-2']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backendRole = $ownerType === 'app-analytics' ? 'analytics' : 'websocket';
+        $backend = Node::factory()
+            ->withActiveRole($backendRole)
+            ->create([
+                'name' => "{$backendRole}-1",
+                'wireguard_address' => '10.6.0.50',
+            ]);
+        $appNode = Node::factory()->create(['name' => 'app-1']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $ingress->id],
+        ]);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
+        $protocol = $ownerType === 'app-analytics' ? 'analytics' : 'websocket';
+        $serviceTarget = "https://{$protocol}.orbit";
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$protocol}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => array_filter(
+                [
+                    'placement' => 'ingress',
+                    'ingress_node_id' => $ingress->id,
+                    'protocol' => $protocol,
+                    'target' => ['type' => $protocol, 'value' => $serviceTarget],
+                    'upstream' => $serviceTarget,
+                    'tracking_paths' => $protocol === 'analytics' ? ['/js/*', '/api/event'] : null,
+                    'router_upstream' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'url' => 'http://10.6.0.2:80',
+                    ],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => $backend->name,
+                        'url' => $protocol === 'analytics' ? 'http://10.6.0.50:8000' : 'https://10.6.0.50:8080',
+                    ]],
+                    'router_backend_tls' => $protocol === 'websocket'
+                        ? ['trusted_by_gateway_ca' => true, 'ca_path' => '/etc/orbit/ca/root.crt']
+                        : null,
+                    'router_artifact' => [
+                        'node_id' => $router->id,
+                        'node' => $router->name,
+                        'source_hash' => str_repeat('a', 64),
+                    ],
+                    'tls' => [
+                        'cert_path' => "/etc/orbit/certs/{$protocol}.docs.test.crt",
+                        'key_path' => "/etc/orbit/certs/{$protocol}.docs.test.key",
+                    ],
+                ],
+                static fn (mixed $value): bool => $value !== null,
+            ),
+        ]);
+        $config = $route->config;
+
+        if ($invalidity === 'unsupported backend topology') {
+            $extraBackend = Node::factory()
+                ->withActiveRole($backendRole)
+                ->create([
+                    'name' => "{$backendRole}-2",
+                    'wireguard_address' => '10.6.0.51',
+                ]);
+            $config['router_backend_pool'][] = [
+                'node_id' => $extraBackend->id,
+                'node' => $extraBackend->name,
+                'url' => $protocol === 'analytics' ? 'http://10.6.0.51:8000' : 'https://10.6.0.51:8080',
+            ];
+        }
+
+        if ($invalidity === 'inactive websocket backend') {
+            $backend->forceFill(['status' => 'inactive'])->save();
+        }
+
+        match ($invalidity) {
+            'wrong node' => $route->forceFill(['node_id' => $otherIngress->id])->save(),
+            'wrong placement' => $config['placement'] = 'backend',
+            'wrong ingress identity' => $config['ingress_node_id'] = $otherIngress->id,
+            'wrong protocol' => $config['protocol'] = 'http',
+            'wrong target' => $config['target']['value'] = 'https://unrelated.orbit',
+            'wrong router identity' => $config['router_upstream']['node_id'] = $otherIngress->id,
+            'wrong backend pool' => $config['router_backend_pool'][0]['node_id'] = $otherIngress->id,
+            'wrong tls identity' => $config['tls']['cert_path'] = '/etc/orbit/certs/unrelated.crt',
+            'wrong family config' => $protocol === 'analytics'
+                ? ($config['tracking_paths'] = ['/admin/*'])
+                : ($config['router_backend_tls']['ca_path'] = '/tmp/untrusted.crt'),
+            'unsupported backend topology', 'inactive websocket backend' => null,
+        };
+
+        if ($invalidity !== 'wrong node') {
+            $route->forceFill(['config' => $config])->save();
+        }
+
+        $rendererRejected = false;
+
+        try {
+            new ProxyRouteRenderer()->render($route->fresh());
+        } catch (RuntimeException) {
+            $rendererRejected = true;
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route->fresh(), new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($rendererRejected)
+            ->toBeTrue()
+            ->and($result)
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
+    })->with([
+        'analytics wrong node' => ['app-analytics', 'wrong node'],
+        'analytics wrong placement' => ['app-analytics', 'wrong placement'],
+        'analytics wrong ingress identity' => ['app-analytics', 'wrong ingress identity'],
+        'analytics wrong protocol' => ['app-analytics', 'wrong protocol'],
+        'analytics wrong target' => ['app-analytics', 'wrong target'],
+        'analytics wrong router identity' => ['app-analytics', 'wrong router identity'],
+        'analytics wrong backend pool' => ['app-analytics', 'wrong backend pool'],
+        'analytics wrong tls identity' => ['app-analytics', 'wrong tls identity'],
+        'analytics wrong family config' => ['app-analytics', 'wrong family config'],
+        'websocket wrong node' => ['app-websocket', 'wrong node'],
+        'websocket wrong placement' => ['app-websocket', 'wrong placement'],
+        'websocket wrong ingress identity' => ['app-websocket', 'wrong ingress identity'],
+        'websocket wrong protocol' => ['app-websocket', 'wrong protocol'],
+        'websocket wrong target' => ['app-websocket', 'wrong target'],
+        'websocket wrong router identity' => ['app-websocket', 'wrong router identity'],
+        'websocket wrong backend pool' => ['app-websocket', 'wrong backend pool'],
+        'websocket wrong tls identity' => ['app-websocket', 'wrong tls identity'],
+        'websocket wrong family config' => ['app-websocket', 'wrong family config'],
+        'websocket unsupported backend topology' => ['app-websocket', 'unsupported backend topology'],
+        'websocket inactive backend' => ['app-websocket', 'inactive websocket backend'],
+    ]);
+
     it('does not fix a proxy route that persists the public instance projection label', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([

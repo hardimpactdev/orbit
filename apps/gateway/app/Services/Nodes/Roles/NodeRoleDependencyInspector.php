@@ -13,7 +13,9 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
+use App\Services\S3\S3RouteRegistrar;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -231,8 +233,9 @@ class NodeRoleDependencyInspector
     }
 
     /**
-     * Public ingress routes on the node whose app resolves to production via its
-     * concrete instance placement (App owns no environment column).
+     * Valid public routes served by this ingress node. Primary App and
+     * Workspace routes also require production placement through their
+     * concrete Instance because App owns no environment column.
      *
      * @return list<int>
      */
@@ -256,7 +259,8 @@ class NodeRoleDependencyInspector
                         $query
                             ->where('owner_type', 'workspace')
                             ->where('kind', 'workspace');
-                    });
+                    })
+                    ->orWhereIn('owner_type', ['app-analytics', 'app-websocket', 's3']);
             })
             ->with(['instance.app', 'workspace'])
             ->get()
@@ -273,6 +277,14 @@ class NodeRoleDependencyInspector
                     }
 
                     return $placement->runtimeEnvironment($ownership->app, $ownership->instance) === 'production';
+                }
+
+                if (InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)) {
+                    return app(PublicBindingProxyRouteOwnership::class)->matches($route);
+                }
+
+                if ($route->owner_type === 's3') {
+                    return app(S3RouteRegistrar::class)->ownsPublicRoute($route, $route->domain);
                 }
 
                 $instance = $instanceRouteOwnership->resolve($route);

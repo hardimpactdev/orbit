@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\S3\S3RouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 
@@ -388,22 +389,10 @@ describe('S3Unpublish success', function (): void {
     it('removes the ingress proxy route for the unpublished host', function (): void {
         s3UnpublishCallerNode(role: 'gateway');
         $storage = s3UnpublishStorageNode();
-        s3UnpublishSeaweedfsTool($storage);
-        $router = s3UnpublishRouterNode();
-        $ingress = s3UnpublishIngressNode();
-
-        ProxyRoute::factory()->create([
-            'domain' => 's3.example.com',
-            'node_id' => $ingress->id,
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-            'config' => [
-                'placement' => 'ingress',
-                'owner_name' => 'seaweedfs',
-                'protocol' => 's3',
-                'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
-            ],
-        ]);
+        $tool = s3UnpublishSeaweedfsTool($storage);
+        s3UnpublishRouterNode();
+        s3UnpublishIngressNode();
+        app(S3RouteRegistrar::class)->syncPublicHosts($tool);
 
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
         $response->streamedContent();

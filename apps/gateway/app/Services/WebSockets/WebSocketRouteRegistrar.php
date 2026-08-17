@@ -16,6 +16,7 @@ use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\ProxyRouteOwnershipCompatibility;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -251,36 +252,9 @@ class WebSocketRouteRegistrar
 
     private function isOwnedPublicRoute(ProxyRoute $route, Instance $instance): bool
     {
-        if (! $this->routeOwnership->resolve($route)?->is($instance)) {
-            return false;
-        }
-
-        $appNode = $this->placement->nodeForInstance($instance);
-
-        if (! $appNode instanceof Node) {
-            return false;
-        }
-
-        $ingress = $this->ingressResolver->forAppNode($appNode);
-        $expected = new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $route->domain,
-            'app_id' => $instance->app_id,
-            'workspace_id' => null,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-websocket',
-            'kind' => 'proxy',
-            'config' => [
-                'placement' => 'ingress',
-                'ingress_node_id' => $ingress->id,
-                'protocol' => 'websocket',
-            ],
-        ]);
-
-        return ProxyRouteOwnershipCompatibility::matches(
-            $route,
-            $expected,
-            ['placement', 'ingress_node_id', 'protocol'],
+        return (
+            $this->routeOwnership->resolve($route)?->is($instance) === true
+            && app(PublicBindingProxyRouteOwnership::class)->matches($route)
         );
     }
 

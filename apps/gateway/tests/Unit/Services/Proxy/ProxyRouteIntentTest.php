@@ -336,7 +336,7 @@ describe('ProxyRouteIntent', function (): void {
 
         invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, $invalidity);
 
-        if (in_array($invalidity, ['missing app', 'missing instance', 'conflicting app'], true)) {
+        if ($invalidity === 'missing instance') {
             $result = app(ProxyRouteIntent::class)->remove('docs.test');
 
             expect($result['meta'])
@@ -581,7 +581,7 @@ describe('ProxyRouteIntent', function (): void {
             ->toBeFalse();
     });
 
-    it('treats mismatched app_id compatibility as an orphaned instance owner', function (): void {
+    it('denies removal when a living instance owner has mismatched app compatibility', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $compatibility = App::factory()->create(['name' => 'other']);
@@ -596,12 +596,33 @@ describe('ProxyRouteIntent', function (): void {
         ]);
         $route->forceFill(['app_id' => $compatibility->id])->save();
 
-        $result = app(ProxyRouteIntent::class)->remove('docs.test');
-
-        expect($result['meta']['removal_reason'])
-            ->toBe('orphan_owner')
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('docs.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'docs.test' is owned by app.")
             ->and(ProxyRoute::query()->whereKey($route->id)->exists())
-            ->toBeFalse();
+            ->toBeTrue();
+    });
+
+    it('denies removal when a living workspace owner has a mismatched instance tuple', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $otherInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'instance_id' => $instance->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+
+        expect(fn (): array => app(ProxyRouteIntent::class)->remove('feature.docs.test'))
+            ->toThrow(GatewayApiException::class, "Domain 'feature.docs.test' is owned by workspace.")
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeTrue();
     });
 
     it('denies removal when an app owner still exists', function (): void {

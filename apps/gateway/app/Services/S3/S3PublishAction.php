@@ -142,6 +142,14 @@ final readonly class S3PublishAction
         // Step 4: Ensure private s3.orbit route.
         $emitter->stepEvent('ensure_private_route', 'running', 'Ensuring private s3.orbit service route');
 
+        try {
+            $this->routeRegistrar->assertPublishAvailable($host);
+        } catch (\RuntimeException $e) {
+            $emitter->stepEvent('ensure_private_route', 'failed', $e->getMessage());
+
+            return $this->error('s3.publish_failed', $e->getMessage(), [], 500);
+        }
+
         // Determine whether the host was already published.
         $config = is_array($seaweedfs->config) ? $seaweedfs->config : [];
         $publicHosts = is_array($config['public_hosts'] ?? null) ? $config['public_hosts'] : [];
@@ -246,7 +254,7 @@ final readonly class S3PublishAction
      *         meta: array{host: string, action: string, already_published: bool}
      *     }
      * }|array{
-     *     error: array{code: string, message: string, meta: array<string, mixed>}
+     *     error: array{code: string, message: string, meta: array<string, mixed>, status: int}
      * }
      */
     public function publish(Node $caller, string $nodeName, string $host): array
@@ -302,22 +310,13 @@ final readonly class S3PublishAction
         // Check domain conflict: is the host owned by a non-S3 proxy route?
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
-        if ($existing instanceof ProxyRoute) {
-            $isS3Tool =
-                $existing->owner_type === 's3'
-                && isset($existing->config['owner_name'])
-                && $existing->config['owner_name'] === 'seaweedfs'
-                && isset($existing->config['protocol'])
-                && $existing->config['protocol'] === 's3';
-
-            if (! $isS3Tool) {
-                return $this->error(
-                    'proxy.domain_conflict',
-                    "The host '{$host}' is owned by a non-S3 proxy route.",
-                    ['field' => 'host', 'owner_type' => $existing->owner_type],
-                    409,
-                );
-            }
+        if ($existing instanceof ProxyRoute && ! $this->routeRegistrar->ownsPublicRoute($existing, $host)) {
+            return $this->error(
+                'proxy.domain_conflict',
+                "The host '{$host}' is owned by a non-S3 proxy route.",
+                ['field' => 'host', 'owner_type' => $existing->owner_type],
+                409,
+            );
         }
 
         // Ensure the selected s3 node has a seaweedfs tool row.
@@ -332,6 +331,17 @@ final readonly class S3PublishAction
                 'The selected s3 node does not have a seaweedfs tool row with service-level credentials.',
                 ['field' => 'node'],
                 422,
+            );
+        }
+
+        try {
+            $this->routeRegistrar->assertPublishAvailable($host);
+        } catch (\RuntimeException $e) {
+            return $this->error(
+                's3.publish_failed',
+                $e->getMessage(),
+                [],
+                500,
             );
         }
 
