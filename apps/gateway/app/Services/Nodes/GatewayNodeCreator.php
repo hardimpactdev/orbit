@@ -340,12 +340,14 @@ final readonly class GatewayNodeCreator
 
     private function gatewayApiConfigured(): bool
     {
-        return LocalGatewaySettings::query()
-            ->whereNotNull('gateway_url')
-            ->where('gateway_url', '!=', '')
-            ->whereNotNull('ca_pem_path')
-            ->where('ca_pem_path', '!=', '')
-            ->exists();
+        $settings = LocalGatewaySettings::current();
+
+        return (
+            is_string($settings->gateway_url)
+            && $settings->gateway_url !== ''
+            && is_string($settings->ca_pem_path)
+            && $settings->ca_pem_path !== ''
+        );
     }
 
     /** @param list<string> $roles */
