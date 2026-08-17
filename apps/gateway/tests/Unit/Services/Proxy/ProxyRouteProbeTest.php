@@ -473,26 +473,54 @@ describe('proxy registry probe foundation', function (): void {
 
     it('passes observed app websocket public and router artifacts rendered with long lived upgrade settings', function (): void {
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
-        $router = Node::factory()->router()->create(['status' => 'active', 'name' => 'router-1']);
-        $appNode = Node::factory()->appProd()->create(['status' => 'active']);
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'status' => 'active',
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $backend = Node::factory()
+            ->withActiveRole('websocket')
+            ->create([
+                'status' => 'active',
+                'name' => 'websocket-1',
+                'wireguard_address' => '10.6.0.44',
+            ]);
+        $appNode = Node::factory()->create(['status' => 'active']);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $appNode->id,
+            'role' => 'app-prod',
+            'status' => 'active',
+            'settings' => ['ingress_node_id' => $edge->id],
+        ]);
         $app = App::factory()->create();
-        $instance = Instance::factory()->for($app)->create();
+        $instance = Instance::factory()->for($app)->create([
+            'driver' => InstanceDriver::Orbit,
+            'driver_config' => new OrbitInstanceDriverConfigData(node_id: $appNode->id),
+        ]);
         $renderer = new ProxyRouteRenderer;
         $config = [
             'placement' => 'ingress',
+            'ingress_node_id' => $edge->id,
             'protocol' => 'websocket',
             'target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit'],
+            'upstream' => 'https://websocket.orbit',
             'router_upstream' => [
                 'node_id' => $router->id,
                 'node' => 'router-1',
                 'url' => 'http://10.6.0.2:80',
             ],
             'router_backend_pool' => [
-                ['node_id' => $router->id, 'node' => 'router-1', 'url' => 'https://websocket.orbit'],
+                ['node_id' => $backend->id, 'node' => 'websocket-1', 'url' => 'https://10.6.0.44:8080'],
+            ],
+            'router_backend_tls' => [
+                'trusted_by_gateway_ca' => true,
+                'ca_path' => '/etc/orbit/ca/root.crt',
             ],
             'tls' => [
-                'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                'cert_path' => '/etc/orbit/certs/ws.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/ws.docs.test.key',
             ],
         ];
         $routerRoute = new ProxyRoute([
@@ -525,8 +553,8 @@ describe('proxy registry probe foundation', function (): void {
                 'public' => [
                     'route_exists' => true,
                     'route_hash' => $route->source_hash,
-                    'cert_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.crt',
-                    'key_path' => '/home/orbit/.config/orbit/certs/ws.docs.test.key',
+                    'cert_path' => '/etc/orbit/certs/ws.docs.test.crt',
+                    'key_path' => '/etc/orbit/certs/ws.docs.test.key',
                     'cert_exists' => true,
                     'key_exists' => true,
                 ],
