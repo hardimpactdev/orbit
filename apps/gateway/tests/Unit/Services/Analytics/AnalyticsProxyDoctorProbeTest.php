@@ -534,6 +534,40 @@ it('removes only valid obsolete public analytics ownership', function (): void {
         ->toBeTrue();
 });
 
+it('flags an analytics assignment that still lacks postgres_process_id', function (): void {
+    $backend = analyticsProxyBackend();
+
+    $drift = app(AnalyticsProxyDoctorProbe::class)->drift($backend);
+
+    expect($drift)
+        ->toHaveCount(1)
+        ->and($drift[0]->key)
+        ->toBe(AnalyticsProxyDoctorProbe::POSTGRES_PROCESS_ID_MISSING_KEY)
+        ->and($drift[0]->kind)
+        ->toBe(DriftKind::Missing)
+        ->and($drift[0]->family)
+        ->toBe('proxy');
+});
+
+it('does not flag an analytics assignment that stores postgres_process_id', function (): void {
+    $backend = analyticsProxyBackend();
+    $assignment = NodeRoleAssignment::query()
+        ->where('node_id', $backend->id)
+        ->where('role', 'analytics')
+        ->firstOrFail();
+    $assignment->forceFill([
+        'settings' => [
+            'postgres_node_id' => 1,
+            'postgres_process_id' => 12,
+            'clickhouse_node_id' => 1,
+        ],
+    ])->save();
+
+    $drift = app(AnalyticsProxyDoctorProbe::class)->drift($backend);
+
+    expect($drift)->toBeEmpty();
+});
+
 function analyticsProxyRouter(): Node
 {
     $router = Node::factory()->create([

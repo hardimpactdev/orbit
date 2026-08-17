@@ -20,6 +20,8 @@ final readonly class AnalyticsProxyDoctorProbe
 
     public const string RouterRouteOrphanedKey = 'proxy.analytics.router_route_orphaned';
 
+    public const string POSTGRES_PROCESS_ID_MISSING_KEY = 'proxy.analytics.postgres_process_id_missing';
+
     /**
      * @return array<string, string> code => restore_action
      */
@@ -42,7 +44,7 @@ final readonly class AnalyticsProxyDoctorProbe
     public function drift(Node $node): array
     {
         if (! $this->nodeRoleAssignments->nodeCanServeRouter($node)) {
-            return [];
+            return $this->postgresProcessIdentityDrift($node);
         }
 
         $activeAnalyticsNodeIds = $this->nodeRoleAssignments
@@ -162,6 +164,48 @@ final readonly class AnalyticsProxyDoctorProbe
             'Removed the orphaned analytics.orbit service route and its rendered artifacts.',
             AnalyticsRouteRegistrar::ServiceDomain,
         );
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function postgresProcessIdentityDrift(Node $node): array
+    {
+        $entries = [];
+
+        foreach ($node->roleAssignments as $assignment) {
+            if ($assignment->role !== NodeRoleName::Analytics->value) {
+                continue;
+            }
+
+            $settings = is_array($assignment->settings) ? $assignment->settings : [];
+
+            if ($this->positiveInt($settings['postgres_process_id'] ?? null) !== null) {
+                continue;
+            }
+
+            $entries[] = new DriftEntry(
+                family: 'proxy',
+                key: self::POSTGRES_PROCESS_ID_MISSING_KEY,
+                kind: DriftKind::Missing,
+                summary: "Analytics role assignment on node {$node->name} is missing postgres_process_id.",
+                detail: [
+                    'node' => $node->name,
+                    'assignment_id' => $assignment->id,
+                ],
+            );
+        }
+
+        return $entries;
+    }
+
+    private function positiveInt(mixed $value): ?int
+    {
+        if (! is_int($value) || $value < 1) {
+            return null;
+        }
+
+        return $value;
     }
 
     /**

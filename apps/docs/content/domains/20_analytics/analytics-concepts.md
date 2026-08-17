@@ -25,9 +25,8 @@ These terms describe the analytics role and the routes around it.
   selected PostgreSQL process ID. Assignment-time creation requires that stored
   identity. A one-time fleet migration may backfill the stored identity from an
   unambiguous assignment. Multiple candidates without a stored process ID fail
-  with a clear ambiguity error. A residual runtime single-candidate fallback
-  still chooses the lone PostgreSQL process when stored identity is absent;
-  that fallback remains until removed and is not the assignment-time contract.
+  with a clear ambiguity error. Runtime resolution requires a stored
+  `postgres_process_id` and fails closed when it is missing.
 - **Private analytics endpoint:** `https://analytics.orbit`, the internal
   dashboard and admin endpoint served through router. Analytics role deployment
   converges its route and TLS after Plausible is healthy; removal deletes the
