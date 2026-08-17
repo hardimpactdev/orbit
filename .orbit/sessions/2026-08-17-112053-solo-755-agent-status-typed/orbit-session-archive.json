@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T09:20:53+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-755-agent-status-typed/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-112053-solo-755-agent-status-typed",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-755-host-macos-receipt.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-17T091359Z-1f04b1f39b0e.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-755-host-macos-receipt.md": "797fed74096c95121ae74cd5e60ad53d314109f4bf4536ad484467c3a1855d5a",
+        "loop.md": "2ca265916afc0522337f2b16ba3578f2adfc8c7baf0c686169f6c2db7900ff7f",
+        "quality-gates/quality-check-2026-08-17T091359Z-1f04b1f39b0e.json": "43bbbe04778c8f8de206189840bd811e996bac4098ff0b24b6cbf95f3c391c75"
+    },
+    "slug": "solo-755-agent-status-typed",
+    "requested_slug": "solo-755-agent-status-typed",
+    "compatible_slugs": [
+        "solo-755-agent-status-typed"
+    ],
+    "branch": "solo-755-agent-status-typed",
+    "candidate_commit": "4c057d8f81c77adfb505234ed393183074522fae",
+    "accepted_feature_tip": "4c057d8f81c77adfb505234ed393183074522fae",
+    "accepted_main_tip": "55846af068503c79e9cb563a9e1abbcd96219771",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
