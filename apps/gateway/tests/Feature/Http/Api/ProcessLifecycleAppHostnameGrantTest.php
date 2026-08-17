@@ -11,8 +11,10 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Processes\ProcessAppHostnameResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 uses(RefreshDatabase::class);
 
@@ -199,6 +201,52 @@ describe('process lifecycle app-hostname grant authorization', function (): void
             'restarting',
         ],
     ]);
+
+    it('rejects a workspace hostname whose workspace app disagrees with its concrete instance', function (): void {
+        $fixture = processLifecycleHostnameGrantFixture();
+        grantProcessLifecycleHostnameAccess(
+            caller: $fixture['caller'],
+            servingNode: $fixture['grantedNode'],
+            permission: 'process:start',
+        );
+        $otherApp = App::factory()->create(['name' => 'other-owner']);
+        $route = ProxyRoute::query()->where('domain', $fixture['workspaceHostname'])->firstOrFail();
+        Workspace::query()->findOrFail($route->workspace_id)->forceFill(['app_id' => $otherApp->id])->save();
+        $shell = new ProcessLifecycleHostnameGrantRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        try {
+            app(ProcessAppHostnameResolver::class)->resolve($fixture['workspaceHostname']);
+            $this->fail('Expected invalid workspace route ownership to fail hostname resolution.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('validation_failed')
+                ->and($exception->errorMeta())
+                ->toMatchArray([
+                    'field' => 'app',
+                    'value' => $fixture['workspaceHostname'],
+                    'reason' => 'instance_required',
+                ]);
+        }
+
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => $fixture['workspaceHostname'],
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LIFECYCLE_HOSTNAME_GRANT_WG_IP],
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed');
+
+        expect($shell->scripts)->toBeEmpty();
+    });
 });
 
 final class ProcessLifecycleHostnameGrantRemoteShell implements RemoteShell

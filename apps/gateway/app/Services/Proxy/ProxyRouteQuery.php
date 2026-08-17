@@ -35,6 +35,7 @@ class ProxyRouteQuery
     public function __construct(
         private readonly AppProxyRouteTargetResolver $appRouteTargets,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
+        private readonly WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership,
     ) {}
 
     /**
@@ -322,25 +323,14 @@ class ProxyRouteQuery
             return null;
         }
 
-        $workspace = $route->workspace;
+        $ownership = $this->workspaceRouteOwnership->resolve($route);
 
-        if ($workspace === null) {
+        if ($ownership === null) {
             return null;
         }
 
-        $route->loadMissing('instance.app');
-        $instance = $route->instance;
-        $app = $instance?->app;
-
-        if (
-            $app === null
-            || $instance === null
-            || $workspace->instance_id !== $route->instance_id
-            || $workspace->app_id !== $instance->app_id
-            || $route->app_id !== $instance->app_id
-        ) {
-            return null;
-        }
+        $app = $ownership->app;
+        $instance = $ownership->instance;
 
         $appName = trim((string) $app->name);
         $instanceName = trim((string) $instance->name);

@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleDependencyInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -147,4 +148,42 @@ it('classifies ingress routes by their concrete instance instead of any app sibl
         ->toBeFalse()
         ->and(ProxyRoute::query()->whereKey($productionRoute->id)->exists())
         ->toBeTrue();
+});
+
+it('does not classify or remove a workspace ingress route with conflicting app ownership', function (): void {
+    $ingress = createTestAppHostNode(['name' => 'ingress-node', 'tld' => 'edge'], 'ingress');
+    $productionNode = createTestAppHostNode(['name' => 'production-node', 'tld' => 'prod'], 'app-prod');
+    $app = App::factory()->create(['name' => 'docs']);
+    $otherApp = App::factory()->create(['name' => 'other']);
+    $production = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $productionNode->id,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    $workspace = Workspace::factory()->for($app)->create([
+        'name' => 'feature',
+        'instance_id' => $production->id,
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $production->id,
+        'workspace_id' => $workspace->id,
+        'domain' => 'feature.docs.example.com',
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+        'config' => ['placement' => 'ingress'],
+    ]);
+    $workspace->forceFill(['app_id' => $otherApp->id])->save();
+    $assignment = new NodeRoleAssignment(['role' => 'ingress']);
+    $inspector = new NodeRoleDependencyInspector;
+
+    expect($inspector->dependentSummaries($ingress, $assignment))->toBe([]);
+
+    $inspector->removeOrbitOwnedDependents($ingress, $assignment);
+
+    expect(ProxyRoute::query()->whereKey($route->id)->exists())->toBeTrue();
 });

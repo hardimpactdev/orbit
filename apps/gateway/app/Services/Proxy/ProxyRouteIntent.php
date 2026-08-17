@@ -12,7 +12,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
-use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -29,6 +28,7 @@ class ProxyRouteIntent
         private readonly ProxyRouteQuery $query,
         private readonly ProxyRouteRenderer $renderer,
         private readonly ProxyRouteFixer $fixer,
+        private readonly WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver,
     ) {}
 
     /**
@@ -296,12 +296,7 @@ class ProxyRouteIntent
             'app', 'app-analytics', 'app-websocket' => ! $route->instance instanceof Instance
                 || ! $route->instance->app instanceof App
                 || $route->app_id !== $route->instance->app_id,
-            'workspace' => ! $route->workspace instanceof Workspace
-                || ! $route->instance instanceof Instance
-                || ! $route->instance->app instanceof App
-                || $route->workspace->instance_id !== $route->instance_id
-                || $route->workspace->app_id !== $route->instance->app_id
-                || $route->app_id !== $route->instance->app_id,
+            'workspace' => $this->workspaceRouteOwnership->resolve($route) === null,
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };

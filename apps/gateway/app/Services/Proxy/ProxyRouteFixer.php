@@ -150,7 +150,10 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
-        $this->renderer->workspaceForRoute($route);
+        if ($route->kind === 'workspace') {
+            new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
+        }
+
         $route->loadMissing('node');
 
         if ($entry->key === 'proxy.enactment_incomplete') {

@@ -1175,21 +1175,7 @@ final readonly class ProxyRouteRenderer
             return null;
         }
 
-        $route->loadMissing('workspace.instance');
-        $workspace = $route->workspace;
-        $instance = $workspace?->instance;
-
-        if (
-            ! $workspace instanceof Workspace
-            || ! $instance instanceof Instance
-            || $route->instance_id !== $workspace->instance_id
-            || $route->app_id !== $instance->app_id
-            || $workspace->app_id !== $instance->app_id
-        ) {
-            throw new RuntimeException("Proxy route '{$route->domain}' has conflicting workspace ownership.");
-        }
-
-        return $workspace;
+        return new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route)->workspace;
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

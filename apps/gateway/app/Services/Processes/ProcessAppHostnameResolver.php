@@ -8,8 +8,8 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
-use App\Models\Workspace;
 use App\Services\Proxy\AppProxyRouteTargetResolver;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -27,6 +27,7 @@ final readonly class ProcessAppHostnameResolver
     public function __construct(
         private AppProxyRouteTargetResolver $appRouteTargets,
         private WorkspacePlacement $placement,
+        private WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership,
     ) {}
 
     public function resolve(string $hostname): ProcessOwnerContext
@@ -227,27 +228,9 @@ final readonly class ProcessAppHostnameResolver
 
     private function contextForWorkspaceRoute(ProxyRoute $route, string $domain): ProcessOwnerContext
     {
-        $workspace = $route->workspace;
+        $ownership = $this->workspaceRouteOwnership->resolve($route);
 
-        if (! $workspace instanceof Workspace) {
-            throw new GatewayApiException(
-                "App hostname '{$domain}' does not resolve to a workspace.",
-                'validation_failed',
-                [
-                    'field' => 'app',
-                    'value' => $domain,
-                ],
-            );
-        }
-
-        $route->loadMissing('instance.app');
-        $instance = $route->instance;
-
-        if (
-            ! $instance instanceof Instance
-            || $workspace->instance_id !== $route->instance_id
-            || $route->app_id !== $instance->app_id
-        ) {
+        if ($ownership === null) {
             throw new GatewayApiException(
                 "App hostname '{$domain}' workspace is not attached to its instance.",
                 'validation_failed',
@@ -259,18 +242,9 @@ final readonly class ProcessAppHostnameResolver
             );
         }
 
-        $app = $instance->app;
-
-        if (! $app instanceof App) {
-            throw new GatewayApiException(
-                "App hostname '{$domain}' workspace is not attached to an app.",
-                'validation_failed',
-                [
-                    'field' => 'app',
-                    'value' => $domain,
-                ],
-            );
-        }
+        $workspace = $ownership->workspace;
+        $instance = $ownership->instance;
+        $app = $ownership->app;
 
         $node = $this->placement->nodeForInstance($instance);
 

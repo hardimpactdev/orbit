@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -217,6 +218,7 @@ class NodeRoleDependencyInspector
     private function ingressDependentRouteIds(Node $node): array
     {
         $placement = app(WorkspacePlacement::class);
+        $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver;
 
         $ingressRouteIds = ProxyRoute::query()
             ->where('node_id', $node->id)
@@ -234,9 +236,19 @@ class NodeRoleDependencyInspector
                             ->where('kind', 'workspace');
                     });
             })
-            ->with('instance.app')
+            ->with(['instance.app', 'workspace'])
             ->get()
-            ->filter(static function (ProxyRoute $route) use ($placement): bool {
+            ->filter(static function (ProxyRoute $route) use ($placement, $workspaceRouteOwnership): bool {
+                if ($route->owner_type === 'workspace') {
+                    $ownership = $workspaceRouteOwnership->resolve($route);
+
+                    if ($ownership === null) {
+                        return false;
+                    }
+
+                    return $placement->runtimeEnvironment($ownership->app, $ownership->instance) === 'production';
+                }
+
                 $instance = $route->instance;
                 $app = $instance?->app;
 

@@ -618,6 +618,28 @@ describe('proxy registry probe foundation', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
+    it('rejects workspace ownership when the workspace app disagrees with the concrete instance', function (): void {
+        $node = createTestAppHostNode();
+        $app = App::factory()->create();
+        $otherApp = App::factory()->create();
+        $workspace = Workspace::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $workspace->instance_id,
+            'workspace_id' => $workspace->id,
+            'domain' => 'feature.docs.test',
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $workspace->forceFill(['app_id' => $otherApp->id])->save();
+
+        $drift = new ProxyRouteProbe()->diff($route->refresh(), new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent);
+    });
+
     it('classifies tool-owned routes without a matching installed NodeTool as owner invalid', function (): void {
         $node = Node::factory()->create([
             'name' => 'agent-1',

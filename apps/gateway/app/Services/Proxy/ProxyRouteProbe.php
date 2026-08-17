@@ -48,6 +48,7 @@ final readonly class ProxyRouteProbe
         private ?ProxyRouteRenderer $renderer = null,
         private ?AgentToolProxyRouteIntent $agentToolRoutes = null,
         private ?ProxyRouteFileProbeContract $routeFileProbeContract = null,
+        private ?WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership = null,
     ) {}
 
     public function key(): string
@@ -878,9 +879,7 @@ final readonly class ProxyRouteProbe
 
         if (
             $route->owner_type === 'workspace'
-            && (! $route->workspace instanceof Workspace
-            || ! $this->hasInstanceOwner($route)
-            || $route->workspace->instance_id !== $route->instance_id)
+            && $this->workspaceRouteOwnership()->resolve($route) === null
         ) {
             return [$this->ownerInvalid($route, 'workspace')];
         }
@@ -1707,6 +1706,11 @@ final readonly class ProxyRouteProbe
     private function renderer(): ProxyRouteRenderer
     {
         return $this->renderer ?? app(ProxyRouteRenderer::class);
+    }
+
+    private function workspaceRouteOwnership(): WorkspaceProxyRouteOwnershipResolver
+    {
+        return $this->workspaceRouteOwnership ?? app(WorkspaceProxyRouteOwnershipResolver::class);
     }
 
     private function scripts(): ToolScriptDispatcher
