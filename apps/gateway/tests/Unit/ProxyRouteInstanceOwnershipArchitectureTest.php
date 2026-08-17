@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 it('resolves app proxy routes only through their persisted instance relationship', function (): void {
     $proxyServicePath = dirname(__DIR__, 2).'/app/Services/Proxy';
-    $resolver = file_get_contents("{$proxyServicePath}/AppProxyRouteTargetResolver.php");
+    $targetResolver = file_get_contents("{$proxyServicePath}/AppProxyRouteTargetResolver.php");
+    $ownershipResolver = file_get_contents("{$proxyServicePath}/InstanceProxyRouteOwnershipResolver.php");
 
-    expect($resolver)
+    expect($targetResolver)
+        ->toBeString()
+        ->toContain('InstanceProxyRouteOwnershipResolver')
+        ->toContain('return $this->ownership->resolve($route);')
+        ->and($ownershipResolver)
         ->toBeString()
         ->toContain("loadMissing('instance.app')")
         ->not->toContain('ConfiguredInstance')
