@@ -29,6 +29,35 @@ function grantProxyRouteQueryAccess(Node $caller, Node $servingNode): void
     ]);
 }
 
+function invalidate_proxy_route_query_ownership(
+    ProxyRoute $route,
+    App $app,
+    Instance $instance,
+    string $validKind,
+    string $invalidity,
+): void {
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+}
+
 describe('ProxyRouteQuery', function (): void {
     it('normalizes proxy route entities and sorts them by node then domain', function (): void {
         $zNode = Node::factory()->create(['name' => 'z-node']);
@@ -550,26 +579,7 @@ describe('ProxyRouteQuery', function (): void {
             'kind' => $validKind,
         ]);
 
-        if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
-        }
-
-        if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
-        }
-
-        if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
-        }
-
-        if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
-        }
-
-        if ($invalidity === 'workspace identity') {
-            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
-        }
+        invalidate_proxy_route_query_ownership($route, $app, $instance, $validKind, $invalidity);
 
         expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($ownerType);
     })->with([

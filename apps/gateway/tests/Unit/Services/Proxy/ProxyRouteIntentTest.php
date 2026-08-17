@@ -36,6 +36,35 @@ function grantProxyRouteIntentAccess(Node $caller, Node $servingNode): void
     ]);
 }
 
+function invalidate_proxy_route_intent_ownership(
+    ProxyRoute $route,
+    App $app,
+    Instance $instance,
+    string $validKind,
+    string $invalidity,
+): void {
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+}
+
 describe('ProxyRouteIntent', function (): void {
     beforeEach(function (): void {
         // Enactment uses ProxyRouteFixer; bind shell + TLS fakes like fixer unit tests.
@@ -211,26 +240,7 @@ describe('ProxyRouteIntent', function (): void {
             'kind' => $validKind,
         ]);
 
-        if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
-        }
-
-        if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
-        }
-
-        if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
-        }
-
-        if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
-        }
-
-        if ($invalidity === 'workspace identity') {
-            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
-        }
+        invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, $invalidity);
 
         try {
             app(ProxyRouteIntent::class)->add(
@@ -286,26 +296,7 @@ describe('ProxyRouteIntent', function (): void {
             'kind' => $validKind,
         ]);
 
-        if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
-        }
-
-        if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
-        }
-
-        if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
-        }
-
-        if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
-        }
-
-        if ($invalidity === 'workspace identity') {
-            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
-        }
+        invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, $invalidity);
 
         if (in_array($invalidity, ['missing app', 'missing instance', 'conflicting app'], true)) {
             $result = app(ProxyRouteIntent::class)->remove('docs.test');
