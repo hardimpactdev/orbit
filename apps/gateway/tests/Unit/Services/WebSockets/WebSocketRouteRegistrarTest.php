@@ -9,6 +9,7 @@ use App\Models\AppWebSocketBinding;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -345,6 +346,69 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
         ]))));
 });
 
+it('rejects malformed or differently-owned routes at a public websocket host', function (string $invalidity): void {
+    [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
+    $instance = websocketRouteRegistrarInstance($app);
+    $binding = AppWebSocketBinding::factory()->create([
+        'instance_id' => $instance->id,
+        'public_hosts' => ['ws.example.com'],
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'workspace_id' => null,
+        'domain' => 'ws.example.com',
+        'owner_type' => 'app-websocket',
+        'kind' => 'proxy',
+        'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+
+    if ($invalidity === 'different valid owner') {
+        $route->forceFill([
+            'instance_id' => Instance::factory()->for($app)->create(['name' => 'preview'])->id,
+        ])->save();
+    }
+
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding))
+        ->toThrow(
+            RuntimeException::class,
+            "WebSocket public host 'ws.example.com' conflicts with an existing proxy route.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'workspace identity',
+    'different valid owner',
+]);
+
 it('removes stale public websocket routes for the binding app', function (): void {
     [$app, $ingress] = websocketRouteRegistrarAppWithIngress();
     $binding = AppWebSocketBinding::factory()->create([
@@ -352,7 +416,7 @@ it('removes stale public websocket routes for the binding app', function (): voi
         'public_hosts' => ['ws-new.example.com'],
     ]);
 
-    ProxyRoute::factory()->create([
+    $validStaleRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
         'instance_id' => $binding->instance_id,
@@ -361,11 +425,34 @@ it('removes stale public websocket routes for the binding app', function (): voi
         'kind' => 'proxy',
         'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
     ]);
+    $malformedStaleRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $binding->instance_id,
+        'domain' => 'ws-malformed.example.com',
+        'owner_type' => 'app-websocket',
+        'kind' => 'proxy',
+    ]);
+    $malformedStaleRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => null,
+        'instance_id' => $binding->instance_id,
+        'domain' => 'ws-custom.example.com',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+    ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
 
-    expect(ProxyRoute::query()->where('domain', 'ws-old.example.com')->exists())
+    expect(ProxyRoute::query()->whereKey($validStaleRoute->id)->exists())
         ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedStaleRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+        ->toBeTrue()
         ->and(ProxyRoute::query()->where('domain', 'ws-new.example.com')->exists())
         ->toBeTrue();
 });
@@ -378,7 +465,7 @@ it('removes public websocket routes when the binding is disabled', function (): 
         'public_hosts' => ['ws.example.com'],
     ]);
 
-    ProxyRoute::factory()->create([
+    $validRoute = ProxyRoute::factory()->create([
         'node_id' => $ingress->id,
         'app_id' => $app->id,
         'instance_id' => $binding->instance_id,
@@ -387,10 +474,34 @@ it('removes public websocket routes when the binding is disabled', function (): 
         'kind' => 'proxy',
         'config' => ['target' => ['type' => 'websocket', 'value' => 'https://websocket.orbit']],
     ]);
+    $malformedRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $binding->instance_id,
+        'domain' => 'ws-malformed.example.com',
+        'owner_type' => 'app-websocket',
+        'kind' => 'proxy',
+    ]);
+    $malformedRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => null,
+        'instance_id' => $binding->instance_id,
+        'domain' => 'ws-custom.example.com',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+    ]);
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
 
-    expect(ProxyRoute::query()->where('domain', 'ws.example.com')->exists())->toBeFalse();
+    expect(ProxyRoute::query()->whereKey($validRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+        ->toBeTrue();
 });
 
 it('requires an ingress route when public websocket hosts are configured', function (): void {

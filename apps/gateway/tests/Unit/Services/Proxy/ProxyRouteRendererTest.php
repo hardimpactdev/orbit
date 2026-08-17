@@ -17,6 +17,25 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('ProxyRouteRenderer', function (): void {
+    it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
+        $route = ProxyRoute::factory()->create([
+            'node_id' => createTestAppHostNode()->id,
+            'domain' => 'invalid.docs.test',
+            'owner_type' => 'instance',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route))
+            ->toThrow(
+                RuntimeException::class,
+                "Proxy route 'invalid.docs.test' persists the public instance projection label as ownership.",
+            );
+    });
+
     it(
         'renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability',
         function (): void {

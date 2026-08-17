@@ -192,12 +192,10 @@ describe('AppRemoveController', function (): void {
                 domain: 'docs.test',
             ),
         ]);
-        $compatibilityApp = App::factory()->create(['name' => 'compatibility']);
-
         ProxyRoute::query()->create([
             'node_id' => $targetNode->id,
             'domain' => 'docs.test',
-            'app_id' => $compatibilityApp->id,
+            'app_id' => $app->id,
             'instance_id' => $instance->id,
             'owner_type' => 'app',
             'kind' => 'app',
@@ -264,6 +262,73 @@ describe('AppRemoveController', function (): void {
             ->toBeTrue()
             ->and(collect($shell->scripts)
                 ->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))
+            ->toBeTrue();
+    });
+
+    it('preserves malformed and stray-FK proxy routes while removing valid app ownership', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $targetNode);
+        $app = App::factory()->static()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create([
+            'driver_config' => new OrbitInstanceDriverConfigData(
+                node_id: $targetNode->id,
+                path: '/home/orbit/apps/docs',
+                domain: 'docs.test',
+            ),
+        ]);
+        $validRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $malformedRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'malformed.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+        $malformedRoute->forceFill([
+            'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+        ])->save();
+        $strayForeignKeyRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'app_id' => null,
+            'instance_id' => $instance->id,
+            'domain' => 'custom.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this
+            ->call(
+                'DELETE',
+                '/api/apps/docs',
+                ['destructive_consent' => true],
+                [],
+                [],
+                appRemoveRemoteShellFallbackHeader(),
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.cleanup.aggregate.proxy_routes_removed', 1);
+
+        expect(ProxyRoute::query()->whereKey($validRoute->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->whereKey($malformedRoute->id)->exists())
+            ->toBeTrue()
+            ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
             ->toBeTrue();
     });
 

@@ -18,6 +18,7 @@ use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:kan-defect */
 class NodeRoleDependencyInspector
 {
     /**
@@ -160,9 +161,28 @@ class NodeRoleDependencyInspector
 
             // Remove the node-bound instances and their routes served on this
             // node; the logical App and any instances on other nodes survive.
-            ProxyRoute::query()
-                ->whereIn('instance_id', $instanceIds)
-                ->delete();
+            $instanceRouteOwnership = new InstanceProxyRouteOwnershipResolver;
+            $workspaceRouteOwnership = new WorkspaceProxyRouteOwnershipResolver;
+
+            $routeIds = [];
+
+            foreach ($instances as $candidateInstance) {
+                foreach ($candidateInstance->proxyRoutes()->get() as $route) {
+                    assert($route instanceof ProxyRoute, 'Instance proxy route relation returns ProxyRoute models.');
+
+                    $instance = $route->owner_type === 'workspace'
+                        ? $workspaceRouteOwnership->resolve($route)?->instance
+                        : $instanceRouteOwnership->resolve($route);
+
+                    if ($instance instanceof Instance && in_array($instance->id, $instanceIds, true)) {
+                        $routeIds[] = $route->id;
+                    }
+                }
+            }
+
+            if ($routeIds !== []) {
+                ProxyRoute::query()->whereIn('id', $routeIds)->delete();
+            }
 
             Instance::query()
                 ->whereIn('id', $instanceIds)

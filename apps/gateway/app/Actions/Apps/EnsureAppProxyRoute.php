@@ -19,6 +19,7 @@ use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\AppProxyRouteRuntimeTargets;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\ProxyRouteEnactment;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -44,6 +45,7 @@ final readonly class EnsureAppProxyRoute
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
         private WorkspacePlacement $placement = new WorkspacePlacement,
+        private InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     /**
@@ -66,6 +68,7 @@ final readonly class EnsureAppProxyRoute
         $owningNode = $this->appOwningNodeResolver->resolve($app, $instance);
 
         $domain = $this->domain($app, $owningNode, $instance);
+        $this->assertDomainOwnership($domain, $instance);
         [$servingNode, $config, $content] = $this->routeArtifact($app, $instance, $owningNode, $domain);
 
         $route = ProxyRoute::query()->updateOrCreate(
@@ -767,6 +770,10 @@ final readonly class EnsureAppProxyRoute
                 continue;
             }
 
+            if (! $this->routeOwnership->resolve($staleRoute)?->is($instance)) {
+                continue;
+            }
+
             foreach ($this->staleRouteNodes($staleRoute) as $node) {
                 $warning = $this->performOperation(
                     route: $currentRoute,
@@ -787,6 +794,21 @@ final readonly class EnsureAppProxyRoute
         }
 
         return null;
+    }
+
+    private function assertDomainOwnership(string $domain, Instance $instance): void
+    {
+        $route = ProxyRoute::query()->where('domain', $domain)->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return;
+        }
+
+        if ($route->owner_type === 'app' && $this->routeOwnership->resolve($route)?->is($instance)) {
+            return;
+        }
+
+        throw new RuntimeException("App proxy route '{$domain}' conflicts with existing ownership.");
     }
 
     /**

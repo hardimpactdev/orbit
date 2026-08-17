@@ -14,6 +14,7 @@ use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\IngressResolver;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -41,6 +42,7 @@ class AnalyticsRouteRegistrar
         private readonly ProxyRouteFixer $proxyRouteFixer,
         private readonly DnsmasqReconciler $dnsmasqReconciler,
         private readonly WorkspacePlacement $placement,
+        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     public function syncServiceRoute(?Node $backend = null): ProxyRoute
@@ -179,8 +181,7 @@ class AnalyticsRouteRegistrar
 
             if (
                 $existingRoute instanceof ProxyRoute
-                && ($existingRoute->owner_type !== 'app-analytics'
-                || $existingRoute->instance_id !== $instance->id)
+                && ! $this->isOwnedPublicRoute($existingRoute, $instance)
             ) {
                 throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
             }
@@ -201,6 +202,10 @@ class AnalyticsRouteRegistrar
 
         foreach ($routes as $route) {
             /** @var ProxyRoute $route */
+            if (! $this->isOwnedPublicRoute($route, $instance)) {
+                continue;
+            }
+
             $route->loadMissing('node');
 
             if (! $route->node instanceof Node) {
@@ -308,8 +313,7 @@ class AnalyticsRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ($existingRoute->owner_type !== 'app-analytics'
-            || $existingRoute->instance_id !== $instance->id)
+            && ! $this->isOwnedPublicRoute($existingRoute, $instance)
         ) {
             throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -329,6 +333,11 @@ class AnalyticsRouteRegistrar
                 'source_hash' => $intent->source_hash,
             ],
         );
+    }
+
+    private function isOwnedPublicRoute(ProxyRoute $route, Instance $instance): bool
+    {
+        return $route->owner_type === 'app-analytics' && $this->routeOwnership->resolve($route)?->is($instance);
     }
 
     private function routerNodeForPublicRoute(ProxyRoute $route): Node

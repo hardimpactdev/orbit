@@ -864,6 +864,10 @@ final readonly class ProxyRouteProbe
     {
         $route->loadMissing(['instance.app', 'workspace.instance']);
 
+        if ($route->owner_type === 'instance') {
+            return [$this->ownerInvalid($route, 'instance')];
+        }
+
         if ($route->owner_type === 'app' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app')];
         }

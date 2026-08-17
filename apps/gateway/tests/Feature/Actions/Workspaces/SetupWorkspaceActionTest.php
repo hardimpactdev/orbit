@@ -287,7 +287,6 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         'owner_type' => 'workspace',
         'kind' => 'workspace',
     ]);
-    $legacyRoute->forceFill(['instance_id' => null])->save();
     Http::preventStrayRequests();
     Http::fake([
         'http://10.47.0.41:9477/v1/commands' => Http::sequence()
@@ -354,6 +353,70 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
             $route?->instance?->is($workspace->instance),
         )->toBeTrue()->and($route?->is($legacyRoute))->toBeTrue();
 });
+
+it('rejects malformed or differently-owned workspace routes at the target domain', function (string $invalidity): void {
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'instance_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => 1,
+        'app_id' => $workspace->app_id,
+        'workspace_id' => $workspace->id,
+        'instance_id' => $workspace->instance_id,
+        'domain' => 'feature-a.demo.beast',
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'proxy'])->save();
+    }
+
+    if ($invalidity === 'missing workspace') {
+        $route->forceFill(['workspace_id' => null])->save();
+    }
+
+    if ($invalidity === 'different valid owner') {
+        $otherWorkspace = Workspace::factory()->create([
+            'app_id' => $workspace->app_id,
+            'instance_id' => $workspace->instance_id,
+        ]);
+        $route->forceFill(['workspace_id' => $otherWorkspace->id])->save();
+    }
+
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => app(EnsureWorkspaceProxyRoute::class)->handle($workspace))
+        ->toThrow(
+            RuntimeException::class,
+            "Workspace proxy route 'feature-a.demo.beast' conflicts with existing ownership.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'missing workspace',
+    'different valid owner',
+]);
 
 it('sets up a Codex worktree against the selected app instance node', function (): void {
     $canonicalNode = Node::query()->where('name', 'gateway')->firstOrFail();

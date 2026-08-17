@@ -158,20 +158,6 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
             domain: "{$app->name}.{$node->tld}",
         ),
     ]);
-    $workspace = Workspace::factory()->create([
-        'app_id' => $app->id,
-        'instance_id' => $instance->id,
-    ]);
-    ProxyRoute::factory()->create([
-        'node_id' => $node->id,
-        'app_id' => $app->id,
-        'instance_id' => $instance->id,
-        'workspace_id' => $workspace->id,
-        'domain' => 'docs.test',
-        'owner_type' => 'workspace',
-        'kind' => 'workspace',
-    ]);
-
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
@@ -347,6 +333,80 @@ it('routes the explicitly selected instance, not the primary or a stale app envi
         ->and($route->config['runtime_upstream'])
         ->not->toContain('development');
 });
+
+it('rejects malformed or differently-owned app routes at the target domain', function (string $invalidity): void {
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+        ]);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'runtime' => AppRuntimeKind::Static,
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            domain: 'docs.test',
+        ),
+    ]);
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'workspace_id' => null,
+        'domain' => 'docs.test',
+        'owner_type' => 'app',
+        'kind' => 'app',
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'proxy'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+
+    if ($invalidity === 'different valid owner') {
+        $route->forceFill([
+            'instance_id' => Instance::factory()->for($app)->create(['name' => 'preview'])->id,
+        ])->save();
+    }
+
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => app(EnsureAppProxyRoute::class)->handle($app, $instance))
+        ->toThrow(
+            RuntimeException::class,
+            "App proxy route 'docs.test' conflicts with existing ownership.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'workspace identity',
+    'different valid owner',
+]);
 
 it('creates a static app proxy route with file_server', function (): void {
     Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
@@ -529,7 +589,7 @@ it('removes stale app-owned proxy routes for the same app when its domain change
         ),
     ]);
 
-    ProxyRoute::factory()->create([
+    $validStaleRoute = ProxyRoute::factory()->create([
         'node_id' => $node->id,
         'app_id' => $app->id,
         'instance_id' => $instance->id,
@@ -547,6 +607,25 @@ it('removes stale app-owned proxy routes for the same app when its domain change
             ],
         ],
     ]);
+    $malformedStaleRoute = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'domain' => 'malformed-happie.nmbp',
+    ]);
+    $malformedStaleRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => null,
+        'instance_id' => $instance->id,
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+        'domain' => 'custom-happie.nmbp',
+    ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -559,6 +638,12 @@ it('removes stale app-owned proxy routes for the same app when its domain change
 
     expect(ProxyRoute::query()->where('app_id', $app->id)->pluck('domain')->all())
         ->toBe(['happie.nmbp'])
+        ->and(ProxyRoute::query()->whereKey($validStaleRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedStaleRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+        ->toBeTrue()
         ->and(array_column($executor->calls, 'action'))
         ->toContain('remove-site')
         ->and(collect($executor->calls)->firstWhere('action', 'remove-site')['payload'])

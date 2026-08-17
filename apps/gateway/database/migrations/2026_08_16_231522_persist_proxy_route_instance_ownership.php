@@ -48,6 +48,8 @@ return new class extends Migration {
             return;
         }
 
+        $this->preserveRollbackOwnershipHints($this->assignments());
+
         Schema::table('proxy_routes', static function (Blueprint $table): void {
             $table->dropIndex(['instance_id', 'owner_type']);
             $table->dropConstrainedForeignId('instance_id');
@@ -65,6 +67,13 @@ return new class extends Migration {
             $ownerType = $this->rowString($route, 'owner_type');
             $kind = $this->rowString($route, 'kind');
             $routeId = $this->rowInteger($route, 'id');
+
+            if ($ownerType === 'instance') {
+                throw $this->ownershipException(
+                    $route,
+                    'uses the public instance projection label as persisted ownership',
+                );
+            }
 
             $expectedKind = InstanceProxyRouteOwnershipResolver::expectedKind($ownerType);
 
@@ -94,6 +103,34 @@ return new class extends Migration {
         }
 
         return $assignments;
+    }
+
+    /** @param array<int, int|null> $assignments */
+    private function preserveRollbackOwnershipHints(array $assignments): void
+    {
+        DB::transaction(function () use ($assignments): void {
+            foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
+                $ownerType = $this->rowString($route, 'owner_type');
+
+                if (! InstanceProxyRouteOwnershipResolver::isDirectOwner($ownerType)) {
+                    continue;
+                }
+
+                $routeId = $this->rowInteger($route, 'id');
+                $instanceId = $assignments[$routeId] ?? null;
+
+                if (! is_int($instanceId) || $instanceId < 1) {
+                    throw $this->ownershipException($route, 'has no strict positive rollback ownership hint');
+                }
+
+                $config = $this->routeConfig($route);
+                $config['instance_id'] = $instanceId;
+
+                DB::table('proxy_routes')
+                    ->where('id', $routeId)
+                    ->update(['config' => json_encode($config, JSON_THROW_ON_ERROR)]);
+            }
+        });
     }
 
     private function workspaceInstanceId(object $route): int

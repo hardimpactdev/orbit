@@ -18,6 +18,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use RuntimeException;
 use Throwable;
 
@@ -34,6 +35,7 @@ final readonly class EnsureWorkspaceProxyRoute
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
+        private WorkspaceProxyRouteOwnershipResolver $routeOwnership = new WorkspaceProxyRouteOwnershipResolver,
     ) {}
 
     /**
@@ -58,6 +60,7 @@ final readonly class EnsureWorkspaceProxyRoute
         $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
 
         $domain = $this->domain($workspace);
+        $this->assertDomainOwnership($domain, $workspace);
         [$servingNode, $config, $content] = $this->routeArtifact($workspace, $app, $node, $domain);
 
         $route = ProxyRoute::query()->updateOrCreate(
@@ -101,6 +104,23 @@ final readonly class EnsureWorkspaceProxyRoute
         }
 
         return [];
+    }
+
+    private function assertDomainOwnership(string $domain, Workspace $workspace): void
+    {
+        $route = ProxyRoute::query()->where('domain', $domain)->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return;
+        }
+
+        $ownership = $this->routeOwnership->resolve($route);
+
+        if ($ownership?->workspace->is($workspace)) {
+            return;
+        }
+
+        throw new RuntimeException("Workspace proxy route '{$domain}' conflicts with existing ownership.");
     }
 
     /**

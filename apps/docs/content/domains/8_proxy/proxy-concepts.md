@@ -24,7 +24,10 @@ These terms define the types of routes that the proxy family owns and manages.
   `config.instance_id` or `config.instance.id` ownership hint must be a JSON
   positive integer. Decimal values, numeric strings, zero, negative values,
   whitespace, junk, and all other types stop migration before schema
-  mutation.
+  mutation. Before rollback removes the durable `instance_id` column, it writes
+  each validated direct owner's positive Instance ID to `config.instance_id`.
+  Reapplying the migration consumes that compatibility hint, so analytics and
+  WebSocket routes keep the same owner when an App has multiple instances.
 - **Route owner:** The domain that owns route lifecycle. Persisted
   `owner_type` values are `app`, `app-analytics`, `app-websocket`, `workspace`,
   `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored
@@ -36,6 +39,10 @@ These terms define the types of routes that the proxy family owns and manages.
   `proxy`. Each tuple requires one matching App and Instance, matching `app_id`,
   and `workspace_id=null`. Query and Doctor do not present incomplete tuples as
   valid owners. Render and repair reject them. Ingress cleanup ignores them.
+  Domain convergence updates an existing row only when its complete tuple
+  resolves to the intended owner. Invalid ownership and another valid owner at
+  the same domain are conflicts. Destructive lifecycle cleanup applies the same
+  resolver rule before it removes route artifacts or registry rows.
 - **Route kind:** Route behavior at ingress. Persisted kinds are `app`,
   `workspace`, `internal`, `proxy`, and `redirect`. The registry maps a stored
   primary `app` route to public kind `instance`.

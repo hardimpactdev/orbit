@@ -1184,6 +1184,12 @@ final readonly class ProxyRouteRenderer
 
     private function assertDirectInstanceOwnership(ProxyRoute $route): void
     {
+        if ($route->owner_type === 'instance') {
+            throw new RuntimeException(
+                "Proxy route '{$route->domain}' persists the public instance projection label as ownership.",
+            );
+        }
+
         if (! InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
             return;
         }

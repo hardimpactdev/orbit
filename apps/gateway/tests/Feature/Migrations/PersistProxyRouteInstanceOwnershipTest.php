@@ -482,20 +482,72 @@ it('recomputes valid legacy ownership when the schema exists but DML was interru
     });
 });
 
-it('does not treat the public instance label as a persisted instance owner type', function (): void {
+it('rejects the public instance projection label as a persisted owner type', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();
         insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
         insertHistoricalProxyRoute(100, 'docs.test', 'instance', 'app', 1);
 
-        proxyRouteInstanceOwnershipMigration()->up();
-
-        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
-            ->toBeNull()
-            ->and(DB::table('proxy_routes')->where('id', 100)->value('owner_type'))
-            ->toBe('instance');
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='docs.test' owner_type='instance' uses the public instance projection label as persisted ownership",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
     });
 });
+
+it('preserves public binding instance ownership through an up down up cycle', function (string $ownerType): void {
+    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertProxyRouteOwnershipInstance(11, 'preview', 'preview.docs.test');
+
+        $migration = proxyRouteInstanceOwnershipMigration();
+        $migration->up();
+
+        DB::table('proxy_routes')->insert([
+            'id' => 100,
+            'node_id' => 1,
+            'domain' => "{$ownerType}.docs.test",
+            'app_id' => 1,
+            'workspace_id' => null,
+            'instance_id' => 11,
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => json_encode([
+                'protocol' => $ownerType === 'app-analytics' ? 'analytics' : 'websocket',
+            ], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $migration->down();
+
+        $rolledBackConfig = json_decode(
+            (string) DB::table('proxy_routes')->where('id', 100)->value('config'),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse()
+            ->and($rolledBackConfig['instance_id'] ?? null)
+            ->toBe(11);
+
+        $migration->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(11)
+            ->and(fn (): mixed => $migration->up())
+            ->not->toThrow(Throwable::class);
+    });
+})->with([
+    'analytics route' => 'app-analytics',
+    'websocket route' => 'app-websocket',
+]);
 
 it('rewrites legacy runtime targets and hashes on the migration connection idempotently', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {

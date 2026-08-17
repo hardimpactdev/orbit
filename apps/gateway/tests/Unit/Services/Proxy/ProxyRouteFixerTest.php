@@ -30,6 +30,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+/** @mago-expect lint:cyclomatic-complexity */
 describe('ProxyRouteFixer', function (): void {
     beforeEach(function (): void {});
 
@@ -363,6 +364,19 @@ describe('ProxyRouteFixer', function (): void {
             $route->forceFill(['app_id' => null])->save();
         }
 
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
         $fixer = new ProxyRouteFixer(
@@ -388,10 +402,56 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe([]);
     })->with([
         'analytics missing app' => ['app-analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'conflicting app'],
         'analytics malformed kind' => ['app-analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'workspace identity'],
         'websocket missing app' => ['app-websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'conflicting app'],
         'websocket malformed kind' => ['app-websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'workspace identity'],
     ]);
+
+    it('does not fix a proxy route that persists the public instance projection label', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'invalid.docs.test',
+            'owner_type' => 'instance',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($route->refresh()->source_hash)
+            ->toBe(str_repeat('0', 64))
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    });
 
     it('does not repair invalid primary app ownership tuples', function (string $invalidity): void {
         $node = createTestAppHostNode(['name' => 'app-1']);

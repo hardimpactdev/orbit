@@ -437,6 +437,86 @@ describe('AppRegisterController', function (): void {
         'websocket',
     ]);
 
+    it('rejects malformed ownership on the selected instance route', function (string $invalidity): void {
+        createTestGatewayNode(['name' => 'gateway-1']);
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.49',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.49');
+        $app = App::factory()->create(['name' => 'docs']);
+        $selected = app_register_instance(
+            $app,
+            'development',
+            $targetNode,
+            '/home/orbit/apps/docs',
+            domain: 'docs.test',
+        );
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'app_id' => $app->id,
+            'instance_id' => $selected->id,
+            'workspace_id' => null,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'wrong kind') {
+            $route->forceFill(['kind' => 'proxy'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->create([
+                'app_id' => $app->id,
+                'instance_id' => $selected->id,
+            ]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        app()->instance(RemoteShell::class, new AppRegisterApiSequencedRemoteShell([]));
+
+        $this
+            ->call(
+                'POST',
+                '/api/instances/register',
+                [
+                    'name' => 'docs.development',
+                    'node' => 'app-1',
+                    'path' => '/home/orbit/apps/docs',
+                ],
+                [],
+                [],
+                app_register_fallback_server(),
+            )
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'proxy.domain_conflict')
+            ->assertJsonPath('error.meta.domain', 'docs.test');
+    })->with([
+        'missing app',
+        'missing instance',
+        'conflicting app',
+        'wrong kind',
+        'workspace identity',
+    ]);
+
     it('rejects invalid runtime proxy transport values before registration', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
@@ -498,7 +578,7 @@ describe('AppRegisterController', function (): void {
             'name' => 'docs',
         ]);
         app_register_instance($app, 'development', $oldNode, '/home/orbit/apps/docs');
-        app_register_instance($app, 'second', $targetNode, '/srv/other');
+        app_register_instance($app, 'second', $targetNode, '/srv/other', domain: 'second.test');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),

@@ -223,6 +223,77 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBeFalse();
     });
 
+    it('preserves malformed and stray-FK proxy routes while removing valid workspace ownership', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $targetNode);
+        $app = App::factory()->static()->placedOn($targetNode)->create(['name' => 'docs']);
+        $instance = $app->instances()->firstOrFail();
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'name' => 'feature-api',
+        ]);
+        $validRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'feature-api.docs.test',
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $malformedRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'malformed.docs.test',
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+        $malformedRoute->forceFill([
+            'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+        ])->save();
+        $strayForeignKeyRoute = ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'custom.docs.test',
+            'app_id' => null,
+            'instance_id' => null,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+        ]);
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
+
+        $this
+            ->call(
+                'DELETE',
+                '/api/workspaces/feature-api?instance=docs',
+                [
+                    'keep_files' => true,
+                    'destructive_consent' => true,
+                ],
+                [],
+                [],
+                workspaceRemoveRemoteShellFallbackHeader(),
+            )
+            ->assertOk()
+            ->assertJsonPath('success.data.proxy_routes_removed', 1);
+
+        expect(ProxyRoute::query()->whereKey($validRoute->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->whereKey($malformedRoute->id)->exists())
+            ->toBeTrue()
+            ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+            ->toBeTrue();
+    });
+
     it('removes an app-instance workspace on the selected instance node', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);

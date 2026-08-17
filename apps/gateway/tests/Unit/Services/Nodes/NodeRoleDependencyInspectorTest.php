@@ -89,6 +89,54 @@ it('deletes the app only once its final instance is removed with the node role',
         ->toBeFalse();
 });
 
+it('removes only valid instance-owned routes with an app role dependent', function (): void {
+    $devNode = createTestAppHostNode(['name' => 'dev-node', 'tld' => 'dev']);
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(node_id: $devNode->id),
+    ]);
+    $validRoute = ProxyRoute::factory()->create([
+        'node_id' => $devNode->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'docs.dev',
+        'owner_type' => 'app',
+        'kind' => 'app',
+    ]);
+    $malformedRoute = ProxyRoute::factory()->create([
+        'node_id' => $devNode->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'malformed.dev',
+        'owner_type' => 'app',
+        'kind' => 'app',
+    ]);
+    $malformedRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $devNode->id,
+        'app_id' => null,
+        'instance_id' => $instance->id,
+        'domain' => 'custom.dev',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+    ]);
+
+    new NodeRoleDependencyInspector()->removeOrbitOwnedDependents(
+        $devNode,
+        new NodeRoleAssignment(['role' => 'app-dev']),
+    );
+
+    expect(ProxyRoute::query()->whereKey($validRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
+        ->toBeTrue();
+});
+
 it('classifies ingress routes by their concrete instance instead of any app sibling', function (): void {
     $ingress = createTestAppHostNode(['name' => 'ingress-node', 'tld' => 'edge'], 'ingress');
     $productionNode = createTestAppHostNode(['name' => 'production-node', 'tld' => 'prod'], 'app-prod');

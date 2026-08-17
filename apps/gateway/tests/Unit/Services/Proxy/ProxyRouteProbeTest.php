@@ -560,6 +560,26 @@ describe('proxy registry probe foundation', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
 
+    it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
+        $route = ProxyRoute::factory()->create([
+            'node_id' => createTestAppHostNode()->id,
+            'domain' => 'invalid.docs.test',
+            'owner_type' => 'instance',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.record_incomplete'))
+            ->toBeNull();
+    });
+
     it('requires app owners to resolve', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();

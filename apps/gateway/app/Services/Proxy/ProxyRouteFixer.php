@@ -146,6 +146,10 @@ final readonly class ProxyRouteFixer
             return null;
         }
 
+        if ($route->owner_type === 'instance') {
+            return null;
+        }
+
         if ($route->owner_type === 'workspace' || $route->kind === 'workspace') {
             new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
         }

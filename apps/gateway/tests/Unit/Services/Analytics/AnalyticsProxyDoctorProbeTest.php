@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\AppAnalyticsBinding;
@@ -11,9 +12,13 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
 use App\Services\Analytics\AnalyticsProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsPublicProxyDoctorProbe;
 use App\Services\Analytics\AnalyticsRouteRegistrar;
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Proxy\RemoteCaddyConfig;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -22,6 +27,29 @@ uses(TestCase::class, RefreshDatabase::class);
 beforeEach(function (): void {
     bind_dnsmasq_reconciler_test_double();
 });
+
+final readonly class AnalyticsRouteRegistrarTestInternalExecutor implements RunsInternalCommands
+{
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $action = is_string($arguments[0] ?? null) ? $arguments[0] : '';
+        $data = $action === 'read-global'
+            ? ['content' => new CaddyGlobalConfig()->fresh()]
+            : [];
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(['success' => ['data' => $data, 'meta' => []]], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+}
 
 it('reports a missing private analytics route for the router', function (): void {
     $router = analyticsProxyRouter();
@@ -140,6 +168,123 @@ it('restores public analytics route intent from the enabled app binding', functi
     expect($result['status'] ?? null)
         ->toBe('completed')
         ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->exists())
+        ->toBeTrue();
+});
+
+it('rejects malformed or differently-owned routes at a public analytics host', function (string $invalidity): void {
+    analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    $instance = $binding->instance()->firstOrFail();
+    $route = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'workspace_id' => null,
+        'domain' => 'analytics.docs.test',
+        'owner_type' => 'app-analytics',
+        'kind' => 'proxy',
+    ]);
+
+    if ($invalidity === 'missing app') {
+        $route->forceFill(['app_id' => null])->save();
+    }
+
+    if ($invalidity === 'missing instance') {
+        $route->forceFill(['instance_id' => null])->save();
+    }
+
+    if ($invalidity === 'conflicting app') {
+        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+    }
+
+    if ($invalidity === 'wrong kind') {
+        $route->forceFill(['kind' => 'app'])->save();
+    }
+
+    if ($invalidity === 'workspace identity') {
+        $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+        $route->forceFill(['workspace_id' => $workspace->id])->save();
+    }
+
+    if ($invalidity === 'different valid owner') {
+        $route->forceFill([
+            'instance_id' => Instance::factory()->for($app)->create(['name' => 'preview'])->id,
+        ])->save();
+    }
+
+    $original = $route->fresh()->getAttributes();
+
+    expect(fn (): mixed => app(AnalyticsRouteRegistrar::class)->assertPublicHostsAvailable(
+        $instance,
+        ['analytics.docs.test'],
+    ))
+        ->toThrow(
+            RuntimeException::class,
+            "Analytics public host 'analytics.docs.test' conflicts with an existing proxy route.",
+        )
+        ->and(fn (): mixed => app(AnalyticsRouteRegistrar::class)->syncPublicHosts($binding))
+        ->toThrow(
+            RuntimeException::class,
+            "Analytics public host 'analytics.docs.test' conflicts with an existing proxy route.",
+        )
+        ->and($route->fresh()->getAttributes())
+        ->toBe($original);
+})->with([
+    'missing app',
+    'missing instance',
+    'conflicting app',
+    'wrong kind',
+    'workspace identity',
+    'different valid owner',
+]);
+
+it('removes only valid obsolete public analytics ownership', function (): void {
+    $router = analyticsProxyRouter();
+    analyticsProxyBackend();
+    [$ingress, $app, $binding] = analyticsPublicBinding();
+    $instance = $binding->instance()->firstOrFail();
+    $routeConfig = ['router_artifact' => ['node_id' => $router->id]];
+    $validRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'valid-analytics.docs.test',
+        'owner_type' => 'app-analytics',
+        'kind' => 'proxy',
+        'config' => $routeConfig,
+    ]);
+    $malformedRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'domain' => 'malformed-analytics.docs.test',
+        'owner_type' => 'app-analytics',
+        'kind' => 'proxy',
+        'config' => $routeConfig,
+    ]);
+    $malformedRoute->forceFill([
+        'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
+    ])->save();
+    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        'node_id' => $ingress->id,
+        'app_id' => null,
+        'instance_id' => $instance->id,
+        'domain' => 'custom-analytics.docs.test',
+        'owner_type' => 'custom',
+        'kind' => 'proxy',
+    ]);
+    $executor = new AnalyticsRouteRegistrarTestInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+    app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));
+
+    app(AnalyticsRouteRegistrar::class)->removeObsoletePublicHosts($instance, []);
+
+    expect(ProxyRoute::query()->whereKey($validRoute->id)->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->whereKey($malformedRoute->id)->exists())
+        ->toBeTrue()
+        ->and(ProxyRoute::query()->whereKey($strayForeignKeyRoute->id)->exists())
         ->toBeTrue();
 });
 
