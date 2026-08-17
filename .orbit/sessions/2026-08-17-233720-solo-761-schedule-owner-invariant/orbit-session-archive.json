@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-17T21:37:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-761-schedule-owner-invariant/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-17-233720-solo-761-schedule-owner-invariant",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-761-blast-radius-inventory.md",
+        "evidence/solo-761-retained-incus-proof.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/solo-761-blast-radius-inventory.md": "7c52366e6f474e2d9f6018500b81366d75cfb17d07f9c9189d8602426d93a5ba",
+        "evidence/solo-761-retained-incus-proof.md": "23285ac942b4467132760f65207e46a3eb6cb48b90adda91a6e3cf863f967f2b",
+        "loop.md": "ed729c7abd4e0ea871c8b7d6019e81bde0f8cf412a9ad422ae6a743884362c1b"
+    },
+    "slug": "solo-761-schedule-owner-invariant",
+    "requested_slug": "solo-761-schedule-owner-invariant",
+    "compatible_slugs": [
+        "solo-761-schedule-owner-invariant"
+    ],
+    "branch": "solo-761-schedule-owner-invariant",
+    "candidate_commit": "a749f66a09a6455a358a2d74a0f2d6e86d1225fe",
+    "accepted_feature_tip": "a749f66a09a6455a358a2d74a0f2d6e86d1225fe",
+    "accepted_main_tip": "b1b8d80f48cae01d4ff817dc451aa584bf2f56a8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

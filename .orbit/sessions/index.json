@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 340,
-    "unique_candidate_commit_count": 236,
+    "record_count": 341,
+    "unique_candidate_commit_count": 237,
     "orphan_count": 0,
     "records": [
         {
@@ -8906,6 +8906,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "98148e077bf377907d6d3a86c9b178f60b16f48b",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-17-233720-solo-761-schedule-owner-invariant",
+            "slug": "solo-761-schedule-owner-invariant",
+            "timestamp": "2026-08-17-233720",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a749f66a09a6455a358a2d74a0f2d6e86d1225fe",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
