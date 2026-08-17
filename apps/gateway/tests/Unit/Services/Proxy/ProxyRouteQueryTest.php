@@ -202,6 +202,10 @@ describe('ProxyRouteQuery', function (): void {
             $route->forceFill(['instance_id' => null])->save();
         }
 
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
         if ($invalidity === 'conflicting app') {
             $route->forceFill(['app_id' => App::factory()->create()->id])->save();
         }
@@ -462,6 +466,73 @@ describe('ProxyRouteQuery', function (): void {
                 ],
             ]);
     });
+
+    it('does not project invalid public binding tuples as analytics or websocket owners and targets', function (
+        string $ownerType,
+        string $filter,
+        string $invalidity,
+    ): void {
+        $edge = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $edge->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$filter}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => $filter, 'value' => "https://{$filter}.orbit"],
+                'upstream' => "https://{$filter}.orbit",
+            ],
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'app'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        $query = app(ProxyRouteQuery::class);
+        $entity = $query->toRouteEntity($route->fresh());
+        $listed = $query->list(filter: $filter)['routes'][0];
+
+        expect($entity['owner'])
+            ->toBe(['type' => $ownerType, 'name' => null])
+            ->and($entity['target'])
+            ->toBe(['type' => 'upstream', 'value' => "https://{$filter}.orbit"])
+            ->and($listed['owner']['type'])
+            ->toBe($ownerType)
+            ->and($listed['target']['type'])
+            ->toBe('upstream');
+    })->with([
+        'analytics missing app' => ['app-analytics', 'analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'analytics', 'conflicting app'],
+        'analytics malformed kind' => ['app-analytics', 'analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'analytics', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'websocket', 'conflicting app'],
+        'websocket malformed kind' => ['app-websocket', 'websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'websocket', 'workspace identity'],
+    ]);
 
     it('enriches workspace route entities with canonical parent app.instance from the FK workspace only', function (): void {
         $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);

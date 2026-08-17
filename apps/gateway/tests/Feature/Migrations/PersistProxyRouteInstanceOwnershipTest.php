@@ -67,8 +67,9 @@ it('backfills every instance-backed route and preserves routes without instance 
 it('fails before schema mutation when an instance-backed owner has the wrong route kind', function (
     string $ownerType,
     string $kind,
+    string $expectedKind,
 ): void {
-    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType, $kind): void {
+    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType, $kind, $expectedKind): void {
         insertProxyRouteOwnershipApp();
         insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
 
@@ -84,14 +85,95 @@ it('fails before schema mutation when an instance-backed owner has the wrong rou
         expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
             ->toThrow(
                 RuntimeException::class,
-                "proxy_routes#100 domain='docs.test' owner_type='{$ownerType}' requires kind='{$ownerType}' but found kind='{$kind}'",
+                "proxy_routes#100 domain='docs.test' owner_type='{$ownerType}' requires kind='{$expectedKind}' but found kind='{$kind}'",
             )
             ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
             ->toBeFalse();
     });
 })->with([
-    'app owner with proxy kind' => ['app', 'proxy'],
-    'workspace owner with proxy kind' => ['workspace', 'proxy'],
+    'app owner with proxy kind' => ['app', 'proxy', 'app'],
+    'workspace owner with proxy kind' => ['workspace', 'proxy', 'workspace'],
+    'analytics owner with app kind' => ['app-analytics', 'app', 'proxy'],
+    'websocket owner with app kind' => ['app-websocket', 'app', 'proxy'],
+]);
+
+it('fails before schema mutation when route config contains malformed non-empty JSON', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1);
+        DB::table('proxy_routes')->where('id', 100)->update(['config' => '{malformed']);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='docs.test' owner_type='app' has malformed config JSON",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
+it('fails before schema mutation when instance driver config contains malformed non-empty JSON', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        DB::table('instances')->where('id', 10)->update(['driver_config' => '{malformed']);
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                'ProxyRoute instance ownership migration blocked by instances#10 has malformed driver_config JSON.',
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
+it('fails before schema mutation when a public binding route has incomplete App or Instance identity', function (
+    string $ownerType,
+    string $invalidity,
+    string $expectedMessage,
+): void {
+    withHistoricalProxyRouteOwnershipSchema(function () use ($ownerType, $invalidity, $expectedMessage): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+
+        if ($invalidity === 'conflicting app') {
+            DB::table('apps')->insert(['id' => 2, 'name' => 'store', 'runtime' => 'php']);
+        }
+
+        $workspaceId = null;
+
+        if ($invalidity === 'workspace identity') {
+            insertProxyRouteOwnershipWorkspace(20, 10);
+            $workspaceId = 20;
+        }
+
+        $appId = match ($invalidity) {
+            'missing app' => null,
+            'conflicting app' => 2,
+            default => 1,
+        };
+        $config = ['instance_id' => $invalidity === 'missing instance' ? 999 : 10];
+
+        insertHistoricalProxyRoute(100, 'public.docs.test', $ownerType, 'proxy', $appId, $workspaceId, $config);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(RuntimeException::class, $expectedMessage)
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+})->with([
+    'analytics missing app' => ['app-analytics', 'missing app', 'has no app_id'],
+    'analytics missing instance' => ['app-analytics', 'missing instance', 'identifies missing instance_id=999'],
+    'analytics conflicting app' => ['app-analytics', 'conflicting app', 'has no Instance candidates for app_id=2'],
+    'analytics workspace identity' => ['app-analytics', 'workspace identity', 'must not identify a workspace_id'],
+    'websocket missing app' => ['app-websocket', 'missing app', 'has no app_id'],
+    'websocket missing instance' => ['app-websocket', 'missing instance', 'identifies missing instance_id=999'],
+    'websocket conflicting app' => ['app-websocket', 'conflicting app', 'has no Instance candidates for app_id=2'],
+    'websocket workspace identity' => ['app-websocket', 'workspace identity', 'must not identify a workspace_id'],
 ]);
 
 it('clears stale instance ownership from non-instance routes when rerun', function (): void {

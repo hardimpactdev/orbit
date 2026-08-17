@@ -36,6 +36,7 @@ class ProxyRouteQuery
         private readonly AppProxyRouteTargetResolver $appRouteTargets,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
         private readonly WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership,
+        private readonly InstanceProxyRouteOwnershipResolver $instanceRouteOwnership,
     ) {}
 
     /**
@@ -364,8 +365,7 @@ class ProxyRouteQuery
     {
         return match ($route->owner_type) {
             'app' => $this->appRouteOwnerName($route),
-            'app-analytics' => $route->instance?->app?->name,
-            'app-websocket' => $route->instance?->app?->name,
+            'app-analytics', 'app-websocket' => $this->bindingRouteAppName($route),
             'workspace' => $this->workspaceRouteOwnership->resolve($route)?->workspace->name,
             'router' => $route->domain,
             'gateway', 'tool', 's3' => $this->stringConfig($config, ['owner_name', 'tool']),
@@ -389,6 +389,13 @@ class ProxyRouteQuery
             return 'app';
         }
 
+        if (
+            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            && ! $this->bindingRouteIsValid($route)
+        ) {
+            return $route->owner_type;
+        }
+
         return $this->ownerType($route);
     }
 
@@ -400,8 +407,8 @@ class ProxyRouteQuery
 
         return match ($route->owner_type) {
             'app' => $this->appRouteIsValid($route) ? $this->appRouteTargetType() : 'upstream',
-            'app-analytics' => 'analytics',
-            'app-websocket' => 'websocket',
+            'app-analytics' => $this->bindingRouteIsValid($route) ? 'analytics' : 'upstream',
+            'app-websocket' => $this->bindingRouteIsValid($route) ? 'websocket' : 'upstream',
             'workspace' => 'workspace',
             'gateway' => 'gateway',
             'tool', 's3', 'router' => 'upstream',
@@ -449,6 +456,18 @@ class ProxyRouteQuery
     private function appRouteIsValid(ProxyRoute $route): bool
     {
         return $this->appRouteTargets->instanceForRoute($route) instanceof Instance;
+    }
+
+    private function bindingRouteIsValid(ProxyRoute $route): bool
+    {
+        return $this->instanceRouteOwnership->resolve($route) instanceof Instance;
+    }
+
+    private function bindingRouteAppName(ProxyRoute $route): ?string
+    {
+        $instance = $this->instanceRouteOwnership->resolve($route);
+
+        return $instance?->app?->name;
     }
 
     /**

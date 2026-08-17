@@ -15,24 +15,16 @@ final readonly class AppProxyRouteTargetResolver
 {
     public function __construct(
         private WorkspacePlacement $placement = new WorkspacePlacement,
+        private InstanceProxyRouteOwnershipResolver $ownership = new InstanceProxyRouteOwnershipResolver,
     ) {}
 
     public function instanceForRoute(ProxyRoute $route): ?Instance
     {
-        if ($route->owner_type !== 'app' || $route->kind !== 'app') {
+        if ($route->owner_type !== 'app') {
             return null;
         }
 
-        $route->loadMissing('instance.app');
-
-        if (
-            ! $route->instance instanceof Instance
-            || $route->app_id !== $route->instance->app_id
-        ) {
-            return null;
-        }
-
-        return $route->instance;
+        return $this->ownership->resolve($route);
     }
 
     public function appForRoute(ProxyRoute $route, ?Instance $instance = null): ?App

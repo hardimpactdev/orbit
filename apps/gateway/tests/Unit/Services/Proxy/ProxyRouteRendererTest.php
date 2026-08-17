@@ -544,6 +544,61 @@ describe('ProxyRouteRenderer', function (): void {
             CADDY);
     });
 
+    it('rejects invalid public binding ownership tuples before rendering', function (
+        string $ownerType,
+        string $invalidity,
+    ): void {
+        $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $ingress->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$ownerType}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => 'proxy',
+            'config' => [
+                'placement' => 'ingress',
+                'router_upstream' => ['url' => 'http://10.6.0.2:80'],
+            ],
+        ]);
+
+        if ($invalidity === 'missing instance') {
+            $route->forceFill(['instance_id' => null])->save();
+        }
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        if ($invalidity === 'conflicting app') {
+            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        }
+
+        if ($invalidity === 'malformed kind') {
+            $route->forceFill(['kind' => 'app'])->save();
+        }
+
+        if ($invalidity === 'workspace identity') {
+            $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
+            $route->forceFill(['workspace_id' => $workspace->id])->save();
+        }
+
+        new ProxyRouteRenderer()->render($route->fresh());
+    })->with([
+        'analytics missing app' => ['app-analytics', 'missing app'],
+        'analytics missing instance' => ['app-analytics', 'missing instance'],
+        'analytics conflicting app' => ['app-analytics', 'conflicting app'],
+        'analytics malformed kind' => ['app-analytics', 'malformed kind'],
+        'analytics workspace identity' => ['app-analytics', 'workspace identity'],
+        'websocket missing app' => ['app-websocket', 'missing app'],
+        'websocket missing instance' => ['app-websocket', 'missing instance'],
+        'websocket conflicting app' => ['app-websocket', 'conflicting app'],
+        'websocket malformed kind' => ['app-websocket', 'malformed kind'],
+        'websocket workspace identity' => ['app-websocket', 'workspace identity'],
+    ])->throws(RuntimeException::class);
+
     it('renders the private analytics service route without tracking-only path restrictions', function (): void {
         $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([

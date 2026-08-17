@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Apps\AppProxyRouteRuntimeUpstreamBackfill;
+use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -14,14 +15,6 @@ use Illuminate\Support\Facades\Schema;
  * @mago-expect lint:too-many-methods
  */
 return new class extends Migration {
-    /** @var list<string> */
-    private const array INSTANCE_OWNER_TYPES = [
-        'app',
-        'workspace',
-        'app-analytics',
-        'app-websocket',
-    ];
-
     public function up(): void
     {
         $assignments = $this->assignments();
@@ -66,24 +59,33 @@ return new class extends Migration {
     {
         $assignments = [];
         $instanceColumnExists = Schema::hasColumn('proxy_routes', 'instance_id');
+        $this->assertLegacyJsonIsValid();
 
         foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
             $ownerType = $this->rowString($route, 'owner_type');
             $kind = $this->rowString($route, 'kind');
             $routeId = $this->rowInteger($route, 'id');
 
-            if ($ownerType === 'app' && $kind !== 'app') {
-                throw $this->ownershipException($route, "requires kind='app' but found kind='{$kind}'");
+            $expectedKind = InstanceProxyRouteOwnershipResolver::expectedKind($ownerType);
+
+            if ($expectedKind !== null && $kind !== $expectedKind) {
+                throw $this->ownershipException(
+                    $route,
+                    "requires kind='{$expectedKind}' but found kind='{$kind}'",
+                );
             }
 
-            if ($ownerType === 'workspace' && $kind !== 'workspace') {
-                throw $this->ownershipException($route, "requires kind='workspace' but found kind='{$kind}'");
-            }
-
-            if (! in_array($ownerType, self::INSTANCE_OWNER_TYPES, true)) {
+            if ($expectedKind === null) {
                 $assignments[$routeId] = null;
 
                 continue;
+            }
+
+            if (
+                InstanceProxyRouteOwnershipResolver::isDirectOwner($ownerType)
+                && $this->rowNullableInteger($route, 'workspace_id') !== null
+            ) {
+                throw $this->ownershipException($route, 'must not identify a workspace_id');
             }
 
             $assignments[$routeId] = $ownerType === 'workspace'
@@ -167,7 +169,7 @@ return new class extends Migration {
             throw $this->ownershipException($route, "has no Instance candidates for app_id={$appId}");
         }
 
-        $config = $this->decodeJson($route->config ?? null);
+        $config = $this->routeConfig($route);
         $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
         $targetConfig = is_array($config['target'] ?? null) ? $config['target'] : [];
         $identities = [];
@@ -303,7 +305,7 @@ return new class extends Migration {
             );
         }
 
-        $config = $this->decodeJson($route->config ?? null);
+        $config = $this->routeConfig($route);
         $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
 
         foreach ([
@@ -359,7 +361,7 @@ return new class extends Migration {
 
     private function instanceDomain(object $instance): string
     {
-        $config = $this->decodeJson($instance->driver_config ?? null);
+        $config = $this->instanceDriverConfig($instance);
         $data = is_array($config['data'] ?? null) ? $config['data'] : $config;
         $domain = $this->nullableString($data['domain'] ?? null);
 
@@ -377,13 +379,47 @@ return new class extends Migration {
         ));
     }
 
+    private function assertLegacyJsonIsValid(): void
+    {
+        foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
+            $this->routeConfig($route);
+        }
+
+        foreach (DB::table('instances')->orderBy('id')->get() as $instance) {
+            $this->instanceDriverConfig($instance);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function routeConfig(object $route): array
+    {
+        try {
+            return $this->decodeJson($route->config ?? null);
+        } catch (\JsonException) {
+            throw $this->ownershipException($route, 'has malformed config JSON');
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function instanceDriverConfig(object $instance): array
+    {
+        try {
+            return $this->decodeJson($instance->driver_config ?? null);
+        } catch (\JsonException) {
+            throw new RuntimeException(sprintf(
+                'ProxyRoute instance ownership migration blocked by instances#%d has malformed driver_config JSON. Repair or remove this legacy Instance, then rerun migrations.',
+                $this->rowInteger($instance, 'id'),
+            ));
+        }
+    }
+
     /** @return array<string, mixed> */
     private function decodeJson(mixed $value): array
     {
         $decoded = $value;
 
         if (is_string($value) && trim($value) !== '') {
-            $decoded = json_decode($value, associative: true);
+            $decoded = json_decode($value, associative: true, flags: JSON_THROW_ON_ERROR);
         }
 
         if (! is_array($decoded)) {

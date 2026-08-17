@@ -342,6 +342,57 @@ describe('ProxyRouteFixer', function (): void {
         'unsupported kind mismatch' => ['workspace', 'internal'],
     ]);
 
+    it('does not repair invalid public binding ownership tuples', function (
+        string $ownerType,
+        string $invalidity,
+    ): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => "{$ownerType}.docs.test",
+            'owner_type' => $ownerType,
+            'kind' => $invalidity === 'malformed kind' ? 'app' : 'proxy',
+            'config' => ['upstream' => 'https://router.orbit'],
+        ]);
+
+        if ($invalidity === 'missing app') {
+            $route->forceFill(['app_id' => null])->save();
+        }
+
+        $shell = new ProxyFixerRecordingRemoteShell;
+        $certificates = new SiteCertificateInstallerFake;
+        $fixer = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            $certificates,
+        );
+
+        $result = $fixer->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+
+        expect($result)
+            ->toBeNull()
+            ->and($certificates->hosts)
+            ->toBe([])
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and($shell->payloads)
+            ->toBe([]);
+    })->with([
+        'analytics missing app' => ['app-analytics', 'missing app'],
+        'analytics malformed kind' => ['app-analytics', 'malformed kind'],
+        'websocket missing app' => ['app-websocket', 'missing app'],
+        'websocket malformed kind' => ['app-websocket', 'malformed kind'],
+    ]);
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()

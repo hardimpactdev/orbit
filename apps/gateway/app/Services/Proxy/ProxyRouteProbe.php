@@ -9,7 +9,6 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -865,15 +864,15 @@ final readonly class ProxyRouteProbe
     {
         $route->loadMissing(['instance.app', 'workspace.instance']);
 
-        if ($route->owner_type === 'app' && ! $this->hasInstanceOwner($route)) {
+        if ($route->owner_type === 'app' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app')];
         }
 
-        if ($route->owner_type === 'app-analytics' && ! $this->hasInstanceOwner($route)) {
+        if ($route->owner_type === 'app-analytics' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app-analytics')];
         }
 
-        if ($route->owner_type === 'app-websocket' && ! $this->hasInstanceOwner($route)) {
+        if ($route->owner_type === 'app-websocket' && $this->instanceRouteOwnership()->resolve($route) === null) {
             return [$this->ownerInvalid($route, 'app-websocket')];
         }
 
@@ -889,15 +888,6 @@ final readonly class ProxyRouteProbe
         }
 
         return [];
-    }
-
-    private function hasInstanceOwner(ProxyRoute $route): bool
-    {
-        return (
-            $route->instance instanceof Instance
-            && $route->instance->app instanceof App
-            && $route->app_id === $route->instance->app_id
-        );
     }
 
     private function toolOwnerIsMissing(ProxyRoute $route): bool
@@ -1711,6 +1701,11 @@ final readonly class ProxyRouteProbe
     private function workspaceRouteOwnership(): WorkspaceProxyRouteOwnershipResolver
     {
         return $this->workspaceRouteOwnership ?? app(WorkspaceProxyRouteOwnershipResolver::class);
+    }
+
+    private function instanceRouteOwnership(): InstanceProxyRouteOwnershipResolver
+    {
+        return app(InstanceProxyRouteOwnershipResolver::class);
     }
 
     private function scripts(): ToolScriptDispatcher

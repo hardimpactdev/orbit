@@ -21,7 +21,7 @@ final readonly class WorkspaceProxyRouteOwnershipResolver
 
         if (
             $route->owner_type !== 'workspace'
-            || $route->kind !== 'workspace'
+            || $route->kind !== InstanceProxyRouteOwnershipResolver::expectedKind($route->owner_type)
             || ! $workspace instanceof Workspace
             || ! $instance instanceof Instance
             || ! $app instanceof App

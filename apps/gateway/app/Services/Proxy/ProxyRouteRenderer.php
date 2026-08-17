@@ -48,6 +48,7 @@ final readonly class ProxyRouteRenderer
 
     public function render(ProxyRoute $route): string
     {
+        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
 
         if ($this->usesIngressPlacement($route)) {
@@ -182,6 +183,7 @@ final readonly class ProxyRouteRenderer
 
     public function renderIngress(ProxyRoute $route): string
     {
+        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
 
         $config = is_array($route->config) ? $route->config : [];
@@ -242,6 +244,7 @@ final readonly class ProxyRouteRenderer
 
     public function renderRouterRoute(ProxyRoute $route): string
     {
+        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
 
         $config = is_array($route->config) ? $route->config : [];
@@ -336,6 +339,7 @@ final readonly class ProxyRouteRenderer
      */
     public function renderPrivateBackend(ProxyRoute $route, array $backendArtifact): string
     {
+        $this->assertPublicBindingOwnership($route);
         $this->workspaceForRoute($route);
         $route->loadMissing('instance.app');
 
@@ -1176,6 +1180,15 @@ final readonly class ProxyRouteRenderer
         }
 
         return new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route)->workspace;
+    }
+
+    private function assertPublicBindingOwnership(ProxyRoute $route): void
+    {
+        if (! InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)) {
+            return;
+        }
+
+        new InstanceProxyRouteOwnershipResolver()->resolveOrFail($route);
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

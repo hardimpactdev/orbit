@@ -131,6 +131,7 @@ describe('AppAnalyticsBindingService', function (): void {
         $app = createAnalyticsApp();
 
         $binding = app(AppAnalyticsBindingService::class)->enable($app, []);
+        $route = ProxyRoute::query()->where('domain', 'analytics.docs.test')->firstOrFail();
 
         expect($binding)
             ->toBeInstanceOf(AppAnalyticsBinding::class)
@@ -138,8 +139,16 @@ describe('AppAnalyticsBindingService', function (): void {
             ->toBeTrue()
             ->and($binding->public_hosts)
             ->toBe(['analytics.docs.test'])
-            ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->value('instance_id'))
+            ->and($route->app_id)
+            ->toBe($app->app_id)
+            ->and($route->instance_id)
             ->toBe($app->id)
+            ->and($route->workspace_id)
+            ->toBeNull()
+            ->and($route->owner_type)
+            ->toBe('app-analytics')
+            ->and($route->kind)
+            ->toBe('proxy')
             ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
             ->toBeTrue()
             ->and(

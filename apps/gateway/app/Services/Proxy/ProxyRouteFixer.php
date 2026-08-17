@@ -150,6 +150,13 @@ final readonly class ProxyRouteFixer
             new WorkspaceProxyRouteOwnershipResolver()->resolveOrFail($route);
         }
 
+        if (
+            InstanceProxyRouteOwnershipResolver::isPublicBindingOwner($route->owner_type)
+            && app(InstanceProxyRouteOwnershipResolver::class)->resolve($route) === null
+        ) {
+            return null;
+        }
+
         if (! in_array($route->kind, ['app', 'workspace', 'proxy', 'redirect'], true)) {
             return null;
         }
