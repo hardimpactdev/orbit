@@ -212,6 +212,44 @@ it('fails before schema mutation when a workspace app conflicts with its selecte
     });
 });
 
+it('fails before schema mutation when a workspace route has no app identity', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertProxyRouteOwnershipWorkspace(20, 10);
+        insertHistoricalProxyRoute(100, 'feature.docs.test', 'workspace', 'workspace', null, 20);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='feature.docs.test' owner_type='workspace' has no app_id",
+            )
+            ->and(Schema::hasColumn('proxy_routes', 'instance_id'))
+            ->toBeFalse();
+    });
+});
+
+it('fails closed on rerun without overwriting conflicting persisted workspace ownership', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'docs.test');
+        insertProxyRouteOwnershipInstance(11, 'preview', 'preview.docs.test');
+        insertProxyRouteOwnershipWorkspace(20, 10);
+        insertHistoricalProxyRoute(100, 'feature.docs.test', 'workspace', 'workspace', 1, 20);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+        DB::table('proxy_routes')->where('id', 100)->update(['instance_id' => 11]);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(
+                RuntimeException::class,
+                "proxy_routes#100 domain='feature.docs.test' owner_type='workspace' workspace owner instance_id=10 conflicts with persisted instance_id=11",
+            )
+            ->and(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(11);
+    });
+});
+
 it('fails closed on rerun when an owner was deleted after a successful backfill', function (): void {
     withHistoricalProxyRouteOwnershipSchema(function (): void {
         insertProxyRouteOwnershipApp();

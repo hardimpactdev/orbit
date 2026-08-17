@@ -794,6 +794,7 @@ class MetricsRoleBaseline implements RoleBaseline
                 'node_id' => $router->id,
                 'app_id' => null,
                 'workspace_id' => null,
+                'instance_id' => null,
                 'owner_type' => 'router',
                 'kind' => 'proxy',
                 'config' => $config,

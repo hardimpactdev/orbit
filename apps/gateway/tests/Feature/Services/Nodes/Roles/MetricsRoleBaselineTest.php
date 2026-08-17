@@ -8,6 +8,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -266,10 +267,12 @@ it('rewrites stale metrics service route intent when the metrics baseline reconv
         'role' => 'metrics',
         'status' => NodeRoleStatus::Pending,
     ]);
+    $instance = Instance::factory()->create();
 
     ProxyRoute::factory()->create([
         'node_id' => $node->id,
         'domain' => 'metrics.orbit',
+        'instance_id' => $instance->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
         'config' => [
@@ -296,7 +299,9 @@ it('rewrites stale metrics service route intent when the metrics baseline reconv
             'scheme' => 'http',
             'host' => 'host.docker.internal',
             'port' => 3000,
-        ]);
+        ])
+        ->and($route->instance_id)
+        ->toBeNull();
 });
 
 it('adds the metrics role through the role assignment service', function (): void {

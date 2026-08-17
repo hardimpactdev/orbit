@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Models\App;
+use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 
 final readonly class WorkspaceUrlResolver
 {
     public function __construct(
         private WorkspacePlacement $placement = new WorkspacePlacement,
+        private WorkspaceProxyRouteOwnershipResolver $routeOwnership = new WorkspaceProxyRouteOwnershipResolver,
     ) {}
 
     public function url(Workspace $workspace): string
@@ -39,17 +42,24 @@ final readonly class WorkspaceUrlResolver
 
     private function workspaceRouteHost(Workspace $workspace): string
     {
-        $route = $workspace
+        $routes = $workspace
             ->proxyRoutes
             ->where('owner_type', 'workspace')
             ->where('kind', 'workspace')
-            ->sortBy('id')
-            ->first();
+            ->sortBy('id');
 
-        if ($route === null || ! is_string($route->domain)) {
-            return '';
+        foreach ($routes as $route) {
+            if (! $route instanceof ProxyRoute) {
+                continue;
+            }
+
+            $ownership = $this->routeOwnership->resolve($route);
+
+            if ($ownership !== null && $ownership->workspace->is($workspace)) {
+                return $route->domain;
+            }
         }
 
-        return $route->domain;
+        return '';
     }
 }

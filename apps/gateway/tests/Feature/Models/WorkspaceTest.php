@@ -143,12 +143,52 @@ it('derives workspace url from explicit workspace proxy route before path placem
         'domain' => 'recipe.happie.nmbp',
         'app_id' => $app->id,
         'workspace_id' => $workspace->id,
+        'instance_id' => $workspace->instance_id,
         'owner_type' => 'workspace',
         'kind' => 'workspace',
         'source_hash' => str_repeat('c', 64),
     ]);
 
     expect($workspace->url())->toBe('https://recipe.happie.nmbp');
+});
+
+it('ignores a workspace proxy route without persisted instance ownership', function (): void {
+    $node = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'beast']);
+    $app = App::factory()->placedOn($node)->create(['name' => 'happie']);
+    $workspace = Workspace::factory()->for($app)->create(['name' => 'recipe']);
+
+    ProxyRoute::query()->create([
+        'node_id' => $node->id,
+        'domain' => 'unowned.example',
+        'app_id' => $app->id,
+        'workspace_id' => $workspace->id,
+        'instance_id' => null,
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+        'source_hash' => str_repeat('c', 64),
+    ]);
+
+    expect($workspace->url())->toBe('https://recipe.happie.beast');
+});
+
+it('ignores a workspace proxy route with conflicting instance ownership', function (): void {
+    $node = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'beast']);
+    $app = App::factory()->placedOn($node)->create(['name' => 'happie']);
+    $workspace = Workspace::factory()->for($app)->create(['name' => 'recipe']);
+    $conflictingInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
+
+    ProxyRoute::query()->create([
+        'node_id' => $node->id,
+        'domain' => 'conflicting.example',
+        'app_id' => $app->id,
+        'workspace_id' => $workspace->id,
+        'instance_id' => $conflictingInstance->id,
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+        'source_hash' => str_repeat('c', 64),
+    ]);
+
+    expect($workspace->url())->toBe('https://recipe.happie.beast');
 });
 
 it('prefers an explicit workspace php version over the parent app version', function (): void {

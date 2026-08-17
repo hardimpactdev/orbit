@@ -283,6 +283,15 @@ return new class extends Migration {
 
     private function assertConfiguredIdsMatch(object $route, int $instanceId): void
     {
+        $persistedInstanceId = $this->rowNullableInteger($route, 'instance_id');
+
+        if ($persistedInstanceId !== null && $persistedInstanceId !== $instanceId) {
+            throw $this->ownershipException(
+                $route,
+                "workspace owner instance_id={$instanceId} conflicts with persisted instance_id={$persistedInstanceId}",
+            );
+        }
+
         $config = $this->decodeJson($route->config ?? null);
         $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
 
@@ -304,7 +313,7 @@ return new class extends Migration {
         $routeAppId = $this->rowNullableInteger($route, 'app_id');
 
         if ($routeAppId === null) {
-            return;
+            throw $this->ownershipException($route, 'has no app_id');
         }
 
         $instanceAppId = DB::table('instances')->where('id', $instanceId)->value('app_id');

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Models\App;
 use App\Models\ProxyRoute;
 use App\Services\Processes\ProcessAppHostnameResolver;
+use App\Services\Proxy\AppProxyRouteTargetResolver;
+use App\Services\Proxy\WorkspaceProxyRouteOwnershipResolver;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,6 +66,8 @@ final readonly class ProcessBrowserCors
 
     public function __construct(
         private ProcessAppHostnameResolver $appHostnames,
+        private AppProxyRouteTargetResolver $appRouteTargets,
+        private WorkspaceProxyRouteOwnershipResolver $workspaceRouteOwnership,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -242,7 +247,8 @@ final readonly class ProcessBrowserCors
 
     private function isRegisteredAppOrWorkspaceDomain(string $domain): bool
     {
-        return ProxyRoute::query()
+        $route = ProxyRoute::query()
+            ->with(['instance.app', 'workspace.instance.app'])
             ->where('domain', $domain)
             ->where(static function ($query): void {
                 $query
@@ -257,7 +263,17 @@ final readonly class ProcessBrowserCors
                             ->where('kind', 'workspace');
                     });
             })
-            ->exists();
+            ->first();
+
+        if (! $route instanceof ProxyRoute) {
+            return false;
+        }
+
+        if ($route->owner_type === 'app' && $route->kind === 'app') {
+            return $this->appRouteTargets->appForRoute($route) instanceof App;
+        }
+
+        return $this->workspaceRouteOwnership->resolve($route) !== null;
     }
 
     private function requestedAppTarget(Request $request): ?string

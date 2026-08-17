@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -185,6 +186,32 @@ it('updates the service route when called again', function (): void {
     expect(ProxyRoute::query()->where('domain', 's3.orbit')->count())->toBe(1);
 })->group('service');
 
+it('clears stale instance ownership when syncing the service route', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
+    ]);
+    $instance = Instance::factory()->create();
+    ProxyRoute::factory()->create([
+        'node_id' => $router->id,
+        'domain' => S3RouteRegistrar::ServiceDomain,
+        'instance_id' => $instance->id,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+
+    app(S3RouteRegistrar::class)->syncServiceRoute();
+
+    expect(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->sole()->instance_id)
+        ->toBeNull();
+})->group('service');
+
 it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): void {
     $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
     s3AssignRole($router, 'router');
@@ -215,6 +242,37 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
         ]);
+})->group('service');
+
+it('clears stale instance ownership when syncing a public host route', function (): void {
+    $router = Node::factory()->create(['name' => 'gateway-1', 'wireguard_address' => '10.6.0.1']);
+    s3AssignRole($router, 'router');
+
+    $edge = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.10']);
+    s3AssignRole($edge, 'ingress');
+
+    $storage = Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44']);
+    s3AssignRole($storage, 's3');
+    $tool = NodeTool::factory()->create([
+        'node_id' => $storage->id,
+        'name' => 'seaweedfs',
+        'config' => [
+            'backend_host' => 'storage-1.s3.orbit',
+            'public_hosts' => ['s3.example.com'],
+        ],
+    ]);
+    $instance = Instance::factory()->create();
+    ProxyRoute::factory()->create([
+        'node_id' => $edge->id,
+        'domain' => 's3.example.com',
+        'instance_id' => $instance->id,
+        'owner_type' => 's3',
+        'kind' => 'proxy',
+    ]);
+
+    app(S3RouteRegistrar::class)->syncPublicHosts($tool);
+
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->sole()->instance_id)->toBeNull();
 })->group('service');
 
 it('skips ingress route sync when there are no public hosts', function (): void {

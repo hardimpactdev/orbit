@@ -718,6 +718,69 @@ describe('ProcessListController', function (): void {
             ->not->toContain('X-Orbit-E2E-WireGuard-Ip');
     });
 
+    it('rejects browser CORS preflight after an app route instance owner is deleted', function (): void {
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $instance = $app->instances()->sole();
+        ProxyRoute::factory()
+            ->forApp($instance, $app)
+            ->create([
+                'node_id' => $appNode->id,
+                'domain' => 'deleted.app.example',
+            ]);
+
+        $instance->delete();
+
+        $this
+            ->call(
+                'OPTIONS',
+                '/api/processes',
+                [],
+                [],
+                [],
+                [
+                    'HTTP_ORIGIN' => 'https://deleted.app.example',
+                    'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin');
+    });
+
+    it('rejects browser CORS preflight for conflicting workspace route ownership', function (): void {
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
+        $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
+        $conflictingInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
+        ProxyRoute::query()->create([
+            'node_id' => $appNode->id,
+            'domain' => 'conflicting.workspace.example',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'instance_id' => $conflictingInstance->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'source_hash' => str_repeat('c', 64),
+        ]);
+
+        $this
+            ->call(
+                'OPTIONS',
+                '/api/processes',
+                [],
+                [],
+                [],
+                [
+                    'HTTP_ORIGIN' => 'https://conflicting.workspace.example',
+                    'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
+                ],
+            )
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.field', 'origin');
+    });
+
     it('rejects browser CORS preflight that requests peer-IP identity headers', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
