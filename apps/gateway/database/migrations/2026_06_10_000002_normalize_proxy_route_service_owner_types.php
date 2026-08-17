@@ -17,8 +17,12 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
+        $routerNodeId = $this->canonicalNodeId('router');
+        $ingressNodeId = $this->canonicalNodeId('ingress');
+
         // Websocket service route: owner 'websocket' → 'router'
         $websocketRoutes = DB::table('proxy_routes')
+            ->where('node_id', $routerNodeId ?? 0)
             ->where('domain', 'websocket.orbit')
             ->where('owner_type', 'websocket')
             ->where('kind', 'proxy')
@@ -30,6 +34,7 @@ return new class extends Migration {
 
         // S3 service route: owner 'tool' → 'router'
         $serviceRoutes = DB::table('proxy_routes')
+            ->where('node_id', $routerNodeId ?? 0)
             ->where('domain', 's3.orbit')
             ->where('owner_type', 'tool')
             ->where('kind', 'proxy')
@@ -43,6 +48,8 @@ return new class extends Migration {
         // Public S3 host routes (all remaining rows with owner 'tool' and protocol s3
         // in config are public host routes — the service route was handled above).
         $publicRoutes = DB::table('proxy_routes')
+            ->where('node_id', $ingressNodeId ?? 0)
+            ->where('domain', '!=', 's3.orbit')
             ->where('owner_type', 'tool')
             ->where('kind', 'proxy')
             ->whereNull('app_id')
@@ -55,8 +62,12 @@ return new class extends Migration {
 
     public function down(): void
     {
+        $routerNodeId = $this->canonicalNodeId('router');
+        $ingressNodeId = $this->canonicalNodeId('ingress');
+
         // Reverse: router-owned websocket.orbit → 'websocket'
         $websocketRoutes = DB::table('proxy_routes')
+            ->where('node_id', $routerNodeId ?? 0)
             ->where('domain', 'websocket.orbit')
             ->where('owner_type', 'router')
             ->where('kind', 'proxy')
@@ -68,6 +79,7 @@ return new class extends Migration {
 
         // Reverse: router-owned s3.orbit → 'tool'
         $serviceRoutes = DB::table('proxy_routes')
+            ->where('node_id', $routerNodeId ?? 0)
             ->where('domain', 's3.orbit')
             ->where('owner_type', 'router')
             ->where('kind', 'proxy')
@@ -80,6 +92,8 @@ return new class extends Migration {
 
         // Reverse: public S3 routes → 'tool'
         $publicRoutes = DB::table('proxy_routes')
+            ->where('node_id', $ingressNodeId ?? 0)
+            ->where('domain', '!=', 's3.orbit')
             ->where('owner_type', 's3')
             ->where('kind', 'proxy')
             ->whereNull('app_id')
@@ -97,5 +111,18 @@ return new class extends Migration {
         }
 
         return $query;
+    }
+
+    private function canonicalNodeId(string $role): ?int
+    {
+        $nodeId = DB::table('nodes')
+            ->join('node_role', 'node_role.node_id', '=', 'nodes.id')
+            ->where('nodes.status', 'active')
+            ->where('node_role.role', $role)
+            ->where('node_role.status', 'active')
+            ->orderBy('nodes.id')
+            ->value('nodes.id');
+
+        return is_int($nodeId) ? $nodeId : null;
     }
 };

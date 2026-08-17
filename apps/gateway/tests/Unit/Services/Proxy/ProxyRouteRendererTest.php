@@ -37,6 +37,27 @@ describe('ProxyRouteRenderer', function (): void {
             );
     });
 
+    it('rejects custom routes with foreign ownership keys before rendering', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::query()->create([
+            'node_id' => $node->id,
+            'domain' => 'malformed-custom.test',
+            'app_id' => App::factory()->create()->id,
+            'workspace_id' => null,
+            'instance_id' => null,
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+
+        expect(fn (): string => new ProxyRouteRenderer()->render($route))
+            ->toThrow(RuntimeException::class, "Proxy route 'malformed-custom.test' has invalid custom ownership.");
+    });
+
     it(
         'renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability',
         function (): void {
@@ -1671,7 +1692,7 @@ describe('ProxyRouteRenderer', function (): void {
 
 describe('s3 upload-safe proxy rendering', function (): void {
     it('renders the private s3.orbit service route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
-        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 's3.orbit',
@@ -1712,6 +1733,12 @@ describe('s3 upload-safe proxy rendering', function (): void {
     });
 
     it('renders the public s3 ingress route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.1',
+            ]);
         $ingress = Node::factory()->ingress()->create(['name' => 'edge-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $ingress->id,
@@ -1727,8 +1754,8 @@ describe('s3 upload-safe proxy rendering', function (): void {
                     'value' => 'https://s3.orbit',
                 ],
                 'router_upstream' => [
-                    'node_id' => 12,
-                    'node' => 'gateway-1',
+                    'node_id' => $router->id,
+                    'node' => $router->name,
                     'url' => 'http://10.6.0.1:80',
                 ],
                 'tls' => [
@@ -1763,7 +1790,7 @@ describe('s3 upload-safe proxy rendering', function (): void {
     });
 
     it('s3 service route source hash is stable and reflects upload-safe streaming directives', function (): void {
-        $router = Node::factory()->create(['name' => 'gateway-1']);
+        $router = Node::factory()->router()->create(['name' => 'gateway-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 's3.orbit',

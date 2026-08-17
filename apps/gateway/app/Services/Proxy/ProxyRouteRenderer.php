@@ -1190,6 +1190,12 @@ final readonly class ProxyRouteRenderer
             );
         }
 
+        if (NonInstanceProxyRouteOwnership::supports($route->owner_type)) {
+            app(NonInstanceProxyRouteOwnership::class)->assertValid($route);
+
+            return;
+        }
+
         if (! InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
             return;
         }

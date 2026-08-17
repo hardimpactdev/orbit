@@ -203,7 +203,7 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('does not repair malformed custom route ownership', function (array $attributes): void {
-        $node = Node::factory()->create(['name' => 'gateway-1']);
+        $node = createTestAppHostNode(['name' => 'gateway-1']);
         $route = ProxyRoute::query()->create([
             'node_id' => $node->id,
             'domain' => 'custom.test',
@@ -241,7 +241,40 @@ describe('ProxyRouteFixer', function (): void {
         'stray workspace identity' => [fn (): array => ['workspace_id' => Workspace::factory()->create()->id]],
         'stray instance identity' => [fn (): array => ['instance_id' => Instance::factory()->create()->id]],
         'wrong kind' => [['kind' => 'app']],
+        'wrong serving role' => [fn (): array => ['node_id' => Node::factory()->create()->id]],
+        'wrong stable config' => [[
+            'config' => [
+                'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                'upstream' => 'http://127.0.0.1:8080',
+            ],
+        ]],
     ]);
+
+    it('does not repair a complete router family route on a non-canonical router', function (): void {
+        Node::factory()->router()->create(['name' => 'router-1']);
+        $otherRouter = Node::factory()->router()->create(['name' => 'router-2']);
+        $route = ProxyRoute::query()->create([
+            'node_id' => $otherRouter->id,
+            'domain' => 'metrics.orbit',
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
+        ]);
+
+        $result = new ProxyRouteFixer(
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Wrong canonical router.',
+        ));
+
+        expect($result)->toBeNull();
+    });
 
     it('repairs proxy routes without explicit transitional SSH fallback', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -740,17 +773,7 @@ describe('ProxyRouteFixer', function (): void {
             'owner_type' => 'router',
             'kind' => 'proxy',
             'source_hash' => str_repeat('0', 64),
-            'config' => [
-                'owner_name' => 'grafana',
-                'protocol' => 'http',
-                'target' => [
-                    'type' => 'upstream',
-                    'value' => 'http://gateway.metrics.orbit:3000',
-                ],
-                'upstreams' => [
-                    ['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000],
-                ],
-            ],
+            'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
         $renderer = new ProxyRouteRenderer;
@@ -786,7 +809,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/metrics.orbit.crt /etc/orbit/certs/metrics.orbit.key')
             ->and($caddySite)
-            ->toContain('reverse_proxy http://gateway.metrics.orbit:3000')
+            ->toContain('reverse_proxy http://host.docker.internal:3000')
             ->and($route->refresh()->source_hash)
             ->toBe(hash('sha256', $caddySite))
             ->and($route->refresh()->source_hash)

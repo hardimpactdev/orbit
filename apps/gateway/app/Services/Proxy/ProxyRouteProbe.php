@@ -10,7 +10,6 @@ use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
-use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
@@ -863,6 +862,7 @@ final readonly class ProxyRouteProbe
     private function checkOwnerEligibility(ProxyRoute $route): array
     {
         $route->loadMissing(['instance.app', 'workspace.instance']);
+        $nonInstanceOwnership = app(NonInstanceProxyRouteOwnership::class);
 
         if ($route->owner_type === 'instance') {
             return [$this->ownerInvalid($route, 'instance')];
@@ -887,27 +887,15 @@ final readonly class ProxyRouteProbe
             return [$this->ownerInvalid($route, 'workspace')];
         }
 
-        if ($route->owner_type === 'tool' && $this->toolOwnerIsMissing($route)) {
-            return [$this->ownerInvalid($route, 'tool')];
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! $nonInstanceOwnership->matches($route)
+            && $nonInstanceOwnership->matchesNodeSelection($route)
+        ) {
+            return [$this->ownerInvalid($route, $route->owner_type)];
         }
 
         return [];
-    }
-
-    private function toolOwnerIsMissing(ProxyRoute $route): bool
-    {
-        $config = is_array($route->config) ? $route->config : [];
-        $ownerName = is_string($config['owner_name'] ?? null) ? $config['owner_name'] : null;
-
-        if ($ownerName === null || $ownerName === '') {
-            return true;
-        }
-
-        return ! NodeTool::query()
-            ->where('node_id', $route->node_id)
-            ->where('name', $ownerName)
-            ->where('expected_state', 'installed')
-            ->exists();
     }
 
     /**
@@ -916,6 +904,7 @@ final readonly class ProxyRouteProbe
     private function checkNodeEligibility(ProxyRoute $route): array
     {
         $route->loadMissing('node');
+        $nonInstanceOwnership = app(NonInstanceProxyRouteOwnership::class);
 
         if (! $route->node instanceof Node) {
             return [
@@ -940,6 +929,20 @@ final readonly class ProxyRouteProbe
                         'role' => $route->node->displayRole(),
                         'status' => $route->node->status,
                     ],
+                ),
+            ];
+        }
+
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! $nonInstanceOwnership->matchesNodeSelection($route)
+        ) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.node_invalid',
+                    kind: DriftKind::Divergent,
+                    summary: "Proxy route {$route->domain} does not use the intended active canonical serving node.",
                 ),
             ];
         }

@@ -69,6 +69,7 @@ it('does not normalize malformed metrics route ownership', function (array $attr
         'target' => ['type' => 'upstream', 'value' => 'http://gateway.metrics.orbit:3000'],
         'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
     ];
+    $routeConfig = $attributes['config'] ?? $config;
     $route = ProxyRoute::query()->create([
         'node_id' => $node->id,
         'domain' => 'metrics.orbit',
@@ -78,7 +79,7 @@ it('does not normalize malformed metrics route ownership', function (array $attr
         'owner_type' => 'router',
         'kind' => 'proxy',
         'source_hash' => str_repeat('0', 64),
-        'config' => $config,
+        'config' => $routeConfig,
         ...$attributes,
     ]);
 
@@ -86,11 +87,66 @@ it('does not normalize malformed metrics route ownership', function (array $attr
     $migration->up();
 
     expect($route->fresh()?->config)
-        ->toBe($config)
+        ->toBe($routeConfig)
         ->and($route->fresh()?->source_hash)
         ->toBe(str_repeat('0', 64));
 })->with([
     'stray app identity' => [fn (): array => ['app_id' => \App\Models\App::factory()->create()->id]],
     'stray workspace identity' => [fn (): array => ['workspace_id' => \App\Models\Workspace::factory()->create()->id]],
     'stray instance identity' => [fn (): array => ['instance_id' => \App\Models\Instance::factory()->create()->id]],
+    'wrong stable target' => [[
+        'config' => [
+            'owner_name' => 'grafana',
+            'protocol' => 'http',
+            'target' => ['type' => 'upstream', 'value' => 'http://unrelated.test:3000'],
+            'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
+        ],
+    ]],
+    'incomplete stable upstreams' => [[
+        'config' => [
+            'owner_name' => 'grafana',
+            'protocol' => 'http',
+            'target' => ['type' => 'upstream', 'value' => 'http://gateway.metrics.orbit:3000'],
+            'upstreams' => [],
+        ],
+    ]],
+    'extra stable config' => [[
+        'config' => [
+            'owner_name' => 'grafana',
+            'protocol' => 'http',
+            'target' => ['type' => 'upstream', 'value' => 'http://gateway.metrics.orbit:3000'],
+            'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
+            'unexpected' => true,
+        ],
+    ]],
 ]);
+
+it('does not normalize metrics intent on a non-canonical router node', function (): void {
+    Node::factory()->router()->create(['name' => 'canonical-router']);
+    $otherRouter = Node::factory()->router()->create(['name' => 'other-router']);
+    $config = [
+        'owner_name' => 'grafana',
+        'protocol' => 'http',
+        'target' => ['type' => 'upstream', 'value' => 'http://gateway.metrics.orbit:3000'],
+        'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
+    ];
+    $route = ProxyRoute::query()->create([
+        'node_id' => $otherRouter->id,
+        'domain' => 'metrics.orbit',
+        'app_id' => null,
+        'workspace_id' => null,
+        'instance_id' => null,
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+        'source_hash' => str_repeat('0', 64),
+        'config' => $config,
+    ]);
+
+    $migration = require database_path('migrations/2026_06_17_010000_normalize_metrics_route_upstream.php');
+    $migration->up();
+
+    expect($route->fresh()?->config)
+        ->toBe($config)
+        ->and($route->fresh()?->source_hash)
+        ->toBe(str_repeat('0', 64));
+});

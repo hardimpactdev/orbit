@@ -152,7 +152,10 @@ final readonly class ProxyRouteFixer
 
         $route->loadMissing('node');
 
-        if (! $this->hasCompatibleNonInstanceOwnership($route)) {
+        if (
+            NonInstanceProxyRouteOwnership::supports($route->owner_type)
+            && ! app(NonInstanceProxyRouteOwnership::class)->matches($route)
+        ) {
             return null;
         }
 
@@ -241,57 +244,6 @@ final readonly class ProxyRouteFixer
                 'route' => $route->domain,
             ],
         ];
-    }
-
-    private function hasCompatibleNonInstanceOwnership(ProxyRoute $route): bool
-    {
-        if (! in_array($route->owner_type, ['custom', 'tool', 'router', 's3', 'gateway'], true)) {
-            return true;
-        }
-
-        if (
-            ! $route->node instanceof Node
-            || $route->app_id !== null
-            || $route->workspace_id !== null
-            || $route->instance_id !== null
-        ) {
-            return false;
-        }
-
-        $config = is_array($route->config) ? $route->config : [];
-
-        return match ($route->owner_type) {
-            'custom' => in_array($route->kind, ['proxy', 'redirect'], true),
-            'tool' => $route->kind === 'proxy'
-                && is_string($config['owner_name'] ?? null)
-                && $config['owner_name'] !== '',
-            's3' => $route->kind === 'proxy'
-                && ($config['placement'] ?? null) === 'ingress'
-                && ($config['owner_name'] ?? null) === 'seaweedfs'
-                && ($config['protocol'] ?? null) === 's3',
-            'router' => $this->hasCompatibleRouterOwnership($route, $config),
-            'gateway' => $route->kind === 'proxy',
-            default => false,
-        };
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function hasCompatibleRouterOwnership(ProxyRoute $route, array $config): bool
-    {
-        if ($route->kind !== 'proxy') {
-            return false;
-        }
-
-        return match ($route->domain) {
-            'analytics.orbit' => ($config['protocol'] ?? null) === 'analytics',
-            'websocket.orbit' => ($config['protocol'] ?? null) === 'websocket',
-            's3.orbit' => ($config['owner_name'] ?? null) === 'seaweedfs' && ($config['protocol'] ?? null) === 's3',
-            'metrics.orbit' => ($config['owner_name'] ?? null) === 'grafana'
-                && ($config['protocol'] ?? null) === 'http',
-            default => true,
-        };
     }
 
     /**

@@ -585,7 +585,7 @@ describe('proxy registry probe foundation', function (): void {
         $route = ProxyRoute::findOrFail($id);
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
-        expect(proxyProbeIssue($drift, 'proxy.record_incomplete')?->kind)->toBe(DriftKind::Missing);
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
 
     it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
@@ -796,6 +796,135 @@ describe('proxy registry probe foundation', function (): void {
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid'))
             ->toBeNull();
     });
+
+    it('classifies malformed non-instance family ownership before ordinary drift', function (
+        string $case,
+        string $key,
+    ): void {
+        $route = match ($case) {
+            'custom stray fk' => ProxyRoute::query()->create([
+                'node_id' => createTestAppHostNode()->id,
+                'domain' => 'custom-stray.test',
+                'app_id' => App::factory()->create()->id,
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('a', 64),
+                'config' => ['upstream' => 'http://127.0.0.1:5173'],
+            ]),
+            'custom wrong role' => ProxyRoute::query()->create([
+                'node_id' => Node::factory()->create()->id,
+                'domain' => 'custom-role.test',
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('b', 64),
+                'config' => ['upstream' => 'http://127.0.0.1:5173'],
+            ]),
+            'custom wrong stable config' => ProxyRoute::query()->create([
+                'node_id' => createTestAppHostNode()->id,
+                'domain' => 'custom-config.test',
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'source_hash' => str_repeat('c', 64),
+                'config' => [
+                    'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
+                    'upstream' => 'http://127.0.0.1:5173',
+                ],
+            ]),
+            'tool wrong stable config' => (function (): ProxyRoute {
+                $node = Node::factory()->agent()->create(['tld' => 'agent']);
+                NodeTool::factory()->create([
+                    'node_id' => $node->id,
+                    'name' => 'hermes',
+                    'expected_state' => 'installed',
+                ]);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $node->id,
+                    'domain' => 'hermes.agent',
+                    'owner_type' => 'tool',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('d', 64),
+                    'config' => [
+                        'owner_name' => 'hermes',
+                        'upstream' => 'http://host.docker.internal:9999',
+                        'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:9999'],
+                    ],
+                ]);
+            })(),
+            'router non-canonical node' => (function (): ProxyRoute {
+                Node::factory()->router()->create(['name' => 'router-1']);
+                $otherRouter = Node::factory()->router()->create(['name' => 'router-2']);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $otherRouter->id,
+                    'domain' => 'metrics.orbit',
+                    'owner_type' => 'router',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('e', 64),
+                    'config' => \App\Services\Metrics\MetricsServiceRoute::config(),
+                ]);
+            })(),
+            's3 wrong canonical ingress' => (function (): ProxyRoute {
+                Node::factory()->ingress()->create(['name' => 'ingress-1']);
+                $otherIngress = Node::factory()->ingress()->create(['name' => 'ingress-2']);
+                $router = Node::factory()
+                    ->router()
+                    ->create([
+                        'name' => 'router-1',
+                        'wireguard_address' => '10.6.0.1',
+                    ]);
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $otherIngress->id,
+                    'domain' => 'objects.example.test',
+                    'owner_type' => 's3',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('f', 64),
+                    'config' => [
+                        'placement' => 'ingress',
+                        'owner_name' => 'seaweedfs',
+                        'protocol' => 's3',
+                        'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+                        'router_upstream' => [
+                            'node_id' => $router->id,
+                            'node' => $router->name,
+                            'url' => 'http://10.6.0.1:80',
+                        ],
+                        'tls' => [
+                            'cert_path' => '/etc/orbit/certs/objects.example.test.crt',
+                            'key_path' => '/etc/orbit/certs/objects.example.test.key',
+                        ],
+                    ],
+                ]);
+            })(),
+            'gateway wrong kind' => (function (): ProxyRoute {
+                $gateway = Node::factory()->gateway()->create();
+
+                return ProxyRoute::query()->create([
+                    'node_id' => $gateway->id,
+                    'domain' => 'gateway.orbit',
+                    'owner_type' => 'gateway',
+                    'kind' => 'proxy',
+                    'source_hash' => str_repeat('0', 64),
+                    'config' => ['target' => ['type' => 'upstream', 'value' => 'http://orbit-gateway:80']],
+                ]);
+            })(),
+            default => throw new LogicException("Unknown non-instance ownership case: {$case}"),
+        };
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, $key)?->kind)
+            ->toBe(DriftKind::Divergent);
+    })->with([
+        'custom stray fk' => ['custom stray fk', 'proxy.owner_invalid'],
+        'custom wrong role' => ['custom wrong role', 'proxy.node_invalid'],
+        'custom wrong stable config' => ['custom wrong stable config', 'proxy.owner_invalid'],
+        'tool wrong stable config' => ['tool wrong stable config', 'proxy.owner_invalid'],
+        'router non-canonical node' => ['router non-canonical node', 'proxy.node_invalid'],
+        's3 wrong canonical ingress' => ['s3 wrong canonical ingress', 'proxy.node_invalid'],
+        'gateway wrong kind' => ['gateway wrong kind', 'proxy.owner_invalid'],
+    ]);
 
     it('requires active gateway or app serving nodes', function (callable $createNode): void {
         $node = $createNode();
@@ -2584,7 +2713,7 @@ describe('orbit-caddy container readiness', function (): void {
 
 describe('s3 upload-safe proxy route probe', function (): void {
     it('passes s3 service route when the observed file hash matches the upload-safe rendered source hash', function (): void {
-        $node = createTestAppHostNode();
+        $node = Node::factory()->router()->create();
         $renderer = new ProxyRouteRenderer;
         $config = [
             'owner_name' => 'seaweedfs',
@@ -2622,7 +2751,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
     });
 
     it('detects drift when the s3 service route on disk lacks upload-safe streaming directives', function (): void {
-        $node = createTestAppHostNode();
+        $node = Node::factory()->router()->create();
         $renderer = new ProxyRouteRenderer;
         $config = [
             'owner_name' => 'seaweedfs',
@@ -2664,6 +2793,12 @@ describe('s3 upload-safe proxy route probe', function (): void {
     });
 
     it('passes observed s3 ingress route artifact rendered with upload-safe streaming settings', function (): void {
+        $router = Node::factory()
+            ->router()
+            ->create([
+                'name' => 'gateway-1',
+                'wireguard_address' => '10.6.0.1',
+            ]);
         $edge = Node::factory()->ingress()->create(['status' => 'active']);
         $renderer = new ProxyRouteRenderer;
         $config = [
@@ -2672,8 +2807,8 @@ describe('s3 upload-safe proxy route probe', function (): void {
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
             'router_upstream' => [
-                'node_id' => 12,
-                'node' => 'gateway-1',
+                'node_id' => $router->id,
+                'node' => $router->name,
                 'url' => 'http://10.6.0.1:80',
             ],
             'tls' => [

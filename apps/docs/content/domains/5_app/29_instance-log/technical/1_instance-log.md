@@ -36,6 +36,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    owned path or is a descendant (`cwd === path` or starts with `path/`).
    Exactly one match is required; zero or multiple matches fail closed without
    `.orbit` marker fallback.
+   A hostname route requires `owner.type=instance` and a non-empty
+   `owner.name`. For compatibility with an older gateway projection that omits
+   `owner`, the CLI also accepts `target.type=instance` with a non-empty
+   `target.value`. It rejects dotted names on router, S3, tool, gateway, custom,
+   and other non-Instance owners.
 2. Authorize `instance:read` on the resolved instance serving node.
 3. Apply `--node` as a placement constraint only; reject mismatches.
 4. Resolve the application root consistent with
