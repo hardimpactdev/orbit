@@ -394,42 +394,68 @@ pub fn ping_gateway_connection(config: &AgentConfig) -> ConnectionStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ServiceStatusSnapshot {
-    pub connection: String,
-    pub gateway_ip: String,
-    pub node_ip: Option<String>,
-    pub node_name: Option<String>,
-    pub config_loaded: bool,
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum GatewayConnection {
+    Connected,
+    Disconnected { reason: String },
+}
+
+impl GatewayConnection {
+    fn from_connection_status(status: ConnectionStatus) -> Self {
+        match status {
+            ConnectionStatus::Connected => Self::Connected,
+            ConnectionStatus::Disconnected(reason) => Self::Disconnected { reason },
+            ConnectionStatus::MissingConfig(path) => Self::Disconnected {
+                reason: format!("missing config at {}", path.display()),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ServiceStatusSnapshot {
+    Loaded {
+        gateway_ip: String,
+        node_ip: Option<String>,
+        node_name: Option<String>,
+        connection: GatewayConnection,
+    },
+    MissingConfig {
+        path: PathBuf,
+    },
+    InvalidConfig {
+        reason: String,
+    },
+}
+
+impl ServiceStatusSnapshot {
+    pub fn from_loaded_config(config: &AgentConfig, connection: GatewayConnection) -> Self {
+        Self::Loaded {
+            gateway_ip: gateway_host_from_config(config),
+            node_ip: Some(config.wireguard_address.to_string()),
+            node_name: Some(config.node_name.clone()),
+            connection,
+        }
+    }
+
+    pub fn from_config_error(error: &ConfigError) -> Self {
+        match error {
+            ConfigError::MissingConfig(path) => Self::MissingConfig { path: path.clone() },
+            ConfigError::InvalidConfig(reason) => Self::InvalidConfig {
+                reason: reason.clone(),
+            },
+        }
+    }
 }
 
 pub fn build_service_status_snapshot() -> ServiceStatusSnapshot {
     match AgentConfig::load_default() {
-        Ok(config) => {
-            let gateway_ip = gateway_host_from_config(&config);
-            let status = ping_gateway_connection(&config);
-
-            ServiceStatusSnapshot {
-                connection: status.label(),
-                gateway_ip,
-                node_ip: Some(config.wireguard_address.to_string()),
-                node_name: Some(config.node_name.clone()),
-                config_loaded: true,
-            }
-        }
-        Err(ConfigError::MissingConfig(path)) => ServiceStatusSnapshot {
-            connection: ConnectionStatus::MissingConfig(path.clone()).label(),
-            gateway_ip: "unknown".to_string(),
-            node_ip: None,
-            node_name: None,
-            config_loaded: false,
-        },
-        Err(error) => ServiceStatusSnapshot {
-            connection: ConnectionStatus::Disconnected(error.to_string()).label(),
-            gateway_ip: "unknown".to_string(),
-            node_ip: None,
-            node_name: None,
-            config_loaded: false,
-        },
+        Ok(config) => ServiceStatusSnapshot::from_loaded_config(
+            &config,
+            GatewayConnection::from_connection_status(ping_gateway_connection(&config)),
+        ),
+        Err(error) => ServiceStatusSnapshot::from_config_error(&error),
     }
 }
 
@@ -864,5 +890,96 @@ wireguard_address = "{wireguard_address}"
         assert!(!source.contains(&["/api/orbit-agent/jobs", "/claim"].concat()));
         assert!(!source.contains(&["Polling", "Worker"].concat()));
         assert!(!source.contains(&["claim_next", "_job"].concat()));
+    }
+
+    #[test]
+    fn service_status_snapshot_round_trips_connected_state() {
+        let snapshot = ServiceStatusSnapshot::Loaded {
+            gateway_ip: "gateway.test".to_string(),
+            node_ip: Some("10.6.0.3".to_string()),
+            node_name: Some("NMBP".to_string()),
+            connection: GatewayConnection::Connected,
+        };
+
+        assert_tagged_service_status_round_trip(
+            &snapshot,
+            serde_json::json!({
+                "kind": "loaded",
+                "gateway_ip": "gateway.test",
+                "node_ip": "10.6.0.3",
+                "node_name": "NMBP",
+                "connection": { "state": "connected" }
+            }),
+        );
+    }
+
+    #[test]
+    fn service_status_snapshot_round_trips_disconnected_state() {
+        let snapshot = ServiceStatusSnapshot::Loaded {
+            gateway_ip: "gateway.test".to_string(),
+            node_ip: Some("10.6.0.3".to_string()),
+            node_name: Some("NMBP".to_string()),
+            connection: GatewayConnection::Disconnected {
+                reason: "gateway returned HTTP 503".to_string(),
+            },
+        };
+
+        assert_tagged_service_status_round_trip(
+            &snapshot,
+            serde_json::json!({
+                "kind": "loaded",
+                "gateway_ip": "gateway.test",
+                "node_ip": "10.6.0.3",
+                "node_name": "NMBP",
+                "connection": {
+                    "state": "disconnected",
+                    "reason": "gateway returned HTTP 503"
+                }
+            }),
+        );
+    }
+
+    #[test]
+    fn service_status_snapshot_round_trips_missing_config_state() {
+        let snapshot = ServiceStatusSnapshot::MissingConfig {
+            path: PathBuf::from("/tmp/orbit-agent.toml"),
+        };
+
+        assert_tagged_service_status_round_trip(
+            &snapshot,
+            serde_json::json!({
+                "kind": "missing_config",
+                "path": "/tmp/orbit-agent.toml"
+            }),
+        );
+    }
+
+    #[test]
+    fn service_status_snapshot_round_trips_invalid_config_state() {
+        let snapshot = ServiceStatusSnapshot::InvalidConfig {
+            reason: "managed must be true for the Orbit Agent command listener".to_string(),
+        };
+
+        assert_tagged_service_status_round_trip(
+            &snapshot,
+            serde_json::json!({
+                "kind": "invalid_config",
+                "reason": "managed must be true for the Orbit Agent command listener"
+            }),
+        );
+    }
+
+    fn assert_tagged_service_status_round_trip(snapshot: &ServiceStatusSnapshot, expected: Value) {
+        let encoded = serde_json::to_value(snapshot).expect("snapshot should serialize");
+        let encoded_text = encoded.to_string();
+
+        assert_eq!(encoded, expected);
+        assert!(encoded.get("config_loaded").is_none());
+        assert!(!encoded_text.contains("Disconnected:"));
+        assert!(!encoded_text.contains("Connected"));
+
+        let decoded: ServiceStatusSnapshot =
+            serde_json::from_value(encoded).expect("snapshot should deserialize");
+        assert_eq!(&decoded, snapshot);
     }
 }
