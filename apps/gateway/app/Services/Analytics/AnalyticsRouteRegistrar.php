@@ -19,6 +19,7 @@ use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\PublicBindingProxyRouteDefinition;
 use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
@@ -391,16 +392,11 @@ class AnalyticsRouteRegistrar
 
     private function publicRouteIntent(Instance $instance, Node $ingress, Node $router, string $host): ProxyRoute
     {
+        $definition = PublicBindingProxyRouteDefinition::analytics();
         $config = $this->publicRouteConfig($instance, $ingress, $router, $host);
 
         return new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'workspace_id' => null,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-analytics',
-            'kind' => 'proxy',
+            ...$definition->attributes($instance, $host, $ingress->id),
             'config' => $config,
             'source_hash' => $this->publicSourceHash($instance, $ingress, $host, $config),
         ]);
@@ -411,33 +407,18 @@ class AnalyticsRouteRegistrar
      */
     private function publicRouteConfig(Instance $instance, Node $ingress, Node $router, string $host): array
     {
+        $definition = PublicBindingProxyRouteDefinition::analytics();
         $analyticsUpstreams = array_map($this->upstream(...), $this->analyticsBackends());
-        $config = [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingress->id,
-            'protocol' => 'analytics',
-            'target' => [
-                'type' => 'analytics',
-                'value' => self::PublicServiceTarget,
-            ],
-            'upstream' => self::PublicServiceTarget,
-            'tracking_paths' => self::TrackingPaths,
-            'router_upstream' => [
-                'node_id' => $router->id,
-                'node' => $router->name,
-                'url' => $this->ingressResolver->routerUrl($router),
-            ],
-            'router_backend_pool' => $this->backendPool($analyticsUpstreams),
-            'tls' => $this->certificatePaths($host),
-        ];
+        $config = $definition->config(
+            $ingress,
+            $router,
+            $host,
+            $this->ingressResolver->routerUrl($router),
+            $this->backendPool($analyticsUpstreams),
+        );
 
         $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
-            'node_id' => $router->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-analytics',
-            'kind' => 'proxy',
+            ...$definition->attributes($instance, $host, $router->id),
             'config' => $config,
         ]));
 
@@ -616,12 +597,7 @@ class AnalyticsRouteRegistrar
     private function publicSourceHash(Instance $instance, Node $ingress, string $host, array $config): string
     {
         return $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-analytics',
-            'kind' => 'proxy',
+            ...PublicBindingProxyRouteDefinition::analytics()->attributes($instance, $host, $ingress->id),
             'config' => $config,
         ]));
     }

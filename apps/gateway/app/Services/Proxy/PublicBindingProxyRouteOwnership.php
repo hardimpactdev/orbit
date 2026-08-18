@@ -8,9 +8,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
-use App\Services\Analytics\AnalyticsRouteRegistrar;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\WebSockets\WebSocketRouteRegistrar;
 use App\Services\Workspaces\WorkspacePlacement;
 use DomainException;
 
@@ -50,56 +48,24 @@ final readonly class PublicBindingProxyRouteOwnership
             return false;
         }
 
-        $protocol = $route->owner_type === 'app-analytics' ? 'analytics' : 'websocket';
-        $serviceTarget = $protocol === 'analytics'
-            ? AnalyticsRouteRegistrar::PublicServiceTarget
-            : WebSocketRouteRegistrar::PublicServiceTarget;
-        $backendPool = $this->backendPool($protocol);
+        $definition = PublicBindingProxyRouteDefinition::forOwnerType($route->owner_type);
+        $backendPool = $this->backendPool($definition->protocol);
 
         if ($backendPool === []) {
             return false;
         }
 
-        $expectedConfig = [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingress->id,
-            'protocol' => $protocol,
-            'target' => ['type' => $protocol, 'value' => $serviceTarget],
-            'upstream' => $serviceTarget,
-            'router_upstream' => [
-                'node_id' => $router->id,
-                'node' => $router->name,
-                'url' => $routerUrl,
-            ],
-            'router_backend_pool' => $backendPool,
-            'tls' => [
-                'cert_path' => "/etc/orbit/certs/{$route->domain}.crt",
-                'key_path' => "/etc/orbit/certs/{$route->domain}.key",
-            ],
-        ];
-
-        if ($protocol !== 'analytics') {
-            $expectedConfig['router_backend_tls'] = [
-                'trusted_by_gateway_ca' => true,
-                'ca_path' => '/etc/orbit/ca/root.crt',
-            ];
-        } else {
-            $expectedConfig['tracking_paths'] = AnalyticsRouteRegistrar::TrackingPaths;
-        }
-
+        $expectedConfig = $definition->config(
+            $ingress,
+            $router,
+            $route->domain,
+            $routerUrl,
+            $backendPool,
+        );
         $expectedNodeId = ! $route->exists && $route->node_id === $router->id
             ? $router->id
             : $ingress->id;
-        $expected = new ProxyRoute([
-            'node_id' => $expectedNodeId,
-            'domain' => $route->domain,
-            'app_id' => $instance->app_id,
-            'workspace_id' => null,
-            'instance_id' => $instance->id,
-            'owner_type' => $route->owner_type,
-            'kind' => 'proxy',
-            'config' => $expectedConfig,
-        ]);
+        $expected = $definition->route($instance, $route->domain, $expectedNodeId, $expectedConfig);
 
         if (! ProxyRouteOwnershipCompatibility::matches($route, $expected, array_keys($expectedConfig))) {
             return false;
