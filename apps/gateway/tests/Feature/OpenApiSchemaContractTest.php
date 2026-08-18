@@ -157,11 +157,6 @@ test('gateway openapi export includes stable contract metadata', function (): vo
         $schema,
         'components.securitySchemes.orbitWireGuardIdentity.name',
     ));
-    Assert::assertIsArray(data_get($schema, 'components.schemas.OrbitSuccessEnvelope.properties.data'));
-    Assert::assertSame('string', data_get(
-        $schema,
-        'components.schemas.OrbitErrorEnvelope.properties.error.properties.code.type',
-    ));
     Assert::assertSame('toolStart', data_get($schema, 'paths./tools/{tool}/start.post.operationId'));
     Assert::assertSame('toolStop', data_get($schema, 'paths./tools/{tool}/stop.post.operationId'));
     Assert::assertSame('toolRestart', data_get($schema, 'paths./tools/{tool}/restart.post.operationId'));

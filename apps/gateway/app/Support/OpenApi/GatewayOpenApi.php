@@ -52,7 +52,6 @@ final class GatewayOpenApi
         Scramble::afterOpenApiGenerated(static function (OpenApi $openApi): void {
             self::describeGateway($openApi);
             self::addSecuritySchemes($openApi);
-            self::addEnvelopeSchemas($openApi);
             self::documentProcessContracts($openApi);
             self::documentApplicationLogContracts($openApi);
             self::stabilizeOperationIds($openApi);
@@ -84,56 +83,12 @@ final class GatewayOpenApi
         );
     }
 
-    private static function addEnvelopeSchemas(OpenApi $openApi): void
-    {
-        $openApi->components->addSchema(
-            'OrbitSuccessEnvelope',
-            self::schemaFrom(self::successEnvelope()),
-        );
-
-        $openApi->components->addSchema(
-            'OrbitErrorEnvelope',
-            self::schemaFrom(self::errorEnvelope()),
-        );
-    }
-
     private static function schemaFrom(Type $type): Schema
     {
         /** @var Schema $schema */
         $schema = Schema::fromType($type);
 
         return $schema;
-    }
-
-    private static function successEnvelope(): ObjectType
-    {
-        $meta = new ObjectType;
-        $meta->additionalProperties(new MixedType);
-
-        $envelope = new ObjectType;
-        $envelope->addProperty('data', new MixedType);
-        $envelope->addProperty('meta', $meta);
-        $envelope->setRequired(['data']);
-
-        return $envelope;
-    }
-
-    private static function errorEnvelope(): ObjectType
-    {
-        $meta = new ObjectType;
-        $meta->additionalProperties(new MixedType);
-
-        $error = new ObjectType;
-        $error->addProperty('code', new StringType);
-        $error->addProperty('message', new StringType);
-        $error->addProperty('meta', $meta);
-        $error->setRequired(['code', 'message', 'meta']);
-
-        $envelope = new ObjectType;
-        $envelope->addProperty('error', $error);
-        $envelope->setRequired(['error']);
-
-        return $envelope;
     }
 
     private static function stabilizeOperationIds(OpenApi $openApi): void

@@ -21933,18 +21933,6 @@ count = 1
 [[issues]]
 file = "tests/Feature/OpenApiSchemaContractTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'components.schemas.OrbitErrorEnvelope.properties.error.properties.code.type'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OpenApiSchemaContractTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'components.schemas.OrbitSuccessEnvelope.properties.data'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OpenApiSchemaContractTest.php"
-code = "literal-named-argument"
 message = "Literal argument `'components.securitySchemes.orbitWireGuardIdentity.in'` should be passed as a named argument for clarity."
 count = 1
 
