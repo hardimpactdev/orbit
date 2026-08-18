@@ -302,11 +302,9 @@ function rewrite_npm_package_json(string $path, string $version): void
         'openapi/public-gateway-openapi.json',
         'README.md',
     ];
-    $json['scripts'] = [
-        'build' => 'tsc -p tsconfig.build.json',
-        'typecheck' => 'tsc --noEmit',
-        'test' => 'npm run typecheck',
-    ];
+    $scripts = is_array($json['scripts'] ?? null) ? $json['scripts'] : [];
+    unset($scripts['generate'], $scripts['generate:openapi'], $scripts['generate:types']);
+    $json['scripts'] = $scripts;
 
     $encoded = json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
