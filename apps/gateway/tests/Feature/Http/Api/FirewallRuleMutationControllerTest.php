@@ -193,7 +193,6 @@ describe('FirewallRule mutation controllers', function (): void {
             'address_family' => 'v4',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
 
         $response = $this->call(

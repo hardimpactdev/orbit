@@ -415,7 +415,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v4',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $wireguardAllow = FirewallRule::factory()->create([
             'node_id' => $node->id,
@@ -425,7 +424,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v4',
             'interface' => 'wireguard',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $publicDenyV6 = FirewallRule::factory()->create([
             'node_id' => $node->id,
@@ -436,7 +434,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v6',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
             Status: active
@@ -469,7 +466,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v4',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $wireguardAllow = FirewallRule::factory()->create([
             'node_id' => $node->id,
@@ -479,7 +475,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v4',
             'interface' => 'wireguard',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $publicDenyV6 = FirewallRule::factory()->create([
             'node_id' => $node->id,
@@ -490,7 +485,6 @@ describe('firewall backend UFW reality', function (): void {
             'address_family' => 'v6',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
         $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
             Status: inactive

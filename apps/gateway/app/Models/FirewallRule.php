@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use LogicException;
 
 /**
  * @property int $id
@@ -69,7 +70,7 @@ class FirewallRule extends Model
 
     public function setProtectedAttribute(mixed $value): void
     {
-        unset($this->attributes['protected']);
+        throw new LogicException('FirewallRule.protected is derived from owner and cannot be assigned.');
     }
 
     /**

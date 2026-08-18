@@ -71,7 +71,6 @@ describe('FirewallRuleQuery', function (): void {
             'address_family' => 'v4',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
             'reason' => null,
         ]);
 

@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:52:52+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-migration-replay/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-205251-solo-hardening-migration-replay",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-migration-replay-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T185201Z-bf55af208c5a.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-migration-replay-retained-incus-runtime.txt": "5a51c9982e53e361e7e9c671a0283907dc067c1389eb744d0aa7fba67b54cafa",
+        "loop.md": "2df418308208f8a8c768a82101a422d41f2685c7cf3a0e0cf3e3cfe4cf4f50e9",
+        "quality-gates/quality-check-2026-08-18T185201Z-bf55af208c5a.json": "b207b3e3aada9526d7b7536290c3ad341acf6306194c9e84a86222c519f154ec"
+    },
+    "slug": "solo-hardening-migration-replay",
+    "requested_slug": "solo-hardening-migration-replay",
+    "compatible_slugs": [
+        "solo-hardening-migration-replay"
+    ],
+    "branch": "solo-hardening-migration-replay",
+    "candidate_commit": "47ec903d7caf7af679bb72c500239c8eb2f184c5",
+    "accepted_feature_tip": "47ec903d7caf7af679bb72c500239c8eb2f184c5",
+    "accepted_main_tip": "1a3431e688729481229ad5e59c661e0c7c3a0a7c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
