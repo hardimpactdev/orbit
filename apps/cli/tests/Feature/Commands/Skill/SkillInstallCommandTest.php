@@ -106,6 +106,28 @@ describe('skill:install', function (): void {
                 ->and($decoded['error']['meta']['reason'])
                 ->toBe('missing_home');
         });
+
+        it('fails with validation_failed when the source skill directory is missing', function (): void {
+            File::deleteDirectory($this->sourceSkillPath);
+
+            [$exitCode, $output] = run_skill_install_command($this, [
+                'provider' => 'codex',
+                '--json' => true,
+            ]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['field'])
+                ->toBe('source')
+                ->and($decoded['error']['meta']['reason'])
+                ->toBe('missing_source')
+                ->and($decoded['error']['meta']['source'])
+                ->toBe($this->sourceSkillPath);
+        });
     });
 
     describe('provider defaults', function (): void {

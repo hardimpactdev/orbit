@@ -55,6 +55,17 @@ and non-interactive input mode only; it is not destructive consent.
 - With an unknown first positional and a second positional, fail with
   `validation_failed`, `meta.field=path`, and `meta.reason=unexpected_path`.
 
+### Install planning
+
+- Resolve the provider, target path, source directory, and the initial
+  target-exists snapshot once into an immutable install plan.
+- After consent, install uses that planned provider, target, and source. It
+  does not resolve the target or source path again.
+- Immediately before delete or copy, re-check whether the planned target exists
+  and re-validate that the planned source directory still contains `SKILL.md`.
+- This command has no `--dry-run` flag. Planning is an internal step, not a
+  preview mode.
+
 ### Copy and overwrite rules
 
 - Validate that the source skill directory exists before mutating the target.
@@ -112,7 +123,8 @@ contract.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php` | Command signature, provider/default and explicit-path resolution, absent-target install, interactive replacement confirmation/decline, `--force`, JSON consent envelope, and local-only no-gateway behavior. |
+| `apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php` | Command signature, provider/default and explicit-path resolution, absent-target install, missing-source validation, interactive replacement confirmation/decline, `--force`, JSON consent envelope, and local-only no-gateway behavior. |
+| `apps/cli/tests/Unit/Services/Skill/SkillInstallActionsTest.php` | Plan built once (`resolve()` called once), install-time target-existence race revalidation, missing-source revalidation after planning, and consent via `withForce()` without rebuilding the request. |
 
 There is no gateway-side coverage for this command contract: `skill:install`
 is local-only and has no gateway API surface.

@@ -8126,7 +8126,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php",
+                "apps/cli/tests/Unit/Services/Skill/SkillInstallActionsTest.php"
             ],
             "verification_hints": [
                 {
@@ -8135,6 +8136,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Skill/SkillInstallCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Skill/SkillInstallCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Unit/Services/Skill/SkillInstallActionsTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Unit/Services/Skill/SkillInstallActionsTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Unit/Services/Skill/SkillInstallActionsTest.php"
                 }
             ],
             "p4_mapping": {

@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Skill;
 
-final readonly class SkillTargetResolver
+readonly class SkillTargetResolver
 {
     public function __construct(
         private ?string $homeOverride = null,
     ) {}
 
-    public function resolve(?string $providerSlug, ?string $path): SkillTargetResolution|SkillInstallFailure
+    /**
+     * @return array{provider: ?string, target: string}|SkillInstallFailure
+     */
+    public function resolve(?string $providerSlug, ?string $path): array|SkillInstallFailure
     {
         if ($providerSlug === null && $path === null) {
             return new SkillInstallFailure(
@@ -27,14 +30,14 @@ final readonly class SkillTargetResolver
             return $this->resolveProviderPathPair($providerSlug, $path);
         }
 
-        if ($providerSlug === null) {
-            return new SkillTargetResolution(provider: null, target: $path);
+        if ($path !== null && $providerSlug === null) {
+            return ['provider' => null, 'target' => $path];
         }
 
         $provider = SkillProvider::tryFromSlug($providerSlug);
 
         if ($provider === null) {
-            return new SkillTargetResolution(provider: null, target: $providerSlug);
+            return ['provider' => null, 'target' => $providerSlug];
         }
 
         $home = $this->homeDirectory();
@@ -51,16 +54,19 @@ final readonly class SkillTargetResolver
             );
         }
 
-        return new SkillTargetResolution(
-            provider: $provider->value,
-            target: $provider->defaultTargetPath($home),
-        );
+        return [
+            'provider' => $provider->value,
+            'target' => $provider->defaultTargetPath($home),
+        ];
     }
 
+    /**
+     * @return array{provider: ?string, target: string}|SkillInstallFailure
+     */
     private function resolveProviderPathPair(
         string $providerSlug,
         string $path,
-    ): SkillTargetResolution|SkillInstallFailure {
+    ): array|SkillInstallFailure {
         $provider = SkillProvider::tryFromSlug($providerSlug);
 
         if ($provider === null) {
@@ -76,7 +82,7 @@ final readonly class SkillTargetResolver
             );
         }
 
-        return new SkillTargetResolution(provider: $provider->value, target: $path);
+        return ['provider' => $provider->value, 'target' => $path];
     }
 
     private function homeDirectory(): ?string
