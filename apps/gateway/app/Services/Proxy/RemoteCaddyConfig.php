@@ -7,11 +7,11 @@ namespace App\Services\Proxy;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
-use JsonException;
 
 final readonly class RemoteCaddyConfig
 {
@@ -27,9 +27,12 @@ final readonly class RemoteCaddyConfig
             return null;
         }
 
+        // Protocol violations return null so write callers halt and cleanup
+        // callers skip mutation instead of treating garbled output as content.
+
         try {
-            $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-        } catch (JsonException) {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException) {
             return null;
         }
 

@@ -16,6 +16,7 @@ final readonly class WebSocketRuntimeContainerManager
 {
     public function __construct(
         private RunsInternalCommands $localExecutor,
+        private ?WebSocketRuntimeContainerApplyWarnings $applyWarnings = null,
     ) {}
 
     public function apply(Node $node, WebSocketRuntimeContainer $container): void
@@ -29,10 +30,12 @@ final readonly class WebSocketRuntimeContainerManager
                     'expected_hash' => $container->specHash(),
                 ],
             ],
-            operation: 'websocket-runtime-container-apply',
+            operation: WebSocketRuntimeContainerApplyWarnings::APPLY_OPERATION,
         );
 
         if ($result->successful()) {
+            $this->applyWarnings()->record($node, $result);
+
             return;
         }
 
@@ -81,6 +84,11 @@ final readonly class WebSocketRuntimeContainerManager
                 durationMs: 0,
             );
         }
+    }
+
+    private function applyWarnings(): WebSocketRuntimeContainerApplyWarnings
+    {
+        return $this->applyWarnings ?? app(WebSocketRuntimeContainerApplyWarnings::class);
     }
 
     private function throwRuntimeFailure(

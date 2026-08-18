@@ -12,11 +12,11 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Tools\ToolScriptDispatcher;
-use JsonException;
 use RuntimeException;
 use Throwable;
 
@@ -135,7 +135,16 @@ final readonly class WorkspaceRuntimeContainerManager
         );
 
         if ($result->successful()) {
-            $data = $this->runtimeSuccessData($result);
+            try {
+                $data = $this->runtimeSuccessData($result);
+            } catch (RemoteShellProtocolException $exception) {
+                throw new WorkspaceRuntimeContainerApplyException(
+                    hadExistingContainer: false,
+                    message: "Workspace runtime container apply returned an invalid success envelope: {$exception->getMessage()}",
+                    previous: $exception,
+                );
+            }
+
             $outcome = $data['outcome'] ?? null;
 
             if (is_string($outcome)) {
@@ -183,7 +192,11 @@ final readonly class WorkspaceRuntimeContainerManager
             return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        try {
+            $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        } catch (RemoteShellProtocolException) {
+            return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
 
         return $changed === true
             ? WorkspaceRuntimeArtifactRemovalOutcome::Removed
@@ -207,7 +220,11 @@ final readonly class WorkspaceRuntimeContainerManager
             return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        try {
+            $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        } catch (RemoteShellProtocolException) {
+            return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
 
         return $changed === true
             ? WorkspaceRuntimeArtifactRemovalOutcome::Removed
@@ -453,25 +470,7 @@ final readonly class WorkspaceRuntimeContainerManager
      */
     private function runtimeSuccessData(RemoteShellResult $result): array
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-
-        if ($data !== []) {
-            return $data;
-        }
-
-        try {
-            /** @var mixed $payload */
-            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return [];
-        }
-
-        if (! is_array($payload) || ! array_all(array_keys($payload), static fn ($key) => is_string($key))) {
-            return [];
-        }
-
-        /** @var array<string, mixed> $payload */
-        return $payload;
+        return RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
     }
 
     /**

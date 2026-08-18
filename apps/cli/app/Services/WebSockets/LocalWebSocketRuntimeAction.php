@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
+use App\Enums\WebSockets\CurrentImageVerification;
 use InvalidArgumentException;
 use JsonException;
 use Symfony\Component\Process\Process;
@@ -374,18 +375,21 @@ final readonly class LocalWebSocketRuntimeAction
         $hadExistingContainer = $inspection !== null;
         $observedHash = $this->observedSpecHash($inspection);
         $hashMatches = hash_equals($spec->expectedHash, $observedHash ?? '');
-        $usesCurrentImage = ! $hadExistingContainer || $this->containerUsesCurrentImage($inspection, $spec->image);
+        $imageVerification = $hadExistingContainer
+            ? $this->currentImageVerification($inspection, $spec->image)
+            : null;
+        $imageRequiresRecreation = $imageVerification?->requiresRecreation() === true;
 
         if (
             $hadExistingContainer
             && $hashMatches
             && $this->isRunning($inspection)
-            && $usesCurrentImage
+            && ! $imageRequiresRecreation
         ) {
-            return $this->containerApplyResult($spec->name, 'unchanged', true, false);
+            return $this->containerApplyResult($spec->name, 'unchanged', true, false, $imageVerification);
         }
 
-        if ($hadExistingContainer && (! $hashMatches || ! $usesCurrentImage)) {
+        if ($hadExistingContainer && (! $hashMatches || $imageRequiresRecreation)) {
             $remove = $this->runProcess(['docker', 'rm', '-f', $spec->name]);
 
             if (! $remove->isSuccessful()) {
@@ -398,7 +402,7 @@ final readonly class LocalWebSocketRuntimeAction
                 throw $this->containerFailure('create', $spec->name, $create);
             }
 
-            return $this->containerApplyResult($spec->name, 'recreated', true, true);
+            return $this->containerApplyResult($spec->name, 'recreated', true, true, $imageVerification);
         }
 
         if (! $hadExistingContainer) {
@@ -408,7 +412,7 @@ final readonly class LocalWebSocketRuntimeAction
                 throw $this->containerFailure('create', $spec->name, $create);
             }
 
-            return $this->containerApplyResult($spec->name, 'created', false, true);
+            return $this->containerApplyResult($spec->name, 'created', false, true, $imageVerification);
         }
 
         $start = $this->runProcess(['docker', 'start', $spec->name]);
@@ -417,7 +421,7 @@ final readonly class LocalWebSocketRuntimeAction
             throw $this->containerFailure('start', $spec->name, $start);
         }
 
-        return $this->containerApplyResult($spec->name, 'started', true, true);
+        return $this->containerApplyResult($spec->name, 'started', true, true, $imageVerification);
     }
 
     /**
@@ -779,15 +783,17 @@ final readonly class LocalWebSocketRuntimeAction
     /**
      * @param  array<array-key, mixed>|null  $inspection
      */
-    private function containerUsesCurrentImage(?array $inspection, string $image): bool
+    private function currentImageVerification(?array $inspection, string $image): CurrentImageVerification
     {
         $desiredImageId = $this->currentRuntimeImageId($image);
 
         if ($desiredImageId === null) {
-            return true;
+            return CurrentImageVerification::CouldNotVerify;
         }
 
-        return $desiredImageId === $this->observedContainerImageId($inspection);
+        return $desiredImageId === $this->observedContainerImageId($inspection)
+            ? CurrentImageVerification::Matches
+            : CurrentImageVerification::Differs;
     }
 
     private function currentRuntimeImageId(string $image): ?string
@@ -816,21 +822,46 @@ final readonly class LocalWebSocketRuntimeAction
     }
 
     /**
-     * @return array{action: string, container: string, outcome: string, had_existing_container: bool, changed: bool}
+     * @return array{
+     *     action: string,
+     *     container: string,
+     *     outcome: string,
+     *     had_existing_container: bool,
+     *     changed: bool,
+     *     image_verification: string|null,
+     *     warning?: string,
+     *     warnings?: list<array{code: string, message: string}>
+     * }
      */
     private function containerApplyResult(
         string $container,
         string $outcome,
         bool $hadExistingContainer,
         bool $changed,
+        ?CurrentImageVerification $imageVerification,
     ): array {
-        return [
+        $result = [
             'action' => 'container:apply',
             'container' => $container,
             'outcome' => $outcome,
             'had_existing_container' => $hadExistingContainer,
             'changed' => $changed,
+            'image_verification' => $imageVerification?->value,
         ];
+
+        if ($imageVerification !== CurrentImageVerification::CouldNotVerify) {
+            return $result;
+        }
+
+        $warning = 'Current-image verification was skipped because orbit-reverb:current could not be inspected.';
+
+        $result['warning'] = $warning;
+        $result['warnings'] = [[
+            'code' => 'websocket_runtime.current_image_unverified',
+            'message' => $warning,
+        ]];
+
+        return $result;
     }
 
     private function containerFailure(string $action, string $container, Process $result): LocalWebSocketRuntimeFailure

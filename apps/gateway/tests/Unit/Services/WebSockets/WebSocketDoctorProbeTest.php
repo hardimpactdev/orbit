@@ -258,6 +258,38 @@ it('reports an additional Docker publication outside WireGuard', function (): vo
         ]);
 })->group('websocket', 'doctor');
 
+it('does not treat a truncated websocket doctor envelope as missing runtime state', function (): void {
+    $websocketNode = Node::factory()->create([
+        'name' => 'realtime-1',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    $assignment = NodeRoleAssignment::factory()->create([
+        'node_id' => $websocketNode->id,
+        'role' => 'websocket',
+        'status' => 'active',
+    ]);
+    $shell = new WebSocketDoctorProbeTestTransport([
+        new RemoteShellResult(0, '{"success":', '', 1),
+        new RemoteShellResult(0, '{"success":', '', 1),
+    ]);
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        new RemoteExecutorBackedInternalExecutor($shell),
+    );
+
+    $drift = app(WebSocketDoctorProbe::class)->nodeDrift($websocketNode, $assignment);
+
+    expect($drift)
+        ->not->toBeEmpty()->and(array_column($drift, 'kind'))
+        ->each->toBe(\App\Enums\DriftKind::Unverifiable)->and(array_column($drift, 'key'))
+        ->not->toContain('tool.websocket.reverb_unavailable');
+
+    foreach ($drift as $entry) {
+        expect($entry->kind)->toBe(\App\Enums\DriftKind::Unverifiable);
+    }
+})->group('websocket', 'doctor');
+
 function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(

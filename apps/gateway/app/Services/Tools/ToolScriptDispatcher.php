@@ -7,6 +7,7 @@ namespace App\Services\Tools;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\GatewayHostExecution;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
@@ -15,6 +16,7 @@ use InvalidArgumentException;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Tools\ToolRunScriptAction;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class ToolScriptDispatcher
 {
     private const int DEFAULT_TIMEOUT = 900;
@@ -63,7 +65,7 @@ final readonly class ToolScriptDispatcher
             return $result;
         }
 
-        $scriptData = $this->scriptResultData(RemoteShellSuccessData::fromJsonEnvelope($result));
+        $scriptData = $this->parsedScriptData($result);
         $scriptResult = $this->fromSuccessEnvelope($result, $scriptData);
 
         if ($throw && $scriptData !== null && ! $scriptResult->successful()) {
@@ -109,6 +111,18 @@ final readonly class ToolScriptDispatcher
                 'error' => $exception->getMessage(),
             ],
         );
+    }
+
+    /**
+     * @return array{exit_code: int, stdout: string, stderr: string, duration_ms: int}|null
+     */
+    private function parsedScriptData(RemoteShellResult $result): ?array
+    {
+        try {
+            return $this->scriptResultData(RemoteShellSuccessData::fromJsonEnvelopeOrFail($result));
+        } catch (RemoteShellProtocolException) {
+            return null;
+        }
     }
 
     /**

@@ -11,11 +11,11 @@ use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Tools\ToolScriptDispatcher;
-use JsonException;
 use RuntimeException;
 use Throwable;
 
@@ -120,7 +120,16 @@ final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeCo
         );
 
         if ($result->successful()) {
-            $data = $this->runtimeSuccessData($result);
+            try {
+                $data = $this->runtimeSuccessData($result);
+            } catch (RemoteShellProtocolException $exception) {
+                throw new AppRuntimeContainerApplyException(
+                    hadExistingContainer: false,
+                    message: "App runtime container apply returned an invalid success envelope: {$exception->getMessage()}",
+                    previous: $exception,
+                );
+            }
+
             $outcome = $data['outcome'] ?? null;
 
             if (is_string($outcome)) {
@@ -173,7 +182,11 @@ final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeCo
             return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        try {
+            $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        } catch (RemoteShellProtocolException) {
+            return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
 
         return $changed === true
             ? AppRuntimeArtifactRemovalOutcome::Removed
@@ -197,7 +210,11 @@ final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeCo
             return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        try {
+            $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+        } catch (RemoteShellProtocolException) {
+            return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
 
         return $changed === true
             ? AppRuntimeArtifactRemovalOutcome::Removed
@@ -441,25 +458,7 @@ final readonly class AppRuntimeContainerManager implements ConvergesAppRuntimeCo
      */
     private function runtimeSuccessData(RemoteShellResult $result): array
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-
-        if ($data !== []) {
-            return $data;
-        }
-
-        try {
-            /** @var mixed $payload */
-            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return [];
-        }
-
-        if (! is_array($payload) || ! array_all(array_keys($payload), static fn ($key) => is_string($key))) {
-            return [];
-        }
-
-        /** @var array<string, mixed> $payload */
-        return $payload;
+        return RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
     }
 
     /**

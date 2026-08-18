@@ -9,6 +9,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\WireGuardPeer;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -62,16 +63,25 @@ final readonly class NodeIdentityArtifactProbe
             );
         }
 
-        $publicKey = RemoteShellSuccessData::fromJsonEnvelope($result)['public_key'] ?? null;
+        try {
+            $publicKey = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result)['public_key'] ?? null;
+        } catch (RemoteShellProtocolException $exception) {
+            $stdout = trim($result->stdout);
+
+            if ($stdout !== '' && ! str_starts_with($stdout, '{')) {
+                return $stdout;
+            }
+
+            throw new RuntimeException(
+                "Failed to read node WireGuard interface public key: invalid success envelope: {$exception->getMessage()}",
+                previous: $exception,
+            );
+        }
 
         if (! is_string($publicKey) || trim($publicKey) === '') {
-            $publicKey = trim($result->stdout);
-
-            if ($publicKey === '') {
-                throw new RuntimeException(
-                    'Failed to read node WireGuard interface public key: response missing public key',
-                );
-            }
+            throw new RuntimeException(
+                'Failed to read node WireGuard interface public key: response missing public key',
+            );
         }
 
         return trim($publicKey);

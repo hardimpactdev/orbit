@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\ReleaseManifestResolver;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Tools\ToolCatalog;
@@ -116,7 +117,22 @@ class WebSocketRoleBaseline implements RoleBaseline
             return false;
         }
 
-        return RemoteShellSuccessData::fromJsonEnvelope($result)['self_contained'] === true;
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException $exception) {
+            throw new RuntimeException(
+                "Could not determine whether the websocket runtime image is self-contained on {$node->name}: {$exception->getMessage()}",
+                previous: $exception,
+            );
+        }
+
+        if (! is_bool($data['self_contained'] ?? null)) {
+            throw new RuntimeException(
+                "Websocket runtime image probe on {$node->name} did not return a boolean self_contained flag.",
+            );
+        }
+
+        return $data['self_contained'];
     }
 
     private function ensureManifestRuntimeImage(Node $node): void
@@ -166,7 +182,14 @@ class WebSocketRoleBaseline implements RoleBaseline
             throw new RuntimeException("Could not install websocket runtime image on {$node->name}.");
         }
 
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException $exception) {
+            throw new RuntimeException(
+                "Could not verify websocket runtime image on {$node->name}: {$exception->getMessage()}",
+                previous: $exception,
+            );
+        }
 
         if (($data['self_contained'] ?? null) !== true) {
             throw new RuntimeException("Websocket runtime image on {$node->name} is not self-contained.");
@@ -208,7 +231,15 @@ class WebSocketRoleBaseline implements RoleBaseline
             action: 'app-key:ensure',
         );
 
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException $exception) {
+            throw new RuntimeException(
+                "Could not prepare websocket runtime app key on {$node->name}: {$exception->getMessage()}",
+                previous: $exception,
+            );
+        }
+
         /** @var mixed $appKey */
         $appKey = $data['app_key'] ?? null;
 

@@ -148,6 +148,57 @@ it('maps solo todo delete receipts to the orbit todo key', function (): void {
         ->toBeTrue();
 });
 
+it('does not treat a malformed remote solo envelope as a successful upstream response', function (string $stdout): void {
+    $node = Node::factory()
+        ->appDev()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-solo',
+            'wireguard_address' => '10.44.0.91',
+        ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.91:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'solo-upstream-request',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => $stdout,
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
+    ]);
+
+    $response = app(HttpSoloUpstreamClient::class)->get(
+        new SoloUpstreamTarget(
+            node: $node,
+            url: 'http://127.0.0.1:24678/api',
+            identity: 'app-dev-solo',
+        ),
+        '/projects',
+    );
+
+    expect($response->ok)
+        ->toBeFalse()
+        ->and($response->error?->code)
+        ->toBe('solo_upstream_error')
+        ->and($response->error?->status)
+        ->toBe(502);
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
+
 function create_solo_gateway_upstream_node(): Node
 {
     $node = Node::factory()->create(['name' => 'gateway']);

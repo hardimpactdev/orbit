@@ -6,6 +6,7 @@ namespace App\Services\Apps;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 
@@ -42,13 +43,15 @@ final readonly class RemoteAppIntrospectProbe
      */
     private function snapshotData(RemoteShellResult $result): array
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
 
         /** @var mixed $snapshot */
         $snapshot = $data['snapshot'] ?? null;
 
         if (! is_array($snapshot)) {
-            return [];
+            throw new RemoteShellProtocolException(
+                'App introspect probe success.data.snapshot must be an object.',
+            );
         }
 
         /** @var array<string, mixed> $snapshot */

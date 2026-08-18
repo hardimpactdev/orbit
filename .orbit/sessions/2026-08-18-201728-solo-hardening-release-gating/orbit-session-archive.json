@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:17:29+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-release-gating/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-201728-solo-hardening-release-gating",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T181653Z-30fcdd0a0310.json"
+    ],
+    "entry_digests": {
+        "loop.md": "375e68a61ca76bb652879ccffb08752ce13e755f3e929a2e56b24c2f73f97f6e",
+        "quality-gates/quality-check-2026-08-18T181653Z-30fcdd0a0310.json": "eb33caf336c427f772a273f52dc5babcba7112a6a23a60be7661d9c7b1c28a22"
+    },
+    "slug": "solo-hardening-release-gating",
+    "requested_slug": "solo-hardening-release-gating",
+    "compatible_slugs": [
+        "solo-hardening-release-gating"
+    ],
+    "branch": "solo-hardening-release-gating",
+    "candidate_commit": "2363a860f1d39ca738d3a9a13dd713810f3a9766",
+    "accepted_feature_tip": "2363a860f1d39ca738d3a9a13dd713810f3a9766",
+    "accepted_main_tip": "1dc825202b98e1ae0609a1122933a5f453dbcd26",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

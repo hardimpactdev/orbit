@@ -22,6 +22,7 @@ use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppSelectorResolver;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -476,7 +477,16 @@ final readonly class DeployManager
             );
         }
 
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException) {
+            return new RemoteShellResult(
+                exitCode: $result->exitCode === 0 ? 1 : $result->exitCode,
+                stdout: '',
+                stderr: $this->stepEnvelopeFailure($result),
+                durationMs: $result->durationMs,
+            );
+        }
 
         if (
             ! is_int($data['exit_code'] ?? null)

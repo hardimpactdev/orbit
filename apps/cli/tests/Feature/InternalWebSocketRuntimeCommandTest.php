@@ -472,7 +472,13 @@ describe('internal websocket runtime command', function (): void {
                 'outcome' => 'created',
                 'had_existing_container' => false,
                 'changed' => true,
+                'image_verification' => null,
             ])
+            ->and(websocket_runtime_success_data($output))
+            ->not
+            ->toHaveKey('warning')
+            ->and(websocket_runtime_success_meta($output)['warnings'] ?? null)
+            ->toBeNull()
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('docker network inspect orbit-network')
             ->toContain(
@@ -508,7 +514,13 @@ describe('internal websocket runtime command', function (): void {
                 'outcome' => 'recreated',
                 'had_existing_container' => true,
                 'changed' => true,
+                'image_verification' => 'differs',
             ])
+            ->and(websocket_runtime_success_data($output))
+            ->not
+            ->toHaveKey('warning')
+            ->and(websocket_runtime_success_meta($output)['warnings'] ?? null)
+            ->toBeNull()
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
             ->toContain('docker rm -f orbit-websocket-app-dev-1')
@@ -539,15 +551,19 @@ describe('internal websocket runtime command', function (): void {
                 'outcome' => 'unchanged',
                 'had_existing_container' => true,
                 'changed' => false,
+                'image_verification' => 'matches',
             ])
-            ->and($calls)
-            ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
-            ->and($calls)
+            ->and(websocket_runtime_success_data($output))
+            ->not->toHaveKey('warning')->and(
+                websocket_runtime_success_meta($output)['warnings'] ?? null,
+            )->toBeNull()->and($calls)->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')->and(
+                $calls,
+            )
             ->not->toContain('docker rm -f orbit-websocket-app-dev-1')->and($calls)
             ->not->toContain('docker run -d --pull never --name orbit-websocket-app-dev-1');
     });
 
-    it('falls back to hash and running reuse when orbit-reverb:current image inspect fails or is empty', function (
+    it('leaves a running websocket container unchanged and warns when orbit-reverb:current cannot be inspected', function (
         bool $inspectFails,
         string $currentImageId,
     ): void {
@@ -564,6 +580,7 @@ describe('internal websocket runtime command', function (): void {
         ]);
 
         $calls = file_get_contents("{$bin}/calls.log");
+        $warning = 'Current-image verification was skipped because orbit-reverb:current could not be inspected.';
 
         expect($exitCode)
             ->toBe(0)
@@ -574,6 +591,15 @@ describe('internal websocket runtime command', function (): void {
                 'outcome' => 'unchanged',
                 'had_existing_container' => true,
                 'changed' => false,
+                'image_verification' => 'could_not_verify',
+                'warning' => $warning,
+            ])
+            ->and(websocket_runtime_success_meta($output)['warnings'] ?? null)
+            ->toBe([
+                [
+                    'code' => 'websocket_runtime.current_image_unverified',
+                    'message' => $warning,
+                ],
             ])
             ->and($calls)
             ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
@@ -584,6 +610,32 @@ describe('internal websocket runtime command', function (): void {
         'inspect errors' => [true, 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'],
         'inspect empty' => [false, ''],
     ]);
+
+    it('prints the current-image verification skip in human container-apply output', function (): void {
+        $bin = install_websocket_runtime_fake_bin([
+            'container_exists' => true,
+            'container_running' => true,
+            'container_image_id' => 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            'image_inspect_fails' => true,
+        ]);
+
+        [$exitCode, $output] = run_websocket_runtime_human_command(action: 'container:apply', payload: [
+            'spec' => websocket_runtime_container_spec_payload(),
+        ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('outcome: unchanged')
+            ->toContain('image_verification: could_not_verify')
+            ->toContain(
+                'warning: Current-image verification was skipped because orbit-reverb:current could not be inspected.',
+            )
+            ->and($calls)
+            ->not->toContain('docker rm -f orbit-websocket-app-dev-1');
+    });
 });
 
 function websocket_runtime_signed_operation_token(
@@ -619,6 +671,32 @@ function websocket_runtime_operation_secret(): string
  */
 function run_websocket_runtime_command(string $action, array $payload): array
 {
+    return run_websocket_runtime_command_with_input($payload, [
+        'action' => $action,
+        '--operation-token' => websocket_runtime_signed_operation_token(),
+        '--json' => true,
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array{0: int, 1: string}
+ */
+function run_websocket_runtime_human_command(string $action, array $payload): array
+{
+    return run_websocket_runtime_command_with_input($payload, [
+        'action' => $action,
+        '--operation-token' => websocket_runtime_signed_operation_token(),
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function run_websocket_runtime_command_with_input(array $payload, array $arguments): array
+{
     $command = app(WebSocketRuntimeCommand::class);
     $application = app();
 
@@ -628,11 +706,7 @@ function run_websocket_runtime_command(string $action, array $payload): array
 
     $command->setLaravel($application);
     $output = new BufferedOutput;
-    $input = new ArrayInput([
-        'action' => $action,
-        '--operation-token' => websocket_runtime_signed_operation_token(),
-        '--json' => true,
-    ]);
+    $input = new ArrayInput($arguments);
     $input->setStream(fopen(
         filename: 'data://text/plain,'.rawurlencode(json_encode($payload, JSON_THROW_ON_ERROR)),
         mode: 'r',
@@ -662,6 +736,29 @@ function websocket_runtime_success_data(string $output): array
 
     /** @var array<string, mixed> $data */
     return $data;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function websocket_runtime_success_meta(string $output): array
+{
+    /** @var mixed $payload */
+    $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    /** @var mixed $meta */
+    $meta = data_get(target: $payload, key: 'success.meta');
+
+    if (! is_array($meta)) {
+        return [];
+    }
+
+    /** @var array<string, mixed> $meta */
+    return $meta;
 }
 
 /**

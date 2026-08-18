@@ -8,6 +8,7 @@ use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 
@@ -41,7 +42,19 @@ final readonly class RemoteLaunchdService
             );
         }
 
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException $exception) {
+            return new ConvergenceApplyResult(
+                status: ConvergenceStatus::Failed,
+                summary: "Failed to apply launchd service {$label}.",
+                details: [
+                    'label' => $label,
+                    'error' => "Apply returned an invalid success envelope: {$exception->getMessage()}",
+                ],
+            );
+        }
+
         $status = ($data['status'] ?? null) === 'ok'
             ? ConvergenceStatus::Ok
             : ConvergenceStatus::Changed;

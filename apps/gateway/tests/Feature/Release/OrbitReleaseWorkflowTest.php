@@ -131,6 +131,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
 
     expect($workflow)
         ->toContain('name: Orbit Release')
+        ->toContain('workflow_dispatch:')
         ->toContain('types: [published]')
         ->toContain('contents: write')
         ->toContain('packages: write')
@@ -149,7 +150,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('Promote canonical gateway image version tag')
         ->toContain('docker buildx imagetools create')
         ->toContain('--prefer-index=false')
-        ->toContain('--tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
+        ->toContain('--tag "$promoted_ref"')
         ->toContain('expected_digest="${GATEWAY_REF##*@}"')
         ->toContain('promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
         ->toContain('inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"')
@@ -216,6 +217,73 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
 
     expect($workflow)->toMatch(
         '/if \[ "\$actual_digest" != "\$expected_digest" \]; then\n\s+echo "Promoted gateway digest is \[\$\{actual_digest:-missing\}\], expected \[\$expected_digest\]\." >&2\n\s+exit 1\n\s+fi/',
+    );
+});
+
+it('pushes the release git tag before creating the draft so checkout can resolve the ref', function (): void {
+    $skill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        ->toContain('ref: ${{ inputs.tag || github.event.release.tag_name }}')
+        ->not->toContain("\n  push:")
+        ->not->toContain('tags:');
+
+    $skillText = (string) preg_replace('/\s+/', ' ', $skill);
+
+    expect($skillText)
+        ->toContain('does not create a git tag')
+        ->toContain('no tag-push trigger');
+
+    preg_match_all('/```bash\s*\n(.*?)\n\s*```/s', $skill, $blocks);
+
+    $recipe = '';
+    foreach ($blocks[1] as $block) {
+        if (str_contains($block, 'gh release create "v${version}"')) {
+            $recipe = $block;
+            break;
+        }
+    }
+
+    expect($recipe)
+        ->not
+        ->toBe('')
+        ->and($recipe)
+        ->toContain('git tag "v${version}"')
+        ->toContain('git push origin "v${version}"')
+        ->toContain('gh release create "v${version}"');
+
+    $tagPos = strpos($recipe, 'git tag "v${version}"');
+    $pushPos = strpos($recipe, 'git push origin "v${version}"');
+    $createPos = strpos($recipe, 'gh release create "v${version}"');
+
+    expect($tagPos)
+        ->not->toBeFalse()->and($pushPos)
+        ->not->toBeFalse()->and($createPos)
+        ->not->toBeFalse()->and($tagPos)->toBeLessThan($pushPos)->and($pushPos)->toBeLessThan($createPos);
+});
+
+it('keeps the GitHub release unpublished until draft asset verification succeeds', function (): void {
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        ->toContain('workflow_dispatch:')
+        ->toContain('description: Draft release tag to verify and publish')
+        ->toContain('inputs.tag || github.event.release.tag_name')
+        ->toContain('types: [published]')
+        ->toContain('Publish verified GitHub release')
+        ->toContain('gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"')
+        ->toContain('Keep failed release unpublished')
+        ->toContain('if: failure()')
+        ->toContain('gh release edit "$TAG" --draft --repo "$GITHUB_REPOSITORY"')
+        ->toContain('--tag "$promoted_ref"')
+        ->not->toContain('--tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}"');
+
+    // Draft verification and split-package promotion must finish before the
+    // GitHub release becomes public. The failure path converts a premature
+    // published release back to a draft.
+    expect($workflow)->toMatch(
+        '/Verify promoted release manifest[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish split package repositories[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
     );
 });
 

@@ -1,0 +1,16 @@
+Todo: Solo #211 (orchestrated hardening wave)
+Candidate: edf338ca75eed2c134901004b799ecd5d3115c37
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-0e0eb4 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-0e0eb4-gateway
+RemoteShellSuccessData.php SHA-256 (local == synced): e112296e2e67642ed8d38feb003154962c75410976acb78cd34914cc360c295e
+
+Method: acquire retained topology dev-0e0eb4 from the implementation worktree; verify synced source hash; run the fail-closed envelope, websocket doctor/baseline, and deploy step-failure suites inside the retained gateway instance as the orbit user.
+
+Observed:
+  Tests:    70 passed (193 assertions)
+  Duration: 16.45s
+
+Result: passed

@@ -24,12 +24,30 @@ final class WebSocketRuntimeCommand extends InternalExecutorCommand
         }
 
         try {
-            return $this->emitInternalSuccess($action->run($this->argument('action'), $this->readPayload()));
+            [$result, $meta] = $this->successPayload($action->run($this->argument('action'), $this->readPayload()));
+
+            return $this->emitInternalSuccess($result, $meta);
         } catch (LocalWebSocketRuntimeFailure $failure) {
             return $this->renderFailure($failure->errorCode, $failure->getMessage(), $failure->meta);
         } catch (InvalidArgumentException|JsonException) {
             return $this->renderFailure('validation_failed', 'Websocket runtime payload is invalid.', []);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function successPayload(array $result): array
+    {
+        $warnings = $result['warnings'] ?? null;
+        unset($result['warnings']);
+
+        if (! is_array($warnings)) {
+            return [$result, []];
+        }
+
+        return [$result, ['warnings' => $warnings]];
     }
 
     /**

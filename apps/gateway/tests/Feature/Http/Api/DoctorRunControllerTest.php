@@ -696,7 +696,7 @@ describe('DoctorRunController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', false)
             ->assertJsonPath('success.data.doctor.scope.families', ['instance'])
-            ->assertJsonPath('success.data.doctor.issues.0.key', 'instance.path_missing');
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'instance.remote_shell_probe_failed');
     });
 
     it('requires a concrete instance for an ambiguous project doctor selector', function (): void {

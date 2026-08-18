@@ -18,7 +18,7 @@ it('exposes typed protocol failures for ambiguous success envelopes', function (
     'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
 ]);
 
-it('keeps the explicit lossy parser behavior for unmigrated callers', function (): void {
+it('keeps the explicit lossy parser behavior for display-only callers', function (): void {
     $result = new RemoteShellResult(0, '{"success":', '', 1);
 
     expect(RemoteShellSuccessData::fromJsonEnvelope($result))->toBeEmpty();
