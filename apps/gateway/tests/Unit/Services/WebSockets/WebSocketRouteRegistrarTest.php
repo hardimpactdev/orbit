@@ -245,7 +245,7 @@ it('does not overwrite malformed websocket service ownership', function (array $
             'name' => 'app-dev-1',
             'wireguard_address' => '10.6.0.41',
         ]);
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $router->id,
         'domain' => WebSocketRouteRegistrar::ServiceDomain,
         'app_id' => null,
@@ -446,24 +446,24 @@ it('rejects malformed or differently-owned routes at a public websocket host', f
     ]);
 
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => 'app'])->save();
+        $route->forceFill(['kind' => 'app'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 
     if ($invalidity === 'different valid owner') {
@@ -563,15 +563,15 @@ it('removes stale public websocket routes for the binding app', function (): voi
     ]);
     $malformedStaleRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-    ])->save();
-    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+    ])->saveQuietly();
+    $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $ingress->id,
         'app_id' => null,
         'instance_id' => $binding->instance_id,
         'domain' => 'ws-custom.example.com',
         'owner_type' => 'custom',
         'kind' => 'proxy',
-    ]);
+    ]));
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
 
@@ -605,15 +605,15 @@ it('removes public websocket routes when the binding is disabled', function (): 
     ]);
     $malformedRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-    ])->save();
-    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+    ])->saveQuietly();
+    $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $ingress->id,
         'app_id' => null,
         'instance_id' => $binding->instance_id,
         'domain' => 'ws-custom.example.com',
         'owner_type' => 'custom',
         'kind' => 'proxy',
-    ]);
+    ]));
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
 

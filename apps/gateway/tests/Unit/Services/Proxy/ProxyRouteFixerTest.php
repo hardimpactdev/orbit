@@ -205,7 +205,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('does not repair malformed custom route ownership', function (array $attributes): void {
         $node = createTestAppHostNode(['name' => 'gateway-1']);
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'custom.test',
             'app_id' => null,
@@ -332,7 +332,7 @@ describe('ProxyRouteFixer', function (): void {
                     'tls' => ['managed_by' => 'orbit'],
                 ],
             ]);
-        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+        $route->forceFill(['instance_id' => $otherInstance->id])->saveQuietly();
         $originalConfig = $route->config;
         $originalSourceHash = $route->source_hash;
         $shell = new ProxyFixerRecordingRemoteShell;
@@ -370,11 +370,11 @@ describe('ProxyRouteFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
-        $route = ProxyRoute::factory()
+        $route = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->for($workspace, 'workspace')
-            ->create([
+            ->make([
                 'instance_id' => $workspace->instance_id,
                 'domain' => 'feature-a.docs.test',
                 'owner_type' => $ownerType,
@@ -386,7 +386,7 @@ describe('ProxyRouteFixer', function (): void {
                     'upstream' => 'http://orbit-ws-docs-feature-a',
                     'tls' => ['managed_by' => 'orbit'],
                 ],
-            ]);
+            ]));
         $shell = new ProxyFixerRecordingRemoteShell;
         $certificates = new SiteCertificateInstallerFake;
         $fixer = new ProxyRouteFixer(
@@ -425,7 +425,7 @@ describe('ProxyRouteFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create();
-        $route = ProxyRoute::factory()->create([
+        $route = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $node->id,
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -433,23 +433,23 @@ describe('ProxyRouteFixer', function (): void {
             'owner_type' => $ownerType,
             'kind' => $invalidity === 'malformed kind' ? 'app' : 'proxy',
             'config' => ['upstream' => 'https://router.orbit'],
-        ]);
+        ]));
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         $shell = new ProxyFixerRecordingRemoteShell;
@@ -652,7 +652,7 @@ describe('ProxyRouteFixer', function (): void {
 
     it('does not fix a proxy route that persists the public instance projection label', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $route = ProxyRoute::factory()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'invalid.docs.test',
             'owner_type' => 'instance',
@@ -704,24 +704,24 @@ describe('ProxyRouteFixer', function (): void {
         ]);
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => 'proxy'])->save();
+            $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         $shell = new ProxyFixerRecordingRemoteShell;

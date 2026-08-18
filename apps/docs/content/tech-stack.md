@@ -176,11 +176,20 @@ selected through `orbit manifest:update`. `orbit manifest:remove` clears that
 override after candidate acceptance or rejection. After live acceptance, the
 exact tested CLI binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
-`github-release` manifest are attached to the `hardimpactdev/orbit` release; the
-GitHub release workflow verifies those promoted assets and publishes the
+`github-release` manifest are attached to a draft `hardimpactdev/orbit`
+`v<VERSION>` release. A draft does not create a git tag, so the operator
+pushes `v<VERSION>` first and then creates the draft against that existing
+tag. The release workflow has no tag-push trigger, so the push alone starts
+nothing. Draft creation also does not trigger GitHub Actions
+(`created`/`edited`/`deleted` skip drafts; `prereleased` is public), so the
+operator dispatches `.github/workflows/orbit-release.yml` against that draft.
+The workflow verifies those promoted assets, publishes the
 `hardimpactdev/orbit-core`, `hardimpactdev/orbit-cli`, and
 `hardimpactdev/orbit-gateway` split package repositories without rebuilding the
-tested binaries or image. Source-dev Docker and Incus topologies may point
+tested binaries or image, and publishes the GitHub release only after those
+checks succeed. A failed verification leaves the draft unpublished and converts
+a premature published release back to a draft. Source-dev Docker and Incus
+topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.
@@ -650,7 +659,14 @@ either an HTTPS image archive with its SHA-256 or a digest-pinned image. The
 target verifies and loads the archive without registry credentials or pulls the
 digest-pinned image, verifies the self-contained label, and only then updates
 the local `orbit-reverb:current` runtime alias. Mutable websocket image
-references are rejected. If the manifest endpoint is unreachable, convergence
+references are rejected.
+
+A later container apply compares a running container's image id to that
+alias. A newer alias recreates the container. A matching alias is left
+unchanged. An uninspectable alias leaves the container in place and reports
+that current-image verification was skipped.
+
+If the manifest endpoint is unreachable, convergence
 continues with existing local alias inspection and the development
 source-checkout fallback. Source sync to `/opt/orbit/websocket/current` and host
 Composer install remain a development source-checkout fallback for

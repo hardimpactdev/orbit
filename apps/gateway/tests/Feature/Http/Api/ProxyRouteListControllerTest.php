@@ -222,7 +222,7 @@ describe('ProxyRouteListController', function (): void {
         $app = App::factory()->create();
         $instance = Instance::factory()->for($app)->create();
 
-        ProxyRoute::factory()->create([
+        persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $workspaceNode->id,
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -230,7 +230,7 @@ describe('ProxyRouteListController', function (): void {
             'domain' => 'orphaned-workspace.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
-        ]);
+        ]));
         ProxyRoute::factory()->create([
             'node_id' => $workspaceNode->id,
             'domain' => 'custom.test',

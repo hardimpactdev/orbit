@@ -285,7 +285,7 @@ describe('S3Unpublish owned-route denial', function (): void {
         s3UnpublishRouterNode();
         $ingress = s3UnpublishIngressNode();
         $instance = Instance::factory()->create();
-        $route = ProxyRoute::factory()->create([
+        $route = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'domain' => 's3.example.com',
             'node_id' => $ingress->id,
             'instance_id' => $instance->id,
@@ -296,7 +296,7 @@ describe('S3Unpublish owned-route denial', function (): void {
                 'owner_name' => 'seaweedfs',
                 'protocol' => 's3',
             ],
-        ]);
+        ]));
 
         $content = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1'])
             ->streamedContent();

@@ -1,9 +1,9 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 354,
-    "unique_candidate_commit_count": 250,
-    "orphan_count": 0,
+    "record_count": 359,
+    "unique_candidate_commit_count": 255,
+    "orphan_count": 4,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -9243,7 +9243,139 @@
                 "protection_failures": 0
             },
             "legacy": null
+        },
+        {
+            "archive": "2026-08-18-194939-solo-hardening-agent-join-guard",
+            "slug": "solo-hardening-agent-join-guard",
+            "timestamp": "2026-08-18-194939",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "c2b434dadb3597e8ab59ff50bf688d2a5851edf2",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-200035-solo-hardening-schedules-migration",
+            "slug": "solo-hardening-schedules-migration",
+            "timestamp": "2026-08-18-200035",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "c4a4173ff49bd5c4186104d672ac90e3c3274683",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-201059-solo-hardening-proxy-write-guard",
+            "slug": "solo-hardening-proxy-write-guard",
+            "timestamp": "2026-08-18-201059",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "99fc3a731575d5d060aa962e9079d52819b96e8d",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-201728-solo-hardening-release-gating",
+            "slug": "solo-hardening-release-gating",
+            "timestamp": "2026-08-18-201728",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "2363a860f1d39ca738d3a9a13dd713810f3a9766",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-202115-solo-hardening-websocket-inspect",
+            "slug": "solo-hardening-websocket-inspect",
+            "timestamp": "2026-08-18-202115",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "cb707a87e8c15fee801d76044f2b519f291b7ec5",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
         }
     ],
-    "orphans": []
+    "orphans": [
+        {
+            "archive": "2026-07-13-004810-agent-push-transports",
+            "reason": "empty"
+        },
+        {
+            "archive": "2026-07-15-133249-docs-drift-alignment",
+            "reason": "empty"
+        },
+        {
+            "archive": "2026-07-16-011102-codex-loop-prevention-closure",
+            "reason": "missing_loop_md"
+        },
+        {
+            "archive": "2026-07-19-112810-postgres-multi-process",
+            "reason": "missing_loop_md"
+        }
+    ]
 }

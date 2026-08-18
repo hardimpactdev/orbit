@@ -194,7 +194,7 @@ it('scopes proxy routes through the concrete instance app instead of compatibili
         'owner_type' => 'app',
         'kind' => 'app',
     ]);
-    $route->forceFill(['app_id' => $compatibility->id])->save();
+    $route->forceFill(['app_id' => $compatibility->id])->saveQuietly();
     $inventory = app(DoctorProxyRouteInventory::class);
 
     expect($inventory->forScope($node, DoctorTargetScope::from(app: null, workspace: null))->modelKeys())

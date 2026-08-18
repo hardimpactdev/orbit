@@ -209,7 +209,7 @@ describe('ProxyRoute mutation API', function (): void {
         $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create();
 
-        ProxyRoute::factory()->create([
+        persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $servingNode->id,
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -217,7 +217,7 @@ describe('ProxyRoute mutation API', function (): void {
             'domain' => 'auth.craft-starterkit-react.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
-        ]);
+        ]));
 
         $response = $this->withServerVariables([
             'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
