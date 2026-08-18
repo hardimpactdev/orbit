@@ -15,50 +15,7 @@ final readonly class SkillInstallActions
         private ?string $sourceOverride = null,
     ) {}
 
-    public function install(SkillInstallRequest $request): SkillInstallResult|SkillInstallFailure
-    {
-        $resolution = $this->prepare($request);
-
-        if ($resolution instanceof SkillInstallFailure) {
-            return $resolution;
-        }
-
-        $source = $this->sourcePath();
-        $target = $resolution->target;
-
-        if ($this->targetExists($target) && ! $request->force) {
-            return new SkillInstallFailure(
-                code: 'validation_failed',
-                message: 'Use --force to overwrite the existing skill target.',
-                meta: [
-                    'field' => 'force',
-                    'reason' => 'destructive_consent_required',
-                    'target' => $target,
-                ],
-            );
-        }
-
-        if ($this->targetExists($target)) {
-            $this->deleteTarget($target);
-        }
-
-        File::ensureDirectoryExists(dirname($target));
-
-        if (! File::copyDirectory($source, $target)) {
-            return new SkillInstallFailure(
-                code: 'skill.install_failed',
-                message: 'Could not copy the Orbit skill to the target path.',
-                meta: [
-                    'source' => $source,
-                    'target' => $target,
-                ],
-            );
-        }
-
-        return new SkillInstallResult(provider: $resolution->provider, target: $target, source: $source);
-    }
-
-    public function prepare(SkillInstallRequest $request): SkillTargetResolution|SkillInstallFailure
+    public function plan(SkillInstallRequest $request): SkillInstallPlan|SkillInstallFailure
     {
         $resolution = $this->targetResolver->resolve($request->provider, $request->path);
 
@@ -66,14 +23,62 @@ final readonly class SkillInstallActions
             return $resolution;
         }
 
-        $sourceValidation = $this->validateSource($this->sourcePath());
+        $source = $this->sourcePath();
+        $sourceValidation = $this->validateSource($source);
 
-        return $sourceValidation ?? $resolution;
+        if ($sourceValidation instanceof SkillInstallFailure) {
+            return $sourceValidation;
+        }
+
+        return new SkillInstallPlan(
+            provider: $resolution['provider'],
+            target: $resolution['target'],
+            source: $source,
+            force: $request->force,
+            targetExistsAtPlan: $this->targetExists($resolution['target']),
+        );
     }
 
-    public function requiresReplacement(SkillTargetResolution $resolution): bool
+    public function install(SkillInstallPlan $plan): SkillInstallResult|SkillInstallFailure
     {
-        return $this->targetExists($resolution->target);
+        $sourceValidation = $this->validateSource($plan->source);
+
+        if ($sourceValidation instanceof SkillInstallFailure) {
+            return $sourceValidation;
+        }
+
+        $targetExists = $this->targetExists($plan->target);
+
+        if ($targetExists && ! $plan->force) {
+            return new SkillInstallFailure(
+                code: 'validation_failed',
+                message: 'Use --force to overwrite the existing skill target.',
+                meta: [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                    'target' => $plan->target,
+                ],
+            );
+        }
+
+        if ($targetExists) {
+            $this->deleteTarget($plan->target);
+        }
+
+        File::ensureDirectoryExists(dirname($plan->target));
+
+        if (! File::copyDirectory($plan->source, $plan->target)) {
+            return new SkillInstallFailure(
+                code: 'skill.install_failed',
+                message: 'Could not copy the Orbit skill to the target path.',
+                meta: [
+                    'source' => $plan->source,
+                    'target' => $plan->target,
+                ],
+            );
+        }
+
+        return new SkillInstallResult(provider: $plan->provider, target: $plan->target, source: $plan->source);
     }
 
     private function validateSource(string $source): ?SkillInstallFailure

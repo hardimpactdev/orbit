@@ -7,8 +7,8 @@ namespace App\Commands\Skill;
 use App\Commands\LocalOnlyCommand;
 use App\Services\Skill\SkillInstallActions;
 use App\Services\Skill\SkillInstallFailure;
+use App\Services\Skill\SkillInstallPlan;
 use App\Services\Skill\SkillInstallRequest;
-use App\Services\Skill\SkillTargetResolution;
 
 final class SkillInstallCommand extends LocalOnlyCommand
 {
@@ -30,27 +30,23 @@ final class SkillInstallCommand extends LocalOnlyCommand
             force: (bool) $this->option('force'),
         );
 
-        $preparation = $actions->prepare($request);
+        $plan = $actions->plan($request);
 
-        if ($preparation instanceof SkillInstallFailure) {
-            return $this->renderFailure($preparation->code, $preparation->message, $preparation->meta);
+        if ($plan instanceof SkillInstallFailure) {
+            return $this->renderFailure($plan->code, $plan->message, $plan->meta);
         }
 
-        $confirmation = $this->confirmReplacement($actions, $preparation);
+        $confirmation = $this->confirmReplacement($plan);
 
         if ($confirmation !== null) {
             return $confirmation;
         }
 
-        if ($actions->requiresReplacement($preparation) && ! $request->force) {
-            $request = new SkillInstallRequest(
-                provider: $request->provider,
-                path: $request->path,
-                force: true,
-            );
+        if ($plan->targetExistsAtPlan && ! $plan->force) {
+            $plan = $plan->withForce();
         }
 
-        $result = $actions->install($request);
+        $result = $actions->install($plan);
 
         if ($result instanceof SkillInstallFailure) {
             return $this->renderFailure($result->code, $result->message, $result->meta);
@@ -66,18 +62,16 @@ final class SkillInstallCommand extends LocalOnlyCommand
         return is_string($value) && $value !== '' ? $value : null;
     }
 
-    private function confirmReplacement(
-        SkillInstallActions $actions,
-        SkillTargetResolution $resolution,
-    ): ?int {
-        if (! $actions->requiresReplacement($resolution) || $this->option('force') === true) {
+    private function confirmReplacement(SkillInstallPlan $plan): ?int
+    {
+        if (! $plan->targetExistsAtPlan || $this->option('force') === true) {
             return null;
         }
 
         $meta = [
             'field' => 'force',
             'reason' => 'destructive_consent_required',
-            'target' => $resolution->target,
+            'target' => $plan->target,
         ];
 
         if (! $this->allowsInteractiveInput()) {
@@ -88,7 +82,7 @@ final class SkillInstallCommand extends LocalOnlyCommand
             );
         }
 
-        if ($this->confirm("Replace existing Orbit skill target '{$resolution->target}'?", default: false)) {
+        if ($this->confirm("Replace existing Orbit skill target '{$plan->target}'?", default: false)) {
             return null;
         }
 
