@@ -1,0 +1,22 @@
+Todo: Solo #206 (orchestrated hardening wave)
+Candidate: c4a4173ff49bd5c4186104d672ac90e3c3274683 (feature tip after integrating advanced main 6640885299bd)
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-99a268 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-99a268-gateway
+Candidate source: /tmp/orbit-e2e-sources/solo-hardening-schedules-migration-incus-d80365d04115/retained/dev-99a268
+Migration SHA-256 (local == synced): 1644bfdb2745d52c279c0481ce7dcf05ede2cfeb69fe23796e431ad73badf9aa
+
+Method:
+1. Acquire retained topology dev-99a268 from the implementation worktree via e2e:dev-topology; the overlay's checkout.migrate step executed the hardened migration against the retained gateway instance database (timings: checkout gateway checkout.migrate 2.066s, success).
+2. Verify the synced candidate migration hash equals the local candidate hash.
+3. Run the migration and schedule invariant suites inside the retained gateway instance as the orbit user from /home/orbit/orbit-run/apps/gateway.
+
+Expected: The exact candidate passes ConstrainScheduleOwnerInvariantTest (collision preflight abort, fail-loud partial-rebuild rerun states, clean-path idempotency) plus ScheduleOwnerInvariantTest and ScheduleTest in the routed retained gateway environment.
+
+Observed:
+  Tests:    24 passed (99 assertions)
+  Duration: 3.95s
+
+Result: passed

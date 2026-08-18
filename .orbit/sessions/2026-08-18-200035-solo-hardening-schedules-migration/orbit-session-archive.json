@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:00:35+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-schedules-migration/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-200035-solo-hardening-schedules-migration",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-schedules-migration-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T175802Z-cc0d8e169abc.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-schedules-migration-retained-incus-runtime.txt": "ab89f1cffb06f6f4b85377c9c21edf24f194a2c009d1d9266fd6f1e6ae496a77",
+        "loop.md": "be656624f7d223762d912f7f8d7fea2217bdc890ccfe0283fa4ccd282e506f21",
+        "quality-gates/quality-check-2026-08-18T175802Z-cc0d8e169abc.json": "547e0560efcf42d28c24ab489b25c5e414de8f78099e2c4c8f37214a62574058"
+    },
+    "slug": "solo-hardening-schedules-migration",
+    "requested_slug": "solo-hardening-schedules-migration",
+    "compatible_slugs": [
+        "solo-hardening-schedules-migration"
+    ],
+    "branch": "solo-hardening-schedules-migration",
+    "candidate_commit": "c4a4173ff49bd5c4186104d672ac90e3c3274683",
+    "accepted_feature_tip": "c4a4173ff49bd5c4186104d672ac90e3c3274683",
+    "accepted_main_tip": "6640885299bd6b77fb8b72f6147b1ec815a529ab",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
