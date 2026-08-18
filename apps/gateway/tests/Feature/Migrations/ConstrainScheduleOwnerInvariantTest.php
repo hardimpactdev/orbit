@@ -214,6 +214,142 @@ it('rejects contradictory owners at the database after canonicalization', functi
     });
 });
 
+it('stops before mutation when remapped schedule keys collide', function (): void {
+    withClosedScheduleOwnerSchema(function (): void {
+        $now = now();
+
+        DB::table('apps')->insert(['id' => 1, 'name' => 'docs']);
+        DB::table('instances')->insert([
+            'id' => 10,
+            'app_id' => 1,
+            'name' => 'development',
+        ]);
+        DB::table('schedules')->insert([
+            [
+                'id' => 1,
+                'schedule_key' => 'app:docs.development:nightly',
+                'name' => 'nightly',
+                'scope' => 'app',
+                'app_id' => 1,
+                'instance_id' => 10,
+                'node_id' => null,
+                'target_name' => 'docs.development',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+            [
+                'id' => 2,
+                'schedule_key' => 'instance:docs.development:nightly',
+                'name' => 'nightly',
+                'scope' => 'instance',
+                'app_id' => null,
+                'instance_id' => 10,
+                'node_id' => null,
+                'target_name' => 'docs.development',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ],
+        ]);
+        DB::table('schedule_runs')->insert([
+            'id' => 1,
+            'schedule_key' => 'app:docs.development:nightly',
+            'target_name' => null,
+        ]);
+
+        expect(fn (): mixed => constrainScheduleOwnerInvariantMigration()->up())
+            ->toThrow(RuntimeException::class, 'cannot remap colliding schedule_key')
+            ->and(Schema::hasColumn('schedules', 'app_id'))
+            ->toBeTrue()
+            ->and(Schema::hasTable('schedules_next'))
+            ->toBeFalse()
+            ->and(DB::table('schedules')->where('id', 1)->value('schedule_key'))
+            ->toBe('app:docs.development:nightly')
+            ->and(DB::table('schedules')->where('id', 1)->value('scope'))
+            ->toBe('app')
+            ->and(DB::table('schedules')->where('id', 2)->value('schedule_key'))
+            ->toBe('instance:docs.development:nightly')
+            ->and(DB::table('schedule_runs')->where('id', 1)->value('schedule_key'))
+            ->toBe('app:docs.development:nightly')
+            ->and(DB::table('schedule_runs')->where('id', 1)->value('target_name'))
+            ->toBeNull();
+    });
+});
+
+it('fails loud when a rerun finds the schedules table missing after a partial rebuild', function (): void {
+    withClosedScheduleOwnerSchema(function (): void {
+        Schema::drop('schedules');
+        Schema::create('schedules_next', function (Blueprint $table): void {
+            $table->id();
+            $table->string('schedule_key');
+        });
+
+        expect(fn (): mixed => constrainScheduleOwnerInvariantMigration()->up())
+            ->toThrow(RuntimeException::class, 'schedules table is missing')
+            ->and(Schema::hasTable('schedules'))
+            ->toBeFalse()
+            ->and(Schema::hasTable('schedules_next'))
+            ->toBeTrue();
+    });
+});
+
+it('fails loud when a rerun finds a rebuilt schedules table missing required indexes', function (): void {
+    withClosedScheduleOwnerSchema(function (): void {
+        Schema::drop('schedules');
+        Schema::create('schedules', function (Blueprint $table): void {
+            $table->id();
+            $table->string('schedule_key');
+            $table->string('name');
+            $table->string('scope');
+            $table->unsignedBigInteger('instance_id')->nullable();
+            $table->unsignedBigInteger('node_id')->nullable();
+            $table->string('target_name');
+            $table->timestamps();
+        });
+
+        expect(fn (): mixed => constrainScheduleOwnerInvariantMigration()->up())
+            ->toThrow(RuntimeException::class, 'missing indexes')
+            ->and(Schema::hasTable('schedules'))
+            ->toBeTrue()
+            ->and(Schema::hasColumn('schedules', 'app_id'))
+            ->toBeFalse();
+    });
+});
+
+it('can rerun after a complete rebuild without mutating the closed schema again', function (): void {
+    withClosedScheduleOwnerSchema(function (): void {
+        $now = now();
+
+        DB::table('apps')->insert(['id' => 1, 'name' => 'docs']);
+        DB::table('instances')->insert([
+            'id' => 10,
+            'app_id' => 1,
+            'name' => 'development',
+        ]);
+        DB::table('schedules')->insert([
+            'id' => 1,
+            'schedule_key' => 'app:docs.development:laravel-scheduler',
+            'name' => 'laravel-scheduler',
+            'scope' => 'app',
+            'app_id' => 1,
+            'instance_id' => 10,
+            'node_id' => null,
+            'target_name' => 'docs',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        constrainScheduleOwnerInvariantMigration()->up();
+        constrainScheduleOwnerInvariantMigration()->up();
+
+        expect(Schema::hasColumn('schedules', 'app_id'))
+            ->toBeFalse()
+            ->and(DB::table('schedules')->where('id', 1)->value('schedule_key'))
+            ->toBe('instance:docs.development:laravel-scheduler')
+            ->and(DB::table('schedules')->where('id', 1)->value('scope'))
+            ->toBe('instance');
+    });
+});
+
 function withClosedScheduleOwnerSchema(Closure $callback): void
 {
     $originalConnection = DB::getDefaultConnection();

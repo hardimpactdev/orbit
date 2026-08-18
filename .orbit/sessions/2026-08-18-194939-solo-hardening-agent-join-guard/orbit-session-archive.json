@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T17:49:39+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-agent-join-guard/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-194939-solo-hardening-agent-join-guard",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-agent-join-guard-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T173743Z-9bb64790a3ca.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-agent-join-guard-retained-incus-runtime.txt": "860e08da452626ecc959600b2d214c33e991f2bef41cc6d293fc8f9549cc40b3",
+        "loop.md": "dc11f35adaa967d5acc280d1f5a46223abb857cff69893ae129103dddc20c590",
+        "quality-gates/quality-check-2026-08-18T173743Z-9bb64790a3ca.json": "76f84fd3529e24ccbbd16e28c10bd9feb111733d6a863d669daf0be940db6476"
+    },
+    "slug": "solo-hardening-agent-join-guard",
+    "requested_slug": "solo-hardening-agent-join-guard",
+    "compatible_slugs": [
+        "solo-hardening-agent-join-guard"
+    ],
+    "branch": "solo-hardening-agent-join-guard",
+    "candidate_commit": "c2b434dadb3597e8ab59ff50bf688d2a5851edf2",
+    "accepted_feature_tip": "c2b434dadb3597e8ab59ff50bf688d2a5851edf2",
+    "accepted_main_tip": "24ed52295ceb23b68b5082bbdd4880bf0629d04a",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
