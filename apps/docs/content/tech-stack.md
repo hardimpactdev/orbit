@@ -176,11 +176,17 @@ selected through `orbit manifest:update`. `orbit manifest:remove` clears that
 override after candidate acceptance or rejection. After live acceptance, the
 exact tested CLI binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
-`github-release` manifest are attached to the `hardimpactdev/orbit` release; the
-GitHub release workflow verifies those promoted assets and publishes the
+`github-release` manifest are attached to a draft `hardimpactdev/orbit`
+`v<VERSION>` release. Draft creation does not trigger GitHub Actions
+(`created`/`edited`/`deleted` skip drafts; `prereleased` is public), so the
+operator dispatches `.github/workflows/orbit-release.yml` against that draft.
+The workflow verifies those promoted assets, publishes the
 `hardimpactdev/orbit-core`, `hardimpactdev/orbit-cli`, and
 `hardimpactdev/orbit-gateway` split package repositories without rebuilding the
-tested binaries or image. Source-dev Docker and Incus topologies may point
+tested binaries or image, and publishes the GitHub release only after those
+checks succeed. A failed verification leaves the draft unpublished and converts
+a premature published release back to a draft. Source-dev Docker and Incus
+topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.

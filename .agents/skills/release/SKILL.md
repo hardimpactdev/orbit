@@ -64,12 +64,15 @@ manifests.
 - The GitHub Actions release workflow must verify the promoted
   `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-reverb-linux-amd64.tar`,
   `orbit-release-manifest.json`, and digest-pinned
-  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then publish the split
-  package repos and matching tags. It must not run CLI binary builds, gateway
-  image builds, or `gh release upload --clobber`. Promotion fails closed when
-  the reverb role image archive is missing, when the manifest
+  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image against the draft
+  release, then publish the GitHub release, the split package repos, and
+  matching tags. It must not run CLI binary builds, gateway image builds, or
+  `gh release upload --clobber`. Promotion fails closed when the reverb role
+  image archive is missing, when the manifest
   `role_image_artifacts.orbit-websocket` URL is not the public release download
-  URL, or when its SHA-256 does not match the published archive.
+  URL, or when its SHA-256 does not match the published archive. A failed
+  verification leaves the draft unpublished and converts a premature published
+  release back to a draft.
 - The promoted `github-release` manifest must carry
   `role_image_artifacts.orbit-websocket` (the public `orbit-reverb-linux-amd64.tar`
   download URL plus SHA-256). Product authority forbids distributing or
@@ -323,9 +326,14 @@ manifests.
    credential-free retained nodes load the pinned image from the published
    archive instead of pulling the private GHCR digest.
 
-14. Create a draft release, attach the tested files, and publish the draft. The
-    release workflow runs on the `release.published` event, so a tag push alone
-    is not enough:
+14. Create a draft release, attach the tested files, and dispatch the release
+    workflow. Do not publish the draft from the operator machine. Draft
+    releases do not fire `release.created` or `release.edited`;
+    `release.prereleased` is public. The workflow therefore runs via
+    `workflow_dispatch`, verifies the draft assets, and publishes the GitHub
+    release only on success. A tag push or `gh release edit --draft=false` is
+    not the happy path — the latter is a safety-net trigger that still
+    verifies and converts the release back to a draft if verification fails:
 
    ```bash
    version="$(bin/orbit-version)"
@@ -342,17 +350,18 @@ manifests.
      orbit-reverb-linux-amd64.tar \
      orbit-release-manifest.json
 
-   gh release edit "v${version}" --draft=false
+   gh workflow run orbit-release.yml --ref main -f tag="v${version}"
    ```
 
-   `orbit-reverb-linux-amd64.tar` must be attached to the release so the URL
-   recorded in `role_image_artifacts.orbit-websocket` resolves publicly. The
-   release workflow requires it and fails the promotion when the archive is
-   missing, its manifest URL is wrong, or the archive SHA-256 mismatches.
+   `orbit-reverb-linux-amd64.tar` must be attached to the draft so the URL
+   recorded in `role_image_artifacts.orbit-websocket` resolves publicly after
+   the workflow publishes. The release workflow requires it and fails the
+   promotion when the archive is missing, its manifest URL is wrong, or the
+   archive SHA-256 mismatches. A failed run leaves the draft unpublished.
 
-15. Watch the `Orbit Release` workflow until it succeeds. It verifies the
-    attached assets and digest-pinned gateway image, then publishes the split
-    package repositories.
+15. Watch the dispatched `Orbit Release` workflow until it succeeds. It
+    verifies the draft assets and digest-pinned gateway image, publishes the
+    split package repositories, then publishes the GitHub release.
 
 16. Verify public artifacts without authentication:
 
@@ -382,7 +391,8 @@ acceptance passes and the human approves the accepted build id, commit, CLI
 hashes, and gateway digest. A no-GitHub live artifact release is complete when
 the live acceptance evidence is recorded and the no-GitHub boundary is explicit.
 A GitHub release is not complete until the GitHub workflow verifies the
-promoted assets and publishes the split package repos.
+draft assets, publishes the split package repos, and publishes the GitHub
+release.
 
 ## Failure Handling
 
