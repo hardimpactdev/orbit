@@ -17,63 +17,54 @@
   "schema_only_operations": [
     {
       "operation": "POST /analytics/update",
-      "operation_id": "analyticsUpdate",
       "classification": "internal_only",
       "group": "analytics_internal",
       "reason": "Analytics event ingestion is a runtime/backend ingest endpoint, not operator or dashboard SDK surface."
     },
     {
       "operation": "POST /instances/{instance}/analytics/enable",
-      "operation_id": "appAnalytics.enable",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
       "operation": "POST /instances/{instance}/analytics/disable",
-      "operation_id": "appAnalytics.disable",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
       "operation": "GET /instances/{instance}/analytics",
-      "operation_id": "appAnalytics.show",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics binding is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
       "operation": "GET /instances/{instance}/analytics/verify",
-      "operation_id": "appAnalytics.verify",
       "classification": "deferred_optional",
       "group": "app_analytics",
       "reason": "App analytics verification context is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
       "operation": "GET /codex/apps",
-      "operation_id": "appCodex.list",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
       "operation": "POST /codex/apps/{project}",
-      "operation_id": "appCodex.add",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
       "operation": "DELETE /codex/apps/{project}",
-      "operation_id": "appCodex.remove",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
     },
     {
       "operation": "GET /apps/{app}/instances",
-      "operation_id": "appInstance.index",
       "classification": "public_sdk",
       "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
@@ -81,7 +72,6 @@
     },
     {
       "operation": "POST /apps/{app}/instances",
-      "operation_id": "appInstance.store",
       "classification": "public_sdk",
       "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
@@ -89,7 +79,6 @@
     },
     {
       "operation": "GET /apps/{app}/instances/{instance}",
-      "operation_id": "appInstance.show",
       "classification": "public_sdk",
       "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
@@ -97,7 +86,6 @@
     },
     {
       "operation": "DELETE /apps/{app}/instances/{instance}",
-      "operation_id": "appInstance.destroy",
       "classification": "public_sdk",
       "group": "instances",
       "reason": "App instances are part of the macOS dashboard and future SDK management surface.",
@@ -105,28 +93,24 @@
     },
     {
       "operation": "GET /apps/{app}/instances/{instance}/env",
-      "operation_id": "appInstanceEnv.index",
       "classification": "deferred_optional",
       "group": "instance_env",
       "reason": "Instance env inspection is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "POST /apps/{app}/instances/{instance}/env",
-      "operation_id": "appInstanceEnv.store",
       "classification": "deferred_optional",
       "group": "instance_env",
       "reason": "Instance env mutation is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "GET /apps/{app}/instances/{instance}/env/render",
-      "operation_id": "appInstanceEnv.render",
       "classification": "deferred_optional",
       "group": "instance_env",
       "reason": "Rendered env output is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "GET /instances/{instance}/mounts",
-      "operation_id": "appRuntimeMount.index",
       "classification": "public_sdk",
       "group": "app_mounts",
       "reason": "Runtime mounts are a public app management surface needed by dashboard-style clients.",
@@ -134,7 +118,6 @@
     },
     {
       "operation": "POST /instances/{instance}/mounts",
-      "operation_id": "appRuntimeMount.store",
       "classification": "public_sdk",
       "group": "app_mounts",
       "reason": "Runtime mounts are a public app management surface needed by dashboard-style clients.",
@@ -142,7 +125,6 @@
     },
     {
       "operation": "DELETE /instances/{instance}/mounts",
-      "operation_id": "appRuntimeMount.destroy",
       "classification": "public_sdk",
       "group": "app_mounts",
       "reason": "Runtime mounts are a public app management surface needed by dashboard-style clients.",
@@ -150,7 +132,6 @@
     },
     {
       "operation": "POST /instances/{instance}/setup",
-      "operation_id": "appSetup",
       "classification": "public_sdk",
       "group": "app_setup",
       "reason": "App setup is a public lifecycle pipeline and should be available to dashboard/generator clients.",
@@ -158,7 +139,6 @@
     },
     {
       "operation": "GET /instances/{instance}/setup-steps",
-      "operation_id": "appSetupStep.index",
       "classification": "public_sdk",
       "group": "app_setup",
       "reason": "App setup steps are public lifecycle configuration.",
@@ -166,7 +146,6 @@
     },
     {
       "operation": "POST /instances/{instance}/setup-steps",
-      "operation_id": "appSetupStep.store",
       "classification": "public_sdk",
       "group": "app_setup",
       "reason": "App setup steps are public lifecycle configuration.",
@@ -174,7 +153,6 @@
     },
     {
       "operation": "DELETE /instances/{instance}/setup-steps/{step}",
-      "operation_id": "appSetupStep.destroy",
       "classification": "public_sdk",
       "group": "app_setup",
       "reason": "App setup steps are public lifecycle configuration.",
@@ -182,7 +160,6 @@
     },
     {
       "operation": "POST /instances/{instance}/websocket/enable",
-      "operation_id": "appWebSocket.enable",
       "classification": "public_sdk",
       "group": "app_websocket",
       "reason": "App WebSocket binding is a public app configuration surface.",
@@ -190,7 +167,6 @@
     },
     {
       "operation": "POST /instances/{instance}/websocket/disable",
-      "operation_id": "appWebSocket.disable",
       "classification": "public_sdk",
       "group": "app_websocket",
       "reason": "App WebSocket binding is a public app configuration surface.",
@@ -198,7 +174,6 @@
     },
     {
       "operation": "GET /instances/{instance}/websocket/credentials",
-      "operation_id": "appWebSocket.credentials",
       "classification": "public_sdk",
       "group": "app_websocket",
       "reason": "App WebSocket credentials are needed by app/dashboard clients, with DTOs that preserve secret handling.",
@@ -206,105 +181,90 @@
     },
     {
       "operation": "GET /cloudflare/zones",
-      "operation_id": "cloudflare.zones",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "GET /cloudflare/zones/{zone}/dns",
-      "operation_id": "cloudflare.dnsRecords",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "POST /cloudflare/zones/{zone}/dns",
-      "operation_id": "cloudflare.storeDnsRecord",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "DELETE /cloudflare/zones/{zone}/dns/{record}",
-      "operation_id": "cloudflare.removeDnsRecord",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "POST /cloudflare/cache/flush",
-      "operation_id": "cloudflare.flushCache",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "POST /cloudflare/cache-rules/{app}",
-      "operation_id": "cloudflare.addCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "DELETE /cloudflare/cache-rules/{app}",
-      "operation_id": "cloudflare.removeCacheRule",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "PUT /cloudflare/zones/{zone}/ssl",
-      "operation_id": "cloudflare.enableSsl",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "PUT /cloudflare/zones/{zone}/ssl/disable",
-      "operation_id": "cloudflare.disableSsl",
       "classification": "deferred_optional",
       "group": "cloudflare_extension",
       "reason": "Cloudflare routes are extension-gated and currently reachable through a generic SDK request; dedicated typed requests are optional follow-up."
     },
     {
       "operation": "GET /database-connections/describe",
-      "operation_id": "databaseConnections.databaseConnectionDescribe",
       "classification": "deferred_optional",
       "group": "database_inspection",
       "reason": "Database describe is useful for richer dashboards but is outside the first core SDK promotion set."
     },
     {
       "operation": "GET /database-connections/tables",
-      "operation_id": "databaseConnections.databaseConnectionTables",
       "classification": "deferred_optional",
       "group": "database_inspection",
       "reason": "Database table listing is useful for richer dashboards but is outside the first core SDK promotion set."
     },
     {
       "operation": "POST /extensions/{extension}/disable",
-      "operation_id": "extensionDisable",
       "classification": "deferred_optional",
       "group": "extension_admin",
       "reason": "Extension administration is an admin surface and should be promoted separately from core SDK generation."
     },
     {
       "operation": "POST /extensions/{extension}/enable",
-      "operation_id": "extensionEnable",
       "classification": "deferred_optional",
       "group": "extension_admin",
       "reason": "Extension administration is an admin surface and should be promoted separately from core SDK generation."
     },
     {
       "operation": "GET /extensions",
-      "operation_id": "extensionList",
       "classification": "deferred_optional",
       "group": "extension_admin",
       "reason": "Extension administration is an admin surface and should be promoted separately from core SDK generation."
     },
     {
       "operation": "GET /status",
-      "operation_id": "status",
       "classification": "public_sdk",
       "group": "gateway_status",
       "reason": "Gateway status is a safe public read and useful for clients before richer dashboard calls.",
@@ -312,49 +272,42 @@
     },
     {
       "operation": "POST /internal-executor/token/verify",
-      "operation_id": "internalExecutorToken",
       "classification": "internal_only",
       "group": "internal_executor",
       "reason": "Token verification is part of the node-local executor trust path, not public SDK surface."
     },
     {
       "operation": "PUT /manifest",
-      "operation_id": "manifest.update",
       "classification": "deferred_optional",
       "group": "release_admin",
       "reason": "Release-candidate manifest source administration is operator/release surface, not first dashboard SDK scope."
     },
     {
       "operation": "DELETE /manifest",
-      "operation_id": "manifest.destroy",
       "classification": "deferred_optional",
       "group": "release_admin",
       "reason": "Release-candidate manifest source administration is operator/release surface, not first dashboard SDK scope."
     },
     {
       "operation": "GET /metrics/credentials",
-      "operation_id": "metricsCredentials",
       "classification": "deferred_optional",
       "group": "metrics",
       "reason": "Metrics credentials are optional role-secret surface and should be promoted with explicit secret DTOs."
     },
     {
       "operation": "POST /metrics/credentials/reset",
-      "operation_id": "metricsCredentialsReset",
       "classification": "deferred_optional",
       "group": "metrics",
       "reason": "Metrics credential reset is optional role-secret surface and should be promoted with explicit secret DTOs."
     },
     {
       "operation": "GET /metrics/status",
-      "operation_id": "metricsStatus",
       "classification": "deferred_optional",
       "group": "metrics",
       "reason": "Metrics status belongs to the optional metrics role and is outside the first SDK promotion set."
     },
     {
       "operation": "POST /nodes/bootstrap/resume",
-      "operation_id": "nodeBootstrapResume",
       "classification": "public_sdk",
       "group": "node_bootstrap",
       "reason": "Configured Orbit clients use this authenticated endpoint to recover Agent-ready or completed bootstrap state before opening SSH.",
@@ -362,7 +315,6 @@
     },
     {
       "operation": "POST /nodes/bootstrap",
-      "operation_id": "nodeBootstrap",
       "classification": "public_sdk",
       "group": "node_bootstrap",
       "reason": "Configured Orbit clients use this authenticated endpoint to reserve a node and obtain its one-time bootstrap script.",
@@ -370,7 +322,6 @@
     },
     {
       "operation": "POST /nodes/bootstrap/{nodeBootstrap}/complete",
-      "operation_id": "nodeBootstrapComplete",
       "classification": "public_sdk",
       "group": "node_bootstrap",
       "reason": "Configured Orbit clients use this authenticated endpoint after local SSH installation to complete Agent-based provisioning.",
@@ -378,7 +329,6 @@
     },
     {
       "operation": "POST /nodes/self/manage",
-      "operation_id": "nodeManage.manage",
       "classification": "public_sdk",
       "group": "node_self_management",
       "reason": "Self-management is needed by local Agent/macOS surfaces that enroll or manage the current node.",
@@ -386,7 +336,6 @@
     },
     {
       "operation": "GET /operations/{operationRun}/events",
-      "operation_id": "operations.events",
       "classification": "public_sdk",
       "group": "operation_events",
       "reason": "Operation event streams are part of the dashboard/client progress model.",
@@ -394,56 +343,48 @@
     },
     {
       "operation": "GET /operations/{operationRun}/stream",
-      "operation_id": "operations.stream.descriptor",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Operation WebSocket descriptors are protocol control-plane metadata for Reverb subscriptions, not generated public SDK methods."
     },
     {
       "operation": "POST /operations/{operationRun}/stream/auth",
-      "operation_id": "operations.stream.auth",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Operation WebSocket auth exchanges short-lived subscription tokens and remains tied to the gateway Reverb protocol."
     },
     {
       "operation": "POST /operations/{operationRun}/stream/leave",
-      "operation_id": "operations.stream.leave",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Subscriber leave tracking is gateway control-plane state used to decide whether target agents should keep tailing."
     },
     {
       "operation": "GET /operations/{operationRun}/stream/stop-decision",
-      "operation_id": "operations.stream.stopDecision",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Stop-decision polling is consumed by target agents publishing a stream and should not be generated as public SDK surface."
     },
     {
       "operation": "POST /operations/{operationRun}/stream/publisher-credentials",
-      "operation_id": "operations.stream.publisherCredentials",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Publisher credentials are trusted target-agent credentials and are not public client SDK surface."
     },
     {
       "operation": "POST /operations/{operationRun}/stream/publish",
-      "operation_id": "operations.stream.publish",
       "classification": "internal_only",
       "group": "operation_stream_control_plane",
       "reason": "Frame publishing is target-agent to gateway protocol traffic, not operator or dashboard SDK surface."
     },
     {
       "operation": "GET /runtime-activations/{type}/{id}",
-      "operation_id": "runtime-activations.show",
       "classification": "internal_only",
       "group": "runtime_hibernation",
       "reason": "Runtime activation is private Caddy-to-gateway control traffic for app-development process hibernation, not public SDK surface."
     },
     {
       "operation": "POST /processes/{name}/log-stream",
-      "operation_id": "processes.logStream.start",
       "classification": "public_sdk",
       "group": "process_logs",
       "reason": "Process log-stream start is a public lifecycle endpoint for CLI and dashboard clients to initiate operation WebSocket log tails.",
@@ -451,7 +392,6 @@
     },
     {
       "operation": "GET /processes/stream",
-      "operation_id": "processesStream",
       "classification": "public_sdk",
       "group": "process_stream",
       "reason": "Browser toolbar process lifecycle SSE is public SDK surface with app-only selector, durable DB cursor, and native EventSource subscription.",
@@ -459,98 +399,84 @@
     },
     {
       "operation": "GET /s3/credentials",
-      "operation_id": "s3Credentials",
       "classification": "deferred_optional",
       "group": "s3",
       "reason": "S3 credentials are optional role-secret surface and should be promoted with explicit secret DTOs."
     },
     {
       "operation": "POST /s3/public-hosts",
-      "operation_id": "s3Publish",
       "classification": "deferred_optional",
       "group": "s3",
       "reason": "S3 public host administration belongs to the optional S3 role and is outside the first SDK promotion set."
     },
     {
       "operation": "DELETE /s3/public-hosts/{host}",
-      "operation_id": "s3Unpublish",
       "classification": "deferred_optional",
       "group": "s3",
       "reason": "S3 public host administration belongs to the optional S3 role and is outside the first SDK promotion set."
     },
     {
       "operation": "GET /solo/tools",
-      "operation_id": "soloProxy.tools",
       "classification": "internal_only",
       "group": "solo_proxy",
       "reason": "Solo proxy routes are extension proxy plumbing and must not be emitted as public SDK methods."
     },
     {
       "operation": "GET /solo/projects",
-      "operation_id": "soloProxy.projects",
       "classification": "internal_only",
       "group": "solo_proxy",
       "reason": "Solo proxy routes are extension proxy plumbing and must not be emitted as public SDK methods."
     },
     {
       "operation": "GET /solo/{operation}",
-      "operation_id": "soloProxy.read",
       "classification": "internal_only",
       "group": "solo_proxy",
       "reason": "Solo proxy routes are extension proxy plumbing and must not be emitted as public SDK methods."
     },
     {
       "operation": "POST /solo/{operation}",
-      "operation_id": "soloProxy.mutate",
       "classification": "internal_only",
       "group": "solo_proxy",
       "reason": "Solo proxy routes are extension proxy plumbing and must not be emitted as public SDK methods."
     },
     {
       "operation": "POST /update/all/start",
-      "operation_id": "update.all.start",
       "classification": "deferred_optional",
       "group": "update_all_streaming",
       "reason": "The PHP SDK already exposes update-all through its current client; the start helper is not first TypeScript SDK scope."
     },
     {
       "operation": "GET /update/artifacts/{operationRun}/{artifactKind}/{platform}",
-      "operation_id": "update.artifacts.download",
       "classification": "internal_only",
       "group": "update_artifacts",
       "reason": "Update artifact download is release/update plumbing, not dashboard public SDK surface."
     },
     {
       "operation": "GET /workspaces/env/resolve-by-path",
-      "operation_id": "workspaceEnv.resolveByPath",
       "classification": "deferred_optional",
       "group": "workspace_env",
       "reason": "Workspace env resolution is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "GET /workspaces/{workspace}/env",
-      "operation_id": "workspaceEnv.index",
       "classification": "deferred_optional",
       "group": "workspace_env",
       "reason": "Workspace env inspection is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "POST /workspaces/{workspace}/env",
-      "operation_id": "workspaceEnv.store",
       "classification": "deferred_optional",
       "group": "workspace_env",
       "reason": "Workspace env mutation is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "GET /workspaces/{workspace}/env/render",
-      "operation_id": "workspaceEnv.render",
       "classification": "deferred_optional",
       "group": "workspace_env",
       "reason": "Rendered workspace env output is sensitive and should be promoted with explicit secret-handling DTOs."
     },
     {
       "operation": "GET /workspaces/{name}/history",
-      "operation_id": "workspaceHistory",
       "classification": "public_sdk",
       "group": "workspace_history",
       "reason": "Workspace history is a public workspace dashboard surface; the current SDK class covers resolve-by-path, and named history needs an explicit request shape.",
