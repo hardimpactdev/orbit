@@ -277,7 +277,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/instances/register', AppRegisterController::class);
         Route::get('/instances', [InstanceController::class, 'all']);
         Route::middleware(RequireGatewayExtension::class.':codex')->group(function (): void {
-            Route::get('/codex/apps', [CodexAppController::class, 'list']);
+            Route::get('/codex/projects', [CodexAppController::class, 'list']);
             Route::post('/codex/apps/{project}', [CodexAppController::class, 'add']);
             Route::delete('/codex/apps/{project}', [CodexAppController::class, 'remove']);
         });

@@ -47,8 +47,11 @@ it('keeps Solo proxy routes on /api/solo/projects not /api/solo/apps', function 
     expect($source)
         ->toContain("Route::get('/solo/projects', [SoloProxyController::class, 'projects']);")
         ->not->toContain("Route::get('/solo/apps', [SoloProxyController::class, 'apps']);")->toContain(
-            "Route::post('/codex/apps/{project}', [CodexAppController::class, 'add']);",
-        )->toContain("Route::delete('/codex/apps/{project}', [CodexAppController::class, 'remove']);")
+            "Route::get('/codex/projects', [CodexAppController::class, 'list']);",
+        )->toContain("Route::post('/codex/apps/{project}', [CodexAppController::class, 'add']);")->toContain(
+            "Route::delete('/codex/apps/{project}', [CodexAppController::class, 'remove']);",
+        )
+        ->not->toContain("Route::get('/codex/apps', [CodexAppController::class, 'list']);")
         ->not->toContain("Route::post('/codex/apps/{app}', [CodexAppController::class, 'add']);");
 });
 

@@ -49,6 +49,10 @@ describe('CodexAppController', function (): void {
         ];
     }
 
+    it('does not expose the obsolete Codex App list path', function (): void {
+        $this->getJson('/api/codex/apps')->assertNotFound();
+    });
+
     it('adds an app project to Codex App config on a macOS non-gateway target through agent-push', function (): void {
         $caller = Node::factory()
             ->operator()
