@@ -1584,23 +1584,6 @@ export interface components {
             add?: string | null;
             remove?: string | null;
         };
-        /** OrbitErrorEnvelope */
-        OrbitErrorEnvelope: {
-            error: {
-                code: string;
-                message: string;
-                meta: {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        /** OrbitSuccessEnvelope */
-        OrbitSuccessEnvelope: {
-            data: unknown;
-            meta?: {
-                [key: string]: unknown;
-            };
-        };
         /** RevokeNodeApiRequest */
         RevokeNodeApiRequest: {
             consuming_node: string;

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orbit Gateway API Public SDK",
-    "version": "0.1.191",
+    "version": "0.1.192",
     "description": "HTTP contract exposed by an Orbit gateway for local nodes, agents, apps, workspaces, processes, and control-plane operations.\n\nFiltered for generated public SDK clients from apps/gateway/openapi-sdk-surface.json."
   },
   "servers": [
@@ -18859,49 +18859,6 @@
           "serving_node"
         ],
         "title": "NodePermissionsApiRequest"
-      },
-      "OrbitErrorEnvelope": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "meta": {
-                "type": "object",
-                "additionalProperties": {}
-              }
-            },
-            "required": [
-              "code",
-              "message",
-              "meta"
-            ]
-          }
-        },
-        "required": [
-          "error"
-        ],
-        "title": "OrbitErrorEnvelope"
-      },
-      "OrbitSuccessEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {},
-          "meta": {
-            "type": "object",
-            "additionalProperties": {}
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "title": "OrbitSuccessEnvelope"
       },
       "RevokeNodeApiRequest": {
         "type": "object",
