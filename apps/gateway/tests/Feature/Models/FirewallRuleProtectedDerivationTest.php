@@ -6,7 +6,6 @@ use App\Models\FirewallRule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use LogicException;
 
 uses(RefreshDatabase::class);
 
@@ -98,9 +97,9 @@ it('throws when assigning the derived protected attribute', function (): void {
     ]);
 
     expect(fn () => $rule->protected = true)
-        ->toThrow(LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
+        ->toThrow(\LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
         ->and(fn () => FirewallRule::factory()->create(['protected' => false]))
-        ->toThrow(LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
+        ->toThrow(\LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
         ->and($rule->refresh()->protected)
         ->toBeFalse();
 });
