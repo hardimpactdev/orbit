@@ -11,7 +11,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * @extends Factory<WorkspaceStep>
@@ -58,19 +57,7 @@ class WorkspaceStepFactory extends Factory
     public function configure(): static
     {
         return $this->afterMaking(function (WorkspaceStep $step): void {
-            if (! Schema::hasColumn($step->getTable(), 'app_id')) {
-                $step->offsetUnset('app_id');
-
-                return;
-            }
-
-            $appId = Instance::query()->whereKey($step->instance_id)->value('app_id');
-
-            if (! is_numeric($appId)) {
-                return;
-            }
-
-            $step->forceFill(['app_id' => (int) $appId]);
+            $step->offsetUnset('app_id');
         });
     }
 }

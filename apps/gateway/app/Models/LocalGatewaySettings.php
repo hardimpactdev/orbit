@@ -33,13 +33,20 @@ class LocalGatewaySettings extends Model
 
     #[\Override]
     protected $fillable = [
-        'singleton_key',
         'gateway_url',
         'gateway_wg_ip',
         'ca_sha256',
         'ca_pem_path',
         'trusted_at',
     ];
+
+    #[\Override]
+    protected static function booted(): void
+    {
+        static::saving(function (self $settings): void {
+            $settings->singleton_key = self::SINGLETON_KEY;
+        });
+    }
 
     #[\Override]
     protected function casts(): array

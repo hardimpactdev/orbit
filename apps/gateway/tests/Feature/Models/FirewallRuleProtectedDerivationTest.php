@@ -6,6 +6,7 @@ use App\Models\FirewallRule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use LogicException;
 
 uses(RefreshDatabase::class);
 
@@ -88,5 +89,18 @@ it('defaults a missing owner to user-owned and unprotected on save', function ()
     expect($rule->refresh()->owner)
         ->toBe('user')
         ->and($rule->protected)
+        ->toBeFalse();
+});
+
+it('throws when assigning the derived protected attribute', function (): void {
+    $rule = FirewallRule::factory()->create([
+        'owner' => 'user',
+    ]);
+
+    expect(fn () => $rule->protected = true)
+        ->toThrow(LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
+        ->and(fn () => FirewallRule::factory()->create(['protected' => false]))
+        ->toThrow(LogicException::class, 'FirewallRule.protected is derived from owner and cannot be assigned.')
+        ->and($rule->refresh()->protected)
         ->toBeFalse();
 });

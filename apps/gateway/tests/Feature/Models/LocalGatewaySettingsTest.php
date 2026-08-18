@@ -69,7 +69,10 @@ describe('LocalGatewaySettings', function (): void {
 
         $settings->refresh();
 
-        expect($settings->gateway_url)
+        expect($settings->getFillable())
+            ->not
+            ->toContain('singleton_key')
+            ->and($settings->gateway_url)
             ->toBe('https://10.6.0.2')
             ->and($settings->gateway_wg_ip)
             ->toBe('10.6.0.2')
@@ -81,6 +84,44 @@ describe('LocalGatewaySettings', function (): void {
             ->toBeInstanceOf(Carbon::class)
             ->and($settings->singleton_key)
             ->toBe(LocalGatewaySettings::SINGLETON_KEY);
+    });
+
+    it('cannot mint a non-default singleton_key via create', function (): void {
+        expect(LocalGatewaySettings::query()->count())->toBe(0);
+
+        $settings = LocalGatewaySettings::query()->create([
+            'singleton_key' => 'other',
+            'gateway_url' => 'https://example.test',
+        ]);
+
+        expect($settings->singleton_key)
+            ->toBe(LocalGatewaySettings::SINGLETON_KEY)
+            ->and(LocalGatewaySettings::query()->pluck('singleton_key')->all())
+            ->toBe([LocalGatewaySettings::SINGLETON_KEY])
+            ->and(LocalGatewaySettings::current()->id)
+            ->toBe($settings->id);
+    });
+
+    it('cannot change singleton_key via fill or forceFill save', function (): void {
+        $settings = LocalGatewaySettings::current();
+
+        $settings->fill(['singleton_key' => 'other', 'gateway_url' => 'https://filled.test']);
+        $settings->save();
+        $settings->refresh();
+
+        expect($settings->singleton_key)
+            ->toBe(LocalGatewaySettings::SINGLETON_KEY)
+            ->and($settings->gateway_url)
+            ->toBe('https://filled.test');
+
+        $settings->forceFill(['singleton_key' => 'other']);
+        $settings->save();
+        $settings->refresh();
+
+        expect($settings->singleton_key)
+            ->toBe(LocalGatewaySettings::SINGLETON_KEY)
+            ->and(LocalGatewaySettings::query()->count())
+            ->toBe(1);
     });
 
     it('does not include local_node_role field', function (): void {
