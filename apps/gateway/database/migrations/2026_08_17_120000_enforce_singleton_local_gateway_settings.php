@@ -2,18 +2,19 @@
 
 declare(strict_types=1);
 
-use App\Models\LocalGatewaySettings;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
+    private const string SINGLETON_KEY = 'default';
+
     public function up(): void
     {
         if (! Schema::hasColumn('local_gateway_settings', 'singleton_key')) {
             Schema::table('local_gateway_settings', static function (Blueprint $table): void {
-                $table->string('singleton_key')->nullable()->default(LocalGatewaySettings::SINGLETON_KEY);
+                $table->string('singleton_key')->nullable()->default(self::SINGLETON_KEY);
             });
         }
 
@@ -23,7 +24,7 @@ return new class extends Migration {
             Schema::table('local_gateway_settings', static function (Blueprint $table): void {
                 $table
                     ->string('singleton_key')
-                    ->default(LocalGatewaySettings::SINGLETON_KEY)
+                    ->default(self::SINGLETON_KEY)
                     ->nullable(false)
                     ->change();
             });
@@ -77,7 +78,7 @@ return new class extends Migration {
                 'ca_sha256' => $winner->ca_sha256,
                 'ca_pem_path' => $winner->ca_pem_path,
                 'trusted_at' => $winner->trusted_at,
-                'singleton_key' => LocalGatewaySettings::SINGLETON_KEY,
+                'singleton_key' => self::SINGLETON_KEY,
             ]);
 
         DB::table('local_gateway_settings')

@@ -1,0 +1,16 @@
+Todo: Solo #214 (orchestrated hardening wave)
+Candidate: fa57826f5f2f98256a55850ca109b9bbe093c90c
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-648a44 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-648a44-gateway
+LocalGatewaySettings.php SHA-256 (local == synced): 993e96a88f23a8b49d7006e774461d915d7367e44396230912462cf7d0649c9a
+
+Method: acquire retained topology dev-648a44 from the implementation worktree at the exact candidate tip; verify synced source hash; run the workspace-step, singleton-settings, and firewall-derivation suites inside the retained gateway instance as the orbit user.
+
+Observed:
+  Tests:    21 passed (86 assertions)
+  Duration: 3.76s
+
+Result: passed
