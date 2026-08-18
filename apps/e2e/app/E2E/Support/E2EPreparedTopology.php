@@ -130,24 +130,14 @@ final readonly class E2EPreparedTopology
     {
         $role = self::requireArtifactRole($role);
 
-        return match ($role) {
-            'app-dev' => 'dev',
-            'app-prod' => 'prod',
-            default => $role,
-        };
+        return E2ETopologyFacts::dockerRoleForArtifactRole($role);
     }
 
     public static function incusRoleForArtifactRole(string $role): string
     {
         $role = self::requireArtifactRole($role);
 
-        return match ($role) {
-            'operator' => 'operator',
-            'app-dev' => 'dev',
-            'app-prod' => 'prod',
-            'websocket' => 'dev',
-            default => $role,
-        };
+        return E2ETopologyFacts::incusRoleForArtifactRole($role);
     }
 
     public static function artifactRoleForDockerRole(string $role): string
@@ -177,47 +167,17 @@ final readonly class E2EPreparedTopology
 
     private static function canonicalArtifactRole(string $role): ?string
     {
-        return match (strtolower(trim($role))) {
-            'operator' => 'operator',
-            'gateway' => 'gateway',
-            'app-dev', 'appdev', 'dev' => 'app-dev',
-            'app-prod', 'appprod', 'prod' => 'app-prod',
-            'ingress', 'edge' => 'ingress',
-            'agent' => 'agent',
-            'websocket' => 'websocket',
-            default => null,
-        };
+        return E2ETopologyFacts::canonicalArtifactRole($role);
     }
 
     private static function usesOperatorGatewayBase(E2ETopologyKind $kind): bool
     {
-        $currentRoleKinds = [
-            E2ETopologyKind::OperatorGateway->value,
-            E2ETopologyKind::OperatorGatewayAppdev->value,
-            E2ETopologyKind::OperatorGatewayAppdevAppprod->value,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->value,
-            E2ETopologyKind::OperatorGatewayAgent->value,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent->value,
-            E2ETopologyKind::OperatorGatewayAppprodIngress->value,
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket->value,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket->value,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value,
-        ];
-
-        return in_array($kind->value, $currentRoleKinds, true);
+        return E2ETopologyFacts::for($kind)->usesOperatorGatewayBase;
     }
 
     private static function websocketTopologyKind(E2ETopologyKind $kind): bool
     {
-        return in_array(
-            $kind,
-            [
-                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-            ],
-            true,
-        );
+        return E2ETopologyFacts::for($kind)->isWebsocketKind;
     }
 
     /**
@@ -226,25 +186,12 @@ final readonly class E2EPreparedTopology
      */
     public static function runtimeRolesFor(E2ETopologyKind $kind, array $defaultRoles): array
     {
-        return match ($kind) {
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod'],
-            default => $defaultRoles,
-        };
+        return E2ETopologyFacts::for($kind)->runtimeRoles($defaultRoles);
     }
 
     public static function prodHostsIngressRole(E2ETopologyKind $kind): bool
     {
-        return in_array(
-            $kind,
-            [
-                E2ETopologyKind::OperatorGatewayAppdevAppprod,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-                E2ETopologyKind::OperatorGatewayAppprodIngress,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-            ],
-            true,
-        );
+        return E2ETopologyFacts::for($kind)->prodHostsIngressRole;
     }
 
     /**
@@ -256,14 +203,7 @@ final readonly class E2EPreparedTopology
         $names = ['gateway', 'operator-1'];
 
         foreach ($roles as $role) {
-            $nodeName = match ($role) {
-                'dev' => 'app-dev-1',
-                'prod' => 'app-prod-1',
-                'agent' => 'agent-1',
-                'ingress' => 'edge-1',
-                'websocket' => 'app-dev-1',
-                default => null,
-            };
+            $nodeName = E2ETopologyFacts::gatewayNodeNameForRole($role);
 
             if ($nodeName === null) {
                 continue;

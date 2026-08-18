@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EProvisionCheckpointManifest;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
@@ -21,6 +22,16 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     m::close();
+});
+
+it('builds Incus topologies from shared topology facts via the template role matrix', function (): void {
+    foreach (E2ETopologyKind::cases() as $kind) {
+        expect(IncusTopologyTemplate::rolesFor($kind))
+            ->toBe(E2ETopologyFacts::for($kind)->incusRoles());
+    }
+
+    expect(file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyBuilder.php')))
+        ->toContain('IncusTopologyTemplate::rolesFor($kind)');
 });
 
 function incusTopologyBuilderProcessResult(

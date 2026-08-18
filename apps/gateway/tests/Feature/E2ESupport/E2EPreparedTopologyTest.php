@@ -6,6 +6,7 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2ETopologyArtifactNamespace;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusTopologyTemplate;
 
@@ -109,6 +110,15 @@ it('collapses app production ingress onto the prod role', function (): void {
         ->toBeTrue()
         ->and(E2EPreparedTopology::prodHostsIngressRole(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
         ->toBeTrue();
+
+    foreach (E2ETopologyKind::cases() as $kind) {
+        $facts = E2ETopologyFacts::for($kind);
+
+        expect(E2EPreparedTopology::prodHostsIngressRole($kind))
+            ->toBe($facts->prodHostsIngressRole)
+            ->and(E2EPreparedTopology::runtimeRolesFor($kind, DockerTopologyProvider::rolesForKind($kind)))
+            ->toBe($facts->runtimeRoles());
+    }
 });
 
 it('builds a gateway registry prune script that removes stale topology rows', function (): void {
