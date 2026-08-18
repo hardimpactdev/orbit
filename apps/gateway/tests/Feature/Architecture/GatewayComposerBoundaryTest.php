@@ -47,11 +47,6 @@ it('keeps the gateway script surface app-local', function (): void {
         ->toContain(
             'test',
             'test:slow',
-            'test:e2e',
-            'test:e2e:docker',
-            'test:e2e:docker:canary',
-            'test:e2e:incus',
-            'test:e2e:provision',
             'analyse',
             'format',
             'rector',
@@ -59,4 +54,24 @@ it('keeps the gateway script surface app-local', function (): void {
             'quality-check:fix',
         )
         ->not->toContain('docs-lint');
+
+    expect($composer['scripts'])
+        ->not
+        ->toHaveKeys([
+            'test:e2e',
+            'test:e2e:docker',
+            'test:e2e:docker:canary',
+            'test:e2e:incus',
+            'test:e2e:topology-contract',
+            'test:e2e:provision',
+            'e2e:preflight',
+            'e2e:reap-incus',
+            'e2e:reap-docker',
+            'e2e:prepare-docker-runtime',
+            'e2e:prepare-docker-topology',
+            'e2e:prepare-docker-hosts',
+            'e2e:prepare-base-image',
+            'e2e:prepare-topology',
+            'e2e:prepare-warm-topology',
+        ]);
 });

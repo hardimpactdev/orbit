@@ -24621,12 +24621,6 @@ count = 1
 [[issues]]
 file = "tests/Pest.php"
 code = "function-name"
-message = "Function name `orbitE2eRequiresEnvironment` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Pest.php"
-code = "function-name"
 message = "Function name `orbitIsDnsCommandTest` should be in snake case."
 count = 1
 

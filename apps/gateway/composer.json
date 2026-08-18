@@ -107,57 +107,6 @@
             "@php artisan config:clear --ansi @no_additional_args",
             "@php -d memory_limit=512M vendor/pestphp/pest/bin/pest --exclude-group=e2e --parallel --compact"
         ],
-        "test:e2e": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:test @additional_args"
-        ],
-        "test:e2e:docker": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test @additional_args"
-        ],
-        "test:e2e:docker:canary": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; ORBIT_E2E_LANES=docker php artisan e2e:test --canary @additional_args"
-        ],
-        "test:e2e:incus": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; ORBIT_E2E_LANES=incus php artisan e2e:test @additional_args"
-        ],
-        "test:e2e:topology-contract": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker php artisan test --testsuite=E2E --group=e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket --fail-on-empty-test-suite @additional_args"
-        ],
-        "test:e2e:provision": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; ORBIT_E2E=1 php artisan test --testsuite=E2E --group=e2e-provision --fail-on-empty-test-suite @additional_args"
-        ],
-        "e2e:preflight": "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:preflight @additional_args",
-        "e2e:reap-incus": "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:reap-incus @additional_args",
-        "e2e:reap-docker": "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:reap-docker @additional_args",
-        "e2e:prepare-docker-runtime": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-docker-runtime @additional_args"
-        ],
-        "e2e:prepare-docker-topology": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-docker-topology @additional_args"
-        ],
-        "e2e:prepare-docker-hosts": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-docker-hosts @additional_args"
-        ],
-        "e2e:prepare-base-image": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-base-image @additional_args"
-        ],
-        "e2e:prepare-topology": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-topology @additional_args"
-        ],
-        "e2e:prepare-warm-topology": [
-            "Composer\\Config::disableProcessTimeout",
-            "set -a; [ ! -f ../../.env.e2e ] || . ../../.env.e2e; set +a; php artisan e2e:prepare-warm-topology @additional_args"
-        ],
         "analyse": "vendor/bin/mago analyze app config database --reporting-format=medium",
         "format": "vendor/bin/mago format",
         "rector": "vendor/bin/rector process",
