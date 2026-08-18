@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T04:45:10+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-772-tool-intent-preservation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-064510-solo-772-tool-intent-preservation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-772-blast-radius-inventory.md",
+        "evidence/solo-772-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T043636Z-a70cc0bf5c7a.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-772-blast-radius-inventory.md": "96f3e597db684051bfad4c01e27c8886c7d2c69deff75e44fd7c92bb050fcbf2",
+        "evidence/solo-772-retained-incus-proof.md": "8461bec5e1eb4701a067f3c1e27f03ccb1c10b46cd8639866d76b208b2a7c73d",
+        "loop.md": "9bb7e3e7429475c2dfb8c0f28d285efafd340966a9d6856e123782df1d5b0c9a",
+        "quality-gates/quality-check-2026-08-18T043636Z-a70cc0bf5c7a.json": "56ac0f11a525adb4f05fb6fb518e5677eb2370d22318d37903edd4173ec31e7d"
+    },
+    "slug": "solo-772-tool-intent-preservation",
+    "requested_slug": "solo-772-tool-intent-preservation",
+    "compatible_slugs": [
+        "solo-772-tool-intent-preservation"
+    ],
+    "branch": "solo-772-tool-intent-preservation",
+    "candidate_commit": "68f6a228aa09d00b13b60e59b915b6d4b83700da",
+    "accepted_feature_tip": "68f6a228aa09d00b13b60e59b915b6d4b83700da",
+    "accepted_main_tip": "e1625a3052fd5ca2330f3357520bf10690ddc729",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

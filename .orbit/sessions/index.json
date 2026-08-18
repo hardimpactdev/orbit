@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 351,
-    "unique_candidate_commit_count": 247,
+    "record_count": 352,
+    "unique_candidate_commit_count": 248,
     "orphan_count": 0,
     "records": [
         {
@@ -9159,6 +9159,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "5ebbe301a29db8afb0026f6c09679ddc285b049d",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-064510-solo-772-tool-intent-preservation",
+            "slug": "solo-772-tool-intent-preservation",
+            "timestamp": "2026-08-18-064510",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "68f6a228aa09d00b13b60e59b915b6d4b83700da",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
