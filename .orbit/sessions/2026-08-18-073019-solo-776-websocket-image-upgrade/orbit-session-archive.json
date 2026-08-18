@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T05:30:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-776-websocket-image-upgrade/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-073019-solo-776-websocket-image-upgrade",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-776-blast-radius-inventory.md",
+        "evidence/solo-776-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T052443Z-c9eeca368ac6.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-776-blast-radius-inventory.md": "ad0012cb8a204ace744dd7552726f91f8bfc48027705ce3e0ae2df9464cdf965",
+        "evidence/solo-776-retained-incus-proof.md": "90c56711cde0232c8516a18892c3f1439869b2f9c6f6ebf7db1aff2f0b74ba93",
+        "loop.md": "826ef1305adac669fd6bbd79f5a5cdf7b7a3dd1ff3b9d0cc50ea0d58c5c5fc92",
+        "quality-gates/quality-check-2026-08-18T052443Z-c9eeca368ac6.json": "bf9f232c1a8671dd826c936389a87d08ad59a8da70717775329a2f28ec92c45c"
+    },
+    "slug": "solo-776-websocket-image-upgrade",
+    "requested_slug": "solo-776-websocket-image-upgrade",
+    "compatible_slugs": [
+        "solo-776-websocket-image-upgrade"
+    ],
+    "branch": "solo-776-websocket-image-upgrade",
+    "candidate_commit": "59394139302792407aa287e9537bf3e27fc3f245",
+    "accepted_feature_tip": "59394139302792407aa287e9537bf3e27fc3f245",
+    "accepted_main_tip": "4057c0ee1c9eafaec70b77d51e609e427c86c593",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
