@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 363,
-    "unique_candidate_commit_count": 259,
+    "record_count": 364,
+    "unique_candidate_commit_count": 260,
     "orphan_count": 4,
     "records": [
         {
@@ -9435,6 +9435,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "47ec903d7caf7af679bb72c500239c8eb2f184c5",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-205633-solo-hardening-owner-context-node",
+            "slug": "solo-hardening-owner-context-node",
+            "timestamp": "2026-08-18-205633",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a5e3ed7ad6bf12f82029e30d2d3f62cbc1f614e8",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
