@@ -6057,12 +6057,6 @@ count = 3
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Services\S3\S3PublishAction::publish`: expected `array{'error': array{'code': string, 'message': string, 'meta': array<string, mixed>}}|array{'success': array{'data': array{'s3': array{'backend_pool': list<string>, 'credentials_ref': array{'node': string, 'tool': string}, 'node': string, 'private_endpoint': string, 'public_endpoints': list<string>}}, 'meta': array{'action': string, 'already_published': bool, 'host': string}}}`, but found `array{'error': array{'code': string, 'message': string, 'meta': array<string, mixed>, 'status': int}}`.'''
-count = 7
-
-[[issues]]
-file = "app/Services/S3/S3PublishAction.php"
-code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\S3\S3PublishAction::resolveS3Node`: expected `App\Models\Node|null`, but found `null|stdClass`.'
 count = 1
 
@@ -6070,25 +6064,19 @@ count = 1
 file = "app/Services/S3/S3PublishAction.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "redundant-condition"
 message = "This condition (type `true`) will always evaluate to true."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "redundant-docblock-type"
 message = "Redundant docblock type for variable `$allPublicHosts`."
-count = 2
-
-[[issues]]
-file = "app/Services/S3/S3PublishAction.php"
-code = "redundant-docblock-type"
-message = "Redundant docblock type for variable `$publicHosts`."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3RouteRegistrar.php"
