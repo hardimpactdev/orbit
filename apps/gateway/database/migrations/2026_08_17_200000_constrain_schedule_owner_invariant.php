@@ -27,7 +27,9 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        if (! Schema::hasTable('schedules') || ! Schema::hasColumn('schedules', 'app_id')) {
+        $this->assertSchedulesRebuildIsNotPartial();
+
+        if (! Schema::hasColumn('schedules', 'app_id')) {
             $this->ensureHistoricalRunLabels();
 
             return;
@@ -36,49 +38,56 @@ return new class extends Migration {
         $plan = $this->plan();
 
         $this->ensureHistoricalRunLabels();
+        $this->dropLeftoverSchedulesNext();
 
-        DB::transaction(function () use ($plan): void {
-            foreach ($plan['updates'] as $scheduleId => $assignment) {
-                if ($assignment['previous_schedule_key'] !== $assignment['schedule_key']) {
-                    DB::table('schedule_runs')
-                        ->where('schedule_key', $assignment['previous_schedule_key'])
+        Schema::disableForeignKeyConstraints();
+
+        try {
+            DB::transaction(function () use ($plan): void {
+                foreach ($plan['updates'] as $scheduleId => $assignment) {
+                    if ($assignment['previous_schedule_key'] !== $assignment['schedule_key']) {
+                        DB::table('schedule_runs')
+                            ->where('schedule_key', $assignment['previous_schedule_key'])
+                            ->update([
+                                'schedule_key' => $assignment['schedule_key'],
+                                'target_name' => $assignment['target_name'],
+                            ]);
+                        DB::table('schedule_locks')
+                            ->where('schedule_key', $assignment['previous_schedule_key'])
+                            ->update(['schedule_key' => $assignment['schedule_key']]);
+                    } else {
+                        DB::table('schedule_runs')
+                            ->where('schedule_key', $assignment['schedule_key'])
+                            ->whereNull('target_name')
+                            ->update(['target_name' => $assignment['target_name']]);
+                    }
+
+                    DB::table('schedules')
+                        ->where('id', $scheduleId)
                         ->update([
-                            'schedule_key' => $assignment['schedule_key'],
+                            'scope' => $assignment['scope'],
+                            'instance_id' => $assignment['instance_id'],
+                            'node_id' => $assignment['node_id'],
                             'target_name' => $assignment['target_name'],
+                            'schedule_key' => $assignment['schedule_key'],
                         ]);
-                    DB::table('schedule_locks')
-                        ->where('schedule_key', $assignment['previous_schedule_key'])
-                        ->update(['schedule_key' => $assignment['schedule_key']]);
-                } else {
-                    DB::table('schedule_runs')
-                        ->where('schedule_key', $assignment['schedule_key'])
-                        ->whereNull('target_name')
-                        ->update(['target_name' => $assignment['target_name']]);
                 }
 
-                DB::table('schedules')
-                    ->where('id', $scheduleId)
-                    ->update([
-                        'scope' => $assignment['scope'],
-                        'instance_id' => $assignment['instance_id'],
-                        'node_id' => $assignment['node_id'],
-                        'target_name' => $assignment['target_name'],
-                        'schedule_key' => $assignment['schedule_key'],
-                    ]);
-            }
+                foreach ($plan['orphans'] as $orphan) {
+                    DB::table('schedule_runs')
+                        ->where('schedule_key', $orphan['schedule_key'])
+                        ->update(['target_name' => $orphan['target_name']]);
+                    DB::table('schedule_locks')
+                        ->where('schedule_key', $orphan['schedule_key'])
+                        ->delete();
+                    DB::table('schedules')->where('id', $orphan['id'])->delete();
+                }
 
-            foreach ($plan['orphans'] as $orphan) {
-                DB::table('schedule_runs')
-                    ->where('schedule_key', $orphan['schedule_key'])
-                    ->update(['target_name' => $orphan['target_name']]);
-                DB::table('schedule_locks')
-                    ->where('schedule_key', $orphan['schedule_key'])
-                    ->delete();
-                DB::table('schedules')->where('id', $orphan['id'])->delete();
-            }
-        });
-
-        $this->rebuildSchedulesWithoutAuthoritativeApp();
+                $this->rebuildSchedulesWithoutAuthoritativeApp();
+            });
+        } finally {
+            Schema::enableForeignKeyConstraints();
+        }
     }
 
     /**
@@ -119,6 +128,16 @@ return new class extends Migration {
                 'Closed schedule ownership requires a single live owner before migration: '
                 .implode('; ', $ambiguous)
                 .'. Resolve contradictory owner foreign keys, then rerun migrations.',
+            );
+        }
+
+        $collisions = $this->remappedScheduleKeyCollisions($updates);
+
+        if ($collisions !== []) {
+            throw new RuntimeException(
+                'Closed schedule ownership cannot remap colliding schedule_key values: '
+                .implode('; ', $collisions)
+                .'. Resolve the duplicate keys, then rerun migrations.',
             );
         }
 
@@ -283,8 +302,6 @@ return new class extends Migration {
             ."scope = 'node' AND node_id IS NOT NULL AND instance_id IS NULL) OR ("
             ."scope = 'instance' AND instance_id IS NOT NULL AND node_id IS NULL))";
 
-        Schema::disableForeignKeyConstraints();
-
         DB::statement("CREATE TABLE schedules_next ({$columnSql}, {$check})");
 
         $quoted = $columns
@@ -304,8 +321,181 @@ return new class extends Migration {
                 $table->index(['enabled', 'status']);
             }
         });
+    }
 
-        Schema::enableForeignKeyConstraints();
+    private function assertSchedulesRebuildIsNotPartial(): void
+    {
+        if (! Schema::hasTable('schedules')) {
+            $leftover = Schema::hasTable('schedules_next')
+                ? ' Leftover table schedules_next is present; the rebuild crashed between DROP and RENAME.'
+                : '';
+
+            throw new RuntimeException(
+                'Closed schedule ownership rebuild is incomplete: schedules table is missing.'
+                .$leftover
+                .' Restore the schedules table, then rerun migrations.',
+            );
+        }
+
+        if (Schema::hasColumn('schedules', 'app_id')) {
+            return;
+        }
+
+        if (Schema::hasTable('schedules_next')) {
+            throw new RuntimeException(
+                'Closed schedule ownership rebuild is incomplete: leftover table schedules_next exists after app_id was removed. Restore or finish the rebuild before rerunning migrations.',
+            );
+        }
+
+        $missing = $this->rebuiltSchedulesMissingIndexes();
+
+        if ($missing !== []) {
+            throw new RuntimeException(
+                'Closed schedule ownership rebuild is incomplete: schedules exists without app_id but is missing indexes ['
+                .implode(', ', $missing)
+                .']. Recreate the unique and secondary indexes, then rerun migrations.',
+            );
+        }
+    }
+
+    private function dropLeftoverSchedulesNext(): void
+    {
+        if (Schema::hasTable('schedules_next')) {
+            Schema::drop('schedules_next');
+        }
+    }
+
+    /**
+     * @param array<int, array{scope: string, instance_id: int|null, node_id: int|null, target_name: string, previous_schedule_key: string, schedule_key: string}> $updates
+     * @return list<string>
+     */
+    private function remappedScheduleKeyCollisions(array $updates): array
+    {
+        /** @var array<string, int> $seen */
+        $seen = [];
+        /** @var list<string> $collisions */
+        $collisions = [];
+
+        foreach ($updates as $scheduleId => $assignment) {
+            $key = $assignment['schedule_key'];
+            $previous = $seen[$key] ?? null;
+
+            if ($previous === null) {
+                $seen[$key] = $scheduleId;
+
+                continue;
+            }
+
+            $collisions[] = "schedule_id={$previous} and schedule_id={$scheduleId} both resolve to {$key}";
+        }
+
+        return $collisions;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rebuiltSchedulesMissingIndexes(): array
+    {
+        $required = [
+            'unique(schedule_key)' => ['unique' => true, 'columns' => ['schedule_key']],
+            '(scope, target_name, name)' => ['unique' => false, 'columns' => ['scope', 'target_name', 'name']],
+            '(instance_id, name)' => ['unique' => false, 'columns' => ['instance_id', 'name']],
+            '(node_id, name)' => ['unique' => false, 'columns' => ['node_id', 'name']],
+        ];
+
+        if (Schema::hasColumn('schedules', 'enabled')) {
+            $required['(enabled, status)'] = ['unique' => false, 'columns' => ['enabled', 'status']];
+        }
+
+        $present = $this->scheduleIndexSignatures();
+        $missing = [];
+
+        foreach ($required as $label => $spec) {
+            foreach ($present as $index) {
+                if ($index['columns'] !== $spec['columns']) {
+                    continue;
+                }
+
+                if ($spec['unique'] && ! $index['unique']) {
+                    continue;
+                }
+
+                continue 2;
+            }
+
+            $missing[] = $label;
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @return list<array{unique: bool, columns: list<string>}>
+     *
+     * @mago-expect analysis:mixed-assignment
+     */
+    private function scheduleIndexSignatures(): array
+    {
+        $indexes = [];
+
+        foreach (DB::select("PRAGMA index_list('schedules')") as $index) {
+            if (! is_object($index)) {
+                continue;
+            }
+
+            $name = $this->sqliteColumnValue($index, 'name');
+
+            if (! is_string($name) || $name === '') {
+                continue;
+            }
+
+            $columns = $this->sqliteIndexColumns($name);
+
+            if ($columns === []) {
+                continue;
+            }
+
+            $indexes[] = [
+                'unique' => $this->sqliteColumnInteger($index, 'unique') === 1,
+                'columns' => $columns,
+            ];
+        }
+
+        return $indexes;
+    }
+
+    /**
+     * @return list<string>
+     *
+     * @mago-expect analysis:mixed-assignment
+     */
+    private function sqliteIndexColumns(string $indexName): array
+    {
+        $quoted = str_replace(search: "'", replace: "''", subject: $indexName);
+        /** @var list<array{seqno: int, name: string}> $rows */
+        $rows = [];
+
+        foreach (DB::select("PRAGMA index_info('{$quoted}')") as $info) {
+            if (! is_object($info)) {
+                continue;
+            }
+
+            $rows[] = [
+                'seqno' => $this->sqliteColumnInteger($info, 'seqno'),
+                'name' => $this->sqliteColumnName($info),
+            ];
+        }
+
+        usort($rows, static fn (array $left, array $right): int => $left['seqno'] <=> $right['seqno']);
+
+        $columns = [];
+
+        foreach ($rows as $row) {
+            $columns[] = $row['name'];
+        }
+
+        return $columns;
     }
 
     private function columnSql(object $column): string
