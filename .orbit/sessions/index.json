@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 361,
-    "unique_candidate_commit_count": 257,
+    "record_count": 362,
+    "unique_candidate_commit_count": 258,
     "orphan_count": 4,
     "records": [
         {
@@ -9389,6 +9389,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "699526a112cc145d6c7565fc9b60561e0e2c8fd6",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-204850-solo-hardening-invariant-hygiene",
+            "slug": "solo-hardening-invariant-hygiene",
+            "timestamp": "2026-08-18-204850",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "fa57826f5f2f98256a55850ca109b9bbe093c90c",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:48:51+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-invariant-hygiene/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-204850-solo-hardening-invariant-hygiene",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-invariant-hygiene-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T184716Z-b23db73ca9b4.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-invariant-hygiene-retained-incus-runtime.txt": "32c7f47b8926fff5c9228709b3fa2bfe918ba086fab91775da5eb8cbce9b0d31",
+        "loop.md": "0e09f71b4cc90e86f759bc0eb04cd27ca974d9612df3e2e3cc06c8a5579ca4a0",
+        "quality-gates/quality-check-2026-08-18T184716Z-b23db73ca9b4.json": "0b81a0ae644ce580d1799bf2c530644f4294b75f3eab98e1b0cc76c99152a369"
+    },
+    "slug": "solo-hardening-invariant-hygiene",
+    "requested_slug": "solo-hardening-invariant-hygiene",
+    "compatible_slugs": [
+        "solo-hardening-invariant-hygiene"
+    ],
+    "branch": "solo-hardening-invariant-hygiene",
+    "candidate_commit": "fa57826f5f2f98256a55850ca109b9bbe093c90c",
+    "accepted_feature_tip": "fa57826f5f2f98256a55850ca109b9bbe093c90c",
+    "accepted_main_tip": "0824bce48fdb13bcbc662b900e0f90d37c6f4f85",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
