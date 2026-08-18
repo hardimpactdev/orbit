@@ -317,8 +317,7 @@ function webSocketBaselineAgentResponse(
     Request $request,
     bool $selfContainedImage,
     ?string $imageProbeStdout = null,
-): mixed
-{
+): mixed {
     $argv = $request['argv'] ?? null;
     $command = is_array($argv) ? $argv[0] ?? null : null;
 

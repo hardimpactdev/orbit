@@ -6,6 +6,7 @@ namespace App\Services\RuntimeBackend;
 
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\RuntimeBackend\GatewayRuntimeBackendProbeResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
@@ -13,7 +14,6 @@ use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Services\Runtime\OrbitContainerNames;
 
 /**

@@ -21,10 +21,10 @@ use App\Services\Processes\RemoteRuntimeHibernation;
 use App\Services\Processes\RuntimeHibernationScope;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteSecretFile;
-use App\Services\Schedules\ScheduleDispatcher;
-use App\Services\Schedules\ScheduleInstanceResolver;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
+use App\Services\Schedules\ScheduleDispatcher;
+use App\Services\Schedules\ScheduleInstanceResolver;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceSetupStepLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -207,9 +207,11 @@ it('treats a malformed schedule run envelope as a failed dispatch', function (st
 })->with(remote_envelope_fail_closed_stdout());
 
 it('does not treat a malformed global Caddy envelope as readable config', function (string $stdout): void {
-    expect(new RemoteCaddyConfig(
-        new RemoteEnvelopeFailClosedExecutor(remote_envelope_fail_closed_result($stdout)),
-    )->readGlobal(remote_envelope_fail_closed_node()))->toBeNull();
+    expect(
+        new RemoteCaddyConfig(
+            new RemoteEnvelopeFailClosedExecutor(remote_envelope_fail_closed_result($stdout)),
+        )->readGlobal(remote_envelope_fail_closed_node()),
+    )->toBeNull();
 })->with(remote_envelope_fail_closed_stdout());
 
 it('does not treat a malformed identity envelope as a WireGuard public key', function (string $stdout): void {
@@ -247,4 +249,3 @@ it('does not treat a malformed gateway runtime envelope as a missing container',
         ]))[0]->kind->value)
         ->toBe('unverifiable');
 })->with(remote_envelope_fail_closed_stdout());
-

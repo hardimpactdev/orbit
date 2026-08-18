@@ -281,13 +281,9 @@ it('does not treat a truncated websocket doctor envelope as missing runtime stat
     $drift = app(WebSocketDoctorProbe::class)->nodeDrift($websocketNode, $assignment);
 
     expect($drift)
-        ->not->toBeEmpty()
-        ->and(array_column($drift, 'kind'))
-        ->each
-        ->toBe(\App\Enums\DriftKind::Unverifiable)
-        ->and(array_column($drift, 'key'))
-        ->not
-        ->toContain('tool.websocket.reverb_unavailable');
+        ->not->toBeEmpty()->and(array_column($drift, 'kind'))
+        ->each->toBe(\App\Enums\DriftKind::Unverifiable)->and(array_column($drift, 'key'))
+        ->not->toContain('tool.websocket.reverb_unavailable');
 
     foreach ($drift as $entry) {
         expect($entry->kind)->toBe(\App\Enums\DriftKind::Unverifiable);
