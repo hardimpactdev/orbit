@@ -123,16 +123,6 @@ pest()
 pest()->extend(TestCase::class, RefreshDatabase::class)
     ->in('Unit/Services/WireGuard');
 
-pest()
-    ->extend(TestCase::class)
-    ->beforeEach(function (): void {
-        if (env('ORBIT_E2E') !== '1' && orbitE2eRequiresEnvironment($this)) {
-            $this->markTestSkipped('Set ORBIT_E2E=1 to run ephemeral E2E tests.');
-        }
-    })
-    ->group('e2e')
-    ->in('E2E');
-
 /*
  |--------------------------------------------------------------------------
  | Expectations
@@ -577,13 +567,6 @@ function fakeHomebrewPrefix(): string
     File::ensureDirectoryExists("{$prefix}/etc");
 
     return $prefix;
-}
-
-function orbitE2eRequiresEnvironment(object $testCase): bool
-{
-    $filename = orbitPestTestFilename($testCase);
-
-    return ! str_ends_with($filename, 'apps/gateway/tests/E2E/Ephemeral/AgentNodeProvisioningTest.php');
 }
 
 function orbitPestTestFilename(object $testCase): string

@@ -1066,17 +1066,19 @@ it('keeps reusable e2e harness code out of the Tests namespace for app commands'
     expect(is_file(repo_path('apps/gateway/app/Console/Commands/E2EPrepareHcloudImagesCommand.php')))->toBeFalse();
 });
 
-it('registers ephemeral e2e as a guarded Pest group', function (): void {
+it('does not register an empty gateway e2e pest suite', function (): void {
     $phpunit = file_get_contents(repo_path('apps/gateway/phpunit.xml'));
     $pest = file_get_contents(repo_path('apps/gateway/tests/Pest.php'));
 
     expect($phpunit)
-        ->toContain('<testsuite name="E2E">')
-        ->toContain('<directory>tests/E2E</directory>')
-        ->and($pest)
-        ->toContain('ORBIT_E2E')
-        ->toContain("->group('e2e')")
-        ->toContain("->in('E2E')");
+        ->not->toContain('<testsuite name="E2E">')
+        ->not->toContain('<directory>tests/E2E</directory>')->and($pest)->toContain('ORBIT_E2E')->toContain(
+            "require_once __DIR__.'/E2E/Support/Pest.php'",
+        )
+        ->not->toContain("->group('e2e')")
+        ->not->toContain("->in('E2E')")
+        ->not->toContain('orbitE2eRequiresEnvironment')
+        ->not->toContain('AgentNodeProvisioningTest');
 });
 
 it('does not need a repository-root ignore policy for the source-less docker topology image', function (): void {
