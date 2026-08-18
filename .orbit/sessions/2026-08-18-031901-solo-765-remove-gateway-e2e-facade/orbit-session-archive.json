@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T01:19:01+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-765-remove-gateway-e2e-facade/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-031901-solo-765-remove-gateway-e2e-facade",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-765-blast-radius-inventory.md",
+        "evidence/solo-765-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T010705Z-aefd16c303ee.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-765-blast-radius-inventory.md": "e6a9024bf5a976d9bbc2e4a9fceb2f2cfbb8943d2eb826ee759c61f7e4c3ac26",
+        "evidence/solo-765-retained-incus-proof.md": "93b94981adab72cddfb6afab8ddb92b867cc6263b0d18a2e0ef308ce370b71b2",
+        "loop.md": "4786b8c379dfb42846ef43d4d24e866cb490728203fcb850224daace763ddb65",
+        "quality-gates/quality-check-2026-08-18T010705Z-aefd16c303ee.json": "36b22cabd58c8ca4019082a2585003e94a69f9921fa3581627bf40302bcda436"
+    },
+    "slug": "solo-765-remove-gateway-e2e-facade",
+    "requested_slug": "solo-765-remove-gateway-e2e-facade",
+    "compatible_slugs": [
+        "solo-765-remove-gateway-e2e-facade"
+    ],
+    "branch": "solo-765-remove-gateway-e2e-facade",
+    "candidate_commit": "208409f16517fb9556453d602842eb1ce7d7815c",
+    "accepted_feature_tip": "208409f16517fb9556453d602842eb1ce7d7815c",
+    "accepted_main_tip": "694f024f158b85936fd5140ff50e6fdbd1a24954",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

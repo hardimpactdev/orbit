@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 344,
-    "unique_candidate_commit_count": 240,
+    "record_count": 345,
+    "unique_candidate_commit_count": 241,
     "orphan_count": 0,
     "records": [
         {
@@ -8998,6 +8998,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "456b4dc5307cd3030d4b97cc00a97b12e2daee68",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-031901-solo-765-remove-gateway-e2e-facade",
+            "slug": "solo-765-remove-gateway-e2e-facade",
+            "timestamp": "2026-08-18-031901",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "208409f16517fb9556453d602842eb1ce7d7815c",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
