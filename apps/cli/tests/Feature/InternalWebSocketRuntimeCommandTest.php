@@ -486,6 +486,104 @@ describe('internal websocket runtime command', function (): void {
             ->toContain('--entrypoint sh')
             ->toContain('-lc php artisan reverb:start --host=0.0.0.0 --port=8080');
     });
+
+    it('recreates a running websocket container when orbit-reverb:current resolves to a new image id', function (): void {
+        $bin = install_websocket_runtime_fake_bin([
+            'container_exists' => true,
+            'container_running' => true,
+            'container_image_id' => 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'current_image_id' => 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        ]);
+
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'container:apply', payload: [
+            'spec' => websocket_runtime_container_spec_payload(),
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(websocket_runtime_success_data($output))
+            ->toMatchArray([
+                'action' => 'container:apply',
+                'container' => 'orbit-websocket-app-dev-1',
+                'outcome' => 'recreated',
+                'had_existing_container' => true,
+                'changed' => true,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
+            ->toContain('docker rm -f orbit-websocket-app-dev-1')
+            ->toContain('docker run -d --pull never --name orbit-websocket-app-dev-1');
+    });
+
+    it('leaves a running websocket container unchanged when it already uses the current image id', function (): void {
+        $imageId = 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+        $bin = install_websocket_runtime_fake_bin([
+            'container_exists' => true,
+            'container_running' => true,
+            'container_image_id' => $imageId,
+            'current_image_id' => $imageId,
+        ]);
+
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'container:apply', payload: [
+            'spec' => websocket_runtime_container_spec_payload(),
+        ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(websocket_runtime_success_data($output))
+            ->toMatchArray([
+                'action' => 'container:apply',
+                'container' => 'orbit-websocket-app-dev-1',
+                'outcome' => 'unchanged',
+                'had_existing_container' => true,
+                'changed' => false,
+            ])
+            ->and($calls)
+            ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
+            ->and($calls)
+            ->not->toContain('docker rm -f orbit-websocket-app-dev-1')->and($calls)
+            ->not->toContain('docker run -d --pull never --name orbit-websocket-app-dev-1');
+    });
+
+    it('falls back to hash and running reuse when orbit-reverb:current image inspect fails or is empty', function (
+        bool $inspectFails,
+        string $currentImageId,
+    ): void {
+        $bin = install_websocket_runtime_fake_bin([
+            'container_exists' => true,
+            'container_running' => true,
+            'container_image_id' => 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+            'current_image_id' => $currentImageId,
+            'image_inspect_fails' => $inspectFails,
+        ]);
+
+        [$exitCode, $output] = run_websocket_runtime_command(action: 'container:apply', payload: [
+            'spec' => websocket_runtime_container_spec_payload(),
+        ]);
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(websocket_runtime_success_data($output))
+            ->toMatchArray([
+                'action' => 'container:apply',
+                'container' => 'orbit-websocket-app-dev-1',
+                'outcome' => 'unchanged',
+                'had_existing_container' => true,
+                'changed' => false,
+            ])
+            ->and($calls)
+            ->toContain('docker image inspect --format {{.Id}} orbit-reverb:current')
+            ->and($calls)
+            ->not->toContain('docker rm -f orbit-websocket-app-dev-1')->and($calls)
+            ->not->toContain('docker run -d --pull never --name orbit-websocket-app-dev-1');
+    })->with([
+        'inspect errors' => [true, 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'],
+        'inspect empty' => [false, ''],
+    ]);
 });
 
 function websocket_runtime_signed_operation_token(
@@ -597,7 +695,7 @@ function websocket_runtime_container_spec_payload(): array
 }
 
 /**
- * @param  array{self_contained_image?: bool, image_archive?: string, image_archive_tags?: list<string>, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, env_host?: string, cmd?: string, published_bindings?: list<array{host: string, port: string}>, network_exists?: bool, source_hash?: string}  $options
+ * @param  array{self_contained_image?: bool, image_archive?: string, image_archive_tags?: list<string>, app_key_exists?: bool, app_key?: string, container_exists?: bool, container_running?: bool, container_image_id?: string, current_image_id?: string, image_inspect_fails?: bool, env_host?: string, cmd?: string, published_bindings?: list<array{host: string, port: string}>, network_exists?: bool, source_hash?: string}  $options
  *
  * @mago-expect lint:cyclomatic-complexity
  */
@@ -610,6 +708,9 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     $appKey = $options['app_key'] ?? '';
     $containerExists = $options['container_exists'] ?? false;
     $containerRunning = $options['container_running'] ?? false;
+    $containerImageId = $options['container_image_id'] ?? '';
+    $currentImageId = $options['current_image_id'] ?? '';
+    $imageInspectFails = $options['image_inspect_fails'] ?? false;
     $networkExists = $options['network_exists'] ?? true;
     $sourceHash = $options['source_hash'] ?? str_repeat('a', times: 64);
     file_put_contents("{$dir}/app-key", $appKey);
@@ -618,6 +719,9 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/cmd", $options['cmd'] ?? '');
     file_put_contents("{$dir}/container-exists", $containerExists ? '1' : '0');
     file_put_contents("{$dir}/container-running", $containerRunning ? 'true' : 'false');
+    file_put_contents("{$dir}/container-image-id", $containerImageId);
+    file_put_contents("{$dir}/current-image-id", $currentImageId);
+    file_put_contents("{$dir}/image-inspect-fails", $imageInspectFails ? '1' : '0');
     file_put_contents("{$dir}/env-host", $options['env_host'] ?? '');
     file_put_contents("{$dir}/image.tar", websocket_runtime_image_archive($options));
     file_put_contents("{$dir}/image-manifest.json", websocket_runtime_image_manifest($options));
@@ -652,7 +756,17 @@ function install_websocket_runtime_fake_bin(array $options = []): string
                     printf 'Error: No such container' >&2
                     exit 1
                 fi
-                printf '{"Config":{"Labels":{"orbit.websocket.spec_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},"State":{"Running":true}}'
+                printf '{"Image":"%s","Config":{"Labels":{"orbit.websocket.spec_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},"State":{"Running":%s}}' "$(cat "$dir/container-image-id")" "$(cat "$dir/container-running")"
+                ;;
+            'image inspect --format {{.Id}} orbit-reverb:current')
+                if [ "$(cat "$dir/image-inspect-fails")" = 1 ]; then
+                    printf 'Error: No such image' >&2
+                    exit 1
+                fi
+                cat "$dir/current-image-id"
+                ;;
+            'rm -f orbit-websocket-app-dev-1')
+                printf 0 >"$dir/container-exists"
                 ;;
             'container inspect --format {{.State.Running}} orbit-websocket-app-dev-1')
                 cat "$dir/container-running"
@@ -799,6 +913,9 @@ function delete_websocket_runtime_fake_bin(string $path): void
         'composer',
         'container-exists',
         'container-running',
+        'container-image-id',
+        'current-image-id',
+        'image-inspect-fails',
         'env-host',
         'installed-source-hash',
         'image.tar',

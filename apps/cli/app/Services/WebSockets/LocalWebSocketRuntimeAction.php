@@ -373,16 +373,19 @@ final readonly class LocalWebSocketRuntimeAction
         $inspection = $this->inspectContainer($spec->name);
         $hadExistingContainer = $inspection !== null;
         $observedHash = $this->observedSpecHash($inspection);
+        $hashMatches = hash_equals($spec->expectedHash, $observedHash ?? '');
+        $usesCurrentImage = ! $hadExistingContainer || $this->containerUsesCurrentImage($inspection, $spec->image);
 
         if (
             $hadExistingContainer
-            && hash_equals($spec->expectedHash, $observedHash ?? '')
+            && $hashMatches
             && $this->isRunning($inspection)
+            && $usesCurrentImage
         ) {
             return $this->containerApplyResult($spec->name, 'unchanged', true, false);
         }
 
-        if ($hadExistingContainer && ! hash_equals($spec->expectedHash, $observedHash ?? '')) {
+        if ($hadExistingContainer && (! $hashMatches || ! $usesCurrentImage)) {
             $remove = $this->runProcess(['docker', 'rm', '-f', $spec->name]);
 
             if (! $remove->isSuccessful()) {
@@ -757,6 +760,47 @@ final readonly class LocalWebSocketRuntimeAction
         return is_string($inspection['Config']['Labels'][LocalWebSocketRuntimeContainerSpec::SpecHashLabel] ?? null)
             ? $inspection['Config']['Labels'][LocalWebSocketRuntimeContainerSpec::SpecHashLabel]
             : null;
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function observedContainerImageId(?array $inspection): ?string
+    {
+        if (! is_array($inspection) || ! isset($inspection['Image']) || ! is_string($inspection['Image'])) {
+            return null;
+        }
+
+        $imageId = trim($inspection['Image']);
+
+        return $imageId === '' ? null : $imageId;
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function containerUsesCurrentImage(?array $inspection, string $image): bool
+    {
+        $desiredImageId = $this->currentRuntimeImageId($image);
+
+        if ($desiredImageId === null) {
+            return true;
+        }
+
+        return $desiredImageId === $this->observedContainerImageId($inspection);
+    }
+
+    private function currentRuntimeImageId(string $image): ?string
+    {
+        $inspect = $this->runProcess(['docker', 'image', 'inspect', '--format', '{{.Id}}', $image]);
+
+        if (! $inspect->isSuccessful()) {
+            return null;
+        }
+
+        $imageId = trim($inspect->getOutput());
+
+        return $imageId === '' ? null : $imageId;
     }
 
     /**
