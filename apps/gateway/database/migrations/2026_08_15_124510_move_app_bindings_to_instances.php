@@ -7,9 +7,16 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 return new class extends Migration {
     public function up(): void
     {
+        if ($this->alreadyUsesInstanceOwnership()) {
+            return;
+        }
+
         $assignments = $this->bindingAssignments();
 
         Schema::table('app_websocket_bindings', static function (Blueprint $table): void {
@@ -31,12 +38,20 @@ return new class extends Migration {
         $this->replaceOwnership('app_analytics_bindings');
     }
 
+    public function down(): void
+    {
+        throw new RuntimeException(
+            'The 2026_08_15_124510_move_app_bindings_to_instances migration is irreversible. Rolling it back would drop instance_id without restoring app_id, then a later migrate would re-run up() against the already-migrated shape. Restore from backup instead of migrate:rollback.',
+        );
+    }
+
     /**
      * @return list<array{table: string, binding_id: int, instance_id: int}>
      */
     private function bindingAssignments(): array
     {
         $assignments = [];
+        $orphaned = [];
         $ambiguous = [];
 
         foreach (['app_websocket_bindings', 'app_analytics_bindings'] as $table) {
@@ -50,35 +65,79 @@ return new class extends Migration {
                     ->map(static fn (mixed $id): int => (int) $id)
                     ->all();
 
-                if (count($instanceIds) !== 1) {
-                    $ambiguous[] = sprintf(
-                        '%s#%d (app_id=%d, instances=%d)',
-                        $table,
-                        $bindingId,
-                        $appId,
-                        count($instanceIds),
-                    );
+                if (count($instanceIds) === 1) {
+                    $assignments[] = [
+                        'table' => $table,
+                        'binding_id' => $bindingId,
+                        'instance_id' => $instanceIds[0],
+                    ];
 
                     continue;
                 }
 
-                $assignments[] = [
-                    'table' => $table,
-                    'binding_id' => $bindingId,
-                    'instance_id' => $instanceIds[0],
-                ];
+                $detail = sprintf(
+                    '%s#%d (app_id=%d, instances=%d)',
+                    $table,
+                    $bindingId,
+                    $appId,
+                    count($instanceIds),
+                );
+
+                if (! DB::table('apps')->where('id', $appId)->exists()) {
+                    $orphaned[] = $detail;
+
+                    continue;
+                }
+
+                $ambiguous[] = $detail;
             }
         }
 
-        if ($ambiguous !== []) {
-            throw new RuntimeException(
-                'Instance binding ownership requires manual assignment before migration: '
-                .implode('; ', $ambiguous)
-                .'. Assign each legacy binding to one concrete instance, then rerun migrations.',
-            );
+        if ($orphaned !== [] || $ambiguous !== []) {
+            throw new RuntimeException($this->blockedBindingsMessage($orphaned, $ambiguous));
         }
 
         return $assignments;
+    }
+
+    /**
+     * @param  list<string>  $orphaned
+     * @param  list<string>  $ambiguous
+     */
+    private function blockedBindingsMessage(array $orphaned, array $ambiguous): string
+    {
+        $parts = [];
+
+        if ($orphaned !== []) {
+            $parts[] =
+                'Orphaned bindings whose apps are gone must be deleted: '
+                .implode('; ', $orphaned)
+                .'. Delete each orphaned binding, then rerun migrations.';
+        }
+
+        if ($ambiguous !== []) {
+            $parts[] =
+                'Instance binding ownership requires manual assignment before migration: '
+                .implode('; ', $ambiguous)
+                .'. Assign each legacy binding to one concrete instance, then rerun migrations.';
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function alreadyUsesInstanceOwnership(): bool
+    {
+        foreach (['app_websocket_bindings', 'app_analytics_bindings'] as $table) {
+            if (! Schema::hasTable($table)) {
+                return false;
+            }
+
+            if (Schema::hasColumn($table, 'app_id') || ! Schema::hasColumn($table, 'instance_id')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function replaceOwnership(string $tableName): void

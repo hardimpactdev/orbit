@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Services\Apps\AppProxyRouteRuntimeUpstreamBackfill;
-use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +14,29 @@ use Illuminate\Support\Facades\Schema;
  * @mago-expect lint:too-many-methods
  */
 return new class extends Migration {
+    /**
+     * Frozen 2026-08-16 owner-kind map from InstanceProxyRouteOwnershipResolver.
+     *
+     * @var array<string, string>
+     */
+    private const array OwnerKinds = [
+        'app' => 'app',
+        'workspace' => 'workspace',
+        'app-analytics' => 'proxy',
+        'app-websocket' => 'proxy',
+    ];
+
+    /**
+     * Frozen 2026-08-16 direct-owner types from InstanceProxyRouteOwnershipResolver.
+     *
+     * @var list<string>
+     */
+    private const array DirectOwnerTypes = [
+        'app',
+        'app-analytics',
+        'app-websocket',
+    ];
+
     public function up(): void
     {
         $assignments = $this->assignments();
@@ -56,6 +78,16 @@ return new class extends Migration {
         });
     }
 
+    private function expectedKind(string $ownerType): ?string
+    {
+        return self::OwnerKinds[$ownerType] ?? null;
+    }
+
+    private function isDirectOwner(string $ownerType): bool
+    {
+        return in_array($ownerType, self::DirectOwnerTypes, true);
+    }
+
     /** @return array<int, int|null> */
     private function assignments(): array
     {
@@ -75,7 +107,7 @@ return new class extends Migration {
                 );
             }
 
-            $expectedKind = InstanceProxyRouteOwnershipResolver::expectedKind($ownerType);
+            $expectedKind = $this->expectedKind($ownerType);
 
             if ($expectedKind !== null && $kind !== $expectedKind) {
                 throw $this->ownershipException(
@@ -102,7 +134,7 @@ return new class extends Migration {
             }
 
             if (
-                InstanceProxyRouteOwnershipResolver::isDirectOwner($ownerType)
+                $this->isDirectOwner($ownerType)
                 && $this->rowNullableInteger($route, 'workspace_id') !== null
             ) {
                 throw $this->ownershipException($route, 'must not identify a workspace_id');
@@ -123,7 +155,7 @@ return new class extends Migration {
             foreach (DB::table('proxy_routes')->orderBy('id')->get() as $route) {
                 $ownerType = $this->rowString($route, 'owner_type');
 
-                if (InstanceProxyRouteOwnershipResolver::expectedKind($ownerType) === null) {
+                if ($this->expectedKind($ownerType) === null) {
                     continue;
                 }
 
