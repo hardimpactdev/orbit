@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\S3\S3PublishAction;
 use App\Services\S3\S3RouteRegistrar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -422,7 +423,7 @@ describe('S3Publish domain conflict', function (): void {
         $originalToolConfig = $tool->fresh()?->config;
         $originalConflict = $conflict->fresh()?->getAttributes();
 
-        $result = app(S3PublishAction::class)->publish($caller, $storage->name, 'new.example.com');
+        $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, 'new.example.com');
 
         expect($result['error']['code'] ?? null)
             ->toBe('s3.publish_failed')
@@ -457,7 +458,7 @@ describe('S3Publish domain conflict', function (): void {
             ],
         ]);
 
-        $result = app(S3PublishAction::class)->publish($caller, $storage->name, 's3.example.com');
+        $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, 's3.example.com');
 
         expect($result['error']['code'] ?? null)
             ->toBe('proxy.domain_conflict')
@@ -588,6 +589,157 @@ describe('S3Publish success', function (): void {
             ->not->toContain('10.6.0.44')->and($targetValue)
             ->not->toContain('storage-1.s3.orbit');
     });
+});
+
+// ---------------------------------------------------------------------------
+// Engine-layer (no HTTP, no-progress path)
+// ---------------------------------------------------------------------------
+
+it('runs the no-progress path end-to-end without emitting progress frames', function (): void {
+    $caller = s3PublishCallerNode(role: 'gateway');
+    $storage = s3PublishStorageNode();
+    $tool = s3PublishSeaweedfsTool($storage);
+    s3PublishRouterNode();
+    s3PublishIngressNode();
+
+    ob_start();
+    $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, host: 's3.example.com');
+    $output = ob_get_clean();
+
+    expect($output)
+        ->toBeEmpty()
+        ->and($result['success']['meta']['action'] ?? null)
+        ->toBe('published')
+        ->and($result['success']['meta']['already_published'] ?? null)
+        ->toBeFalse()
+        ->and($result['success']['data']['s3']['backend_pool'] ?? null)
+        ->toBe(['http://storage-1.s3.orbit:8333'])
+        ->and($tool->fresh()?->config['public_hosts'] ?? null)
+        ->toContain('s3.example.com');
+});
+
+it('persists public hosts and assembles the backend pool at the engine layer', function (): void {
+    $caller = s3PublishCallerNode(role: 'gateway');
+    $storage = s3PublishStorageNode();
+    $tool = s3PublishSeaweedfsTool($storage);
+    $router = s3PublishRouterNode();
+    s3PublishIngressNode();
+
+    $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, host: 's3.example.com');
+    $serviceRoute = ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->firstOrFail();
+    $publicRoute = ProxyRoute::query()->where('domain', 's3.example.com')->firstOrFail();
+
+    expect($result['success']['data']['s3']['node'] ?? null)
+        ->toBe('storage-1')
+        ->and($result['success']['data']['s3']['private_endpoint'] ?? null)
+        ->toBe(S3RouteRegistrar::ServiceEndpoint)
+        ->and($result['success']['data']['s3']['public_endpoints'] ?? null)
+        ->toBe(['https://s3.example.com'])
+        ->and($result['success']['data']['s3']['backend_pool'] ?? null)
+        ->toBe(['http://storage-1.s3.orbit:8333'])
+        ->and($tool->fresh()?->config['public_hosts'] ?? null)
+        ->toBe(['s3.example.com'])
+        ->and($serviceRoute->node_id)
+        ->toBe($router->id)
+        ->and($serviceRoute->owner_type)
+        ->toBe('router')
+        ->and($publicRoute->owner_type)
+        ->toBe('s3');
+});
+
+it('maps assertPublishAvailable RuntimeException to s3.publish_failed 500 without mutating', function (): void {
+    $caller = s3PublishCallerNode(role: 'gateway');
+    $storage = s3PublishStorageNode();
+    $tool = s3PublishSeaweedfsTool($storage, [
+        'public_hosts' => ['safe.example.com', 'conflict.example.com'],
+    ]);
+    s3PublishRouterNode();
+    $ingress = s3PublishIngressNode();
+    ProxyRoute::factory()
+        ->forApp(Instance::factory()->create())
+        ->create([
+            'domain' => 'conflict.example.com',
+            'node_id' => $ingress->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+    $originalToolConfig = $tool->fresh()?->config;
+
+    $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, host: 'new.example.com');
+
+    expect($result['error']['code'] ?? null)
+        ->toBe('s3.publish_failed')
+        ->and($result['error']['status'] ?? null)
+        ->toBe(500)
+        ->and($tool->fresh()?->config)
+        ->toBe($originalToolConfig)
+        ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())
+        ->toBeFalse();
+});
+
+it('maps syncServiceRoute RuntimeException to s3.publish_failed 500', function (): void {
+    $caller = s3PublishCallerNode(role: 'gateway');
+    $storage = s3PublishStorageNode();
+    $tool = s3PublishSeaweedfsTool($storage);
+    s3PublishRouterNode();
+    s3PublishIngressNode();
+    $reconciler = new class('router apply failed') extends DnsmasqReconciler {
+        public function __construct(
+            private string $failureMessage,
+        ) {}
+
+        public function reconcileProxyRecords(): bool
+        {
+            throw new \RuntimeException($this->failureMessage);
+        }
+    };
+    app()->instance(DnsmasqReconciler::class, $reconciler);
+    app()->forgetInstance(S3RouteRegistrar::class);
+    app()->forgetInstance(S3PublishAction::class);
+
+    $result = app(S3PublishAction::class)->publishWithProgress($caller, $storage->name, host: 's3.example.com');
+
+    expect($result['error']['code'] ?? null)
+        ->toBe('s3.publish_failed')
+        ->and($result['error']['status'] ?? null)
+        ->toBe(500)
+        ->and($result['error']['message'] ?? null)
+        ->toBe('router apply failed')
+        ->and($tool->fresh()?->config['public_hosts'] ?? null)
+        ->toContain('s3.example.com');
+});
+
+it('maps syncPublicHosts RuntimeException to s3.publish_failed 500', function (): void {
+    $caller = s3PublishCallerNode(role: 'gateway');
+    $storage = s3PublishStorageNode();
+    s3PublishSeaweedfsTool($storage);
+    s3PublishRouterNode();
+    s3PublishIngressNode();
+    $armed = true;
+    ProxyRoute::creating(function (ProxyRoute $route) use (&$armed): void {
+        if (! $armed || $route->domain !== 'engine-public.example.com') {
+            return;
+        }
+
+        throw new \RuntimeException('ingress apply failed');
+    });
+
+    try {
+        $result = app(S3PublishAction::class)->publishWithProgress(
+            $caller,
+            $storage->name,
+            host: 'engine-public.example.com',
+        );
+    } finally {
+        $armed = false;
+    }
+
+    expect($result['error']['code'] ?? null)
+        ->toBe('s3.publish_failed')
+        ->and($result['error']['status'] ?? null)
+        ->toBe(500)
+        ->and($result['error']['message'] ?? null)
+        ->toBe('ingress apply failed');
 });
 
 // ---------------------------------------------------------------------------

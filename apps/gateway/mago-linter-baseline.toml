@@ -8476,7 +8476,7 @@ count = 1
 file = "app/Services/S3/S3PublishAction.php"
 code = "halstead"
 message = "Method has a high halstead volume and effort"
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
@@ -8488,25 +8488,25 @@ count = 1
 file = "app/Services/S3/S3PublishAction.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
-count = 6
+count = 3
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "prefer-early-continue"
 message = "Consider using early continue pattern to reduce nesting."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3PublishAction.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/S3/S3RouteRegistrar.php"
