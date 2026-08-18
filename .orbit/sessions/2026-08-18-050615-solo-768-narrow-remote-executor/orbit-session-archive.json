@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T03:06:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-768-narrow-remote-executor/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-050615-solo-768-narrow-remote-executor",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-768-blast-radius-inventory.md",
+        "evidence/solo-768-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T030208Z-5a42c30f9ea7.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-768-blast-radius-inventory.md": "6a89f69d88ba649dd131304c2f5f744b6a42962600a6fed868a0ebc08fc8a05b",
+        "evidence/solo-768-retained-incus-proof.md": "2367bb17587e02c153f069b466b2b088665e517fbb94a390be0f8b01616da6f2",
+        "loop.md": "6518052f9678f975bbc28b57ac8c9aed98d6dacab43fbb46616f3e4cf495d02e",
+        "quality-gates/quality-check-2026-08-18T030208Z-5a42c30f9ea7.json": "60689a9bcbe71028f27154558f5c26ef4eaf857892f23ea677493dbc779c812d"
+    },
+    "slug": "solo-768-narrow-remote-executor",
+    "requested_slug": "solo-768-narrow-remote-executor",
+    "compatible_slugs": [
+        "solo-768-narrow-remote-executor"
+    ],
+    "branch": "solo-768-narrow-remote-executor",
+    "candidate_commit": "1fe426f20e29aff6937baae2ed4c28898a9e18e6",
+    "accepted_feature_tip": "1fe426f20e29aff6937baae2ed4c28898a9e18e6",
+    "accepted_main_tip": "0031dd041ac72d3d6c05732d5e0ab0cad3c8cfc9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

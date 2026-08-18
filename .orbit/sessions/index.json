@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 347,
-    "unique_candidate_commit_count": 243,
+    "record_count": 348,
+    "unique_candidate_commit_count": 244,
     "orphan_count": 0,
     "records": [
         {
@@ -9072,6 +9072,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-050615-solo-768-narrow-remote-executor",
+            "slug": "solo-768-narrow-remote-executor",
+            "timestamp": "2026-08-18-050615",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "1fe426f20e29aff6937baae2ed4c28898a9e18e6",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
