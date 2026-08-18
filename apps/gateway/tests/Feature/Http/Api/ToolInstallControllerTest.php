@@ -144,7 +144,7 @@ describe('ToolInstallController', function (): void {
         expect($shell->scripts)->toHaveCount(1);
     });
 
-    it('requires agent-push transport before installing host capabilities', function (): void {
+    it('preserves expected install intent when agent-push transport fails after the row write', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
@@ -174,8 +174,15 @@ describe('ToolInstallController', function (): void {
             ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
             ->assertJsonPath('error.meta.node', 'app-install-api-1');
 
-        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'php-cli')->exists())
-            ->toBeFalse()
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'php-cli')
+            ->firstOrFail();
+
+        expect($tool->expected_version)
+            ->toBe('8.5')
+            ->and($tool->expected_state)
+            ->toBe('installed')
             ->and($shell->scripts)
             ->toBe([]);
     });

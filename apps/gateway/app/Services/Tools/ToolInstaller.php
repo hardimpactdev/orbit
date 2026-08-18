@@ -189,8 +189,6 @@ final readonly class ToolInstaller
         );
 
         if ($result instanceof ToolRegistryFailure) {
-            $row->delete();
-
             return $result;
         }
 
