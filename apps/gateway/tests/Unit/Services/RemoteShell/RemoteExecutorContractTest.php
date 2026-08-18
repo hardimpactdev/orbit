@@ -6,26 +6,19 @@ use App\Contracts\RemoteShell;
 use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteOrbitGatewayExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\RemoteShell\SshRemoteShell;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('mirrors the existing remote shell public surface', function (): void {
-    $interface = new ReflectionClass(RemoteExecutor::class);
-
-    expect($interface->isInterface())
-        ->toBeTrue()
-        ->and($interface->implementsInterface(RemoteShell::class))
-        ->toBeTrue()
-        ->and($interface->implementsInterface(StartsRemoteShellProcesses::class))
-        ->toBeTrue();
-
-    $run = $interface->getMethod('run');
-    $start = $interface->getMethod('start');
+it('keeps run and start on the narrow contracts', function (): void {
+    $run = new ReflectionClass(RemoteShell::class)->getMethod('run');
+    $start = new ReflectionClass(StartsRemoteShellProcesses::class)->getMethod('start');
 
     expect((string) $run->getReturnType())
         ->toBe(RemoteShellResult::class)
@@ -37,19 +30,37 @@ it('mirrors the existing remote shell public surface', function (): void {
         ->toBe([Node::class, 'string', 'array']);
 });
 
-it('defaults RemoteExecutor resolution to the host executor while keeping runtime explicit', function (): void {
-    app()->bind(RemoteExecutor::class, RemoteHostExecutor::class);
+it('keeps start() on the capable executors and withholds it from the local executor', function (): void {
+    expect(is_a(RemoteHostExecutor::class, RemoteShell::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteHostExecutor::class, StartsRemoteShellProcesses::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteOrbitGatewayExecutor::class, RemoteShell::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteOrbitGatewayExecutor::class, StartsRemoteShellProcesses::class, true))
+        ->toBeTrue()
+        ->and(is_a(SshRemoteShell::class, RemoteShell::class, true))
+        ->toBeTrue()
+        ->and(is_a(SshRemoteShell::class, StartsRemoteShellProcesses::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteLocalExecutor::class, RemoteShell::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteLocalExecutor::class, RunsInternalCommands::class, true))
+        ->toBeTrue()
+        ->and(is_a(RemoteLocalExecutor::class, StartsRemoteShellProcesses::class, true))
+        ->toBeFalse();
+});
+
+it('defaults RemoteShell and start resolution to the host executor while keeping runtime explicit', function (): void {
     app()->forgetInstance(RemoteShell::class);
     app()->forgetInstance(StartsRemoteShellProcesses::class);
 
-    expect(app(RemoteExecutor::class))
-        ->toBeInstanceOf(RemoteHostExecutor::class)
-        ->and(app(RemoteOrbitGatewayExecutor::class))
-        ->toBeInstanceOf(RemoteOrbitGatewayExecutor::class)
-        ->and(app(RemoteShell::class))
+    expect(app(RemoteShell::class))
         ->toBeInstanceOf(RemoteHostExecutor::class)
         ->and(app(StartsRemoteShellProcesses::class))
-        ->toBeInstanceOf(RemoteHostExecutor::class);
+        ->toBeInstanceOf(RemoteHostExecutor::class)
+        ->and(app(RemoteOrbitGatewayExecutor::class))
+        ->toBeInstanceOf(RemoteOrbitGatewayExecutor::class);
 });
 
 /**

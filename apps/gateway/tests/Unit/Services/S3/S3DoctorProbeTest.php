@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
@@ -12,10 +13,8 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\S3\S3DoctorProbe;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
@@ -105,7 +104,7 @@ function s3ProbeExecutor(S3DoctorProbeTestTransport $transport): RemoteLocalExec
     );
 }
 
-final class S3DoctorProbeTestTransport implements RemoteExecutor
+final class S3DoctorProbeTestTransport implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -132,12 +131,6 @@ final class S3DoctorProbeTestTransport implements RemoteExecutor
         }
 
         return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
-
-    #[Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new \RuntimeException('S3 doctor probe test transport does not start processes.');
     }
 }
 

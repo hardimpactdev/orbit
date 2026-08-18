@@ -50,7 +50,6 @@ use App\Services\Processes\SystemProcessStreamClock;
 use App\Services\Processes\UsleepProcessStreamSleeper;
 use App\Services\RemoteShell\GatewayLocalCommandDispatcher;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteExecutorOutputRedactor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -172,7 +171,6 @@ class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
-        $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
         $this->app->bind(RunsInternalCommands::class, RemoteLocalExecutor::class);

@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Fakes;
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class RemoteExecutorBackedInternalExecutor implements RunsInternalCommands
 {
     public function __construct(
-        private RemoteExecutor $executor,
+        private RemoteShell $executor,
         private LocalExecutorCommandBuilder $commands = new LocalExecutorCommandBuilder,
     ) {}
 

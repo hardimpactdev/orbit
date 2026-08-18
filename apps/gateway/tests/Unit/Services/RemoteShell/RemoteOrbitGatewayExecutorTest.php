@@ -8,6 +8,7 @@ use App\Services\RemoteShell\RemoteOrbitGatewayExecutor;
 use App\Services\Runtime\OrbitGatewayContainer;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
@@ -37,6 +38,29 @@ it('targets the active Swarm gateway task name from the runtime environment', fu
             ? putenv('ORBIT_GATEWAY_CONTAINER')
             : putenv("ORBIT_GATEWAY_CONTAINER={$previous}");
     }
+});
+
+it('starts gateway shell processes with the same docker exec composition surface', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake();
+
+    $process = app(RemoteOrbitGatewayExecutor::class)->start(
+        remoteRuntimeExecutorNode(),
+        'tail -f storage/logs/laravel.log',
+        [
+            'timeout' => 90,
+            'input' => 'start-input',
+        ],
+    );
+
+    expect($process)
+        ->toBeInstanceOf(FakeInvokedProcess::class)
+        ->and($process->command())
+        ->toContain('docker exec -i orbit-gateway tail -f storage/logs/laravel.log');
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        return $process->timeout === 90 && $process->input === 'start-input';
+    });
 });
 
 it('wraps plain commands in docker exec on orbit-gateway', function (): void {

@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Fakes;
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteExecutor;
-use Illuminate\Contracts\Process\InvokedProcess;
-use RuntimeException;
 
-final class ProvisioningAgentInstallerRemoteExecutor implements RemoteExecutor
+final class ProvisioningAgentInstallerRemoteExecutor implements RemoteShell
 {
     public ?RemoteShellResult $result = null;
 
@@ -27,13 +25,5 @@ final class ProvisioningAgentInstallerRemoteExecutor implements RemoteExecutor
         $this->runs[] = compact('node', 'script', 'options');
 
         return $this->result ?? new RemoteShellResult(exitCode: 0, stdout: 'agent-ready', stderr: '', durationMs: 1);
-    }
-
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('Not implemented for this test.');
     }
 }

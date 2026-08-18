@@ -47,7 +47,6 @@ use App\Services\Processes\NodeProcessResolver;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -5417,7 +5416,7 @@ function doctorRunnerLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecuto
     );
 }
 
-final readonly class DoctorReportRunnerRemoteExecutor implements RemoteExecutor
+final readonly class DoctorReportRunnerRemoteExecutor implements RemoteShell
 {
     public function __construct(
         private RemoteShell $remoteShell,
@@ -5464,11 +5463,6 @@ final readonly class DoctorReportRunnerRemoteExecutor implements RemoteExecutor
             stderr: $result->stderr,
             durationMs: $result->durationMs,
         );
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('DoctorReportRunnerRemoteExecutor does not support start().');
     }
 }
 

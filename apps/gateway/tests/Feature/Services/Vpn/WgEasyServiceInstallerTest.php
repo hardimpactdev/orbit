@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -10,12 +11,10 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use App\Services\Vpn\WgEasyStateInstallerFailed;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -904,7 +903,7 @@ function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $tr
     );
 }
 
-final class WgEasyServiceInstallerStateTransport implements RemoteExecutor
+final class WgEasyServiceInstallerStateTransport implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -933,14 +932,5 @@ final class WgEasyServiceInstallerStateTransport implements RemoteExecutor
         }
 
         return $this->result;
-    }
-
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    #[Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('The recording transport does not start processes.');
     }
 }

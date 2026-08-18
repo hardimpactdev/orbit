@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
@@ -9,10 +10,8 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorktreeWorkspaceDriver;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
@@ -96,7 +95,7 @@ function worktreeWorkspaceDriverExecutor(WorktreeWorkspaceDriverTestTransport $t
     return new RemoteExecutorBackedInternalExecutor($transport);
 }
 
-final class WorktreeWorkspaceDriverTestTransport implements RemoteExecutor
+final class WorktreeWorkspaceDriverTestTransport implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -118,11 +117,5 @@ final class WorktreeWorkspaceDriverTestTransport implements RemoteExecutor
         ];
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
-
-    #[Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('Worktree workspace driver test transport does not start processes.');
     }
 }

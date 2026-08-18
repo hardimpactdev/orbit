@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
@@ -14,10 +15,8 @@ use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\LocalExecutorCommandComposer;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Process\PendingProcess;
@@ -1210,43 +1209,6 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->not->toContain('gateway-secret');
     });
 
-    it('rejects long-running local executor dispatch through start before minting a token', function (): void {
-        $transport = new RemoteLocalExecutorRecordingTransport(
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        );
-        $executor = remoteLocalExecutor($transport, remoteLocalExecutorTokenFactory(
-            clock: static fn (): int => throw new RuntimeException('Operation token mint should not run.'),
-        ));
-
-        expect(fn (): InvokedProcess => $executor->start(
-            node: remoteLocalExecutorNode(),
-            script: 'internal:executor:verify',
-            options: [],
-        ))
-            ->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
-
-        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
-    });
-
-    it('rejects long-running local executor dispatch through startInternal before minting a token', function (): void {
-        $transport = new RemoteLocalExecutorRecordingTransport(
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        );
-        $executor = remoteLocalExecutor($transport, remoteLocalExecutorTokenFactory(
-            clock: static fn (): int => throw new RuntimeException('Operation token mint should not run.'),
-        ));
-
-        expect(fn (): InvokedProcess => $executor->startInternal(
-            node: remoteLocalExecutorNode(),
-            commandName: 'internal:executor:verify',
-            arguments: [],
-            commandOptions: [],
-        ))
-            ->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
-
-        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
-    });
-
     it('surfaces builder failures without dispatching to transport', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -2213,11 +2175,6 @@ function remoteLocalExecutorEnvironment(): array
     ];
 }
 
-function remoteLocalExecutorStartUnsupportedMessage(): string
-{
-    return 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See apps/docs/content/execution-lanes.md.';
-}
-
 /**
  * @param  (Closure(): int)|null  $clock
  */
@@ -2500,7 +2457,7 @@ function remote_local_executor_process_stream_frame(int $type, string $payload):
     return pack('CCnN', $type, 0, 0, strlen($payload)).$payload;
 }
 
-final class RemoteLocalExecutorRecordingTransport implements RemoteExecutor
+final class RemoteLocalExecutorRecordingTransport implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -2529,14 +2486,5 @@ final class RemoteLocalExecutorRecordingTransport implements RemoteExecutor
         }
 
         return $this->result;
-    }
-
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    #[Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('The recording transport does not start processes.');
     }
 }
