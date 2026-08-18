@@ -650,7 +650,14 @@ either an HTTPS image archive with its SHA-256 or a digest-pinned image. The
 target verifies and loads the archive without registry credentials or pulls the
 digest-pinned image, verifies the self-contained label, and only then updates
 the local `orbit-reverb:current` runtime alias. Mutable websocket image
-references are rejected. If the manifest endpoint is unreachable, convergence
+references are rejected.
+
+A later container apply compares a running container's image id to that
+alias. A newer alias recreates the container. A matching alias is left
+unchanged. An uninspectable alias leaves the container in place and reports
+that current-image verification was skipped.
+
+If the manifest endpoint is unreachable, convergence
 continues with existing local alias inspection and the development
 source-checkout fallback. Source sync to `/opt/orbit/websocket/current` and host
 Composer install remain a development source-checkout fallback for
