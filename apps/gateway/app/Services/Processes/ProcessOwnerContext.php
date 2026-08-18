@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Instance;
@@ -40,6 +41,12 @@ final readonly class ProcessOwnerContext
             );
         }
 
+        self::assertNodeMatchesInstancePlacement(
+            $node,
+            $instance,
+            'An app-owned process context requires the instance placement node.',
+        );
+
         return new self(
             node: $node,
             app: $app,
@@ -64,6 +71,12 @@ final readonly class ProcessOwnerContext
                 'A workspace-owned process context requires the workspace instance.',
             );
         }
+
+        self::assertNodeMatchesInstancePlacement(
+            $node,
+            $instance,
+            'A workspace-owned process context requires the instance placement node.',
+        );
 
         return new self(
             node: $node,
@@ -121,6 +134,30 @@ final readonly class ProcessOwnerContext
         }
 
         throw new InvalidArgumentException('Process owner is not lifecycle-addressable.');
+    }
+
+    private static function assertNodeMatchesInstancePlacement(
+        Node $node,
+        Instance $instance,
+        string $message,
+    ): void {
+        $config = $instance->driver_config;
+
+        if (! $config instanceof OrbitInstanceDriverConfigData) {
+            return;
+        }
+
+        if ($config->node_id !== null) {
+            if ((int) $config->node_id !== (int) $node->id) {
+                throw new InvalidArgumentException($message);
+            }
+
+            return;
+        }
+
+        if (is_string($config->node) && $config->node !== '' && $config->node !== $node->name) {
+            throw new InvalidArgumentException($message);
+        }
     }
 
     /**

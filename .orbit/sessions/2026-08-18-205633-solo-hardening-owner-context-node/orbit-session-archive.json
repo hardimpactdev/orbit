@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:56:33+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-owner-context-node/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-205633-solo-hardening-owner-context-node",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-owner-context-node-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T185554Z-e2e2b3f053ed.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-owner-context-node-retained-incus-runtime.txt": "403b79f507a506b54595ca023971b7f3213c894ce1ecb568d28d6996bc71ae20",
+        "loop.md": "c8897416fdafb10169edf4b72ea986ddf92744ec8a0900afc78c341d79039a22",
+        "quality-gates/quality-check-2026-08-18T185554Z-e2e2b3f053ed.json": "871166cb06337280dfc333f9fb28596342e6be8c79a86ce6a368ffbd9a9c5688"
+    },
+    "slug": "solo-hardening-owner-context-node",
+    "requested_slug": "solo-hardening-owner-context-node",
+    "compatible_slugs": [
+        "solo-hardening-owner-context-node"
+    ],
+    "branch": "solo-hardening-owner-context-node",
+    "candidate_commit": "a5e3ed7ad6bf12f82029e30d2d3f62cbc1f614e8",
+    "accepted_feature_tip": "a5e3ed7ad6bf12f82029e30d2d3f62cbc1f614e8",
+    "accepted_main_tip": "23651eb35366a46438d8b21eeb558c57a8951cc8",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

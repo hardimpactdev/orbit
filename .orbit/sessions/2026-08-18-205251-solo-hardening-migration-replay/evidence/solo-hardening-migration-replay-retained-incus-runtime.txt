@@ -1,0 +1,16 @@
+Todo: Solo #213 (orchestrated hardening wave)
+Candidate: 47ec903d7caf7af679bb72c500239c8eb2f184c5
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-e9c490 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-e9c490-gateway
+move_app_bindings migration SHA-256 (local == synced): fe8f8ba15677c922e4ebf408bf80bcac6b5006b7f4f4390a7af4d6036d36af10
+
+Method: acquire retained topology dev-e9c490 from the implementation worktree (the overlay's checkout.migrate replayed the full migration chain including the guarded and frozen migrations against the retained gateway database); verify synced source hash; run the replay-safety, bindings, shadow-columns, and proxy-ownership migration suites inside the retained gateway instance as the orbit user.
+
+Observed:
+  Tests:    79 passed (294 assertions)
+  Duration: 8.23s
+
+Result: passed

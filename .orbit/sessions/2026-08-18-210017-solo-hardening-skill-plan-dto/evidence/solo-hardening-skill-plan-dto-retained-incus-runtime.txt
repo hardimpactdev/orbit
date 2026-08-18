@@ -1,0 +1,16 @@
+Todo: Solo #216 (orchestrated hardening wave)
+Candidate: 7a67e768be68711ec05dae6b646fedb22bc754e2
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-ebcbbb (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-ebcbbb-operator
+SkillTargetResolution.php SHA-256 (local == synced): ec070e8170efb82ffa4d12988b9ef8673422fb6c061a8fb7b3b066ea23375ac1
+
+Method: acquire retained topology dev-ebcbbb from the implementation worktree; verify synced source hash; run the SkillInstall suites inside the retained operator instance as the orbit user.
+
+Observed:
+  Tests:    25 passed (104 assertions)
+  Duration: 2.41s
+
+Result: passed

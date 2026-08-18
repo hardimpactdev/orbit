@@ -11,29 +11,6 @@ use App\Services\Skill\SkillTargetResolver;
 use App\Services\Updates\CheckoutPathResolver;
 use Illuminate\Support\Facades\File;
 
-final readonly class CountingSkillTargetResolver extends SkillTargetResolver
-{
-    /**
-     * @param  object{resolveCalls: int}  $counter
-     */
-    public function __construct(
-        public object $counter,
-        ?string $homeOverride = null,
-    ) {
-        parent::__construct($homeOverride);
-    }
-
-    /**
-     * @return array{provider: ?string, target: string}|SkillInstallFailure
-     */
-    public function resolve(?string $providerSlug, ?string $path): array|SkillInstallFailure
-    {
-        $this->counter->resolveCalls++;
-
-        return parent::resolve($providerSlug, $path);
-    }
-}
-
 beforeEach(function (): void {
     $this->tempRoot = sys_get_temp_dir().'/orbit-skill-install-actions-'.bin2hex(random_bytes(4));
     $this->tempHome = $this->tempRoot.'/home';
@@ -43,11 +20,7 @@ beforeEach(function (): void {
     File::ensureDirectoryExists($this->sourceSkillPath);
     file_put_contents(filename: $this->sourceSkillPath.'/SKILL.md', data: "# Orbit skill\n");
 
-    $this->resolveCounter = (object) ['resolveCalls' => 0];
-    $this->resolver = new CountingSkillTargetResolver(
-        counter: $this->resolveCounter,
-        homeOverride: $this->tempHome,
-    );
+    $this->resolver = new SkillTargetResolver(homeOverride: $this->tempHome);
     $this->actions = new SkillInstallActions(
         checkoutPaths: new CheckoutPathResolver,
         targetResolver: $this->resolver,
@@ -75,14 +48,21 @@ describe('SkillInstallActions plan and install', function (): void {
 
         expect($plan)->toBeInstanceOf(SkillInstallPlan::class);
 
-        $result = $this->actions->install($plan);
+        $otherHome = $this->tempRoot.'/other-home';
+        $otherActions = new SkillInstallActions(
+            checkoutPaths: new CheckoutPathResolver,
+            targetResolver: new SkillTargetResolver(homeOverride: $otherHome),
+            sourceOverride: $this->sourceSkillPath,
+        );
+
+        $result = $otherActions->install($plan);
 
         expect($result)
             ->toBeInstanceOf(SkillInstallResult::class)
-            ->and($this->resolveCounter->resolveCalls)
-            ->toBe(1)
             ->and(is_file($plan->target.'/SKILL.md'))
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and(is_dir($otherHome))
+            ->toBeFalse();
     });
 
     it('fails with missing_source when the source disappears after plan()', function (): void {
@@ -181,8 +161,6 @@ describe('SkillInstallActions plan and install', function (): void {
             ->and($plan->force)
             ->toBeFalse()
             ->and(file_get_contents($target.'/SKILL.md'))
-            ->toBe("# Orbit skill\n")
-            ->and($this->resolveCounter->resolveCalls)
-            ->toBe(1);
+            ->toBe("# Orbit skill\n");
     });
 });

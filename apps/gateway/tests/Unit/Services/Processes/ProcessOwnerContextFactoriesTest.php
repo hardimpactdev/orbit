@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -151,5 +152,47 @@ it('rejects a workspace-owned context when the instance does not belong to the w
         ->toThrow(
             InvalidArgumentException::class,
             'A workspace-owned process context requires the workspace instance.',
+        );
+});
+
+it('rejects an instance-owned context when the node is not the instance placement node', function (): void {
+    $placementNode = Node::factory()->create(['name' => 'app-host-1']);
+    $otherNode = Node::factory()->create(['name' => 'app-host-2']);
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $placementNode->id,
+            node: $placementNode->name,
+        ),
+    ]);
+
+    expect(fn (): ProcessOwnerContext => ProcessOwnerContext::forInstance($otherNode, $instance))
+        ->toThrow(
+            InvalidArgumentException::class,
+            'An app-owned process context requires the instance placement node.',
+        );
+});
+
+it('rejects a workspace-owned context when the node is not the instance placement node', function (): void {
+    $placementNode = Node::factory()->create(['name' => 'app-host-1']);
+    $otherNode = Node::factory()->create(['name' => 'app-host-2']);
+    $app = App::factory()->create(['name' => 'docs']);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $placementNode->id,
+            node: $placementNode->name,
+        ),
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'instance_id' => $instance->id,
+        'name' => 'feature-docs',
+    ]);
+
+    expect(fn (): ProcessOwnerContext => ProcessOwnerContext::forWorkspace($otherNode, $workspace, $instance))
+        ->toThrow(
+            InvalidArgumentException::class,
+            'A workspace-owned process context requires the instance placement node.',
         );
 });

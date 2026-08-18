@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Instance;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -102,4 +103,35 @@ it('orders workspace steps independently per app instance', function (): void {
         ->toBe(['npm install'])
         ->and($nmbpStep->instance_id)
         ->toBe($nmbp->id);
+});
+
+it('inserts workspace steps against the current schema without an app_id compat branch', function (): void {
+    expect(file_get_contents(app_path('Actions/Workspaces/AddWorkspaceStep.php')))
+        ->not->toContain('Schema::hasColumn')->and(file_get_contents(database_path(
+            'factories/WorkspaceStepFactory.php',
+        )))
+        ->not->toContain('Schema::hasColumn')->and(Schema::hasColumn('workspace_steps', 'app_id'))->toBeFalse();
+
+    $app = App::factory()->create();
+    $instance = Instance::factory()->create(['app_id' => $app->id]);
+    $step = app(AddWorkspaceStep::class)->handle(
+        appId: $app->id,
+        phase: WorkspaceLifecyclePhase::Setup,
+        instanceId: $instance->id,
+        command: 'composer install',
+    );
+    $factoryStep = WorkspaceStep::factory()->create([
+        'app_id' => $app->id,
+        'instance_id' => $instance->id,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'command' => 'npm install',
+    ]);
+
+    expect($step->exists)
+        ->toBeTrue()
+        ->and($step->instance_id)
+        ->toBe($instance->id)
+        ->and($step->getAttributes())
+        ->not->toHaveKey('app_id')->and($factoryStep->exists)->toBeTrue()->and($factoryStep->getAttributes())
+        ->not->toHaveKey('app_id')->and($factoryStep->instance->app_id)->toBe($app->id);
 });

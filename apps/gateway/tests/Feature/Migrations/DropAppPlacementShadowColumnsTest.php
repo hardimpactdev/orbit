@@ -71,6 +71,32 @@ it('backfills a concrete Orbit instance for an app with no matching instance, th
     });
 });
 
+it('writes frozen empty runtime requirements when backfilling a missing instance', function (): void {
+    with_historical_placement_shadow_schema(function (): void {
+        $now = now();
+
+        DB::table('nodes')->insert(['id' => 7, 'name' => 'app-dev-1', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('apps')->insert([
+            'id' => 1,
+            'name' => 'docs',
+            'node_id' => 7,
+            'environment' => 'production',
+            'domain' => 'docs.example.test',
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'php_version' => '8.4',
+            'adopted' => true,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        drop_app_placement_shadow_columns_migration()->up();
+
+        expect((string) DB::table('instances')->where('app_id', 1)->value('runtime_requirements'))
+            ->toBe('{"php_extensions":[]}');
+    });
+});
+
 it('leaves an app untouched when a concrete Orbit instance already carries its placement', function (): void {
     with_historical_placement_shadow_schema(function (): void {
         $now = now();

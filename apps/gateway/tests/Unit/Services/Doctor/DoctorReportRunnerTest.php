@@ -210,7 +210,6 @@ function markDoctorRunnerNodeSecurityBaselineClean(Node $node): void
             'address_family' => $addressFamily,
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
     }
 }

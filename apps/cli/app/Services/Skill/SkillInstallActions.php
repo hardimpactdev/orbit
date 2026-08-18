@@ -31,11 +31,11 @@ final readonly class SkillInstallActions
         }
 
         return new SkillInstallPlan(
-            provider: $resolution['provider'],
-            target: $resolution['target'],
+            provider: $resolution->provider,
+            target: $resolution->target,
             source: $source,
             force: $request->force,
-            targetExistsAtPlan: $this->targetExists($resolution['target']),
+            targetExistsAtPlan: $this->targetExists($resolution->target),
         );
     }
 

@@ -338,7 +338,6 @@ describe('FirewallRuleIntent', function (): void {
             'node_id' => $node->id,
             'name' => 'orbit-public-ssh-deny-v4',
             'owner' => 'node-security',
-            'protected' => true,
         ]);
 
         app(FirewallRuleIntent::class)->remove('orbit-public-ssh-deny-v4', 'app-1');

@@ -71,6 +71,63 @@ it('stops before schema mutation when a legacy binding app has multiple instance
     });
 });
 
+it('tells operators to delete orphaned bindings whose app is gone', function (): void {
+    withHistoricalBindingOwnershipSchema(function (): void {
+        Schema::disableForeignKeyConstraints();
+        DB::table('app_websocket_bindings')->insert(['id' => 1, 'app_id' => 99]);
+        DB::table('app_analytics_bindings')->insert(['id' => 1, 'app_id' => 99]);
+        Schema::enableForeignKeyConstraints();
+
+        try {
+            bindingInstanceOwnershipMigration()->up();
+            throw new RuntimeException('Expected orphaned binding migration to abort.');
+        } catch (RuntimeException $exception) {
+            expect($exception->getMessage())
+                ->toContain('Orphaned bindings whose apps are gone must be deleted')
+                ->toContain('app_websocket_bindings#1 (app_id=99, instances=0)')
+                ->toContain('Delete each orphaned binding, then rerun migrations.')
+                ->not->toContain('Assign each legacy binding to one concrete instance');
+        }
+
+        expect(Schema::hasColumn('app_websocket_bindings', 'instance_id'))->toBeFalse();
+    });
+});
+
+it('refuses rollback instead of silently desyncing the already-migrated binding schema', function (): void {
+    withHistoricalBindingOwnershipSchema(function (): void {
+        insertHistoricalBindingApp(instanceCount: 1);
+        insertHistoricalBindings();
+        bindingInstanceOwnershipMigration()->up();
+
+        expect(fn (): mixed => bindingInstanceOwnershipMigration()->down())
+            ->toThrow(RuntimeException::class, 'irreversible')
+            ->and(Schema::hasColumn('app_websocket_bindings', 'app_id'))
+            ->toBeFalse()
+            ->and(Schema::hasColumn('app_websocket_bindings', 'instance_id'))
+            ->toBeTrue()
+            ->and(DB::table('app_websocket_bindings')->value('instance_id'))
+            ->toBe(1);
+    });
+});
+
+it('no-ops when binding tables already use instance_id without app_id', function (): void {
+    withHistoricalBindingOwnershipSchema(function (): void {
+        insertHistoricalBindingApp(instanceCount: 1);
+        insertHistoricalBindings();
+        bindingInstanceOwnershipMigration()->up();
+
+        expect(fn (): mixed => bindingInstanceOwnershipMigration()->up())
+            ->not
+            ->toThrow(Throwable::class)
+            ->and(Schema::hasColumn('app_websocket_bindings', 'app_id'))
+            ->toBeFalse()
+            ->and(DB::table('app_websocket_bindings')->value('instance_id'))
+            ->toBe(1)
+            ->and(DB::table('app_analytics_bindings')->value('instance_id'))
+            ->toBe(1);
+    });
+});
+
 function withHistoricalBindingOwnershipSchema(Closure $callback): void
 {
     $originalConnection = DB::getDefaultConnection();

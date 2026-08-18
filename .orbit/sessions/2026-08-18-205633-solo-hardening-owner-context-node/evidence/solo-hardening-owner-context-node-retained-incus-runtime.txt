@@ -1,0 +1,16 @@
+Todo: Solo #215 (orchestrated hardening wave)
+Candidate: a5e3ed7ad6bf12f82029e30d2d3f62cbc1f614e8
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-40cae5 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-40cae5-gateway
+ProcessOwnerContext.php SHA-256 (local == synced): 423982cff0603d2dfd7c87794866dff6f6f2fc2c9e801e6285d634a6629fa4db
+
+Method: acquire retained topology dev-40cae5 from the implementation worktree; verify synced source hash; run the ProcessOwnerContext factory and context suites inside the retained gateway instance as the orbit user.
+
+Observed:
+  Tests:    17 passed (58 assertions)
+  Duration: 3.39s
+
+Result: passed
