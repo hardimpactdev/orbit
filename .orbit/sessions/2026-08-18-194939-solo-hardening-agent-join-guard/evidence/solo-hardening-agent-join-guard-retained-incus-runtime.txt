@@ -1,0 +1,37 @@
+Todo: Solo #210 (orchestrated hardening wave)
+Candidate: c2b434dadb3597e8ab59ff50bf688d2a5851edf2
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-b8ea8e
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-b8ea8e-agent
+Candidate source: /tmp/orbit-e2e-sources/solo-hardening-agent-join-guard-incus-fd86bcb6eb27/retained/dev-b8ea8e
+Candidate source http.rs SHA-256: d45688cdfa198621a7660b431a39cdb0cdcf7836aeb2b6e0a56064a9bcfaa656
+Local candidate http.rs SHA-256: d45688cdfa198621a7660b431a39cdb0cdcf7836aeb2b6e0a56064a9bcfaa656
+Compiled test binary: apps/agent/target/debug/deps/orbit_agent-3a7f36ab7ffc2914
+
+Method:
+1. Acquire retained topology dev-b8ea8e (operator_gateway_agent) from the implementation worktree via e2e:dev-topology.
+2. Verify the synced candidate source hash equals the local candidate hash.
+3. Compile the Agent test binary on the retained Linux host from the candidate source overlay with cargo test --no-run.
+4. Push that binary into the retained Agent instance as /tmp/orbit-agent-tests.
+5. Run it as the orbit user from /home/orbit/orbit-run with --nocapture.
+
+Expected: The exact candidate passes the Agent lifecycle suite in the routed retained Agent environment, including the new reap-guard tests (wait-failed-with-live-child detaches stream drains, stdin writer, and buffered drains while still emitting the exit frame; reaped paths still join).
+
+Observed:
+test http::tests::buffered_drains_detach_when_child_is_still_alive ... ok
+test http::tests::buffered_drains_still_join_after_child_is_reaped ... ok
+test http::tests::dropping_stream_body_kills_and_reaps_the_child ... ok
+test http::tests::execute_binary_stream_returns_while_large_stdin_is_unread ... ok
+test http::tests::execute_binary_times_out_while_large_stdin_is_unread ... ok
+test http::tests::execute_binary_writes_request_input_to_stdin ... ok
+test http::tests::finish_stdin_detaches_writer_when_child_is_still_alive ... ok
+test http::tests::finish_stdin_still_joins_writer_after_child_is_reaped ... ok
+test http::tests::timeout_and_cancel_paths_still_join_reaped_stream_drains ... ok
+test http::tests::timeout_kills_and_reaps_the_buffered_child ... ok
+test http::tests::wait_failed_after_reap_still_joins_stream_drains ... ok
+test http::tests::wait_failed_with_live_child_emits_exit_frame_without_joining_drains ... ok
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.72s
+
+Result: passed

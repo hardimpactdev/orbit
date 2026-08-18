@@ -370,7 +370,7 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     let stdout = command.take_stdout().map(spawn_output_drain);
     let stderr = command.take_stderr().map(spawn_output_drain);
     let completion = command.wait(None);
-    let output = collect_drained_output(stdout, stderr);
+    let output = collect_drained_output_if_child_reaped(stdout, stderr, completion.child_reaped);
     let timings = CommandExecutionTimings {
         process_spawn_ms,
         process_wait_ms: completion.process_wait_ms,
@@ -520,65 +520,82 @@ fn spawn_stream_waiter(
 ) {
     thread::spawn(move || {
         let completion = command.wait(Some(&cancelled));
-        let mut exit_code = None;
-        let mut signal = None;
-        let mut agent_error_sent = false;
-
-        match completion.outcome {
-            CommandLifecycleOutcome::Exited(status) => {
-                let status_parts = exit_status_parts(status);
-                exit_code = status_parts.0;
-                signal = status_parts.1;
-
-                if let Some(error) = completion.stdin_error {
-                    let _ = sender.send(Ok(encode_agent_error_frame(
-                        "process_input_failed",
-                        error,
-                        false,
-                    )));
-                    agent_error_sent = true;
-                }
-            }
-            CommandLifecycleOutcome::TimedOut => {
-                let _ = sender.send(Ok(encode_agent_error_frame(
-                    "process_timeout",
-                    format!(
-                        "binary execution timed out after {} seconds",
-                        completion.timeout_seconds
-                    ),
-                    false,
-                )));
-                agent_error_sent = true;
-            }
-            CommandLifecycleOutcome::Cancelled => {
-                agent_error_sent = true;
-            }
-            CommandLifecycleOutcome::WaitFailed(error) => {
-                let _ = sender.send(Ok(encode_agent_error_frame(
-                    "process_wait_failed",
-                    format!("failed to wait for allowlisted binary: {error}"),
-                    false,
-                )));
-                agent_error_sent = true;
-            }
-        }
-
-        if let Some(handle) = drains.stdout {
-            let _ = handle.join();
-        }
-
-        if let Some(handle) = drains.stderr {
-            let _ = handle.join();
-        }
-
-        let _ = sender.send(Ok(encode_exit_frame(
-            if agent_error_sent { None } else { exit_code },
-            if agent_error_sent { None } else { signal },
-            completion.duration_ms,
-        )));
-
-        completed.store(true, Ordering::SeqCst);
+        finish_stream_wait(completion, sender, completed, drains);
     });
+}
+
+fn finish_stream_wait(
+    completion: CommandLifecycleCompletion,
+    sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
+    completed: Arc<AtomicBool>,
+    drains: StreamDrainHandles,
+) {
+    let mut exit_code = None;
+    let mut signal = None;
+    let mut agent_error_sent = false;
+
+    match completion.outcome {
+        CommandLifecycleOutcome::Exited(status) => {
+            let status_parts = exit_status_parts(status);
+            exit_code = status_parts.0;
+            signal = status_parts.1;
+
+            if let Some(error) = completion.stdin_error {
+                let _ = sender.send(Ok(encode_agent_error_frame(
+                    "process_input_failed",
+                    error,
+                    false,
+                )));
+                agent_error_sent = true;
+            }
+        }
+        CommandLifecycleOutcome::TimedOut => {
+            let _ = sender.send(Ok(encode_agent_error_frame(
+                "process_timeout",
+                format!(
+                    "binary execution timed out after {} seconds",
+                    completion.timeout_seconds
+                ),
+                false,
+            )));
+            agent_error_sent = true;
+        }
+        CommandLifecycleOutcome::Cancelled => {
+            agent_error_sent = true;
+        }
+        CommandLifecycleOutcome::WaitFailed(error) => {
+            let _ = sender.send(Ok(encode_agent_error_frame(
+                "process_wait_failed",
+                format!("failed to wait for allowlisted binary: {error}"),
+                false,
+            )));
+            agent_error_sent = true;
+        }
+    }
+
+    join_stream_drains_if_child_reaped(drains, completion.child_reaped);
+
+    let _ = sender.send(Ok(encode_exit_frame(
+        if agent_error_sent { None } else { exit_code },
+        if agent_error_sent { None } else { signal },
+        completion.duration_ms,
+    )));
+
+    completed.store(true, Ordering::SeqCst);
+}
+
+fn join_stream_drains_if_child_reaped(drains: StreamDrainHandles, child_reaped: bool) {
+    if !child_reaped {
+        return;
+    }
+
+    if let Some(handle) = drains.stdout {
+        let _ = handle.join();
+    }
+
+    if let Some(handle) = drains.stderr {
+        let _ = handle.join();
+    }
 }
 
 fn bounded_execution_timeout_seconds(timeout_seconds: u64) -> u64 {
@@ -717,53 +734,76 @@ impl SpawnedCommand {
 
     fn wait(mut self, cancelled: Option<&AtomicBool>) -> CommandLifecycleCompletion {
         let wait_start = Instant::now();
-        let outcome = match wait_for_child(&mut self.child, Some(self.deadline), cancelled) {
-            Ok(ChildWaitOutcome::Exited(status)) => CommandLifecycleOutcome::Exited(status),
-            Ok(ChildWaitOutcome::TimedOut) => match terminate_child(&mut self.child) {
-                Ok(_) => CommandLifecycleOutcome::TimedOut,
-                Err(error) => CommandLifecycleOutcome::WaitFailed(format!(
-                    "timed out and failed to kill and reap child: {error}"
-                )),
-            },
-            Ok(ChildWaitOutcome::Cancelled) => match terminate_child(&mut self.child) {
-                Ok(_) => CommandLifecycleOutcome::Cancelled,
-                Err(error) => CommandLifecycleOutcome::WaitFailed(format!(
-                    "was cancelled and failed to kill and reap child: {error}"
-                )),
-            },
-            Err(error) => {
-                let termination = terminate_child(&mut self.child)
-                    .map(|_| String::new())
-                    .unwrap_or_else(|termination_error| {
-                        format!("; failed to kill and reap child: {termination_error}")
-                    });
-
-                CommandLifecycleOutcome::WaitFailed(format!("{error}{termination}"))
-            }
-        };
-        let stdin_error = self.finish_stdin();
+        let (outcome, child_reaped) =
+            match wait_for_child(&mut self.child, Some(self.deadline), cancelled) {
+                Ok(ChildWaitOutcome::Exited(status)) => {
+                    (CommandLifecycleOutcome::Exited(status), true)
+                }
+                Ok(ChildWaitOutcome::TimedOut) => match terminate_child(&mut self.child) {
+                    Ok(_) => (CommandLifecycleOutcome::TimedOut, true),
+                    Err(error) => (
+                        CommandLifecycleOutcome::WaitFailed(format!(
+                            "timed out and failed to kill and reap child: {error}"
+                        )),
+                        false,
+                    ),
+                },
+                Ok(ChildWaitOutcome::Cancelled) => match terminate_child(&mut self.child) {
+                    Ok(_) => (CommandLifecycleOutcome::Cancelled, true),
+                    Err(error) => (
+                        CommandLifecycleOutcome::WaitFailed(format!(
+                            "was cancelled and failed to kill and reap child: {error}"
+                        )),
+                        false,
+                    ),
+                },
+                Err(error) => match terminate_child(&mut self.child) {
+                    Ok(_) => (CommandLifecycleOutcome::WaitFailed(error), true),
+                    Err(termination_error) => (
+                        CommandLifecycleOutcome::WaitFailed(format!(
+                            "{error}; failed to kill and reap child: {termination_error}"
+                        )),
+                        false,
+                    ),
+                },
+            };
+        let stdin_error = self.finish_stdin(child_reaped);
 
         CommandLifecycleCompletion {
             outcome,
             stdin_error,
+            child_reaped,
             timeout_seconds: self.timeout_seconds,
             process_wait_ms: elapsed_millis(wait_start),
             duration_ms: elapsed_millis(self.started_at),
         }
     }
 
-    fn finish_stdin(&mut self) -> Option<String> {
-        let writer_error = self
-            .stdin_writer
-            .take()
-            .and_then(|writer| match writer.join() {
-                Ok(Ok(())) => None,
-                Ok(Err(error)) => Some(error),
-                Err(_) => Some("failed to join binary stdin writer".to_string()),
-            });
-
-        self.stdin_error.take().or(writer_error)
+    fn finish_stdin(&mut self, child_reaped: bool) -> Option<String> {
+        finish_stdin_writer(
+            self.stdin_writer.take(),
+            self.stdin_error.take(),
+            child_reaped,
+        )
     }
+}
+
+fn finish_stdin_writer(
+    writer: Option<JoinHandle<Result<(), String>>>,
+    recorded_error: Option<String>,
+    child_reaped: bool,
+) -> Option<String> {
+    if !child_reaped {
+        return recorded_error;
+    }
+
+    let writer_error = writer.and_then(|writer| match writer.join() {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some("failed to join binary stdin writer".to_string()),
+    });
+
+    recorded_error.or(writer_error)
 }
 
 enum CommandLifecycleOutcome {
@@ -776,6 +816,7 @@ enum CommandLifecycleOutcome {
 struct CommandLifecycleCompletion {
     outcome: CommandLifecycleOutcome,
     stdin_error: Option<String>,
+    child_reaped: bool,
     timeout_seconds: u64,
     process_wait_ms: u64,
     duration_ms: u64,
@@ -895,6 +936,21 @@ where
 
         Ok(bytes)
     })
+}
+
+fn collect_drained_output_if_child_reaped(
+    stdout: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    stderr: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    child_reaped: bool,
+) -> DrainedCommandOutput {
+    if !child_reaped {
+        return DrainedCommandOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+    }
+
+    collect_drained_output(stdout, stderr)
 }
 
 fn collect_drained_output(
@@ -1761,6 +1817,286 @@ mod tests {
 
         assert_child_is_reaped(child_pid);
         let _ = std::fs::remove_file(child_pid_path);
+    }
+
+    fn wait_failed_completion(error: &str, child_reaped: bool) -> CommandLifecycleCompletion {
+        CommandLifecycleCompletion {
+            outcome: CommandLifecycleOutcome::WaitFailed(error.to_string()),
+            stdin_error: None,
+            child_reaped,
+            timeout_seconds: 1,
+            process_wait_ms: 0,
+            duration_ms: 10,
+        }
+    }
+
+    fn collect_unbounded_stream_frames(
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<Result<Bytes, Infallible>>,
+    ) -> Vec<(u8, Vec<u8>)> {
+        let mut bytes = Vec::new();
+
+        while let Ok(Ok(frame)) = receiver.try_recv() {
+            bytes.extend_from_slice(&frame);
+        }
+
+        decode_process_stream_frames(&bytes)
+    }
+
+    #[test]
+    fn wait_failed_with_live_child_emits_exit_frame_without_joining_drains() {
+        let (block_tx, block_rx) = mpsc::channel::<()>();
+        let blocked = thread::spawn(move || {
+            let _ = block_rx.recv();
+        });
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_for_thread = completed.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            finish_stream_wait(
+                wait_failed_completion("kill failed", false),
+                sender,
+                completed_for_thread,
+                StreamDrainHandles {
+                    stdout: Some(blocked),
+                    stderr: None,
+                },
+            );
+            let _ = done_tx.send(());
+        });
+
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("WaitFailed with a live child must emit without joining blocked drains");
+        waiter.join().expect("finish_stream_wait thread");
+
+        assert!(completed.load(Ordering::SeqCst));
+        let frames = collect_unbounded_stream_frames(receiver);
+        assert!(
+            frames
+                .iter()
+                .any(|(frame_type, _)| *frame_type == FRAME_TYPE_AGENT_ERROR),
+            "expected process_wait_failed frame, got {frames:?}"
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|(frame_type, _)| *frame_type == FRAME_TYPE_EXIT),
+            "expected exit frame after WaitFailed, got {frames:?}"
+        );
+
+        drop(block_tx);
+    }
+
+    #[test]
+    fn wait_failed_after_reap_still_joins_stream_drains() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let drain = thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+        });
+        started_rx.recv().expect("drain started");
+
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_for_thread = completed.clone();
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            finish_stream_wait(
+                wait_failed_completion("wait failed", true),
+                sender,
+                completed_for_thread,
+                StreamDrainHandles {
+                    stdout: Some(drain),
+                    stderr: None,
+                },
+            );
+            let _ = done_tx.send(());
+        });
+
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "reaped WaitFailed must join drains before emitting the exit frame"
+        );
+        release_tx.send(()).expect("release drain");
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaped WaitFailed must finish after drains join");
+        waiter.join().expect("finish_stream_wait thread");
+
+        assert!(completed.load(Ordering::SeqCst));
+        let frames = collect_unbounded_stream_frames(receiver);
+        assert!(frames
+            .iter()
+            .any(|(frame_type, _)| *frame_type == FRAME_TYPE_EXIT));
+    }
+
+    #[test]
+    fn timeout_and_cancel_paths_still_join_reaped_stream_drains() {
+        for outcome in [
+            CommandLifecycleOutcome::TimedOut,
+            CommandLifecycleOutcome::Cancelled,
+        ] {
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel::<()>();
+            let drain = thread::spawn(move || {
+                let _ = started_tx.send(());
+                let _ = release_rx.recv();
+            });
+            started_rx.recv().expect("drain started");
+
+            let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+            let completed = Arc::new(AtomicBool::new(false));
+            let completed_for_thread = completed.clone();
+            let (done_tx, done_rx) = mpsc::channel();
+
+            let waiter = thread::spawn(move || {
+                finish_stream_wait(
+                    CommandLifecycleCompletion {
+                        outcome,
+                        stdin_error: None,
+                        child_reaped: true,
+                        timeout_seconds: 1,
+                        process_wait_ms: 0,
+                        duration_ms: 10,
+                    },
+                    sender,
+                    completed_for_thread,
+                    StreamDrainHandles {
+                        stdout: None,
+                        stderr: Some(drain),
+                    },
+                );
+                let _ = done_tx.send(());
+            });
+
+            assert!(
+                done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+                "kill-succeeded timeout/cancel paths must still join drains"
+            );
+            release_tx.send(()).expect("release drain");
+            done_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("kill-succeeded path must finish after drains join");
+            waiter.join().expect("finish_stream_wait thread");
+            assert!(completed.load(Ordering::SeqCst));
+        }
+    }
+
+    #[test]
+    fn finish_stdin_detaches_writer_when_child_is_still_alive() {
+        let (block_tx, block_rx) = mpsc::channel::<()>();
+        let blocked = thread::spawn(move || {
+            let _ = block_rx.recv();
+            Ok(())
+        });
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            let error = finish_stdin_writer(
+                Some(blocked),
+                Some("child stdin was unavailable".to_string()),
+                false,
+            );
+            let _ = done_tx.send(error);
+        });
+
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("unreaped finish_stdin must not join a blocked stdin writer");
+        waiter.join().expect("finish_stdin_writer thread");
+
+        assert_eq!(error.as_deref(), Some("child stdin was unavailable"));
+        drop(block_tx);
+    }
+
+    #[test]
+    fn finish_stdin_still_joins_writer_after_child_is_reaped() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let writer = thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            Err("failed to write binary stdin: broken pipe".to_string())
+        });
+        started_rx.recv().expect("stdin writer started");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            let error = finish_stdin_writer(Some(writer), None, true);
+            let _ = done_tx.send(error);
+        });
+
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "reaped finish_stdin must join the stdin writer"
+        );
+        release_tx.send(()).expect("release stdin writer");
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaped finish_stdin must finish after the writer joins");
+        waiter.join().expect("finish_stdin_writer thread");
+
+        assert_eq!(
+            error.as_deref(),
+            Some("failed to write binary stdin: broken pipe")
+        );
+    }
+
+    #[test]
+    fn buffered_drains_detach_when_child_is_still_alive() {
+        let (block_tx, block_rx) = mpsc::channel::<()>();
+        let blocked = thread::spawn(move || {
+            let _ = block_rx.recv();
+            Ok(b"unread".to_vec())
+        });
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            let output = collect_drained_output_if_child_reaped(Some(blocked), None, false);
+            let _ = done_tx.send(output.stdout);
+        });
+
+        let stdout = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("unreaped buffered collect must not join blocked drains");
+        waiter.join().expect("collect_drained_output thread");
+
+        assert!(stdout.is_empty());
+        drop(block_tx);
+    }
+
+    #[test]
+    fn buffered_drains_still_join_after_child_is_reaped() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let drain = thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            Ok(b"drained".to_vec())
+        });
+        started_rx.recv().expect("drain started");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            let output = collect_drained_output_if_child_reaped(Some(drain), None, true);
+            let _ = done_tx.send(output.stdout);
+        });
+
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "reaped buffered collect must join drains"
+        );
+        release_tx.send(()).expect("release drain");
+        let stdout = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaped buffered collect must finish after drains join");
+        waiter.join().expect("collect_drained_output thread");
+
+        assert_eq!(stdout, b"drained");
     }
 
     #[test]
