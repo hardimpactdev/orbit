@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Carbon\CarbonImmutable;
@@ -191,7 +192,16 @@ final readonly class ScheduleDispatcher
 
     private function fromSuccessEnvelope(RemoteShellResult $result): RemoteShellResult
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: $result->stdout,
+                stderr: 'Schedule run response is invalid.',
+                durationMs: $result->durationMs,
+            );
+        }
 
         if (
             ! is_int($data['exit_code'] ?? null)

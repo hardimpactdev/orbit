@@ -42,6 +42,8 @@ class RemoteNodeDoctor
             return null;
         }
 
+        // Lenient parse is safe: this post-update doctor count is display-only.
+        // Unknown (null) does not remediate or rewrite node state.
         try {
             $data = RemoteShellSuccessData::fromJsonEnvelope($result);
         } catch (JsonException) {

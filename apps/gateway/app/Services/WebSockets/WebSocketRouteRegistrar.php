@@ -16,6 +16,7 @@ use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Proxy\NonInstanceProxyRouteOwnership;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\PublicBindingProxyRouteDefinition;
 use App\Services\Proxy\PublicBindingProxyRouteOwnership;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Support\Facades\DB;
@@ -281,16 +282,11 @@ class WebSocketRouteRegistrar
 
     private function publicRouteIntent(Instance $instance, Node $ingress, Node $router, string $host): ProxyRoute
     {
+        $definition = PublicBindingProxyRouteDefinition::websocket();
         $config = $this->publicRouteConfig($instance, $ingress, $router, $host);
 
         return new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'workspace_id' => null,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-websocket',
-            'kind' => 'proxy',
+            ...$definition->attributes($instance, $host, $ingress->id),
             'config' => $config,
             'source_hash' => $this->publicSourceHash($instance, $ingress, $host, $config),
         ]);
@@ -301,39 +297,18 @@ class WebSocketRouteRegistrar
      */
     private function publicRouteConfig(Instance $instance, Node $ingress, Node $router, string $host): array
     {
-        $certificatePaths = $this->certificatePaths($host);
+        $definition = PublicBindingProxyRouteDefinition::websocket();
         $webSocketUpstreams = array_map($this->upstream(...), $this->webSocketBackends());
-        $config = [
-            'placement' => 'ingress',
-            'ingress_node_id' => $ingress->id,
-            'protocol' => 'websocket',
-            'target' => [
-                'type' => 'websocket',
-                'value' => self::PublicServiceTarget,
-            ],
-            'upstream' => self::PublicServiceTarget,
-            'router_upstream' => [
-                'node_id' => $router->id,
-                'node' => $router->name,
-                'url' => $this->ingressResolver->routerUrl($router),
-            ],
-            'router_backend_pool' => [
-                ...$this->backendPool($webSocketUpstreams),
-            ],
-            'router_backend_tls' => $this->trustedBackendTls(),
-            'tls' => [
-                'cert_path' => $certificatePaths['cert'],
-                'key_path' => $certificatePaths['key'],
-            ],
-        ];
+        $config = $definition->config(
+            $ingress,
+            $router,
+            $host,
+            $this->ingressResolver->routerUrl($router),
+            $this->backendPool($webSocketUpstreams),
+        );
 
         $routerContent = $this->proxyRouteRenderer->renderRouterRoute(new ProxyRoute([
-            'node_id' => $router->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-websocket',
-            'kind' => 'proxy',
+            ...$definition->attributes($instance, $host, $router->id),
             'config' => $config,
         ]));
 
@@ -352,12 +327,7 @@ class WebSocketRouteRegistrar
     private function publicSourceHash(Instance $instance, Node $ingress, string $host, array $config): string
     {
         return $this->proxyRouteRenderer->sourceHash(new ProxyRoute([
-            'node_id' => $ingress->id,
-            'domain' => $host,
-            'app_id' => $instance->app_id,
-            'instance_id' => $instance->id,
-            'owner_type' => 'app-websocket',
-            'kind' => 'proxy',
+            ...PublicBindingProxyRouteDefinition::websocket()->attributes($instance, $host, $ingress->id),
             'config' => $config,
         ]));
     }

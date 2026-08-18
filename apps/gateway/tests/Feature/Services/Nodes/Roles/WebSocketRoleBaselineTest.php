@@ -41,10 +41,12 @@ beforeEach(function (): void {
     app()->instance(RemoteShell::class, $this->webSocketBaselineShell);
     app()->instance(ReleaseManifestResolver::class, new WebSocketRoleBaselineTestManifestResolver([]));
     $this->webSocketBaselineSelfContainedImage = false;
+    $this->webSocketBaselineImageProbeStdout = null;
     Http::preventStrayRequests();
     Http::fake(fn (Request $request) => webSocketBaselineAgentResponse(
         request: $request,
         selfContainedImage: $this->webSocketBaselineSelfContainedImage,
+        imageProbeStdout: $this->webSocketBaselineImageProbeStdout,
     ));
 
     $this->webSocketBaselineIssued = new ArrayObject;
@@ -223,6 +225,29 @@ it('starts an existing matching websocket runtime container when it is stopped',
     ));
 });
 
+it('does not install websocket source after an ambiguous image probe envelope', function (string $stdout): void {
+    $node = webSocketBaselineNode();
+    $assignment = webSocketBaselineAssignment($node, valkeyNode: webSocketBaselineValkeyNode());
+    $this->webSocketBaselineImageProbeStdout = $stdout;
+
+    expect(fn () => app(NodeRoleBaselineConverger::class)->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'Could not determine whether the websocket runtime image is self-contained');
+
+    Http::assertNotSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'source:install',
+    ));
+    Http::assertNotSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'container:apply',
+    ));
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
+
 it('removes websocket runtime containers through the role converger', function (): void {
     $node = webSocketBaselineNode();
     $assignment = webSocketBaselineAssignment($node, NodeRoleStatus::Active, webSocketBaselineValkeyNode());
@@ -288,21 +313,52 @@ function webSocketBaselineNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function webSocketBaselineAgentResponse(Request $request, bool $selfContainedImage): mixed
-{
+function webSocketBaselineAgentResponse(
+    Request $request,
+    bool $selfContainedImage,
+    ?string $imageProbeStdout = null,
+): mixed {
     $argv = $request['argv'] ?? null;
     $command = is_array($argv) ? $argv[0] ?? null : null;
 
     return match ($command) {
         'internal:site-certificate:install' => webSocketBaselineCertificateAgentResponse(),
-        'internal:websocket-runtime' => webSocketBaselineRuntimeAgentResponse($request, $selfContainedImage),
+        'internal:websocket-runtime' => webSocketBaselineRuntimeAgentResponse(
+            $request,
+            $selfContainedImage,
+            $imageProbeStdout,
+        ),
         default => webSocketBaselineFailedAgentResponse((string) $command),
     };
 }
 
-function webSocketBaselineRuntimeAgentResponse(Request $request, bool $selfContainedImage): mixed
-{
+function webSocketBaselineRuntimeAgentResponse(
+    Request $request,
+    bool $selfContainedImage,
+    ?string $imageProbeStdout = null,
+): mixed {
     $action = is_array($request['argv'] ?? null) ? $request['argv'][1] ?? null : null;
+
+    if ($action === 'image:is-self-contained' && is_string($imageProbeStdout)) {
+        return Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'websocket-runtime.image:is-self-contained',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => $imageProbeStdout,
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]);
+    }
+
     $data = match ($action) {
         'image:ensure' => [
             'image' => 'manifest-image',

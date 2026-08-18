@@ -10,6 +10,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
@@ -58,7 +59,21 @@ final readonly class WebSocketDoctorProbe
             ];
         }
 
-        $runtimeState = $this->probeState($runtime);
+        try {
+            $runtimeState = $this->probeState($runtime);
+        } catch (RemoteShellProtocolException $exception) {
+            return [
+                $this->runtimeUnavailableEntry(
+                    node: $node,
+                    assignment: $assignment,
+                    detail: [
+                        'reason' => 'runtime_probe_failed',
+                        'error' => $exception->getMessage(),
+                    ],
+                    kind: DriftKind::Unverifiable,
+                ),
+            ];
+        }
 
         if (($runtimeState['exists'] ?? null) !== '1' || ($runtimeState['running'] ?? null) !== 'true') {
             $drift[] = $this->runtimeUnavailableEntry(
@@ -162,7 +177,25 @@ final readonly class WebSocketDoctorProbe
             ];
         }
 
-        $state = $this->probeState($probe);
+        try {
+            $state = $this->probeState($probe);
+        } catch (RemoteShellProtocolException $exception) {
+            return [
+                new DriftEntry(
+                    family: 'node',
+                    key: 'node.websocket.backend_cert_missing',
+                    kind: DriftKind::Unverifiable,
+                    summary: "WebSocket backend certificate material could not be verified on node {$node->name}.",
+                    detail: [
+                        'role' => $assignment->role,
+                        'backend' => $backendName,
+                        'cert_path' => $paths['cert'],
+                        'key_path' => $paths['key'],
+                        'error' => $exception->getMessage(),
+                    ],
+                ),
+            ];
+        }
 
         if (
             ($state['cert_exists'] ?? null) === '1'
@@ -221,7 +254,24 @@ final readonly class WebSocketDoctorProbe
             ];
         }
 
-        $state = $this->probeState($probe);
+        try {
+            $state = $this->probeState($probe);
+        } catch (RemoteShellProtocolException $exception) {
+            return [
+                new DriftEntry(
+                    family: 'node',
+                    key: 'node.websocket.bind_public_interface',
+                    kind: DriftKind::Unverifiable,
+                    summary: "WebSocket runtime bind posture could not be verified on node {$node->name}.",
+                    detail: [
+                        'role' => $assignment->role,
+                        'container' => $this->runtimeRenderer->containerName($node),
+                        'error' => $exception->getMessage(),
+                    ],
+                ),
+            ];
+        }
+
         $expectedBind = '0.0.0.0';
         $expectedPublishedBindings = [[
             'host' => $this->backendName->forNode($node),
@@ -391,7 +441,17 @@ final readonly class WebSocketDoctorProbe
      */
     private function probeState(RemoteShellResult $probe): array
     {
-        $data = RemoteShellSuccessData::fromJsonEnvelope($probe);
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($probe);
+        } catch (RemoteShellProtocolException $exception) {
+            $state = $this->parseKeyValueOutput($probe->stdout);
+
+            if ($state === []) {
+                throw $exception;
+            }
+
+            return $state;
+        }
 
         if (array_key_exists('stdout', $data) && is_string($data['stdout']) && $data['stdout'] !== '') {
             return $this->parseKeyValueOutput($data['stdout']);
@@ -418,7 +478,9 @@ final readonly class WebSocketDoctorProbe
             return $state;
         }
 
-        return $this->parseKeyValueOutput($probe->stdout);
+        throw new RemoteShellProtocolException(
+            'WebSocket doctor probe success.data is missing typed state fields.',
+        );
     }
 
     /**

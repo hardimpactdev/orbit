@@ -8,7 +8,6 @@ use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 final readonly class AddWorkspaceStep
@@ -67,10 +66,6 @@ final readonly class AddWorkspaceStep
                 'command' => $command,
                 'timeout_seconds' => $timeoutSeconds,
             ]);
-
-            if (Schema::hasColumn($step->getTable(), 'app_id')) {
-                $step->forceFill(['app_id' => $appId]);
-            }
 
             $step->save();
 

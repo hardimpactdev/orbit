@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:30:31+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-proxy-tuple-dedup/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-203031-solo-hardening-proxy-tuple-dedup",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-proxy-tuple-dedup-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T182950Z-f89eb9733c00.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-proxy-tuple-dedup-retained-incus-runtime.txt": "e42a3af9ba0cfbb34d0618bb02f2ad2af060c5e2593c36f008fd2875255150b0",
+        "loop.md": "26404b012adad1150daeb2525daa406483258b22aa1ee253a1c0fb0ce3701918",
+        "quality-gates/quality-check-2026-08-18T182950Z-f89eb9733c00.json": "44e70fa0cad9ec062b5def9d110acc9dc94161f875e44eb2e02684209e59c590"
+    },
+    "slug": "solo-hardening-proxy-tuple-dedup",
+    "requested_slug": "solo-hardening-proxy-tuple-dedup",
+    "compatible_slugs": [
+        "solo-hardening-proxy-tuple-dedup"
+    ],
+    "branch": "solo-hardening-proxy-tuple-dedup",
+    "candidate_commit": "699526a112cc145d6c7565fc9b60561e0e2c8fd6",
+    "accepted_feature_tip": "699526a112cc145d6c7565fc9b60561e0e2c8fd6",
+    "accepted_main_tip": "ab7e437ed0871688222b575a83c5b6bab79a18e0",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

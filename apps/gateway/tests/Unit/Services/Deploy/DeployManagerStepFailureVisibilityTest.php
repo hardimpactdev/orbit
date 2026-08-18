@@ -130,10 +130,10 @@ it('keeps node stderr when a deploy step answers with an unparsable envelope', f
         ->toContain('orbit: command not found');
 });
 
-it('falls back to the protocol message when the node returns no usable failure detail', function (): void {
+it('falls back to the protocol message when the node returns no usable failure detail', function (string $stdout): void {
     createDeployFailureVisibilityApp();
     app()->instance(RunsInternalCommands::class, new DeployManagerEnvelopeShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 5),
+        new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 5),
     ));
 
     expect(fn (): array => app(DeployManager::class)->run('visibility.production'))
@@ -145,4 +145,9 @@ it('falls back to the protocol message when the node returns no usable failure d
         ->toBe(1)
         ->and($step->stderr)
         ->toBe('Deploy run step response is invalid.');
-});
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
