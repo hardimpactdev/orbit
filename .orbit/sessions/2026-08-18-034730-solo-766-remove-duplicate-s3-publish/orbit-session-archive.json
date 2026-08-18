@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T01:47:30+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-766-remove-duplicate-s3-publish/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-034730-solo-766-remove-duplicate-s3-publish",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-766-blast-radius-inventory.md",
+        "evidence/solo-766-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T014225Z-c579dde6b01b.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-766-blast-radius-inventory.md": "bba95857ae46b4ba38cc055047cbfbb5157af79cc3f71890059979df6bb82188",
+        "evidence/solo-766-retained-incus-proof.md": "9320666494997ac227e89bd92831ee92a908f042698a7e01ceea946ecb960a13",
+        "loop.md": "9cb37449db636e73df00ade3ad0a883916344d2448b44abd50f2fce4de703eba",
+        "quality-gates/quality-check-2026-08-18T014225Z-c579dde6b01b.json": "33686fec3e6377dca4b00c4dec3913bfd4d4bf3208edbbbc1818c01476e42cc3"
+    },
+    "slug": "solo-766-remove-duplicate-s3-publish",
+    "requested_slug": "solo-766-remove-duplicate-s3-publish",
+    "compatible_slugs": [
+        "solo-766-remove-duplicate-s3-publish"
+    ],
+    "branch": "solo-766-remove-duplicate-s3-publish",
+    "candidate_commit": "896400dc7428b749ce88fd48e23cddf5276c66ce",
+    "accepted_feature_tip": "896400dc7428b749ce88fd48e23cddf5276c66ce",
+    "accepted_main_tip": "01d8622062e0b13d731b237aae3f91628539e198",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
