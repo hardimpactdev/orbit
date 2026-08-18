@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:26:22+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-envelope-rollout/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-202621-solo-hardening-envelope-rollout",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-envelope-rollout-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T182538Z-84a42510b8ee.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-envelope-rollout-retained-incus-runtime.txt": "f3c2f9fe7c3e433a6386977e17473ad85180f20d9ea212c81eb9957da1d78645",
+        "loop.md": "a3a132be93813528353243757131e42a6f14eff03726190e6dd76e82dda1b6d7",
+        "quality-gates/quality-check-2026-08-18T182538Z-84a42510b8ee.json": "56bbe300a3d922c1b9e490d52a8093ec7063e55d2c193162d92e831d690a914a"
+    },
+    "slug": "solo-hardening-envelope-rollout",
+    "requested_slug": "solo-hardening-envelope-rollout",
+    "compatible_slugs": [
+        "solo-hardening-envelope-rollout"
+    ],
+    "branch": "solo-hardening-envelope-rollout",
+    "candidate_commit": "edf338ca75eed2c134901004b799ecd5d3115c37",
+    "accepted_feature_tip": "edf338ca75eed2c134901004b799ecd5d3115c37",
+    "accepted_main_tip": "bda12d7e789529b26c140b536a028d562c18fce4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
