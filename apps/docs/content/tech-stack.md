@@ -177,7 +177,10 @@ override after candidate acceptance or rejection. After live acceptance, the
 exact tested CLI binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
 `github-release` manifest are attached to a draft `hardimpactdev/orbit`
-`v<VERSION>` release. Draft creation does not trigger GitHub Actions
+`v<VERSION>` release. A draft does not create a git tag, so the operator
+pushes `v<VERSION>` first and then creates the draft against that existing
+tag. The release workflow has no tag-push trigger, so the push alone starts
+nothing. Draft creation also does not trigger GitHub Actions
 (`created`/`edited`/`deleted` skip drafts; `prereleased` is public), so the
 operator dispatches `.github/workflows/orbit-release.yml` against that draft.
 The workflow verifies those promoted assets, publishes the

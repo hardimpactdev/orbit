@@ -1,6 +1,9 @@
 name: Orbit Release
 
 # Drafts do not fire release created/edited/deleted. prereleased is public.
+# Drafts also do not create a git tag. The operator must push v<VERSION>
+# before creating the draft so checkout of inputs.tag can resolve.
+# This workflow has no tag-push trigger; the push alone starts nothing.
 # workflow_dispatch verifies a draft and publishes only on success.
 # release published is a safety net; failure converts it back to a draft.
 # Publishing with GITHUB_TOKEN does not re-enter this workflow.

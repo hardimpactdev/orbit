@@ -326,20 +326,27 @@ manifests.
    credential-free retained nodes load the pinned image from the published
    archive instead of pulling the private GHCR digest.
 
-14. Create a draft release, attach the tested files, and dispatch the release
-    workflow. Do not publish the draft from the operator machine. Draft
-    releases do not fire `release.created` or `release.edited`;
+14. Push the `v<VERSION>` git tag, create a draft release against that
+    existing tag, attach the tested files, and dispatch the release workflow.
+    Do not publish the draft from the operator machine. A draft release does
+    not create a git tag — GitHub creates the tag only when the release is
+    published — so `actions/checkout` of `inputs.tag` would fail unless the
+    tag already exists. Pushing the tag first is required and is safe: this
+    workflow has no tag-push trigger, so the push alone starts nothing.
+    Draft releases also do not fire `release.created` or `release.edited`;
     `release.prereleased` is public. The workflow therefore runs via
     `workflow_dispatch`, verifies the draft assets, and publishes the GitHub
-    release only on success. A tag push or `gh release edit --draft=false` is
-    not the happy path — the latter is a safety-net trigger that still
-    verifies and converts the release back to a draft if verification fails:
+    release only on success. `gh release edit --draft=false` is not the
+    happy path; it remains a safety-net trigger that still verifies and
+    converts the release back to a draft if verification fails:
 
    ```bash
    version="$(bin/orbit-version)"
 
+   git tag "v${version}"
+   git push origin "v${version}"
+
    gh release create "v${version}" \
-     --target main \
      --title "Orbit v${version}" \
      --notes "Orbit ${version}." \
      --draft

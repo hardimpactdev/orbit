@@ -220,6 +220,58 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
     );
 });
 
+it('pushes the release git tag before creating the draft so checkout can resolve the ref', function (): void {
+    $skill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        ->toContain('ref: ${{ inputs.tag || github.event.release.tag_name }}')
+        ->not->toContain("\n  push:")
+        ->not->toContain('tags:');
+
+    $skillText = (string) preg_replace('/\s+/', ' ', $skill);
+
+    expect($skillText)
+        ->toContain('does not create a git tag')
+        ->toContain('no tag-push trigger');
+
+    preg_match_all('/```bash\s*\n(.*?)\n\s*```/s', $skill, $blocks);
+
+    $recipe = '';
+    foreach ($blocks[1] as $block) {
+        if (str_contains($block, 'gh release create "v${version}"')) {
+            $recipe = $block;
+            break;
+        }
+    }
+
+    expect($recipe)
+        ->not
+        ->toBe('')
+        ->and($recipe)
+        ->toContain('git tag "v${version}"')
+        ->toContain('git push origin "v${version}"')
+        ->toContain('gh release create "v${version}"');
+
+    $tagPos = strpos($recipe, 'git tag "v${version}"');
+    $pushPos = strpos($recipe, 'git push origin "v${version}"');
+    $createPos = strpos($recipe, 'gh release create "v${version}"');
+
+    expect($tagPos)
+        ->not
+        ->toBeFalse()
+        ->and($pushPos)
+        ->not
+        ->toBeFalse()
+        ->and($createPos)
+        ->not
+        ->toBeFalse()
+        ->and($tagPos)
+        ->toBeLessThan($pushPos)
+        ->and($pushPos)
+        ->toBeLessThan($createPos);
+});
+
 it('keeps the GitHub release unpublished until draft asset verification succeeds', function (): void {
     $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
 
