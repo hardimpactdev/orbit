@@ -12069,6 +12069,7 @@
                 "apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolInstallPreflightTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolInstallerPostWriteFailureIntentTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php"
             ],
             "verification_hints": [
@@ -12113,6 +12114,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolInstallPreflightTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolInstallPreflightTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolInstallerPostWriteFailureIntentTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolInstallerPostWriteFailureIntentTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolInstallerPostWriteFailureIntentTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php",
