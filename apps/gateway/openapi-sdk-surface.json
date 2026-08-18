@@ -46,7 +46,7 @@
       "reason": "App analytics verification context is optional analytics-role surface and is not part of the first macOS dashboard SDK set."
     },
     {
-      "operation": "GET /codex/apps",
+      "operation": "GET /codex/projects",
       "classification": "deferred_optional",
       "group": "codex_extension",
       "reason": "Codex integration is extension-gated and should be promoted separately from core dashboard SDK generation."
