@@ -443,7 +443,7 @@
       "operation": "POST /update/all/start",
       "classification": "deferred_optional",
       "group": "update_all_streaming",
-      "reason": "The PHP SDK already exposes update-all through its current client; the start helper is not first TypeScript SDK scope."
+      "reason": "The direct update-all lane was removed; POST /update/all/start is the durable-operation entry and is not first TypeScript SDK scope."
     },
     {
       "operation": "GET /update/artifacts/{operationRun}/{artifactKind}/{platform}",

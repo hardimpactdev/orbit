@@ -89,10 +89,9 @@ final class ToolUpdateBulkController implements Loggable
             return $target;
         }
 
-        $node = $target['node'];
-        $instance = $target['app'];
+        $targetNode = $target['resolved'];
 
-        if ($node === null && $instance === null) {
+        if (! $targetNode instanceof Node) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
@@ -104,19 +103,12 @@ final class ToolUpdateBulkController implements Loggable
             ], 422);
         }
 
-        $targetNode = $node !== null
-            ? $this->resolveNodeFilter($node, $caller, $visibleNodeIds)
-            : $this->resolveAppNodeFilter((string) $instance, $caller, $visibleNodeIds);
-
-        if (
-            $targetNode instanceof Node
-            && in_array($targetNode->id, $this->nodeRoleAssignments()->activeToolHostNodeIds(), strict: true)
-        ) {
+        if (in_array($targetNode->id, $this->nodeRoleAssignments()->activeToolHostNodeIds(), strict: true)) {
             return $targetNode;
         }
 
-        $field = $node !== null ? 'node' : 'instance';
-        $value = $node ?? (string) $instance;
+        $field = $target['node'] !== null ? 'node' : 'instance';
+        $value = $target['node'] ?? (string) $target['app'];
 
         return $this->toolTargetFailure($value, $field, $caller, $visibleNodeIds);
     }

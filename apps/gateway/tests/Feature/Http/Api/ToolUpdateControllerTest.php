@@ -313,7 +313,16 @@ it('rejects missing and invalid bulk update selectors before mutation', function
 
     $response
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation_failed');
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath(
+            'error.meta',
+            $field === null
+                ? ['fields' => ['target']]
+                : [
+                    'field' => $field,
+                    'value' => $payload[$field],
+                ],
+        );
 
     $response->assertJsonPath(
         $field === null ? 'error.meta.fields.0' : 'error.meta.field',
@@ -405,8 +414,15 @@ it('rejects an unauthorized bulk update target before mutation', function (): vo
 
     $response
         ->assertForbidden()
-        ->assertJsonPath('error.code', 'authorization_failed')
-        ->assertJsonPath('error.meta.node', $unauthorizedNode->name);
+        ->assertExactJson([
+            'error' => [
+                'code' => 'authorization_failed',
+                'message' => 'This node is not authorized to manage tools for the selected node.',
+                'meta' => [
+                    'node' => $unauthorizedNode->name,
+                ],
+            ],
+        ]);
 
     assert_tool_update_api_bulk_did_not_mutate($shell, $visibleTool, $unauthorizedTool);
 });
@@ -444,8 +460,16 @@ it('rejects a gateway instance target whose active node is not a tool host', fun
 
     $response
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation_failed')
-        ->assertJsonPath('error.meta.field', 'instance');
+        ->assertExactJson([
+            'error' => [
+                'code' => 'validation_failed',
+                'message' => "Invalid value for --instance: 'docs.development'. Expected a visible instance selector.",
+                'meta' => [
+                    'field' => 'instance',
+                    'value' => 'docs.development',
+                ],
+            ],
+        ]);
 
     assert_tool_update_api_bulk_did_not_mutate($shell, $tool);
 });

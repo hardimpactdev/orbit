@@ -54,11 +54,12 @@ final readonly class LocalCodexAppConfigStore
     public function release($lock, string $configPath): void
     {
         $released = flock($lock, LOCK_UN);
-        fclose($lock);
 
         if (! $released) {
             throw $this->lockFailure($configPath.'.lock', 'The exclusive lock could not be released.');
         }
+
+        fclose($lock);
     }
 
     /**

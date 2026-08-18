@@ -8,15 +8,22 @@ use App\E2E\Support\E2ETopologyKind;
 
 it('uses one gateway image manifest that matches every host-context Docker COPY source', function (): void {
     $manifestPaths = E2EGatewayImageBuildInputs::paths(repo_path());
-    $dockerfilePaths = gateway_image_docker_copy_sources(
-        (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile')),
+    $dockerfilePaths = collapse_directory_covered_copy_sources(
+        gateway_image_docker_copy_sources(
+            (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile')),
+        ),
+        repo_path(),
     );
 
     expect($manifestPaths)
         ->toBe($dockerfilePaths)
         ->toContain('bin/install-orbit')
         ->toContain('VERSION')
-        ->toContain('packages/core/resources/php-cli/artifact-catalog.json');
+        ->toContain('packages/core/resources/php-cli/artifact-catalog.json')
+        ->toContain('docker/orbit-gateway')
+        ->not->toContain('docker/orbit-gateway/Caddyfile')
+        ->not->toContain('docker/orbit-gateway/entrypoint.sh')
+        ->not->toContain('docker/orbit-gateway/healthcheck.sh');
 });
 
 it('uses the gateway image manifest for staging and matching artifact fingerprints', function (): void {
@@ -283,6 +290,34 @@ function gateway_image_docker_copy_sources(string $dockerfile): array
     sort($sources);
 
     return $sources;
+}
+
+/**
+ * @param  list<string>  $sources
+ * @return list<string>
+ */
+function collapse_directory_covered_copy_sources(array $sources, string $root): array
+{
+    $collapsed = array_values(array_filter(
+        $sources,
+        static function (string $candidate) use ($sources, $root): bool {
+            foreach ($sources as $parent) {
+                if ($parent === $candidate || ! is_dir("{$root}/{$parent}")) {
+                    continue;
+                }
+
+                if (str_starts_with($candidate, "{$parent}/")) {
+                    return false;
+                }
+            }
+
+            return true;
+        },
+    ));
+
+    sort($collapsed);
+
+    return $collapsed;
 }
 
 /**

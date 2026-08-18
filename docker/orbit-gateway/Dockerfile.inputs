@@ -14,9 +14,6 @@ apps/gateway/resources/views
 apps/gateway/routes
 bin/install-orbit
 docker/orbit-gateway
-docker/orbit-gateway/Caddyfile
-docker/orbit-gateway/entrypoint.sh
-docker/orbit-gateway/healthcheck.sh
 packages/core/composer.json
 packages/core/composer.lock
 packages/core/resources/php-cli/artifact-catalog.json

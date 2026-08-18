@@ -181,7 +181,8 @@ The provision fingerprint separates three input classes:
 - Gateway artifact inputs: `docker/orbit-gateway/Dockerfile.inputs` is the
   Dockerfile-adjacent authority consumed by remote context staging and both
   gateway artifact fingerprint paths. Contract coverage keeps it equal to every
-  host-context `COPY` source in the gateway Dockerfile. These inputs apply to
+  host-context `COPY` source in the gateway Dockerfile after directory-covered
+  children are omitted. These inputs apply to
   the gateway role and to downstream roles whose prepared state depends on
   gateway database registration.
 - Provision support inputs: `bin/install-orbit`, `bin/e2e-provision-node`,

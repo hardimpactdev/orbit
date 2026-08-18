@@ -7,12 +7,14 @@ use Orbit\Sdk\Laravel\Tests\TestCase;
 uses(TestCase::class);
 
 it('does not ship the retired direct POST /api/update/all client stack', function (): void {
-    expect(class_exists('Orbit\\Sdk\\Laravel\\Requests\\Operations\\UpdateAllRequest'))
-        ->toBeFalse()
-        ->and(class_exists('Orbit\\Sdk\\Laravel\\Requests\\Operations\\UpdateAllStreamRequest'))
-        ->toBeFalse()
-        ->and(class_exists('Orbit\\Sdk\\Laravel\\Responses\\Operations\\UpdateAllResponse'))
-        ->toBeFalse()
-        ->and(class_exists('Orbit\\Sdk\\Laravel\\UpdateAllGatewayStreamClient'))
-        ->toBeFalse();
+    $src = dirname(path: __DIR__, levels: 2).'/src';
+    $requestFiles = glob($src.'/Requests/Operations/UpdateAll*');
+    $responseFiles = glob($src.'/Responses/Operations/UpdateAll*');
+    $clientFiles = glob($src.'/UpdateAll*');
+
+    expect([
+        ...($requestFiles === false ? [] : $requestFiles),
+        ...($responseFiles === false ? [] : $responseFiles),
+        ...($clientFiles === false ? [] : $clientFiles),
+    ])->toBeEmpty();
 });

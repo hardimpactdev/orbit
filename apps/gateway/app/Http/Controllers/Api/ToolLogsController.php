@@ -110,7 +110,7 @@ final class ToolLogsController implements Loggable
     }
 
     /**
-     * @return array{node: ?string, app: ?string}|JsonResponse
+     * @return array{node: ?string, app: ?string, resolved: ?Node}|JsonResponse
      */
     private function remoteTarget(Request $request, Node $caller, string $tool): array|JsonResponse
     {

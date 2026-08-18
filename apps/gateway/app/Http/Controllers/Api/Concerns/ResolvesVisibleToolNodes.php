@@ -71,7 +71,7 @@ trait ResolvesVisibleToolNodes
 
     /**
      * @param  list<int>  $visibleNodeIds
-     * @return array{node: ?string, app: ?string}|JsonResponse
+     * @return array{node: ?string, app: ?string, resolved: ?Node}|JsonResponse
      */
     private function authorizedToolTarget(
         Request $request,
@@ -96,7 +96,7 @@ trait ResolvesVisibleToolNodes
 
     /**
      * @param  list<int>  $visibleNodeIds
-     * @return array{node: ?string, app: ?string}|JsonResponse
+     * @return array{node: ?string, app: ?string, resolved: ?Node}|JsonResponse
      */
     private function authorizedToolRemovalTarget(
         Request $request,
@@ -125,7 +125,7 @@ trait ResolvesVisibleToolNodes
      *     tool: ?string,
      *     unsupported_policy: string,
      * }  $options
-     * @return array{node: ?string, app: ?string}|JsonResponse
+     * @return array{node: ?string, app: ?string, resolved: ?Node}|JsonResponse
      */
     private function authorizedToolTargetWithUnsupportedPolicy(
         Request $request,
@@ -179,6 +179,7 @@ trait ResolvesVisibleToolNodes
             return [
                 'node' => $node,
                 'app' => $app,
+                'resolved' => $nodeFilter,
             ];
         }
 
@@ -192,11 +193,13 @@ trait ResolvesVisibleToolNodes
                 ->get();
 
             if ($nodes->count() === 1) {
-                $fallbackNodeName = $nodes->first()?->name;
+                $fallbackNode = $nodes->first();
+                $fallbackNodeName = $fallbackNode?->name;
 
                 return [
                     'node' => is_string($fallbackNodeName) ? $fallbackNodeName : null,
                     'app' => null,
+                    'resolved' => $fallbackNode instanceof Node ? $fallbackNode : null,
                 ];
             }
         }
@@ -204,6 +207,7 @@ trait ResolvesVisibleToolNodes
         return [
             'node' => null,
             'app' => null,
+            'resolved' => null,
         ];
     }
 
