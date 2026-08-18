@@ -7,6 +7,7 @@ use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2EPreparedTopology;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
@@ -66,6 +67,19 @@ it('keeps explicit dev-prod-ingress topologies on a dedicated ingress role', fun
         ->toBeFalse()
         ->and(E2EPreparedTopology::gatewayNodeNamesForRoles(IncusTopologyTemplate::rolesFor($kind)))
         ->toBe(['gateway', 'operator-1', 'app-dev-1', 'app-prod-1', 'edge-1']);
+
+    foreach (E2ETopologyKind::cases() as $topologyKind) {
+        $facts = E2ETopologyFacts::for($topologyKind);
+
+        expect(IncusTopologyTemplate::rolesFor($topologyKind))
+            ->toBe($facts->incusRoles())
+            ->and(DockerTopologyBuilder::rolesFor($topologyKind))
+            ->toBe($facts->runtimeRoles())
+            ->and(DockerTopologyProvider::rolesForKind($topologyKind))
+            ->toBe($facts->logicalRoles)
+            ->and(E2EPreparedTopology::prodHostsIngressRole($topologyKind))
+            ->toBe($facts->prodHostsIngressRole);
+    }
 });
 
 it('uses operator on the topology harness and lease', function (): void {

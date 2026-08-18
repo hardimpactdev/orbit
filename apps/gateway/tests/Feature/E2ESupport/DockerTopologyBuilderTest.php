@@ -8,6 +8,7 @@ use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Support\Facades\Process;
 
@@ -1035,6 +1036,11 @@ it('defines downstream small topology role matrices for current roles', function
         ->toBe(['operator', 'gateway', 'dev', 'prod'])
         ->and(DockerTopologyBuilder::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
         ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
+
+    foreach (E2ETopologyKind::cases() as $kind) {
+        expect(DockerTopologyBuilder::rolesFor($kind))
+            ->toBe(E2ETopologyFacts::for($kind)->runtimeRoles());
+    }
 });
 
 it('does not accept bare client aliases for downstream small topology fixtures', function (): void {

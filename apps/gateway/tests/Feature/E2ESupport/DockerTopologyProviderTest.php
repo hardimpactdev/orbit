@@ -9,10 +9,12 @@ use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
+use App\E2E\Support\E2EPreparedTopology;
 use App\E2E\Support\E2EResourceLeasePool;
 use App\E2E\Support\E2ETopologyAcquisitionOptions;
 use App\E2E\Support\E2ETopologyAcquisitionRetainedForDiagnosis;
 use App\E2E\Support\E2ETopologyCapabilities;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\SshKeyPair;
 use Illuminate\Support\Facades\Process;
@@ -2284,4 +2286,15 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
         ->toContain('10.6.0.2')
         ->toContain('127.0.0.1')
         ->toContain('::1');
+});
+
+it('reads kind role matrices from the shared topology facts model', function (): void {
+    foreach (E2ETopologyKind::cases() as $kind) {
+        $facts = E2ETopologyFacts::for($kind);
+
+        expect(DockerTopologyProvider::rolesForKind($kind))
+            ->toBe($facts->logicalRoles)
+            ->and(E2EPreparedTopology::runtimeRolesFor($kind, DockerTopologyProvider::rolesForKind($kind)))
+            ->toBe($facts->runtimeRoles());
+    }
 });

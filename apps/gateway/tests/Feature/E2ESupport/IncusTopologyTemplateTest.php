@@ -6,6 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EPhaseTimer;
 use App\E2E\Support\E2EResourceLeasePool;
 use App\E2E\Support\E2ETopologyAcquisitionOptions;
+use App\E2E\Support\E2ETopologyFacts;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
@@ -120,6 +121,11 @@ it('maps each topology kind to expected roles', function (): void {
         ->toBe(['operator', 'gateway', 'dev', 'prod'])
         ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
         ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
+
+    foreach (E2ETopologyKind::cases() as $kind) {
+        expect(IncusTopologyTemplate::rolesFor($kind))
+            ->toBe(E2ETopologyFacts::for($kind)->incusRoles());
+    }
 });
 
 it('generates correct template and clone names', function (): void {

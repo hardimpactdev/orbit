@@ -303,25 +303,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     public static function rolesForKind(E2ETopologyKind $kind): array
     {
-        return match ($kind) {
-            E2ETopologyKind::Operator => ['operator'],
-            E2ETopologyKind::OperatorGateway => ['operator', 'gateway'],
-            E2ETopologyKind::OperatorGatewayAppdev => ['operator', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress => ['operator', 'gateway', 'dev', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => [
-                'operator',
-                'gateway',
-                'dev',
-                'prod',
-                'agent',
-            ],
-        };
+        return E2ETopologyFacts::for($kind)->logicalRoles;
     }
 
     public static function containerCountFor(E2ETopologyKind $kind): int
@@ -331,15 +313,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private static function websocketTopologyKind(E2ETopologyKind $kind): bool
     {
-        return in_array(
-            $kind,
-            [
-                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-            ],
-            true,
-        );
+        return E2ETopologyFacts::for($kind)->isWebsocketKind;
     }
 
     public static function maxContainerCountForAnyTopology(): int
@@ -1445,16 +1419,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private function canonicalWireGuardAddressForRole(string $role): string
     {
-        return match ($role) {
-            'gateway' => '10.6.0.2',
-            'operator' => '10.6.0.3',
-            'dev' => '10.6.0.4',
-            'prod' => '10.6.0.5',
-            'agent' => '10.6.0.6',
-            'ingress' => '10.6.0.7',
-            'websocket' => '10.6.0.8',
-            default => throw new \RuntimeException("Unknown Docker topology role {$role}."),
-        };
+        return E2ETopologyFacts::canonicalWireGuardAddressForRole($role);
     }
 
     /**

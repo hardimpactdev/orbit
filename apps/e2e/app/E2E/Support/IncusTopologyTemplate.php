@@ -11,31 +11,7 @@ final readonly class IncusTopologyTemplate
      */
     public static function rolesFor(E2ETopologyKind $kind): array
     {
-        $roles = match ($kind) {
-            E2ETopologyKind::Operator => ['operator'],
-            E2ETopologyKind::OperatorGateway => ['operator', 'gateway'],
-            E2ETopologyKind::OperatorGatewayAppdev => ['operator', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprod => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress => ['operator', 'gateway', 'dev', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAgent => ['operator', 'gateway', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => ['operator', 'gateway', 'dev', 'prod', 'agent'],
-            E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => [
-                'operator',
-                'gateway',
-                'dev',
-                'prod',
-                'agent',
-            ],
-        };
-
-        if (E2EPreparedTopology::prodHostsIngressRole($kind)) {
-            return array_values(array_filter($roles, fn (string $role): bool => $role !== 'ingress'));
-        }
-
-        return $roles;
+        return E2ETopologyFacts::for($kind)->incusRoles();
     }
 
     public static function templateName(E2ETopologyKind $kind, string $role): string
@@ -336,12 +312,7 @@ final readonly class IncusTopologyTemplate
 
     private static function artifactRole(string $role): string
     {
-        return match ($role) {
-            'operator' => 'operator',
-            'dev' => 'app-dev',
-            'prod' => 'app-prod',
-            default => $role,
-        };
+        return E2ETopologyFacts::artifactRoleForRuntimeRole($role);
     }
 
     /**
