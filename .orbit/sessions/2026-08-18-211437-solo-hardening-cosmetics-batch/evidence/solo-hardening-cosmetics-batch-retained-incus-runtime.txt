@@ -1,0 +1,18 @@
+Todo: Solo #217 (orchestrated hardening wave)
+Candidate: 7e6981de1bff09360131d40a7297f20ed4ed91d3
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-22d631 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Targets: orbit-e2e-dev-22d631-gateway (tool bulk update suite), orbit-e2e-dev-22d631-operator (Codex config store suites)
+ToolUpdateBulkController.php SHA-256 (local == synced): f978af4f85cfe998901978eff2cb1c34c675aded5b046ec56aa19f717caed542
+
+Method: acquire retained topology dev-22d631 from the implementation worktree; verify synced source hash; run the tool bulk-update suite in the retained gateway instance and the Codex config store suites in the retained operator instance as the orbit user.
+
+Observed:
+  Tests:    17 passed (94 assertions)
+  Duration: 3.61s
+  Tests:    12 passed (54 assertions)
+  Duration: 1.69s
+
+Result: passed

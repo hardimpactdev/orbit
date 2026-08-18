@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 365,
-    "unique_candidate_commit_count": 261,
+    "record_count": 366,
+    "unique_candidate_commit_count": 262,
     "orphan_count": 4,
     "records": [
         {
@@ -9481,6 +9481,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "7a67e768be68711ec05dae6b646fedb22bc754e2",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-211437-solo-hardening-cosmetics-batch",
+            "slug": "solo-hardening-cosmetics-batch",
+            "timestamp": "2026-08-18-211437",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "7e6981de1bff09360131d40a7297f20ed4ed91d3",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

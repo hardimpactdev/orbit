@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T19:14:37+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-cosmetics-batch/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-211437-solo-hardening-cosmetics-batch",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-cosmetics-batch-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T191338Z-1f9ef471dc66.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-cosmetics-batch-retained-incus-runtime.txt": "d03dea2f5bdc204b91eb2f69acbc4d2f95546c277cb8aa6c8b932916ee5ed466",
+        "loop.md": "b78af10d3e6eb5c840124fb8576a8ac1cff769170c18f9a65239ff816fbabb30",
+        "quality-gates/quality-check-2026-08-18T191338Z-1f9ef471dc66.json": "b30b1c41328a4fb197d46474da8ffdf012a085cf2d3f541d05c960fe2e134d3e"
+    },
+    "slug": "solo-hardening-cosmetics-batch",
+    "requested_slug": "solo-hardening-cosmetics-batch",
+    "compatible_slugs": [
+        "solo-hardening-cosmetics-batch"
+    ],
+    "branch": "solo-hardening-cosmetics-batch",
+    "candidate_commit": "7e6981de1bff09360131d40a7297f20ed4ed91d3",
+    "accepted_feature_tip": "7e6981de1bff09360131d40a7297f20ed4ed91d3",
+    "accepted_main_tip": "a579a4b9004d3e1ede74792285f4eb9e3e809765",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
