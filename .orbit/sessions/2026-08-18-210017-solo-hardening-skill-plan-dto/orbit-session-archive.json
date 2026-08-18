@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T19:00:17+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-skill-plan-dto/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-210017-solo-hardening-skill-plan-dto",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-skill-plan-dto-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T185942Z-8b1ccbbd64da.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-skill-plan-dto-retained-incus-runtime.txt": "608e14f4b625c81e00b15a450cba32ca5167f7340450ecc429993be1b0d228bc",
+        "loop.md": "94128e7168cb7255f12bcc0abcae2a634f9a78c25f646cd83bfeb4b4729949a5",
+        "quality-gates/quality-check-2026-08-18T185942Z-8b1ccbbd64da.json": "87aea3288187d25b68d19a6b9c6e2af5f5520a21006c148da8b90d24f736f427"
+    },
+    "slug": "solo-hardening-skill-plan-dto",
+    "requested_slug": "solo-hardening-skill-plan-dto",
+    "compatible_slugs": [
+        "solo-hardening-skill-plan-dto"
+    ],
+    "branch": "solo-hardening-skill-plan-dto",
+    "candidate_commit": "7a67e768be68711ec05dae6b646fedb22bc754e2",
+    "accepted_feature_tip": "7a67e768be68711ec05dae6b646fedb22bc754e2",
+    "accepted_main_tip": "b6550e6ad44e8bf6618d71351939cb7cabbbb8e1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
