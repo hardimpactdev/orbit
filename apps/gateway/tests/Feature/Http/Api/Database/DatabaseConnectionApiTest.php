@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
@@ -17,10 +18,8 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -1065,7 +1064,7 @@ function bindDatabaseApiLocalExecutor(DatabaseApiQueryRemoteShell $transport): v
     ));
 }
 
-final class DatabaseApiQueryRemoteShell implements RemoteExecutor
+final class DatabaseApiQueryRemoteShell implements RemoteShell
 {
     public string $script = '';
 
@@ -1085,10 +1084,5 @@ final class DatabaseApiQueryRemoteShell implements RemoteExecutor
         $this->options = $options;
 
         return $this->result;
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('Process start is not used in this test.');
     }
 }

@@ -14,13 +14,11 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolInstaller;
 use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Tools\ToolUpdater;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -203,7 +201,7 @@ function toolInstallerGitHubAuthLocalExecutor(RemoteShell $remoteShell): RemoteL
     );
 }
 
-final readonly class ToolInstallerGitHubAuthRemoteExecutor implements RemoteExecutor
+final readonly class ToolInstallerGitHubAuthRemoteExecutor implements RemoteShell
 {
     public function __construct(
         private RemoteShell $remoteShell,
@@ -212,11 +210,6 @@ final readonly class ToolInstallerGitHubAuthRemoteExecutor implements RemoteExec
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return $this->remoteShell->run($node, $script, $options);
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('ToolInstallerGitHubAuthRemoteExecutor does not support start().');
     }
 }
 

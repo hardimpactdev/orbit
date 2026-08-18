@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteExecutor;
 use Orbit\Core\Nodes\NodeSystemdServiceRenderer;
 use RuntimeException;
 
 class ProvisioningAgentInstaller
 {
     public function __construct(
-        private readonly RemoteExecutor $transport,
+        private readonly RemoteShell $transport,
         private readonly ReleaseManifestResolver $manifests,
         private readonly NodeAgentServicePayloadBuilder $agentServices,
         private readonly FleetUpdateTargetSelector $targets,

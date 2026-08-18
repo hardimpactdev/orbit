@@ -8,11 +8,41 @@ use App\Models\NodeRoleAssignment;
 use App\Services\RemoteShell\SshRemoteShell;
 use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
+
+it('starts host shell processes through the host executor', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake();
+
+    $node = Node::factory()->create([
+        'name' => 'ssh-start-node',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'user' => 'orbit',
+        ...sshRemoteShellPinnedHostKey(),
+    ]);
+
+    $process = new SshRemoteShell()->start($node, 'tail -f /var/log/orbit.log', [
+        'timeout' => 90,
+        'input' => 'start-input',
+    ]);
+
+    expect($process)
+        ->toBeInstanceOf(FakeInvokedProcess::class)
+        ->and($process->command())
+        ->toContain('ssh -o StrictHostKeyChecking=yes')
+        ->and($process->command())
+        ->toContain('tail -f /var/log/orbit.log');
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        return $process->timeout === 90 && $process->input === 'start-input';
+    });
+});
 
 it('runs local nodes through bash without ssh', function (): void {
     Process::preventStrayProcesses();

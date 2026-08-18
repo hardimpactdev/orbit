@@ -24,7 +24,7 @@ it('keeps SSH limited to the provisioning and bootstrap lane', function (): void
             $inventory['provisioning_ssh'],
         ))
         ->toBe([
-            'apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php#remote-executor.run',
+            'apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php#remote-shell.run',
             'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.scp-to-node',
             'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.scp-to',
             'apps/gateway/app/Services/OrbitHostInstaller.php#ssh-builder.enforce-for-node',

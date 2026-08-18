@@ -31,12 +31,10 @@ use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\S3\S3RouteRegistrar;
 use App\Services\WebSockets\WebSocketRouteRegistrar;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -1744,7 +1742,7 @@ function nodeRoleAssignmentLocalExecutor(RemoteShell $remoteShell): RemoteLocalE
     );
 }
 
-final readonly class NodeRoleAssignmentRemoteExecutor implements RemoteExecutor
+final readonly class NodeRoleAssignmentRemoteExecutor implements RemoteShell
 {
     public function __construct(
         private RemoteShell $remoteShell,
@@ -1753,10 +1751,5 @@ final readonly class NodeRoleAssignmentRemoteExecutor implements RemoteExecutor
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return $this->remoteShell->run($node, $script, $options);
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('NodeRoleAssignmentRemoteExecutor does not support start().');
     }
 }

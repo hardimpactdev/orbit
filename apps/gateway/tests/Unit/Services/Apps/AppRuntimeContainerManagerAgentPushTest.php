@@ -15,12 +15,10 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -575,23 +573,18 @@ function app_runtime_manager_operation_secret(): string
     return implode('-', ['gateway', 'secret']);
 }
 
-final class AppRuntimeManagerUnusedTransport implements RemoteExecutor
+final class AppRuntimeManagerUnusedTransport implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         throw new RuntimeException('SSH transport should not be called for app runtime manager actions.');
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('App runtime manager tests do not start long-running transports.');
     }
 }
 
 /**
  * @mago-expect lint:single-class-per-file
  */
-final class AppRuntimeManagerRecordingTransport implements RemoteExecutor
+final class AppRuntimeManagerRecordingTransport implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -611,10 +604,5 @@ final class AppRuntimeManagerRecordingTransport implements RemoteExecutor
         return (
             array_shift($this->responses) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
         );
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('App runtime manager tests do not start long-running transports.');
     }
 }

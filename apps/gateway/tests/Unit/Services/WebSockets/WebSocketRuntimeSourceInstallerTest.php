@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
@@ -9,11 +10,9 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -178,15 +177,10 @@ function websocket_runtime_source_installer_operation_secret(): string
     return implode('-', ['gateway', 'secret']);
 }
 
-final class WebSocketRuntimeSourceInstallerUnusedTransport implements RemoteExecutor
+final class WebSocketRuntimeSourceInstallerUnusedTransport implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         throw new RuntimeException('SSH transport should not be called for websocket runtime source installs.');
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('WebSocket runtime source tests do not start long-running transports.');
     }
 }

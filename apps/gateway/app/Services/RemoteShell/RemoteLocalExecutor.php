@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\RemoteShell;
 
 use App\Contracts\Loggable;
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\ActivityLogType;
 use App\Exceptions\RemoteShellFailed;
@@ -18,17 +19,14 @@ use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\FleetUpdateNodeCliLauncher;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Model;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenEnvironment;
 use RuntimeException;
 use Throwable;
 
-final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternalCommands
+final readonly class RemoteLocalExecutor implements RemoteShell, RunsInternalCommands
 {
-    private const string START_UNSUPPORTED_MESSAGE = 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See apps/docs/content/execution-lanes.md.';
-
     public function __construct(
         private LocalExecutorCommandComposer $commands,
         private OperationTokenFactory $operationTokens,
@@ -480,56 +478,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             transportOptions: $transportOptions,
             activityTransport: $activityTransport,
         );
-    }
-
-    /**
-     * @param  array{
-     *     cwd?: string,
-     *     timeout?: int,
-     *     input?: string,
-     *     throw?: bool,
-     *     environment?: array<string, string>,
-     *     metadata?: array<string, string>,
-     *     strict?: bool,
-     *     force_remote_host?: bool,
-     *     redact_stdout?: bool,
-     *     redact_stderr?: bool,
-     *     redact_command_options?: list<string>,
-     * }  $options
-     */
-    #[\Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException(self::START_UNSUPPORTED_MESSAGE);
-    }
-
-    /**
-     * @param  array<int|string, mixed>  $arguments
-     * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{
-     *     cwd?: string,
-     *     timeout?: int,
-     *     input?: string,
-     *     throw?: bool,
-     *     environment?: array<string, string>,
-     *     metadata?: array<string, string>,
-     *     strict?: bool,
-     *     redact_stdout?: bool,
-     *     redact_stderr?: bool,
-     *     redact_command_options?: list<string>,
-     *     bind_application_key?: bool,
-     *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     * }  $transportOptions
-     */
-    public function startInternal(
-        Node $node,
-        string $commandName,
-        array $arguments = [],
-        array $commandOptions = [],
-        array $transportOptions = [],
-    ): InvokedProcess {
-        throw new RuntimeException(self::START_UNSUPPORTED_MESSAGE);
     }
 
     /**

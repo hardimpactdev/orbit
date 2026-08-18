@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
@@ -12,11 +13,9 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
@@ -278,7 +277,7 @@ function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transpo
     );
 }
 
-final class WebSocketDoctorProbeTestTransport implements RemoteExecutor
+final class WebSocketDoctorProbeTestTransport implements RemoteShell
 {
     /**
      * @var list<array{node: Node, script: string, options: array<string, mixed>}>
@@ -302,11 +301,5 @@ final class WebSocketDoctorProbeTestTransport implements RemoteExecutor
         ];
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
-
-    #[Override]
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new \RuntimeException('Websocket doctor probe test transport does not start processes.');
     }
 }

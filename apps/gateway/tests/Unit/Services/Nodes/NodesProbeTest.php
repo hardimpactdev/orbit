@@ -26,10 +26,8 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Platform\PlatformDetector;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -2179,7 +2177,7 @@ final class NodesProbeRecordingRemoteShell implements RemoteShell
     }
 }
 
-final readonly class NodesProbeRemoteExecutor implements RemoteExecutor
+final readonly class NodesProbeRemoteExecutor implements RemoteShell
 {
     public function __construct(
         private NodesProbeRecordingRemoteShell $remoteShell,
@@ -2188,10 +2186,5 @@ final readonly class NodesProbeRemoteExecutor implements RemoteExecutor
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return $this->remoteShell->run($node, $script, $options);
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('NodesProbeRemoteExecutor does not support start().');
     }
 }

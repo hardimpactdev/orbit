@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\RemoteShell;
 
+use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use Illuminate\Contracts\Process\InvokedProcess;
 
-final readonly class SshRemoteShell implements RemoteExecutor
+final readonly class SshRemoteShell implements RemoteShell, StartsRemoteShellProcesses
 {
     /**
      * @param  array{

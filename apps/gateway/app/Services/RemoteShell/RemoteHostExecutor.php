@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\RemoteShell;
 
+use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
@@ -12,7 +14,7 @@ use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
-final readonly class RemoteHostExecutor implements RemoteExecutor
+final readonly class RemoteHostExecutor implements RemoteShell, StartsRemoteShellProcesses
 {
     private const int DEFAULT_TIMEOUT = 120;
 

@@ -17,9 +17,7 @@ use App\Services\Firewall\RemoteFirewallRuleProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -568,15 +566,10 @@ final class UfwFirewallRuleUnusedShell implements RemoteShell
     }
 }
 
-final class UfwFirewallRuleUnusedTransport implements RemoteExecutor
+final class UfwFirewallRuleUnusedTransport implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         throw new RuntimeException('SSH transport should not be called for UFW firewall rule convergence.');
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('UFW firewall rule convergence tests do not start long-running transports.');
     }
 }

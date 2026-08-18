@@ -17,7 +17,6 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -28,7 +27,6 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
@@ -135,7 +133,7 @@ function inspectPayloadForWorkspace(
 final readonly class WorkspaceRuntimeScriptExecutor implements RunsInternalCommands
 {
     public function __construct(
-        private RemoteExecutor $shell,
+        private RemoteShell $shell,
     ) {}
 
     public function runInternal(
@@ -168,7 +166,7 @@ final readonly class WorkspaceRuntimeScriptExecutor implements RunsInternalComma
     }
 }
 
-final class WorkspaceRuntimeRecordingShell implements RemoteExecutor
+final class WorkspaceRuntimeRecordingShell implements RemoteShell
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -203,11 +201,6 @@ final class WorkspaceRuntimeRecordingShell implements RemoteExecutor
         return (
             array_shift($this->responses) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
         );
-    }
-
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        throw new RuntimeException('Workspace runtime manager tests do not start long-running transports.');
     }
 }
 

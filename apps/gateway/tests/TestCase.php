@@ -10,7 +10,6 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\UpdateLeaseHeartbeatProcess;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteExecutorOutputRedactor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -22,7 +21,6 @@ use RuntimeException;
 use Tests\Fakes\InlineUpdateLeaseHeartbeatProcess;
 use Tests\Fakes\NullRemoteShell;
 use Tests\Fakes\RemoteShellBackedInternalExecutor;
-use Tests\Fakes\RemoteShellBackedRemoteExecutor;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -48,7 +46,6 @@ abstract class TestCase extends BaseTestCase
         $this->isolateStoragePathPerWorker();
 
         $this->app->instance(RemoteShell::class, new NullRemoteShell);
-        $this->app->bind(RemoteExecutor::class, RemoteShellBackedRemoteExecutor::class);
         $this->app->bind(RunsInternalCommands::class, RemoteShellBackedInternalExecutor::class);
         $this->app->bind(UpdateLeaseHeartbeatProcess::class, InlineUpdateLeaseHeartbeatProcess::class);
         $this->app->bind(RemoteLocalExecutor::class, function (Application $app): RemoteLocalExecutor {
