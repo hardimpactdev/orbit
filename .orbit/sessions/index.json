@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 343,
-    "unique_candidate_commit_count": 239,
+    "record_count": 344,
+    "unique_candidate_commit_count": 240,
     "orphan_count": 0,
     "records": [
         {
@@ -8975,6 +8975,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "1d57dcb41193c168e7e7392d383605224a963cf2",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-024321-solo-764-e2e-topology-facts",
+            "slug": "solo-764-e2e-topology-facts",
+            "timestamp": "2026-08-18-024321",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "456b4dc5307cd3030d4b97cc00a97b12e2daee68",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
