@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:10:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-proxy-write-guard/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-201059-solo-hardening-proxy-write-guard",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-proxy-write-guard-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T180933Z-24b972ae43a9.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-proxy-write-guard-retained-incus-runtime.txt": "a3290d3150c4ca1c91d55c16552f946cdd8b31b3001bee770a5ea23a44bf95c9",
+        "loop.md": "626024d5c08ed15c5d733bfb4b69c3ef5b35a28d3241e13cce35f4ec30922f85",
+        "quality-gates/quality-check-2026-08-18T180933Z-24b972ae43a9.json": "14cac8f32cd99132f3a6f57e2754c0f2dd27e5b61fe626602aeaf2fbd528ad89"
+    },
+    "slug": "solo-hardening-proxy-write-guard",
+    "requested_slug": "solo-hardening-proxy-write-guard",
+    "compatible_slugs": [
+        "solo-hardening-proxy-write-guard"
+    ],
+    "branch": "solo-hardening-proxy-write-guard",
+    "candidate_commit": "99fc3a731575d5d060aa962e9079d52819b96e8d",
+    "accepted_feature_tip": "99fc3a731575d5d060aa962e9079d52819b96e8d",
+    "accepted_main_tip": "0ce43e0777e2020a5ed6220f6db305f3b8866a8c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
