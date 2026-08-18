@@ -23,11 +23,12 @@ uses(RefreshDatabase::class);
 
 describe('ProxyRouteRenderer', function (): void {
     it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
-        $route = ProxyRoute::factory()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => createTestAppHostNode()->id,
             'domain' => 'invalid.docs.test',
             'owner_type' => 'instance',
             'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
                 'upstream' => 'http://127.0.0.1:5173',
@@ -43,7 +44,7 @@ describe('ProxyRouteRenderer', function (): void {
 
     it('rejects custom routes with foreign ownership keys before rendering', function (): void {
         $node = createTestAppHostNode();
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'malformed-custom.test',
             'app_id' => App::factory()->create()->id,
@@ -647,24 +648,24 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'malformed kind') {
-            $route->forceFill(['kind' => 'app'])->save();
+            $route->forceFill(['kind' => 'app'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         new ProxyRouteRenderer()->render($route->fresh());
@@ -1303,7 +1304,7 @@ describe('ProxyRouteRenderer', function (): void {
                     'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
                 ],
             ]);
-        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+        $route->forceFill(['instance_id' => $otherInstance->id])->saveQuietly();
 
         expect(fn (): string => new ProxyRouteRenderer()->render($route->refresh()))
             ->toThrow(
@@ -1316,11 +1317,11 @@ describe('ProxyRouteRenderer', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
-        $route = ProxyRoute::factory()
+        $route = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
             ->for($workspace, 'workspace')
-            ->create([
+            ->make([
                 'instance_id' => $workspace->instance_id,
                 'domain' => 'feature-a.docs.test',
                 'owner_type' => $ownerType,
@@ -1330,7 +1331,7 @@ describe('ProxyRouteRenderer', function (): void {
                     'runtime_upstream' => 'http://orbit-ws-docs-feature-a',
                     'upstream' => 'http://orbit-ws-docs-feature-a',
                 ],
-            ]);
+            ]));
 
         expect(fn (): string => new ProxyRouteRenderer()->render($route))
             ->toThrow(
@@ -1356,24 +1357,24 @@ describe('ProxyRouteRenderer', function (): void {
         ]);
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => 'proxy'])->save();
+            $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         expect(fn (): string => new ProxyRouteRenderer()->render($route->fresh()))
@@ -1407,7 +1408,7 @@ describe('ProxyRouteRenderer', function (): void {
             ]);
 
         if ($compatibilityOwner === 'route') {
-            $route->forceFill(['app_id' => $otherApp->id])->save();
+            $route->forceFill(['app_id' => $otherApp->id])->saveQuietly();
         }
 
         if ($compatibilityOwner === 'workspace') {

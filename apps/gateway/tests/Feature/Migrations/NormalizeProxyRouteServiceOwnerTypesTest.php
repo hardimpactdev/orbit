@@ -11,7 +11,7 @@ uses(RefreshDatabase::class);
 it('normalizes only complete legacy service and public S3 ownership tuples', function (): void {
     $router = Node::factory()->router()->create();
     $ingress = Node::factory()->ingress()->create();
-    $websocket = ProxyRoute::query()->create([
+    $websocket = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $router->id,
         'domain' => 'websocket.orbit',
         'app_id' => null,
@@ -63,7 +63,7 @@ it('preserves legacy owner types on wrong or non-canonical family nodes in both 
     $otherIngress = Node::factory()->ingress()->create();
 
     $upRoutes = collect([
-        ProxyRoute::query()->create([
+        persist_proxy_route_bypassing_owner_guard([
             'node_id' => $otherRouter->id,
             'domain' => 'websocket.orbit',
             'owner_type' => 'websocket',
@@ -134,7 +134,7 @@ it('preserves legacy owner types on wrong or non-canonical family nodes in both 
 
 it('preserves malformed legacy service ownership tuples', function (array $routeAttributes): void {
     $node = Node::factory()->router()->create();
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'domain' => 'websocket.orbit',
         'app_id' => null,

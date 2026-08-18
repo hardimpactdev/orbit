@@ -75,7 +75,7 @@ it('does not normalize malformed metrics route ownership', function (array $attr
         'upstreams' => [['scheme' => 'http', 'host' => 'gateway.metrics.orbit', 'port' => 3000]],
     ];
     $routeConfig = $attributes['config'] ?? $config;
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'domain' => 'metrics.orbit',
         'app_id' => null,

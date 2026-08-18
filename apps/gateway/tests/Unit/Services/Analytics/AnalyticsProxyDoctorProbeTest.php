@@ -172,7 +172,7 @@ it('does not restore active analytics drift by converting another owner', functi
 it('does not overwrite malformed analytics service ownership', function (array $attributes): void {
     $router = analyticsProxyRouter();
     analyticsProxyBackend();
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $router->id,
         'domain' => AnalyticsRouteRegistrar::ServiceDomain,
         'app_id' => null,
@@ -430,24 +430,24 @@ it('rejects malformed or differently-owned routes at a public analytics host', f
     ]);
 
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => 'app'])->save();
+        $route->forceFill(['kind' => 'app'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 
     if ($invalidity === 'different valid owner') {
@@ -511,15 +511,15 @@ it('removes only valid obsolete public analytics ownership', function (): void {
     ]);
     $malformedRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-    ])->save();
-    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+    ])->saveQuietly();
+    $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $ingress->id,
         'app_id' => null,
         'instance_id' => $instance->id,
         'domain' => 'custom-analytics.docs.test',
         'owner_type' => 'custom',
         'kind' => 'proxy',
-    ]);
+    ]));
     $executor = new AnalyticsRouteRegistrarTestInternalExecutor;
     app()->instance(RunsInternalCommands::class, $executor);
     app()->instance(RemoteCaddyConfig::class, new RemoteCaddyConfig($executor));

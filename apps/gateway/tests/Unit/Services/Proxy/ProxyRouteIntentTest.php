@@ -45,24 +45,24 @@ function invalidate_proxy_route_intent_ownership(
     string $invalidity,
 ): void {
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 }
 
@@ -202,7 +202,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('does not claim malformed custom route ownership even with force', function (array $attributes): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'vite.docs.test',
             'app_id' => null,
@@ -417,7 +417,7 @@ describe('ProxyRouteIntent', function (): void {
 
     it('does not remove malformed custom ownership', function (array $attributes): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'old.test',
             'app_id' => null,
@@ -466,7 +466,7 @@ describe('ProxyRouteIntent', function (): void {
             'name' => 'hermes',
             'expected_state' => 'installed',
         ]);
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $routeNode->id,
             'domain' => 'hermes.test',
             'app_id' => null,
@@ -607,7 +607,7 @@ describe('ProxyRouteIntent', function (): void {
         $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create();
 
-        ProxyRoute::factory()->create([
+        persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $node->id,
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -615,7 +615,7 @@ describe('ProxyRouteIntent', function (): void {
             'domain' => 'auth.craft-starterkit-react.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
-        ]);
+        ]));
 
         expect(fn (): array => app(ProxyRouteIntent::class)->remove('auth.craft-starterkit-react.test'))
             ->toThrow(
@@ -639,7 +639,7 @@ describe('ProxyRouteIntent', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
-        $route->forceFill(['app_id' => $compatibility->id])->save();
+        $route->forceFill(['app_id' => $compatibility->id])->saveQuietly();
 
         expect(fn (): array => app(ProxyRouteIntent::class)->remove('docs.test'))
             ->toThrow(GatewayApiException::class, "Domain 'docs.test' is owned by app.")
@@ -662,7 +662,7 @@ describe('ProxyRouteIntent', function (): void {
             'owner_type' => 'workspace',
             'kind' => 'workspace',
         ]);
-        $route->forceFill(['instance_id' => $otherInstance->id])->save();
+        $route->forceFill(['instance_id' => $otherInstance->id])->saveQuietly();
 
         expect(fn (): array => app(ProxyRouteIntent::class)->remove('feature.docs.test'))
             ->toThrow(GatewayApiException::class, "Domain 'feature.docs.test' is owned by workspace.")

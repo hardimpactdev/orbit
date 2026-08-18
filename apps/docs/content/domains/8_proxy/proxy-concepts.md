@@ -38,8 +38,11 @@ These terms define the types of routes that the proxy family owns and manages.
   and registry metadata. A stored `owner_type=instance` is invalid. Direct rows
   use only `app` + `app`, `app-analytics` + `proxy`, or `app-websocket` +
   `proxy`. Each tuple requires one matching App and Instance, matching `app_id`,
-  and `workspace_id=null`. Query and Doctor do not present incomplete tuples as
-  valid owners. Render and repair reject them. Ingress cleanup ignores them.
+  and `workspace_id=null`. Eloquent saves reject incomplete tuples and unknown
+  persisted `owner_type` values. Query and Doctor do not present incomplete or
+  unknown tuples as valid owners; unknown stored types emit
+  `proxy.owner_invalid`. Render and repair reject them. Ingress cleanup
+  ignores them.
   Domain convergence updates an existing row only when its complete tuple
   resolves to the intended owner. Invalid ownership and another valid owner at
   the same domain are conflicts. Destructive lifecycle cleanup applies the same

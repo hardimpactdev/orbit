@@ -469,7 +469,7 @@ describe('ToolRemoveController', function (): void {
             'status' => 'active',
         ]);
         grantToolRemoveApiAccess($caller, $node);
-        $route = ProxyRoute::query()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => 'hermes.nmbp.test',
             'app_id' => null,

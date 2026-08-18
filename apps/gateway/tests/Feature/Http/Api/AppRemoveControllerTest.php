@@ -299,15 +299,15 @@ describe('AppRemoveController', function (): void {
         ]);
         $malformedRoute->forceFill([
             'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-        ])->save();
-        $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        ])->saveQuietly();
+        $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $targetNode->id,
             'app_id' => null,
             'instance_id' => $instance->id,
             'domain' => 'custom.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-        ]);
+        ]));
         $shell = new AppRemoveApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(RunsInternalCommands::class, $shell);

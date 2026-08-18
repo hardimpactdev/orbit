@@ -267,7 +267,7 @@ it('does not rewrite malformed metrics service route ownership when the baseline
         'role' => 'metrics',
         'status' => NodeRoleStatus::Pending,
     ]);
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'domain' => 'metrics.orbit',
         'app_id' => null,

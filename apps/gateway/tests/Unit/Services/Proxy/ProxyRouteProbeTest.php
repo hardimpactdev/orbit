@@ -611,11 +611,12 @@ describe('proxy registry probe foundation', function (): void {
     });
 
     it('rejects the public instance projection label when it is persisted on a proxy route', function (): void {
-        $route = ProxyRoute::factory()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => createTestAppHostNode()->id,
             'domain' => 'invalid.docs.test',
             'owner_type' => 'instance',
             'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
             'config' => [
                 'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
                 'upstream' => 'http://127.0.0.1:5173',
@@ -630,6 +631,27 @@ describe('proxy registry probe foundation', function (): void {
             ->toBeNull();
     });
 
+    it('flags an unknown persisted owner_type as owner invalid', function (): void {
+        $route = persist_proxy_route_bypassing_owner_guard([
+            'node_id' => createTestAppHostNode()->id,
+            'domain' => 'legacy.docs.test',
+            'owner_type' => 'legacy',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
+
+        expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.owner_invalid')?->detail)
+            ->toMatchArray(['owner_type' => 'legacy']);
+    });
+
     it('requires app owners to resolve', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();
@@ -642,7 +664,7 @@ describe('proxy registry probe foundation', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
@@ -664,24 +686,24 @@ describe('proxy registry probe foundation', function (): void {
         ]);
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'malformed kind') {
-            $route->forceFill(['kind' => 'app'])->save();
+            $route->forceFill(['kind' => 'app'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         $drift = new ProxyRouteProbe()->diff($route->fresh(), new ProbeSnapshot([]));
@@ -713,7 +735,7 @@ describe('proxy registry probe foundation', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
-        $route->forceFill(['app_id' => $compatibility->id])->save();
+        $route->forceFill(['app_id' => $compatibility->id])->saveQuietly();
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
@@ -725,7 +747,7 @@ describe('proxy registry probe foundation', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->create();
         $instance = Instance::factory()->for($app)->create();
-        $route = ProxyRoute::factory()->create([
+        $route = persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'app_id' => $app->id,
             'instance_id' => $instance->id,
@@ -733,6 +755,8 @@ describe('proxy registry probe foundation', function (): void {
             'domain' => 'feature.docs.test',
             'owner_type' => 'workspace',
             'kind' => 'workspace',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [],
         ]);
 
         $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
@@ -824,7 +848,7 @@ describe('proxy registry probe foundation', function (): void {
         string $key,
     ): void {
         $route = match ($case) {
-            'custom stray fk' => ProxyRoute::query()->create([
+            'custom stray fk' => persist_proxy_route_bypassing_owner_guard([
                 'node_id' => createTestAppHostNode()->id,
                 'domain' => 'custom-stray.test',
                 'app_id' => App::factory()->create()->id,
@@ -2436,7 +2460,7 @@ describe('proxy node-level diff', function (): void {
         ];
 
         foreach ($workspaceRoutes as [$domain, $ownerType, $kind, $workspaceId]) {
-            ProxyRoute::factory()->create([
+            persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
                 'node_id' => $node->id,
                 'app_id' => $app->id,
                 'instance_id' => $instance->id,
@@ -2444,7 +2468,7 @@ describe('proxy node-level diff', function (): void {
                 'domain' => $domain,
                 'owner_type' => $ownerType,
                 'kind' => $kind,
-            ]);
+            ]));
         }
 
         $probe = new ProxyRouteProbe;
