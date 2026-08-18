@@ -258,18 +258,9 @@ it('pushes the release git tag before creating the draft so checkout can resolve
     $createPos = strpos($recipe, 'gh release create "v${version}"');
 
     expect($tagPos)
-        ->not
-        ->toBeFalse()
-        ->and($pushPos)
-        ->not
-        ->toBeFalse()
-        ->and($createPos)
-        ->not
-        ->toBeFalse()
-        ->and($tagPos)
-        ->toBeLessThan($pushPos)
-        ->and($pushPos)
-        ->toBeLessThan($createPos);
+        ->not->toBeFalse()->and($pushPos)
+        ->not->toBeFalse()->and($createPos)
+        ->not->toBeFalse()->and($tagPos)->toBeLessThan($pushPos)->and($pushPos)->toBeLessThan($createPos);
 });
 
 it('keeps the GitHub release unpublished until draft asset verification succeeds', function (): void {
@@ -277,7 +268,7 @@ it('keeps the GitHub release unpublished until draft asset verification succeeds
 
     expect($workflow)
         ->toContain('workflow_dispatch:')
-        ->toContain("description: Draft release tag to verify and publish")
+        ->toContain('description: Draft release tag to verify and publish')
         ->toContain('inputs.tag || github.event.release.tag_name')
         ->toContain('types: [published]')
         ->toContain('Publish verified GitHub release')
