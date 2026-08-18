@@ -1,0 +1,16 @@
+Todo: Solo #208 (orchestrated hardening wave)
+Candidate: 699526a112cc145d6c7565fc9b60561e0e2c8fd6
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-612b96 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-612b96-gateway
+PublicBindingProxyRouteDefinition.php SHA-256 (local == synced): 02bf22547eb4ae0c131efe675f1fab299f322703579b10760da9239e0d2dc714
+
+Method: acquire retained topology dev-612b96 from the implementation worktree; verify synced source hash; run the behavioral architecture, owner-invariant, and websocket registrar suites inside the retained gateway instance as the orbit user.
+
+Observed:
+  Tests:    76 passed (217 assertions)
+  Duration: 9.22s
+
+Result: passed
