@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T03:52:42+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-770-openapi-surface-operation-id/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-055242-solo-770-openapi-surface-operation-id",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-770-blast-radius-inventory.md",
+        "evidence/solo-770-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T034826Z-6d07802afa62.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-770-blast-radius-inventory.md": "2665e4a668800b218d3e2a4735edcaab942999bd1ac61674fd8f1907900511c6",
+        "evidence/solo-770-retained-incus-proof.md": "f12db5ce38bbd09fc45c5ced51b43d8e55f588296eb0e1708798dd8b4002f4dc",
+        "loop.md": "5172de5250445bf681f374640eb00869fd79b1ae2b5f44eb607327a018bcb5cb",
+        "quality-gates/quality-check-2026-08-18T034826Z-6d07802afa62.json": "d0973e33d01b35be3e7fd8e66b4c20439d64576cc95b74aaa0ca13a6993bcea2"
+    },
+    "slug": "solo-770-openapi-surface-operation-id",
+    "requested_slug": "solo-770-openapi-surface-operation-id",
+    "compatible_slugs": [
+        "solo-770-openapi-surface-operation-id"
+    ],
+    "branch": "solo-770-openapi-surface-operation-id",
+    "candidate_commit": "50ab6aa8aaf4cdf13e5e38d686af5c9144bc77f1",
+    "accepted_feature_tip": "50ab6aa8aaf4cdf13e5e38d686af5c9144bc77f1",
+    "accepted_main_tip": "0a48a5782fc245d0ba3b71d743701fff7ccc2511",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
