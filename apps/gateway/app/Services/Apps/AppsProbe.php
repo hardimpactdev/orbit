@@ -15,6 +15,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\Workspaces\WorkspacePlacement;
 use Throwable;
 
@@ -48,8 +49,9 @@ final readonly class AppsProbe
             return new ProbeSnapshot([]);
         }
 
-        return $this->snapshotFromProbe(
-            snapshot: $this->introspectProbe()->snapshot($node, $this->introspectionPayload($app)),
+        return $this->snapshotFromProbeOrUnverifiable(
+            node: $node,
+            payload: $this->introspectionPayload($app),
             fallbackName: $app->name,
         );
     }
@@ -62,11 +64,9 @@ final readonly class AppsProbe
             return new ProbeSnapshot([]);
         }
 
-        return $this->snapshotFromProbe(
-            snapshot: $this->introspectProbe()->snapshot(
-                $node,
-                $this->introspectionPayload($app, $instance),
-            ),
+        return $this->snapshotFromProbeOrUnverifiable(
+            node: $node,
+            payload: $this->introspectionPayload($app, $instance),
             fallbackName: $this->appRuntimeContainerRenderer()->targetName($app, $instance),
         );
     }
@@ -121,6 +121,25 @@ final readonly class AppsProbe
             'expected_runtime_config_hash' => $expectedRuntimeConfigHash,
             'expected_runtime_image' => $expectedImage,
         ];
+    }
+
+    /**
+     * @param  array<string, string>  $payload
+     */
+    private function snapshotFromProbeOrUnverifiable(Node $node, array $payload, string $fallbackName): ProbeSnapshot
+    {
+        try {
+            return $this->snapshotFromProbe(
+                snapshot: $this->introspectProbe()->snapshot($node, $payload),
+                fallbackName: $fallbackName,
+            );
+        } catch (RemoteShellProtocolException) {
+            return new ProbeSnapshot([
+                $fallbackName => [
+                    'probe_unverifiable' => true,
+                ],
+            ]);
+        }
     }
 
     /**
@@ -285,6 +304,19 @@ final readonly class AppsProbe
     public function diffInstance(App $app, Instance $instance, ProbeSnapshot $snapshot): array
     {
         $targetName = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
+        $observed = $snapshot->get($targetName);
+
+        if (($observed['probe_unverifiable'] ?? null) === true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'app.remote_shell_probe_failed',
+                    kind: DriftKind::Unverifiable,
+                    summary: "App {$targetName} remote introspect envelope was invalid.",
+                    detail: $this->targetDetail($app, $instance),
+                ),
+            ];
+        }
 
         $drift = [];
         $drift = array_merge($drift, $this->checkRecordCompleteness($app, $instance));

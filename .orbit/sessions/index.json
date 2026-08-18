@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 359,
-    "unique_candidate_commit_count": 255,
+    "record_count": 361,
+    "unique_candidate_commit_count": 257,
     "orphan_count": 4,
     "records": [
         {
@@ -9343,6 +9343,52 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "cb707a87e8c15fee801d76044f2b519f291b7ec5",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-202621-solo-hardening-envelope-rollout",
+            "slug": "solo-hardening-envelope-rollout",
+            "timestamp": "2026-08-18-202621",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "edf338ca75eed2c134901004b799ecd5d3115c37",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-203031-solo-hardening-proxy-tuple-dedup",
+            "slug": "solo-hardening-proxy-tuple-dedup",
+            "timestamp": "2026-08-18-203031",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "699526a112cc145d6c7565fc9b60561e0e2c8fd6",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

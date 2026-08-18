@@ -155,6 +155,29 @@ describe('source path and document root reality', function (): void {
         expect(apps_introspect_probe_was_sent())->toBeTrue();
     });
 
+    it('does not treat a malformed introspect envelope as a missing app path', function (string $stdout): void {
+        $node = appsProbeAgentNode();
+        $app = App::factory()->create(['name' => 'docs']);
+        $instance = attachAppsProbeInstance($app, $node);
+        fake_apps_introspect_probe_stdout($stdout);
+
+        $snapshot = new AppsProbe()->introspectInstance($app, $instance);
+        $drift = new AppsProbe()->diffInstance($app, $instance, $snapshot);
+
+        expect($drift)
+            ->toHaveCount(1)
+            ->and($drift[0]->key)
+            ->toBe('app.remote_shell_probe_failed')
+            ->and($drift[0]->kind)
+            ->toBe(DriftKind::Unverifiable);
+    })->with([
+        'empty output' => '',
+        'malformed JSON' => '{"success":',
+        'missing success.data' => '{"success":{"meta":[]}}',
+        'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+        'missing snapshot' => '{"success":{"data":{"name":"docs"},"meta":[]}}',
+    ]);
+
     it('detects missing source paths', function (): void {
         $node = appNode();
         $app = App::factory()->create(['name' => 'docs']);
@@ -999,6 +1022,30 @@ function appsRuntimeConfigsProbeWasSent(): bool
 /**
  * @param  array<string, mixed>  $snapshot
  */
+function fake_apps_introspect_probe_stdout(string $stdout): void
+{
+    app()->instance(
+        RunsInternalCommands::class,
+        app(RemoteLocalExecutor::class),
+    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.63:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app.introspect',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => $stdout,
+                ],
+            ],
+        ]),
+    ]);
+}
+
 function fake_apps_introspect_probe(array $snapshot): void
 {
     app()->instance(

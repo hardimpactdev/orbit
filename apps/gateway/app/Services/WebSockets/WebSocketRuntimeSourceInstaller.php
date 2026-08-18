@@ -60,6 +60,8 @@ class WebSocketRuntimeSourceInstaller
             ),
         );
 
+        // Lenient parse is safe: install already succeeded via throw=true; this
+        // only extracts timing markers from stdout and never gates a write.
         $data = RemoteShellSuccessData::fromJsonEnvelope($result);
         $stdout = $data['stdout'] ?? null;
 

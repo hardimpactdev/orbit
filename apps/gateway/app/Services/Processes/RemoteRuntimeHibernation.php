@@ -6,9 +6,9 @@ namespace App\Services\Processes;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
-use JsonException;
 
 final readonly class RemoteRuntimeHibernation
 {
@@ -49,8 +49,8 @@ final readonly class RemoteRuntimeHibernation
         }
 
         try {
-            $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-        } catch (JsonException) {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException) {
             return null;
         }
 

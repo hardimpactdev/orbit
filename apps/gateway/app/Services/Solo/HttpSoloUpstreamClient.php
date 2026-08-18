@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Solo;
 
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use Illuminate\Http\Client\ConnectionException;
@@ -142,7 +143,11 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
             );
         }
 
-        $remoteResponse = $this->remoteResponse(RemoteShellSuccessData::fromJsonEnvelope($result));
+        try {
+            $remoteResponse = $this->remoteResponse(RemoteShellSuccessData::fromJsonEnvelopeOrFail($result));
+        } catch (RemoteShellProtocolException) {
+            $remoteResponse = null;
+        }
 
         if ($remoteResponse === null) {
             return SoloUpstreamResponse::failure(
