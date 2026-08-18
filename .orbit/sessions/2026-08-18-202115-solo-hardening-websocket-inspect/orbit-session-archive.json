@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T18:21:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-hardening-websocket-inspect/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-202115-solo-hardening-websocket-inspect",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-hardening-websocket-inspect-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T182026Z-b15840a4a55b.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-hardening-websocket-inspect-retained-incus-runtime.txt": "f5e1fe81ad20f5a3fa03009f39ef8ebde9322e8f9294a5a9d7750fa0e24a3138",
+        "loop.md": "54d03e33bf06f0dd397dffc463a6065986384bcea8fb55d7c7778b0512039582",
+        "quality-gates/quality-check-2026-08-18T182026Z-b15840a4a55b.json": "12cf057ee83e7e270a7230db66aadf8ce54d747814c326d3c7e7b8ba21fd9b84"
+    },
+    "slug": "solo-hardening-websocket-inspect",
+    "requested_slug": "solo-hardening-websocket-inspect",
+    "compatible_slugs": [
+        "solo-hardening-websocket-inspect"
+    ],
+    "branch": "solo-hardening-websocket-inspect",
+    "candidate_commit": "cb707a87e8c15fee801d76044f2b519f291b7ec5",
+    "accepted_feature_tip": "cb707a87e8c15fee801d76044f2b519f291b7ec5",
+    "accepted_main_tip": "c50726e3d8922f548da4f0a5748a08c5b6d7d025",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

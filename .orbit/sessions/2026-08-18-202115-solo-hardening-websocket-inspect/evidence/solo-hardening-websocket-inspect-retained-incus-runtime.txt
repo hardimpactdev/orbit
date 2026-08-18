@@ -1,0 +1,19 @@
+Todo: Solo #209 (orchestrated hardening wave)
+Candidate: cb707a87e8c15fee801d76044f2b519f291b7ec5
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-a42f40 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Targets: orbit-e2e-dev-a42f40-operator (CLI suite), orbit-e2e-dev-a42f40-gateway (gateway manager suite)
+Candidate source: /tmp/orbit-e2e-sources/solo-hardening-websocket-inspect-incus-a98082681718/retained/dev-a42f40
+LocalWebSocketRuntimeAction.php SHA-256 (local == synced): edba9e33ec70a0f545d88d372f34cec3c9356e1142fe4b3b1af52ab0e86ee412
+
+Method: acquire retained topology dev-a42f40 from the implementation worktree; verify synced source hash; run the websocket runtime CLI suite in the operator instance and the gateway container-manager warning suite in the gateway instance as the orbit user.
+
+Observed:
+  Tests:    21 passed (212 assertions)
+  Duration: 2.43s
+  Tests:    5 passed (19 assertions)
+  Duration: 2.46s
+
+Result: passed
