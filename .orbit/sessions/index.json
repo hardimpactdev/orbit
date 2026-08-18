@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 350,
-    "unique_candidate_commit_count": 246,
+    "record_count": 351,
+    "unique_candidate_commit_count": 247,
     "orphan_count": 0,
     "records": [
         {
@@ -9136,6 +9136,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "50ab6aa8aaf4cdf13e5e38d686af5c9144bc77f1",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-061746-solo-771-codex-route-family",
+            "slug": "solo-771-codex-route-family",
+            "timestamp": "2026-08-18-061746",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "5ebbe301a29db8afb0026f6c09679ddc285b049d",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

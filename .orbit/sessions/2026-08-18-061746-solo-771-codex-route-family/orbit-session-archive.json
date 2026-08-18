@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T04:17:46+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-771-codex-route-family/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-061746-solo-771-codex-route-family",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-771-blast-radius-inventory.md",
+        "evidence/solo-771-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T041016Z-3cf52488a38d.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-771-blast-radius-inventory.md": "9a318a2e7d0dcb2aaff4fc04d76d7de335b5d1cdae3fcb35e76769acad17c2bf",
+        "evidence/solo-771-retained-incus-proof.md": "8cc0a34bb4cf29f75cf0bde4a88845df9b640ac5cd46ec8459df57b55990292a",
+        "loop.md": "28d6db37f57d62b5761c15b95080bae4ecde46c5f4d79fdc7c41100fcb35ecf7",
+        "quality-gates/quality-check-2026-08-18T041016Z-3cf52488a38d.json": "441f31cb27dbfd67ef8f17f6ef9692e976c3dea5ed380100ec88b942e8829ea6"
+    },
+    "slug": "solo-771-codex-route-family",
+    "requested_slug": "solo-771-codex-route-family",
+    "compatible_slugs": [
+        "solo-771-codex-route-family"
+    ],
+    "branch": "solo-771-codex-route-family",
+    "candidate_commit": "5ebbe301a29db8afb0026f6c09679ddc285b049d",
+    "accepted_feature_tip": "5ebbe301a29db8afb0026f6c09679ddc285b049d",
+    "accepted_main_tip": "c594b889e92460c0dae20d984be8914092bb8e5b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
