@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T02:07:37+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-767-preserve-sdk-runtime-tests/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-040736-solo-767-preserve-sdk-runtime-tests",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-767-blast-radius-inventory.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T020438Z-2c00867225ea.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-767-blast-radius-inventory.md": "43ac248074e394888dd2109ef4d8a48da9f2c90f0aae76da95d3f2d93639cc33",
+        "loop.md": "369ea53eb48f35f86368a5e2cf73679324a8e21988c0340972b6e92edda73b61",
+        "quality-gates/quality-check-2026-08-18T020438Z-2c00867225ea.json": "690a3beda30d504f17c92988f6ea274bdb2839ff590b3e6c64ba80d5b8762ba3"
+    },
+    "slug": "solo-767-preserve-sdk-runtime-tests",
+    "requested_slug": "solo-767-preserve-sdk-runtime-tests",
+    "compatible_slugs": [
+        "solo-767-preserve-sdk-runtime-tests"
+    ],
+    "branch": "solo-767-preserve-sdk-runtime-tests",
+    "candidate_commit": "eb08a40d83676739cfb3d526edb134bc7ba82559",
+    "accepted_feature_tip": "eb08a40d83676739cfb3d526edb134bc7ba82559",
+    "accepted_main_tip": "9ba473cb613f3f06bf1941ace148073e59fd3362",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
