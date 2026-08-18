@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
+use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
+use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
@@ -516,6 +519,90 @@ function app_runtime_manager_ca(): OrbitCaService
             return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
         }
     };
+}
+
+it('does not apply an app runtime container after a malformed success envelope', function (string $stdout): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_raw_agent_response($stdout)),
+    ]);
+
+    expect(fn () => new AppRuntimeContainerManager(
+        new DockerCommandBuilder,
+        app_runtime_manager_ca(),
+        localExecutor: app_runtime_manager_executor(),
+    )->apply(app_runtime_manager_node(), app_runtime_manager_app_container()))
+        ->toThrow(AppRuntimeContainerApplyException::class);
+
+    Http::assertSentCount(1);
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
+
+it('does not report an app container as already absent after a malformed remove envelope', function (string $stdout): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_raw_agent_response($stdout)),
+    ]);
+
+    $outcome = new AppRuntimeContainerManager(
+        new DockerCommandBuilder,
+        app_runtime_manager_ca(),
+        localExecutor: app_runtime_manager_executor(),
+    )->remove(app_runtime_manager_node(), 'docs');
+
+    expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
+    Http::assertSentCount(1);
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
+
+it('does not report a workspace container as already absent after a malformed remove envelope', function (string $stdout): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_raw_agent_response($stdout)),
+    ]);
+
+    $outcome = new WorkspaceRuntimeContainerManager(
+        new DockerCommandBuilder,
+        app_runtime_manager_ca(),
+        localExecutor: app_runtime_manager_executor(),
+    )->remove(app_runtime_manager_node(), 'docs', 'feature-a');
+
+    expect($outcome)->toBe(WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining);
+    Http::assertSentCount(1);
+})->with([
+    'empty output' => '',
+    'malformed JSON' => '{"success":',
+    'missing success.data' => '{"success":{"meta":[]}}',
+    'invalid success.data' => '{"success":{"data":"invalid","meta":[]}}',
+]);
+
+function app_runtime_manager_raw_agent_response(string $stdout): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'app-runtime-container-apply',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => $stdout,
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ];
 }
 
 function app_runtime_manager_agent_response(string $outcome): array

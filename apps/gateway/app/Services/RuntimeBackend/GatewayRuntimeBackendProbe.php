@@ -9,9 +9,11 @@ use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RuntimeBackend\GatewayRuntimeBackendProbeResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Services\Runtime\OrbitContainerNames;
 
 /**
@@ -20,6 +22,8 @@ use App\Services\Runtime\OrbitContainerNames;
  * Inspects the gateway `orbit-gateway` container state over node transport. This probe
  * is scoped to gateway nodes only; app-host nodes use {@see RuntimeBackendProbe}
  * for the host process runtime.
+ *
+ * @mago-expect lint:cyclomatic-complexity
  */
 final readonly class GatewayRuntimeBackendProbe
 {
@@ -44,13 +48,39 @@ final readonly class GatewayRuntimeBackendProbe
                 ],
             ],
         );
-        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-        $runtimeStatus = is_string($data['runtime_status'] ?? null) ? $data['runtime_status'] : 'unknown';
+        try {
+            return $this->probeResultFromEnvelope($result);
+        } catch (RemoteShellProtocolException $exception) {
+            return new GatewayRuntimeBackendProbeResult(
+                runtimeStatus: 'unverifiable',
+                containerExists: false,
+                containerRunning: false,
+                exitCode: $result->exitCode,
+                output: "Probe returned an invalid success envelope: {$exception->getMessage()}",
+            );
+        }
+    }
+
+    private function probeResultFromEnvelope(RemoteShellResult $result): GatewayRuntimeBackendProbeResult
+    {
+        $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+
+        if (! is_string($data['runtime_status'] ?? null) || $data['runtime_status'] === '') {
+            throw new RemoteShellProtocolException(
+                'Gateway runtime backend probe success.data.runtime_status must be a non-empty string.',
+            );
+        }
+
+        if (! is_bool($data['container_exists'] ?? null) || ! is_bool($data['container_running'] ?? null)) {
+            throw new RemoteShellProtocolException(
+                'Gateway runtime backend probe success.data.container_exists and container_running must be booleans.',
+            );
+        }
 
         return new GatewayRuntimeBackendProbeResult(
-            runtimeStatus: $runtimeStatus,
-            containerExists: ($data['container_exists'] ?? null) === true,
-            containerRunning: ($data['container_running'] ?? null) === true,
+            runtimeStatus: $data['runtime_status'],
+            containerExists: $data['container_exists'],
+            containerRunning: $data['container_running'],
             exitCode: $result->exitCode,
             output: trim($result->output()),
         );
@@ -79,6 +109,22 @@ final readonly class GatewayRuntimeBackendProbe
         $runtimeStatus = is_string($observed['runtime_status'] ?? null)
             ? $observed['runtime_status']
             : 'available';
+
+        if ($runtimeStatus === 'unverifiable') {
+            return [
+                new DriftEntry(
+                    family: 'node',
+                    key: 'node.remote_shell_probe_failed',
+                    kind: DriftKind::Unverifiable,
+                    summary: "Gateway container {$runtimeName} could not be verified on {$node->name}.",
+                    detail: [
+                        'container' => $runtimeName,
+                        'node' => $node->name,
+                        'runtime_status' => $runtimeStatus,
+                    ],
+                ),
+            ];
+        }
 
         if ($runtimeStatus !== 'available') {
             return [

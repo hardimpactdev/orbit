@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
-use JsonException;
 use Orbit\Core\Enums\InternalCommand;
 
 /** @mago-expect lint:cyclomatic-complexity */
@@ -167,8 +167,8 @@ final readonly class RemoteRuntimeDependencies
         }
 
         try {
-            return RemoteShellSuccessData::fromJsonEnvelope($result);
-        } catch (JsonException) {
+            return RemoteShellSuccessData::fromJsonEnvelopeOrFail($result);
+        } catch (RemoteShellProtocolException) {
             return null;
         }
     }

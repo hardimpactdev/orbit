@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\RemoteShell;
 
 use App\Models\Node;
+use App\Services\RemoteShell\Exceptions\RemoteShellProtocolException;
 use RuntimeException;
 
 final readonly class RemoteSecretFile
@@ -38,10 +39,17 @@ final readonly class RemoteSecretFile
             ],
         );
 
-        $data = RemoteShellSuccessData::fromJsonEnvelope($staged);
-
         if (! $staged->successful()) {
             throw new RuntimeException(trim($staged->stderr) ?: 'Remote secret file staging failed.');
+        }
+
+        try {
+            $data = RemoteShellSuccessData::fromJsonEnvelopeOrFail($staged);
+        } catch (RemoteShellProtocolException $exception) {
+            throw new RuntimeException(
+                'Remote secret file staging returned an invalid success envelope.',
+                previous: $exception,
+            );
         }
 
         if (! array_key_exists('path', $data) || ! is_string($data['path']) || trim($data['path']) === '') {
