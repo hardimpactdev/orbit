@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-18T03:34:16+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/solo-769-skill-install-immutable-plan/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-18-053415-solo-769-skill-install-immutable-plan",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/solo-769-blast-radius-inventory.md",
+        "evidence/solo-769-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-18T033006Z-fafb94c20e46.json"
+    ],
+    "entry_digests": {
+        "evidence/solo-769-blast-radius-inventory.md": "78da793a62c87d4a05e5fb0f530477095bef8cef64d92257728ff1c31c8cb7f2",
+        "evidence/solo-769-retained-incus-proof.md": "61a270191dcb14bec378ef5622ec17c37a6856362da5d1f958a439f88314a9f6",
+        "loop.md": "84c3907fe7ae6d74983f10ff66f03d23512d5f538a4fa9d5a6e7fc61da322820",
+        "quality-gates/quality-check-2026-08-18T033006Z-fafb94c20e46.json": "a007563f4bbaf58c4f5edff1502835c01150fc6ff152528965dc5461ed91e025"
+    },
+    "slug": "solo-769-skill-install-immutable-plan",
+    "requested_slug": "solo-769-skill-install-immutable-plan",
+    "compatible_slugs": [
+        "solo-769-skill-install-immutable-plan"
+    ],
+    "branch": "solo-769-skill-install-immutable-plan",
+    "candidate_commit": "89b3dff3f4cced1aef2e0a838640329fbef6a99a",
+    "accepted_feature_tip": "89b3dff3f4cced1aef2e0a838640329fbef6a99a",
+    "accepted_main_tip": "0642bf5c1e7b62d29808e2f9aeed4ad4e7c26917",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
