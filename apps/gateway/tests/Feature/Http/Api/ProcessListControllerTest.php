@@ -753,7 +753,7 @@ describe('ProcessListController', function (): void {
         $app = App::factory()->placedOn($appNode)->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
         $conflictingInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
-        ProxyRoute::query()->create([
+        persist_proxy_route_bypassing_owner_guard([
             'node_id' => $appNode->id,
             'domain' => 'conflicting.workspace.example',
             'app_id' => $app->id,

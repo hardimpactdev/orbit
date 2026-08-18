@@ -118,7 +118,7 @@ schedule creation attempts.
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI `schedule:add` POST payload, target and execution-source validation, default node when no target is supplied, and gateway error passthrough. |
 | `apps/gateway/tests/Feature/Http/Api/ScheduleInstanceOwnershipTest.php` | Explicit and bare instance resolution, per-instance name uniqueness, serving-node payloads, and ambiguity before writes. |
 | `apps/gateway/tests/Feature/Migrations/CanonicalizeScheduleAppInstanceOwnershipTest.php` | Existing app-schedule ownership backfill and ambiguous migration stop. |
-| `apps/gateway/tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php` | Closed Orbit/Node/Instance owner backfill, deleted-owner run retention, and fail-closed contradictory rows. |
+| `apps/gateway/tests/Feature/Migrations/ConstrainScheduleOwnerInvariantTest.php` | Closed Orbit/Node/Instance owner backfill, deleted-owner run retention, fail-closed contradictory rows, remapped `schedule_key` collision preflight, and fail-loud partial-rebuild reruns. |
 | `apps/gateway/tests/Feature/Models/ScheduleOwnerInvariantTest.php` | Persist/reject closed owners, lock identity, and historical run labels. |
 
 Activity logging assertions remain a coverage gap until focused tests land.

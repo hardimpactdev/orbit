@@ -265,7 +265,7 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
 
         expect($expected)->toBeInstanceOf(ProxyRoute::class);
 
-        ProxyRoute::query()->create([
+        persist_proxy_route_bypassing_owner_guard([
             'node_id' => $node->id,
             'domain' => $expected->domain,
             'app_id' => null,

@@ -116,15 +116,15 @@ it('removes only valid instance-owned routes with an app role dependent', functi
     ]);
     $malformedRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-    ])->save();
-    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+    ])->saveQuietly();
+    $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $devNode->id,
         'app_id' => null,
         'instance_id' => $instance->id,
         'domain' => 'custom.dev',
         'owner_type' => 'custom',
         'kind' => 'proxy',
-    ]);
+    ]));
 
     new NodeRoleDependencyInspector()->removeOrbitOwnedDependents(
         $devNode,
@@ -185,7 +185,7 @@ it('classifies ingress routes by their concrete instance instead of any app sibl
         'kind' => 'app',
         'config' => ['placement' => 'ingress'],
     ]);
-    $productionRoute->forceFill(['app_id' => $compatibilityApp->id])->save();
+    $productionRoute->forceFill(['app_id' => $compatibilityApp->id])->saveQuietly();
 
     new NodeRoleDependencyInspector()->removeOrbitOwnedDependents(
         $ingress,
@@ -261,24 +261,24 @@ it('does not summarize or remove an ingress app route with invalid ownership', f
     ]);
 
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => 'proxy'])->save();
+        $route->forceFill(['kind' => 'proxy'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 
     $assignment = new NodeRoleAssignment(['role' => 'ingress']);

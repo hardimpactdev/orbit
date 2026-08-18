@@ -157,7 +157,7 @@ it('ignores a workspace proxy route without persisted instance ownership', funct
     $app = App::factory()->placedOn($node)->create(['name' => 'happie']);
     $workspace = Workspace::factory()->for($app)->create(['name' => 'recipe']);
 
-    ProxyRoute::query()->create([
+    persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'domain' => 'unowned.example',
         'app_id' => $app->id,
@@ -177,7 +177,7 @@ it('ignores a workspace proxy route with conflicting instance ownership', functi
     $workspace = Workspace::factory()->for($app)->create(['name' => 'recipe']);
     $conflictingInstance = Instance::factory()->for($app)->create(['name' => 'preview']);
 
-    ProxyRoute::query()->create([
+    persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'domain' => 'conflicting.example',
         'app_id' => $app->id,
@@ -270,6 +270,7 @@ it('allows proxy routes to point at workspace-owned intent', function (): void {
         'domain' => 'feature-docs.docs.test',
         'app_id' => $workspace->app_id,
         'workspace_id' => $workspace->id,
+        'instance_id' => $workspace->instance_id,
         'owner_type' => 'workspace',
         'kind' => 'workspace',
         'source_hash' => str_repeat('b', 64),

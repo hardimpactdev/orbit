@@ -77,7 +77,7 @@ it('identifies workspace-owned proxy issues by their stored route', function ():
         'domain' => 'workspace.test',
         'owner_type' => 'custom',
     ]);
-    $workspaceRoute->forceFill(['owner_type' => 'workspace'])->save();
+    $workspaceRoute->forceFill(['owner_type' => 'workspace'])->saveQuietly();
     ProxyRoute::factory()->create([
         'node_id' => $this->node->id,
         'domain' => 'custom.test',

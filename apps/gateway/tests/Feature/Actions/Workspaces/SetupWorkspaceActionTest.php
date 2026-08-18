@@ -373,23 +373,23 @@ it('rejects malformed or differently-owned workspace routes at the target domain
     ]);
 
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => 'proxy'])->save();
+        $route->forceFill(['kind' => 'proxy'])->saveQuietly();
     }
 
     if ($invalidity === 'missing workspace') {
-        $route->forceFill(['workspace_id' => null])->save();
+        $route->forceFill(['workspace_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'different valid owner') {
@@ -397,7 +397,7 @@ it('rejects malformed or differently-owned workspace routes at the target domain
             'app_id' => $workspace->app_id,
             'instance_id' => $workspace->instance_id,
         ]);
-        $route->forceFill(['workspace_id' => $otherWorkspace->id])->save();
+        $route->forceFill(['workspace_id' => $otherWorkspace->id])->saveQuietly();
     }
 
     $original = $route->fresh()->getAttributes();

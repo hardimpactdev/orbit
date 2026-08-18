@@ -468,19 +468,19 @@ describe('AppRegisterController', function (): void {
         ]);
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'wrong kind') {
-            $route->forceFill(['kind' => 'proxy'])->save();
+            $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
@@ -488,7 +488,7 @@ describe('AppRegisterController', function (): void {
                 'app_id' => $app->id,
                 'instance_id' => $selected->id,
             ]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         app()->instance(RemoteShell::class, new AppRegisterApiSequencedRemoteShell([]));

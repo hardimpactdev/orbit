@@ -198,13 +198,13 @@ it('does not clear malformed ownership when syncing the service route', function
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
     $instance = Instance::factory()->create();
-    ProxyRoute::factory()->create([
+    persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $router->id,
         'domain' => S3RouteRegistrar::ServiceDomain,
         'instance_id' => $instance->id,
         'owner_type' => 'router',
         'kind' => 'proxy',
-    ]);
+    ]));
 
     expect(fn () => app(S3RouteRegistrar::class)->syncServiceRoute())
         ->toThrow(RuntimeException::class, "S3 service route 's3.orbit' conflicts with existing ownership.");
@@ -295,7 +295,7 @@ it('does not overwrite mismatched s3 service ownership', function (array $attrib
         'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $router->id,
         'domain' => S3RouteRegistrar::ServiceDomain,
         'app_id' => null,
@@ -372,13 +372,13 @@ it('does not clear malformed ownership when syncing a public host route', functi
         ],
     ]);
     $instance = Instance::factory()->create();
-    ProxyRoute::factory()->create([
+    persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
         'node_id' => $edge->id,
         'domain' => 's3.example.com',
         'instance_id' => $instance->id,
         'owner_type' => 's3',
         'kind' => 'proxy',
-    ]);
+    ]));
 
     expect(fn () => app(S3RouteRegistrar::class)->syncPublicHosts($tool))
         ->toThrow(RuntimeException::class, "S3 public route 's3.example.com' conflicts with existing ownership.");
@@ -666,7 +666,7 @@ it('removePublicHost does not remove malformed s3 ownership at the same domain',
         'name' => 'seaweedfs',
         'config' => ['backend_host' => 'storage-1.s3.orbit', 'public_hosts' => []],
     ]);
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $edge->id,
         'domain' => 's3.example.com',
         'app_id' => null,

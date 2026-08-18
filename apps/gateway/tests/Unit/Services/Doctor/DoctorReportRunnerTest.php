@@ -4672,7 +4672,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             'owner_type' => 'custom',
             'kind' => 'proxy',
         ]);
-        $legacyWorkspaceRoute->forceFill(['owner_type' => 'workspace'])->save();
+        $legacyWorkspaceRoute->forceFill(['owner_type' => 'workspace'])->saveQuietly();
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'domain' => 'legacy-kind.docs.example.test',
@@ -4867,7 +4867,7 @@ describe('DoctorReportRunner metrics role categories', function (): void {
                 'kind' => $kind,
             ]);
 
-            $route->forceFill(['owner_type' => $ownerType])->save();
+            $route->forceFill(['owner_type' => $ownerType])->saveQuietly();
         }
 
         $shell = new DoctorProductionProxyAdoptRemoteShell(array_column($routes, 0));
