@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\OperationEvent;
+use App\Models\OperationRun;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
@@ -13,6 +15,7 @@ use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerManager;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -23,33 +26,11 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('applies websocket runtime containers through the agent-push local executor', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.80:9477/v1/commands' => Http::response([
-            'transport' => 'agent-push',
-            'operation_id' => 'websocket-runtime-container-apply',
-            'binary' => 'orbit',
-            'status' => 'succeeded',
-            'exit_code' => 0,
-            'frames' => [
-                [
-                    'type' => 'stdout',
-                    'message' => "{\"success\":{\"data\":{\"action\":\"container:apply\",\"changed\":true},\"meta\":[]}}\n",
-                ],
-                [
-                    'type' => 'exit',
-                    'message' => '0',
-                ],
-            ],
-        ]),
+    websocket_runtime_manager_fake_apply([
+        'action' => 'container:apply',
+        'changed' => true,
     ]);
-    $node = Node::factory()
-        ->withActiveRole('websocket')
-        ->managed()
-        ->create([
-            'name' => 'realtime-1',
-            'wireguard_address' => '10.44.0.80',
-        ]);
+    $node = websocket_runtime_manager_node();
     $container = websocket_runtime_manager_container();
 
     new WebSocketRuntimeContainerManager(websocket_runtime_manager_executor())
@@ -75,6 +56,151 @@ it('applies websocket runtime containers through the agent-push local executor',
         );
     });
 });
+
+it('re-emits could-not-verify current-image warnings onto the apply operation run', function (
+    array $data,
+    array $meta,
+): void {
+    $warning = 'Current-image verification was skipped because orbit-reverb:current could not be inspected.';
+    websocket_runtime_manager_fake_apply($data, $meta);
+    $node = websocket_runtime_manager_node();
+
+    new WebSocketRuntimeContainerManager(websocket_runtime_manager_executor())
+        ->apply($node, websocket_runtime_manager_container());
+
+    $events = websocket_runtime_manager_apply_warning_events($node);
+
+    expect($events)
+        ->toHaveCount(1)
+        ->and($events[0]->event_type)
+        ->toBe('step')
+        ->and($events[0]->payload)
+        ->toMatchArray([
+            'key' => 'current-image-verification',
+            'status' => 'warning',
+            'message' => $warning,
+        ]);
+})->with([
+    'meta warnings' => [
+        [
+            'action' => 'container:apply',
+            'outcome' => 'unchanged',
+            'changed' => false,
+            'image_verification' => 'could_not_verify',
+            'warning' => 'Current-image verification was skipped because orbit-reverb:current could not be inspected.',
+        ],
+        [
+            'warnings' => [[
+                'code' => 'websocket_runtime.current_image_unverified',
+                'message' => 'Current-image verification was skipped because orbit-reverb:current could not be inspected.',
+            ]],
+        ],
+    ],
+    'data warning only' => [
+        [
+            'action' => 'container:apply',
+            'outcome' => 'unchanged',
+            'changed' => false,
+            'image_verification' => 'could_not_verify',
+            'warning' => 'Current-image verification was skipped because orbit-reverb:current could not be inspected.',
+        ],
+        [],
+    ],
+]);
+
+it('does not emit apply-operation warning steps when current-image verification is decisive', function (
+    string $verification,
+    string $outcome,
+    bool $changed,
+): void {
+    websocket_runtime_manager_fake_apply([
+        'action' => 'container:apply',
+        'outcome' => $outcome,
+        'changed' => $changed,
+        'image_verification' => $verification,
+    ]);
+    $node = websocket_runtime_manager_node();
+
+    new WebSocketRuntimeContainerManager(websocket_runtime_manager_executor())
+        ->apply($node, websocket_runtime_manager_container());
+
+    expect(websocket_runtime_manager_apply_warning_events($node))->toBeEmpty();
+})->with([
+    'matches' => ['matches', 'unchanged', false],
+    'differs' => ['differs', 'recreated', true],
+]);
+
+/**
+ * @param  array<string, mixed>  $data
+ * @param  array<string, mixed>  $meta
+ */
+function websocket_runtime_manager_fake_apply(array $data, array $meta = []): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'websocket-runtime-container-apply',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' =>
+                        json_encode([
+                            'success' => [
+                                'data' => $data,
+                                'meta' => $meta,
+                            ],
+                        ], JSON_THROW_ON_ERROR)."\n",
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
+    ]);
+}
+
+function websocket_runtime_manager_node(): Node
+{
+    return Node::factory()
+        ->withActiveRole('websocket')
+        ->managed()
+        ->create([
+            'name' => 'realtime-1',
+            'wireguard_address' => '10.44.0.80',
+        ]);
+}
+
+/**
+ * @return Collection<int, OperationEvent>
+ */
+function websocket_runtime_manager_apply_warning_events(Node $node): Collection
+{
+    $run = OperationRun::query()
+        ->where('operation_id', 'websocket-runtime-container-apply')
+        ->where('target_node_id', $node->id)
+        ->latest('created_at')
+        ->first();
+
+    if (! $run instanceof OperationRun) {
+        return new Collection;
+    }
+
+    return OperationEvent::query()
+        ->where('operation_run_id', $run->id)
+        ->where('event_type', 'step')
+        ->get()
+        ->filter(
+            static fn (OperationEvent $event): bool => (
+                ($event->payload['key'] ?? null) === 'current-image-verification'
+            ),
+        )
+        ->values();
+}
 
 function websocket_runtime_manager_container(): WebSocketRuntimeContainer
 {
