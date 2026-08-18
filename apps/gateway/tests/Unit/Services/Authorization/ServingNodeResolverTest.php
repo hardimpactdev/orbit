@@ -294,7 +294,7 @@ describe('ServingNodeResolver', function (): void {
             'owner_type' => 'app',
             'kind' => 'app',
         ]);
-        $route->forceFill(['app_id' => $compatibility->id])->save();
+        $route->forceFill(['app_id' => $compatibility->id])->saveQuietly();
 
         $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest([], ['app' => 'mismatch.example']),

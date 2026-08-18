@@ -364,24 +364,24 @@ it('rejects malformed or differently-owned app routes at the target domain', fun
     ]);
 
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => 'proxy'])->save();
+        $route->forceFill(['kind' => 'proxy'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 
     if ($invalidity === 'different valid owner') {
@@ -617,14 +617,16 @@ it('removes stale app-owned proxy routes for the same app when its domain change
     ]);
     $malformedStaleRoute->forceFill([
         'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-    ])->save();
-    $strayForeignKeyRoute = ProxyRoute::factory()->create([
+    ])->saveQuietly();
+    $strayForeignKeyRoute = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'app_id' => null,
         'instance_id' => $instance->id,
         'owner_type' => 'custom',
         'kind' => 'proxy',
         'domain' => 'custom-happie.nmbp',
+        'source_hash' => str_repeat('0', 64),
+        'config' => ['upstream' => 'http://127.0.0.1:8080'],
     ]);
 
     $shell = new EnsureAppProxyRouteTestShell;

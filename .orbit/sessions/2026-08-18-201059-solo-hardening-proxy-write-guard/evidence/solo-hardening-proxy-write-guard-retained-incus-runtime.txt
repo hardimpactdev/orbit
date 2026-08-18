@@ -1,0 +1,22 @@
+Todo: Solo #207 (orchestrated hardening wave)
+Candidate: 99fc3a731575d5d060aa962e9079d52819b96e8d (feature tip after integrating advanced main 0ce43e077 and applying mago format)
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-3c8e9b (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-3c8e9b-gateway
+Candidate source: /tmp/orbit-e2e-sources/solo-hardening-proxy-write-guard-incus-23c019f4b722/retained/dev-3c8e9b
+ProxyRoute.php SHA-256 (local == synced): e734c37a2692ac552b7af02b0940ecc73b50cf38da167613c7da62073dfcb792
+
+Method:
+1. Acquire retained topology dev-3c8e9b from the implementation worktree via e2e:dev-topology (checkout.migrate executed the full migration chain, including the proxy ownership backfill, against the retained gateway database with the new save guard active).
+2. Verify the synced candidate ProxyRoute.php hash equals the local candidate hash.
+3. Run the proxy owner-invariant, probe, and ownership-migration suites inside the retained gateway instance as the orbit user.
+
+Expected: The exact candidate rejects invalid ownership tuples at save, emits owner_invalid drift for unknown owner_type, and keeps registrar/backfill/adoption write paths green in the routed retained gateway environment.
+
+Observed:
+  Tests:    180 passed (564 assertions)
+  Duration: 17.17s
+
+Result: passed

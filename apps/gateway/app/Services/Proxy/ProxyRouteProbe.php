@@ -864,8 +864,12 @@ final readonly class ProxyRouteProbe
         $route->loadMissing(['instance.app', 'workspace.instance']);
         $nonInstanceOwnership = app(NonInstanceProxyRouteOwnership::class);
 
-        if ($route->owner_type === 'instance') {
-            return [$this->ownerInvalid($route, 'instance')];
+        if (
+            ! InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)
+            && $route->owner_type !== 'workspace'
+            && ! NonInstanceProxyRouteOwnership::supports($route->owner_type)
+        ) {
+            return [$this->ownerInvalid($route, $route->owner_type)];
         }
 
         if ($route->owner_type === 'app' && $this->instanceRouteOwnership()->resolve($route) === null) {

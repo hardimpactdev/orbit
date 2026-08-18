@@ -257,8 +257,8 @@ describe('WorkspaceRemoveController', function (): void {
         ]);
         $malformedRoute->forceFill([
             'app_id' => App::factory()->create(['name' => 'compatibility'])->id,
-        ])->save();
-        $strayForeignKeyRoute = ProxyRoute::factory()->create([
+        ])->saveQuietly();
+        $strayForeignKeyRoute = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $targetNode->id,
             'domain' => 'custom.docs.test',
             'app_id' => null,
@@ -266,7 +266,7 @@ describe('WorkspaceRemoveController', function (): void {
             'workspace_id' => $workspace->id,
             'owner_type' => 'custom',
             'kind' => 'proxy',
-        ]);
+        ]));
         $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(RunsInternalCommands::class, $shell);

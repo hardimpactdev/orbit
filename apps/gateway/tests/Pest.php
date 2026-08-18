@@ -8,6 +8,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\NodeDnsmasqRecordsBuilder;
 use App\Services\Dns\ProxyDnsmasqRecordsBuilder;
@@ -319,6 +320,30 @@ function fakeGatewayCaRootThroughLaravelHttp(): void
  * @param  array<string, mixed>  $attributes
  * @param  array<string, mixed>  $settings
  */
+/**
+ * Persist a proxy route that would violate the write-time owner invariant.
+ * Probe, query, render, and repair tests use this to seed already-invalid rows.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function persist_proxy_route_bypassing_owner_guard(array $attributes): ProxyRoute
+{
+    $route = new ProxyRoute([
+        'source_hash' => str_repeat('0', 64),
+        ...$attributes,
+    ]);
+    $route->saveQuietly();
+
+    return $route->refresh();
+}
+
+function persist_made_proxy_route_bypassing_owner_guard(ProxyRoute $route): ProxyRoute
+{
+    $route->saveQuietly();
+
+    return $route->refresh();
+}
+
 function createTestAppHostNode(
     array $attributes = [],
     string $role = 'app-dev',

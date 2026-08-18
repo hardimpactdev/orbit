@@ -217,7 +217,8 @@ Required test files:
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
 | `apps/gateway/tests/Feature/Services/Doctor/DoctorDnsProjectionRestoreTest.php` | Family-specific restore routing for node and proxy DNS projections. |
 | `apps/gateway/tests/Unit/Services/Doctor/ProxyDnsProjectionProbeTest.php` | Router/private `.orbit`, exact backend projection, and `proxy.dns_mapping_mismatch`. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership, node eligibility, artifacts, TLS, and safe adoption. |
+| `apps/gateway/tests/Feature/Models/ProxyRouteOwnerInvariantTest.php` | Write-time owner invariant: valid instance, workspace, and non-instance saves; rejected incomplete tuples and unknown owner types. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | Probe drift for registry, derived agent-tool route intent, ownership including unknown `owner_type`, node eligibility, artifacts, TLS, and safe adoption. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFileProbeContractTest.php` | Route observation framing, verified absence, unavailable Caddy, malformed replies, and preserved route evidence. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteFixerTest.php` | Restore behavior for deleted and mismatched agent-tool routes, complete app-route re-enactment, and layer-specific artifact repairs. |
 | `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` | apply-container seeds the host-mounted global Caddyfile before create/recreate, force-recreates restarting orbit-caddy containers with matching hash/network, and still starts stopped matching containers. |

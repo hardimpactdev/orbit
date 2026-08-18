@@ -37,24 +37,24 @@ function invalidate_proxy_route_query_ownership(
     string $invalidity,
 ): void {
     if ($invalidity === 'missing app') {
-        $route->forceFill(['app_id' => null])->save();
+        $route->forceFill(['app_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'missing instance') {
-        $route->forceFill(['instance_id' => null])->save();
+        $route->forceFill(['instance_id' => null])->saveQuietly();
     }
 
     if ($invalidity === 'conflicting app') {
-        $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+        $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
     }
 
     if ($invalidity === 'wrong kind') {
-        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->save();
+        $route->forceFill(['kind' => $validKind === 'app' ? 'proxy' : 'app'])->saveQuietly();
     }
 
     if ($invalidity === 'workspace identity') {
         $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-        $route->forceFill(['workspace_id' => $workspace->id])->save();
+        $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
     }
 }
 
@@ -228,19 +228,19 @@ describe('ProxyRouteQuery', function (): void {
         ]);
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'malformed kind') {
-            $route->forceFill(['kind' => 'proxy'])->save();
+            $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
         $query = app(ProxyRouteQuery::class);
@@ -276,15 +276,15 @@ describe('ProxyRouteQuery', function (): void {
         ]);
 
         if ($invalidity === 'missing workspace') {
-            $route->forceFill(['workspace_id' => null])->save();
+            $route->forceFill(['workspace_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create(['name' => 'other'])->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create(['name' => 'other'])->id])->saveQuietly();
         }
 
         if ($invalidity === 'malformed kind') {
-            $route->forceFill(['kind' => 'proxy'])->save();
+            $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
         $entity = app(ProxyRouteQuery::class)->toRouteEntity($route->fresh());
@@ -309,7 +309,7 @@ describe('ProxyRouteQuery', function (): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
-        $route = ProxyRoute::factory()->create([
+        $route = persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $node->id,
             'app_id' => $app->id,
             'instance_id' => $workspace->instance_id,
@@ -317,7 +317,7 @@ describe('ProxyRouteQuery', function (): void {
             'domain' => 'feature.docs.test',
             'owner_type' => $ownerType,
             'kind' => $kind,
-        ]);
+        ]));
 
         expect(app(WorkspaceProxyRouteOwnershipResolver::class)->resolve($route))->toBeNull();
     })->with([
@@ -518,24 +518,24 @@ describe('ProxyRouteQuery', function (): void {
         ]);
 
         if ($invalidity === 'missing instance') {
-            $route->forceFill(['instance_id' => null])->save();
+            $route->forceFill(['instance_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'missing app') {
-            $route->forceFill(['app_id' => null])->save();
+            $route->forceFill(['app_id' => null])->saveQuietly();
         }
 
         if ($invalidity === 'conflicting app') {
-            $route->forceFill(['app_id' => App::factory()->create()->id])->save();
+            $route->forceFill(['app_id' => App::factory()->create()->id])->saveQuietly();
         }
 
         if ($invalidity === 'malformed kind') {
-            $route->forceFill(['kind' => 'app'])->save();
+            $route->forceFill(['kind' => 'app'])->saveQuietly();
         }
 
         if ($invalidity === 'workspace identity') {
             $workspace = Workspace::factory()->for($app)->create(['instance_id' => $instance->id]);
-            $route->forceFill(['workspace_id' => $workspace->id])->save();
+            $route->forceFill(['workspace_id' => $workspace->id])->saveQuietly();
         }
 
         $query = app(ProxyRouteQuery::class);

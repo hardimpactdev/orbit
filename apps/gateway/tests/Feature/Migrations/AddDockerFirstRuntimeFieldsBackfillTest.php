@@ -208,7 +208,7 @@ it('rejects malformed app route tuples before runtime upstream backfill', functi
     $node = Node::factory()->appDev()->create();
     $app = App::factory()->create(['name' => 'owner', 'runtime' => AppRuntimeKind::Php]);
     $instance = Instance::factory()->for($app)->create();
-    $route = ProxyRoute::query()->create([
+    $route = persist_proxy_route_bypassing_owner_guard([
         'node_id' => $node->id,
         'app_id' => $app->id,
         'workspace_id' => null,

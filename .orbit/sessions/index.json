@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 355,
-    "unique_candidate_commit_count": 251,
+    "record_count": 357,
+    "unique_candidate_commit_count": 253,
     "orphan_count": 4,
     "records": [
         {
@@ -9251,6 +9251,52 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "c2b434dadb3597e8ab59ff50bf688d2a5851edf2",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-200035-solo-hardening-schedules-migration",
+            "slug": "solo-hardening-schedules-migration",
+            "timestamp": "2026-08-18-200035",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "c4a4173ff49bd5c4186104d672ac90e3c3274683",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-18-201059-solo-hardening-proxy-write-guard",
+            "slug": "solo-hardening-proxy-write-guard",
+            "timestamp": "2026-08-18-201059",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "99fc3a731575d5d060aa962e9079d52819b96e8d",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
