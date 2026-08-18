@@ -370,7 +370,7 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     let stdout = command.take_stdout().map(spawn_output_drain);
     let stderr = command.take_stderr().map(spawn_output_drain);
     let completion = command.wait(None);
-    let output = collect_drained_output(stdout, stderr);
+    let output = collect_drained_output_if_child_reaped(stdout, stderr, completion.child_reaped);
     let timings = CommandExecutionTimings {
         process_spawn_ms,
         process_wait_ms: completion.process_wait_ms,
@@ -767,7 +767,7 @@ impl SpawnedCommand {
                     ),
                 },
             };
-        let stdin_error = self.finish_stdin();
+        let stdin_error = self.finish_stdin(child_reaped);
 
         CommandLifecycleCompletion {
             outcome,
@@ -779,18 +779,31 @@ impl SpawnedCommand {
         }
     }
 
-    fn finish_stdin(&mut self) -> Option<String> {
-        let writer_error = self
-            .stdin_writer
-            .take()
-            .and_then(|writer| match writer.join() {
-                Ok(Ok(())) => None,
-                Ok(Err(error)) => Some(error),
-                Err(_) => Some("failed to join binary stdin writer".to_string()),
-            });
-
-        self.stdin_error.take().or(writer_error)
+    fn finish_stdin(&mut self, child_reaped: bool) -> Option<String> {
+        finish_stdin_writer(
+            self.stdin_writer.take(),
+            self.stdin_error.take(),
+            child_reaped,
+        )
     }
+}
+
+fn finish_stdin_writer(
+    writer: Option<JoinHandle<Result<(), String>>>,
+    recorded_error: Option<String>,
+    child_reaped: bool,
+) -> Option<String> {
+    if !child_reaped {
+        return recorded_error;
+    }
+
+    let writer_error = writer.and_then(|writer| match writer.join() {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(_) => Some("failed to join binary stdin writer".to_string()),
+    });
+
+    recorded_error.or(writer_error)
 }
 
 enum CommandLifecycleOutcome {
@@ -923,6 +936,21 @@ where
 
         Ok(bytes)
     })
+}
+
+fn collect_drained_output_if_child_reaped(
+    stdout: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    stderr: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    child_reaped: bool,
+) -> DrainedCommandOutput {
+    if !child_reaped {
+        return DrainedCommandOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+    }
+
+    collect_drained_output(stdout, stderr)
 }
 
 fn collect_drained_output(
@@ -1956,6 +1984,119 @@ mod tests {
             waiter.join().expect("finish_stream_wait thread");
             assert!(completed.load(Ordering::SeqCst));
         }
+    }
+
+    #[test]
+    fn finish_stdin_detaches_writer_when_child_is_still_alive() {
+        let (block_tx, block_rx) = mpsc::channel::<()>();
+        let blocked = thread::spawn(move || {
+            let _ = block_rx.recv();
+            Ok(())
+        });
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            let error = finish_stdin_writer(
+                Some(blocked),
+                Some("child stdin was unavailable".to_string()),
+                false,
+            );
+            let _ = done_tx.send(error);
+        });
+
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("unreaped finish_stdin must not join a blocked stdin writer");
+        waiter.join().expect("finish_stdin_writer thread");
+
+        assert_eq!(error.as_deref(), Some("child stdin was unavailable"));
+        drop(block_tx);
+    }
+
+    #[test]
+    fn finish_stdin_still_joins_writer_after_child_is_reaped() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let writer = thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            Err("failed to write binary stdin: broken pipe".to_string())
+        });
+        started_rx.recv().expect("stdin writer started");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            let error = finish_stdin_writer(Some(writer), None, true);
+            let _ = done_tx.send(error);
+        });
+
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "reaped finish_stdin must join the stdin writer"
+        );
+        release_tx.send(()).expect("release stdin writer");
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaped finish_stdin must finish after the writer joins");
+        waiter.join().expect("finish_stdin_writer thread");
+
+        assert_eq!(
+            error.as_deref(),
+            Some("failed to write binary stdin: broken pipe")
+        );
+    }
+
+    #[test]
+    fn buffered_drains_detach_when_child_is_still_alive() {
+        let (block_tx, block_rx) = mpsc::channel::<()>();
+        let blocked = thread::spawn(move || {
+            let _ = block_rx.recv();
+            Ok(b"unread".to_vec())
+        });
+        let (done_tx, done_rx) = mpsc::channel();
+
+        let waiter = thread::spawn(move || {
+            let output = collect_drained_output_if_child_reaped(Some(blocked), None, false);
+            let _ = done_tx.send(output.stdout);
+        });
+
+        let stdout = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("unreaped buffered collect must not join blocked drains");
+        waiter.join().expect("collect_drained_output thread");
+
+        assert!(stdout.is_empty());
+        drop(block_tx);
+    }
+
+    #[test]
+    fn buffered_drains_still_join_after_child_is_reaped() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let drain = thread::spawn(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            Ok(b"drained".to_vec())
+        });
+        started_rx.recv().expect("drain started");
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            let output = collect_drained_output_if_child_reaped(Some(drain), None, true);
+            let _ = done_tx.send(output.stdout);
+        });
+
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(150)).is_err(),
+            "reaped buffered collect must join drains"
+        );
+        release_tx.send(()).expect("release drain");
+        let stdout = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("reaped buffered collect must finish after drains join");
+        waiter.join().expect("collect_drained_output thread");
+
+        assert_eq!(stdout, b"drained");
     }
 
     #[test]
