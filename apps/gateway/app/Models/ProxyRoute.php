@@ -76,7 +76,7 @@ class ProxyRoute extends Model
         $this->unsetRelation('app');
 
         if (InstanceProxyRouteOwnershipResolver::isDirectOwner($this->owner_type)) {
-            if ((new InstanceProxyRouteOwnershipResolver)->resolve($this) instanceof Instance) {
+            if (new InstanceProxyRouteOwnershipResolver()->resolve($this) instanceof Instance) {
                 return;
             }
 
@@ -86,7 +86,7 @@ class ProxyRoute extends Model
         }
 
         if ($this->owner_type === 'workspace') {
-            if ((new WorkspaceProxyRouteOwnershipResolver)->resolve($this) instanceof WorkspaceProxyRouteOwnership) {
+            if (new WorkspaceProxyRouteOwnershipResolver()->resolve($this) instanceof WorkspaceProxyRouteOwnership) {
                 return;
             }
 
