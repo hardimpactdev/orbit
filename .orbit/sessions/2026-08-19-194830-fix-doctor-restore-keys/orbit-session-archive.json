@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-19T17:48:30+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-doctor-restore-keys/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-19-194830-fix-doctor-restore-keys",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fix-doctor-restore-keys-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-19T174442Z-468c2b8078e0.json"
+    ],
+    "entry_digests": {
+        "evidence/fix-doctor-restore-keys-retained-incus-runtime.txt": "ad4e5ef2f24f43370499ab7bd784e9a98a16ecfbdf1dfb3a88a933ec7fc960b2",
+        "loop.md": "4e20886dd0a38dc8227cd743f3918e6f63be46ea0e3a31aa06824f42e2d9cd0f",
+        "quality-gates/quality-check-2026-08-19T174442Z-468c2b8078e0.json": "94e847f06c84926fea4cb355cd6f939b197db15ddc1c367c2d21219ee835adda"
+    },
+    "slug": "fix-doctor-restore-keys",
+    "requested_slug": "fix-doctor-restore-keys",
+    "compatible_slugs": [
+        "fix-doctor-restore-keys"
+    ],
+    "branch": "fix-doctor-restore-keys",
+    "candidate_commit": "c44fa3d5cf7908a07ab9c2ace9fa0de50514df58",
+    "accepted_feature_tip": "c44fa3d5cf7908a07ab9c2ace9fa0de50514df58",
+    "accepted_main_tip": "e2d92e0c905b8d8cb2d17392f9af4a24f0ac8b0e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

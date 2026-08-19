@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 368,
-    "unique_candidate_commit_count": 264,
+    "record_count": 369,
+    "unique_candidate_commit_count": 265,
     "orphan_count": 4,
     "records": [
         {
@@ -9550,6 +9550,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "b00cc9b7975521af74b5af6057c3d0b67c97cfd5",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-19-194830-fix-doctor-restore-keys",
+            "slug": "fix-doctor-restore-keys",
+            "timestamp": "2026-08-19-194830",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "c44fa3d5cf7908a07ab9c2ace9fa0de50514df58",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

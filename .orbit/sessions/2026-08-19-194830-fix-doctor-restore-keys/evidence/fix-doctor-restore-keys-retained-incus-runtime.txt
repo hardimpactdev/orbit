@@ -1,0 +1,20 @@
+Todo: Solo #221 (doctor probe + restore dispatch fixes)
+Candidate: c44fa3d5cf7908a07ab9c2ace9fa0de50514df58
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-cc227b (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Targets: orbit-e2e-dev-cc227b-gateway (fixer, runner, architecture suites), orbit-e2e-dev-cc227b-operator (introspect probe suite)
+AppsFixer.php SHA-256 (local == synced): dfca5eb44ecd97b3d78b503219d07bea6d5caec0b51429c5eea3352cf12dc3a7
+
+Method: acquire retained topology dev-cc227b from the implementation worktree; verify synced source hash; run the gateway fixer/runner/architecture suites in the gateway instance and the CLI introspect probe suite (real 0775 and 0777 fixture directories) in the operator instance as the orbit user.
+
+Red proofs: the group-writable acceptance test failed against the old probe (old policy rejected the sanctioned 0775 user-private-group shape); the instance security dispatch test errored against the old fixer (fixInstance rejected security keys).
+
+Observed:
+  Tests:    128 passed (991 assertions)
+  Duration: 17.47s
+  Tests:    4 passed (8 assertions)
+  Duration: 1.18s
+
+Result: passed
