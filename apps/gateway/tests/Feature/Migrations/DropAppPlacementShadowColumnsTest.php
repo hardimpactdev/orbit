@@ -273,7 +273,7 @@ it('matches instances left behind by the 2026-08-05 slug rename, as on a real ga
         // Replay the exact rename the live database went through on 2026-08-05,
         // then the shadow-column drop: the composed chain must match the
         // renamed slug instead of reporting divergent placement.
-        rename_app_instances_migration()->up();
+        instance_slug_rename_migration()->up();
 
         drop_app_placement_shadow_columns_migration()->up();
 
@@ -382,15 +382,18 @@ function with_historical_placement_shadow_schema(Closure $callback): void
     }
 }
 
-function rename_app_instances_migration(): Migration
+function instance_slug_rename_migration(): Migration
 {
-    $migration = require
-        database_path(
-            'migrations/2026_08_05_120000_rename_app_instances_to_instances_and_project_permissions_to_app.php',
-        );
+    $paths = glob(database_path('migrations/2026_08_05_120000_*.php'));
+
+    if ($paths === false || count($paths) !== 1) {
+        throw new RuntimeException('Expected exactly one 2026_08_05_120000 slug rename migration file.');
+    }
+
+    $migration = require $paths[0];
 
     if (! $migration instanceof Migration) {
-        throw new RuntimeException('Expected rename app instances migration instance.');
+        throw new RuntimeException('Expected instance slug rename migration instance.');
     }
 
     return $migration;
