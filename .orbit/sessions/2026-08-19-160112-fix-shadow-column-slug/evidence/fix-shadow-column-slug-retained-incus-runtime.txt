@@ -1,0 +1,18 @@
+Todo: Solo #218 (release 0.1.193 blocker)
+Candidate: 36f40473eb0d698f2844a4ea6d300d04b2aedd95
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-f00f51 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-f00f51-gateway
+Migration SHA-256 (local == synced): 3502d7cbb83284b3ad0f6c409c9112273c87c86962b0705717b9f6ef34b66ca4
+
+Method: acquire retained topology dev-f00f51 from the implementation worktree; verify synced migration hash; run the shadow-column drop, replay-safety, and vocabulary contract suites inside the retained gateway instance as the orbit user. The composed-chain regression replays the 2026-08-05 slug rename then the 2026-08-16 drop on a live-shaped fixture.
+
+Red proof: against the previous constant the new regression test reproduced the exact live failure (platform11#11 instance development already exists with divergent placement).
+
+Observed:
+  Tests:    20 passed (139 assertions)
+  Duration: 4.34s
+
+Result: passed

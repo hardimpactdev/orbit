@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-19T14:01:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-shadow-column-slug/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-19-160112-fix-shadow-column-slug",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fix-shadow-column-slug-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-19T075739Z-6f3aadfecdac.json"
+    ],
+    "entry_digests": {
+        "evidence/fix-shadow-column-slug-retained-incus-runtime.txt": "587a069b6717e508d3307189b1a072bae12873cd4ae6e1c58b5a2e2cf7c08360",
+        "loop.md": "ff463aaea9c780dce25993f7d59d25dc9b58054e52abae6e54ad14ba9b885d5e",
+        "quality-gates/quality-check-2026-08-19T075739Z-6f3aadfecdac.json": "ab8ec442efae4ae62257cdaa5773b06e8bb421ae28765749f9a445e09ef107d4"
+    },
+    "slug": "fix-shadow-column-slug",
+    "requested_slug": "fix-shadow-column-slug",
+    "compatible_slugs": [
+        "fix-shadow-column-slug"
+    ],
+    "branch": "fix-shadow-column-slug",
+    "candidate_commit": "36f40473eb0d698f2844a4ea6d300d04b2aedd95",
+    "accepted_feature_tip": "36f40473eb0d698f2844a4ea6d300d04b2aedd95",
+    "accepted_main_tip": "d859b4d5fa678807c97c199b12f2ce8de65f766e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
