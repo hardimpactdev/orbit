@@ -1,0 +1,18 @@
+Todo: Solo #219 (release 0.1.193 blocker #2)
+Candidate: b00cc9b7975521af74b5af6057c3d0b67c97cfd5
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-b33246 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-b33246-gateway
+Migration SHA-256 (local == synced): 8319fe82f97694955a041954fe287c2ede0adb813c0520d41a0bf952db07e5c9
+
+Method: acquire retained topology dev-b33246 from the implementation worktree; verify synced migration hash; run the proxy ownership migration and owner-invariant suites inside the retained gateway instance as the orbit user. The regression seeds the exact pre-rename app_instance config shape carried by 33 of 78 fleet routes.
+
+Red proof: against the unpatched migration the live-shaped fixture reproduced the fleet blocker (no provably unique owner among Instance candidates).
+
+Observed:
+  Tests:    77 passed (220 assertions)
+  Duration: 8.72s
+
+Result: passed

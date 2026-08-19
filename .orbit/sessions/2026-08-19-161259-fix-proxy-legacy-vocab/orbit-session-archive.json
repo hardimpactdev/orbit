@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-19T14:12:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-proxy-legacy-vocab/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-19-161259-fix-proxy-legacy-vocab",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fix-proxy-legacy-vocab-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-19T141219Z-cf830a4e96a4.json"
+    ],
+    "entry_digests": {
+        "evidence/fix-proxy-legacy-vocab-retained-incus-runtime.txt": "12ce164665b4aecc448623930de1a4d4931c82401f7b0e54c6c8c9497a0a0cb0",
+        "loop.md": "e2476263f58f1eb05bc356d75bc500faf2e3d265a6f2fa332b18db67f8172a94",
+        "quality-gates/quality-check-2026-08-19T141219Z-cf830a4e96a4.json": "4644846a93b8e501c104b7c59a0c47b6ff381ac525faa9ce1fee6acfd4f93770"
+    },
+    "slug": "fix-proxy-legacy-vocab",
+    "requested_slug": "fix-proxy-legacy-vocab",
+    "compatible_slugs": [
+        "fix-proxy-legacy-vocab"
+    ],
+    "branch": "fix-proxy-legacy-vocab",
+    "candidate_commit": "b00cc9b7975521af74b5af6057c3d0b67c97cfd5",
+    "accepted_feature_tip": "b00cc9b7975521af74b5af6057c3d0b67c97cfd5",
+    "accepted_main_tip": "ae156dbcb8140ac9d17c07720c6a14332f20769c",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
