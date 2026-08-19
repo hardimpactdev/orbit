@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
@@ -307,10 +308,30 @@ class ProxyRouteIntent
      */
     private function hasMissingOwner(ProxyRoute $route): bool
     {
+        if (InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
+            return $this->instanceOwnerIsMissing($route);
+        }
+
         return match ($route->owner_type) {
             'tool' => $this->toolOwnerIsMissing($route),
             default => false,
         };
+    }
+
+    /**
+     * Direct-instance routes are removable orphans only when their owning
+     * Instance is genuinely gone: the durable FK was nulled when the instance
+     * was removed, or the referenced row no longer exists. Conflicting tuples
+     * whose instance still lives stay denied; they are repairable divergence,
+     * and removal consent never overrides a living owner.
+     */
+    private function instanceOwnerIsMissing(ProxyRoute $route): bool
+    {
+        if ($route->instance_id === null) {
+            return true;
+        }
+
+        return Instance::query()->whereKey($route->instance_id)->doesntExist();
     }
 
     /**

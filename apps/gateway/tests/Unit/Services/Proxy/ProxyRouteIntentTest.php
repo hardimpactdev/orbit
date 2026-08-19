@@ -318,17 +318,14 @@ describe('ProxyRouteIntent', function (): void {
         }
     })->with([
         'primary app missing app' => ['app', 'app', 'missing app'],
-        'primary app missing instance' => ['app', 'app', 'missing instance'],
         'primary app conflicting app' => ['app', 'app', 'conflicting app'],
         'primary app wrong kind' => ['app', 'app', 'wrong kind'],
         'primary app workspace identity' => ['app', 'app', 'workspace identity'],
         'analytics missing app' => ['app-analytics', 'proxy', 'missing app'],
-        'analytics missing instance' => ['app-analytics', 'proxy', 'missing instance'],
         'analytics conflicting app' => ['app-analytics', 'proxy', 'conflicting app'],
         'analytics wrong kind' => ['app-analytics', 'proxy', 'wrong kind'],
         'analytics workspace identity' => ['app-analytics', 'proxy', 'workspace identity'],
         'websocket missing app' => ['app-websocket', 'proxy', 'missing app'],
-        'websocket missing instance' => ['app-websocket', 'proxy', 'missing instance'],
         'websocket conflicting app' => ['app-websocket', 'proxy', 'conflicting app'],
         'websocket wrong kind' => ['app-websocket', 'proxy', 'wrong kind'],
         'websocket workspace identity' => ['app-websocket', 'proxy', 'workspace identity'],
@@ -369,21 +366,78 @@ describe('ProxyRouteIntent', function (): void {
         expect(ProxyRoute::query()->whereKey($route->id)->exists())->toBeTrue();
     })->with([
         'primary app missing app' => ['app', 'app', 'missing app'],
-        'primary app missing instance' => ['app', 'app', 'missing instance'],
         'primary app conflicting app' => ['app', 'app', 'conflicting app'],
         'primary app wrong kind' => ['app', 'app', 'wrong kind'],
         'primary app workspace identity' => ['app', 'app', 'workspace identity'],
         'analytics missing app' => ['app-analytics', 'proxy', 'missing app'],
-        'analytics missing instance' => ['app-analytics', 'proxy', 'missing instance'],
         'analytics conflicting app' => ['app-analytics', 'proxy', 'conflicting app'],
         'analytics wrong kind' => ['app-analytics', 'proxy', 'wrong kind'],
         'analytics workspace identity' => ['app-analytics', 'proxy', 'workspace identity'],
         'websocket missing app' => ['app-websocket', 'proxy', 'missing app'],
-        'websocket missing instance' => ['app-websocket', 'proxy', 'missing instance'],
         'websocket conflicting app' => ['app-websocket', 'proxy', 'conflicting app'],
         'websocket wrong kind' => ['app-websocket', 'proxy', 'wrong kind'],
         'websocket workspace identity' => ['app-websocket', 'proxy', 'workspace identity'],
     ]);
+
+    it('removes a direct-owner route whose owning instance no longer exists', function (
+        string $ownerType,
+        string $validKind,
+    ): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => $ownerType,
+            'kind' => $validKind,
+        ]);
+
+        // The durable FK is nulled exactly as instance:remove leaves it.
+        invalidate_proxy_route_intent_ownership($route, $app, $instance, $validKind, 'missing instance');
+
+        $result = app(ProxyRouteIntent::class)->remove('docs.test');
+
+        expect($result['data']['route'])
+            ->toMatchArray([
+                'domain' => 'docs.test',
+                'status' => 'removed',
+            ])
+            ->and($result['meta']['removal_reason'])
+            ->toBe('orphan_owner')
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeFalse();
+    })->with([
+        'primary app' => ['app', 'app'],
+        'analytics' => ['app-analytics', 'proxy'],
+        'websocket' => ['app-websocket', 'proxy'],
+    ]);
+
+    it('removes a direct-owner route whose referenced instance row was hard-deleted', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create();
+        $instance = Instance::factory()->for($app)->create();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'instance_id' => $instance->id,
+            'domain' => 'docs.test',
+            'owner_type' => 'app',
+            'kind' => 'app',
+        ]);
+
+        $instance->delete();
+        $route->refresh();
+
+        $result = app(ProxyRouteIntent::class)->remove('docs.test');
+
+        expect($result['meta']['removal_reason'])
+            ->toBe('orphan_owner')
+            ->and(ProxyRoute::query()->whereKey($route->id)->exists())
+            ->toBeFalse();
+    });
 
     it('removes custom route backend and TLS through the fixer in one step', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -686,27 +740,6 @@ describe('ProxyRouteIntent', function (): void {
 
         app(ProxyRouteIntent::class)->remove('docs.test');
     })->throws(GatewayApiException::class, "Domain 'docs.test' is owned by");
-
-    it('keeps an incomplete direct ownership tuple when the instance relation is missing', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create();
-        $instance = Instance::factory()->for($app)->create();
-
-        ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'app_id' => $app->id,
-            'instance_id' => $instance->id,
-            'domain' => 'orphan-app.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-        ]);
-        $instance->delete();
-
-        expect(fn (): array => app(ProxyRouteIntent::class)->remove('orphan-app.test'))
-            ->toThrow(GatewayApiException::class, "Domain 'orphan-app.test' is owned by app.")
-            ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
-            ->toBeTrue();
-    });
 
     it('authorizes non-gateway callers by serving node grant', function (): void {
         $caller = Node::factory()->appDev()->create();
