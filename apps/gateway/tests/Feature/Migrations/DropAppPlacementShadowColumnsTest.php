@@ -57,7 +57,7 @@ it('backfills a concrete Orbit instance for an app with no matching instance, th
         $config = json_decode((string) $instance->driver_config, true);
 
         expect($config['type'])
-            ->toBe('orbit_app_instance_driver_config')
+            ->toBe('orbit_instance_driver_config')
             ->and($config['data']['node_id'])
             ->toBe(7)
             ->and($config['data']['node'])
@@ -123,7 +123,7 @@ it('leaves an app untouched when a concrete Orbit instance already carries its p
             'php_version' => '8.5',
             'adopted' => false,
             'driver_config' => json_encode([
-                'type' => 'orbit_app_instance_driver_config',
+                'type' => 'orbit_instance_driver_config',
                 'data' => [
                     'node_id' => 7,
                     'node' => 'app-dev-1',
@@ -207,7 +207,7 @@ it('fails closed when a name-conflicting instance already exists with divergent 
             'php_version' => '8.5',
             'adopted' => false,
             'driver_config' => json_encode([
-                'type' => 'orbit_app_instance_driver_config',
+                'type' => 'orbit_instance_driver_config',
                 'data' => [
                     'node_id' => 7,
                     'node' => 'app-dev-1',
@@ -225,6 +225,66 @@ it('fails closed when a name-conflicting instance already exists with divergent 
             ->toThrow(RuntimeException::class, "instance 'production' already exists with divergent placement");
 
         expect(Schema::hasColumn('apps', 'node_id'))->toBeTrue();
+    });
+});
+
+it('matches instances left behind by the 2026-08-05 slug rename, as on a real gateway database', function (): void {
+    with_historical_placement_shadow_schema(function (): void {
+        $now = now();
+
+        DB::table('nodes')->insert(['id' => 4, 'name' => 'NMBP', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('apps')->insert([
+            'id' => 11,
+            'name' => 'platform11',
+            'node_id' => 4,
+            'environment' => 'development',
+            'domain' => 'platform11.nmbp',
+            'path' => '/Users/nckrtl/apps/platform11',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => false,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        // Pre-rename row exactly as it existed before 2026-08-05.
+        DB::table('instances')->insert([
+            'id' => 10,
+            'app_id' => 11,
+            'name' => 'development',
+            'driver' => 'orbit',
+            'php_version' => '8.5',
+            'adopted' => false,
+            'driver_config' => json_encode([
+                'type' => 'orbit_app_instance_driver_config',
+                'data' => [
+                    'node_id' => 4,
+                    'node' => 'NMBP',
+                    'path' => '/Users/nckrtl/apps/platform11',
+                    'document_root' => 'public',
+                    'domain' => 'platform11.nmbp',
+                ],
+            ], JSON_THROW_ON_ERROR),
+            'runtime_requirements' => '{}',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        // Replay the exact rename the live database went through on 2026-08-05,
+        // then the shadow-column drop: the composed chain must match the
+        // renamed slug instead of reporting divergent placement.
+        rename_app_instances_migration()->up();
+
+        drop_app_placement_shadow_columns_migration()->up();
+
+        expect(Schema::hasColumn('apps', 'node_id'))
+            ->toBeFalse()
+            ->and(DB::table('instances')->where('app_id', 11)->count())
+            ->toBe(1)
+            ->and(
+                json_decode((string) DB::table('instances')->where('app_id', 11)->value('driver_config'), true)['type'],
+            )
+            ->toBe('orbit_instance_driver_config');
     });
 });
 
@@ -320,6 +380,20 @@ function with_historical_placement_shadow_schema(Closure $callback): void
         DB::purge($connection);
         DB::setDefaultConnection(config('database.default'));
     }
+}
+
+function rename_app_instances_migration(): Migration
+{
+    $migration = require
+        database_path(
+            'migrations/2026_08_05_120000_rename_app_instances_to_instances_and_project_permissions_to_app.php',
+        );
+
+    if (! $migration instanceof Migration) {
+        throw new RuntimeException('Expected rename app instances migration instance.');
+    }
+
+    return $migration;
 }
 
 function drop_app_placement_shadow_columns_migration(): Migration

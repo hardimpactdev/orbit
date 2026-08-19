@@ -19,7 +19,13 @@ use Illuminate\Support\Facades\Schema;
  * @mago-expect lint:kan-defect
  */
 return new class extends Migration {
-    private const string ORBIT_CONFIG_TYPE = 'orbit_app_instance_driver_config';
+    /**
+     * The instance driver_config morph slug as the 2026_08_05 rename migration
+     * leaves it and as the runtime morph map enforces it. The pre-rename
+     * 'orbit_app_instance_driver_config' slug cannot exist here: 08_05 always
+     * runs first and rewrites every row to this value.
+     */
+    private const string ORBIT_CONFIG_TYPE = 'orbit_instance_driver_config';
 
     /**
      * @var list<string>
