@@ -64,6 +64,47 @@ it('backfills every instance-backed route and preserves routes without instance 
     });
 });
 
+it('resolves pre-rename app_instance config vocabulary as deterministic legacy evidence', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'unused-a.internal');
+        insertProxyRouteOwnershipInstance(11, 'nmbp', 'docs.nmbp');
+
+        // Exactly the config shape live routes carried before the 2026-07-20
+        // App -> Instance rename: identity under `app_instance` and
+        // target.type=app_instance instead of the renamed spellings.
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1, null, [
+            'app_instance' => [
+                'id' => 10,
+                'name' => 'development',
+                'selector' => 'docs.development',
+                'domain' => 'docs.test',
+            ],
+            'target' => ['type' => 'app_instance', 'value' => 'docs.development'],
+        ]);
+
+        proxyRouteInstanceOwnershipMigration()->up();
+
+        expect(DB::table('proxy_routes')->where('id', 100)->value('instance_id'))
+            ->toBe(10);
+    });
+});
+
+it('still fails closed when a pre-rename route carries no usable identity evidence', function (): void {
+    withHistoricalProxyRouteOwnershipSchema(function (): void {
+        insertProxyRouteOwnershipApp();
+        insertProxyRouteOwnershipInstance(10, 'development', 'unused-a.internal');
+        insertProxyRouteOwnershipInstance(11, 'nmbp', 'unused-b.internal');
+
+        insertHistoricalProxyRoute(100, 'docs.test', 'app', 'app', 1, null, [
+            'target' => ['type' => 'app_instance', 'value' => 'unknown-selector'],
+        ]);
+
+        expect(fn (): mixed => proxyRouteInstanceOwnershipMigration()->up())
+            ->toThrow(RuntimeException::class, 'no provably unique owner');
+    });
+});
+
 it('fails before schema mutation when an instance-backed owner has the wrong route kind', function (
     string $ownerType,
     string $kind,

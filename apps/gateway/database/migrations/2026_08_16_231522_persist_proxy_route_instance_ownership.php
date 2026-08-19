@@ -250,7 +250,7 @@ return new class extends Migration {
         }
 
         $config = $this->routeConfig($route);
-        $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
+        $instanceConfig = $this->legacyAwareInstanceConfig($config);
         $targetConfig = is_array($config['target'] ?? null) ? $config['target'] : [];
         $identities = [];
 
@@ -283,7 +283,7 @@ return new class extends Migration {
             'instance.name' => $this->nullableString($instanceConfig['name'] ?? null),
             'instance.selector' => $this->nullableString($instanceConfig['selector'] ?? null),
             'instance.domain' => $this->nullableString($instanceConfig['domain'] ?? null),
-            'target.value' => ($targetConfig['type'] ?? null) === 'instance'
+            'target.value' => in_array($targetConfig['type'] ?? null, ['instance', 'app_instance'], true)
                 ? $this->nullableString($targetConfig['value'] ?? null)
                 : null,
         ] as $label => $value) {
@@ -391,7 +391,7 @@ return new class extends Migration {
         }
 
         $config = $this->routeConfig($route);
-        $instanceConfig = is_array($config['instance'] ?? null) ? $config['instance'] : [];
+        $instanceConfig = $this->legacyAwareInstanceConfig($config);
 
         foreach ([
             $this->configuredOwnershipId($route, $config, 'instance_id', 'config.instance_id'),
@@ -426,6 +426,28 @@ return new class extends Migration {
                 "app_id={$routeAppId} conflicts with instance_id={$instanceId} app_id={$instanceAppId}",
             );
         }
+    }
+
+    /**
+     * Route configs written before the 2026-07-20 App -> Instance rename carry
+     * the identical instance identity under the legacy `app_instance` key (and
+     * `target.type=app_instance`). That spelling is deterministic pre-rename
+     * evidence, not ambiguity, so read it when the renamed key is absent.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<array-key, mixed>
+     */
+    private function legacyAwareInstanceConfig(array $config): array
+    {
+        if (is_array($config['instance'] ?? null)) {
+            return $config['instance'];
+        }
+
+        if (is_array($config['app_instance'] ?? null)) {
+            return $config['app_instance'];
+        }
+
+        return [];
     }
 
     private function instanceMatches(object $instance, string $appName, string $value): bool
