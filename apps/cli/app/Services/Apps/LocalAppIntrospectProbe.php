@@ -10,6 +10,7 @@ use Symfony\Component\Process\Process;
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:too-many-methods
  */
+/** @mago-expect lint:kan-defect */
 final readonly class LocalAppIntrospectProbe
 {
     /**

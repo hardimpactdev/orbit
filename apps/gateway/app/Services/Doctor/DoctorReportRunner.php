@@ -506,16 +506,14 @@ final readonly class DoctorReportRunner
     private function applyIssue(Node $node, string $mode, DoctorIssue $issue): ?array
     {
         $family = $issue->family;
-        $key = $issue->key;
+        $key = $family === 'instance'
+            ? new DoctorPublicVocabulary()->internalKey($issue->key) ?? $issue->key
+            : $issue->key;
         $detail = $issue->detail;
 
         return match ($family) {
             'node' => $this->nodeRestorer->apply($node, $issue),
-            'app', 'instance' => $this->appRestorer->apply(
-                $node,
-                new DoctorPublicVocabulary()->internalKey($key) ?? $key,
-                $detail,
-            ),
+            'app', 'instance' => $this->appRestorer->apply($node, $key, $detail),
             'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
             'workspace' => $this->workspaceRestorer->apply($node, $key, $detail),
             'process' => $this->processRestorer->apply($node, $key, $detail),
