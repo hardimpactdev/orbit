@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-19T18:51:30+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/proxy-remove-missing-instance/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-19-205130-proxy-remove-missing-instance",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/proxy-remove-missing-instance-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-19T185040Z-2126cf35d097.json"
+    ],
+    "entry_digests": {
+        "evidence/proxy-remove-missing-instance-retained-incus-runtime.txt": "44b58cdb7a154e7cd6e94a3cb4a0a7f45bc29f317d33e9640cdc37f0ffd84f78",
+        "loop.md": "0e275d1b4fda3482ca09f1c2d8e33dba19a7b71fec5397597ea0d5b683d2e1cf",
+        "quality-gates/quality-check-2026-08-19T185040Z-2126cf35d097.json": "2739326d9b4322e06c9c3c9e95d5731de1ac679b2e08eb3068406cd4e9cbaea9"
+    },
+    "slug": "proxy-remove-missing-instance",
+    "requested_slug": "proxy-remove-missing-instance",
+    "compatible_slugs": [
+        "proxy-remove-missing-instance"
+    ],
+    "branch": "proxy-remove-missing-instance",
+    "candidate_commit": "08c21be2ada7d8bbdeab68afa4fd4c7967237b88",
+    "accepted_feature_tip": "08c21be2ada7d8bbdeab68afa4fd4c7967237b88",
+    "accepted_main_tip": "2838d25387422f0ebafa00b7b8a421c8e77e1cde",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

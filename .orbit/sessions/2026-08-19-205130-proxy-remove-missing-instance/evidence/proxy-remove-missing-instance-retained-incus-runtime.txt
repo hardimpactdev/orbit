@@ -1,0 +1,18 @@
+Todo: Solo #222 (operator-consented orphan removal lane)
+Candidate: 08c21be2ada7d8bbdeab68afa4fd4c7967237b88
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-0367a7 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-0367a7-gateway
+ProxyRouteIntent.php SHA-256 (local == synced): 3d8479f5593a82730ea5af09e2ba83ef8c99b66557a04a75ec7a69f0edc65655
+
+Method: acquire retained topology dev-0367a7 from the implementation worktree; verify synced source hash; run the proxy intent and mutation controller suites inside the retained gateway instance as the orbit user. The new orphan-removal cases cover FK-nulled and hard-deleted owning instances across all three direct-owner types; the fail-closed dataset retains every living-owner and conflicting-tuple denial.
+
+Red proof: both new orphan-removal tests errored against the unpatched intent (owned_route_denied), matching the live hauzer.test refusal.
+
+Observed:
+  Tests:    74 passed (352 assertions)
+  Duration: 8.81s
+
+Result: passed
