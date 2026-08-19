@@ -38,7 +38,7 @@ final readonly class LocalAppIntrospectProbe
                 $pathExists
                     && $input['runtime_user'] !== ''
                     && $this->ownedBy($input['path'], $input['runtime_user'])
-                    && $this->notWorldWritable($input['path']),
+                    && $this->permissionsMatchRuntimePolicy($input['path'], $input['runtime_user']),
             'runtime_config_exists' => false,
             'runtime_config_matches' => $input['runtime_kind'] === 'static',
             'runtime_image_available' => $input['runtime_kind'] === 'static',
@@ -224,11 +224,63 @@ final readonly class LocalAppIntrospectProbe
         return $darwin->isSuccessful() && trim($darwin->getOutput()) === $user;
     }
 
-    private function notWorldWritable(string $path): bool
+    /**
+     * Mirrors the runtime action's accepted directory shapes: never
+     * world-writable, and group-writable only for the runtime user's own
+     * primary group (the provisioned user-private group on workload nodes).
+     */
+    private function permissionsMatchRuntimePolicy(string $path, string $user): bool
     {
-        $process = $this->run(['find', $path, '-maxdepth', '0', '!', '-perm', '/022', '-print'], 10);
+        $mode = $this->octalMode($path);
 
-        return $process->isSuccessful() && trim($process->getOutput()) !== '';
+        if ($mode === null || ($mode & 0o002) !== 0) {
+            return false;
+        }
+
+        if (($mode & 0o020) === 0) {
+            return true;
+        }
+
+        $group = $this->groupOwner($path);
+
+        return $group !== null && ($group === $user || $group === $this->primaryGroup($user));
+    }
+
+    private function octalMode(string $path): ?int
+    {
+        $linux = $this->run(['stat', '-c', '%a', $path], 10);
+
+        if ($linux->isSuccessful() && preg_match('/^[0-7]{3,4}$/', trim($linux->getOutput())) === 1) {
+            return (int) octdec(trim($linux->getOutput()));
+        }
+
+        $darwin = $this->run(['stat', '-f', '%Lp', $path], 10);
+
+        if ($darwin->isSuccessful() && preg_match('/^[0-7]{3,4}$/', trim($darwin->getOutput())) === 1) {
+            return (int) octdec(trim($darwin->getOutput()));
+        }
+
+        return null;
+    }
+
+    private function groupOwner(string $path): ?string
+    {
+        $linux = $this->run(['stat', '-c', '%G', $path], 10);
+
+        if ($linux->isSuccessful() && trim($linux->getOutput()) !== '') {
+            return trim($linux->getOutput());
+        }
+
+        $darwin = $this->run(['stat', '-f', '%Sg', $path], 10);
+
+        return $darwin->isSuccessful() && trim($darwin->getOutput()) !== '' ? trim($darwin->getOutput()) : null;
+    }
+
+    private function primaryGroup(string $user): ?string
+    {
+        $process = $this->run(['id', '-gn', $user], 10);
+
+        return $process->isSuccessful() && trim($process->getOutput()) !== '' ? trim($process->getOutput()) : null;
     }
 
     /**

@@ -63,8 +63,10 @@ final class AppsFixerRecordingRemoteShell implements RemoteShell
     }
 }
 
-function buildAppsFixer(RemoteShell $shell): AppsFixer
-{
+function buildAppsFixer(
+    RemoteShell $shell,
+    ?\App\Services\Apps\RemoteAppSecurityRepair $securityRepair = null,
+): AppsFixer {
     $appRuntimeContainerRenderer = new AppRuntimeContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
@@ -91,6 +93,7 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
             new WorkspaceRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
             new WorkspacePlacement,
         ),
+        $securityRepair,
     );
 }
 
@@ -395,6 +398,48 @@ it('throws from removeRuntimeConfigExtra when the sudo probe fails for an unknow
 
     expect(fn () => buildAppsFixer($shell)->removeRuntimeConfigExtra($node, 'orphan-docs'))
         ->toThrow(RuntimeException::class);
+});
+
+it('routes instance security drift to the app security repair with instance placement', function (): void {
+    $node = appsFixerNode();
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = Instance::factory()->for($app)->create([
+        'name' => 'production',
+        'driver' => InstanceDriver::Orbit,
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $node->id,
+            node: $node->name,
+            path: '/home/orbit/apps/docs',
+            document_root: 'public',
+            domain: 'docs.test',
+        ),
+    ]);
+
+    $shell = new AppsFixerRecordingRemoteShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+    $result = buildAppsFixer($shell, new \App\Services\Apps\RemoteAppSecurityRepair(new RemoteShellBackedInternalExecutor(
+        new LocalExecutorCommandBuilder,
+        $shell,
+    )))->fixInstance($app, $instance, new DriftEntry(
+        family: 'app',
+        key: 'app.security.fs_permissions',
+        kind: DriftKind::Divergent,
+        summary: 'permissions drift',
+    ));
+
+    expect($result['status'])
+        ->toBe('completed')
+        ->and($result['key'])
+        ->toBe('app.security.fs_permissions')
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->scripts[0])
+        ->toContain('/home/orbit/apps/docs');
 });
 
 it('rewrites the selected instance runtime config when handed app.runtime_config_missing', function (): void {

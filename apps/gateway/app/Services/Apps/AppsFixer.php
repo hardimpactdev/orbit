@@ -80,16 +80,21 @@ final readonly class AppsFixer
             return null;
         }
 
-        if (! in_array($entry->key, ['app.runtime_config_missing', 'app.runtime_config_mismatch'], true)) {
-            return null;
-        }
-
-        return $this->reapplyRuntimeConfig(
-            $app,
-            $node,
-            $entry,
-            $instance,
-        );
+        return match ($entry->key) {
+            'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
+                $app,
+                $node,
+                $entry,
+                $instance,
+            ),
+            'app.security.system_user', 'app.security.fs_permissions' => $this->reapplyInstanceSecurity(
+                $app,
+                $instance,
+                $node,
+                $entry,
+            ),
+            default => null,
+        };
     }
 
     /**
@@ -173,16 +178,24 @@ final readonly class AppsFixer
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function reapplyInstanceSecurity(App $app, Instance $instance, Node $node, DriftEntry $entry): array
+    {
+        return $this->reapplyAppSecurity($app, $node, $entry, $instance);
+    }
+
+    /**
      * Restore production app security baseline: ensure the configured runtime
      * user exists and the app path ownership/permissions match the policy.
      *
      * @return array<string, mixed>
      */
-    private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry): array
+    private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry, ?Instance $instance = null): array
     {
         $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $appPath = $this->placement->runtimePath($app, null);
+        $appPath = $this->placement->runtimePath($app, $instance);
 
         $this->securityRepair()->repair(
             node: $node,

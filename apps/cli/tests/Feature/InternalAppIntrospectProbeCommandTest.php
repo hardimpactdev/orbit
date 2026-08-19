@@ -84,6 +84,65 @@ describe('internal app introspect probe command', function (): void {
                 ],
             ]));
     });
+    it('accepts a group-writable app path owned by the runtime user and its primary group', function (): void {
+        $path = app_introspect_fixture();
+        chmod($path, 0o775);
+        putenv('PATH='.app_introspect_fake_docker(exitCode: 127).':/usr/bin:/bin');
+        $user = trim((string) shell_exec('id -un'));
+
+        [$exitCode, $output] = run_internal_app_introspect_probe_command([
+            '--operation-token' => app_introspect_probe_signed_operation_token(),
+            '--json' => true,
+        ], [
+            'name' => 'docs',
+            'path' => $path,
+            'document_root' => 'public',
+            'runtime_kind' => 'static',
+            'runtime_user' => $user,
+            'runtime_container_name' => '',
+            'expected_spec_hash' => '',
+            'runtime_config_path' => '',
+            'expected_runtime_config_hash' => '',
+            'expected_runtime_image' => '',
+        ]);
+
+        $snapshot = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data']['snapshot'];
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($snapshot['fs_permissions_ok'])
+            ->toBeTrue();
+    });
+
+    it('rejects a world-writable app path regardless of ownership', function (): void {
+        $path = app_introspect_fixture();
+        chmod($path, 0o777);
+        putenv('PATH='.app_introspect_fake_docker(exitCode: 127).':/usr/bin:/bin');
+        $user = trim((string) shell_exec('id -un'));
+
+        [$exitCode, $output] = run_internal_app_introspect_probe_command([
+            '--operation-token' => app_introspect_probe_signed_operation_token(),
+            '--json' => true,
+        ], [
+            'name' => 'docs',
+            'path' => $path,
+            'document_root' => 'public',
+            'runtime_kind' => 'static',
+            'runtime_user' => $user,
+            'runtime_container_name' => '',
+            'expected_spec_hash' => '',
+            'runtime_config_path' => '',
+            'expected_runtime_config_hash' => '',
+            'expected_runtime_image' => '',
+        ]);
+
+        $snapshot = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data']['snapshot'];
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($snapshot['fs_permissions_ok'])
+            ->toBeFalse();
+    });
 });
 
 function app_introspect_probe_signed_operation_token(

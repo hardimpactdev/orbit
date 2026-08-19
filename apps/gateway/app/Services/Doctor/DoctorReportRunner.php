@@ -511,7 +511,11 @@ final readonly class DoctorReportRunner
 
         return match ($family) {
             'node' => $this->nodeRestorer->apply($node, $issue),
-            'app' => $this->appRestorer->apply($node, $key, $detail),
+            'app', 'instance' => $this->appRestorer->apply(
+                $node,
+                new DoctorPublicVocabulary()->internalKey($key) ?? $key,
+                $detail,
+            ),
             'database_connection' => $this->databaseConnectionRestorer->apply($key, $detail),
             'workspace' => $this->workspaceRestorer->apply($node, $key, $detail),
             'process' => $this->processRestorer->apply($node, $key, $detail),
