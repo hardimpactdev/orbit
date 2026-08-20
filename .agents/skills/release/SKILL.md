@@ -369,16 +369,18 @@ manifests.
    recorded in `role_image_artifacts.orbit-websocket` resolves publicly after
    the workflow publishes. The release workflow requires it and fails the
    promotion when the archive is missing, its manifest URL is wrong, or the
-   archive SHA-256 mismatches. A failed run leaves the draft unpublished and
-   the GHCR version tag unmoved.
+   archive SHA-256 mismatches. A failed verification leaves the draft
+   unpublished and the GHCR version tag unmoved.
 
 15. Watch the dispatched `Orbit Release` workflow until it succeeds. It
     verifies the draft assets and the accepted gateway digest, publishes the
     split package repositories, promotes that digest to
     `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`, then publishes the GitHub
-    release. A failed run leaves the draft unpublished and the version tag
-    unmoved; fix the cause and dispatch again (re-promotion is an idempotent
-    carbon copy of the same digest).
+    release. A run that fails before promotion leaves the draft unpublished
+    and the version tag unmoved; a failure after promotion leaves the tag at
+    the verified digest with the draft still unpublished. Fix the cause and
+    dispatch again (re-promotion is an idempotent carbon copy of the same
+    digest).
 
 16. Verify public artifacts without authentication:
 
