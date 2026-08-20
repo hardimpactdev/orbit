@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T13:19:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-zero-round-5/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-151913-codex-docs-drift-zero-round-5",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T131719Z-153b667cc658.json"
+    ],
+    "entry_digests": {
+        "loop.md": "297ead0fbdefca058072901cdbb9173131a8b22882f748cf33458613133d071b",
+        "quality-gates/quality-check-2026-08-20T131719Z-153b667cc658.json": "9072b5124fd04b0a75980a20c34b329db1041ed603e7e13e44269173d7c5384e"
+    },
+    "slug": "codex-docs-drift-zero-round-5",
+    "requested_slug": "codex-docs-drift-zero-round-5",
+    "compatible_slugs": [
+        "codex-docs-drift-zero-round-5"
+    ],
+    "branch": "codex/docs-drift-zero-round-5",
+    "candidate_commit": "20055a0c94add53c458aea017ea2b6e8e1330649",
+    "accepted_feature_tip": "20055a0c94add53c458aea017ea2b6e8e1330649",
+    "accepted_main_tip": "c4119b76018b177420a04cee7f500ecd5ed0327e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
