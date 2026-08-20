@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 357,
-    "unique_candidate_commit_count": 253,
+    "record_count": 358,
+    "unique_candidate_commit_count": 254,
     "orphan_count": 0,
     "records": [
         {
@@ -9297,6 +9297,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "5b465b40829b06c1144936044ef1145017139758",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-142841-codex-docs-drift-zero-round-4",
+            "slug": "codex-docs-drift-zero-round-4",
+            "timestamp": "2026-08-20-142841",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a7d08f385c7a22d0b6a6c5ad031efa832c914b6e",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
