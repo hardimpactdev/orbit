@@ -15,7 +15,7 @@ Create a recurring schedule.
 ```bash
 orbit schedule:add [<name>] [--command='<shell>' | --script=<path>]
                    --interval='<expr>' [--instance=<name>] [--node=<name>]
-                   [--timezone=UTC] [--json]
+                   [--timezone=UTC] [--timeout=900] [--json]
 ```
 
 | Option | Default | Notes |
@@ -27,6 +27,7 @@ orbit schedule:add [<name>] [--command='<shell>' | --script=<path>]
 | `--instance` |  -  | Instance scope. |
 | `--node` |  -  | Node scope. |
 | `--timezone` | `UTC` | IANA timezone. |
+| `--timeout` | `900` | Execution timeout in seconds (`1` through `86400`). |
 
 Examples:
 

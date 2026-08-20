@@ -12,12 +12,14 @@ client identity, so do **not** run `gateway:add` afterward on that same machine.
 Register the local client's connection to a gateway and trust its CA.
 
 ```bash
-orbit gateway:add [<gateway_ip>] [--json]
+orbit gateway:add [<gateway_ip>] [--name=<name>] [--json]
 ```
 
 | Argument | Notes |
 |---|---|
 | `gateway_ip` | The gateway's WireGuard IP (e.g. `10.6.0.1`). Prompted when omitted. |
+
+`--name` sets the local gateway name. It defaults to `default`.
 
 Prerequisite: the gateway already knows this machine's client identity, usually
 created with `orbit node:new <name> --operator`, and the returned WireGuard

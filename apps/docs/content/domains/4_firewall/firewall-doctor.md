@@ -17,8 +17,9 @@ The firewall family owns these facts:
 
 Each gateway firewall rule row records the node, name, direction, action,
 source, destination, protocol, port, address family, interface scope, owner,
-protected flag, reason, and the backend metadata needed to identify the applied
-rule.
+reason, and the backend metadata needed to identify the applied rule. Protection
+is derived from the owner: user-owned rows are unprotected and non-user-owned
+rows are protected.
 
 Node reachability belongs to `node`. Proxy routes, apps, workspaces, processes, schedules, and tools remain outside the firewall family even when their capabilities depend on firewall policy.
 

@@ -164,8 +164,14 @@ Workload nodes can usually resolve themselves from local context, but explicit
 Grant the `consumer` node access to the `server` node. Authorization is node-grant based; non-gateway callers need a grant to the serving node that owns the resource they're touching.
 
 ```bash
-orbit node:grant <consuming_node> <serving_node> [--json]
+orbit node:grant <consuming_node> <serving_node>
+                 [--preset=<preset> | --permissions=<list>] [--force] [--json]
 ```
+
+Use `--preset` for a known permission preset or `--permissions` for a
+comma-separated permission list. Non-interactive mode requires one of them.
+`--force` confirms a gateway-admin or wildcard grant to the gateway when
+non-interactive.
 
 ## `orbit node:revoke [consumer] [server]`
 

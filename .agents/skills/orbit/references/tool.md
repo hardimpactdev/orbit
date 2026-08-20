@@ -43,8 +43,10 @@ For `php:*` workflow (selecting a runtime for an instance/workspace/CLI), see [`
 List tracked tool state.
 
 ```bash
-orbit tool:list [--instance=<name>] [--node=<name>] [--json]
+orbit tool:list [--instance=<name>] [--node=<name>] [--all] [--json]
 ```
+
+`--all` lists all visible tool rows instead of using the default node scope.
 
 ## `orbit tool:show <tool>`
 
@@ -109,8 +111,10 @@ capability. The gateway resolves the tool's one declared runtime; process-backed
 tools do not use a second parallel lifecycle implementation.
 
 ```bash
-orbit tool:logs dns --node=<node> [--lines=100] [--json]
+orbit tool:logs <tool> [--instance=<name>] [--node=<node>] [--lines=100] [--json]
 ```
+
+`--instance` resolves the serving node from a visible app instance.
 
 ## `orbit tool:remove <tool>`
 

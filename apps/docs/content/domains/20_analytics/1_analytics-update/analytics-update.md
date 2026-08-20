@@ -26,7 +26,7 @@ runtime change. Version tracking stays on the process row and its runtime
 configuration; there is no tool-owned Plausible lifecycle and no
 `--plausible-version` option.
 
-The command does not change app analytics bindings, public tracking hosts,
+The command does not change instance analytics bindings, public tracking hosts,
 Plausible site configuration, or tracking script installation.
 
 ## Requirements

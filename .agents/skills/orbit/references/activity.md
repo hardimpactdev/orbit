@@ -11,7 +11,8 @@ List activity entries (most recent first).
 ```bash
 orbit activity:list [--app=<name>] [--node=<name>]
                     [--effect=read|write|destructive]
-                    [--correlation=<uuid>] [--limit=25] [--json]
+                    [--correlation=<uuid>] [--include-internal]
+                    [--limit=25] [--json]
 ```
 
 | Option | Default | Notes |
@@ -20,6 +21,7 @@ orbit activity:list [--app=<name>] [--node=<name>]
 | `--node` |  -  | Filter by node subject. |
 | `--effect` |  -  | Filter by effect category. |
 | `--correlation` |  -  | Filter by correlation UUID  -  useful when one CLI call fans out to multiple gateway operations and you want the whole chain. |
+| `--include-internal` | off | Include internal-lane activity rows. |
 | `--limit` | 25 | Max rows. |
 
 Examples:

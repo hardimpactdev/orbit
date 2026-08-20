@@ -123,7 +123,7 @@ Manage runtime mounts with:
 ```bash
 orbit instance:mount list <app.instance> [--json]
 orbit instance:mount add <app.instance> <source> <target> [--read-only] [--json]
-orbit instance:mount remove <app.instance> <target> [--force] [--json]
+orbit instance:mount remove <app.instance> <target> [--json]
 ```
 
 ## Setup pipeline

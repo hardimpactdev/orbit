@@ -173,4 +173,4 @@ mounts immediately before Docker creates the container.
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App runtime configured instance mounts and runtime `spec_hash` changes. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | Workspace use of selected instance runtime mounts and runtime `spec_hash` changes. |
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php` | App runtime source-directory preparation before Docker run. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php` | Workspace runtime source-directory preparation for inherited app mounts before Docker run. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php` | Workspace runtime source-directory preparation for inherited instance mounts before Docker run. |

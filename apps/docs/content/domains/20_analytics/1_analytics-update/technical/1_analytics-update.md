@@ -52,7 +52,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ### Scope Boundaries
 
-`analytics:update` must not create app analytics bindings, inject tracking
+`analytics:update` must not create instance analytics bindings, inject tracking
 scripts, provision Plausible sites, mutate PostgreSQL or ClickHouse versions,
 or create a tool-owned Plausible lifecycle.
 

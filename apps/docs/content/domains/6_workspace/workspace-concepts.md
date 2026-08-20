@@ -130,7 +130,7 @@ These boundaries define what the workspace family owns and what belongs to other
   workspace. The workspace family owns branch/path/setup state; the process
   family owns start/stop/restart/log lifecycle for the long-running units. They
   do not own proxy route convergence, process-unit convergence, app
-  configuration, app runtime mount intent, or node-level firewall policy.
+  configuration, instance runtime mount intent, or node-level firewall policy.
   Workspace commands do not install host PHP, Composer, or Caddy.
   Workspace setup initializes a missing workspace `.env` from that workspace's
   own `.env.example`, then overlays the effective workspace env. It preserves
