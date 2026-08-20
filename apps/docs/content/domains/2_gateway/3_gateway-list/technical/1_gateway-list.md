@@ -62,7 +62,8 @@ gateway is marked per entry.
 
 ## Activity Logging
 
-`gateway:list` declares `none`: This local configuration read emits no activity entry because it does not call a gateway API or change state.
+`gateway:list` does not emit activity. It reads local configuration and does
+not call a gateway API or change state.
 
 ## Test Mapping
 

@@ -7,10 +7,12 @@ use App\Enums\ActivityLogType;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\WireGuardIdentity;
 use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
 use Spatie\Activitylog\Models\Activity;
 
@@ -22,6 +24,14 @@ final class FakeWriteController implements Loggable
 {
     public function __invoke(Request $request): JsonResponse
     {
+        if ($request->is('_test/fake-failed')) {
+            return new JsonResponse(['error' => ['code' => 'test_failed']], 422);
+        }
+
+        if ($request->is('_test/fake-throwing-activity')) {
+            return new JsonResponse(['error' => ['code' => 'original_response']], 409);
+        }
+
         return new JsonResponse(['success' => true]);
     }
 
@@ -62,6 +72,10 @@ final class FakeWriteController implements Loggable
 
     public function properties(): array
     {
+        if (request()->is('_test/fake-throwing-activity')) {
+            throw new RuntimeException('activity logging failed');
+        }
+
         return ['probe' => 'ok'];
     }
 
@@ -209,6 +223,12 @@ describe('LogActivity middleware', function (): void {
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
             ->get('/_test/fake-doctrine', FakeDoctrineController::class);
+
+        Route::middleware([WireGuardIdentity::class, LogActivity::class])
+            ->post('/_test/fake-failed', FakeWriteController::class);
+
+        Route::middleware([WireGuardIdentity::class, LogActivity::class])
+            ->post('/_test/fake-throwing-activity', FakeWriteController::class);
     });
 
     it('logs an entry with causer hydrated from the authenticated node', function (): void {
@@ -351,5 +371,51 @@ describe('LogActivity middleware', function (): void {
         expect($entry->description)->toBe('doctrine method names');
         expect($entry->properties->get('type'))->toBe('read');
         expect($entry->properties->get('method_surface'))->toBe('doctrine');
+    });
+
+    it('logs a failed attempt when a Loggable controller returns a 4xx response', function (): void {
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
+            ->postJson('/_test/fake-failed')
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'test_failed');
+
+        expect(Activity::query()->value('event'))->toBe('api:POST /_test/fake-write');
+    });
+
+    it('keeps the API response when activity logging throws', function (): void {
+        Exceptions::fake();
+
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
+            ->postJson('/_test/fake-throwing-activity')
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'original_response');
+
+        Exceptions::assertReported(
+            fn (RuntimeException $exception): bool => $exception->getMessage() === 'activity logging failed',
+        );
+
+        expect(app(ActivityLogCorrelation::class)->current())->toBeNull();
     });
 });

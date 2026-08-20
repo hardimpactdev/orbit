@@ -157,9 +157,9 @@ automation must use the same source-agnostic config services.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /codex/projects` for `list`; `api:POST /codex/apps/{instance}` for `add`; `api:DELETE /codex/apps/{instance}` for `remove`. |
+| Type | `api:GET /codex/projects` for `list`; `api:POST /codex/apps/{project}` for `add`; `api:DELETE /codex/apps/{project}` for `remove`. |
 | Effect | `read` for `list`; `write` for `add` and `remove`. |
-| Subject | The selected target `Node` for `list`; the selected Orbit `Instance` for `add` and `remove`; `none` when resolution fails. |
+| Subject | The selected target `Node` for `list`; the resolved Orbit `App` for `add` and `remove`; `none` when resolution fails. |
 | Properties | `action` and `target_node`; never project paths, raw config, or credentials. |
 | Description | derived |
 

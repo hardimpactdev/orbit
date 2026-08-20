@@ -121,13 +121,9 @@ contract.
 
 ## Activity Logging
 
-| Field | Value |
-| --- | --- |
-| Type | `skill.installed` |
-| Effect | `write`; `destructive` when explicit replacement removes the prior installed copy. |
-| Subject | `none` |
-| Properties | `skill`, `source`, and whether replacement consent was supplied; downloaded content and credentials are not logged. |
-| Description | derived |
+This command does not emit activity. It installs files in the caller-local CLI
+environment, and the CLI has no trusted shared activity helper. The gateway
+records API work; `skill:install` does not make a gateway API request.
 
 ## Test Mapping
 

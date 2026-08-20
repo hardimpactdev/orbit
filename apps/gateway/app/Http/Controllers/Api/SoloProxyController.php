@@ -56,7 +56,7 @@ final class SoloProxyController implements Loggable
 
     public function projects(Request $request, SoloProxy $proxy, NodeAccessAuthorizer $authorizer): JsonResponse
     {
-        $this->operation = 'projects';
+        $this->operation = 'project/list';
         $this->captureActivitySubject($request);
 
         $authorization = $this->authorizeOperation($request, $authorizer, 'solo:*');
@@ -123,7 +123,20 @@ final class SoloProxyController implements Loggable
         }
 
         $this->operation = $mutation->apiPath;
-        $this->activityEffect = ActivityLogType::Write;
+        $this->activityEffect = in_array(
+            $mutation->apiPath,
+            [
+                'project/delete',
+                'process/close',
+                'scratchpad/clear',
+                'scratchpad/delete',
+                'todo/delete',
+                'todo/comment/delete',
+            ],
+            strict: true,
+        )
+            ? ActivityLogType::Destructive
+            : ActivityLogType::Write;
         $this->captureActivitySubject($request);
 
         $authorization = $this->authorizeOperation($request, $authorizer, $mutation->permission);
@@ -242,7 +255,6 @@ final class SoloProxyController implements Loggable
     {
         return match ($this->operation) {
             'tools' => 'solo.tools.listed',
-            'projects' => 'solo.projects.listed',
             default => 'solo.'
                 .str_replace(search: '/', replace: '.', subject: $this->operation)
                 .($this->activityEffect === ActivityLogType::Read ? '.read' : ''),

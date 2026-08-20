@@ -9,6 +9,7 @@ use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -195,6 +196,13 @@ describe('Extension API controllers', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'extension_unknown')
             ->assertJsonPath('error.meta.extension', 'missing');
+
+        $entry = Activity::query()->latest('id')->firstOrFail();
+
+        expect($entry->subject_type)
+            ->toBeNull()
+            ->and($entry->properties->get('extension'))
+            ->toBe('missing');
     })->with([
         'enable' => ['POST', '/api/extensions/missing/enable'],
         'disable' => ['POST', '/api/extensions/missing/disable'],

@@ -11,6 +11,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -141,6 +142,39 @@ it('allows app-dev role callers when they hold the deployment grant', function (
         ->assertJsonPath('success.data.step.instance', 'production')
         ->assertJsonPath('success.data.step.title', 'Run migrations')
         ->assertJsonPath('success.meta.action', 'created');
+
+    $step = DeployStep::query()->firstOrFail();
+    $entry = Activity::query()->latest('id')->firstOrFail();
+
+    expect($entry->event)
+        ->toBe('api:POST /deploy/steps')
+        ->and($entry->subject_type)
+        ->toBe(DeployStep::class)
+        ->and($entry->subject_id)
+        ->toBe($step->id)
+        ->and(json_encode($entry->properties->all(), JSON_THROW_ON_ERROR))
+        ->not->toContain('php artisan migrate');
+});
+
+it('declares the exact activity contract for all six deploy actions', function (): void {
+    createDeployApiFixture('control', ['deploy:read', 'deploy:step', 'deploy:run']);
+    $server = ['REMOTE_ADDR' => DEPLOY_API_CALLER_WG_IP];
+
+    $this->call('POST', '/api/deploy/steps', ['instance' => 'docs'], server: $server)->assertBadRequest();
+    $this->call('GET', '/api/deploy/steps', ['instance' => 'docs'], server: $server)->assertOk();
+    $this->call('DELETE', '/api/deploy/steps/999', ['instance' => 'docs'], server: $server)->assertBadRequest();
+    $this->call('POST', '/api/deploy/run', ['instance' => 'docs'], server: $server)->assertAccepted();
+    $this->call('GET', '/api/deploy/history', ['instance' => 'docs'], server: $server)->assertOk();
+    $this->call('GET', '/api/deploy/log/not-a-run', ['instance' => 'docs'], server: $server)->assertBadRequest();
+
+    expect(Activity::query()->orderBy('id')->pluck('event')->all())->toBe([
+        'api:POST /deploy/steps',
+        'api:GET /deploy/steps',
+        'api:DELETE /deploy/steps/{step}',
+        'api:POST /deploy/run',
+        'api:GET /deploy/history',
+        'api:GET /deploy/log/{run}',
+    ]);
 });
 
 it('returns canonical destructive consent metadata before removing a deployment step', function (): void {

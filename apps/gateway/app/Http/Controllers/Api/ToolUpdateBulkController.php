@@ -47,6 +47,8 @@ final class ToolUpdateBulkController implements Loggable
             return $targetNode;
         }
 
+        $this->activitySubject = $targetNode;
+
         $operation = fn (): array => $updater->updateAll($targetNode);
 
         if ($this->wantsEventStream($request)) {
@@ -62,8 +64,6 @@ final class ToolUpdateBulkController implements Loggable
         }
 
         $result = $operation();
-
-        $this->activitySubject = $caller;
 
         return response()->json([
             'success' => [

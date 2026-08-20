@@ -27,7 +27,7 @@ use Illuminate\Support\Collection;
  */
 final class AppRuntimeMountController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Instance $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -54,13 +54,13 @@ final class AppRuntimeMountController implements Loggable
         }
 
         $targetApp = $resolved['app'];
-        $this->activitySubject = $targetApp;
-
         $targetInstance = $resolved['instance'];
 
         if (! $targetInstance instanceof Instance) {
             return $this->instanceRequired();
         }
+
+        $this->activitySubject = $targetInstance;
 
         return $this->success($this->instanceMountsPayload(
             $targetApp,
@@ -87,11 +87,16 @@ final class AppRuntimeMountController implements Loggable
         }
 
         $targetApp = $resolved['app'];
-        $this->activitySubject = $targetApp;
+        $targetInstance = $resolved['instance'];
+
+        if (! $targetInstance instanceof Instance) {
+            return $this->instanceRequired();
+        }
+
+        $this->activitySubject = $targetInstance;
 
         $source = $this->stringInput($request, 'source');
         $target = $this->stringInput($request, 'target');
-        $this->currentTarget = $target;
 
         if ($source === null) {
             return $this->validationFailed('Source path is required.', ['field' => 'source']);
@@ -99,12 +104,6 @@ final class AppRuntimeMountController implements Loggable
 
         if ($target === null) {
             return $this->validationFailed('Target path is required.', ['field' => 'target']);
-        }
-
-        $targetInstance = $resolved['instance'];
-
-        if (! $targetInstance instanceof Instance) {
-            return $this->instanceRequired();
         }
 
         try {
@@ -118,9 +117,12 @@ final class AppRuntimeMountController implements Loggable
             return $this->validationFailed($exception->getMessage(), $exception->meta);
         }
 
+        $mountPayload = $mounts->instanceMountPayload($result['mount']);
+        $this->currentTarget = $mountPayload['target'];
+
         return $this->success([
             ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
-            'mount' => $mounts->instanceMountPayload($result['mount']),
+            'mount' => $mountPayload,
             'action' => $result['action'],
         ]);
     }
@@ -142,19 +144,18 @@ final class AppRuntimeMountController implements Loggable
         }
 
         $targetApp = $resolved['app'];
-        $this->activitySubject = $targetApp;
-
-        $target = $this->stringInput($request, 'target');
-        $this->currentTarget = $target;
-
-        if ($target === null) {
-            return $this->validationFailed('Target path is required.', ['field' => 'target']);
-        }
-
         $targetInstance = $resolved['instance'];
 
         if (! $targetInstance instanceof Instance) {
             return $this->instanceRequired();
+        }
+
+        $this->activitySubject = $targetInstance;
+
+        $target = $this->stringInput($request, 'target');
+
+        if ($target === null) {
+            return $this->validationFailed('Target path is required.', ['field' => 'target']);
         }
 
         try {
@@ -170,6 +171,7 @@ final class AppRuntimeMountController implements Loggable
 
         if ($result['mount'] instanceof InstanceRuntimeMount) {
             $payload['mount'] = $mounts->instanceMountPayload($result['mount']);
+            $this->currentTarget = $payload['mount']['target'];
         }
 
         return $this->success($payload);

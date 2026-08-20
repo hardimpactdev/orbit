@@ -157,17 +157,9 @@ Already-configured convergence is success, not failure.
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed
-gateway onboarding attempts. Activity logging is best-effort and must not
-change the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `gateway:add` |
-| Effect | `write` |
-| Subject | `none`; the command writes caller-local gateway trust and settings, not a gateway-owned registry entity. |
-| Properties | `gateway_ip` when supplied or resolved, plus `gateway_name`, `local_node`, and `result` (`added` or `converged`) when gateway identity verification succeeds. No CA PEM, trust-store output, raw HTTP response body, or secrets. |
-| Description | derived |
+The local CLI command does not emit activity because the CLI has no trusted
+shared activity helper. Gateway API work used during onboarding can emit its
+own gateway activity. Local trust-store and settings changes do not emit.
 
 ## Test Mapping
 

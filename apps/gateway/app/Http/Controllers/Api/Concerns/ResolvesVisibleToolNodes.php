@@ -277,6 +277,34 @@ trait ResolvesVisibleToolNodes
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
+    /** @param array{node: ?string, app: ?string} $target */
+    private function resolvedToolActivityTarget(array $target): ?Node
+    {
+        if ($target['node'] !== null) {
+            return Node::query()
+                ->where('name', $target['node'])
+                ->where('status', NodeStatus::Active->value)
+                ->first();
+        }
+
+        if ($target['app'] === null) {
+            return null;
+        }
+
+        try {
+            $selection = app(AppSelectorResolver::class)->resolve($target['app']);
+            $selection = $selection instanceof AppSelection
+                ? app(AppSelectorResolver::class)->requireInstance($selection)
+                : null;
+        } catch (AppSelectionResolutionFailed) {
+            return null;
+        }
+
+        return $selection?->instance instanceof Instance
+            ? app(WorkspacePlacement::class)->nodeForInstance($selection->instance)
+            : null;
+    }
+
     /**
      * @param  list<int>  $visibleNodeIds
      */

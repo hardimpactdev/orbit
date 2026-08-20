@@ -102,7 +102,11 @@ describe('ToolRemoveController', function (): void {
             ->and($entry->properties->get('tool'))
             ->toBe('laravel-installer')
             ->and($entry->properties->get('node'))
-            ->toBe('app-remove-api-1');
+            ->toBe('app-remove-api-1')
+            ->and($entry->subject_type)
+            ->toBe(Node::class)
+            ->and($entry->subject_id)
+            ->toBe($node->id);
     });
 
     it('requires agent-push transport before running remove scripts', function (): void {

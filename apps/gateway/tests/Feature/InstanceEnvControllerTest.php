@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -166,6 +167,13 @@ it('sets lists and renders non-secret app instance env values with database atta
         ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'APP_DEBUG')
         ->assertJsonPath('success.data.variable.value', 'false');
+
+    $entry = Activity::query()->latest('id')->firstOrFail();
+
+    expect($entry->subject_type)
+        ->toBe(Instance::class)
+        ->and($entry->subject_id)
+        ->toBe($instance->id);
 
     $attach = $this->call(
         'POST',

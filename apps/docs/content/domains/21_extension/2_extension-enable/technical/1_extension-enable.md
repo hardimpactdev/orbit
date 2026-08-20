@@ -78,7 +78,7 @@ issues or run restore flows.
 | --- | --- |
 | Type | `api:POST /extensions/{extension}/enable` |
 | Effect | `write` |
-| Subject | The selected `GatewayExtension`; `none` when the extension is unknown. |
+| Subject | `none`; gateway extension state has no activity subject model. |
 | Properties | `extension`. |
 | Description | derived |
 

@@ -21,7 +21,7 @@ use Throwable;
 
 final class InstanceEnvController implements Loggable
 {
-    private ?App $activitySubject = null;
+    private ?Instance $activitySubject = null;
 
     private string $currentAction = 'list';
 
@@ -41,7 +41,7 @@ final class InstanceEnvController implements Loggable
         }
 
         [$targetApp, $targetInstance] = $resolved;
-        $this->activitySubject = $targetApp;
+        $this->activitySubject = $targetInstance;
 
         return $this->success([
             ...$this->targetPayload($targetApp, $targetInstance),
@@ -60,7 +60,7 @@ final class InstanceEnvController implements Loggable
         }
 
         [$targetApp, $targetInstance] = $resolved;
-        $this->activitySubject = $targetApp;
+        $this->activitySubject = $targetInstance;
 
         if ($request->boolean('secret')) {
             return $this->validationFailed('secret', 'Secret env writes are not supported in this slice.');
@@ -117,7 +117,7 @@ final class InstanceEnvController implements Loggable
         }
 
         [$targetApp, $targetInstance] = $resolved;
-        $this->activitySubject = $targetApp;
+        $this->activitySubject = $targetInstance;
 
         return $this->success([
             ...$this->targetPayload($targetApp, $targetInstance),

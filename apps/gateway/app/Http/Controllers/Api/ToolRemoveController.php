@@ -87,6 +87,8 @@ final class ToolRemoveController implements Loggable
             return $target;
         }
 
+        $this->activitySubject = $this->resolvedToolActivityTarget($target);
+
         $node = $target['node'];
         $app = $target['app'];
 
@@ -117,8 +119,6 @@ final class ToolRemoveController implements Loggable
         if ($result instanceof ToolRegistryFailure) {
             return $this->failureResponse($result);
         }
-
-        $this->activitySubject = $caller;
 
         return response()->json([
             'success' => [

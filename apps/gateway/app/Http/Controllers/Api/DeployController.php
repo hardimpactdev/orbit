@@ -4,27 +4,39 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
+use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
 use App\Services\Deploy\DeployOperationRunner;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
-final readonly class DeployController
+final class DeployController implements Loggable
 {
+    private string $activityAction = 'listSteps';
+
+    private ?Model $activitySubject = null;
+
+    /** @var array<string, mixed> */
+    private array $activityProperties = [];
+
     public function __construct(
-        private DeployManager $deploy,
-        private DeployOperationRunner $deployOperations,
+        private readonly DeployManager $deploy,
+        private readonly DeployOperationRunner $deployOperations,
     ) {}
 
     #[RequiresPermission('deploy:step', servingNode: ServingNode::InstanceOwning)]
     public function storeStep(Request $request): JsonResponse
     {
+        $this->beginActivity('storeStep', ['instance' => $this->stringInput($request, 'instance')]);
         $instanceSelector = $this->stringInput($request, 'instance');
         $command = $this->stringInput($request, 'command');
 
@@ -62,6 +74,12 @@ final readonly class DeployController
                 $retention,
             );
 
+            $step = $result['step'];
+            $this->activitySubject = DeployStep::query()->find($step['id']);
+            $this->activityProperties = $this->safeProperties($step, ['app', 'instance', 'id', 'title', 'order']);
+            $this->activityProperties['step_id'] = $this->activityProperties['id'] ?? null;
+            unset($this->activityProperties['id']);
+
             return $this->success(['step' => $result['step']], $result['meta']);
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
@@ -71,6 +89,7 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function listSteps(Request $request): JsonResponse
     {
+        $this->beginActivity('listSteps', ['instance' => $this->stringInput($request, 'instance')]);
         $instanceSelector = $this->stringInput($request, 'instance');
 
         if ($instanceSelector === null) {
@@ -79,6 +98,10 @@ final readonly class DeployController
 
         try {
             $result = $this->deploy->listSteps($instanceSelector);
+
+            $this->activityProperties = [
+                ...$this->safeProperties($result['meta'], ['app', 'instance', 'count']),
+            ];
 
             return $this->success(['steps' => $result['steps']], $result['meta']);
         } catch (GatewayApiException $exception) {
@@ -89,6 +112,12 @@ final readonly class DeployController
     #[RequiresPermission('deploy:step', servingNode: ServingNode::InstanceOwning)]
     public function removeStep(string $step, Request $request): JsonResponse
     {
+        $this->beginActivity('removeStep', [
+            'instance' => $this->stringInput($request, 'instance'),
+            'step_id' => ctype_digit($step) ? (int) $step : null,
+        ]);
+        $this->resolveStepSubject($this->stringInput($request, 'instance'), $step);
+
         if ($request->boolean('destructive_consent') !== true) {
             return $this->error(
                 'validation_failed',
@@ -107,6 +136,13 @@ final readonly class DeployController
         try {
             $result = $this->deploy->removeStep($instanceSelector, $step);
 
+            $this->activityProperties = $this->safeProperties(
+                $result['step'],
+                ['app', 'instance', 'id', 'title'],
+            );
+            $this->activityProperties['step_id'] = $this->activityProperties['id'] ?? null;
+            unset($this->activityProperties['id']);
+
             return $this->success(['step' => $result['step']], $result['meta']);
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
@@ -116,6 +152,7 @@ final readonly class DeployController
     #[RequiresPermission('deploy:run', servingNode: ServingNode::InstanceOwning)]
     public function run(Request $request): JsonResponse
     {
+        $this->beginActivity('run', ['instance' => $this->stringInput($request, 'instance')]);
         $instanceSelector = $this->stringInput($request, 'instance');
 
         if ($instanceSelector === null) {
@@ -129,6 +166,12 @@ final readonly class DeployController
         }
 
         try {
+            $instance = $this->deploy->productionInstance($instanceSelector);
+            $this->activityProperties = [
+                'app' => $instance->app->name,
+                'instance' => $instance->name,
+                'status' => 'queued',
+            ];
             $operation = $this->deployOperations->start($instanceSelector, $caller);
 
             app()->terminating(function () use ($operation, $instanceSelector): void {
@@ -152,6 +195,10 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function history(Request $request): JsonResponse
     {
+        $this->beginActivity('history', [
+            'instance' => $this->stringInput($request, 'instance'),
+            'limit' => $request->query('limit', $request->input('limit', 50)),
+        ]);
         $instanceSelector = $this->stringInput($request, 'instance');
 
         if ($instanceSelector === null) {
@@ -172,6 +219,12 @@ final readonly class DeployController
         try {
             $result = $this->deploy->history($instanceSelector, $limit);
 
+            $this->activityProperties = [
+                ...$this->safeProperties($result['meta'], ['app', 'instance']),
+                'count' => count($result['runs']),
+                'limit' => $result['meta']['pagination']['limit'] ?? $limit,
+            ];
+
             return $this->success(['runs' => $result['runs']], $result['meta']);
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
@@ -181,6 +234,11 @@ final readonly class DeployController
     #[RequiresPermission('deploy:read', servingNode: ServingNode::InstanceOwning)]
     public function log(string $run, Request $request): JsonResponse
     {
+        $this->beginActivity('log', [
+            'instance' => $this->stringInput($request, 'instance'),
+            'run_id' => ctype_digit($run) ? (int) $run : null,
+            'step_id' => $this->optionalPositiveIntInput($request, 'step'),
+        ]);
         $instanceSelector = $this->stringInput($request, 'instance');
 
         if ($instanceSelector === null || ! ctype_digit($run) || (int) $run < 1) {
@@ -209,6 +267,14 @@ final readonly class DeployController
         try {
             $result = $this->deploy->log($instanceSelector, (int) $run, $step, $lines);
 
+            $runEntity = $result['run'];
+            $this->activitySubject = DeploymentRun::query()->find($runEntity['id']);
+            $this->activityProperties = [
+                ...$this->safeProperties($runEntity, ['app', 'instance']),
+                'run_id' => $runEntity['id'],
+                ...($step !== null ? ['step_id' => $step] : []),
+            ];
+
             return $this->success([
                 'run' => $result['run'],
                 'steps' => $result['steps'],
@@ -216,6 +282,93 @@ final readonly class DeployController
         } catch (GatewayApiException $exception) {
             return $this->exception($exception);
         }
+    }
+
+    /** @param array<string, mixed> $properties */
+    private function beginActivity(string $action, array $properties): void
+    {
+        $this->activityAction = $action;
+        $this->activitySubject = null;
+        $this->activityProperties = array_filter(
+            $properties,
+            static fn (mixed $value): bool => $value !== null && $value !== false,
+        );
+    }
+
+    private function resolveStepSubject(?string $instanceSelector, string $stepSelector): void
+    {
+        if ($instanceSelector === null) {
+            return;
+        }
+
+        try {
+            $instance = $this->deploy->productionInstance($instanceSelector);
+            $query = DeployStep::query()->where('instance_id', $instance->id);
+            $subject = ctype_digit($stepSelector)
+                ? $query->whereKey((int) $stepSelector)->first()
+                : $query->where('title', $stepSelector)->first();
+
+            if ($subject instanceof DeployStep) {
+                $this->activitySubject = $subject;
+                $this->activityProperties = [
+                    'app' => $instance->app->name,
+                    'instance' => $instance->name,
+                    'step_id' => $subject->id,
+                    'title' => $subject->title,
+                ];
+            }
+        } catch (GatewayApiException) {
+            return;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @param  list<string>  $keys
+     * @return array<string, mixed>
+     */
+    private function safeProperties(array $source, array $keys): array
+    {
+        return array_filter(
+            array_intersect_key($source, array_flip($keys)),
+            static fn (mixed $value): bool => $value !== null,
+        );
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return match ($this->activityAction) {
+            'listSteps', 'history', 'log' => ActivityLogType::Read,
+            'removeStep' => ActivityLogType::Destructive,
+            default => ActivityLogType::Write,
+        };
+    }
+
+    public function type(): string
+    {
+        return match ($this->activityAction) {
+            'storeStep' => 'api:POST /deploy/steps',
+            'removeStep' => 'api:DELETE /deploy/steps/{step}',
+            'run' => 'api:POST /deploy/run',
+            'history' => 'api:GET /deploy/history',
+            'log' => 'api:GET /deploy/log/{run}',
+            default => 'api:GET /deploy/steps',
+        };
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function properties(): array
+    {
+        return $this->activityProperties;
+    }
+
+    public function description(): ?string
+    {
+        return null;
     }
 
     private function stringInput(Request $request, string $key): ?string

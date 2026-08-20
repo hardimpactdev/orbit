@@ -82,7 +82,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Activity Logging
 
-`gateway:status` declares `none`: This local connectivity read emits no activity entry because it does not call a state-reading gateway product endpoint or change state.
+`gateway:status` does not emit activity. It reads local connectivity and does
+not call a state-reading gateway product endpoint or change state.
 
 ## Test Mapping
 

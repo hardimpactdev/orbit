@@ -11,6 +11,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -28,6 +29,36 @@ beforeEach(function (): void {
 afterEach(function (): void {
     Http::allowStrayRequests();
 });
+
+it('logs destructive Cloudflare attempts with canonical API types', function (
+    string $method,
+    string $uri,
+    string $type,
+): void {
+    createCloudflareApiCallerNode();
+
+    $this->call($method, $uri, server: ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP])
+        ->assertUnprocessable();
+
+    $entry = Activity::query()->latest('id')->firstOrFail();
+
+    expect($entry->event)
+        ->toBe($type)
+        ->and($entry->properties->get('type'))
+        ->toBe('destructive');
+})->with([
+    'DNS remove' => [
+        'DELETE',
+        '/api/cloudflare/zones/example.com/dns/record-1',
+        'api:DELETE /cloudflare/zones/{zone}/dns/{record}',
+    ],
+    'cache-rule remove' => ['DELETE', '/api/cloudflare/cache-rules/docs', 'api:DELETE /cloudflare/cache-rules/{app}'],
+    'SSL disable' => [
+        'PUT',
+        '/api/cloudflare/zones/example.com/ssl/disable',
+        'api:PUT /cloudflare/zones/{zone}/ssl/disable',
+    ],
+]);
 
 function createCloudflareApiCallerNode(string $role = 'gateway'): Node
 {

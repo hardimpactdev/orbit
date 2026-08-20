@@ -1315,6 +1315,36 @@ it('reports canonical technical contracts without activity logging declarations'
         ]);
 });
 
+it('checks activity logging for commands outside the former allowlist', function (): void {
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/1_node/2_node-manage/node-manage.md',
+        contents: "# `orbit node:manage`\n\n[Technical](technical/1_node-manage.md)\n",
+    );
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/1_node/2_node-manage/technical/1_node-manage.md',
+        contents: validOrbitCanonicalContract(signature: 'orbit node:manage', activityLogging: ''),
+    );
+
+    $rule = new ActivityLoggingContractRule(new OrbitCommandDocs(
+        new DocsConfig("{$this->docsRoot}/docs"),
+    ));
+    $matchingFindings = array_map(
+        static fn ($finding): array => $finding->toArray(),
+        $rule->check(),
+    );
+
+    expect($matchingFindings)->toContainEqual([
+        'path' => 'docs/domains/1_node/2_node-manage/technical/1_node-manage.md',
+        'line' => null,
+        'severity' => 'error',
+        'rule' => 'command_docs.activity_logging_contract',
+        'message' => 'Canonical technical contracts must include `## Activity Logging` declaring the per-command Loggable contract.',
+    ]);
+});
+
 it('reports unregistered product error codes in json renderer examples', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,

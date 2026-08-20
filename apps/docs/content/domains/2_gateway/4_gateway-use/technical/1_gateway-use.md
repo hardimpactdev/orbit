@@ -60,13 +60,9 @@ Human output reports the selected gateway name and endpoint.
 
 ## Activity Logging
 
-| Field | Value |
-| --- | --- |
-| Type | `gateway.selected` |
-| Effect | `write` |
-| Subject | `none` |
-| Properties | `gateway` is the selected gateway name; credentials and raw configuration are not logged. |
-| Description | derived |
+This command does not emit activity. It changes caller-local CLI settings, and
+the CLI has no trusted shared activity helper. The gateway records API work;
+`gateway:use` does not make a gateway API request.
 
 ## Test Mapping
 

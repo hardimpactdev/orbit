@@ -407,7 +407,7 @@ describe('Solo proxy API', function (): void {
             ->assertJsonPath('error.code', 'solo_upstream_unavailable')
             ->assertJsonPath('error.meta.node', 'gateway-1');
 
-        expect(solo_proxy_activity_event(solo_proxy_activity_entry()))->toBe('solo.projects.listed');
+        expect(solo_proxy_activity_event(solo_proxy_activity_entry()))->toBe('solo.project.list.read');
     });
 
     it('maps invalid upstream payloads to validation_failed', function (): void {
@@ -670,6 +670,29 @@ describe('Solo proxy API', function (): void {
             ->assertJsonPath('error.code', 'solo_revision_conflict')
             ->assertJsonPath('error.meta.actual_revision', 8);
     });
+
+    it('marks documented Solo delete and clear operations as destructive', function (string $operation): void {
+        $gateway = create_solo_target_node();
+        $caller = create_solo_proxy_caller_node();
+        grant_solo_proxy_gateway_access($caller, $gateway, ['solo:*']);
+        enable_solo_gateway_extension();
+        bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
+
+        solo_proxy_json_request(method: 'DELETE', uri: "/api/solo/{$operation}", payload: [
+            'node' => 'gateway-1',
+        ])->assertUnprocessable();
+
+        $properties = solo_proxy_activity_properties(solo_proxy_activity_entry());
+
+        expect($properties['type'] ?? null)->toBe('destructive');
+    })->with([
+        'project delete' => 'project/delete',
+        'process close' => 'process/close',
+        'scratchpad clear' => 'scratchpad/clear',
+        'scratchpad delete' => 'scratchpad/delete',
+        'todo delete' => 'todo/delete',
+        'todo comment delete' => 'todo/comment/delete',
+    ]);
 
     it('proxies project-scoped Todo create and delete operations', function (): void {
         $gateway = create_solo_target_node();
