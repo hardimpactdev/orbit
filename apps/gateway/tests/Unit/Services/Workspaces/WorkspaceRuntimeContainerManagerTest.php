@@ -55,7 +55,7 @@ function workspaceAndNodeForManagerTest(): array
         ->create([
             'name' => 'feature-a',
             'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
-            'php_version' => null,
+            'php_version' => '8.5',
         ]);
     $workspace->setRelation('app', $app);
 

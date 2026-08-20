@@ -91,6 +91,7 @@ beforeEach(function (): void {
 
     Instance::factory()->create([
         'app_id' => 1,
+        'php_version' => '8.5',
         'name' => 'development',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
@@ -115,8 +116,19 @@ function setup_workspace_use_agent_push(): void
     app()->instance(RunsInternalCommands::class, app(RemoteLocalExecutor::class));
 }
 
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function setupWorkspaceFixture(array $attributes): Workspace
+{
+    return Workspace::query()->create([
+        'php_version' => '8.5',
+        ...$attributes,
+    ]);
+}
+
 it('sets up a workspace and restores expected lifecycle intent', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -139,7 +151,7 @@ it('sets up a workspace and restores expected lifecycle intent', function (): vo
 });
 
 it('does not render PHP-FPM pool config for PHP workspaces in the steady-state path', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -170,7 +182,7 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
 });
 
 it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -220,7 +232,7 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
 });
 
 it('reconciles an existing FrankenPHP workspace runtime process row', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -264,7 +276,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ]);
     Node::factory()->gateway()->create(['wireguard_address' => '10.47.0.2']);
 
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -355,7 +367,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 });
 
 it('rejects malformed or differently-owned workspace routes at the target domain', function (string $invalidity): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -455,6 +467,7 @@ it('sets up a Codex worktree against the selected app instance node', function (
         ->for($app)
         ->create([
             'name' => 'nmbp',
+            'php_version' => '8.5',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $localNode->id,
@@ -545,6 +558,7 @@ it('infers the caller app instance for a Codex worktree path when app selector i
         ->for($app)
         ->create([
             'name' => 'nmbp',
+            'php_version' => '8.5',
             'driver' => InstanceDriver::Orbit,
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $localNode->id,
@@ -593,7 +607,7 @@ it('installs workspace app-dev runtime trust pool through the managed file agent
             'runtime_config' => ['proxy_transport' => 'https'],
         ]);
 
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -675,7 +689,7 @@ it('rejects production workspace routes before recording or enacting artifacts',
             ),
         ]);
 
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -705,7 +719,7 @@ it('starts configured app processes for the workspace after rendering runtime un
             'wireguard_address' => '10.47.0.45',
         ]);
 
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -780,7 +794,7 @@ it('starts configured app processes for the workspace after rendering runtime un
 });
 
 it('reports converged for a workspace with expected lifecycle intent', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -798,7 +812,7 @@ it('reports converged for a workspace with expected lifecycle intent', function 
 });
 
 it('reports adopted for new workspace with adoption flag', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -833,7 +847,7 @@ it('reports adopted for new workspace with adoption flag', function (): void {
 });
 
 it('skips setup steps when none are configured', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -857,7 +871,7 @@ it('continues with workspace-owned env initialization after migration removes an
     File::put("{$path}/.env.example", "APP_NAME=WorkspaceOwned\n");
 
     try {
-        $workspace = Workspace::create([
+        $workspace = setupWorkspaceFixture([
             'app_id' => 1,
             'instance_id' => 1,
             'name' => 'feature-a',
@@ -900,7 +914,7 @@ it('continues with workspace-owned env initialization after migration removes an
 });
 
 it('runs setup steps when configured', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -941,6 +955,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
     $instance = Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'nmbp',
+        'php_version' => '8.5',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: 1,
@@ -948,7 +963,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
             domain: 'demo.nmbp',
         ),
     ]);
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => $app->id,
         'instance_id' => $instance->id,
         'name' => 'feature-a',
@@ -988,7 +1003,7 @@ it('runs instance-specific setup steps for workspaces bound to an app instance',
 });
 
 it('reports progress while setup steps are running', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -1036,7 +1051,7 @@ it('reports progress while setup steps are running', function (): void {
 });
 
 it('routes php and composer setup steps through the selected workspace host php toolchain', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -1096,7 +1111,7 @@ it('routes php and composer setup steps through the selected workspace host php 
 });
 
 it('keeps non-php setup steps on the host', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -1132,7 +1147,7 @@ it('keeps non-php setup steps on the host', function (): void {
 });
 
 it('passes lifecycle environment into host-routed setup steps', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -1188,7 +1203,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
 it(
     'applies and starts inherited non-web definitions as workspace-specific units and never starts the parent frankenphp container',
     function (): void {
-        $workspace = Workspace::create([
+        $workspace = setupWorkspaceFixture([
             'app_id' => 1,
             'instance_id' => 1,
             'name' => 'feature-a',
@@ -1235,7 +1250,7 @@ it(
 );
 
 it('skips setup steps when hash matches previous successful run', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',
@@ -1274,7 +1289,7 @@ it('skips setup steps when hash matches previous successful run', function (): v
 });
 
 it('throws when setup step fails', function (): void {
-    $workspace = Workspace::create([
+    $workspace = setupWorkspaceFixture([
         'app_id' => 1,
         'instance_id' => 1,
         'name' => 'feature-a',

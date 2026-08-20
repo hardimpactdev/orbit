@@ -263,7 +263,7 @@ Source: [Workspace Concepts](domains/6_workspace/workspace-concepts.md).
 - **Workspace lifecycle status**
 - **Workspace runtime container**
 - **Host cwd context**
-- **Workspace PHP override**
+- **Workspace PHP runtime version**
 - **Workspace PHP inheritance flag**
 - **Setup step definition**
 - **Setup steps phase**
@@ -600,8 +600,7 @@ Source: [PHP Concepts](domains/14_php/php-concepts.md).
 - **PHP runtime view**
 - **App PHP creation template**
 - **Instance PHP runtime version**
-- **Workspace PHP runtime override**
-- **Workspace PHP inheritance**
+- **Workspace PHP runtime version**
 - **Effective workspace PHP version**
 - **Runtime PHP binary**
 - **Host PHP CLI variant**

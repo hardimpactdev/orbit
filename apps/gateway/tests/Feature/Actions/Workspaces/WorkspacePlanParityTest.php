@@ -62,6 +62,7 @@ beforeEach(function (): void {
 
     Instance::factory()->for($app)->create([
         'name' => 'development',
+        'php_version' => '8.5',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/demo',
@@ -827,7 +828,7 @@ it('returns the same complete canonical setup success payload through JSON and S
                 'path' => '/home/orbit/apps/demo/.worktrees/setup-adapter',
                 'url' => 'https://setup-adapter.demo.test',
                 'php_version' => '8.5',
-                'php_inherited' => true,
+                'php_inherited' => false,
                 'adopted' => false,
                 'lifecycle_status' => 'expected',
             ],
@@ -1339,6 +1340,7 @@ function workspace_plan_parity_workspace(string $name = 'feature-a'): Workspace
         'instance_id' => $instance->id,
         'name' => $name,
         'path' => "/home/orbit/apps/demo/.worktrees/{$name}",
+        'php_version' => '8.5',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 }

@@ -610,7 +610,7 @@ These terms describe how grants are created and what shape they take.
 
 ## Node DNS Projection
 
-These terms describe the node family's private DNS projection. The appion
+These terms describe the node family's private DNS projection. The projection
 is served by the DNS tool runtime, but record ownership remains with the node
 family.
 

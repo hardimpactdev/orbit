@@ -41,6 +41,7 @@ class WorkspaceFactory extends Factory
 
                 return (int) Instance::factory()->create([
                     'app_id' => $appId,
+                    'php_version' => '8.5',
                     'driver_config' => new OrbitInstanceDriverConfigData(
                         node_id: $node->id,
                         node: $node->name,
@@ -52,7 +53,7 @@ class WorkspaceFactory extends Factory
             },
             'name' => $name,
             'path' => "/home/orbit/apps/docs/workspaces/{$name}",
-            'php_version' => null,
+            'php_version' => '8.5',
             'adopted' => false,
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ];

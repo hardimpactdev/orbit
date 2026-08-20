@@ -179,7 +179,7 @@ server name before rendering.
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when it can be identified safely. |
 | `proxy.enactment_incomplete` | Retry the instance route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
-| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
+| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public WebSocket ingress routes from the owning instance binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |

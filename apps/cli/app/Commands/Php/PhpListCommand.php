@@ -140,11 +140,10 @@ final class PhpListCommand extends GatewayCommand
         }
 
         $version = $this->runtimeString($workspace, 'php_version');
-        $inheritance = ($workspace['inherits'] ?? null) === true ? 'inherited' : 'pinned';
 
         return $version === '—'
-            ? "{$name} ({$inheritance})"
-            : "{$name} (PHP {$version}, {$inheritance})";
+            ? $name
+            : "{$name} (PHP {$version})";
     }
 
     /**

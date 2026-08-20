@@ -73,8 +73,8 @@ serving node. These defaults are not stored as explicit instance env rows.
    and writes that map to the selected instance's live `.env` on its serving
    node through authenticated Agent push over WireGuard. Consecutive applies
    include previously stored values, Orbit-derived values, and attached
-   database values. It cannot write the app default path or a sibling
-   instance path. Workspace CWD never supplies an implicit instance target;
+   database values. It cannot write the app default path or any other
+   instance's path. Workspace CWD never supplies an implicit instance target;
    app and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config and deletes generated bootstrap cache files at the selected

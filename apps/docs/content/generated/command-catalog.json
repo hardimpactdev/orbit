@@ -6460,7 +6460,6 @@
                 "instance",
                 "workspace",
                 "node",
-                "inherit",
                 "cli",
                 "json"
             ],
@@ -15422,21 +15421,6 @@
                     ]
                 },
                 "--host": {
-                    "allowed_contexts": [
-                        "foreign_command_reference",
-                        "doctor_command_reference",
-                        "machine_handoff",
-                        "admin_handoff"
-                    ],
-                    "allowed_command_families": [
-                        "node",
-                        "app",
-                        "instance",
-                        "workspace",
-                        "process"
-                    ]
-                },
-                "--inherit": {
                     "allowed_contexts": [
                         "foreign_command_reference",
                         "doctor_command_reference",

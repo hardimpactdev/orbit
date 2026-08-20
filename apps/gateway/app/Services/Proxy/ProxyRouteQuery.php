@@ -289,7 +289,7 @@ class ProxyRouteQuery
 
         $entity = [
             'domain' => $route->domain,
-            'kind' => $route->kind === 'app' && $this->appRouteIsValid($route)
+            'kind' => $route->kind === 'app'
                 ? $this->appRouteTargetType()
                 : $route->kind,
             'owner' => [
@@ -355,6 +355,10 @@ class ProxyRouteQuery
 
     public function publicOwnerType(ProxyRoute $route): string
     {
+        if ($route->owner_type === 'app') {
+            return $this->appRouteTargetType();
+        }
+
         return $this->registryOwnerType($route);
     }
 

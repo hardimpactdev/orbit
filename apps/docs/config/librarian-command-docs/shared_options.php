@@ -40,7 +40,6 @@ $options = [
     '--group',
     '--help',
     '--host',
-    '--inherit',
     '--interval',
     '--json',
     '--keep-files',

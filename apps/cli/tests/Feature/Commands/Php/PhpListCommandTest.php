@@ -109,7 +109,7 @@ describe('php:list', function (): void {
                 'cli' => '8.5',
                 'app' => ['name' => 'docs', 'php_version' => '8.4'],
                 'instance' => ['name' => 'development', 'app' => 'docs'],
-                'workspace' => ['name' => 'feature-docs', 'php_version' => '8.4', 'inherits' => true],
+                'workspace' => ['name' => 'feature-docs', 'php_version' => '8.4', 'inherits' => false],
             ],
         ]));
 
@@ -143,8 +143,6 @@ describe('php:list', function (): void {
             ->toContain('docs')
             ->and($output)
             ->toContain('feature-docs')
-            ->and($output)
-            ->toContain('inherited')
             ->and($output)
             ->not->toContain('php: {');
     });

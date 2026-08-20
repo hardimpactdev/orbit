@@ -358,6 +358,8 @@ Use these commands for analytics, instances, and env values.
 7. [`orbit instance:add [app.instance]`](27_instance-add/instance-add.md)
 8. [`orbit instance:remove [app.instance] --force`](28_instance-remove/instance-remove.md)
 9. [`orbit instance:env list|set|render [app.instance]`](20_instance-env/instance-env.md)
+10. [`orbit instance:log [target]`](29_instance-log/instance-log.md)
+11. [`orbit app:log [target]`](30_app-log/app-log.md)
 
 ### Instance Tooling and Setup
 

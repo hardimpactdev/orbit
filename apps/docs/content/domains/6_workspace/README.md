@@ -40,10 +40,10 @@ These rules govern all workspace family commands.
   characters.
 - Workspace PHP version is gateway-tracked configuration, copied from the
   owning instance when the workspace is created or adopted unless an explicit
-  version is supplied. A row that stores no version of its own resolves through
-  its owning instance and then the app template. The effective PHP version
-  selects the workspace FrankenPHP runtime container image; it does not install
-  host PHP or render a host FPM pool.
+  version is supplied. A null value is invalid state and remains detectable; it
+  does not resolve through the owning instance or app template. The stored PHP
+  version selects the workspace FrankenPHP runtime container image; it does not
+  install host PHP or render a host FPM pool.
 - Each workspace owns a Docker runtime container derived from workspace,
   app, and PHP image configuration. The container serves the workspace's web
   route through FrankenPHP and is represented as a process with Docker runtime.
@@ -166,16 +166,15 @@ entity does not define.
 | `node` | string | Effective workspace node slug resolved from the selected instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
-| `php_version` | string \| null | Effective PHP version for the workspace, resolved from its own stored value, then the owning instance, then the app creation template. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
-| `php_inherited` | boolean | `false` whenever the row stores its own concrete version, which is every workspace created or adopted under snapshot inheritance. `true` only for a row that stores no version and resolves through its owning instance. Retained for payload compatibility. |
+| `php_version` | string \| null | PHP version stored by the workspace. `null` exposes invalid state and never triggers live fallback. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
+| `php_inherited` | boolean | Compatibility field that is always `false` under the snapshot ownership model. |
 | `adopted` | boolean | `true` once the workspace path was adopted through `workspace:setup`; `false` for workspace rows created by `workspace:new` or first set up without adoption. |
 | `lifecycle_status` | string | Registry configuration lifecycle, currently `expected` or `setup-pending`. This is not setup-run status and not a live readiness result. |
 
 Structural fields are always present. Use `null` only for structural fields
 whose value is genuinely inapplicable, such as `node` when no serving node
-resolves. `php_version` is the effective version and stays populated even when
-`php_inherited=true`, because that row resolves through its owning instance.
-`instance` is applicable to every workspace and is never `null`.
+resolves. A null `php_version` reports invalid stored state. `instance` is
+applicable to every workspace and is never `null`.
 
 ## Terminology
 
@@ -247,18 +246,19 @@ These commands create, inspect, and tear down workspaces themselves.
 5. [`orbit workspace:remove [name]`](5_workspace-remove/workspace-remove.md)
 6. [`orbit workspace:history [name]`](6_workspace-history/workspace-history.md)
 7. [`orbit workspace:run:log [run]`](7_workspace-run-log/workspace-run-log.md)
+8. [`orbit workspace:log [target]`](15_workspace-log/workspace-log.md)
 
 ### Step management commands
 
 These commands manage the setup and teardown step policy that runs during workspace lifecycle events.
 
-8. [`orbit workspace-setup-step:add`](8_workspace-setup-step-add/workspace-setup-step-add.md)
-9. [`orbit workspace-setup-step:list`](9_workspace-setup-step-list/workspace-setup-step-list.md)
-10. [`orbit workspace-setup-step:remove`](10_workspace-setup-step-remove/workspace-setup-step-remove.md)
-11. [`orbit workspace-teardown-step:add`](11_workspace-teardown-step-add/workspace-teardown-step-add.md)
-12. [`orbit workspace-teardown-step:list`](12_workspace-teardown-step-list/workspace-teardown-step-list.md)
-13. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
-14. [`orbit workspace:env list|set|render [name]`](14_workspace-env/workspace-env.md)
+9. [`orbit workspace-setup-step:add`](8_workspace-setup-step-add/workspace-setup-step-add.md)
+10. [`orbit workspace-setup-step:list`](9_workspace-setup-step-list/workspace-setup-step-list.md)
+11. [`orbit workspace-setup-step:remove`](10_workspace-setup-step-remove/workspace-setup-step-remove.md)
+12. [`orbit workspace-teardown-step:add`](11_workspace-teardown-step-add/workspace-teardown-step-add.md)
+13. [`orbit workspace-teardown-step:list`](12_workspace-teardown-step-list/workspace-teardown-step-list.md)
+14. [`orbit workspace-teardown-step:remove`](13_workspace-teardown-step-remove/workspace-teardown-step-remove.md)
+15. [`orbit workspace:env list|set|render [name]`](14_workspace-env/workspace-env.md)
 
 ## Related
 

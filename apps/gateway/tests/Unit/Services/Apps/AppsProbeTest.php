@@ -779,7 +779,7 @@ describe('owning node eligibility', function (): void {
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_values(array_filter(
             $drift,
-            fn (DriftEntry $entry): bool => $entry->key === 'app.owner_node_invalid',
+            fn (DriftEntry $entry): bool => $entry->key === 'app.serving_node_invalid',
         ));
 
         expect($ownerIssues)->toHaveCount(1);
@@ -797,7 +797,7 @@ describe('owning node eligibility', function (): void {
         $drift = $this->probe->diff($app, new ProbeSnapshot([]));
         $ownerIssues = array_filter(
             $drift,
-            fn (DriftEntry $entry): bool => $entry->key === 'app.owner_node_invalid',
+            fn (DriftEntry $entry): bool => $entry->key === 'app.serving_node_invalid',
         );
 
         expect($ownerIssues)->toHaveCount(0);

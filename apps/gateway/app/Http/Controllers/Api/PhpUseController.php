@@ -65,7 +65,6 @@ final readonly class PhpUseController implements Loggable
             instance: $this->nullableString($request->input('instance')),
             workspace: $this->nullableString($request->input('workspace')),
             node: $this->nullableString($request->input('node')),
-            inherit: filter_var($request->input('inherit'), FILTER_VALIDATE_BOOL),
             cli: filter_var($request->input('cli'), FILTER_VALIDATE_BOOL),
             caller: $caller,
         );

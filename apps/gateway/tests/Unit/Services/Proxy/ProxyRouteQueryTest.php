@@ -214,7 +214,7 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
-    it('does not project invalid app routes as instance-owned registry entities', function (string $invalidity): void {
+    it('keeps the public instance kind while exposing invalid persisted app ownership', function (string $invalidity): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create(['name' => 'development']);
@@ -246,9 +246,10 @@ describe('ProxyRouteQuery', function (): void {
         $query = app(ProxyRouteQuery::class);
         $entity = $query->toRouteEntity($route->fresh());
 
+        $expectedKind = $invalidity === 'malformed kind' ? 'proxy' : 'instance';
+
         expect($entity['kind'])
-            ->not
-            ->toBe('instance')
+            ->toBe($expectedKind)
             ->and($entity['owner'])
             ->toBe(['type' => 'app', 'name' => null])
             ->and($entity['target'])
@@ -563,7 +564,7 @@ describe('ProxyRouteQuery', function (): void {
         'websocket workspace identity' => ['app-websocket', 'websocket', 'workspace identity'],
     ]);
 
-    it('uses stored direct owner types for malformed public ownership metadata', function (
+    it('normalizes the primary app owner type even for malformed public ownership metadata', function (
         string $ownerType,
         string $validKind,
         string $invalidity,
@@ -581,7 +582,9 @@ describe('ProxyRouteQuery', function (): void {
 
         invalidate_proxy_route_query_ownership($route, $app, $instance, $validKind, $invalidity);
 
-        expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($ownerType);
+        $expectedOwnerType = $ownerType === 'app' ? 'instance' : $ownerType;
+
+        expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($expectedOwnerType);
     })->with([
         'primary app missing app' => ['app', 'app', 'missing app'],
         'primary app missing instance' => ['app', 'app', 'missing instance'],

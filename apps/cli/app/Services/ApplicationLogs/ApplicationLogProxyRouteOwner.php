@@ -62,20 +62,11 @@ final readonly class ApplicationLogProxyRouteOwner
      */
     private function ownerIdentity(array $route): array
     {
-        if (array_key_exists('owner', $route)) {
-            $owner = is_array($route['owner']) ? $route['owner'] : [];
-
-            return [
-                $owner['type'] ?? null,
-                $owner['name'] ?? null,
-            ];
-        }
-
-        $target = is_array($route['target'] ?? null) ? $route['target'] : [];
+        $owner = is_array($route['owner'] ?? null) ? $route['owner'] : [];
 
         return [
-            $target['type'] ?? null,
-            $target['value'] ?? null,
+            $owner['type'] ?? null,
+            $owner['name'] ?? null,
         ];
     }
 

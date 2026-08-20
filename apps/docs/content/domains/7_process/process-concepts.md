@@ -85,7 +85,7 @@ These terms define how process definitions are identified, scoped, and ordered.
   username, and a published port bound to every selected publish host. Its
   container target remains `5432`. Process-derived container name, service name,
   host data path, and volume keep multiple PostgreSQL processes independent on
-  one node. PostgreSQL 16 mounts its volume at `/var/lib/postgresql/data`;
+  one node. PostgreSQL 16 and 17 mount their volumes at `/var/lib/postgresql/data`;
   PostgreSQL 18 mounts at `/var/lib/postgresql` to retain the image's
   major-version data layout.
 - **Process order:** Stable order of process definitions inside their owning

@@ -59,8 +59,8 @@ These rules define what PHP runtime commands own and how they operate.
   owns the concrete version its runtime container uses, independent of its
   siblings and of the app template.
 - Workspace PHP version is gateway-tracked workspace configuration, copied from
-  the owning instance at creation unless an explicit version is supplied. A row that stores no version of its own resolves through its owning instance,
-  then the app template.
+  the owning instance at creation unless an explicit version is supplied. A
+  null value is invalid state and does not resolve through another row.
 - Workspace PHP reads and writes are available only when the workspace resolves
   to an active `app-dev` serving node and the caller is not an `app-prod` node.
   Explicit workspace targets fail with

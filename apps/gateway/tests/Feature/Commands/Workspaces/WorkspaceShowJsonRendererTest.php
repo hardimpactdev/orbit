@@ -77,7 +77,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             'app_id' => $app->id,
             'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
-            'php_version' => null,
+            'php_version' => '8.5',
         ]);
 
         $response = $this->call(
@@ -106,7 +106,7 @@ describe('WorkspaceShowJsonRenderer success shape', function (): void {
             ->and($ws['php_version'])
             ->toBe('8.5')
             ->and($ws['php_inherited'])
-            ->toBeTrue()
+            ->toBeFalse()
             ->and($ws)
             ->not
             ->toHaveKey('agent_ide')

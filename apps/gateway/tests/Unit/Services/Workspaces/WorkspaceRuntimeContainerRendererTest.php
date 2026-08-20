@@ -42,7 +42,7 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
     $workspaceAttributes = array_merge([
         'name' => 'feature-a',
         'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
-        'php_version' => null,
+        'php_version' => '8.5',
     ], $workspaceOverrides);
 
     $workspace = makeWorkspaceRendererWorkspace($app, $workspaceAttributes);
@@ -174,7 +174,7 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
     $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
 
     $container = workspaceRendererForTest()->render($workspace);
@@ -223,7 +223,7 @@ it('uses the selected app instance node for workspace runtime node-local mounts'
         'instance_id' => $instance->id,
         'name' => 'recipes',
         'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
 
     $mounts = workspaceRendererForTest()->render($workspace)->mounts();
@@ -294,7 +294,7 @@ it('uses selected app instance runtime mounts for workspace containers', functio
         'name' => 'feature-a',
         'path' => '/Users/nckrtl/apps/hauser/.worktrees/feature-a',
         'instance_id' => $instance->id,
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
     $workspace->setRelation('instance', $instance);
 
@@ -320,7 +320,7 @@ it('uses configured runtime mounts from the selected app instance', function ():
     $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
     $workspace
         ->instance
@@ -356,12 +356,11 @@ it('uses the workspace php_version override when set', function (): void {
     expect($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
 });
 
-it('inherits the app php_version when workspace php_version is null', function (): void {
+it('rejects an invalid null workspace PHP snapshot', function (): void {
     $workspace = makePhpWorkspace(appOverrides: ['php_version' => '8.4'], workspaceOverrides: ['php_version' => null]);
 
-    $container = workspaceRendererForTest()->render($workspace);
-
-    expect($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
+    expect(fn () => workspaceRendererForTest()->render($workspace))
+        ->toThrow(InvalidArgumentException::class, "Workspace 'feature-a' has no resolvable PHP version");
 });
 
 it('uses the approved glibc-based FrankenPHP image family rather than alpine/musl', function (): void {
@@ -474,7 +473,7 @@ it('changes the spec hash when selected app instance runtime mounts change', fun
         'name' => 'feature-a',
         'path' => '/Users/nckrtl/apps/hauser/.worktrees/feature-a',
         'instance_id' => $instance->id,
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
     $workspace->setRelation('instance', $instance);
 
@@ -604,7 +603,7 @@ it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP cl
     $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
 
     $container = workspaceRendererForTest()->render($workspace);
@@ -644,7 +643,7 @@ it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mount
     $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
-        'php_version' => null,
+        'php_version' => '8.5',
     ]);
 
     $container = workspaceRendererForTest()->render($workspace);

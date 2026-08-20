@@ -57,6 +57,7 @@ function place_php_api_app(App $app, Node $node, string $name = 'development'): 
 {
     return Instance::factory()->for($app)->create([
         'name' => $name,
+        'php_version' => $app->php_version,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
@@ -331,7 +332,8 @@ describe('PHP runtime API controllers', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.php.node', 'app-1')
-            ->assertJsonPath('success.data.php.workspace.inherits', true);
+            ->assertJsonPath('success.data.php.workspace.php_version', null)
+            ->assertJsonPath('success.data.php.workspace.inherits', false);
     });
 
     it('writes instance PHP runtime intent without moving the app default', function (): void {

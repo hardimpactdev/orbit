@@ -243,7 +243,7 @@ describe('app:log host resolution', function (): void {
         ));
     });
 
-    it('accepts the safe target-only instance projection compatibility form', function (): void {
+    it('rejects target-only proxy projections without a canonical owner', function (): void {
         Http::fake(function (Request $request) {
             $url = urldecode($request->url());
 
@@ -256,14 +256,6 @@ describe('app:log host resolution', function (): void {
                 ]));
             }
 
-            if (str_contains($url, '/api/instances/docs.development/log')) {
-                return Http::response(fakeSuccessEnvelope([
-                    'path' => 'storage/logs/laravel.log',
-                    'file_exists' => false,
-                    'lines' => [],
-                ]));
-            }
-
             return Http::response(['error' => ['code' => 'unexpected']], 500);
         });
 
@@ -272,7 +264,9 @@ describe('app:log host resolution', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0);
+        expect($exitCode)->toBe(1);
+
+        Http::assertNotSent(fn (Request $request): bool => str_contains(urldecode($request->url()), '/log'));
     });
 
     it('does not combine a partial owner projection with an instance target fallback', function (): void {

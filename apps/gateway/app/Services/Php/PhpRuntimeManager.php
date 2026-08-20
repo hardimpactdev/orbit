@@ -81,11 +81,10 @@ final readonly class PhpRuntimeManager
         ?string $instance = null,
         ?string $workspace = null,
         ?string $node = null,
-        bool $inherit = false,
         bool $cli = false,
         ?Node $caller = null,
     ): PhpRuntimeOperation {
-        $validation = $this->validateUseInputs($version, $instance, $workspace, $inherit, $cli);
+        $validation = $this->validateUseInputs($version, $instance, $workspace, $cli);
 
         if ($validation instanceof PhpRuntimeFailure) {
             return new PhpRuntimeOperation(failure: $validation);
@@ -95,7 +94,6 @@ final readonly class PhpRuntimeManager
             instance: $instance,
             workspace: $workspace,
             node: $node,
-            inherit: $inherit,
             cli: $cli,
         );
 
@@ -141,8 +139,7 @@ final readonly class PhpRuntimeManager
             'workspace' => $this->useWorkspace(
                 $target['workspace'],
                 $target['node'],
-                $inherit,
-                $requestedVersion,
+                (string) $requestedVersion,
             ),
             default => $this->useProject(
                 $target['app'],
@@ -343,7 +340,6 @@ final readonly class PhpRuntimeManager
         ?string $instance,
         ?string $workspace,
         ?string $node,
-        bool $inherit,
         bool $cli,
     ): array|PhpRuntimeFailure {
         if ($cli) {
@@ -371,7 +367,7 @@ final readonly class PhpRuntimeManager
             return $target;
         }
 
-        if (($inherit || $workspace !== null) && ! $target['workspace'] instanceof Workspace) {
+        if ($workspace !== null && ! $target['workspace'] instanceof Workspace) {
             return new PhpRuntimeFailure('validation_failed', 'A workspace target is required.', [
                 'field' => 'workspace',
                 'reason' => 'missing_target',
@@ -408,7 +404,6 @@ final readonly class PhpRuntimeManager
         ?string $version,
         ?string $instance,
         ?string $workspace,
-        bool $inherit,
         bool $cli,
     ): ?PhpRuntimeFailure {
         $version = is_string($version) ? trim($version) : null;
@@ -417,25 +412,18 @@ final readonly class PhpRuntimeManager
             $version = null;
         }
 
-        if ($inherit && $version !== null) {
-            return new PhpRuntimeFailure('validation_failed', 'Cannot provide both a PHP version and --inherit.', [
-                'fields' => ['version', 'inherit'],
-                'reason' => 'mutually_exclusive_input',
-            ]);
-        }
-
-        if ($cli && ($instance !== null || $workspace !== null || $inherit)) {
+        if ($cli && ($instance !== null || $workspace !== null)) {
             return new PhpRuntimeFailure(
                 'validation_failed',
-                'CLI PHP selection cannot be combined with instance, workspace, or inheritance targets.',
+                'CLI PHP selection cannot be combined with instance or workspace targets.',
                 [
-                    'fields' => ['cli', 'instance', 'workspace', 'inherit'],
+                    'fields' => ['cli', 'instance', 'workspace'],
                     'reason' => 'mutually_exclusive_input',
                 ],
             );
         }
 
-        if (! $inherit && $version === null) {
+        if ($version === null) {
             return new PhpRuntimeFailure('validation_failed', 'PHP version is required.', [
                 'field' => 'version',
                 'reason' => 'missing_required_input',
@@ -471,7 +459,7 @@ final readonly class PhpRuntimeManager
         // Instance scope writes the instance. The app value is the template for
         // new instances and is deliberately left alone, so sibling instances
         // and workspaces never move because of this run.
-        $previous = $instance->php_version ?? $app->php_version;
+        $previous = $instance->php_version;
         $changed = $previous !== $version;
         $instance->forceFill(['php_version' => $version])->save();
 
@@ -498,8 +486,7 @@ final readonly class PhpRuntimeManager
     private function useWorkspace(
         ?Workspace $workspace,
         Node $node,
-        bool $inherit,
-        ?string $version,
+        string $version,
     ): PhpRuntimeOperation {
         if (! $workspace instanceof Workspace) {
             return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
@@ -513,24 +500,14 @@ final readonly class PhpRuntimeManager
         }
 
         $workspace->loadMissing(['app', 'instance']);
-        // Inheritance resolves instance-first, matching effectivePhpVersion().
-        // Preflighting the app template here would verify an image the
-        // workspace will never run and let the real one through unchecked.
-        $inheritedVersion = $workspace->instance?->php_version ?? $workspace->app?->php_version;
-        $previous = $workspace->php_version ?? $inheritedVersion;
-        $previousRaw = $workspace->php_version;
-        $nextRaw = $inherit ? null : $version;
-        $nextEffective = $nextRaw ?? $inheritedVersion;
+        $previous = $workspace->php_version;
+        $availabilityFailure = $this->versionAvailabilityFailure($node, $version);
 
-        if (is_string($nextEffective)) {
-            $availabilityFailure = $this->versionAvailabilityFailure($node, $nextEffective);
-
-            if ($availabilityFailure instanceof PhpRuntimeFailure) {
-                return new PhpRuntimeOperation(failure: $availabilityFailure);
-            }
+        if ($availabilityFailure instanceof PhpRuntimeFailure) {
+            return new PhpRuntimeOperation(failure: $availabilityFailure);
         }
 
-        $workspace->forceFill(['php_version' => $nextRaw])->save();
+        $workspace->forceFill(['php_version' => $version])->save();
         $workspace->refresh()->loadMissing(['app', 'instance']);
         $effective = $workspace->effectivePhpVersion();
 
@@ -548,8 +525,8 @@ final readonly class PhpRuntimeManager
                 'previous' => $previous,
                 'version' => $effective,
                 'image' => $this->imageForSupportedVersion($effective),
-                'inherits' => $inherit,
-                'changed' => $previousRaw !== $nextRaw,
+                'inherits' => false,
+                'changed' => $previous !== $version,
             ],
         );
     }
@@ -672,14 +649,13 @@ final readonly class PhpRuntimeManager
                 ? [
                     'name' => $instance->name,
                     'app' => $app?->name,
-                    // The instance's own version, which may differ from the app creation template.
-                    'php_version' => $instance->php_version ?? $app?->php_version,
+                    'php_version' => $instance->php_version,
                 ] : null,
             'workspace' => $workspace instanceof Workspace
                 ? [
                     'name' => $workspace->name,
                     'php_version' => $workspace->effectivePhpVersion(),
-                    'inherits' => ! is_string($workspace->php_version) || $workspace->php_version === '',
+                    'inherits' => false,
                 ] : null,
         ];
     }

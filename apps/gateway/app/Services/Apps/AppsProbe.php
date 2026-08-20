@@ -606,7 +606,7 @@ final readonly class AppsProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'app.owner_node_invalid',
+                    key: 'app.serving_node_invalid',
                     kind: DriftKind::Divergent,
                     summary: "App {$label} points at a missing owning node.",
                     detail: $this->targetDetail($app, $instance),
@@ -622,7 +622,7 @@ final readonly class AppsProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'app.owner_node_invalid',
+                    key: 'app.serving_node_invalid',
                     kind: DriftKind::Divergent,
                     summary: "App {$label} is owned by node {$node->name}, which is not an active app node.",
                     detail: $this->targetDetail($app, $instance),

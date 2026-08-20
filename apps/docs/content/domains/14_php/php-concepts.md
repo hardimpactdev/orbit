@@ -69,17 +69,11 @@ These terms define each target scope that a PHP command can read or write.
   concrete instance, authorizes its serving node, verifies the approved image,
   stores the version on the instance, and reconciles that instance's
   Orbit-managed runtime artifacts. It never changes a sibling instance.
-- **Workspace PHP runtime override:** Workspace-scoped PHP version stored on the
-  workspace row. It is copied from the owning instance at creation and can be
-  set explicitly to a different version for that workspace alone.
-- **Workspace PHP inheritance:** Workspace state where the row stores no PHP
-  version of its own and resolves through its owning instance, then the app
-  creation template. Workspaces created or adopted today store a concrete
-  version, so this state arises from `php:use --inherit`, which clears a
-  workspace override, and from rows written before the snapshot model.
-- **Effective workspace PHP version:** Version a workspace actually uses: its
-  own stored version, then the owning instance version, then the app creation
-  template when the row stores none.
+- **Workspace PHP runtime version:** Concrete PHP version stored on the
+  workspace row. Orbit copies it from the owning instance at creation or writes
+  an explicitly selected version for that workspace alone. A null value is
+  invalid state and does not resolve through another row.
+- **Effective workspace PHP version:** The workspace's own stored version.
 - **Runtime PHP binary:** The `php` binary inside an app, workspace, or gateway
   runtime container — the web *serving* runtime and, in `orbit-gateway`, the
   gateway's own runtime. Instance setup, deploy commands, and ad-hoc

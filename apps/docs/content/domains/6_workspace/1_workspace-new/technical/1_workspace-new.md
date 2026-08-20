@@ -177,7 +177,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
-  (`error.code=workspace.parent_project_invalid`).
+  (`error.code=workspace.parent_instance_invalid`).
 - **Production app unsupported** — the selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). The
   command fails before source-driver, registry, Agent-push, or runtime effects.

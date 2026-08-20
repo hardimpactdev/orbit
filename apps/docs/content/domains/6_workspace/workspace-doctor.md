@@ -104,7 +104,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | Code | Detected when |
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app identity, selected instance identity, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
-| `workspace.parent_project_invalid` | The workspace record points at a missing parent app. |
+| `workspace.parent_instance_invalid` | The workspace record points at a missing parent app and cannot resolve its required parent instance. |
 | `workspace.instance_invalid` | The selected instance is missing, belongs to another app, or does not resolve to an active `app-dev` node for a reason other than production placement. |
 | `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |

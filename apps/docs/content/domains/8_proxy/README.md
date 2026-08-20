@@ -227,7 +227,7 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
-| `kind` | `app`, `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
+| `kind` | `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Public route behavior. Persisted primary-instance rows use `kind=app` but always project `instance`. |
 | `owner.type` | `app`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
 | `owner.name` | string \| null | Owning app, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 

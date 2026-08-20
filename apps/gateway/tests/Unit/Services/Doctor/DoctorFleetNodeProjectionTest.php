@@ -71,7 +71,7 @@ it('projects the existing fleet node summary fields with complete active roles',
     ]);
 });
 
-it('uses safe node summary defaults and the operator role fallback', function (): void {
+it('uses safe node summary defaults and an empty operator role set', function (): void {
     $node = Node::factory()->create(['name' => 'operator-1', 'status' => 'active']);
     assert($node instanceof Node, description: 'The factory must produce a node.');
 
@@ -80,7 +80,7 @@ it('uses safe node summary defaults and the operator role fallback', function ()
     expect($summary)->toBe([
         'node' => 'operator-1',
         'role' => 'operator',
-        'roles' => ['operator'],
+        'roles' => [],
         'healthy' => false,
         'families' => [],
         'summary' => [],

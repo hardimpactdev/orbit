@@ -39,7 +39,7 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'instance_id' => $app->instances()->firstOrFail()->id,
         'name' => 'feature-docs',
         'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
-        'php_version' => null,
+        'php_version' => '8.5',
         'adopted' => true,
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);

@@ -193,7 +193,7 @@ Supported managed services in this vertical slice:
 | Service | Versions | Default runtime | Notes |
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
-| `postgres` | `16` -> `16-alpine`, `18` -> `18-alpine` | `docker` | Requires an initial database, initial username, and per-process published port. Containers always target port `5432`; distinct WireGuard-bound published ports allow multiple PostgreSQL processes on one node. One explicitly selected process may back the analytics role. |
+| `postgres` | `16` -> `16-alpine`, `17` -> `17-alpine`, `18` -> `18-alpine` | `docker` | Requires an initial database, initial username, and per-process published port. Containers always target port `5432`; distinct WireGuard-bound published ports allow multiple PostgreSQL processes on one node. One explicitly selected process may back the analytics role. |
 | `clickhouse` | `24.12` -> `24.12-alpine` | `docker` | Publishes the ClickHouse HTTP endpoint on the owning node's WireGuard service address and can back the analytics role. |
 | `valkey` | `8` -> `8.1` | `docker` | Publishes the Valkey TCP endpoint from the owning node's WireGuard service address and is the required app-facing WebSocket broker. |
 | `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |

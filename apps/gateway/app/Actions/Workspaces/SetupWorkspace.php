@@ -494,7 +494,7 @@ final readonly class SetupWorkspace
                 'ORBIT_WORKSPACE_NAME' => $workspace->name,
                 'ORBIT_WORKSPACE_PATH' => $workspace->path,
                 'ORBIT_URL' => $workspace->url(),
-                'ORBIT_PHP_VERSION' => $workspace->effectivePhpVersion() ?? $app->php_version,
+                'ORBIT_PHP_VERSION' => $workspace->effectivePhpVersion() ?? '',
             ] + $this->vite->shellVariables($app, $node, $workspace)
         );
     }

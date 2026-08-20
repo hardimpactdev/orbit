@@ -22,8 +22,6 @@ final readonly class PhpUseHumanProgressRenderer
             return new PhpUseCliHumanTreeRunner($this->output)->run($payload, $version, $gatewayUse);
         }
 
-        $inherit = ($payload['inherit'] ?? false) === true;
-
-        return new PhpUseGatewayHumanTreeRunner($this->output)->run($payload, $version, $gatewayUse, $inherit);
+        return new PhpUseGatewayHumanTreeRunner($this->output)->run($payload, $version, $gatewayUse);
     }
 }

@@ -214,7 +214,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp(['php_version' => '7.4']);
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'php_version' => null,
+            'php_version' => '7.4',
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
@@ -510,7 +510,7 @@ describe('registry intent', function (): void {
         expect($drift[0]->kind)->toBe(DriftKind::Missing);
     });
 
-    it('accepts PHP version inherited from the parent app', function (): void {
+    it('reports a null PHP snapshot as an incomplete record', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
         $workspace = workspaceFor($app, ['php_version' => null]);
 
@@ -520,12 +520,12 @@ describe('registry intent', function (): void {
             fn (DriftEntry $entry): bool => $entry->key === 'workspace.record_incomplete',
         );
 
-        expect($recordIssues)->toHaveCount(0);
+        expect($recordIssues)->toHaveCount(1);
     });
 
     it('requires an effective PHP version', function (): void {
         $app = workspaceableApp(['php_version' => '']);
-        $workspace = workspaceFor($app, ['php_version' => null]);
+        $workspace = workspaceFor($app, ['php_version' => '']);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -542,7 +542,7 @@ describe('registry intent', function (): void {
 
         expect(issue($drift, 'workspace.record_incomplete')?->kind)
             ->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'workspace.app_instance_invalid')?->kind)
+            ->and(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent);
     });
 });
@@ -557,9 +557,9 @@ describe('app instance eligibility', function (): void {
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+        expect(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_project_invalid'))
+            ->and(issue($drift, 'workspace.parent_instance_invalid'))
             ->toBeNull();
     });
 
@@ -572,9 +572,9 @@ describe('app instance eligibility', function (): void {
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+        expect(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_project_invalid'))
+            ->and(issue($drift, 'workspace.parent_instance_invalid'))
             ->toBeNull();
     })->with([
         'gateway instance node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
@@ -657,6 +657,7 @@ function workspaceFor(App $app, array $overrides = []): Workspace
         ->create([
             'name' => $name,
             'path' => workspaceForAppPath($app).'/.worktrees/'.$name,
+            'php_version' => '8.5',
             ...$overrides,
         ]);
 }

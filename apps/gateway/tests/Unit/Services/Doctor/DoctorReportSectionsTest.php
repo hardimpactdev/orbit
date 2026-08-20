@@ -171,10 +171,10 @@ it('counts issue dispositions and serializes issues without reordering them', fu
         ]);
 });
 
-it('uses operator as the complete role set when a node has no active roles', function (): void {
+it('keeps the active role set empty for an operator node', function (): void {
     $node = Node::factory()->create(['status' => 'active']);
 
-    expect(app(DoctorReportSections::class)->roles($node))->toBe(['operator']);
+    expect(app(DoctorReportSections::class)->roles($node))->toBe([]);
 });
 
 it('preserves the local executor failed report without disposition counts', function (): void {
@@ -201,7 +201,7 @@ it('preserves the local executor failed report without disposition counts', func
                 'families' => ['node'],
                 'node' => 'local-executor-failed',
                 'role' => 'operator',
-                'roles' => ['operator'],
+                'roles' => [],
                 'self' => false,
                 'app' => null,
                 'instance' => null,

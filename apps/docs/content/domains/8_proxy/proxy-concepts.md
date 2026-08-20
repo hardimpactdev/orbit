@@ -250,7 +250,7 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that appion changes. It does not own app, instance WebSocket binding, instance
+  and restart path when that projection changes. It does not own app, instance WebSocket binding, instance
   analytics binding, workspace, gateway, websocket service, S3 service,
   analytics service, or tool identity, does not create or remove owner-side
   records, and does not manage TCP tool service endpoints or firewall policy.

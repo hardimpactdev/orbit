@@ -50,7 +50,6 @@ describe('php:use', function (): void {
                 && $request->data() === [
                     'version' => '8.5',
                     'instance' => 'docs.development',
-                    'inherit' => false,
                     'cli' => false,
                 ]
             );
@@ -92,7 +91,7 @@ describe('php:use', function (): void {
         }
     });
 
-    it('posts workspace inheritance without requiring a version', function (): void {
+    it('posts explicit workspace PHP runtime selections', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'php' => ['node' => 'app-1'],
             'result' => [
@@ -100,14 +99,14 @@ describe('php:use', function (): void {
                 'app' => 'docs',
                 'workspace' => 'feature-docs',
                 'version' => '8.5',
-                'inherits' => true,
+                'inherits' => false,
             ],
         ], ['warnings' => []]));
 
         [$exitCode] = runCommand($this, 'php:use', [
+            'version' => '8.5',
             '--instance' => 'docs.development',
             '--workspace' => 'feature-docs',
-            '--inherit' => true,
             '--json' => true,
         ]);
 
@@ -117,10 +116,10 @@ describe('php:use', function (): void {
             return (
                 $request->method() === 'POST'
                 && str_contains($request->url(), '/api/php/use')
-                && ! array_key_exists('version', $payload)
+                && $payload['version'] === '8.5'
                 && $payload['instance'] === 'docs.development'
                 && $payload['workspace'] === 'feature-docs'
-                && $payload['inherit'] === true
+                && ! array_key_exists('inherit', $payload)
                 && $payload['cli'] === false
             );
         });
@@ -150,7 +149,6 @@ describe('php:use', function (): void {
                 return $request->data() === [
                     'version' => '8.5',
                     'node' => 'default-app',
-                    'inherit' => false,
                     'cli' => true,
                 ];
             });

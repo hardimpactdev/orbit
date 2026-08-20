@@ -76,6 +76,7 @@ function makeRuntimeRendererApp(Node $node, array $attributes, bool $withDefault
     // opt out and define their own instances explicitly.
     if ($withDefaultInstance) {
         Instance::factory()->for($app, 'app')->create([
+            'php_version' => $app->php_version,
             'driver_config' => new OrbitInstanceDriverConfigData(
                 node_id: $node->id,
                 node: $node->name,
@@ -134,6 +135,7 @@ function workerRuntimeInstance(
 
     return Instance::factory()->for($app)->create(array_merge([
         'name' => 'development',
+        'php_version' => $app->php_version,
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $nodeId,
