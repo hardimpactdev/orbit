@@ -74,7 +74,7 @@ owns app-domain health.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:PUT /api/cloudflare/zones/{zone}/ssl/disable` |
+| Type | `api:PUT /cloudflare/zones/{zone}/ssl/disable` |
 | Effect | `destructive` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |

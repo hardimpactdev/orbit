@@ -76,7 +76,7 @@ owns app-domain health.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:DELETE /api/cloudflare/zones/{zone}/dns/{record}` |
+| Type | `api:DELETE /cloudflare/zones/{zone}/dns/{record}` |
 | Effect | `destructive` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |

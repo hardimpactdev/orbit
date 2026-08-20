@@ -96,7 +96,7 @@ role.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /api/vpn/clients` |
+| Type | `api:POST /vpn/clients` |
 | Effect | `write` |
 | Subject | `none` |
 | Properties | No command-specific properties. |

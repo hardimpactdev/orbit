@@ -75,7 +75,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /api/cloudflare/zones/{zone}/dns` |
+| Type | `api:POST /cloudflare/zones/{zone}/dns` |
 | Effect | `write` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |

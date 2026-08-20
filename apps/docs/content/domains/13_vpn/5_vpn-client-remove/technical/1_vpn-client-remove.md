@@ -86,7 +86,7 @@ detection and safe node-peer cleanup.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:DELETE /api/vpn/clients/{name}` |
+| Type | `api:DELETE /vpn/clients/{name}` |
 | Effect | `destructive` |
 | Subject | `none` |
 | Properties | `client` is the selected VPN client name. |

@@ -93,7 +93,7 @@ but it does not rotate the VPN web UI password.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /api/vpn/web-ui/password` |
+| Type | `api:POST /vpn/web-ui/password` |
 | Effect | `destructive` |
 | Subject | `none` |
 | Properties | No command-specific properties. |

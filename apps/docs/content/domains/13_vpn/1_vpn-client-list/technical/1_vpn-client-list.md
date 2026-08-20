@@ -82,7 +82,7 @@ runtime drift, and node reachability drift.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:GET /api/vpn/clients` |
+| Type | `api:GET /vpn/clients` |
 | Effect | `read` |
 | Subject | `none` |
 | Properties | No command-specific properties. |

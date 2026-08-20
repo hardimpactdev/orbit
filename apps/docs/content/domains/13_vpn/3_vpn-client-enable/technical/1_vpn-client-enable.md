@@ -75,7 +75,7 @@ active `vpn` role.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /api/vpn/clients/{name}/enable` |
+| Type | `api:POST /vpn/clients/{name}/enable` |
 | Effect | `write` |
 | Subject | `none` |
 | Properties | `client` is the selected VPN client name. |

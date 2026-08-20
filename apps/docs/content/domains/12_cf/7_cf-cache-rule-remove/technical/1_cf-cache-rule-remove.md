@@ -82,7 +82,7 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 | Field | Value |
 | --- | --- |
-| Type | `api:DELETE /api/cloudflare/cache-rules/{app}` |
+| Type | `api:DELETE /cloudflare/cache-rules/{app}` |
 | Effect | `destructive` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |

@@ -80,7 +80,7 @@ Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy
 
 | Field | Value |
 | --- | --- |
-| Type | `api:POST /api/cloudflare/cache/flush` |
+| Type | `api:POST /cloudflare/cache/flush` |
 | Effect | `write` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |

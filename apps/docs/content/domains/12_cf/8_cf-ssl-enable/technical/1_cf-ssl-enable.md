@@ -66,7 +66,7 @@ owns app-domain health.
 
 | Field | Value |
 | --- | --- |
-| Type | `api:PUT /api/cloudflare/zones/{zone}/ssl` |
+| Type | `api:PUT /cloudflare/zones/{zone}/ssl` |
 | Effect | `write` |
 | Subject | The authenticated gateway `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
