@@ -64,11 +64,12 @@ Each activity entry carries the following fields.
   command in the command's technical contract.
 - **Description:** Optional one-line human summary for human renderers.
   Renderers may fall back to type plus subject when description is absent.
-- **Channel:** Origin of the entry. The canonical public values are `cli`
-  (command-side emission) and `api` (gateway controller emission). Internal
-  execution rows use channel `api` plus `properties.lane = internal` and a
-  current `properties.transport` marker. Channel does not change which fields
-  are required.
+- **Channel:** Origin of the entry. `api` is the current emission channel for
+  gateway controller and internal execution rows. Read paths accept `cli` only
+  for stored records; current CLI commands do not emit activity. Internal rows
+  use channel `api` plus `properties.lane = internal` and a current
+  `properties.transport` marker. Channel does not change which fields are
+  required.
 
 ### Canonical Activity DTO
 

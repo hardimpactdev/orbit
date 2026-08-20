@@ -107,12 +107,14 @@ grep -rn "architecture\.md#\|tech-stack\.md#" apps/docs/content/ --include="*.md
 grep -n "^#" apps/docs/content/architecture.md apps/docs/content/tech-stack.md
 
 # Legacy terminology still in current docs
-grep -rn "hosted node\|hosted host\|hosted role\|joined client\|operator node\|control node" \
+grep -rn "hosted node\|hosted host\|hosted role\|joined client\|control node" \
   apps/docs/content/ --include="*.md" | grep -v "porting\|Legacy\|legacy"
 
 # Caller-role leakage
 grep -rn "caller_role_not_allowed\|Caller Role Rule\|control.*callers\|app callers\|unknown callers" \
   apps/docs/content/domains/ --include="*.md"
+# Compare every match with Architecture's named authorization classes before
+# reporting it as drift.
 
 # Per-target scheduler model leakage
 grep -rn "target node.*scheduler\|scheduler on the target\|node.*scheduler" \
@@ -297,8 +299,10 @@ in place from the audit session:
 
 These keep showing up. Look for them first.
 
-- **Caller-role leakage.** Architecture is grants-only; downstream docs still
-  enumerate `control` / `gateway` / `app` / `unknown` as authorization gates.
+- **Caller-role leakage.** Stored grants are the default authorization gate.
+  Reject built-in `control` / `gateway` / `app` / `unknown` caller-role gates
+  unless the surface uses one of Architecture's named gateway-implicit-authority,
+  pre-grants-bootstrap, local-only, or identity-gated-self-management classes.
   Check shared README + per-domain "Caller Role Rule" sections + technical
   contract authorization bullets + activity JSON `actor.role` enum.
 - **TLD ownership flip-flop.** Whether TLD lives on the node row or on the
@@ -310,9 +314,9 @@ These keep showing up. Look for them first.
   list 8 families when architecture lists 9 (or whatever the current count is).
 - **Broken architecture / tech-stack anchors.** Domain READMEs cite anchors
   that don't exist in the target file.
-- **Legacy terminology in current prose.** `hosted role`, `joined client`,
-  `operator node`, `control node` — node-concepts marks these legacy but they
-  re-appear in current docs.
+- **Legacy terminology in current prose.** `hosted role`, `joined client`, and
+  `control node` are legacy. `operator node` is current identity wording; use
+  `roleless operator node` when the absence of workload roles matters.
 - **Preset name collisions.** `operator`, `developer`, `admin`, etc. are
   preset names. Don't use the same word as a caller-type noun.
 - **Tool catalog ↔ family README ↔ role baseline mismatch.** The family README

@@ -139,20 +139,21 @@ singular product prefixes, such as `node.wireguard_peer_missing`,
 `process.runtime_unit_missing`, `proxy.route_extra`, and `schedule.unit_extra`.
 
 Documentation domains may also contain command groups that are not state
-families, such as operations, deployments, VPN administration, PHP runtime, and
-agent IDE commands. Those domains may call or affect state families, but they
-must not invent new doctor family names unless the blueprint defines a product
-family for them.
+families, such as operations, deployments, VPN administration, PHP runtime,
+DNS, activity, S3, metrics, analytics, Codex, and extensions. Those domains may
+call or affect state families, but they must not invent new doctor family names
+unless the blueprint defines a product family for them.
 
 Tool-specific and capability-specific command families are explicitly admitted
 product surfaces, not generated from tool catalog slugs. Generic lifecycle,
 inventory, logs, credentials, update, reload, and reconfiguration stay under
 `tool:*`. A separate family is valid only when it owns a distinct Orbit
 workflow whose natural operator vocabulary is the tool or capability name:
-`php:*` for PHP runtime selection, future `redis:*` for Redis-native
-data-plane operations, and future `db:*` for database backup and restore
-drivers. Do not create `mysql:*`, `postgres:*`, or other per-tool families just
-because a catalog entry exists.
+`php:*` owns PHP runtime selection, future `valkey:*` may own Valkey-native
+data-plane operations, and `database:*` owns database connection inventory, env
+convergence, schema inspection, audited SQL execution, and database backup or
+restore. Do not create `redis:*`, `db:*`, `mysql:*`, `postgres:*`, or other
+per-tool families just because a catalog entry exists.
 
 When converting a command, state both:
 
