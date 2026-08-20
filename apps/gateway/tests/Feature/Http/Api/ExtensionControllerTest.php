@@ -134,7 +134,15 @@ describe('Extension API controllers', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.extension.enabled', true);
 
-        expect(GatewayExtension::query()->where('slug', 'cloudflare')->count())->toBe(1);
+        $extension = GatewayExtension::query()->where('slug', 'cloudflare')->sole();
+        $entry = Activity::query()->latest('id')->firstOrFail();
+
+        expect(GatewayExtension::query()->where('slug', 'cloudflare')->count())
+            ->toBe(1)
+            ->and($entry->subject_type)
+            ->toBe(GatewayExtension::class)
+            ->and($entry->subject_id)
+            ->toBe($extension->id);
     });
 
     it('disables an extension idempotently', function (): void {
@@ -158,6 +166,14 @@ describe('Extension API controllers', function (): void {
         $second
             ->assertOk()
             ->assertJsonPath('success.data.extension.enabled', false);
+
+        $extension = GatewayExtension::query()->where('slug', 'codex')->sole();
+        $entry = Activity::query()->latest('id')->firstOrFail();
+
+        expect($entry->subject_type)
+            ->toBe(GatewayExtension::class)
+            ->and($entry->subject_id)
+            ->toBe($extension->id);
     });
 
     it('requires extension:enable to enable an extension', function (): void {

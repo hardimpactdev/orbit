@@ -8,6 +8,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\GatewayExtension;
 use App\Services\Extensions\GatewayExtensionState;
 use App\Services\Extensions\GatewayExtensionStorageUnavailable;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,8 @@ final class ExtensionDisableController implements Loggable
 {
     private ?string $activityExtension = null;
 
+    private ?GatewayExtension $activitySubject = null;
+
     public function __construct(
         private readonly GatewayExtensionState $extensionState,
     ) {}
@@ -27,6 +30,7 @@ final class ExtensionDisableController implements Loggable
     public function __invoke(string $extension): JsonResponse
     {
         $this->activityExtension = $extension;
+        $this->activitySubject = null;
 
         if (! $this->extensionState->isKnownSlug($extension)) {
             return response()->json(
@@ -40,7 +44,7 @@ final class ExtensionDisableController implements Loggable
         }
 
         try {
-            $this->extensionState->disable($extension);
+            $this->activitySubject = $this->extensionState->disable($extension);
         } catch (GatewayExtensionStorageUnavailable) {
             return response()->json(
                 JsonEnvelope::failure(
@@ -78,7 +82,7 @@ final class ExtensionDisableController implements Loggable
 
     public function subject(): ?Model
     {
-        return null;
+        return $this->activitySubject;
     }
 
     public function properties(): array

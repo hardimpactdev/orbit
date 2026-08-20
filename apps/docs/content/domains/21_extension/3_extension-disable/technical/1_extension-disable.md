@@ -73,7 +73,7 @@ issues or run restore flows.
 | --- | --- |
 | Type | `api:POST /extensions/{extension}/disable` |
 | Effect | `write` |
-| Subject | `none`; gateway extension state has no activity subject model. |
+| Subject | The selected `GatewayExtension`; `none` when the extension slug is unknown or state storage is unavailable. |
 | Properties | `extension`. |
 | Description | derived |
 

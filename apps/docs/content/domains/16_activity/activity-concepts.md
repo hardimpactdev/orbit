@@ -110,8 +110,8 @@ These terms describe how related activity entries are grouped.
 
 ## Loggable Contract
 
-Every API controller and every CLI command participates in activity logging
-through one shared contract.
+Gateway API controllers participate in activity logging through one shared
+contract. CLI commands do not write activity directly.
 
 - **Loggable interface:** Controllers and command handlers that emit
   activity declare:
@@ -125,10 +125,10 @@ through one shared contract.
   matched controller and, if it implements Loggable, records an entry after
   the response is produced (success or failure). The controller decides
   what to log; the middleware is the transport. Causer is resolved from
-  the WireGuard identity middleware. On the CLI, a small command-side
-  helper emits an entry through the gateway client when the command itself
-  is the canonical actor (CLI paths that do not flow through a single
-  matching API endpoint); causer is the local node identity.
+  the WireGuard identity middleware. A CLI command that calls a matching
+  gateway API endpoint relies on that endpoint's activity entry. A CLI-only
+  command does not emit activity because the CLI has no trusted shared
+  activity writer.
 - **Logging failure handling:** Activity write failures must not change
   command or API outcomes. Logging is a side channel; commands succeed or
   fail on their documented contracts, and activity emission errors are
@@ -144,8 +144,9 @@ Activity covers the following categories of operations.
   retention prunes).
 - All gateway API endpoints that read state (lists, shows, status). Effect
   `read`. Default-on for consistent activity visibility.
-- CLI commands that perform CLI-only state changes (e.g. local gateway
-  connection setup) emit through the CLI helper.
+- CLI-only state changes, including local gateway connection setup and local
+  skill installation, do not emit activity. Their command contracts state
+  this explicitly.
 - Node-local executor operations are recorded through the existing gateway
   activity and operation history surfaces. The gateway records
   `RemoteLocalExecutor` dispatch/completion for the intended lane
