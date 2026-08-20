@@ -14,7 +14,8 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
                [--tld=<tld>]
                [--user=<user>] [--gateway-endpoint=<endpoint>]
                [--ingress=<node>] [--valkey-node=<node>]
-               [--postgres-node=<node>] [--clickhouse-node=<node>]
+               [--postgres-node=<node>] [--postgres-process=<process>]
+               [--clickhouse-node=<node>]
                [--s3-data-path=<path>] [--host-key-fingerprint=<sha256>]
                [--self-grant=<mode>] [--self-grant-permissions=<perms>]
                [--grant-to=<node>]... [--grant-to-preset=<preset>]
@@ -27,9 +28,9 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | Option | Default | Notes |
 |---|---|---|
 | `name` |  -  | Registry slug (unique). |
-| `--template` |  -  | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, `metrics`, or `agent`. Templates expand to role sets. |
+| `--template` |  -  | One of `operator`, `app-development`, `app-production`, `gateway`, `ingress`, `database`, `s3`, `websocket`, `metrics`, `analytics`, or `agent`. Templates expand to role sets. |
 | `--operator` | off | Create a client identity with the operator permission preset and no workload roles. Operator is not a node role. |
-| `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`. |
+| `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, `analytics`. |
 | `--host` |  -  | SSH/bootstrap endpoint. Required for gateway bootstrap and host-capable workload roles. Forbidden for client identities with no roles. |
 | `--operator-name` | local short hostname | First-gateway bootstrap only  -  the initiating client identity's name. |
 | `--operator-tld` |  -  | Required first-gateway-bootstrap TLD for the separate initiating operator identity. |
@@ -39,6 +40,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
 | `--valkey-node` |  -  | Active database-role node with managed Valkey that backs `websocket` Reverb scaling. |
 | `--postgres-node` |  -  | Active database-role node for analytics PostgreSQL. |
+| `--postgres-process` |  -  | Node-owned PostgreSQL 16 service process on `--postgres-node`; required for analytics. |
 | `--clickhouse-node` |  -  | Active database-role node for analytics ClickHouse. |
 | `--s3-data-path` | `/srv/orbit/s3/data` | Host path mounted into SeaweedFS as `/data`. |
 | `--host-key-fingerprint` |  -  | Expected SSH host key SHA256 fingerprint for bootstrap verification. |
@@ -65,8 +67,14 @@ By role:
 - **`--template=app-production`**: provisions `app-prod`; it either colocates
   `ingress` or requires `--ingress` for private app-prod placement.
 - **`--template=database`, `--template=agent`, `--template=ingress`,
-  `--template=websocket`, `--template=s3`, `--template=metrics`**: provisions
+  `--template=s3`, `--template=metrics`, `--template=analytics`**: provisions
   the corresponding workload role.
+- **`--template=analytics`**: requires `--postgres-node`,
+  `--postgres-process`, and `--clickhouse-node`.
+- **`--template=websocket` / `--roles=websocket`**: reserved names that
+  currently fail before effects with `validation_failed` and
+  `reason=not_implemented`. Add the live role to an existing node with
+  `orbit node role:add <node> websocket --valkey-node=<node>`.
 - **`--template=gateway`**: bootstraps or adopts the gateway with coupled
   `gateway`, `vpn`, and `router` assignments. During first-gateway bootstrap it
   also onboards the initiating client identity; do not run `gateway:add`
@@ -79,6 +87,7 @@ orbit node:new my-mac --operator --tld=my-mac
 orbit node:new beast --template=app-development --host=beast.lan --tld=beast
 orbit node:new prod-1 --template=app-production --host=203.0.113.20 --tld=prod-1 --ingress=edge-1
 orbit node:new storage-1 --template=s3 --host=10.0.0.20 --tld=storage-1 --s3-data-path=/srv/orbit/s3/data
+orbit node:new analytics-1 --template=analytics --host=10.0.0.30 --tld=analytics-1 --postgres-node=db-1 --postgres-process=postgres-16 --clickhouse-node=db-1
 orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --operator-name=my-mac --operator-tld=my-mac
 ```
 
@@ -87,7 +96,7 @@ orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --tld=gateway --o
 List nodes from the gateway registry.
 
 ```bash
-orbit node:list [--role=gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|metrics] [--json]
+orbit node:list [--role=gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|metrics|analytics] [--json]
 ```
 
 `node:list` reads gateway registry state only. The `PEER IP`/WireGuard address
@@ -181,7 +190,7 @@ and `gateway-admin`. Use explicit permissions when a preset is too broad.
 
 ## `orbit node role:add | list | remove`
 
-Manage assignable hosted roles on existing nodes.
+Manage assignable workload roles on existing nodes.
 
 ```bash
 orbit node role:list [<node>] [--json]
@@ -190,7 +199,7 @@ orbit node role:add <node> <role> [--valkey-node=<node>]
 orbit node role:remove <node> <role> [--force] [--purge-data] [--json]
 ```
 
-Only hosted roles that the product marks assignable can be mutated here.
+Only workload roles that the product marks assignable can be mutated here.
 Gateway-coupled `gateway`, `vpn`, and `router` are bootstrap-owned. `agent` is
 only selectable during `node:new`. If synchronous role convergence leaves the
 assignment in `error`, role add fails and the assignment remains repairable

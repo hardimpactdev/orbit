@@ -17,10 +17,11 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../../apps/doc
 | `websocket` | Ubuntu | Private Laravel Reverb backend, reached through router-owned routes |
 | `s3` | Ubuntu | Private SeaweedFS backend, reached through router-owned S3 routes |
 | `metrics` | Ubuntu | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
+| `analytics` | Ubuntu | Fleet-singleton Plausible CE analytics backend, reached through `analytics.orbit` and app tracking routes |
 
 The gateway-owned operations Reverb service is not the app-facing `websocket`
 role. It is a single gateway Swarm service for durable operation progress, uses
-its own operations app config path, and does not require Redis or a
+its own operations app config path, and does not require Valkey or a
 database-role node in v1.
 
 An **operator** is a node identity with the operator permission preset and

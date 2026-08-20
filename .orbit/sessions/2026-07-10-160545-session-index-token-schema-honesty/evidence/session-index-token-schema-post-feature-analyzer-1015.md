@@ -10,9 +10,9 @@ Guardrail decisions: all six observed candidates are `correct-noop`.
 - Orchestrator context: source thread `019f4bd5-ba0e-7d33-af71-2e8ebc774627`; roadmap `solo://proj/4/scratchpad/orbit-feature-loop-r--276`, revision 124.
 - Worktree: exact branch and clean final commit `66dda9f88211b524018fc434540f8e26b63c9108`.
 - Diff: exactly `.orbit/sessions/index.json`, `SessionIndexTest.php`, and `bin/orbit-session-index` against `d07c78ff81b1478dbbea7ede6ef28121e8c520bb`.
-- Packet: [.orbit/loop.md](/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/loop.md).
-- Worker/reviewers: captured processes 1010 and 1011; [Opus review 1013](/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/evidence/session-index-token-schema-quality-review-1013.md).
-- Verification: focused 9/9/312, corrected archive-keyed 88-record replay, exact classification counts and 27 movers, `git diff --check`, exact-commit [quality artifact](/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/quality-gates/quality-check-2026-07-10T134421Z-648b3c0880b5.json), and [retained-topology proof](/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/evidence/session-index-token-schema/retained-topology-dev-52df92/topology-proof.md).
+- Packet: original path `/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/loop.md`; [archived copy](../loop.md).
+- Worker/reviewers: captured processes 1010 and 1011; original path `/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/evidence/session-index-token-schema-quality-review-1013.md`; [archived copy](session-index-token-schema-quality-review-1013.md).
+- Verification: focused 9/9/312, corrected archive-keyed 88-record replay, exact classification counts and 27 movers, `git diff --check`, original quality-artifact path `/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/quality-gates/quality-check-2026-07-10T134421Z-648b3c0880b5.json` with [archived copy](../quality-gates/quality-check-2026-07-10T134421Z-648b3c0880b5.json), and original retained-proof path `/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/.orbit/evidence/session-index-token-schema/retained-topology-dev-52df92/topology-proof.md` with [archived copy](session-index-token-schema/retained-topology-dev-52df92/topology-proof.md).
 - Human corrections: N6 object/array collapse fixed before formal review; slug-keyed replay rejected before verdict; empty low-model terminal closed before review; missing retained-overlay index was not presented as feature evidence.
 - No `composer test:e2e*` execution was claimed or evidenced.
 
@@ -24,7 +24,7 @@ No findings. The frozen contract, scope, actor boundaries, tests, exact replay, 
 
 - Candidate: associative decoding collapsed `sessions: {}` and `sessions: []`.
   Classification: `correct-noop`.
-  Existing coverage: the owner caught it before formal review and added a deterministic regression in [SessionIndexTest.php](/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/apps/gateway/tests/Feature/E2ESupport/SessionIndexTest.php:514).
+  Existing coverage: the owner caught it before formal review and added a deterministic regression at original path `/Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty/apps/gateway/tests/Feature/E2ESupport/SessionIndexTest.php:514`; [commit-stable copy](https://github.com/hardimpactdev/orbit/blob/66dda9f88211b524018fc434540f8e26b63c9108/apps/gateway/tests/Feature/E2ESupport/SessionIndexTest.php#L514).
   Recommended target: none.
   Verification: dedicated red/green evidence and focused 9/9/312.
 

@@ -12,7 +12,7 @@ and owns all durable state. Every other machine is a gateway client when it runs
 the gateway decide authorization from node grants.
 
 Nodes carry role assignments such as `app-dev`, `app-prod`, `database`,
-`agent`, `ingress`, `websocket`, `s3`, and `metrics`. Workload nodes run
+`agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. Workload nodes run
 role-specific artifacts: `orbit-caddy`, FrankenPHP app/workspace containers,
 systemd or launchd host command units, Docker-backed process units, Laravel
 Reverb, SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
@@ -22,7 +22,7 @@ fallbacks.
 The gateway role also renders an `orbit-operations-reverb` Swarm service for
 durable Orbit operation progress. That gateway-owned operations surface reuses the
 `orbit-reverb` image but is separate from app-facing `websocket` role traffic,
-`websocket.orbit`, app WebSocket bindings, and the websocket role's Redis
+`websocket.orbit`, app WebSocket bindings, and the websocket role's Valkey
 scaling dependency.
 
 Orbit Agent is a separate native lane. The headless Orbit Agent service lives
