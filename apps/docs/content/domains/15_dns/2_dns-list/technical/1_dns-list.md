@@ -81,17 +81,9 @@ No local DNS overrides is success with an empty result.
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed local
-resolver list attempts. Activity logging is best-effort and must not change
-the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `dns:list` |
-| Effect | `read` |
-| Subject | `none`; the command reads caller-local resolver files and does not own a durable DNS entity. |
-| Properties | `count` and `resolver_backend` when local resolver state is read. No resolver file contents, public DNS responses, gateway records, or secrets. |
-| Description | derived |
+This caller-local command does not emit activity because the CLI has no
+trusted shared activity writer. It does not call a gateway API endpoint.
+Resolver reads are reflected only in command output and exit status.
 
 ## Test Mapping
 

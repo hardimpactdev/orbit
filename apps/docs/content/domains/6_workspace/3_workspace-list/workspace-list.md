@@ -86,7 +86,7 @@ Use these commands to inspect or act on individual workspaces.
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — apply workspace artifacts on the node
 - [`workspace:show`](../4_workspace-show/workspace-show.md) — inspect a single workspace
 - [`workspace:remove`](../5_workspace-remove/workspace-remove.md) — remove a workspace
-- [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift
+- [`doctor --family=workspace`](../workspace-doctor.md) — verify and report workspace drift
 - [`app:list`](../../5_app/3_app-list/app-list.md) — list parent apps
 
 ## Technical Contract

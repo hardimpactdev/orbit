@@ -89,7 +89,7 @@ orbit workspace:show feature-docs --instance=docs --json
 - [`orbit workspace:list`](../3_workspace-list/workspace-list.md): List all workspaces.
 - [`orbit workspace:history [name]`](../6_workspace-history/workspace-history.md): View full setup/teardown history.
 - [`orbit workspace:run:log [run]`](../7_workspace-run-log/workspace-run-log.md): View logs for a specific lifecycle run.
-- [`doctor --family=workspace`](../workspace-doctor.md): Verify and repair live workspace reality.
+- [`doctor --family=workspace`](../workspace-doctor.md): Verify and report live workspace reality.
 
 ***
 

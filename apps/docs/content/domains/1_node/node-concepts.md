@@ -273,7 +273,7 @@ Role baselines are code-defined desired state, not editable package lists.
 
 | Role | Baseline intent |
 | --- | --- |
-| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, `orbit-runtime-hibernator` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |

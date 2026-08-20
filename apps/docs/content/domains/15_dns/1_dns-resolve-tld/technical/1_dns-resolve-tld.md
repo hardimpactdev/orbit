@@ -131,17 +131,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed local
-resolver mutation attempts. Activity logging is best-effort and must not
-change the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `dns:resolve-tld` |
-| Effect | `write` for resolve path; `destructive` for reset path. |
-| Subject | `none`; the command mutates caller-local resolver files and does not own a durable DNS entity. |
-| Properties | `tld`, `target` for resolve path, `action` (`resolve` or `reset`), `status`, `changed`, and `resolver_backend` when known. No resolver file contents, process output, public DNS responses, gateway records, or secrets. |
-| Description | derived |
+This caller-local command does not emit activity because the CLI has no
+trusted shared activity writer. It does not call a gateway API endpoint.
+Resolver attempts are reflected only in command output and exit status.
 
 ## Test Mapping
 

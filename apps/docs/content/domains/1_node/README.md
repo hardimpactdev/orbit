@@ -127,7 +127,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 
 | Role | Baseline intent |
 | --- | --- |
-| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, `orbit-runtime-hibernator` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
@@ -289,10 +289,11 @@ These rules apply to all node commands and define the invariants the family enfo
   not separate product domains in the command contract.
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
-- For gateway nodes, node readiness includes the `orbit-gateway` service,
-  `orbit-scheduler` service, gateway config root, and the selected gateway
-  exposure mode. Runtime container provisioning commands specific to the
-  process manager are not a public node command surface.
+- For gateway nodes, node readiness includes the `orbit-gateway`,
+  `orbit-scheduler`, and `orbit-runtime-hibernator` services, gateway config
+  root, and the selected gateway exposure mode. Runtime container provisioning
+  commands specific to the process manager are not a public node command
+  surface.
 - `orbit doctor --family=node` verifies role, platform, WireGuard, Agent
   transport, provisioning SSH policy, and reachability expectations, including
   gateway service readiness for gateway nodes.
