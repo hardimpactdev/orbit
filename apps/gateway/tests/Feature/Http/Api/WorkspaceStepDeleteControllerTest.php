@@ -90,7 +90,11 @@ describe('WorkspaceStepDeleteController', function (): void {
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'workspace.step_not_found');
+            ->assertJsonPath('error.code', 'workspace.step_not_found')
+            ->assertJsonPath(
+                'error.message',
+                "Setup step '{$foreignStep->id}' not found for app 'happie' in phase 'setup'.",
+            );
 
         expect(WorkspaceStep::query()->whereKey($foreignStep->id)->exists())->toBeTrue();
     });
@@ -368,6 +372,7 @@ describe('WorkspaceStepDeleteController', function (): void {
         $response
             ->assertNotFound()
             ->assertJsonPath('error.code', 'workspace.step_not_found')
+            ->assertJsonPath('error.message', "Setup step '{$step->id}' not found for app 'docs' in phase 'setup'.")
             ->assertJsonPath('error.meta.phase', 'setup');
     });
 });

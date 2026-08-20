@@ -135,7 +135,7 @@ final class WorkspaceStepStoreController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
                 'app' => $app->name,
             ]);
         }
@@ -306,7 +306,7 @@ final class WorkspaceStepStoreController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'workspace.step_not_found',
-                'message' => "Referenced insertion step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
+                'message' => "Referenced insertion step '{$id}' not found for app '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'id' => $id,
                     'app' => $app,

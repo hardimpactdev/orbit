@@ -172,6 +172,19 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
             'required for app and workspace process ownership',
         ],
         'gateway/app/Services/Php/PhpRuntimeManager.php' => ['does not own app'],
+        'cli/app/Commands/Cloudflare/CfCacheRuleAddCommand.php' => ['Resolve instance domain'],
+        'cli/app/Commands/Cloudflare/CfCacheRuleRemoveCommand.php' => ['Resolve instance domain'],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepListController.php' => [
+            'Could not resolve owning node for app',
+        ],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepStoreController.php' => [
+            'Could not resolve owning node for app',
+            'not found for app',
+        ],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepDeleteController.php' => [
+            'Could not resolve owning node for app',
+            'not found for app',
+        ],
     ];
     $forbidden = [
         'bare project only when unambiguous',
@@ -185,6 +198,9 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
         'Instance for project',
         'required for project and workspace process ownership',
         'does not own project',
+        'Resolve project domain',
+        'Could not resolve owning node for project',
+        'not found for project',
     ];
 
     foreach ($expectedByPath as $relativePath => $expected) {
