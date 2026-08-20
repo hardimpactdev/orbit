@@ -131,6 +131,16 @@ readiness checks.
 Instance and workspace proxy backend drift caused by runtime-target changes is
 verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /php/use` |
+| Effect | `write` |
+| Subject | `none` because the command can target different scope model types. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

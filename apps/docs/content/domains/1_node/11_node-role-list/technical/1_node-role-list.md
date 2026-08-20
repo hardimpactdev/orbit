@@ -50,6 +50,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [Human renderer](6.1_node-role-list_output-render_human.md)
 - [JSON renderer](6.2_node-role-list_output-render_json.md)
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.role.listed` |
+| Effect | `read` |
+| Subject | The selected `Node`; `none` when resolution fails. |
+| Properties | `node`. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

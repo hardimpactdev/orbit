@@ -83,6 +83,16 @@ owns PHP image capability drift. [`doctor --family=instance`](../../../5_app/ins
 and [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md)
 own PHP runtime health for instance and workspace artifacts.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /php/runtime` |
+| Effect | `read` |
+| Subject | `none` because the command can target different scope model types. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

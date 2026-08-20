@@ -73,6 +73,16 @@ drift, or fall back to a similarly named process.
 [`tool-doctor.md`](../../tool-doctor.md) owns tool-family drift, while the
 process doctor owns drift in a resolved process row.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /tools/{tool}/logs` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

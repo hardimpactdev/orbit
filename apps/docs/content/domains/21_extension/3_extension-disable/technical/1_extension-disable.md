@@ -67,6 +67,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `extension:disable` mutates explicit extension state. It does not create doctor
 issues or run restore flows.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /extensions/{extension}/disable` |
+| Effect | `write` |
+| Subject | The selected `GatewayExtension`; `none` when the extension is unknown. |
+| Properties | `extension`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

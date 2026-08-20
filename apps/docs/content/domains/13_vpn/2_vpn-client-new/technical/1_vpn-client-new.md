@@ -92,6 +92,16 @@ not create doctor issues, fix drift, or adopt backend state.
 identity and node peer drift that the gateway manages through the active `vpn`
 role.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /api/vpn/clients` |
+| Effect | `write` |
+| Subject | `none` |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

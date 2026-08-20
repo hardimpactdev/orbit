@@ -78,6 +78,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [Human renderer](6.1_node-role-remove_output-render_human.md)
 - [JSON renderer](6.2_node-role-remove_output-render_json.md)
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.role.removed` |
+| Effect | `destructive` |
+| Subject | The selected `Node`; `none` when resolution fails. |
+| Properties | `node`, `role`, `force`, `purge_data`, and `dependents`. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

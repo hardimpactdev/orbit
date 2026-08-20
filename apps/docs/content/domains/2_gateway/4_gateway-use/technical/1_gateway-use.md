@@ -58,6 +58,16 @@ Human output reports the selected gateway name and endpoint.
 
 `gateway:use` has no doctor relationship. It writes local CLI configuration only and does not verify gateway connectivity or CA trust.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `gateway.selected` |
+| Effect | `write` |
+| Subject | `none` |
+| Properties | `gateway` is the selected gateway name; credentials and raw configuration are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

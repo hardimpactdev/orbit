@@ -71,6 +71,16 @@ does not create doctor issues, fix drift, or adopt backend state.
 WireGuard identity and node peer drift that the gateway manages through the
 active `vpn` role.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /api/vpn/clients/{name}/enable` |
+| Effect | `write` |
+| Subject | `none` |
+| Properties | `client` is the selected VPN client name. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

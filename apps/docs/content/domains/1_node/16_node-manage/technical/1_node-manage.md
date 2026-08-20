@@ -100,6 +100,16 @@ reachability check for a roleless operator node. Later drift in managed eligibil
 Agent expectation, user metadata, platform metadata, or reachability belongs to
 [`doctor --family=node`](../../node-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.managed` |
+| Effect | `write` |
+| Subject | The authenticated self-managed `Node`; `none` before identity resolution. |
+| Properties | `user`, `platform`, and `managed` intent; probe output is not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

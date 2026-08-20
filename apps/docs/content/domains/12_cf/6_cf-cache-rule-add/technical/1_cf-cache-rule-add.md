@@ -70,6 +70,16 @@ Cloudflare doctor family. Instance-domain and deployment health remain owned by
 [`doctor --family=instance`](../../../5_app/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /api/cloudflare/cache-rules/{app}` |
+| Effect | `write` |
+| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

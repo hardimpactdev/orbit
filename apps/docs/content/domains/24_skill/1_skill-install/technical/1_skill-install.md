@@ -119,6 +119,16 @@ not repair Orbit state. Provider tools may need to reload or restart their own
 skill discovery after installation; that reload is outside Orbit's doctor
 contract.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `skill.installed` |
+| Effect | `write`; `destructive` when explicit replacement removes the prior installed copy. |
+| Subject | `none` |
+| Properties | `skill`, `source`, and whether replacement consent was supplied; downloaded content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

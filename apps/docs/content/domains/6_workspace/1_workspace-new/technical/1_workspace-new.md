@@ -226,6 +226,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
   `workspace:new` itself never adopts unmanaged paths.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /workspaces` |
+| Effect | `write` |
+| Subject | The selected or created `Workspace`; `none` before resolution or persistence. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

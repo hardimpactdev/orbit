@@ -230,6 +230,16 @@ family doctor — not a removal failure.
   points operators at the owning family's repair or report path via the
   warning's `next_command`.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /workspaces/{name}` |
+| Effect | `destructive` |
+| Subject | The selected or created `Workspace`; `none` before resolution or persistence. |
+| Properties | `name`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

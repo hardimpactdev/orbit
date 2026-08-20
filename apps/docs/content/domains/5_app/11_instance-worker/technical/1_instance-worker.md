@@ -252,6 +252,16 @@ Caddyfile option inside the `worker` block, but Orbit's current worker
 contract does not include it and no env consumer reads
 `MAX_CONSECUTIVE_FAILURES`; emitting either today would be naming theater.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /instances/{instance}/worker` for `show`; `api:POST /instances/{instance}/worker/enable` for `enable`; `api:POST /instances/{instance}/worker/disable` for `disable`. |
+| Effect | `read` for `show`; `write` for `enable` and `disable`. |
+| Subject | The selected `Instance`; `none` when selection fails. |
+| Properties | `action`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -76,6 +76,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 state. Instance deployment health remains owned by [`doctor --family=instance`](../../../5_app/instance-doctor.md).
 Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /api/cloudflare/cache/flush` |
+| Effect | `write` |
+| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

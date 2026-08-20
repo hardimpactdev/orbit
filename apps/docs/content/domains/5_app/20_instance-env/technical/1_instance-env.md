@@ -107,6 +107,16 @@ this slice. Instance env rendering is gateway state. Database connection
 drift and restore for instance/workspace `.env` files remain owned by
 [`doctor --family=database_connection`](../../../17_database/database-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /apps/{app}/instances/{instance}/env` for `list`; `api:GET /apps/{app}/instances/{instance}/env/render` for `render`; `api:POST /apps/{app}/instances/{instance}/env` for `set`. |
+| Effect | `read` for `list` and `render`; `write` for `set`. |
+| Subject | The selected `Instance`; `none` when selection fails. |
+| Properties | No command-specific properties. Environment keys and values are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

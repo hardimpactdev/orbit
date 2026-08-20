@@ -121,6 +121,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `tool-remove` changes gateway tool configuration and performs command-owned cleanup only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /tools/{tool}` |
+| Effect | `destructive` |
+| Subject | The target `Node`; `none` when target resolution fails. |
+| Properties | `tool`, `node`, `app`, `destructive_consent`, and `destructive_consent_source`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

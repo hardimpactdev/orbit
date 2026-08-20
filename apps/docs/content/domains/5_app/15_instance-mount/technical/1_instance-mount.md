@@ -154,6 +154,16 @@ The next runtime convergence for the app or a workspace uses the stored mount
 configuration. The runtime manager creates safe source directories for bind
 mounts immediately before Docker creates the container.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /instances/{instance}/mounts` for `list`; `api:POST /instances/{instance}/mounts` for `add`; `api:DELETE /instances/{instance}/mounts` for `remove`. |
+| Effect | `read` for `list`; `write` for `add` and `remove`. |
+| Subject | The selected `Instance`; `none` when selection fails. |
+| Properties | `action` and the normalized mount `target`; source paths are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -278,6 +278,16 @@ all documented command failures exit with the standard command failure status
   `workspace:run:log`; doctor verifies current workspace reality and does not
   rewrite past runs.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /workspaces/setup` |
+| Effect | `write` |
+| Subject | The selected or created `Workspace`; `none` before resolution or persistence. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

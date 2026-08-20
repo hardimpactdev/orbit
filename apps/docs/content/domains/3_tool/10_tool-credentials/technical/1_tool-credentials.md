@@ -67,6 +67,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `tool-credentials` reads gateway credential metadata or managed secret material without changing tool configuration. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /tools/{tool}/credentials` |
+| Effect | `read` |
+| Subject | The target `Node`; `none` when target resolution fails. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |
