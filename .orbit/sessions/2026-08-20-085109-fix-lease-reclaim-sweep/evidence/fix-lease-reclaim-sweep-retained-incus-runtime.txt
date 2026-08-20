@@ -1,0 +1,18 @@
+Todo: Solo #224 (lease reclaim sweep)
+Candidate: ff985cf637dba9aac7bf790857d44c00ef3d0b55
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-9ec7a3 (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-9ec7a3-operator
+E2EResourceLeasePool.php SHA-256 (local == synced): 1ebeb96098085ccd12f217b798c829f6619aa754e4b511b491dba8778c6ed7ec
+
+Method: acquire retained topology dev-9ec7a3 from the implementation worktree; verify synced source hash; run the lease pool suite (retained-lease protection, dead-pid retained survival, retired-host sweep regression, isolation guard) inside the retained operator instance as the orbit user.
+
+Red proof: pre-fix, the retired-host sweep regression failed (the dead-pid lease for a host absent from the configuration survived acquire).
+
+Observed:
+  Tests:    4 passed (34 assertions)
+  Duration: 1.06s
+
+Result: passed

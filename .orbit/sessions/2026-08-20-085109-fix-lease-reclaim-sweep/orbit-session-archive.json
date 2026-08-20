@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T06:51:09+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-lease-reclaim-sweep/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-085109-fix-lease-reclaim-sweep",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fix-lease-reclaim-sweep-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T064700Z-457ee76827e2.json"
+    ],
+    "entry_digests": {
+        "evidence/fix-lease-reclaim-sweep-retained-incus-runtime.txt": "9e443abbe6342aba29ca8e54b04f7818bf85f49c596de0efb18f3019f4073829",
+        "loop.md": "46449d49e0106c421fe730cc3d89d37fd791994d009f285fd697dd475ec1d530",
+        "quality-gates/quality-check-2026-08-20T064700Z-457ee76827e2.json": "64e7e7c65af36ba66b5e3e8f6517ba689a2e7f1c0d8bbc7eac39e41f69000ee6"
+    },
+    "slug": "fix-lease-reclaim-sweep",
+    "requested_slug": "fix-lease-reclaim-sweep",
+    "compatible_slugs": [
+        "fix-lease-reclaim-sweep"
+    ],
+    "branch": "fix-lease-reclaim-sweep",
+    "candidate_commit": "ff985cf637dba9aac7bf790857d44c00ef3d0b55",
+    "accepted_feature_tip": "ff985cf637dba9aac7bf790857d44c00ef3d0b55",
+    "accepted_main_tip": "2b8d70850b5ea5552e974b83bab5ad6d4ed873f5",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
