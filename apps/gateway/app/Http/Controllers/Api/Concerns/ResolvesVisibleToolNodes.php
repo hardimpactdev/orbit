@@ -300,9 +300,13 @@ trait ResolvesVisibleToolNodes
             return null;
         }
 
-        return $selection?->instance instanceof Instance
-            ? app(WorkspacePlacement::class)->nodeForInstance($selection->instance)
-            : null;
+        $instance = $selection?->instance;
+
+        if (! $instance instanceof Instance) {
+            return null;
+        }
+
+        return app(WorkspacePlacement::class)->nodeForInstance($instance);
     }
 
     /**

@@ -75,7 +75,8 @@ final class DeployController implements Loggable
             );
 
             $step = $result['step'];
-            $this->activitySubject = DeployStep::query()->find($step['id']);
+            $subject = DeployStep::query()->find($step['id']);
+            $this->activitySubject = $subject instanceof DeployStep ? $subject : null;
             $this->activityProperties = $this->safeProperties($step, ['app', 'instance', 'id', 'title', 'order']);
             $this->activityProperties['step_id'] = $this->activityProperties['id'] ?? null;
             unset($this->activityProperties['id']);
@@ -268,7 +269,8 @@ final class DeployController implements Loggable
             $result = $this->deploy->log($instanceSelector, (int) $run, $step, $lines);
 
             $runEntity = $result['run'];
-            $this->activitySubject = DeploymentRun::query()->find($runEntity['id']);
+            $subject = DeploymentRun::query()->find($runEntity['id']);
+            $this->activitySubject = $subject instanceof DeploymentRun ? $subject : null;
             $this->activityProperties = [
                 ...$this->safeProperties($runEntity, ['app', 'instance']),
                 'run_id' => $runEntity['id'],
@@ -395,7 +397,11 @@ final class DeployController implements Loggable
 
     private function optionalPositiveIntInput(Request $request, string $key): int|false|null
     {
-        $value = $request->query($key, $request->input($key));
+        $value = $request->query($key);
+
+        if ($value === null) {
+            $value = $request->input($key);
+        }
 
         if ($value === null || $value === '') {
             return null;

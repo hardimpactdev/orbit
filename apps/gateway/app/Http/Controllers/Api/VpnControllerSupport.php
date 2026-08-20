@@ -16,6 +16,7 @@ use App\Services\Vpn\WgEasyVpnBackend;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use LogicException;
 
 abstract class VpnControllerSupport implements Loggable
 {
@@ -79,6 +80,7 @@ abstract class VpnControllerSupport implements Loggable
             VpnClientDisableController::class => 'api:POST /vpn/clients/{name}/disable',
             VpnClientRemoveController::class => 'api:DELETE /vpn/clients/{name}',
             VpnWebUiChangePasswordController::class => 'api:POST /vpn/web-ui/password',
+            default => throw new LogicException('Unsupported VPN activity controller ['.static::class.'].'),
         };
     }
 
