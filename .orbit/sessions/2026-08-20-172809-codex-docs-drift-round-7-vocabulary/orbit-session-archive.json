@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T15:28:09+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-round-7-vocabulary/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-172809-codex-docs-drift-round-7-vocabulary",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/round-7-vocabulary-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T152253Z-129078fd948e.json"
+    ],
+    "entry_digests": {
+        "evidence/round-7-vocabulary-retained-incus.md": "2a0f4e1c8761eaea6b7cca229b2d352172fa4f51fccc6b671e610412b2a592d0",
+        "loop.md": "2f5269815f11262219f4099619764821a53340a39d09a065a12b40e4625811fe",
+        "quality-gates/quality-check-2026-08-20T152253Z-129078fd948e.json": "3139639c9aedc08c35ac26a25589782e925af949d3474c46ac8919d6c69bc9e3"
+    },
+    "slug": "codex-docs-drift-round-7-vocabulary",
+    "requested_slug": "codex-docs-drift-round-7-vocabulary",
+    "compatible_slugs": [
+        "codex-docs-drift-round-7-vocabulary"
+    ],
+    "branch": "codex/docs-drift-round-7-vocabulary",
+    "candidate_commit": "88a596bf4f889104a8354d444295a570139ca5c1",
+    "accepted_feature_tip": "88a596bf4f889104a8354d444295a570139ca5c1",
+    "accepted_main_tip": "56a9988f5915face461923c45311b7f3cb223cb2",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
