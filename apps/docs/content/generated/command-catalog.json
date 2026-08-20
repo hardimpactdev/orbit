@@ -14906,7 +14906,7 @@
                     "driver": "string",
                     "driver_config": "object|array",
                     "environment": "string|null",
-                    "latest_deployment_run_id": "int|string|null",
+                    "latest_deployment_run_id": "int|null",
                     "latest_deployment_status": "string|null",
                     "node": "string|object|null",
                     "path": "string|null",
@@ -14933,21 +14933,24 @@
             },
             "process": {
                 "required": {
-                    "name": "string"
+                    "app": "string|null",
+                    "instance": "string|null",
+                    "name": "string",
+                    "node": "string",
+                    "workspace": "string|null"
                 },
                 "optional": {
                     "command": "string",
                     "crash_notification": "string",
-                    "instance": "string|null",
                     "key": "string",
                     "label": "string|null",
                     "last_event": "object|null",
-                    "app": "string|null",
                     "restart_policy": "string",
                     "runtime": "string",
                     "runtime_unit": "string",
+                    "service": "object|null",
                     "status": "string",
-                    "workspace": "string|null"
+                    "tool": "string|null"
                 }
             },
             "workspace": {
@@ -14955,21 +14958,15 @@
                     "name": "string",
                     "app": "string",
                     "instance": "string",
-                    "node": "string|object",
+                    "node": "string|null",
                     "url": "string"
                 },
                 "optional": {
                     "adopted": "bool",
-                    "base": "string",
-                    "branch": "string|null",
-                    "inherited_processes": "array",
-                    "latest_setup_run": "object|null",
                     "lifecycle_status": "string",
                     "path": "string",
                     "php_inherited": "bool",
-                    "php_version": "string",
-                    "route": "object|null",
-                    "runtime_expectations": "object"
+                    "php_version": "string|null"
                 }
             }
         },

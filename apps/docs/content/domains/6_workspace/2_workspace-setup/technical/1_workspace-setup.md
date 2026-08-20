@@ -32,8 +32,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 The `--path` value must be an absolute path on the owning node. A relative
 or non-absolute value fails before side effects with
 `error.code=validation_failed`, `error.meta.field=path`. The path must exist
-on the node and must be distinct from the parent app root. It may live outside
-the parent app path, including external agent worktree directories.
+on the node and must be distinct from the owning Instance source path. It may
+live outside that source path, including external agent worktree directories.
 
 ## Input Resolution
 
@@ -69,13 +69,13 @@ the parent app path, including external agent worktree directories.
        command fails with
        `error.code=validation_failed`/`error.meta.field=instance|path` before
        side effects.
-     - `app_root` — CWD is a registered instance's own path, not a workspace
+     - `instance_root` — CWD is a registered Instance's own path, not a workspace
        path under it. The command fails before side effects with
-       `error.code=workspace.path_is_app_root`,
-       `error.meta.app=<app>`, and
+       `error.code=workspace.path_is_instance_root`,
+       `error.meta.instance=<app.instance>`, and
        `error.meta.next_command=orbit workspace:new`. The instance root is not
        a workspace and `workspace:setup` does not promote it to one.
-     - `inside_app` — CWD is under a registered app or instance path but
+     - `inside_instance` — CWD is under a registered Instance source path but
        does not match any registered workspace path under that target. The
        parent app and exactly one concrete instance are resolved from the
        lookup. Zero or multiple instance matches fail with
@@ -90,7 +90,7 @@ the parent app path, including external agent worktree directories.
      Codex/path resolution supplied it; non-interactive failure if no prompt
      is available.
    - Explicit and derived workspace names must not be `main`. That name is
-     reserved for the parent app source. Validation fails before side effects
+     reserved for the owning Instance source. Validation fails before side effects
      with `error.code=validation_failed`, `error.meta.field=name`, and
      `error.meta.reason=reserved_name`.
 2. **Resolve Path**:
@@ -103,8 +103,8 @@ the parent app path, including external agent worktree directories.
    - Target node must be reachable and carry an active `app-dev` role. An
      `app-prod` target fails before side effects with
      `workspace.unsupported_for_production`.
-   - Path must be a workspace source path, not the parent app root. Explicit
-     `--path` adoption may register paths outside the parent app path,
+   - Path must be a workspace source path, not the owning Instance source path.
+     Explicit `--path` adoption may register paths outside that source path,
      including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
@@ -211,15 +211,17 @@ Agent-push, or runtime effects. This failure uses
 
 - **Path Is Instance Root**: The resolved CWD is a registered instance's own path, not
   a workspace path under it. Fails before side effects with
-  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  `error.code=workspace.path_is_instance_root`,
+  `error.meta.instance=<app.instance>`,
   `error.meta.path=<cwd>`, and
-  `error.meta.next_command=orbit workspace:new`. The app root is not a
+  `error.meta.next_command=orbit workspace:new`. The Instance source path is not a
   workspace and `workspace:setup` never promotes it to one. The hint points
   the operator at [`workspace:new`](../../1_workspace-new/workspace-new.md).
 
 - **Path Is Instance Root (Explicit `--path`)**: The supplied `--path` equals the
-  parent app's own root path. Fails before side effects with
-  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  owning Instance's source path. Fails before side effects with
+  `error.code=workspace.path_is_instance_root`,
+  `error.meta.instance=<app.instance>`,
   `error.meta.path=<path>`, and
   `error.meta.next_command=orbit workspace:new`.
 - **Remote Failures**: Agent-push timeout, permission denied, or remote command
@@ -282,7 +284,7 @@ all documented command failures exit with the standard command failure status
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
 | `apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php` | One ordered setup plan plus controller-level JSON/SSE success and failure envelopes, including environment initialization, ordered phase events, exact errors, non-rollback state, and final-result parity. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path, Codex/path-basename identity for path setup without a positional name, and parent-instance-root rejection before side effects. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the owning Instance source path, Codex/path-basename identity for path setup without a positional name, and Instance-source-path rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, agent-push dispatch, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |

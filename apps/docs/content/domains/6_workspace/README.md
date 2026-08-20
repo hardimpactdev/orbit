@@ -24,7 +24,7 @@ These rules govern all workspace family commands.
 - Workspace artifacts are applied through Agent push on the selected app-dev
   instance node. Every workspace belongs to exactly one app-dev instance.
 - Every workspace write resolves one concrete instance before side effects.
-  A bare parent-app selector, parent app path, or parent-app marker is shorthand
+  A bare App selector, owning Instance source path, or App marker is shorthand
   only when the gateway can resolve it to exactly one registered instance.
   Zero or multiple matches fail with `error.code=validation_failed`,
   `error.meta.field=instance`, and
@@ -163,7 +163,7 @@ entity does not define.
 | `name` | string | Workspace identity slug. Unique within the parent app. |
 | `app` | string | Parent app slug. |
 | `instance` | string | Required selected instance name. |
-| `node` | string | Effective workspace node slug resolved from the selected instance. |
+| `node` | string \| null | Effective workspace node slug resolved from the selected Instance. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string \| null | PHP version stored by the workspace. `null` exposes invalid state and never triggers live fallback. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
@@ -220,7 +220,7 @@ instead of depending on command-string substitution.
 | Variable | Value | Why it is exposed |
 | --- | --- | --- |
 | `ORBIT_APP` | Parent app slug | Lets scripts identify the app that owns the workspace. |
-| `ORBIT_APP_PATH` | Parent app root path | Lets scripts inspect or copy files from the main app. |
+| `ORBIT_APP_PATH` | Owning Instance source path | Lets scripts inspect or copy files from the main Instance checkout. |
 | `ORBIT_WORKSPACE_NAME` | Workspace slug | Lets scripts branch on workspace identity. |
 | `ORBIT_WORKSPACE_PATH` | Workspace path | Lets scripts use the workspace path without recomputing it. |
 | `ORBIT_URL` | Workspace HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |

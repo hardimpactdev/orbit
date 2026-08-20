@@ -54,7 +54,7 @@ describe('interface contract', function (): void {
 });
 
 describe('source path reality', function (): void {
-    it('introspects workspace source path reality on the parent app node', function (): void {
+    it('introspects workspace source path reality on the owning instance node', function (): void {
         $app = workspaceableApp();
         $workspacePath = workspaceForAppPath($app).'/.worktrees/feature';
         $workspace = Workspace::factory()
@@ -130,7 +130,10 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
-        expect(issue($drift, 'workspace.path_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'workspace.path_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.path_missing')?->summary)
+            ->toBe('Workspace feature path is missing on the owning instance node.');
         expect(issue($drift, 'workspace.path_unusable'))->toBeNull();
     });
 
@@ -150,7 +153,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_unusable')?->kind)->toBe(DriftKind::Unverifiable);
     });
 
-    it('allows generic workspace paths outside the parent app path', function (): void {
+    it('allows generic workspace paths outside the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -178,7 +181,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
-    it('allows agent IDE workspace paths outside the parent app path', function (): void {
+    it('allows agent IDE workspace paths outside the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -194,7 +197,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
-    it('detects workspace paths that equal the parent app root', function (): void {
+    it('detects workspace paths that equal the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -205,7 +208,24 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.path_outside_policy')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'workspace.path_outside_policy')?->summary)
+            ->toBe('Workspace feature path is the owning instance source path, not a workspace path.');
+    });
+
+    it('uses owning instance placement vocabulary in runtime availability summaries', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => false,
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.php_version_unavailable')?->summary)
+            ->toBe('Docker is not available to serve PHP 8.5 for workspace feature on the owning instance node.');
     });
 });
 

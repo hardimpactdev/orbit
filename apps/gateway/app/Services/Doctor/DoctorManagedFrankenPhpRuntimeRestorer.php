@@ -281,7 +281,7 @@ final readonly class DoctorManagedFrankenPhpRuntimeRestorer
                 'details' => [
                     'workspace' => $workspace->name,
                     'process' => $process->name,
-                    'error' => 'Process workspace has no active parent app node.',
+                    'error' => 'Process workspace has no active owning instance node.',
                 ],
             ];
         }

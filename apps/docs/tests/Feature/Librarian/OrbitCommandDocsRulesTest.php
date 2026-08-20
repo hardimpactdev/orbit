@@ -999,6 +999,43 @@ it('requires a non-null instance on canonical workspace json entities', function
         );
 });
 
+it('allows the compact workspace show node sibling', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/6_workspace/4_workspace-show/technical/6.2_workspace-show_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "node": {
+                    "name": "app-1",
+                    "host": "1.2.3.4"
+                  }
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.json_renderer_examples'))
+        ->toBeEmpty();
+});
+
 it('accepts the compact app list summary instead of the instance placement entity', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(

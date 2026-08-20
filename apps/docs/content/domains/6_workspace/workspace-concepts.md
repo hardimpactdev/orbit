@@ -14,7 +14,7 @@ The terms below define the core identity vocabulary for the workspace family.
   `app-dev` node, with a canonical workspace name, workspace path, and one
   workspace route lifecycle.
 - **Concrete instance ownership:** Every workspace row stores a non-null
-  `instance_id`. A bare parent-app selector or parent-app path is only a
+  `instance_id`. A bare App selector or owning Instance source path is only a
   shorthand resolver: it succeeds when exactly one registered instance
   matches and otherwise fails with `instance_required`. It never creates a
   parent-app-only workspace. Every workspace ProxyRoute stores both its
@@ -45,7 +45,8 @@ The terms below define the core identity vocabulary for the workspace family.
   serves the workspace's web route through FrankenPHP. Workspace setup and
   teardown run through the selected app user's host tool path, not inside the
   container; PHP/Composer/Artisan commands include the node's versioned host PHP
-  toolchain. Workspaces whose parent app is on an `app-dev` node receive the
+  toolchain. Workspaces whose owning Instance is served by an active `app-dev`
+  node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.

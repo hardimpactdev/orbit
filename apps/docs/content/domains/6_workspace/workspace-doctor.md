@@ -65,7 +65,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
    never uses that issue as permission to target an `app-prod` node.
 4. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
-   app root. Workspace sources may live outside the parent app path,
+   owning Instance source path. Workspace sources may live outside that path,
    including external agent worktree directories.
 5. **PHP runtime:** workspaces in the `expected` lifecycle state have an effective PHP image that can serve
    the workspace runtime on the owning node. Concrete FrankenPHP unit presence
@@ -109,7 +109,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | The workspace path equals the parent app root instead of a distinct workspace path. |
+| `workspace.path_outside_policy` | The workspace path equals the owning Instance source path instead of a distinct workspace path. |
 | `workspace.php_version_unavailable` | An `expected` workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |

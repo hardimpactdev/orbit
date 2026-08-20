@@ -14,7 +14,7 @@ return [
         'driver' => 'string',
         'driver_config' => 'object|array',
         'environment' => 'string|null',
-        'latest_deployment_run_id' => 'int|string|null',
+        'latest_deployment_run_id' => 'int|null',
         'latest_deployment_status' => 'string|null',
         'node' => 'string|object|null',
         'path' => 'string|null',

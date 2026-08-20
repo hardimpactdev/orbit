@@ -32,7 +32,7 @@ This command follows the shared
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
-A bare parent app slug, marker, or parent path is shorthand only when exactly
+A bare App slug, marker, or owning Instance source path is shorthand only when exactly
 one registered instance matches. Zero or multiple matches fail with
 `error.meta.reason=instance_required`.
 
@@ -182,7 +182,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `app-prod` node (`error.code=workspace.unsupported_for_production`). The
   command fails before source-driver, registry, Agent-push, or runtime effects.
 - **Concrete instance required** — a bare app selector, parent-app marker,
-  or parent app path does not resolve to exactly one concrete instance
+  or owning Instance source path does not resolve to exactly one concrete Instance
   (`error.code=validation_failed`, `error.meta.field=instance`,
   `error.meta.reason=instance_required`). No workspace row or node artifact
   is created.

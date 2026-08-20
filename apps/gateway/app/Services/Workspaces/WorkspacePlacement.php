@@ -62,7 +62,7 @@ final class WorkspacePlacement
         return null;
     }
 
-    public function appPathForWorkspace(Workspace $workspace): ?string
+    public function instancePathForWorkspace(Workspace $workspace): ?string
     {
         $config = $this->instanceForWorkspace($workspace)?->driver_config;
 
@@ -70,7 +70,7 @@ final class WorkspacePlacement
             return $config->path;
         }
 
-        // App owns no source path; an instance-less workspace has no app path.
+        // App owns no source path; an instance-less workspace has no source path.
         return null;
     }
 

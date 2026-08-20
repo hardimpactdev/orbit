@@ -490,7 +490,7 @@ final readonly class SetupWorkspace
         return (
             [
                 'ORBIT_APP' => $app->name,
-                'ORBIT_APP_PATH' => $this->placement->appPathForWorkspace($workspace) ?? '',
+                'ORBIT_APP_PATH' => $this->placement->instancePathForWorkspace($workspace) ?? '',
                 'ORBIT_WORKSPACE_NAME' => $workspace->name,
                 'ORBIT_WORKSPACE_PATH' => $workspace->path,
                 'ORBIT_URL' => $workspace->url(),

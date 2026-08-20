@@ -38,7 +38,7 @@ orbit workspace:new feature-a --instance=my-app.development --stream-json
 - `--instance=<app.instance>`: instance selector or bare parent-app shorthand.
   - Dot notation such as `happie.nmbp` selects one concrete instance
     directly.
-  - A bare app slug, parent-app marker, or parent app path succeeds only when it
+  - A bare App slug, App marker, or owning Instance source path succeeds only when it
     resolves uniquely to one registered instance.
   - When omitted, Orbit infers an instance from an `.orbit/config` marker or a
     gateway path-ownership lookup against registered paths.

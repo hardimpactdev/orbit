@@ -56,14 +56,14 @@ final readonly class WorkspaceSetupTargetResolver
             return $this->unwrap($workspace, false);
         }
 
-        if ($outcome['type'] === 'app_root' && $ownedApp instanceof App) {
+        if ($outcome['type'] === 'instance_root' && $ownedApp instanceof App) {
             $app = $ownedApp;
             $instance = $outcome['instance'] ?? null;
             $label = $instance instanceof Instance ? $this->selectionLabel($app, $instance) : $app->name;
 
             throw new WorkspaceSetupResolutionFailed(
-                'workspace.path_is_project_root',
-                "The current directory is the '{$label}' project root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or change into an existing workspace path and rerun 'orbit workspace:setup'.",
+                'workspace.path_is_instance_root',
+                "The current directory is the '{$label}' instance source path, not a workspace path. Use 'orbit workspace:new' to create a workspace, or change into an existing workspace path and rerun 'orbit workspace:setup'.",
                 [
                     'instance' => $label,
                     'path' => $cwd,
@@ -117,11 +117,11 @@ final readonly class WorkspaceSetupTargetResolver
 
         if (! $this->pathAllowedForWorkspace($path, $instance)) {
             throw new WorkspaceSetupResolutionFailed(
-                'workspace.path_is_project_root',
+                'workspace.path_is_instance_root',
                 "Path {$path} is the '{$this->selectionLabel(
      $app,
      $instance,
- )}' project root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or pass a workspace path with --path.",
+ )}' instance source path, not a workspace path. Use 'orbit workspace:new' to create a workspace, or pass a workspace path with --path.",
                 [
                     'instance' => $this->selectionLabel($app, $instance),
                     'path' => $path,
@@ -223,7 +223,7 @@ final readonly class WorkspaceSetupTargetResolver
     }
 
     /**
-     * @return array{type: 'workspace', workspace: Workspace}|array{type: 'app_root'|'inside_app', app: App, instance?: Instance}|array{type: 'unregistered'}
+     * @return array{type: 'workspace', workspace: Workspace}|array{type: 'instance_root'|'inside_instance', app: App, instance?: Instance}|array{type: 'unregistered'}
      */
     private function pathOwnership(string $cwd): array
     {
@@ -255,8 +255,8 @@ final readonly class WorkspaceSetupTargetResolver
 
             return (
                 $path === $cwd
-                    ? ['type' => 'app_root', 'app' => $app, 'instance' => $instance]
-                    : ['type' => 'inside_app', 'app' => $app, 'instance' => $instance]
+                    ? ['type' => 'instance_root', 'app' => $app, 'instance' => $instance]
+                    : ['type' => 'inside_instance', 'app' => $app, 'instance' => $instance]
             );
         }
 

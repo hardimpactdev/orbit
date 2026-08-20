@@ -237,23 +237,32 @@ whose value is inapplicable, such as an absent repository.
 
 ## Instance JSON Entity
 
-Instance renderers return this shape under `success.data.instance`, or under
-`success.data.instances[]` for list output.
+Instance renderers return the gateway Instance payload under
+`success.data.instance`, or under `success.data.instances[]` for list output.
+Placement is projected at the top level as `environment`, `node`, `url`,
+`path`, `root`, and `domain`. `driver_config` is the serialized driver-specific
+stored data object. For the Orbit driver it uses `node_id`, `node`, `path`,
+`document_root`, and `domain`.
 
 ```json
 {
   "app": "docs",
   "name": "production",
   "driver": "orbit",
+  "environment": "production",
+  "node": "app-1",
+  "url": "https://docs.example.com",
+  "path": "/home/docs/app",
+  "root": "public",
+  "domain": "docs.example.com",
+  "adopted": false,
   "driver_config": {
-    "environment": "production",
+    "node_id": 1,
     "node": "app-1",
-    "url": "https://docs.example.com",
     "path": "/home/docs/app",
-    "root": "public",
+    "document_root": "public",
     "domain": "docs.example.com"
   },
-  "adopted": false,
   "runtime": {
     "runtime": "php",
     "php_version": "8.5",
@@ -275,8 +284,14 @@ Instance renderers return this shape under `success.data.instance`, or under
 | `app` | string | App identity slug. |
 | `name` | string | Instance name, unique within the app. |
 | `driver` | string | Instance driver: `orbit` or `laravel-cloud`. |
-| `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
+| `environment` | string \| null | Public environment projection. Orbit Instances use the Instance name; Laravel Cloud uses the provider environment name. |
+| `node` | string \| null | Public serving-node projection for Orbit Instances. |
+| `url` | string \| null | Public HTTPS URL projection. |
+| `path` | string \| null | Public source-path projection for Orbit Instances. |
+| `root` | string \| null | Public document-root projection for Orbit Instances. |
+| `domain` | string \| null | Public domain projection. |
 | `adopted` | boolean | Whether this concrete path was adopted through `instance:register`. It never belongs to the app. |
+| `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
 | `runtime` | object | Effective runtime metadata for this instance. |
 | `runtime.runtime` | string | App runtime. |
 | `runtime.php_version` | string | The instance's own PHP version, which its runtime container uses. It may differ from the app creation template and from a sibling instance. |
