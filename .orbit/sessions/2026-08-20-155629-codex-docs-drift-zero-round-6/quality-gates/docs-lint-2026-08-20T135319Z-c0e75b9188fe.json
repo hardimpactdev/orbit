@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-20T13:53:11Z",
+    "ended_at": "2026-08-20T13:53:19Z",
+    "duration_seconds": 8,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/docs-drift-zero-round-6",
+        "commit": "6bdff303f718a69546b8687df44ae5829e5bfe94",
+        "dirty": false
+    },
+    "subgates": []
+}
