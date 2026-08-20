@@ -1154,6 +1154,7 @@ it('requires an id when syncing a retained Incus topology', function (): void {
 
 it('stops a retained Incus topology by id', function (): void {
     writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    Process::fake(fn (PendingProcess $process): ProcessResult => incus_command_process_result($process));
 
     $log = new ArrayObject(['deleted' => [], 'runs' => []]);
     incusReleaseCommandWith($log);
@@ -1176,6 +1177,7 @@ it('stops a retained Incus topology by id', function (): void {
 
 it('stops a recorded live wg quick tunnel before releasing the topology', function (): void {
     writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    Process::fake(fn (PendingProcess $process): ProcessResult => incus_command_process_result($process));
 
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
@@ -1222,6 +1224,7 @@ it('stops a recorded live wg quick tunnel before releasing the topology', functi
 });
 
 it('stops every retained Incus topology with all', function (): void {
+    Process::fake(fn (PendingProcess $process): ProcessResult => incus_command_process_result($process));
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-aaa111');
     writeIncusRetainedManifest($this->manifestDirectory, 'dev-bbb222');
 

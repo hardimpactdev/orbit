@@ -16,6 +16,14 @@ final readonly class SourceMountedCheckoutLifecycleLock
 {
     private const int LOCK_WAIT_SECONDS = 30;
 
+    /**
+     * Bound for the local wait on the holder's ready marker: the remote flock
+     * wait plus ssh connect and scheduling margin. A holder that dies without
+     * ever printing the marker must surface as a failure, never as an
+     * unbounded poll.
+     */
+    private const int ACQUIRE_WAIT_SECONDS = 45;
+
     private const int LEGACY_LOCK_STALE_SECONDS = 86_400;
 
     private const string LOCK_READY_MARKER = '__ORBIT_SOURCE_SYNC_LOCK_READY__';
@@ -68,17 +76,34 @@ final readonly class SourceMountedCheckoutLifecycleLock
     private function acquire(): array
     {
         $input = new InputStream;
-        $ready = false;
         $holder = Process::forever()
             ->input($input)
             ->start($this->holderProcessCommand());
 
-        $holder->waitUntil(static function (string $type, string $output) use (&$ready): bool {
-            return $ready = $type === 'out' && str_contains($output, self::LOCK_READY_MARKER);
-        });
+        $deadline = microtime(true) + self::ACQUIRE_WAIT_SECONDS;
+        $ready = false;
+
+        while (true) {
+            if (str_contains($holder->output(), self::LOCK_READY_MARKER)) {
+                $ready = true;
+
+                break;
+            }
+
+            if (! $holder->running() || microtime(true) >= $deadline) {
+                break;
+            }
+
+            usleep(100_000);
+        }
 
         if (! $ready) {
             $input->close();
+
+            if ($holder->running()) {
+                $holder->stop();
+            }
+
             $result = $holder->wait();
 
             throw new RuntimeException(

@@ -19,6 +19,21 @@ use Tests\TestCase;
 
 uses(TestCase::class)->in('Feature');
 
+/*
+ |--------------------------------------------------------------------------
+ | Lease Pool Isolation
+ |--------------------------------------------------------------------------
+ |
+ | The resource lease pool defaults to the repository-shared directory that
+ | real topology acquisitions use. A test process must never contend with
+ | (or leave stale leases in) that real pool: a held slot turns the suite
+ | into a 900-second acquire poll that reads as a hang. Every test process
+ | gets its own throwaway lease directory instead.
+ |
+ */
+
+putenv('ORBIT_E2E_LEASE_DIRECTORY='.sys_get_temp_dir().'/orbit-e2e-test-leases-'.bin2hex(random_bytes(6)));
+
 require_once __DIR__.'/E2E/Support/Pest.php';
 
 /*

@@ -66,3 +66,14 @@ it('does not reclaim retained leases owned by dead processes', function (): void
 
     $retained->release();
 });
+
+it('never resolves the repository-shared lease directory inside a test process', function (): void {
+    $pool = App\E2E\Support\E2EResourceLeasePool::fromEnvironment();
+    $sharedDefault = App\E2E\Support\E2EResourceLeasePool::defaultDirectoryFor(base_path());
+
+    expect($pool->directory())
+        ->not
+        ->toBe($sharedDefault)
+        ->and($pool->directory())
+        ->toStartWith(sys_get_temp_dir());
+});
