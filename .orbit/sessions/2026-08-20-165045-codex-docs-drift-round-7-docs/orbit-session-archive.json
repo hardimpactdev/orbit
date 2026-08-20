@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T14:50:46+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-round-7-docs/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-165045-codex-docs-drift-round-7-docs",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/docs-lint-2026-08-20T145009Z-fb51034e754d.json"
+    ],
+    "entry_digests": {
+        "loop.md": "7c3bd0ac888f7460ead7057b3d00ae892205360e799d2340d486a025c523e074",
+        "quality-gates/docs-lint-2026-08-20T145009Z-fb51034e754d.json": "79d2eb80e7c89d9b75f852d4c631728afc77ad6c81123c48517c302f72481371"
+    },
+    "slug": "codex-docs-drift-round-7-docs",
+    "requested_slug": "codex-docs-drift-round-7-docs",
+    "compatible_slugs": [
+        "codex-docs-drift-round-7-docs"
+    ],
+    "branch": "codex/docs-drift-round-7-docs",
+    "candidate_commit": "0768be5e3f81371772b54e465e2bb8fe761f97c8",
+    "accepted_feature_tip": "0768be5e3f81371772b54e465e2bb8fe761f97c8",
+    "accepted_main_tip": "49e57bc2e8d09bf408e07415365361d2b852b140",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
