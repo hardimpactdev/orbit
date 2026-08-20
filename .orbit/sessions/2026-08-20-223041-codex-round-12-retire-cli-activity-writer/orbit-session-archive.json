@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T20:30:41+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-round-12-retire-cli-activity-writer/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-223041-codex-round-12-retire-cli-activity-writer",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/round-12-cli-activity-writer-runtime.md",
+        "evidence/round-12-cli-activity-writer-tdd.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-20T20-18-26Z-373324670515/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/round-12-cli-activity-writer-runtime.md": "3874025ca239b8a7a96a96dee8583fc376b44adfbd0e34322c50478dad9e7d6f",
+        "evidence/round-12-cli-activity-writer-tdd.md": "0033f1ac0936e9cceaa225f084c68eb1aed41ef87cf6cba5f677094ffd4567a3",
+        "loop.md": "43678c0ebd5011ab84096aa0f304c0f6b0c2c4f683a9172f75af5363b7521d79",
+        "quality-gates/profiles/2026-08-20T20-18-26Z-373324670515/gateway_pest.junit.xml": "56a6982b25c9d78d620189f4e5c833c3e60af70beeda3e192dbdb4326ec7d11f"
+    },
+    "slug": "codex-round-12-retire-cli-activity-writer",
+    "requested_slug": "codex-round-12-retire-cli-activity-writer",
+    "compatible_slugs": [
+        "codex-round-12-retire-cli-activity-writer"
+    ],
+    "branch": "codex/round-12-retire-cli-activity-writer",
+    "candidate_commit": "3733246705151d0a08bcc13b9275a790bfd5d744",
+    "accepted_feature_tip": "3733246705151d0a08bcc13b9275a790bfd5d744",
+    "accepted_main_tip": "8408d697f5b00847d2d85071ba18447e889a34e1",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
