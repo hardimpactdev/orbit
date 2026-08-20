@@ -151,6 +151,7 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
             'gateway app registry',
             "tree('Creating App'",
             "'label' => 'Prepare app creation'",
+            "'label' => 'Create app source'",
             "'label' => 'Register app'",
         ],
         'gateway/app/Http/Controllers/Api/InstanceController.php' => [
@@ -177,6 +178,7 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
         'gateway project registry',
         "tree('Creating Project'",
         "'label' => 'Prepare project creation'",
+        "'label' => 'Create project source'",
         "'label' => 'Register project'",
         'already exists for project',
         'was not found for project',

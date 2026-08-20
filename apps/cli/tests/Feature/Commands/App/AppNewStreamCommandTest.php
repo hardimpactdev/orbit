@@ -9,7 +9,7 @@ describe('AppNewStream command', function (): void {
                 'title' => 'Creating App',
                 'steps' => [
                     ['key' => 'operation', 'label' => 'Prepare app creation'],
-                    ['key' => 'source', 'label' => 'Create project source'],
+                    ['key' => 'source', 'label' => 'Create app source'],
                     ['key' => 'registry', 'label' => 'Register app'],
                     ['key' => 'runtime', 'label' => 'Apply instance runtime'],
                 ],
@@ -36,7 +36,7 @@ describe('AppNewStream command', function (): void {
             ->and($output)
             ->toContain('Creating App')
             ->toContain('Prepare app creation')
-            ->toContain('Create project source')
+            ->toContain('Create app source')
             ->toContain('Register app')
             ->toContain('Apply instance runtime')
             ->toContain('Creating source for docs')

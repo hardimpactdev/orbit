@@ -98,7 +98,7 @@ it('streams app creation from an operation_run source', function (): void {
         ->and($content)
         ->toContain('Prepare app creation')
         ->and($content)
-        ->toContain('Create project source')
+        ->toContain('Create app source')
         ->and($content)
         ->toContain('Register app')
         ->and($content)

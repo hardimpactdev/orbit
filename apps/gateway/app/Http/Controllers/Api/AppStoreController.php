@@ -199,7 +199,7 @@ final class AppStoreController implements Loggable
         ): void {
             $events->tree('Creating App', [
                 ['key' => 'operation', 'label' => 'Prepare app creation'],
-                ['key' => 'source', 'label' => 'Create project source'],
+                ['key' => 'source', 'label' => 'Create app source'],
                 ['key' => 'registry', 'label' => 'Register app'],
                 ['key' => 'runtime', 'label' => 'Apply instance runtime'],
             ]);
