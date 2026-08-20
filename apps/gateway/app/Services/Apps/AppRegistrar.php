@@ -857,8 +857,7 @@ final class AppRegistrar
         return match ($action) {
             'adopted' => "Instance for app '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
             'moved' => "Instance for app '{$name}' successfully moved to path '{$path}' on node '{$node}'.",
-            'converged'
-                => "Instance for app '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            'converged' => "Instance for app '{$name}' is already converged on node '{$node}'. No changes were needed.",
             default => "Instance for app '{$name}' successfully registered on node '{$node}'.",
         };
     }

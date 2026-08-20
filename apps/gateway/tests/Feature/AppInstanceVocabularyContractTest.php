@@ -154,7 +154,7 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
             "'label' => 'Register app'",
         ],
         'gateway/app/Http/Controllers/Api/InstanceController.php' => [
-            "already exists for app",
+            'already exists for app',
             'was not found for app',
         ],
         'gateway/app/Http/Controllers/Api/InstanceEnvController.php' => ['was not found for app'],
