@@ -40,6 +40,23 @@ it('derives effect and channel from stored type without rewriting workload keys'
         ->toHaveKey('instance');
 });
 
+it('preserves the channel when reading a stored CLI activity', function (): void {
+    $activity = new Activity;
+    $activity->log_name = 'cli';
+    $activity->event = 'app.shown';
+    $activity->properties = [
+        'type' => 'read',
+    ];
+
+    $formatted = ActivityPayloadFormatter::format($activity, []);
+
+    expect($formatted)
+        ->toMatchArray([
+            'effect' => 'read',
+            'channel' => 'cli',
+        ]);
+});
+
 it('preserves legacy SSH host-key effect channel and host_key_type presentation exactly', function (): void {
     $activity = new Activity;
     $activity->log_name = 'security';
