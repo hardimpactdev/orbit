@@ -178,7 +178,7 @@ final class InstanceEnvController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => 'instance.not_found',
-                    'message' => "Instance '{$instance}' was not found for project '{$targetApp->name}'.",
+                    'message' => "Instance '{$instance}' was not found for app '{$targetApp->name}'.",
                     'meta' => [
                         'app' => $targetApp->name,
                         'instance' => $instance,

@@ -8,9 +8,9 @@ describe('AppNewStream command', function (): void {
             gatewayProgressFrame('tree', [
                 'title' => 'Creating App',
                 'steps' => [
-                    ['key' => 'operation', 'label' => 'Prepare project creation'],
+                    ['key' => 'operation', 'label' => 'Prepare app creation'],
                     ['key' => 'source', 'label' => 'Create project source'],
-                    ['key' => 'registry', 'label' => 'Register project'],
+                    ['key' => 'registry', 'label' => 'Register app'],
                     ['key' => 'runtime', 'label' => 'Apply instance runtime'],
                 ],
             ])
@@ -35,9 +35,9 @@ describe('AppNewStream command', function (): void {
             ->toBe(0)
             ->and($output)
             ->toContain('Creating App')
-            ->toContain('Prepare project creation')
+            ->toContain('Prepare app creation')
             ->toContain('Create project source')
-            ->toContain('Register project')
+            ->toContain('Register app')
             ->toContain('Apply instance runtime')
             ->toContain('Creating source for docs')
             ->toContain("App 'docs' created.");

@@ -831,7 +831,7 @@ final readonly class PhpRuntimeManager
     {
         return new PhpRuntimeFailure(
             code: 'validation_failed',
-            message: "Node '{$node->name}' does not own project '{$app->name}'.",
+            message: "Node '{$node->name}' does not own app '{$app->name}'.",
             meta: [
                 'field' => 'node',
                 'reason' => 'target_mismatch',

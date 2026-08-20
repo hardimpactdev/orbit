@@ -138,6 +138,62 @@ it('keeps active CLI app and instance command surfaces on App vocabulary', funct
         ->not->toContain('Register Orbit projects in Codex App on a target node.');
 });
 
+it('keeps public workload help and messages on App and Instance vocabulary', function (): void {
+    $repoRoot = dirname(base_path());
+    $expectedByPath = [
+        'cli/app/Commands/Schedule/ScheduleAddCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleListCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleShowCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleRemoveCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleRunCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleLogsCommand.php' => ['bare app only when unambiguous'],
+        'gateway/app/Http/Controllers/Api/AppStoreController.php' => [
+            'gateway app registry',
+            "tree('Creating App'",
+            "'label' => 'Prepare app creation'",
+            "'label' => 'Register app'",
+        ],
+        'gateway/app/Http/Controllers/Api/InstanceController.php' => [
+            "already exists for app",
+            'was not found for app',
+        ],
+        'gateway/app/Http/Controllers/Api/InstanceEnvController.php' => ['was not found for app'],
+        'gateway/app/Services/Apps/AppRegistrar.php' => [
+            "Instance for app '{\$name}' successfully adopted",
+            "Instance for app '{\$name}' successfully moved",
+            "Instance for app '{\$name}' is already converged",
+            "Instance for app '{\$name}' successfully registered",
+        ],
+        'gateway/app/Services/Processes/ProcessOwnerContext.php' => [
+            'required for app and workspace process ownership',
+        ],
+        'gateway/app/Services/Processes/ProcessOwnerContextResolver.php' => [
+            'required for app and workspace process ownership',
+        ],
+        'gateway/app/Services/Php/PhpRuntimeManager.php' => ['does not own app'],
+    ];
+    $forbidden = [
+        'bare project only when unambiguous',
+        'gateway project registry',
+        "tree('Creating Project'",
+        "'label' => 'Prepare project creation'",
+        "'label' => 'Register project'",
+        'already exists for project',
+        'was not found for project',
+        'Instance for project',
+        'required for project and workspace process ownership',
+        'does not own project',
+    ];
+
+    foreach ($expectedByPath as $relativePath => $expected) {
+        $contents = (string) file_get_contents($repoRoot.'/'.$relativePath);
+
+        expect($contents, $relativePath)
+            ->toContain(...$expected)
+            ->not->toContain(...$forbidden);
+    }
+});
+
 /**
  * macOS node-detail workload tables must use App headers, not Project.
  */
