@@ -80,6 +80,14 @@ Probe failures mark the selected tool unverifiable for that run. Tool doctor
 does not guess observed state, adopt unknown probe output, or run fixes that
 depend on facts the probe could not establish.
 
+Ordinary single-tool and batched capability probes use one ordered JSONL
+observation contract. A failed command or empty batch output makes every
+requested tool unverifiable. Invalid evidence for one requested tool does not
+discard valid sibling observations. Empty, malformed, missing, duplicate,
+unexpectedly named, or incorrectly typed evidence produces
+`tool.capability_probe_failed`. Only a verified `installed=false` observation
+produces `tool.capability_missing`.
+
 ## Tool Issue Codes
 
 Every code below is registered in the Doctor issue catalog owned by this
@@ -100,7 +108,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
-| `tool.capability_probe_failed` | The ordinary capability command failed or returned an empty, malformed, duplicate, missing, or incorrectly typed observation, so capability state is unverifiable for this run. |
+| `tool.capability_probe_failed` | The ordinary capability command failed or returned an empty, malformed, duplicate, missing, unexpectedly named, or incorrectly typed observation, so capability state is unverifiable for this run. |
 | `tool.php_cli_coverage_missing` | `php-cli` effective runtime is the `coverage` variant (matrix install contract) but a supported minor lacks a working statically linked PCOV (`extension_loaded('pcov')`, `function_exists('pcov\\start')`, `pcov.enabled`, or `php --ri pcov`). Under `install_contract=compatibility`, doctor validates the retained standard runtime instead and does not emit this code for desired coverage alone. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |

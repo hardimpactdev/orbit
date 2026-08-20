@@ -131,7 +131,8 @@ Proxy API requests are authorized against the route's serving node.
 - `proxy:add` covers custom proxy and redirect route creation on the selected
   serving node.
 - `proxy:remove` covers removal of custom proxy and redirect routes on the
-  route's owning node, and registry rows whose owner record is proven missing.
+  route's owning node. It also covers a registry row with structurally complete
+  tool ownership when the matching installed `NodeTool` is absent on that node.
 
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.

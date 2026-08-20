@@ -22,7 +22,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing custom route domain. |
+| `domain` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Existing custom route domain, or a structurally complete tool-owned route whose matching installed tool is absent. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
@@ -37,16 +37,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - Resolves the route by domain from gateway proxy route configuration.
 - Removes a route when the owner is `custom`.
-- With destructive consent, also removes a non-custom route only when the
-  recorded owner reference is proven missing in gateway configuration (orphan
-  owner). Owner proof matches proxy doctor `proxy.owner_invalid`: `app`,
-  `instance`, `analytics`, and `websocket` owners require the corresponding
-  living app, instance, or binding row; `workspace` owners require a living
-  workspace row. Missing proof means the relation does not resolve (including a
-  null foreign key after cascade null).
-- `--force` never becomes a general ownership bypass. A living app,
-  instance, WebSocket, workspace, gateway, S3, or tool owner still denies
-  removal with `proxy.owned_route_denied`.
+- With destructive consent, also removes a structurally complete tool-owned
+  route only when no matching installed `NodeTool` remains on the route's
+  serving node. The complete stable tuple must match the tool ownership
+  contract, including its eligible serving node, proxy kind, canonical domain,
+  owner name, expected upstream configuration, and absent direct-owner foreign
+  keys.
+- `--force` never becomes a general ownership bypass. Missing or invalid app,
+  instance, WebSocket, workspace, gateway, S3, or other direct ownership does
+  not prove removable ownership. Those non-custom routes remain stored and
+  return `proxy.owned_route_denied`; invalid custom ownership remains stored and
+  returns `proxy.owner_invalid`.
 - Cleans backend route artifacts and Orbit-managed route-scoped TLS material
   through the canonical `ProxyRouteFixer::removeExtra()` path first
   (`/etc/orbit/certs/<domain>.{crt,key}` via the existing Caddy config remove path).
@@ -56,16 +57,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `tls_removed=false`, and `next_command` for doctor repair, and no registry
   deletion occurs.
 - TLS material shared by remaining proxy routes is not removed.
-- When an orphan owner is removed successfully, the success payload includes
-  `removal_reason=orphan_owner` and the public owner type that was proven
-  missing so operators can audit the repair.
+- When a missing tool owner is removed successfully, the success payload
+  includes `removal_reason=orphan_owner` and `owner_type=tool` so operators can
+  audit the repair.
 
 ### Destructive Consent Rules
 
 - Interactive mode requires an explicit confirmation prompt before effects.
 - Non-interactive mode requires `--force`.
 - `--json` does not imply destructive consent.
-- Orphan-owner removal uses the same destructive consent rules as custom
+- Missing-tool-owner removal uses the same destructive consent rules as custom
   route removal; there is no separate orphan flag.
 
 ### Scope Boundaries
@@ -74,9 +75,11 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 S3, or tool-owned routes while those owners still exist. It must not delete
 app or instance files, WebSocket bindings, workspaces, tools, S3 route
 publication records, DNS records, firewall rules, or service processes.
-Living-owner route removal belongs to the owner domain. Orphan-owner rows that
-doctor reports as `proxy.owner_invalid` are the narrow repair exception for
-this command because proxy doctor restore does not delete those registry rows.
+Living-owner route removal belongs to the owner domain. The only non-custom
+repair exception is a route with structurally complete tool ownership when its
+matching installed `NodeTool` is absent on the serving node. Other
+`proxy.owner_invalid` rows are report-only until their owner domain or a later
+product decision supplies a safe repair.
 
 ## Renderer Contracts
 
@@ -101,7 +104,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Route not found | The selected domain has no proxy route row. | `error.code=proxy.not_found` |
-| Owned route denied | The selected route is owned by an app, instance, workspace, gateway, WebSocket binding, S3 publication, or tool whose owner record still exists. Orphan owners are not denied. | `error.code=proxy.owned_route_denied` |
+| Owned route denied | The route has non-custom ownership and is not an eligible missing-tool-owner repair. Missing or invalid direct ownership fails closed. | `error.code=proxy.owned_route_denied` |
+| Invalid custom ownership | The selected route claims custom ownership but its ownership tuple is invalid. | `error.code=proxy.owner_invalid` |
 | Destructive consent missing | Non-interactive input omitted `--force`, or the interactive confirmation was rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Cleanup failed | Backend route or TLS cleanup failed before registry deletion. | `error.code=proxy.cleanup_failed`; registry row remains; `error.meta.backend_removed=false`, `error.meta.tls_removed=false`, `error.meta.next_command` for doctor repair. |
 
@@ -109,16 +113,18 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `proxy-remove` cleans backend and TLS through `ProxyRouteFixer` and then removes
 the registry row when cleanup succeeds. With destructive consent it may also
-remove orphan-owner registry rows that doctor reports as `proxy.owner_invalid`
-(restore does not delete those rows). Doctor is only for genuine cleanup
-failures and remaining orphan extras; it is not a mandatory second step after a
-healthy remove. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
+remove a structurally complete tool-owned row when the matching installed
+`NodeTool` is absent on the serving node. Proxy Doctor can report that row as
+`proxy.owner_invalid`, but restore does not delete it. Other invalid ownership
+tuples are report-only. Doctor is only for genuine cleanup failures and
+remaining orphan extras; it is not a mandatory second step after a healthy
+remove. [`proxy-doctor.md`](../../proxy-doctor.md) owns the authoritative
 `proxy` probe, issue codes, fix map, and adopt map.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route removal authorization, custom route deletion, orphan-owner force removal, living-owner denial, destructive consent requirement, and mutation API shape. |
-| `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:remove` force consent handling, interactive confirmation, DELETE forwarding, JSON success envelope, orphan-owner safety prose, and gateway error passthrough. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | Custom removal, orphan-owner force removal, living-owner denial, cleanup failure keeps registry, ownership checks, and authorization. |
+| `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route removal authorization, custom route deletion, missing-tool-owner force removal, owned-route denial, destructive consent requirement, and mutation API shape. |
+| `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:remove` force consent handling, interactive confirmation, DELETE forwarding, JSON success envelope, missing-tool-owner safety prose, and gateway error passthrough. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | Custom removal, complete missing-tool-owner force removal, malformed direct-owner retention, cleanup failure keeps registry, ownership checks, and authorization. |

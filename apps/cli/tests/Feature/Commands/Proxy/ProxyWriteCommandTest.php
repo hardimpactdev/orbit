@@ -383,39 +383,39 @@ describe('proxy write commands', function (): void {
             ->not->toContain('{');
     });
 
-    it('renders orphan-owner proxy:remove safety detail in human mode', function (): void {
+    it('renders missing-tool-owner proxy:remove safety detail in human mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'route' => [
-                'domain' => 'auth.craft-starterkit-react.test',
-                'kind' => 'workspace',
-                'owner' => ['type' => 'workspace', 'name' => null],
-                'node' => 'app-1',
-                'target' => ['type' => 'workspace', 'value' => null],
+                'domain' => 'hermes.agent',
+                'kind' => 'proxy',
+                'owner' => ['type' => 'tool', 'name' => 'hermes'],
+                'node' => 'agent-1',
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:8080'],
                 'status' => 'removed',
             ],
         ], [
             'backend_removed' => true,
             'tls_removed' => true,
             'removal_reason' => 'orphan_owner',
-            'owner_type' => 'workspace',
+            'owner_type' => 'tool',
             'warnings' => [],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'proxy:remove', [
-            'domain' => 'auth.craft-starterkit-react.test',
+            'domain' => 'hermes.agent',
             '--force' => true,
         ]);
 
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain("Proxy route 'auth.craft-starterkit-react.test' removed")
+            ->toContain("Proxy route 'hermes.agent' removed")
             ->and($output)
-            ->toContain('Domain: auth.craft-starterkit-react.test')
+            ->toContain('Domain: hermes.agent')
             ->and($output)
-            ->toContain('Owner: workspace (orphaned)')
+            ->toContain('Owner: tool (orphaned)')
             ->and($output)
-            ->toContain('Safe because: the recorded workspace owner no longer exists')
+            ->toContain('Safe because: the recorded tool owner no longer exists')
             ->and($output)
             ->not->toContain('{');
     });
