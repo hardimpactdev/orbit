@@ -25,17 +25,26 @@ Prerequisite: the gateway already knows this machine's client identity, usually
 created with `orbit node:new <name> --operator`, and the returned WireGuard
 config is installed locally so the tunnel is up.
 
-What it does: fetches `GET /api/me` from the gateway to confirm identity, writes the gateway row and the local self-row in the nodes table, stores the local gateway endpoint, and trusts the gateway root CA in the local OS trust store. Idempotent  -  re-running on an already-onboarded host is a no-op.
+What it does: fetches `GET /api/me` from the gateway to confirm identity,
+stores the named gateway endpoint and active selection in
+`~/.config/orbit/config.json`, stores gateway trust material under
+`~/.config/orbit/gateways/<name>/`, and installs the gateway root CA in the
+local OS trust store. It does not create a local Orbit database, gateway row,
+or self-row. Re-running it converges the stored endpoint and trust state.
 
 ## `orbit gateway:trust`
 
-Just trust the gateway root CA in the local OS trust store. Use this if the trust step failed during `gateway:add`, or to refresh trust after the OS keychain was reset.
+Install or refresh the gateway root CA in the local OS trust store. Use this if
+the trust step failed during `gateway:add`, or to refresh trust after the OS
+keychain was reset.
 
 ```bash
 orbit gateway:trust [--json]
 ```
 
-Does not touch gateway config or the nodes table  -  purely a local certificate-trust action.
+Writes caller-local trust metadata after the trust-store action succeeds. It
+does not change the configured gateway endpoint or create gateway, client, or
+node records.
 
 ## `orbit gateway:list`
 

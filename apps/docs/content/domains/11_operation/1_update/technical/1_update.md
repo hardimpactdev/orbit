@@ -261,7 +261,7 @@ Artisan command was removed when public command ownership moved to
 
 ## Named Blocker
 
-**Live `orbit update --check` smoke against a published release** is
+**Live `orbit update` smoke against a published release** is
 PUSH/RELEASE-GATED. The download-and-relink mechanism is proven offline via
 `ORBIT_BINARY_URL=file://` (see `LocalCheckoutUpdaterTest`). A live resolution
 of `https://github.com/hardimpactdev/orbit/releases/latest/download/<asset>`
