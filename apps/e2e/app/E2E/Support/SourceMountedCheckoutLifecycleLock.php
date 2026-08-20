@@ -12,6 +12,7 @@ use RuntimeException;
 use Symfony\Component\Process\InputStream;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class SourceMountedCheckoutLifecycleLock
 {
     private const int LOCK_WAIT_SECONDS = 30;
@@ -80,24 +81,7 @@ final readonly class SourceMountedCheckoutLifecycleLock
             ->input($input)
             ->start($this->holderProcessCommand());
 
-        $deadline = microtime(true) + self::ACQUIRE_WAIT_SECONDS;
-        $ready = false;
-
-        while (true) {
-            if (str_contains($holder->output(), self::LOCK_READY_MARKER)) {
-                $ready = true;
-
-                break;
-            }
-
-            if (! $holder->running() || microtime(true) >= $deadline) {
-                break;
-            }
-
-            usleep(100_000);
-        }
-
-        if (! $ready) {
+        if (! $this->waitForReadyMarker($holder)) {
             $input->close();
 
             if ($holder->running()) {
@@ -113,6 +97,27 @@ final readonly class SourceMountedCheckoutLifecycleLock
         }
 
         return [$input, $holder];
+    }
+
+    /**
+     * True once the holder prints the ready marker; false when it dies or the
+     * acquire deadline passes first. Never polls a dead holder indefinitely.
+     */
+    private function waitForReadyMarker(InvokedProcess $holder): bool
+    {
+        $deadline = microtime(true) + self::ACQUIRE_WAIT_SECONDS;
+
+        while (true) {
+            if (str_contains($holder->output(), self::LOCK_READY_MARKER)) {
+                return true;
+            }
+
+            if (! $holder->running() || microtime(true) >= $deadline) {
+                return false;
+            }
+
+            usleep(100_000);
+        }
     }
 
     private function release(InputStream $input, InvokedProcess $holder): void
