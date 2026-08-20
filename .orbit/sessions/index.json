@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 370,
-    "unique_candidate_commit_count": 266,
+    "record_count": 371,
+    "unique_candidate_commit_count": 267,
     "orphan_count": 4,
     "records": [
         {
@@ -9596,6 +9596,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "08c21be2ada7d8bbdeab68afa4fd4c7967237b88",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-083124-fix-e2e-lease-isolation",
+            "slug": "fix-e2e-lease-isolation",
+            "timestamp": "2026-08-20-083124",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "0c1613d72cfe7b3b85a3bc6974d61f4a781cea45",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

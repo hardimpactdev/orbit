@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T06:31:24+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-e2e-lease-isolation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-083124-fix-e2e-lease-isolation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/fix-e2e-lease-isolation-retained-incus-runtime.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T062722Z-21492f4e8dbe.json"
+    ],
+    "entry_digests": {
+        "evidence/fix-e2e-lease-isolation-retained-incus-runtime.txt": "1572403ddfe877a121f27c38b4b3a0aea07b1659c0e273adaafede36a910fca8",
+        "loop.md": "21ba5e0c4d8743074e6ee009f2d38073f778e5900a3a3a555c6beb01496c4c8a",
+        "quality-gates/quality-check-2026-08-20T062722Z-21492f4e8dbe.json": "feac9bccd0ed41a2f335b2080a6710a0c5e0d39a1765e4ccb278de7a1ee4130f"
+    },
+    "slug": "fix-e2e-lease-isolation",
+    "requested_slug": "fix-e2e-lease-isolation",
+    "compatible_slugs": [
+        "fix-e2e-lease-isolation"
+    ],
+    "branch": "fix-e2e-lease-isolation",
+    "candidate_commit": "0c1613d72cfe7b3b85a3bc6974d61f4a781cea45",
+    "accepted_feature_tip": "0c1613d72cfe7b3b85a3bc6974d61f4a781cea45",
+    "accepted_main_tip": "07d1f799f3409d914665c3cd21e0ee988db7de65",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

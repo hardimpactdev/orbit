@@ -1,0 +1,18 @@
+Todo: Solo #223 (e2e in-memory suite hang)
+Candidate: 0c1613d72cfe7b3b85a3bc6974d61f4a781cea45
+Acceptance route: retained-incus
+Environment: dev-fixture
+Topology: dev-e9e82c (operator_gateway)
+Host: beast (ssh alias beast-wg via wg-orbit 10.6.0.7)
+Target: orbit-e2e-dev-e9e82c-operator
+SourceMountedCheckoutLifecycleLock.php SHA-256 (local == synced): 969da3d7d3c9bf527ff65998dd72e7f2a5d25044e79576b31fa6d5a0f112af19
+
+Method: acquire retained topology dev-e9e82c from the implementation worktree; verify synced source hash; run the previously-hanging E2EIncusCommandTest, the new dying-holder lock suite, and the lease pool suite (isolation guard included) inside the retained operator instance on Linux, where flock exists and the bounded lock's genuine-acquire path executes for real.
+
+Red proofs: pre-fix, the three stop tests and the full file hang indefinitely on the unfaked real lock holder (documented reproductions on the implementing Mac); the dying-holder scenario spins on a zombie holder forever, and the isolation guard fails because fromEnvironment resolves the repository-shared lease directory.
+
+Observed:
+  Tests:    29 passed (242 assertions)
+  Duration: 3.96s
+
+Result: passed
