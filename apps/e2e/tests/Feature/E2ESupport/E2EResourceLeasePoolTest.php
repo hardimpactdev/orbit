@@ -67,6 +67,22 @@ it('does not reclaim retained leases owned by dead processes', function (): void
     $retained->release();
 });
 
+it('reclaims stale leases for hosts no longer present in the configuration', function (): void {
+    $pool = new E2EResourceLeasePool($this->leaseDirectory, waitSeconds: 0, staleSeconds: 0);
+
+    // A lease left behind by a dead process on a retired host alias.
+    $legacy = $pool->acquire('incus', ['retired-host' => 1]);
+    $payload = json_decode((string) file_get_contents($legacy->path()), true, flags: JSON_THROW_ON_ERROR);
+    $payload['pid'] = 999_999_999;
+    file_put_contents($legacy->path(), json_encode($payload, JSON_THROW_ON_ERROR));
+
+    // Acquiring against the current configuration, which no longer names the
+    // retired host, must still sweep its stale lease from the directory.
+    $pool->acquire('incus', ['beast-wg' => 1])->release();
+
+    expect(file_exists($legacy->path()))->toBeFalse();
+});
+
 it('never resolves the repository-shared lease directory inside a test process', function (): void {
     $pool = App\E2E\Support\E2EResourceLeasePool::fromEnvironment();
     $sharedDefault = App\E2E\Support\E2EResourceLeasePool::defaultDirectoryFor(base_path());

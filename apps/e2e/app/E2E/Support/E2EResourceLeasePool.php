@@ -305,6 +305,14 @@ final readonly class E2EResourceLeasePool
                 $this->reclaimStaleLeasePath($this->path($backend, $host, $slot));
             }
         }
+
+        // Leases for hosts that left the configuration would otherwise never
+        // be visited again and linger forever. The per-path guards (retained
+        // flag, live owner pid, staleness window) make a directory-wide sweep
+        // safe for every backend's files.
+        foreach ($this->leaseFiles() as $path) {
+            $this->reclaimStaleLeasePath($path);
+        }
     }
 
     private function hasConflictingHostLease(string $backend, string $host): bool
