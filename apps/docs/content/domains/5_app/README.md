@@ -38,10 +38,13 @@ These rules govern all instance family commands.
 - Instance env values and database targets belong to the instance, not the
   app. Rendering an instance env merges explicit instance env values with
   database attachments for that instance.
-- App and instance hostnames are represented in `proxy` as app-owned route records.
-  App and instance commands create, update, and remove the app configuration that owns those
-  routes; proxy route registry, router route convergence, and backend artifact
-  convergence belong to the `proxy` family.
+- Instance hostnames are represented in `proxy` as Instance-owned route records.
+  The persisted `owner_type=app` tuple is a compatibility representation that
+  public registry and list surfaces project as `instance` only when the full
+  ownership tuple is valid. App and instance commands create, update, and
+  remove the instance configuration that owns those routes; proxy route
+  registry, router route convergence, and backend artifact convergence belong
+  to the `proxy` family.
 - Commands that create or set up instances use explicit `--node` first, then the
   local `node:default` node when configured.
 - `app:new` creates or clones one source path, then atomically creates the

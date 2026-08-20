@@ -96,7 +96,8 @@ Release A storage cleanup migration.
 
 Orbit retains durable process lifecycle history for list and status surfaces.
 Existing `crashed` events remain readable, but current runtime paths do not
-install a crash hook or ingest new process-exit reports.
+install a crash hook or ingest new process-exit reports. Operators use process
+list, logs, and Doctor to observe unit health.
 
 ### Lifecycle events
 
@@ -293,14 +294,6 @@ npm run dev -- --host=0.0.0.0
 Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the instance/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
-
-## Crash Event History
-
-With `crash_notification=none`, Orbit does not install a process crash hook or
-post crash notifications to third-party tools. Operators still use process list,
-logs, and Doctor to observe unit health. Existing `crashed` events remain
-readable, but there is no active product command that ingests or fans out crash
-notifications.
 
 ## Commands
 

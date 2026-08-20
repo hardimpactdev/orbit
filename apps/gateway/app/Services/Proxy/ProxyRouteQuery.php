@@ -88,7 +88,10 @@ class ProxyRouteQuery
         }
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
-        $proxyRoutes = $query->get();
+        $proxyRoutes = $query
+            ->get()
+            ->filter($this->routeIsValidForPublicRegistry(...))
+            ->values();
 
         if ($filter === 'workspace') {
             foreach ($proxyRoutes as $route) {
@@ -104,13 +107,6 @@ class ProxyRouteQuery
 
         /** @var list<ProxyRoute> $visibleRoutes */
         $visibleRoutes = $proxyRoutes->values()->all();
-
-        if ($filter === 'instance') {
-            $visibleRoutes = array_values(array_filter(
-                $visibleRoutes,
-                $this->appRouteIsValid(...),
-            ));
-        }
 
         usort(
             $visibleRoutes,
@@ -468,6 +464,19 @@ class ProxyRouteQuery
         $instance = $this->instanceRouteOwnership->resolve($route);
 
         return $instance?->app?->name;
+    }
+
+    private function routeIsValidForPublicRegistry(ProxyRoute $route): bool
+    {
+        if (InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
+            return $this->instanceRouteOwnership->resolve($route) instanceof Instance;
+        }
+
+        if ($route->owner_type === 'workspace') {
+            return $this->workspaceRouteOwnership->resolve($route) !== null;
+        }
+
+        return $route->owner_type !== 'instance';
     }
 
     /**

@@ -6,8 +6,8 @@ Read-only tabular display for list commands.
 
 Use `table` in the following situations.
 
-- Rendering multiple rows of structured data (`node:list`, `app:list`,
-  `tool:list`, `proxy:list`, `firewall:list`, `process:list`,
+- Rendering multiple rows of structured data (`node:list`, `proxy:list`,
+  `firewall:list`, `process:list`,
   `schedule:list`, `workspace:list`, `activity:list`).
 - The command is a list/read command and does not select a row.
 

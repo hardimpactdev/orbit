@@ -19,6 +19,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -210,6 +211,35 @@ it('executes one ordered create plan with the same final result for JSON and SSE
 
     workspace_plan_parity_expect_reporter($reporter, $result->completedSteps());
 })->with(['json', 'sse']);
+
+it('rejects a create plan when the parent instance has no owning node', function (): void {
+    $app = App::query()->where('name', 'demo')->firstOrFail();
+    $instance = Instance::query()->where('app_id', $app->id)->firstOrFail();
+    $instance->forceFill([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            path: '/home/orbit/apps/demo',
+            document_root: 'public',
+            domain: 'demo.test',
+        ),
+    ])->save();
+
+    try {
+        app(CreateWorkspace::class)->plan($app, 'feature-a', $instance);
+    } catch (WorkspaceCreateFailed $exception) {
+        expect($exception->errorCode)
+            ->toBe('workspace.parent_instance_invalid')
+            ->and($exception->meta)
+            ->toMatchArray([
+                'field' => 'instance',
+                'app' => 'demo',
+                'instance' => 'development',
+            ]);
+
+        return;
+    }
+
+    expect(false)->toBeTrue('Expected invalid parent instance failure.');
+});
 
 it('returns the same create failure and retains source plus intent for JSON and SSE adapters', function (string $adapter): void {
     $app = App::query()->where('name', 'demo')->firstOrFail();

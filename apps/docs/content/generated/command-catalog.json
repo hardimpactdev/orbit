@@ -12274,8 +12274,10 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/cli/tests/Feature/GatewayApiClientTest.php",
                 "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php"
             ],
             "verification_hints": [
@@ -12285,6 +12287,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/GatewayApiClientTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/GatewayApiClientTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/GatewayApiClientTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
@@ -12299,6 +12308,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php",
@@ -12453,8 +12469,10 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/cli/tests/Feature/GatewayApiClientTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
-                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php"
+                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "verification_hints": [
                 {
@@ -12463,6 +12481,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/GatewayApiClientTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/GatewayApiClientTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/GatewayApiClientTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
@@ -12477,6 +12502,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolCatalogTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCatalogTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14376,7 +14408,8 @@
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
-                "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php"
             ],
             "verification_hints": [
                 {
@@ -14406,6 +14439,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/WorkspaceStoreControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceStoreControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php"
                 }
             ],
             "p4_mapping": {

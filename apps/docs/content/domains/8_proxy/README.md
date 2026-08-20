@@ -17,9 +17,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   project both as `instance` only when the complete App, Instance, kind, and
   null Workspace ownership tuple is valid. Conflict and removal metadata carry
   the raw stored owner type, so a valid primary route reports `app` there.
-  Invalid tuples also retain their stored owner type in registry metadata.
-  Persisted `owner_type=instance` is
-  invalid. Convergence and destructive cleanup accept a route only when its
+  Conflict and removal metadata also retain the stored owner type for invalid
+  tuples. Public list and summary rendering omit invalid instance-backed
+  tuples. Persisted `owner_type=instance` is invalid. Convergence and
+  destructive cleanup accept a route only when its
   complete ownership tuple resolves to the intended owner; a domain collision
   with invalid or different ownership is a conflict. The owner value classifies
   which domain's convergence edits the route record; the private
@@ -230,7 +231,7 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
 | `kind` | `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Public route behavior. Persisted primary-instance rows use `kind=app` but always project `instance`. |
-| `owner.type` | `app`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
+| `owner.type` | `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Valid persisted primary routes project their compatibility `app` owner as `instance`. |
 | `owner.name` | string \| null | Owning app, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 
 The remaining fields describe placement, backend target, TLS, and status.
