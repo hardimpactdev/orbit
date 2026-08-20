@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 362,
-    "unique_candidate_commit_count": 258,
+    "record_count": 363,
+    "unique_candidate_commit_count": 259,
     "orphan_count": 0,
     "records": [
         {
@@ -9412,6 +9412,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "88a596bf4f889104a8354d444295a570139ca5c1",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-183133-codex-docs-drift-round-7-activity",
+            "slug": "codex-docs-drift-round-7-activity",
+            "timestamp": "2026-08-20-183133",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "aa2b2cf68c22d6cc9cf9016e81d82f11baee7138",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
