@@ -255,7 +255,7 @@ it('does not rewrite malformed metrics service route ownership when the baseline
         ->gateway()
         ->create([
             'name' => 'gateway',
-            'platform' => 'debian_12',
+            'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
         ]);
@@ -367,7 +367,7 @@ it('adds the metrics role through the role assignment service', function (): voi
         ->toBe(3);
 });
 
-it('adds the metrics role to the debian gateway node', function (): void {
+it('rejects assigning the metrics role to a Debian node', function (): void {
     $node = Node::factory()
         ->gateway()
         ->create([
@@ -378,28 +378,41 @@ it('adds the metrics role to the debian gateway node', function (): void {
             'managed' => true,
         ]);
 
-    $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
+    expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'metrics', []))
+        ->toThrow(InvalidArgumentException::class, "Role 'metrics' does not support platform 'debian_12'.");
 
-    expect($assignment->status)
-        ->toBe(NodeRoleStatus::Active)
-        ->and(
-            Process::query()
-                ->where('node_id', $node->id)
-                ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
-                ->count(),
-        )
-        ->toBe(3);
+    expect(NodeRoleAssignment::query()->where('node_id', $node->id)->where('role', 'metrics')->exists())
+        ->toBeFalse()
+        ->and(Process::query()->where('node_id', $node->id)->exists())
+        ->toBeFalse();
 
     Http::assertNothingSent();
-    ProcessFacade::assertRan(function (PendingProcess $process): bool {
-        $command = (string) $process->command;
+    ProcessFacade::assertNothingRan();
+});
 
-        return (
-            str_contains($command, 'docker exec -i')
-            && str_contains($command, 'orbit-gateway')
-            && ! str_contains($command, ' ssh ')
-        );
-    });
+it('rejects converging metrics role intent on a Debian node', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'metrics-1',
+        'platform' => 'debian_12',
+        'wireguard_address' => '10.6.0.44',
+        'status' => NodeStatus::Active,
+        'managed' => true,
+    ]);
+    $assignment = NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'metrics',
+        'status' => NodeRoleStatus::Pending,
+    ]);
+
+    expect(fn () => app(NodeRoleBaselineConverger::class)->converge($node, $assignment))
+        ->toThrow(RuntimeException::class, 'The metrics role requires an Ubuntu host.');
+
+    expect(Process::query()->where('node_id', $node->id)->exists())
+        ->toBeFalse()
+        ->and(NodeTool::query()->where('node_id', $node->id)->exists())
+        ->toBeFalse();
+
+    Http::assertNothingSent();
+    ProcessFacade::assertNothingRan();
 });
 
 it('renders metrics node processes after syncing role-derived node fields', function (): void {
@@ -407,7 +420,7 @@ it('renders metrics node processes after syncing role-derived node fields', func
         ->gateway()
         ->create([
             'name' => 'gateway',
-            'platform' => 'debian_12',
+            'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
             'managed' => true,
@@ -436,7 +449,7 @@ it('converges node exporter process intent for active workload nodes', function 
         ->gateway()
         ->create([
             'name' => 'gateway',
-            'platform' => 'debian_12',
+            'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
             'managed' => true,
@@ -550,6 +563,7 @@ it('converges node exporter process intent for active workload nodes', function 
         'agent-1',
         'app-1',
         'database-1',
+        'gateway',
         'ingress-1',
         'main-1',
     ]);
@@ -602,7 +616,7 @@ it('removes workload node exporter process intent when the last metrics role is 
         ->gateway()
         ->create([
             'name' => 'gateway',
-            'platform' => 'debian_12',
+            'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
             'managed' => true,

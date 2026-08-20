@@ -46,7 +46,7 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private const string ServiceDomain = MetricsServiceRoute::Domain;
 
-    private const array HostExporterPlatforms = ['ubuntu', 'debian'];
+    private const array HostExporterPlatforms = ['ubuntu'];
 
     private const string PrometheusConfigPath = '/var/lib/orbit/processes/prometheus/prometheus.yml';
 
@@ -77,7 +77,7 @@ class MetricsRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRoleAssignment $assignment): void
     {
         if (! $this->nodeSupportsHostExporter($node)) {
-            throw new RuntimeException('The metrics role requires an Ubuntu or Debian host.');
+            throw new RuntimeException('The metrics role requires an Ubuntu host.');
         }
 
         $this->convergeTools($node, ['docker', 'node-exporter']);
