@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T17:37:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-round-9/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-193754-codex-docs-drift-round-9",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/round-9-doctor-catalog-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T172701Z-be621f3713cd.json"
+    ],
+    "entry_digests": {
+        "evidence/round-9-doctor-catalog-retained-incus.md": "741c46cb86e825bbc0ce0a81bf7c5c5a1437d11024a584d9e4f2fbf6c2897a33",
+        "loop.md": "2b1397d94e4aacb3bfe52ea83bacae71860e82056cbb2aa33eed8431da106054",
+        "quality-gates/quality-check-2026-08-20T172701Z-be621f3713cd.json": "a06001149d26cfde9050c561c3e4884c875bde7807b7ea24deab42bcbd248484"
+    },
+    "slug": "codex-docs-drift-round-9",
+    "requested_slug": "codex-docs-drift-round-9",
+    "compatible_slugs": [
+        "codex-docs-drift-round-9"
+    ],
+    "branch": "codex/docs-drift-round-9",
+    "candidate_commit": "6d299f4a5047a0fb2eab39065c8eba279b79d655",
+    "accepted_feature_tip": "6d299f4a5047a0fb2eab39065c8eba279b79d655",
+    "accepted_main_tip": "83df7636414401427d03dbb4b237d7edc8ca1e7e",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
