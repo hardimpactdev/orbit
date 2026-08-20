@@ -2,8 +2,8 @@
 
 PHP runtime commands select PHP image versions for Orbit-managed instance and
 workspace runtime containers. They do not install host PHP runtimes; image
-availability and runtime lifecycle stay with Docker runtime preparation and the
-owning instance or workspace family.
+availability stays with Docker runtime preparation, and concrete runtime-unit
+lifecycle stays with the Process family.
 
 The PHP runtime command family owns the `php:*` command prefix.
 
@@ -13,10 +13,12 @@ The `php` command domain does not own a state family. It writes runtime
 selection configuration that is verified by existing state-family doctors.
 
 [`doctor --family=tool`](../3_tool/tool-doctor.md) owns Docker runtime tool
-availability. [`doctor --family=instance`](../5_app/instance-doctor.md)
-owns instance PHP runtime health and app runtime containers.
-[`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns
-workspace PHP runtime health and workspace runtime containers.
+availability. [`doctor --family=instance`](../5_app/instance-doctor.md) owns
+instance PHP version selection and desired runtime configuration.
+[`doctor --family=workspace`](../6_workspace/workspace-doctor.md) owns workspace
+PHP version selection and desired runtime configuration.
+[`doctor --family=process`](../7_process/process-doctor.md) owns the concrete
+FrankenPHP runtime units, containers, lifecycle, logs, and repair.
 [`doctor --family=proxy`](../8_proxy/proxy-doctor.md) owns instance and workspace
 proxy backend artifact drift when PHP runtime targets change.
 [`doctor --family=node`](../1_node/node-doctor.md) owns node runtime readiness.
@@ -36,8 +38,9 @@ These rules define what PHP runtime commands own and how they operate.
   8.3 use image major `1`. Host PHP, PHP-FPM, CLI-only PHP images, and
   Alpine/musl FrankenPHP variants are not supported fallback runtimes for app
   or workspace containers.
-- The instance and workspace families own applying the selected PHP image to their
-  runtime containers.
+- The Instance and Workspace families own the selected PHP version and desired
+  runtime configuration. The Process family owns applying that configuration to
+  concrete runtime units and containers.
 - A topology release candidate carries its digest-pinned PHP 8.5 image under an
   immutable candidate tag and as a checksummed topology artifact, so private
   registry credentials are not required on workload nodes. On candidate Linux

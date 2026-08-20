@@ -93,8 +93,9 @@ These terms define what PHP commands apply to nodes and how partial application 
 
 - **PHP runtime container artifact:** FrankenPHP container configuration,
   endpoint, image tag, and service state on the node side, derived from instance or
-  workspace PHP runtime configuration. Instance and workspace families own artifact
-  convergence.
+  workspace PHP runtime configuration. The Process family owns artifact
+  convergence; the Instance and Workspace families own the desired PHP
+  configuration.
 - **PHP runtime target:** Resolved app, concrete instance,
   workspace, or node-CLI scope that a PHP command reads or writes after target
   resolution and authorization.

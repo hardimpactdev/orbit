@@ -46,8 +46,8 @@ This command follows the shared
      / `instance:register` and any workspace-installed marker) that names the
      owning app slug.
    - Gateway path-ownership lookup keyed on `(caller node identity,
-     absolute cwd)` that returns the app slug whose registered app path or
-     any registered workspace path contains the caller's cwd.
+     absolute cwd)` that returns the concrete Instance whose registered source
+     path or owned Workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.
    - **Forbidden:** project-file inspection (`composer.json`, `package.json`,

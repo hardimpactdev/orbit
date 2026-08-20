@@ -510,12 +510,14 @@ being requested.
 Gateway, node, and client identities are minted or adopted during
 [`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
 starts with local CLI installation. Production installs download the native
-Orbit CLI binary artifact and link the host `bin/orbit` launcher as `orbit`.
+Orbit CLI binary and link it at `$HOME/.local/bin/orbit` by default.
+`ORBIT_BIN_PATH` or `--bin` selects another explicit host launcher path.
 Source-mounted Docker and Incus topologies are development and E2E lanes; in
 those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`.
 The `orbit-gateway` and `orbit-scheduler` Swarm services remain gateway-role
-concerns, not blanket client prerequisites. The app README owns those
-installation steps.
+concerns, not blanket client prerequisites. The [Tech Stack installation
+contract](../../tech-stack.md#installation) owns client, gateway-service, and
+scheduler installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs
