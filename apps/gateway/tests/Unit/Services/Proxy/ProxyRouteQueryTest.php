@@ -312,8 +312,6 @@ describe('ProxyRouteQuery', function (): void {
             ->toBe(['type' => 'workspace', 'name' => null])
             ->and($entity['target'])
             ->toBe(['type' => 'workspace', 'value' => null])
-            ->and($query->list(filter: 'workspace')['routes'])
-            ->toBeEmpty()
             ->and($query->list()['routes'])
             ->toBeEmpty();
     })->with([

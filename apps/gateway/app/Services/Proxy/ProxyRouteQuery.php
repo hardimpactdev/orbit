@@ -14,6 +14,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -88,10 +89,7 @@ class ProxyRouteQuery
         }
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
-        $proxyRoutes = $query
-            ->get()
-            ->filter($this->routeIsValidForPublicRegistry(...))
-            ->values();
+        $proxyRoutes = $query->get();
 
         if ($filter === 'workspace') {
             foreach ($proxyRoutes as $route) {
@@ -99,9 +97,19 @@ class ProxyRouteQuery
             }
         }
 
+        $proxyRoutes = $proxyRoutes
+            ->filter(
+                fn (Model $route, int $_key): bool => $route instanceof ProxyRoute
+                && $this->routeIsValidForPublicRegistry($route),
+            )
+            ->values();
+
         if ($filter !== 'workspace') {
             $proxyRoutes = $proxyRoutes
-                ->reject(fn (ProxyRoute $route): bool => ! $this->workspaceRouteIsSupported($route, $caller))
+                ->reject(
+                    fn (Model $route, int $_key): bool => $route instanceof ProxyRoute
+                    && ! $this->workspaceRouteIsSupported($route, $caller),
+                )
                 ->values();
         }
 
