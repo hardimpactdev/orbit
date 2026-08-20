@@ -48,15 +48,19 @@ manifests.
   `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>-candidate-<BUILD_ID>` and are
   always digest-pinned in the manifest.
 - GitHub publication promotes those exact tested assets; it does not rebuild
-  CLI binaries or gateway images. The accepted gateway image digest is promoted
-  to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` package tag
-  before the GitHub release is published.
+  CLI binaries or gateway images. The release workflow promotes the accepted
+  gateway image digest to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`
+  package tag only after the draft assets and the digest-pinned image verify
+  and the split package repositories publish, immediately before it publishes
+  the GitHub release. The operator never moves the version tag, so a failed
+  verification leaves the GHCR version tag unmoved.
 - GitHub release tags and release assets are created only after live candidate
   acceptance and explicit human approval to publish. A successful candidate
   `update:all` is not by itself approval to create a GitHub release.
 - If the user requests a live artifact release with no GitHub release, stop
-  after live candidate acceptance. Do not create a GitHub tag, publish a GitHub
-  release, or move the final GHCR version tag in that mode.
+  after live candidate acceptance. Do not create a GitHub tag, create or
+  publish a GitHub release, or dispatch the release workflow in that mode; the
+  final GHCR version tag stays unmoved.
 - If the user requests a release-candidate refresh for the current live
   version, do not bump `VERSION` just to create candidate artifacts. Build from
   the pushed `origin/main` commit, give the candidate a unique `build_id`, and
@@ -64,15 +68,17 @@ manifests.
 - The GitHub Actions release workflow must verify the promoted
   `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-reverb-linux-amd64.tar`,
   `orbit-release-manifest.json`, and digest-pinned
-  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image against the draft
-  release, then publish the GitHub release, the split package repos, and
-  matching tags. It must not run CLI binary builds, gateway image builds, or
+  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>@sha256:<digest>` image
+  against the draft release by digest, then publish the split package repos
+  and matching tags, promote that digest to the
+  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` package tag, and publish the
+  GitHub release. It must not run CLI binary builds, gateway image builds, or
   `gh release upload --clobber`. Promotion fails closed when the reverb role
   image archive is missing, when the manifest
   `role_image_artifacts.orbit-websocket` URL is not the public release download
   URL, or when its SHA-256 does not match the published archive. A failed
-  verification leaves the draft unpublished and converts a premature published
-  release back to a draft.
+  verification leaves the draft unpublished and the GHCR version tag unmoved,
+  and converts a premature published release back to a draft.
 - The promoted `github-release` manifest must carry
   `role_image_artifacts.orbit-websocket` (the public `orbit-reverb-linux-amd64.tar`
   download URL plus SHA-256). Product authority forbids distributing or
@@ -263,30 +269,29 @@ manifests.
    acceptance and runtime-promotion evidence. Otherwise, stop and ask for
    explicit human approval to
     publish the accepted candidate to GitHub. Do not create a GitHub release,
-    push a `v<VERSION>` tag, upload GitHub release assets, or move the final
-    GHCR version tag until approval is given for the candidate identified by
-    `build_id`, commit, CLI hashes, and gateway digest.
+    push a `v<VERSION>` tag, upload GitHub release assets, or dispatch the
+    release workflow that moves the final GHCR version tag until approval is
+    given for the candidate identified by `build_id`, commit, CLI hashes, and
+    gateway digest.
 
-12. After approval, promote the accepted gateway image digest to the final GHCR
-    version tag without rebuilding, then verify the promotion against the
-    stored candidate state:
+12. After approval, verify the accepted candidate identity against the stored
+    candidate state before generating the GitHub manifest. Do not move the
+    final GHCR version tag from the operator machine: the release workflow
+    promotes the accepted digest to `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`
+    only after the draft assets and the image verify, so a failed run never
+    leaves the public version tag pointing at an unverified candidate.
 
    ```bash
    eval "$(bin/orbit-release-candidate env)"
-   release_image="ghcr.io/hardimpactdev/orbit-gateway:${version}"
-
-   docker buildx imagetools create \
-     -t "$release_image" \
-     "${candidate_image}@${gateway_digest}"
-
-   bin/orbit-release-candidate verify --release-image="$release_image"
+   bin/orbit-release-candidate verify --release-image="$candidate_image"
    ```
 
    `verify` recomputes the sha256 of the stored CLI binaries against
-   `candidate.env` and compares the promoted image digest (via
-   `docker buildx imagetools inspect`) against the recorded gateway digest.
-   It prints a `PASS`/`FAIL` line per key and exits 1 on any `FAIL`; do not
-   continue past a failed verify.
+   `candidate.env` and compares the candidate image digest (via
+   `docker buildx imagetools inspect`) against the recorded gateway digest,
+   proving the accepted digest is still resolvable in GHCR before the draft is
+   dispatched. It prints a `PASS`/`FAIL` line per key and exits 1 on any
+   `FAIL`; do not continue past a failed verify.
 
 13. Generate the final GitHub manifest from the stored candidate artifacts. It
     must have `source=github-release` and the same CLI hashes and gateway
@@ -364,11 +369,16 @@ manifests.
    recorded in `role_image_artifacts.orbit-websocket` resolves publicly after
    the workflow publishes. The release workflow requires it and fails the
    promotion when the archive is missing, its manifest URL is wrong, or the
-   archive SHA-256 mismatches. A failed run leaves the draft unpublished.
+   archive SHA-256 mismatches. A failed run leaves the draft unpublished and
+   the GHCR version tag unmoved.
 
 15. Watch the dispatched `Orbit Release` workflow until it succeeds. It
-    verifies the draft assets and digest-pinned gateway image, publishes the
-    split package repositories, then publishes the GitHub release.
+    verifies the draft assets and the accepted gateway digest, publishes the
+    split package repositories, promotes that digest to
+    `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`, then publishes the GitHub
+    release. A failed run leaves the draft unpublished and the version tag
+    unmoved; fix the cause and dispatch again (re-promotion is an idempotent
+    carbon copy of the same digest).
 
 16. Verify public artifacts without authentication:
 
@@ -384,9 +394,9 @@ manifests.
    bin/orbit-release-candidate verify --release-image="ghcr.io/hardimpactdev/orbit-gateway:${version}"
    ```
 
-   The final `verify` proves the published version tag still resolves to the
-   accepted candidate's gateway digest and that the stored CLI binaries still
-   match their recorded hashes.
+   The final `verify` proves the version tag the workflow promoted resolves to
+   the accepted candidate's gateway digest and that the stored CLI binaries
+   still match their recorded hashes.
 
 17. If doctor output changed after `update:all`, classify the delta before
     accepting the release. Fix release-caused regressions immediately when
@@ -398,8 +408,8 @@ acceptance passes and the human approves the accepted build id, commit, CLI
 hashes, and gateway digest. A no-GitHub live artifact release is complete when
 the live acceptance evidence is recorded and the no-GitHub boundary is explicit.
 A GitHub release is not complete until the GitHub workflow verifies the
-draft assets, publishes the split package repos, and publishes the GitHub
-release.
+draft assets, publishes the split package repos, promotes the gateway version
+tag, and publishes the GitHub release.
 
 ## Failure Handling
 

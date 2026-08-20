@@ -7,6 +7,10 @@ name: Orbit Release
 # workflow_dispatch verifies a draft and publishes only on success.
 # release published is a safety net; failure converts it back to a draft.
 # Publishing with GITHUB_TOKEN does not re-enter this workflow.
+# The GHCR :VERSION tag moves only here: every image check resolves the
+# accepted digest directly, and the tag is promoted after those checks and
+# the split publish, right before the release goes public. A failed run
+# therefore never points the public version tag at an unverified candidate.
 on:
   workflow_dispatch:
     inputs:
@@ -191,7 +195,7 @@ jobs:
               fail('Release manifest role_image_artifacts.orbit-websocket sha256 does not match the promoted archive.');
           }
 
-          file_put_contents(getenv('GITHUB_OUTPUT'), "gateway_ref={$gateway}\n", FILE_APPEND);
+          file_put_contents(getenv('GITHUB_OUTPUT'), "gateway_digest=sha256:{$gatewayDigest}\n", FILE_APPEND);
 
           function fail(string $message): never
           {
@@ -201,56 +205,25 @@ jobs:
           }
           PHP
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
-
-      - name: Promote canonical gateway image version tag
+      - name: Verify accepted gateway image is pullable
         env:
-          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          set -euo pipefail
-
-          expected_digest="${GATEWAY_REF##*@}"
-          promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
-
-          docker buildx imagetools create \
-            --prefer-index=false \
-            --tag "$promoted_ref" \
-            "$GATEWAY_REF"
-
-          inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"
-          actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
-
-          if [ "$actual_digest" != "$expected_digest" ]; then
-            echo "Promoted gateway digest is [${actual_digest:-missing}], expected [$expected_digest]." >&2
-            exit 1
-          fi
-
-          echo "Promoted gateway digest ${expected_digest} to ${promoted_ref}."
-
-      - name: Verify promoted gateway image is pullable
-        env:
-          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
+          GATEWAY_DIGEST: ${{ steps.manifest.outputs.gateway_digest }}
         run: |
           set -euo pipefail
           docker_config="$(mktemp -d)"
           trap 'rm -rf "$docker_config"' EXIT
 
-          DOCKER_CONFIG="$docker_config" docker pull "$GATEWAY_REF"
+          DOCKER_CONFIG="$docker_config" docker pull "${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"
 
-      - name: Verify promoted gateway image bakes the release version
+      - name: Verify accepted gateway image bakes the release version
         env:
-          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
+          GATEWAY_DIGEST: ${{ steps.manifest.outputs.gateway_digest }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
           set -euo pipefail
 
-          baked="$(docker run --rm --entrypoint cat "$GATEWAY_REF" /srv/orbit/VERSION || true)"
+          accepted_ref="${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"
+          baked="$(docker run --rm --entrypoint cat "$accepted_ref" /srv/orbit/VERSION || true)"
           if [ "$baked" != "$VERSION" ]; then
             echo "Gateway image /srv/orbit/VERSION is [$baked], expected [$VERSION] (gateway-version regression)." >&2
             exit 1
@@ -319,6 +292,38 @@ jobs:
           else
             echo "Packagist credentials not configured; skipping hardimpactdev/orbit-core and hardimpactdev/orbit-sdk-laravel API updates."
           fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Promote canonical gateway image version tag
+        env:
+          GATEWAY_DIGEST: ${{ steps.manifest.outputs.gateway_digest }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          accepted_ref="${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"
+          promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
+
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "$promoted_ref" \
+            "$accepted_ref"
+
+          inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"
+          actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+          if [ "$actual_digest" != "$GATEWAY_DIGEST" ]; then
+            echo "Promoted gateway digest is [${actual_digest:-missing}], expected [$GATEWAY_DIGEST]." >&2
+            exit 1
+          fi
+
+          echo "Promoted gateway digest ${GATEWAY_DIGEST} to ${promoted_ref}."
 
       - name: Publish verified GitHub release
         env:

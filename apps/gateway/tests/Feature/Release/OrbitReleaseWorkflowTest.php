@@ -151,16 +151,17 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('docker buildx imagetools create')
         ->toContain('--prefer-index=false')
         ->toContain('--tag "$promoted_ref"')
-        ->toContain('expected_digest="${GATEWAY_REF##*@}"')
+        ->toContain('GATEWAY_DIGEST: ${{ steps.manifest.outputs.gateway_digest }}')
+        ->toContain('accepted_ref="${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"')
         ->toContain('promoted_ref="${REGISTRY}/${IMAGE_NAME}:${VERSION}"')
         ->toContain('inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"')
         ->toContain('actual_digest=')
         ->toContain('awk \'/^Digest:/ { print $2; exit }\'')
-        ->toContain('if [ "$actual_digest" != "$expected_digest" ]; then')
-        ->toContain('Promoted gateway digest is [${actual_digest:-missing}], expected [$expected_digest].')
+        ->toContain('if [ "$actual_digest" != "$GATEWAY_DIGEST" ]; then')
+        ->toContain('Promoted gateway digest is [${actual_digest:-missing}], expected [$GATEWAY_DIGEST].')
         ->toContain('Promoted gateway digest')
-        ->toContain('Verify promoted gateway image is pullable')
-        ->toContain('Verify promoted gateway image bakes the release version')
+        ->toContain('Verify accepted gateway image is pullable')
+        ->toContain('Verify accepted gateway image bakes the release version')
         ->toContain('bin/orbit-prepare-release-package --package="$package"')
         ->toContain('publish_split core hardimpactdev/orbit-core')
         ->toContain('publish_split cli hardimpactdev/orbit-cli')
@@ -208,15 +209,15 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->not->toContain('orbit'.'-runtime');
 
     expect($workflow)->toMatch(
-        '/Verify promoted release manifest[\s\S]*Promote canonical gateway image version tag[\s\S]*Verify promoted gateway image is pullable/',
+        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Promote canonical gateway image version tag/',
     );
 
     expect($workflow)->toMatch(
-        '/docker buildx imagetools create[\s\S]*docker buildx imagetools inspect "\$promoted_ref"[\s\S]*actual_digest=[\s\S]*if \[ "\$actual_digest" != "\$expected_digest" \]; then[\s\S]*Verify promoted gateway image is pullable/',
+        '/docker buildx imagetools create[\s\S]*docker buildx imagetools inspect "\$promoted_ref"[\s\S]*actual_digest=[\s\S]*if \[ "\$actual_digest" != "\$GATEWAY_DIGEST" \]; then[\s\S]*Publish verified GitHub release/',
     );
 
     expect($workflow)->toMatch(
-        '/if \[ "\$actual_digest" != "\$expected_digest" \]; then\n\s+echo "Promoted gateway digest is \[\$\{actual_digest:-missing\}\], expected \[\$expected_digest\]\." >&2\n\s+exit 1\n\s+fi/',
+        '/if \[ "\$actual_digest" != "\$GATEWAY_DIGEST" \]; then\n\s+echo "Promoted gateway digest is \[\$\{actual_digest:-missing\}\], expected \[\$GATEWAY_DIGEST\]\." >&2\n\s+exit 1\n\s+fi/',
     );
 });
 
@@ -279,11 +280,106 @@ it('keeps the GitHub release unpublished until draft asset verification succeeds
         ->toContain('--tag "$promoted_ref"')
         ->not->toContain('--tag "${REGISTRY}/${IMAGE_NAME}:${VERSION}"');
 
-    // Draft verification and split-package promotion must finish before the
-    // GitHub release becomes public. The failure path converts a premature
-    // published release back to a draft.
+    // Draft verification, split-package promotion, and the version-tag
+    // promotion must finish before the GitHub release becomes public. The
+    // failure path converts a premature published release back to a draft.
     expect($workflow)->toMatch(
-        '/Verify promoted release manifest[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish split package repositories[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
+        '/Verify promoted release manifest[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
+    );
+});
+
+it('promotes the GHCR version tag only after the accepted image verifies and split packages publish', function (): void {
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        ->toContain('Verify accepted gateway image is pullable')
+        ->toContain('Verify accepted gateway image bakes the release version')
+        ->toContain('gateway_digest=sha256:{$gatewayDigest}')
+        ->toContain('GATEWAY_DIGEST: ${{ steps.manifest.outputs.gateway_digest }}')
+        ->toContain('docker pull "${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"')
+        ->toContain('accepted_ref="${REGISTRY}/${IMAGE_NAME}@${GATEWAY_DIGEST}"')
+        ->toContain('docker run --rm --entrypoint cat "$accepted_ref" /srv/orbit/VERSION')
+        // Nothing before promotion may depend on the version tag existing:
+        // every image check resolves the accepted digest directly.
+        ->not->toContain('GATEWAY_REF')
+        ->not->toContain('gateway_ref=');
+
+    // Both image checks and split publishing precede the only tag mutation,
+    // which is the last step before the GitHub release goes public.
+    expect($workflow)->toMatch(
+        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
+    );
+
+    // Promotion carbon-copies the accepted digest onto the version tag; the
+    // tag need not exist yet, so the source is the bare digest reference.
+    expect($workflow)->toContain("--tag \"\$promoted_ref\" \\\n            \"\$accepted_ref\"");
+
+    // The workflow is the only place that moves the version tag.
+    expect(substr_count($workflow, needle: 'docker buildx imagetools create'))->toBe(1);
+});
+
+it('keeps the operator release recipe from moving the GHCR version tag before the workflow verifies', function (): void {
+    $skill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
+    $skillText = (string) preg_replace('/\s+/', replacement: ' ', subject: $skill);
+
+    expect($skill)
+        // The operator never promotes the version tag; the workflow owns it.
+        ->not->toContain('docker buildx imagetools create')
+        ->not->toContain('release_image="ghcr.io/hardimpactdev/orbit-gateway:${version}"')
+        // Pre-publication verify binds the accepted candidate image to the
+        // recorded digest before the draft is dispatched.
+        ->toContain('bin/orbit-release-candidate verify --release-image="$candidate_image"')
+        // The public verify still proves the workflow-promoted tag resolves
+        // to the accepted digest.
+        ->toContain(
+            'bin/orbit-release-candidate verify --release-image="ghcr.io/hardimpactdev/orbit-gateway:${version}"',
+        );
+
+    expect($skillText)
+        ->toContain(
+            'The release workflow promotes the accepted gateway image digest to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` package tag only after the draft assets and the digest-pinned image verify and the split package repositories publish, immediately before it publishes the GitHub release.',
+        )
+        ->toContain(
+            'The operator never moves the version tag, so a failed verification leaves the GHCR version tag unmoved.',
+        )
+        ->toContain(
+            'A failed verification leaves the draft unpublished and the GHCR version tag unmoved, and converts a premature published release back to a draft.',
+        );
+
+    // The candidate verify precedes manifest generation and the draft dispatch.
+    $verifyPos = strpos($skill, needle: 'bin/orbit-release-candidate verify --release-image="$candidate_image"');
+    $manifestPos = strpos($skill, needle: '--source=github-release');
+    $dispatchPos = strpos($skill, needle: 'gh workflow run orbit-release.yml');
+
+    expect($verifyPos)
+        ->toBeInt()
+        ->and($manifestPos)
+        ->toBeInt()
+        ->and($dispatchPos)
+        ->toBeInt()
+        ->and($verifyPos)
+        ->toBeLessThan($manifestPos)
+        ->and($manifestPos)
+        ->toBeLessThan($dispatchPos);
+
+    $techStack = (string) preg_replace(
+        '/\s+/',
+        replacement: ' ',
+        subject: (string) file_get_contents(repo_path('apps/docs/content/tech-stack.md')),
+    );
+
+    expect($techStack)
+        ->toContain(
+            'promotes the verified gateway digest to the `ghcr.io/hardimpactdev/orbit-gateway:<version>` package tag',
+        )
+        ->toContain(
+            'A failed verification leaves the draft unpublished and the GHCR version tag unmoved, and converts a premature published release back to a draft.',
+        );
+
+    $decisions = (string) file_get_contents(repo_path('PRODUCT_DECISIONS.md'));
+
+    expect($decisions)->toMatch(
+        '/^- 2026-08-20 — [^\n]*ghcr\.io\/hardimpactdev\/orbit-gateway:<VERSION>[^\n]*\(solo todo #225\)$/m',
     );
 });
 
@@ -322,7 +418,7 @@ it('accepts a promotion manifest whose websocket archive url and checksum match'
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and((string) file_get_contents($output))
-            ->toContain('gateway_ref=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:');
+            ->toContain('gateway_digest=sha256:'.str_repeat('a', times: 64));
     } finally {
         new Process(['rm', '-rf', $assetDir])->run();
     }

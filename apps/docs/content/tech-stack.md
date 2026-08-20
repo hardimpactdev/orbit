@@ -186,9 +186,12 @@ operator dispatches `.github/workflows/orbit-release.yml` against that draft.
 The workflow verifies those promoted assets, publishes the
 `hardimpactdev/orbit-core`, `hardimpactdev/orbit-cli`, and
 `hardimpactdev/orbit-gateway` split package repositories without rebuilding the
-tested binaries or image, and publishes the GitHub release only after those
-checks succeed. A failed verification leaves the draft unpublished and converts
-a premature published release back to a draft. Source-dev Docker and Incus
+tested binaries or image, promotes the verified gateway digest to the
+`ghcr.io/hardimpactdev/orbit-gateway:<version>` package tag, and publishes the
+GitHub release only after those checks succeed. The operator never moves that
+version tag. A failed verification leaves the draft unpublished and the GHCR
+version tag unmoved, and converts a premature published release back to a
+draft. Source-dev Docker and Incus
 topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
