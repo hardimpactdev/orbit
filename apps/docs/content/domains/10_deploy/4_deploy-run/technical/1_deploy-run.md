@@ -163,8 +163,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | Type | `api:POST /deploy/run` |
 | Effect | `write` |
-| Subject | `DeploymentRun` when created; `none` otherwise. |
-| Properties | `app`, `instance`, `run_id`, `status`. No step command secrets. |
+| Subject | `none`; the `DeploymentRun` is created after the accepted response during deferred execution. |
+| Properties | `app`, `instance`, `status=queued`. No run id or step command secrets. |
 | Description | derived |
 
 ## Doctor Relationship

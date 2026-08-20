@@ -164,6 +164,21 @@ it('declares the exact activity contract for all six deploy actions', function (
     $this->call('GET', '/api/deploy/steps', ['instance' => 'docs'], server: $server)->assertOk();
     $this->call('DELETE', '/api/deploy/steps/999', ['instance' => 'docs'], server: $server)->assertBadRequest();
     $this->call('POST', '/api/deploy/run', ['instance' => 'docs'], server: $server)->assertAccepted();
+
+    $runActivity = Activity::query()->where('event', 'api:POST /deploy/run')->firstOrFail();
+    $runProperties = $runActivity->properties->all();
+
+    expect($runActivity->subject_type)
+        ->toBeNull()
+        ->and($runProperties)
+        ->toMatchArray([
+            'app' => 'docs',
+            'instance' => 'production',
+            'status' => 'queued',
+        ])
+        ->and($runProperties)
+        ->not->toHaveKey('run_id');
+
     $this->call('GET', '/api/deploy/history', ['instance' => 'docs'], server: $server)->assertOk();
     $this->call('GET', '/api/deploy/log/not-a-run', ['instance' => 'docs'], server: $server)->assertBadRequest();
 
