@@ -1,6 +1,7 @@
 # `orbit cf-cache-rule:remove`
 
-Remove the Cloudflare cache rule that Orbit manages for an app's Cloudflare-backed domain.
+Remove the Cloudflare cache rule that Orbit manages for the selected concrete
+instance's Cloudflare-backed domain.
 
 ## Usage
 
@@ -25,8 +26,9 @@ orbit cf-cache-rule:remove docs --force --json
 
 ## What Happens
 
-Run `orbit cf-cache-rule:remove <app>` to remove the Cloudflare cache rule
-that Orbit manages for the app's Cloudflare zone.
+Run `orbit cf-cache-rule:remove <app.instance>` to remove the Cloudflare cache
+rule that Orbit manages for the selected instance's Cloudflare zone. A bare App
+selector is accepted only when it resolves to exactly one Instance.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
 cache rule for the zone resolved from the selected instance's domain. It does

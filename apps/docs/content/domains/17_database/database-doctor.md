@@ -92,8 +92,9 @@ that target.
 
 ## Database Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -113,6 +114,7 @@ detect.
 | `database_connection.target_extra` | During an explicit adoption scope, a selected instance or workspace has an adopted-or-mappable database target that does not yet exist in gateway target mappings. |
 | `database_connection.unverifiable` | The observed env-prefix group is partial, malformed, ambiguous, or uses unsupported fields so Orbit cannot safely compare, restore, or adopt it. |
 | `database_connection.wireguard_self_route_unavailable` | A mapped managed database host points at the consuming node's own WireGuard service address, but supported Linux self-route diagnostics are missing or unhealthy. Unsupported platforms are not applicable and emit no issue. |
+| `database_connection.remote_shell_probe_failed` | The remote database-connection probe raised before it could return a usable target-environment observation for the selected node. |
 
 ## Database Fix Map
 

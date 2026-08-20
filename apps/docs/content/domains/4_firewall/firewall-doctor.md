@@ -52,8 +52,9 @@ Backend rows that cannot be represented in Orbit firewall-rule fields are report
 
 ## Firewall Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -71,6 +72,7 @@ Each code below identifies a specific kind of drift the firewall probe can detec
 | `firewall_rule.rule_missing` | Gateway configuration expects a managed backend rule, but the rule is absent from node reality. |
 | `firewall_rule.rule_mismatch` | A managed backend rule exists but differs from gateway configuration. |
 | `firewall_rule.rule_extra` | During an explicit adoption scope, a selected observed backend rule has no matching gateway firewall rule row. |
+| `firewall_rule.remote_shell_probe_failed` | The remote firewall probe raised before it could return a usable backend-rule observation for the selected node. |
 
 ## Firewall Fix Map
 

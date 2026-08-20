@@ -15,12 +15,22 @@ use App\Services\Doctor\DoctorRestoreSupport;
  */
 it('classifies every family-doctor contract issue code explicitly', function (): void {
     $docCodes = doctor_family_doc_issue_codes();
-    $catalogCodes = DoctorIssueCatalog::codes();
+    $catalogCodes = doctor_public_family_catalog_issue_codes();
 
     $missing = array_values(array_diff($docCodes, $catalogCodes));
 
     expect($missing)
         ->toBeEmpty('Uncatalogued family-doctor issue codes: '.implode(', ', $missing));
+});
+
+it('documents every public family-doctor catalog issue code', function (): void {
+    $docCodes = doctor_family_doc_issue_codes();
+    $catalogCodes = doctor_public_family_catalog_issue_codes();
+
+    $missing = array_values(array_diff($catalogCodes, $docCodes));
+
+    expect($missing)
+        ->toBeEmpty('Undocumented family-doctor issue codes: '.implode(', ', $missing));
 });
 
 it('requires DoctorRestoreSupport dispatch for every genuine-drift catalog entry', function (): void {
@@ -115,6 +125,10 @@ it('does not keep name-substring fallback classification in the doctor runner', 
 });
 
 /**
+ * App-prefixed definitions are private compatibility inputs that project
+ * through the public instance family. `node.updates` is an issue key whose
+ * public issue codes are the documented `node.updates_*` entries.
+ *
  * @return list<string>
  */
 function doctor_family_doc_issue_codes(): array
@@ -142,4 +156,25 @@ function doctor_family_doc_issue_codes(): array
     sort($list);
 
     return $list;
+}
+
+/**
+ * @return list<string>
+ */
+function doctor_public_family_catalog_issue_codes(): array
+{
+    $codes = array_map(
+        static fn (string $code): string => str_starts_with($code, 'app.')
+            ? 'instance.'.substr($code, 4)
+            : $code,
+        DoctorIssueCatalog::codes(),
+    );
+    $codes = array_values(array_unique($codes));
+    $codes = array_values(array_filter(
+        $codes,
+        static fn (string $code): bool => $code !== 'node.updates',
+    ));
+    sort($codes);
+
+    return $codes;
 }

@@ -74,6 +74,10 @@ issues or run restore flows.
 
 ## Activity Logging
 
+Local enablement emits no activity because the CLI has no trusted shared
+activity writer. When this command calls the gateway enable API, it relies on
+the matching gateway endpoint entry defined below.
+
 | Field | Value |
 | --- | --- |
 | Type | `api:POST /extensions/{extension}/enable` |

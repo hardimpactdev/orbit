@@ -90,8 +90,9 @@ results as workspace-family issue codes.
 
 ## Workspace Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -118,6 +119,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.artifact_extra` | An Orbit-owned workspace worktree or managed workspace artifact exists without matching registered workspace configuration. |
 | `workspace.unregistered_path` | During an explicit adoption scope, a selected workspace path exists without a matching gateway workspace record. |
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
+| `workspace.remote_shell_probe_failed` | The remote workspace probe raised before it could return a usable observation for the selected node. |
 
 ## Workspace Fix Map
 

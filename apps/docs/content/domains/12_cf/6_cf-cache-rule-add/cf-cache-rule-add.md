@@ -1,6 +1,7 @@
 # `orbit cf-cache-rule:add`
 
-Create the Cloudflare cache rule that Orbit manages for an app's Cloudflare-backed domain.
+Create the Cloudflare cache rule that Orbit manages for the selected concrete
+instance's Cloudflare-backed domain.
 
 ## Usage
 
@@ -24,22 +25,24 @@ orbit cf-cache-rule:add docs --json
 
 ## What Happens
 
-Run `orbit cf-cache-rule:add <app>` to create or converge the standard
-Cloudflare cache rule for the app's Cloudflare zone.
+Run `orbit cf-cache-rule:add <app.instance>` to create or converge the standard
+Cloudflare cache rule for the selected instance's Cloudflare zone. A bare App
+selector is accepted only when it resolves to exactly one Instance.
 
 `cf-cache-rule:add` asks the gateway to create or converge the standard
-Cloudflare cache rule for the zone resolved from the app's domain. The rule
-lets Cloudflare cache public responses while respecting origin `Cache-Control`
-headers.
+Cloudflare cache rule for the zone resolved from the selected instance's
+domain. The rule lets Cloudflare cache public responses while respecting
+origin `Cache-Control` headers.
 
 The command does not change instance deployment policy, process state, or proxy
 routes.
 
 ## Output
 
-You will see a confirmation of the cache rule outcome for the resolved app.
+You will see a confirmation of the cache rule outcome for the selected
+instance.
 
-Human output confirms the app cache rule outcome. Use `--json` for
+Human output confirms the instance cache rule outcome. Use `--json` for
 machine-readable output.
 
 ## Requirements
