@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T07:26:35+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/release-ghcr-tag-after-verify/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-092634-release-ghcr-tag-after-verify",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/release-ghcr-tag-after-verify-green.txt",
+        "evidence/release-ghcr-tag-after-verify-red.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T072415Z-1249a84adb31.json"
+    ],
+    "entry_digests": {
+        "evidence/release-ghcr-tag-after-verify-green.txt": "923ccc101dbf81ef8e0418e9ffcf831add7ef83c1417ca0a222ad654a9ce93ba",
+        "evidence/release-ghcr-tag-after-verify-red.txt": "6673b554dcf73f2b406ed2942e0c5c931de68987002cfe72b7ac88b27246caa9",
+        "loop.md": "7eed94112c862742e1296648d5580c9fa5a6ed0340121bbdf4513ffe36e9cef2",
+        "quality-gates/quality-check-2026-08-20T072415Z-1249a84adb31.json": "67b531b218b003b0a9ada5b70bc62a64e20f95f74656ef76b2ed5f174ced4a88"
+    },
+    "slug": "release-ghcr-tag-after-verify",
+    "requested_slug": "release-ghcr-tag-after-verify",
+    "compatible_slugs": [
+        "release-ghcr-tag-after-verify"
+    ],
+    "branch": "release-ghcr-tag-after-verify",
+    "candidate_commit": "97e4d175773c5c965c288a91e9e59711b69f2e0e",
+    "accepted_feature_tip": "97e4d175773c5c965c288a91e9e59711b69f2e0e",
+    "accepted_main_tip": "10f3762f4dc9217e2c3ec0a88924a3851acc6793",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
