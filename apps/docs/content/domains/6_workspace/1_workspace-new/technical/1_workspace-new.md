@@ -124,9 +124,9 @@ The command performs:
    product workspace source driver.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    the driver-returned `name` and physical `path`, `app_id`, a mandatory
-   non-null `instance_id`, derived hostname, `php_version` (or `null` for
-   inheritance), and lifecycle fields. Workspace identity uniqueness is
-   enforced before any side effects and again at this step.
+   non-null `instance_id`, derived hostname, the concrete `php_version` snapshot
+   selected during input resolution, and lifecycle fields. The gateway enforces
+   workspace identity uniqueness before any side effects and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace
