@@ -2,7 +2,7 @@
 
 Manage the fleet: gateway nodes, client identities, grants, role assignments,
 and workload nodes. Spec:
-[`apps/docs/content/domains/1_node/`](../../../apps/docs/content/domains/1_node/).
+[`apps/docs/content/domains/1_node/`](../../../../apps/docs/content/domains/1_node/).
 
 ## `orbit node:new [name]`
 

@@ -71,7 +71,7 @@ route drift.
 | Type | `api:GET /instances/{instance}/analytics` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
-| Properties | `target_instance`, `target_instance`, and `serving_node`. |
+| Properties | `action=show`, `target_instance`, and `public_hosts`. |
 
 ## Test Mapping
 

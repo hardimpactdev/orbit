@@ -1,7 +1,7 @@
 # Gateway Commands
 
 Onboard a local client onto an existing gateway. Spec:
-[`apps/docs/content/domains/2_gateway/`](../../../apps/docs/content/domains/2_gateway/).
+[`apps/docs/content/domains/2_gateway/`](../../../../apps/docs/content/domains/2_gateway/).
 
 For first-gateway bootstrap (no gateway yet), use
 `node:new --template=gateway` instead. That path also onboards the initiating

@@ -1,6 +1,6 @@
 # VPN Commands
 
-Manage **non-node** gateway VPN clients (e.g. a phone, a personal device) and the gateway VPN web UI. Orbit nodes get their own WireGuard identities through `node:new`  -  those don't go through `vpn-client:*`. Spec: [`apps/docs/content/domains/13_vpn/`](../../../apps/docs/content/domains/13_vpn/).
+Manage **non-node** gateway VPN clients (e.g. a phone, a personal device) and the gateway VPN web UI. Orbit nodes get their own WireGuard identities through `node:new`  -  those don't go through `vpn-client:*`. Spec: [`apps/docs/content/domains/13_vpn/`](../../../../apps/docs/content/domains/13_vpn/).
 
 VPN administration is the gateway-local exception: when invoked from a client,
 the CLI calls the gateway API over WireGuard HTTPS and the gateway runs the

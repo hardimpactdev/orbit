@@ -6,11 +6,11 @@ future implementation and tests can follow without guessing.
 
 ## Directory Shape
 
-Use the [`node:new`](../../../../docs/domains/1_node/1_node-new/) shape for
+Use the [`node:new`](../../../../apps/docs/content/domains/1_node/1_node-new/) shape for
 commands with non-trivial behavior:
 
 ```text
-docs/domains/N_family-singular/
+apps/docs/content/domains/N_family-singular/
 ├── README.md
 ├── N_command-name/
 │   ├── command-name.md
@@ -130,13 +130,13 @@ reuse a reserved slot for a different concern.
 Command directories are documentation domains. State families are doctor and
 convergence families. They often align, but they are not the same concept.
 
-Stable state families are `node`, `app`, `workspace`, `process`,
-`proxy`, `firewall_rule`, `tool`, and `schedule`. These are the keys
-accepted by `doctor --family=<family>` and the values carried by warning or
-doctor `family` fields. Machine-readable issue and warning codes use singular
-product prefixes, such as `node.wireguard_peer_missing`,
-`app.fpm_config_missing`, `workspace.path_missing`, `process.runtime_unit_missing`,
-`proxy.route_extra`, and `schedule.unit_extra`.
+Stable state families are `node`, `instance`, `workspace`, `process`,
+`proxy`, `firewall_rule`, `tool`, `schedule`, and `database_connection`. These
+are the keys accepted by `doctor --family=<family>` and the values carried by
+warning or doctor `family` fields. Machine-readable issue and warning codes use
+singular product prefixes, such as `node.wireguard_peer_missing`,
+`instance.runtime_config_missing`, `workspace.path_missing`,
+`process.runtime_unit_missing`, `proxy.route_extra`, and `schedule.unit_extra`.
 
 Documentation domains may also contain command groups that are not state
 families, such as operations, deployments, VPN administration, PHP runtime, and
@@ -241,10 +241,10 @@ artifacts, process reloads, and family handoffs. Do not present that as
 application health or runtime readiness unless the command explicitly owns a live
 readiness contract.
 
-For apps, `app:new` and `app:register` verify command-owned enactment, not
-application HTTP readiness. A newly created or adopted app may still need
+For apps, `app:new` and `instance:register` verify command-owned enactment, not
+application HTTP readiness. A newly created or adopted instance may still need
 project setup steps before it is healthy. Durable runtime health, production
-health checks, and readiness drift belong to `doctor --family=app`.
+health checks, and readiness drift belong to `doctor --family=instance`.
 
 Avoid generic fields such as `app.status: "ready"` on create/register results
 unless the field is durable gateway intent and its meaning is documented. Prefer
@@ -295,8 +295,8 @@ follow the contract without reading decision-history notes.
 ## Doctor Convergence Commands
 
 `orbit doctor` is Orbit's convergence command. Public family filters must use
-product family keys: `node`, `app`, `workspace`, `process`,
-`proxy`, `firewall_rule`, `tool`, and `schedule`.
+product family keys: `node`, `instance`, `workspace`, `process`,
+`proxy`, `firewall_rule`, `tool`, `schedule`, and `database_connection`.
 
 Use `--self` for the caller's gateway-known node identity. Use `--node=<name>`
 for an explicit target node; `--self` and `--node` are mutually exclusive.

@@ -3,7 +3,7 @@
 Caller-local Orbit DNS resolver overrides. Used on the caller machine so
 wildcard development hostnames under a TLD resolve to the target node's
 WireGuard or caller-facing private address. Spec:
-[`apps/docs/content/domains/16_dns/`](../../../apps/docs/content/domains/16_dns/).
+[`apps/docs/content/domains/15_dns/`](../../../../apps/docs/content/domains/15_dns/).
 
 Public DNS for production apps is **not** managed here  -  Orbit uses Cloudflare integration (when configured) for that.
 

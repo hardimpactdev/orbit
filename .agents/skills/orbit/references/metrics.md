@@ -1,7 +1,7 @@
 # Metrics Commands
 
 Metrics commands manage Orbit's optional host-resource observability surface.
-Spec: [`apps/docs/content/domains/20_metrics/`](../../../apps/docs/content/domains/20_metrics/).
+Spec: [`apps/docs/content/domains/19_metrics/`](../../../../apps/docs/content/domains/19_metrics/).
 
 The `metrics` role is disabled by default. Enabling it records and starts
 Prometheus and Grafana as Docker Swarm process definitions on the selected

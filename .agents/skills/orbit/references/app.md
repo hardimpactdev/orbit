@@ -17,7 +17,7 @@ remain valid for infrastructure roles and runtime containers; they are not
 public app command families.
 
 All app and instance commands flow through the gateway. Product contract:
-[`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
+[`apps/docs/content/domains/5_app/`](../../../../apps/docs/content/domains/5_app/).
 
 ## Create or adopt
 

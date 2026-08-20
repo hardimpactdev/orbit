@@ -130,7 +130,7 @@ Add domain-specific sweeps as you spot patterns.
 The architecture's state-families list is the source of truth. Confirm:
 
 - Every family is enumerated in `apps/docs/content/domains/11_operation/README.md` doctor-routing list.
-- Every family is enumerated in `apps/docs/content/domains/17_activity/README.md` doctor-handoff bullets.
+- Every family is enumerated in `apps/docs/content/domains/16_activity/README.md` doctor-handoff bullets.
 - Each `<family>-concepts.md` matches the architecture's family description.
 - Each `<family>-doctor.md` technical contract returns the correct singular family key (`node`, not `nodes`).
 

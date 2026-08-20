@@ -4,11 +4,12 @@ Workspaces are isolated working copies of an app for parallel development (per
 branch, per agent, per task). Each workspace gets its own route
 (`{workspace}.{app}.{tld}` for development apps) and, for PHP apps, its own
 FrankenPHP runtime container. Spec:
-[`apps/docs/content/domains/6_workspace/`](../../../apps/docs/content/domains/6_workspace/).
+[`apps/docs/content/domains/6_workspace/`](../../../../apps/docs/content/domains/6_workspace/).
 
 ## `orbit workspace:new [name]`
 
-Create a workspace intent for an app.
+Create a workspace for one instance: write gateway configuration, create the
+workspace source, and run the workspace setup pipeline.
 
 ```bash
 orbit workspace:new [<name>] [--instance=<name>] [--base=main] [--php-version=<v>] [--json|--stream-json]
@@ -19,10 +20,10 @@ orbit workspace:new [<name>] [--instance=<name>] [--base=main] [--php-version=<v
 | `name` |  -  | Workspace slug (<=63 chars, independent of parent app). |
 | `--instance` |  -  | Parent `app.instance` selector. |
 | `--base` | `main` | Base git ref to branch from. |
-| `--php-version` | inherit | Optional PHP version override (otherwise inherits the app's PHP version). |
+| `--php-version` | owning instance snapshot | Optional PHP version override. When omitted, the workspace copies its owning instance's PHP version at creation. |
 | `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
-`workspace:new` only writes intent. Use `workspace:setup` to converge.
+Use `workspace:setup` later to re-run setup on an existing workspace.
 
 ## `orbit workspace:list`
 

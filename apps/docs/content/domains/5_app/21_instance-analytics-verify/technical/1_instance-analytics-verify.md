@@ -97,7 +97,7 @@ repair surface for router and ingress artifacts.
 | Type | `api:GET /instances/{instance}/analytics/verify` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
-| Properties | `action=verify`, `target_instance`, `target_instance`, and `serving_node`. |
+| Properties | `action=verify`, `target_instance`, and `public_hosts`. |
 
 ## Test Mapping
 

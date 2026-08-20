@@ -204,7 +204,7 @@ Use this canonical fixture set unless the command needs a different case:
 | Entity | Fixture |
 | --- | --- |
 | Gateway node | `gateway-1`, WireGuard `10.6.0.2` |
-| Control node | `control-1`, WireGuard `10.6.0.8` |
+| Operator client | `operator-1`, WireGuard `10.6.0.8` |
 | Development app node | `app-1`, WireGuard `10.6.0.7`, TLD `.test` |
 | Production app node | `app-2` |
 

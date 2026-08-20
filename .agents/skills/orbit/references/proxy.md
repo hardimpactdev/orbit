@@ -1,6 +1,6 @@
 # Proxy Commands
 
-Manage **custom** proxy routes (Caddy site intent)  -  for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`apps/docs/content/domains/8_proxy/`](../../../apps/docs/content/domains/8_proxy/).
+Manage **custom** proxy routes (Caddy site intent)  -  for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`apps/docs/content/domains/8_proxy/`](../../../../apps/docs/content/domains/8_proxy/).
 
 The `proxy` state family also covers app, workspace, gateway, and tool-owned routes  -  `proxy:list` shows all of them, but you can only mutate **custom** ones with `proxy:add` / `proxy:remove`. Drift in the other route kinds is repaired through `doctor --fix --family=proxy --restore`.
 
@@ -37,7 +37,7 @@ orbit proxy:add www.acme.com --node=prod-1 --redirect=https://acme.com --code=30
 List proxy routes tracked by gateway intent.
 
 ```bash
-orbit proxy:list [--node=<name>] [--filter=all|app|workspace|gateway|tool|custom|redirect] [--json]
+orbit proxy:list [--node=<name>] [--filter=all|instance|workspace|gateway|analytics|websocket|s3|tool|custom|redirect] [--json]
 ```
 
 `--filter=custom` is the most useful one for "what did I add via `proxy:add`".

@@ -1,6 +1,6 @@
 # Process Commands
 
-Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). App/workspace host-command process definitions render as one systemd unit per target on Linux and one Orbit-owned launchd user LaunchAgent per target on macOS. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`; launchd labels are `dev.hardimpact.orbit.<runtimeUnit>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
+Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). App/workspace host-command process definitions render as one systemd unit per target on Linux and one Orbit-owned launchd user LaunchAgent per target on macOS. Runtime unit name: `orbit_<app>_<instance>_<workspace|main>_<process>`; launchd labels are `dev.hardimpact.orbit.<runtimeUnit>`. Spec: [`apps/docs/content/domains/7_process/`](../../../../apps/docs/content/domains/7_process/).
 
 App/workspace runtime units receive Laravel Vite-compatible URL/TLS env fields:
 `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and

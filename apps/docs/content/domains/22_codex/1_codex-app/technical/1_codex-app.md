@@ -38,8 +38,8 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/codex/apps/{instance}` | `codex:app` on instance serving node and target node | Add or update the instance project entry. |
-| `DELETE` | `/api/codex/apps/{instance}` | `codex:app` on instance serving node and target node | Remove the instance project entry. |
+| `POST` | `/api/codex/apps/{project}` | `codex:app` on instance serving node and target node | Add or update the instance project entry. |
+| `DELETE` | `/api/codex/apps/{project}` | `codex:app` on instance serving node and target node | Remove the instance project entry. |
 | `GET` | `/api/codex/projects` | `codex:app` on target node | List target-node Codex App projects. |
 
 ## Behavior Contract

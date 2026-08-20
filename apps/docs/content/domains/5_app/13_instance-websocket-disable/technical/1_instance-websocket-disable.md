@@ -105,7 +105,7 @@ disable attempt.
 | Type | `api:POST /instances/{instance}/websocket/disable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
-| Properties | `action=disable`, `target_instance`, `target_instance`, `serving_node`, and `public_hosts=[]`. |
+| Properties | `action=disable`, `target_instance`, and `public_hosts=[]`. |
 
 ## Test Mapping
 

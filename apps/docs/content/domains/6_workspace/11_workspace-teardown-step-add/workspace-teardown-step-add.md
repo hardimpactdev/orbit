@@ -12,8 +12,7 @@ orbit workspace-teardown-step:add --command="dropdb my_app_feature" --instance=<
 
 The `workspace-teardown-step:add` command registers a shell command that
 runs whenever Orbit removes a workspace for the selected instance
-([`workspace:remove`](../5_workspace-remove/workspace-remove.md)) or prunes
-stale workspaces for the selected instance
+([`workspace:remove`](../5_workspace-remove/workspace-remove.md)). Use it
 for app-specific cleanup that needs the workspace path intact, such as
 dropping feature-specific databases or notifying external services.
 
@@ -50,7 +49,7 @@ The following rules govern how a step is added and when it runs.
 ### Deferred Execution
 
 Adding a step does not execute it immediately. Steps run during
-[`workspace:remove`](../5_workspace-remove/workspace-remove.md) and
+[`workspace:remove`](../5_workspace-remove/workspace-remove.md).
 
 ### Execution Timing
 
@@ -88,14 +87,16 @@ identified by the numeric `id` used by
 
 ### Failure Handling at Execution
 
-reported as a non-fatal structured warning on the consumer command.
-Subsequent teardown steps still run, and the workspace removal continues
-with runtime container removal and worktree removal.
+A failed teardown step is reported as a non-fatal structured warning on
+[`workspace:remove`](../5_workspace-remove/workspace-remove.md). Subsequent
+teardown steps still run, and the workspace removal continues with runtime
+container removal and worktree removal.
 
 ### No Runtime Lock
 
 The command never blocks on, or aborts because of, in-flight
-teardown pipeline run that begins after the gateway commit.
+`workspace:remove` runs. The new step takes effect on the next teardown
+pipeline run that begins after the gateway commit.
 
 ## Examples
 

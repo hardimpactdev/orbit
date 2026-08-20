@@ -7,7 +7,7 @@
 **Effects:** `read`, `local-only`.
 
 **Prerequisites:**
-- The command is running on a non-gateway operator machine.
+- The command runs on the caller machine against local resolver state.
 - The caller platform is Linux or macOS.
 
 ## Signature
@@ -65,7 +65,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Not supported on gateway | The command is run on a gateway node. | Failure before local resolver reads |
 | Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 

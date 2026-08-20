@@ -1,6 +1,6 @@
 # Activity Commands
 
-Gateway-owned activity history. Records every CLI/API command's type, effect, subject, causer, and correlation id so you can trace who did what. Spec: [`apps/docs/content/domains/17_activity/`](../../../apps/docs/content/domains/17_activity/).
+Gateway-owned activity history. Gateway API endpoints record type, effect, subject, causer, and correlation id. A CLI command that calls a matching gateway API relies on that endpoint's activity entry. CLI-only local state changes emit nothing because the CLI has no trusted shared activity writer. Spec: [`apps/docs/content/domains/16_activity/`](../../../../apps/docs/content/domains/16_activity/).
 
 Activity is **history**, not metrics and not live state. Use `doctor` for live state.
 
