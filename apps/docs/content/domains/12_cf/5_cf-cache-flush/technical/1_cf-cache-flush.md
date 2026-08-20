@@ -23,20 +23,20 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, or bare app name with a Cloudflare-backed `App.domain`. |
+| `zone` | `--zone` or prompt `cf_cache_flush_zone` | Required in non-interactive input mode. | `Never.` | Prompted in interactive input mode. | Zone ID, exact zone domain, dotted `app.instance` selector, or a bare app name that resolves to exactly one instance with a Cloudflare-backed domain. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution
 
 1. Resolve `zone` from `--zone`, or from prompt `cf_cache_flush_zone` in
    interactive input mode.
-2. Current gateway behavior: if the value matches a app name, resolve the
-   zone from that app's `App.domain` field (`CloudflareZoneResolver`).
+2. If the value resolves as a dotted instance selector, use that instance's
+   domain. A bare app selector is valid only when the app has exactly one
+   instance; otherwise fail with `error.code=validation_failed` and
+   `error.meta.reason=instance_required`.
 3. Otherwise resolve the value as a Cloudflare zone ID or exact zone domain
    name.
 4. Fail before provider mutation when the zone cannot be resolved.
-5. Direction (pending implementation): instance-owned domain resolution via
-   dotted `app.instance` selectors is intended, but not current behavior.
 
 ## Input Mode Contracts
 
@@ -67,6 +67,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
 
 ## Doctor Relationship
@@ -83,8 +84,10 @@ Primary test owners:
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI zone and app resolution, interactive zone prompt, non-interactive missing-zone validation, and gateway forwarding. |
 | `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human progress-tree flush output and JSON validation and error rendering. |
+| `apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php` | Shared bare single-instance, multi-instance rejection, and dotted-instance zone resolution. |
 
-There is no gateway-side coverage for this command contract: `CloudflareController::flushCache` has no dedicated routine gateway feature test owner. CLI forwarding, zone resolution, and renderer output are covered by the linked CLI tests above.
+The shared gateway resolver coverage is owned by `CloudflareControllerTest`.
+CLI forwarding and renderer output are covered by the linked CLI tests above.
 
 Input-mode-specific test mapping lives in:
 

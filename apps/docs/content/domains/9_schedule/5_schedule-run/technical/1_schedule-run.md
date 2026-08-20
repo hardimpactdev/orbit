@@ -76,7 +76,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run failed | The scheduled command or script exits non-zero. | `error.code=schedule.run_failed` |
 | Run timed out | The scheduled command or script exceeds its stored execution timeout. | `error.code=schedule.run_failed`; the timeout result is retained in run history. |
-| Run history write failed | The gateway could not persist the run-history record. | `error.code=schedule.history_write_failed` |
 
 The command follows the shared exit status policy. Scheduled process failure is
 an Orbit-handled command failure; the scheduled process result is captured in

@@ -634,7 +634,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -650,6 +651,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -704,7 +712,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -720,6 +729,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -772,7 +788,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -788,6 +805,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14721,22 +14745,10 @@
                     "not_found"
                 ],
                 "instance": [
-                    "exec_command_not_executable",
-                    "exec_command_not_found",
-                    "exec_container_not_running",
-                    "exec_docker_unavailable",
-                    "exec_node_unreachable",
-                    "exec_unsupported_runtime",
                     "not_found"
                 ],
                 "workspace": [
                     "ambiguous_name",
-                    "exec_command_not_executable",
-                    "exec_command_not_found",
-                    "exec_container_not_running",
-                    "exec_docker_unavailable",
-                    "exec_node_unreachable",
-                    "exec_unsupported_runtime",
                     "not_found",
                     "unsupported_for_production"
                 ],

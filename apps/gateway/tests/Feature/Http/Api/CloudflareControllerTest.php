@@ -232,3 +232,93 @@ it('adds a cache rule for an app without exposing project vocabulary', function 
         ->assertJsonPath('success.data.rule.app', 'docs')
         ->assertJsonMissingPath('success.data.rule.project');
 });
+
+it('requires an explicit instance for a multi-instance cache rule target', function (): void {
+    $gateway = createCloudflareApiCallerNode();
+    $app = App::factory()->create(['name' => 'docs']);
+
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.staging.example.com',
+        ),
+    ]);
+
+    Http::fake();
+
+    $response = $this->call(
+        'POST',
+        '/api/cloudflare/cache-rules/docs',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'app')
+        ->assertJsonPath('error.meta.reason', 'instance_required');
+
+    Http::assertNothingSent();
+});
+
+it('adds a cache rule for an explicit dotted instance target', function (): void {
+    $gateway = createCloudflareApiCallerNode();
+    $app = App::factory()->create(['name' => 'docs']);
+
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.staging.example.net',
+        ),
+    ]);
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => true,
+            'result' => [[
+                'id' => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'name' => 'example.net',
+                'status' => 'active',
+            ]],
+        ]),
+        'https://api.cloudflare.com/client/v4/zones/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/rulesets' => Http::sequence()
+            ->push(['success' => true, 'result' => []])
+            ->push(['success' => true, 'result' => ['id' => 'cache-rules']]),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/cloudflare/cache-rules/docs.staging',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.rule.app', 'docs');
+});

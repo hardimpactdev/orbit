@@ -58,7 +58,7 @@ final class AppShowCommand extends GatewayCommand
 
     private function resolveAppSelector(): string|int
     {
-        $selector = $this->stringArgument('app');
+        $selector = $this->stringArgument('app') ?? $this->appFromOrbitMarker();
 
         if ($selector !== null) {
             return $selector;

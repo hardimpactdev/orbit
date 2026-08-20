@@ -11,15 +11,15 @@ orbit cf-cache-rule:add <app> [--json]
 ## Examples
 
 ```bash
-orbit cf-cache-rule:add docs
+orbit cf-cache-rule:add docs.production
 orbit cf-cache-rule:add docs --json
 ```
 
 ## Arguments and options
 
-- `app`: Bare app name. Current gateway resolution uses
-  `App.domain` to find the Cloudflare zone. Dotted `app.instance`
-  selectors are not implemented.
+- `app`: Dotted `app.instance` selector, or a bare app name when the app has
+  exactly one instance. The selected instance's domain determines the
+  Cloudflare zone.
 - `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens
@@ -33,7 +33,7 @@ lets Cloudflare cache public responses while respecting origin `Cache-Control`
 headers.
 
 The command does not change instance deployment policy, process state, or proxy
-routes. Direction (pending): zone resolution from instance-owned domains.
+routes.
 
 ## Output
 
@@ -47,7 +47,8 @@ machine-readable output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named app exists and has a Cloudflare-backed `App.domain`.
+- The selected instance exists and has a Cloudflare-backed domain.
+- A bare app selector resolves to exactly one instance.
 
 ## Related Commands
 

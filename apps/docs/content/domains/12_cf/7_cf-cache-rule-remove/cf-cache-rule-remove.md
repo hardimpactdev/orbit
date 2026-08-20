@@ -11,15 +11,15 @@ orbit cf-cache-rule:remove <app> [--force] [--json]
 ## Examples
 
 ```bash
-orbit cf-cache-rule:remove docs
+orbit cf-cache-rule:remove docs.production
 orbit cf-cache-rule:remove docs --force --json
 ```
 
 ## Arguments and options
 
-- `app`: Bare app name. Current gateway resolution uses
-  `App.domain` to find the Cloudflare zone. Dotted `app.instance`
-  selectors are not implemented.
+- `app`: Dotted `app.instance` selector, or a bare app name when the app has
+  exactly one instance. The selected instance's domain determines the
+  Cloudflare zone.
 - `--force`: Confirm removal without an interactive prompt.
 - `--json`: Return the removal result in the JSON output.
 
@@ -29,9 +29,8 @@ Run `orbit cf-cache-rule:remove <app>` to remove the Cloudflare cache rule
 that Orbit manages for the app's Cloudflare zone.
 
 `cf-cache-rule:remove` asks the gateway to remove Orbit's standard Cloudflare
-cache rule for the zone resolved from the app's domain. It does not remove
-app domains, DNS records, proxy routes, or deployment policy. Direction
-(pending): zone resolution from instance-owned domains.
+cache rule for the zone resolved from the selected instance's domain. It does
+not remove instance domains, DNS records, proxy routes, or deployment policy.
 
 Removal is destructive. Interactive use asks for confirmation unless `--force`
 is supplied. Non-interactive use, including `--json`, requires `--force`.
@@ -48,7 +47,8 @@ output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:remove` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named app exists and has a Cloudflare-backed `App.domain`.
+- The selected instance exists and has a Cloudflare-backed domain.
+- A bare app selector resolves to exactly one instance.
 - A Cloudflare cache rule managed by Orbit exists for that zone.
 
 ## Related Commands

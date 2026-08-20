@@ -55,7 +55,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - `database_connection.not_found` when the selected or inferred connection does not exist.
 - `database_connection.target_not_found` when the target has no matching mapping.
-- `database_query.connection_ambiguous` when `--connection` is required but omitted.
+- `database_connection.ambiguous_target` when `--connection` is required but omitted.
 - `database_query.execution_failed` for schema inspection failures.
 
 ## Doctor Relationship

@@ -89,6 +89,19 @@ trait ResolvesHostContext
         return null;
     }
 
+    protected function appFromOrbitMarker(): ?string
+    {
+        $instance = $this->instanceFromOrbitMarker();
+
+        if ($instance === null) {
+            return null;
+        }
+
+        $separator = strpos($instance, '.');
+
+        return $separator === false ? $instance : substr($instance, 0, $separator);
+    }
+
     /**
      * @param  array<string, mixed>  $query
      * @return array<string, mixed>
