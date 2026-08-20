@@ -17,7 +17,7 @@ records.
 The workspace family owns these facts:
 
 - gateway-owned workspace records: name, parent app, selected instance,
-  workspace path, derived hostname, PHP version override or inheritance, and
+  workspace path, derived hostname, concrete PHP version, and
   lifecycle status;
 - workspace source location: the managed workspace path exists on the
   effective workspace node and is allowed by the workspace source driver that

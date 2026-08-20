@@ -105,6 +105,8 @@ it('keeps active CLI app and instance command surfaces on App vocabulary', funct
     $instanceList = (string) file_get_contents($cliRoot.'/app/Commands/App/InstanceListCommand.php');
     $appShow = (string) file_get_contents($cliRoot.'/app/Commands/App/AppShowCommand.php');
     $prompts = (string) file_get_contents($cliRoot.'/app/Commands/Concerns/PromptsForGatewayRegistryEntities.php');
+    $gatewayPrompts = (string) file_get_contents(base_path('app/Concerns/PromptsForRegistryEntities.php'));
+    $codexApp = (string) file_get_contents($cliRoot.'/app/Commands/Codex/CodexAppCommand.php');
 
     expect($instanceList)
         ->toContain('{--app= : Limit results to one app}')
@@ -124,6 +126,16 @@ it('keeps active CLI app and instance command surfaces on App vocabulary', funct
         ->toContain("headers: ['App', 'Host', 'Node', 'Repository']")
         ->not->toContain('function promptForVisibleProject')
         ->not->toContain("headers: ['Project', 'Host', 'Node', 'Repository']");
+
+    expect($gatewayPrompts)
+        ->toContain("headers: ['App', 'Host', 'Node', 'Repository']")
+        ->toContain("headers: ['Workspace', 'App', 'Node', 'URL', 'Status']")
+        ->not->toContain("headers: ['Project', 'Host', 'Node', 'Repository']")
+        ->not->toContain("headers: ['Workspace', 'Project', 'Node', 'URL', 'Status']");
+
+    expect($codexApp)
+        ->toContain('Register Orbit apps in Codex App on a target node.')
+        ->not->toContain('Register Orbit projects in Codex App on a target node.');
 });
 
 /**

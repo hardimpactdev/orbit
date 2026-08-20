@@ -105,7 +105,7 @@ These terms define what PHP commands apply to nodes and how partial application 
 
 These boundaries define what PHP runtime commands own and what they must not touch.
 
-- **PHP-domain boundaries:** PHP runtime commands own selection, inheritance,
+- **PHP-domain boundaries:** PHP runtime commands own concrete version selection,
   target resolution, runtime reporting, and partial-application warnings for
   `php:*`. They do not install or remove host PHP runtimes, own runtime image
   lifecycle, invent `doctor --family=php`, read `.php-version`, mutate Composer

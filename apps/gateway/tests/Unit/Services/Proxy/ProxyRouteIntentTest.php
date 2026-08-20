@@ -308,14 +308,12 @@ describe('ProxyRouteIntent', function (): void {
             );
             $this->fail('Expected a proxy domain conflict.');
         } catch (GatewayApiException $exception) {
-            $publicOwnerType = $ownerType === 'app' ? 'instance' : $ownerType;
-
             expect($exception->errorCode())
                 ->toBe('proxy.domain_conflict')
                 ->and($exception->errorMeta())
                 ->toMatchArray([
                     'domain' => 'docs.test',
-                    'owner_type' => $publicOwnerType,
+                    'owner_type' => $ownerType,
                 ]);
         }
     })->with([
@@ -359,14 +357,12 @@ describe('ProxyRouteIntent', function (): void {
             app(ProxyRouteIntent::class)->remove('docs.test');
             $this->fail('Expected owned route removal to be denied.');
         } catch (GatewayApiException $exception) {
-            $publicOwnerType = $ownerType === 'app' ? 'instance' : $ownerType;
-
             expect($exception->errorCode())
                 ->toBe('proxy.owned_route_denied')
                 ->and($exception->errorMeta())
                 ->toMatchArray([
                     'domain' => 'docs.test',
-                    'owner_type' => $publicOwnerType,
+                    'owner_type' => $ownerType,
                 ]);
         }
 
@@ -646,7 +642,7 @@ describe('ProxyRouteIntent', function (): void {
         $route->forceFill(['app_id' => $compatibility->id])->save();
 
         expect(fn (): array => app(ProxyRouteIntent::class)->remove('docs.test'))
-            ->toThrow(GatewayApiException::class, "Domain 'docs.test' is owned by instance.")
+            ->toThrow(GatewayApiException::class, "Domain 'docs.test' is owned by app.")
             ->and(ProxyRoute::query()->whereKey($route->id)->exists())
             ->toBeTrue();
     });
@@ -707,7 +703,7 @@ describe('ProxyRouteIntent', function (): void {
         $instance->delete();
 
         expect(fn (): array => app(ProxyRouteIntent::class)->remove('orphan-app.test'))
-            ->toThrow(GatewayApiException::class, "Domain 'orphan-app.test' is owned by instance.")
+            ->toThrow(GatewayApiException::class, "Domain 'orphan-app.test' is owned by app.")
             ->and(ProxyRoute::query()->where('domain', 'orphan-app.test')->exists())
             ->toBeTrue();
     });

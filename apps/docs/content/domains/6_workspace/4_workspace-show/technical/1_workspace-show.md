@@ -66,11 +66,11 @@ belong to that concrete instance.
    target workspace through gateway-owned access policy. If not authorized,
    fail before side effects.
 3. **Result Assembly.** Collect the workspace record and the durable gateway
-   configuration the workspace owns or inherits:
+   configuration associated with the workspace:
    - workspace registry: name, parent app, selected instance, branch,
      workspace path, canonical URL;
    - owning node: name and host (from the workspace's effective node);
-   - runtime expectations: effective PHP version and inheritance source,
+   - runtime expectations: the workspace's concrete PHP version,
      runtime container, derived hostname;
    - inherited process: instance-owned process definitions inherited by this
      workspace (registry-shaped, not live status);

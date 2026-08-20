@@ -8,8 +8,8 @@ Show workspace registry configuration and runtime expectations.
 configuration. It reports the parent app, required selected instance,
 effective owning node, branch, path, and canonical URL.
 
-It also returns runtime expectations (effective PHP version and inheritance
-process definitions, the workspace-owned proxy route, and a summary of the most
+It also returns runtime expectations (the concrete PHP version and inherited
+process definitions), the workspace-owned proxy route, and a summary of the most
 recent setup run.
 
 This command is a registry-only read; it does not perform live probes on app

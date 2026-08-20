@@ -564,7 +564,7 @@ describe('ProxyRouteQuery', function (): void {
         'websocket workspace identity' => ['app-websocket', 'websocket', 'workspace identity'],
     ]);
 
-    it('normalizes the primary app owner type even for malformed public ownership metadata', function (
+    it('retains stored owner types for malformed public ownership metadata', function (
         string $ownerType,
         string $validKind,
         string $invalidity,
@@ -582,9 +582,7 @@ describe('ProxyRouteQuery', function (): void {
 
         invalidate_proxy_route_query_ownership($route, $app, $instance, $validKind, $invalidity);
 
-        $expectedOwnerType = $ownerType === 'app' ? 'instance' : $ownerType;
-
-        expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($expectedOwnerType);
+        expect(app(ProxyRouteQuery::class)->publicOwnerType($route->fresh()))->toBe($ownerType);
     })->with([
         'primary app missing app' => ['app', 'app', 'missing app'],
         'primary app missing instance' => ['app', 'app', 'missing instance'],
