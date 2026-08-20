@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 366,
-    "unique_candidate_commit_count": 262,
+    "record_count": 367,
+    "unique_candidate_commit_count": 263,
     "orphan_count": 0,
     "records": [
         {
@@ -9509,6 +9509,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-205115-codex-metrics-ubuntu-only",
+            "slug": "codex-metrics-ubuntu-only",
+            "timestamp": "2026-08-20-205115",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "cf688dc0f7e496ba76f744567985242ec41424f9",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
