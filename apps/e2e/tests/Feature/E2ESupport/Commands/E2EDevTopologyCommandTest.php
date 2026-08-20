@@ -179,7 +179,40 @@ it('waits for the overlaid gateway API inside the acquisition cleanup boundary',
         ->and($readiness)
         ->toBeLessThan($cleanupBoundary)
         ->and($methodSource)
+        ->toContain('requiresGatewayApiReadiness($lease)')
         ->toContain("measure('gateway-api.ready'");
+});
+
+it('requires gateway API readiness only when the retained topology has a gateway', function (): void {
+    $command = app(E2EDevTopologyCommand::class);
+    $operator = devTopologyFakeInstance('orbit-e2e-dev-abc123-operator');
+    $gateway = devTopologyFakeInstance('orbit-e2e-dev-abc123-gateway');
+
+    $operatorOnly = new E2ETopologyLease(
+        kind: E2ETopologyKind::Operator,
+        operator: $operator,
+        gateway: null,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/dev/null', '/dev/null'),
+        rebuild: fn (): array => ['instances' => [], 'snapshotReset' => null],
+    );
+    $operatorGateway = new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGateway,
+        operator: $operator,
+        gateway: $gateway,
+        dev: null,
+        prod: null,
+        sshKeyPair: new SshKeyPair('/dev/null', '/dev/null'),
+        rebuild: fn (): array => ['instances' => [], 'snapshotReset' => null],
+    );
+
+    $requiresReadiness = fn (E2ETopologyLease $lease): bool => $this->requiresGatewayApiReadiness($lease);
+
+    expect($requiresReadiness->call($command, $operatorOnly))
+        ->toBeFalse()
+        ->and($requiresReadiness->call($command, $operatorGateway))
+        ->toBeTrue();
 });
 
 it('rejects unsupported topology kinds with a stable json error', function (): void {

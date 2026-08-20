@@ -361,12 +361,15 @@ class E2EDevTopologyCommand extends Command
 
         try {
             $timer->measure('checkout.overlay', fn () => $harness->withCurrentCheckout($overlayRoles));
-            $timer->measure('gateway-api.ready', static fn () => E2EGatewayApi::waitForGatewayApi(
-                $lease->operator(),
-                $config->operatorUser,
-                $lease->sshKeyPair(),
-                $lease->gatewayApiIp(),
-            ));
+
+            if ($this->requiresGatewayApiReadiness($lease)) {
+                $timer->measure('gateway-api.ready', static fn () => E2EGatewayApi::waitForGatewayApi(
+                    $lease->operator(),
+                    $config->operatorUser,
+                    $lease->sshKeyPair(),
+                    $lease->gatewayApiIp(),
+                ));
+            }
         } catch (Throwable $exception) {
             try {
                 $lease->cleanup();
@@ -396,6 +399,11 @@ class E2EDevTopologyCommand extends Command
             'checkouts' => $harness->checkouts(),
             'timings' => $this->normalizeTimings($timer->events()),
         ];
+    }
+
+    private function requiresGatewayApiReadiness(E2ETopologyLease $lease): bool
+    {
+        return $lease->gateway() instanceof E2EInstance;
     }
 
     private function provider(E2EConfig $config, string $provider): E2ETopologyProvider
