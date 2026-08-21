@@ -15,7 +15,7 @@ orbit codex:app list --node=<node> [--json]
 reads the source path and builds the SSH alias from that instance's serving
 node. The Codex App target must be an active, visible, non-gateway macOS node.
 
-The command edits only `~/.codex/codex-app/config.json` on the target and then
-applies `codex://codex-app/apply-config`. It does not register workspaces,
-change app runtime placement, or create roles, grants, SSH keys, or WireGuard
-identity material.
+`add` and `remove` edit only `~/.codex/codex-app/config.json` on the target and
+then apply `codex://codex-app/apply-config`. `list` is read-only. None of the
+actions register workspaces, change app runtime placement, or create roles,
+grants, SSH keys, or WireGuard identity material.
