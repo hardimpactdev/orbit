@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 398,
-    "unique_candidate_commit_count": 294,
+    "record_count": 399,
+    "unique_candidate_commit_count": 295,
     "orphan_count": 0,
     "records": [
         {
@@ -10240,6 +10240,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "97dade62e73409a8cd0023474f45c6706a53bcf3",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-21-135812-codex-release-0-1-196-audit",
+            "slug": "codex-release-0-1-196-audit",
+            "timestamp": "2026-08-21-135812",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "b0a31d351ece5f948e70089f97740d115f81e6ac",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

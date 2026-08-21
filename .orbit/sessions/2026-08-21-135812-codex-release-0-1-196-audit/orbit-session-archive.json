@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T11:58:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-release-0.1.196-audit/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-135812-codex-release-0-1-196-audit",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T115620Z-b91109995128.json"
+    ],
+    "entry_digests": {
+        "loop.md": "32ce2503f7d8e6cb3603cedfc45b2f57bae87cdafb3b59984fba5c1b6d81e731",
+        "quality-gates/quality-check-2026-08-21T115620Z-b91109995128.json": "d06d04f0bf285333e5a3480c9e099b7ce7f71d52d74156bc90468647c83629e0"
+    },
+    "slug": "codex-release-0-1-196-audit",
+    "requested_slug": "codex-release-0-1-196-audit",
+    "compatible_slugs": [
+        "codex-release-0-1-196-audit"
+    ],
+    "branch": "codex/release-0.1.196-audit",
+    "candidate_commit": "b0a31d351ece5f948e70089f97740d115f81e6ac",
+    "accepted_feature_tip": "b0a31d351ece5f948e70089f97740d115f81e6ac",
+    "accepted_main_tip": "20e5baf90f2974d69f09e9e2455a347a778031b7",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
