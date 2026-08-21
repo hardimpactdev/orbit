@@ -1,0 +1,4 @@
+Command: bin/orbit-prepare-worktree-test
+Initial result: failed because the fixture omitted the TypeScript SDK package added by commit 2e72b4275
+Root cause: the production preparation script unconditionally installs packages/sdk-typescript, while the focused fixture had neither a tracked package directory nor an npm stub
+Final result: passed after adding a tracked minimal package.json and npm stub to the isolated fixture

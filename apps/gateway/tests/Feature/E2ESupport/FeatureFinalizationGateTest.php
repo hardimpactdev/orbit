@@ -24,6 +24,7 @@ it('documents one compact zero-touch loop contract', function (): void {
         ->toContain('- Blocker: none')
         ->toContain('## Feedback')
         ->toContain('.orbit/feedback.jsonl')
+        ->not->toContain('Allowed states are')
         ->not->toContain('Final Distillation')
         ->not->toContain('Fresh analyzer')
         ->not->toContain('Candidate Signals While Working')
@@ -75,7 +76,7 @@ it('lints the compact loop contract without historical ceremony', function (): v
     }
 });
 
-it('lints a completed packet copied from the loop template without editing its guidance', function (): void {
+it('lints a completed packet copied from the data-only loop template', function (): void {
     $template = (string) file_get_contents(repo_path('LOOP.md.example'));
     $packet = str_replace(
         [
@@ -135,17 +136,15 @@ it('documents optional compact Scope transition framing without a new row or cer
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
 
-    foreach ([$template, $harness] as $doc) {
-        expect($doc)
-            ->toContain('primitive=')
-            ->toContain('transitions=')
-            ->toContain('success:')
-            ->toContain('failure:')
-            ->toContain('retry:')
-            ->toContain('stop-restart:')
-            ->toContain('stale:')
-            ->toContain('Omit the clause');
-    }
+    expect($harness)
+        ->toContain('primitive=')
+        ->toContain('transitions=')
+        ->toContain('success:')
+        ->toContain('failure:')
+        ->toContain('retry:')
+        ->toContain('stop-restart:')
+        ->toContain('stale:')
+        ->toContain('Omit the clause');
 
     expect($skill)
         ->toContain('primitive=')
@@ -154,6 +153,8 @@ it('documents optional compact Scope transition framing without a new row or cer
 
     expect($template)
         ->toMatch('/^- Owned:\s*$/m')
+        ->not->toContain('primitive=')
+        ->not->toContain('transitions=')
         ->not->toContain('## Transition Framing')
         ->not->toContain('- Framing:');
 });

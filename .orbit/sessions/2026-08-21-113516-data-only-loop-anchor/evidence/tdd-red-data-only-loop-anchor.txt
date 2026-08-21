@@ -1,0 +1,8 @@
+Command: bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/FeatureFinalizationGateTest.php tests/Feature/E2ESupport/FeatureAcceptanceTest.php
+Result: expected failure
+Tests: 303 total, 300 passed, 3 failed
+
+Failures:
+- LOOP.md.example still contained "Allowed states are".
+- LOOP.md.example still contained "primitive=".
+- LOOP.md.example still contained "exactly one of target= or command=".
