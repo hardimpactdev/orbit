@@ -38,7 +38,7 @@ function quality_gate_artifact_problem(string $worktree, string $gate, string $l
         return "{$label} is required, but latest {$gate} artifact payload is invalid";
     }
 
-    $reservedProblem = reserved_quality_artifact_problem($gate, $payload);
+    $reservedProblem = reserved_quality_artifact_problem($gate, $payload, $worktree);
 
     if ($reservedProblem !== null) {
         return "{$label} is required, but latest {$gate} artifact {$reservedProblem}";
@@ -64,7 +64,7 @@ function quality_gate_artifact_problem(string $worktree, string $gate, string $l
 }
 
 /** @param array<string, mixed> $payload */
-function reserved_quality_artifact_problem(string $gate, array $payload): ?string
+function reserved_quality_artifact_problem(string $gate, array $payload, ?string $worktree = null): ?string
 {
     $expected = match ($gate) {
         'quality-check' => [
@@ -105,6 +105,16 @@ function reserved_quality_artifact_problem(string $gate, array $payload): ?strin
     sort($expectedLabels);
     sort($actualLabels);
 
+    if ($worktree !== null) {
+        $candidateLabels = candidate_quality_check_labels($worktree, $expectedLabels);
+
+        if ($candidateLabels === null) {
+            return 'requires the exact expected subgate set';
+        }
+
+        $expectedLabels = $candidateLabels;
+    }
+
     if ($actualLabels !== $expectedLabels) {
         return 'requires the exact expected subgate set';
     }
@@ -116,6 +126,93 @@ function reserved_quality_artifact_problem(string $gate, array $payload): ?strin
     }
 
     return null;
+}
+
+/**
+ * Read the candidate declarations from its committed HEAD. The current labels
+ * remain a required floor, while matching data and producer declarations may
+ * add new labels in the same candidate that introduces their checks. Retiring
+ * a label requires a prior verifier change that deliberately lowers this floor.
+ *
+ * @param  list<string>  $currentLabels
+ * @return list<string>|null
+ */
+function candidate_quality_check_labels(string $worktree, array $currentLabels): ?array
+{
+    $declaration = run_git($worktree, ['show', 'HEAD:bin/orbit-quality-subgates.php']);
+    $producer = run_git($worktree, ['show', 'HEAD:bin/quality-check.sh']);
+
+    if ($declaration['exit_code'] !== 0 || $producer['exit_code'] !== 0) {
+        return null;
+    }
+
+    $declaredLabels = parse_candidate_php_quality_labels($declaration['stdout']);
+    $producerLabels = parse_candidate_shell_quality_labels($producer['stdout']);
+
+    if ($declaredLabels === null || $producerLabels === null) {
+        return null;
+    }
+
+    sort($declaredLabels);
+    sort($producerLabels);
+    sort($currentLabels);
+
+    if (
+        $declaredLabels !== $producerLabels
+        || count($declaredLabels) !== count(array_unique($declaredLabels))
+        || array_diff($currentLabels, $declaredLabels) !== []
+    ) {
+        return null;
+    }
+
+    return $declaredLabels;
+}
+
+/** @return list<string>|null */
+function parse_candidate_php_quality_labels(string $declaration): ?array
+{
+    $pattern = '/\A<\?php\R\Rdeclare\(strict_types=1\);\R\R'
+        .'const QUALITY_CHECK_EXPECTED_SUBGATES = \[\R'
+        .'(?P<body>(?:    \'[a-z0-9_]+\',\R)+)'
+        .'\];\R?\z/';
+
+    if (preg_match($pattern, $declaration, $matches) !== 1) {
+        return null;
+    }
+
+    return parse_candidate_quality_label_lines($matches[1], "/^'([a-z0-9_]+)',$/");
+}
+
+/** @return list<string>|null */
+function parse_candidate_shell_quality_labels(string $producer): ?array
+{
+    if (preg_match_all('/^CHECK_LABELS=\(\R(?P<body>.*?)^\)/ms', $producer, $matches) !== 1) {
+        return null;
+    }
+
+    return parse_candidate_quality_label_lines($matches['body'][0], '/^([a-z0-9_]+)$/');
+}
+
+/** @return list<string>|null */
+function parse_candidate_quality_label_lines(string $body, string $pattern): ?array
+{
+    $lines = preg_split('/\R/', trim($body));
+
+    if (! is_array($lines) || $lines === []) {
+        return null;
+    }
+
+    $labels = [];
+
+    foreach ($lines as $line) {
+        if (preg_match($pattern, trim($line), $matches) !== 1) {
+            return null;
+        }
+
+        $labels[] = $matches[1];
+    }
+
+    return $labels;
 }
 
 /**
@@ -212,4 +309,3 @@ function artifact_timestamp(array $payload, string $path): int
 
     return $modifiedAt === false ? 0 : $modifiedAt;
 }
-

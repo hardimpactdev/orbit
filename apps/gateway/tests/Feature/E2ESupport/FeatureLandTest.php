@@ -902,6 +902,8 @@ function land_create_fixture(): array
     mkdir("{$repo}/bin", recursive: true);
     file_put_contents("{$repo}/apps/cli/runtime.php", "<?php\n");
     copy(repo_path('bin/orbit-loop-contract.php'), "{$repo}/bin/orbit-loop-contract.php");
+    copy(repo_path('bin/orbit-quality-subgates.php'), "{$repo}/bin/orbit-quality-subgates.php");
+    copy(repo_path('bin/quality-check.sh'), "{$repo}/bin/quality-check.sh");
 
     land_run($repo, ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps', 'bin']);
     land_run($repo, ['git', 'commit', '-m', 'Initial commit']);
@@ -993,10 +995,10 @@ function land_write_accepted_loop(string $repo, string $worktree, string $gate =
 /** @return array<string, int> */
 function land_quality_check_subgates(): array
 {
-    $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    $declaration = (string) file_get_contents(repo_path('bin/orbit-quality-subgates.php'));
     $constant = [];
 
-    if (preg_match('/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s', $hook, $constant) !== 1) {
+    if (preg_match('/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s', $declaration, $constant) !== 1) {
         throw new RuntimeException('Unable to read finalization quality-check subgates.');
     }
 

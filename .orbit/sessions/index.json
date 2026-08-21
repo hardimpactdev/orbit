@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 396,
-    "unique_candidate_commit_count": 292,
+    "record_count": 397,
+    "unique_candidate_commit_count": 293,
     "orphan_count": 0,
     "records": [
         {
@@ -10199,6 +10199,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-21-134027-codex-quality-subgate-bootstrap",
+            "slug": "codex-quality-subgate-bootstrap",
+            "timestamp": "2026-08-21-134027",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "00e14969f2b3586182dd859e2273a8e40274c745",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
