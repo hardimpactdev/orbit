@@ -931,11 +931,6 @@ final class InstanceController implements Loggable
         return in_array($this->currentAction, ['list', 'show'], true) ? ActivityLogType::Read : ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return match ($this->currentAction) {

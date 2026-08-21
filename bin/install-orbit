@@ -662,7 +662,7 @@ ensure_gateway_app_key() {
 }
 
 ensure_forward_install_image_archives_flag() {
-    if [ -z "$GATEWAY_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
+    if [ -z "$GATEWAY_IMAGE_ARCHIVE" ] && [ -z "$CADDY_IMAGE_ARCHIVE" ] && [ -z "$DNSMASQ_IMAGE_ARCHIVE" ] && [ -z "$FRANKENPHP_IMAGE_ARCHIVE" ] && [ -z "$WG_EASY_IMAGE_ARCHIVE" ]; then
         return
     fi
 

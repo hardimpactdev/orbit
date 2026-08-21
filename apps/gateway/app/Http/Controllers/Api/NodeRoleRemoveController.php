@@ -133,29 +133,14 @@ final class NodeRoleRemoveController implements Loggable
         return ActivityLogType::Destructive;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return $this->activityAction;
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -169,21 +154,11 @@ final class NodeRoleRemoveController implements Loggable
         ];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         $role = (string) request()->route('role');
         $name = (string) request()->route('name');
 
         return $role !== '' && $name !== '' ? "Role {$role} removed from {$name}" : null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

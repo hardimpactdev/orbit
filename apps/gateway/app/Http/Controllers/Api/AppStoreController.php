@@ -599,29 +599,14 @@ final class AppStoreController implements Loggable
         return ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:POST /apps';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -632,18 +617,8 @@ final class AppStoreController implements Loggable
         return [];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

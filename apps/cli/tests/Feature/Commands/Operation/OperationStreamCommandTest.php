@@ -153,14 +153,6 @@ function operationStreamUpdateAllStartEnvelope(): array
 final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
 {
     /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function pullSource(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    /**
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
      */
     public function downloadBinary(string $expectedVersion = ''): array
@@ -190,28 +182,12 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
         return ['issues' => 0];
     }
 
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function installDependencies(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
     public function ensureShellIntegrations(): array
     {
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 
     public function verifyCurrentInstallation(string $expectedVersion): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function runMigrations(): array
     {
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }

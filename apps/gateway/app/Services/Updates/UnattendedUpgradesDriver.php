@@ -31,14 +31,6 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
         return 'unattended-upgrades';
     }
 
-    public function supportedTargets(): array
-    {
-        return [
-            new UpdateDriverTarget('node', 'ubuntu_24-04', 'managed-server-node'),
-            new UpdateDriverTarget('node', 'ubuntu_26-04', 'managed-server-node'),
-        ];
-    }
-
     public function supports(UpdateTarget $target): bool
     {
         return (

@@ -55,13 +55,6 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         'output' => '',
     ];
 
-    public function pullSource(): array
-    {
-        $this->calls[] = 'pull_source';
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
     public function downloadBinary(string $expectedVersion = ''): array
     {
         $this->calls[] = 'download';
@@ -84,13 +77,6 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         return $this->doctorResult;
     }
 
-    public function installDependencies(): array
-    {
-        $this->calls[] = 'install_dependencies';
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
     public function ensureShellIntegrations(): array
     {
         $this->calls[] = 'ensure_shell_integrations';
@@ -103,13 +89,6 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         $this->calls[] = "verify_current_installation:{$expectedVersion}";
 
         return $this->currentInstallationResult;
-    }
-
-    public function runMigrations(): array
-    {
-        $this->calls[] = 'run_migrations';
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }
 }
 

@@ -66,29 +66,14 @@ final class NodeRoleListController implements Loggable
         return ActivityLogType::Read;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'node.role.listed';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -98,18 +83,8 @@ final class NodeRoleListController implements Loggable
         ];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

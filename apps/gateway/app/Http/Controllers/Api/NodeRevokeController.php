@@ -135,19 +135,9 @@ final class NodeRevokeController implements Loggable
         return ActivityLogType::Destructive;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:POST /nodes/revoke';
-    }
-
-    public function activityLogAction(): string
-    {
-        return $this->type();
     }
 
     public function subject(): ?Model
@@ -155,11 +145,6 @@ final class NodeRevokeController implements Loggable
         return $this->activitySubject ?? Node::query()
             ->where('name', (string) request('serving_node'))
             ->first();
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -171,18 +156,8 @@ final class NodeRevokeController implements Loggable
         ];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): string
     {
         return sprintf('%s revoked access to %s', (string) request('consuming_node'), (string) request('serving_node'));
-    }
-
-    public function activityLogDescription(): string
-    {
-        return $this->description();
     }
 }

@@ -289,29 +289,14 @@ final class NodeUpdateController implements Loggable
         return ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:PUT /nodes/{name}';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -322,20 +307,10 @@ final class NodeUpdateController implements Loggable
         ];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         $target = $this->activityTargetName ?? (string) request()->route('name');
 
         return $target !== '' ? "Node {$target} updated" : null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

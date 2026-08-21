@@ -1027,12 +1027,6 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/ActivityListController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/AnalyticsUpdateController.php"
 code = "constant-name"
 message = "Constant name `ImageRepository` should be in constant case."
@@ -1132,18 +1126,6 @@ count = 1
 file = "app/Http/Controllers/Api/AppRemoveController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppRemoveController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppRootController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -1831,12 +1813,6 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 3
 
 [[issues]]
-file = "app/Http/Controllers/Api/NodeListController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/NodePermissionsController.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -1879,21 +1855,9 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/NodeRemoveController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/NodeRevokeController.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeRevokeController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -1921,12 +1885,6 @@ message = "Nested ternary expressions are confusing due to PHP's operator associ
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/NodeRoleAddController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/NodeRoleListController.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
@@ -1936,12 +1894,6 @@ count = 1
 file = "app/Http/Controllers/Api/NodeRoleListController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeRoleListController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -1951,12 +1903,6 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/NodeRoleRemoveController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/NodeShowController.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
@@ -1966,12 +1912,6 @@ count = 1
 file = "app/Http/Controllers/Api/NodeShowController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeShowController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -2029,18 +1969,6 @@ message = "This closure does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/PhpRuntimeController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/PhpUseController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/ProcessDestroyController.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2062,12 +1990,6 @@ count = 1
 file = "app/Http/Controllers/Api/ProcessListController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProcessListController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -2182,12 +2104,6 @@ count = 1
 file = "app/Http/Controllers/Api/ProxyRouteListController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/ProxyRouteListController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -2425,12 +2341,6 @@ message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
-file = "app/Http/Controllers/Api/ToolShowController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Http/Controllers/Api/ToolUpdateBulkController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
@@ -2651,12 +2561,6 @@ file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 2
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceSetupController.php"
@@ -9868,18 +9772,6 @@ count = 1
 file = "app/Services/WebSockets/WebSocketRuntimeSourceInstaller.php"
 code = "too-many-methods"
 message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Services/WireGuard/WireGuardGatewayAddressResolver.php"
-code = "literal-named-argument"
-message = "Literal argument `2` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/WireGuard/WireGuardGatewayAddressResolver.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
 count = 1
 
 [[issues]]
@@ -21239,12 +21131,6 @@ file = "tests/Feature/Http/Middleware/LogActivityTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `FakeDoctrineController` but class `FakeWriteController` is already defined in this file."
 count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Middleware/LogActivityTest.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 3
 
 [[issues]]
 file = "tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php"

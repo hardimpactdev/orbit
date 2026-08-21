@@ -400,11 +400,7 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
 
     expect($script)
         ->toContain('librarian:lint')
-        ->toContain('APP_BEFORE_PACKAGE_CHECK_LABELS=(')
-        ->toContain('APP_REMAINING_CHECK_LABELS=(')
-        ->toContain('PACKAGE_BACKGROUND_CHECK_LABELS=(')
         ->toContain('quality_check_progress_render_pending')
-        ->toContain('BACKGROUND_CHECK_LABELS=(')
         ->toContain('--path=testing')
         ->toContain('--group=references')
         ->toContain('mago analyze')

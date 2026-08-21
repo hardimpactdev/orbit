@@ -234,29 +234,14 @@ final class ToolShowController implements Loggable
         return ActivityLogType::Read;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:GET /tools/{tool}';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -267,18 +252,8 @@ final class ToolShowController implements Loggable
         return [];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

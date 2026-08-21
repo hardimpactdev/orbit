@@ -133,6 +133,31 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->toContain('GATEWAY_IMAGE_ARCHIVE');
     });
 
+    it('enables archive forwarding when only a wg-easy image archive is supplied', function (): void {
+        $command = sprintf(
+            <<<'BASH'
+                source %s
+                GATEWAY_IMAGE_ARCHIVE=""
+                CADDY_IMAGE_ARCHIVE=""
+                DNSMASQ_IMAGE_ARCHIVE=""
+                FRANKENPHP_IMAGE_ARCHIVE=""
+                WG_EASY_IMAGE_ARCHIVE="/tmp/wg-easy-15.tar"
+                write_env_var() { printf 'write=%%s=%%s\n' "$1" "$2"; }
+                ensure_forward_install_image_archives_flag
+                printf 'export=%%s\n' "${ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES:-}"
+                BASH,
+            escapeshellarg(repo_path('bin/install-orbit')),
+        );
+
+        $process = Process::fromShellCommandline($command);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toBe("write=ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES=1\nexport=1\n");
+    });
+
     it('bootstraps gateway state inside orbit-gateway without a CLI source step', function (): void {
         expect($this->installer)
             ->toContain('docker_cli run --rm')

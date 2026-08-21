@@ -304,19 +304,9 @@ final readonly class NodeStoreController implements Loggable
         return ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'node.created';
-    }
-
-    public function activityLogAction(): string
-    {
-        return $this->type();
     }
 
     public function subject(): ?Model
@@ -328,11 +318,6 @@ final readonly class NodeStoreController implements Loggable
         }
 
         return Node::query()->where('name', $name)->first();
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -354,14 +339,6 @@ final readonly class NodeStoreController implements Loggable
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     private function createdNodeTld(): ?string
     {
         $subject = $this->subject();
@@ -378,11 +355,6 @@ final readonly class NodeStoreController implements Loggable
         $name = $this->requestString('name');
 
         return $name !== null ? "Created node {$name}." : null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 
     private function requestString(string $key): ?string

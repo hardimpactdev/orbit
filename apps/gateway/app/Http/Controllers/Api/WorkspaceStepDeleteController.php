@@ -265,29 +265,14 @@ final class WorkspaceStepDeleteController implements Loggable
         return ActivityLogType::Destructive;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:DELETE /workspaces/steps/{phase}/{step}';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -298,21 +283,8 @@ final class WorkspaceStepDeleteController implements Loggable
         return [];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

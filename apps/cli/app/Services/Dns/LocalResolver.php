@@ -173,6 +173,8 @@ class LocalResolver implements ResolvesLocalDns
             }
 
             if ($configChanged || $systemResolverChanged) {
+                $this->flushMacOSResolverCache();
+
                 return ['status' => 'resolved', 'changed' => true];
             }
 
@@ -180,25 +182,6 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         File::put($this->configPath($tld), "address=/{$tld}/{$target}\n");
-
-        $resolverWriteCommand =
-            "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee "
-            .escapeshellarg("/etc/resolver/{$tld}")
-            .' > /dev/null';
-
-        try {
-            $resolverResult = Process::timeout(10)->run($resolverWriteCommand);
-        } catch (ProcessTimedOutException $exception) {
-            return [
-                'status' => 'write_failed',
-                'changed' => false,
-                'error' => $this->formatTimeoutFailure($resolverWriteCommand, $exception),
-            ];
-        }
-
-        if (! $resolverResult->successful()) {
-            return ['status' => 'write_failed', 'changed' => false, 'error' => $resolverResult->errorOutput()];
-        }
 
         $refreshError = $this->refreshDnsmasq($tld, $target);
 
@@ -290,8 +273,6 @@ class LocalResolver implements ResolvesLocalDns
                 'error' => trim($writeResult->errorOutput()) ?: "Failed to update /etc/resolver/{$tld}.",
             ];
         }
-
-        $this->flushMacOSResolverCache();
 
         return ['changed' => true];
     }

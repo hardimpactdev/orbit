@@ -311,11 +311,6 @@ final class AppRuntimeMountController implements Loggable
         return $this->currentAction === 'list' ? ActivityLogType::Read : ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return match ($this->currentAction) {
@@ -325,19 +320,9 @@ final class AppRuntimeMountController implements Loggable
         };
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -354,21 +339,8 @@ final class AppRuntimeMountController implements Loggable
         );
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

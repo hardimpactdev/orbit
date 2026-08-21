@@ -7,19 +7,16 @@ namespace App\Services\Operations;
 use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\UpdateLease;
-use Closure;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class UpdateLeaseManager
 {
     private const array RESOURCE_TYPES = ['fleet', 'gateway', 'scheduler', 'node'];
 
-    private const int DATABASE_LOCK_RETRY_ATTEMPTS = 10;
-
-    private const int DATABASE_LOCK_RETRY_DELAY_MICROSECONDS = 100_000;
+    public function __construct(
+        private readonly DatabaseLockRetry $databaseLockRetry,
+    ) {}
 
     public function acquire(
         string $resourceType,
@@ -46,7 +43,7 @@ class UpdateLeaseManager
         $expiresAt = $now->copy()->addSeconds($ttlSeconds);
         $activeResourceKey = $this->activeResourceKey($resourceType, $resourceKey);
 
-        return $this->transactionWithDatabaseLockRetry(function () use (
+        return $this->databaseLockRetry->transactionRetryingUniqueConstraints(function () use (
             $resourceType,
             $resourceKey,
             $operationRunId,
@@ -57,22 +54,22 @@ class UpdateLeaseManager
         ): UpdateLease {
             $active = $this->activeLease($activeResourceKey);
 
-            if ($active instanceof UpdateLease && $active->expires_at->gt($now)) {
+            if ($active instanceof UpdateLease && $active->isActive() && $active->expires_at->gt($now)) {
                 throw UpdateLeaseConflict::fromLease($active);
             }
 
             if ($active instanceof UpdateLease) {
-                $this->deactivate($active, $now);
+                $active->deactivate($now);
+                $active->save();
             }
 
-            return $this->attemptCreate(
+            return $this->createActiveLease(
                 resourceType: $resourceType,
                 resourceKey: $resourceKey,
                 activeResourceKey: $activeResourceKey,
                 operationRunId: $operationRunId,
                 ownerToken: $ownerToken,
                 expiresAt: $expiresAt,
-                now: $now,
             );
         });
     }
@@ -82,18 +79,19 @@ class UpdateLeaseManager
         $ownerToken = trim($ownerToken);
         $this->assertNonEmpty('owner token', $ownerToken);
 
-        return $this->transactionWithDatabaseLockRetry(function () use ($lease, $ownerToken): UpdateLease {
+        return $this->databaseLockRetry->transaction(function () use ($lease, $ownerToken): UpdateLease {
             $active = $this->leaseForUpdate($lease);
 
-            if ($active->active_resource_key === null || $active->released_at !== null) {
+            if (! $active->isActive()) {
                 return $active;
             }
 
-            if ($active->owner_token !== $ownerToken) {
+            if (! $active->isOwnedBy($ownerToken)) {
                 throw new RuntimeException('Update lease owner token mismatch.');
             }
 
-            $this->deactivate($active, Carbon::now());
+            $active->deactivate(Carbon::now());
+            $active->save();
 
             return $active->refresh();
         });
@@ -110,7 +108,7 @@ class UpdateLeaseManager
 
         $expired = false;
 
-        $heartbeat = $this->transactionWithDatabaseLockRetry(function () use (
+        $heartbeat = $this->databaseLockRetry->transaction(function () use (
             $lease,
             $ownerToken,
             $ttlSeconds,
@@ -118,18 +116,19 @@ class UpdateLeaseManager
         ): UpdateLease {
             $active = $this->leaseForUpdate($lease);
 
-            if ($active->active_resource_key === null || $active->released_at !== null) {
+            if (! $active->isActive()) {
                 throw new RuntimeException('Update lease is not active.');
             }
 
-            if ($active->owner_token !== $ownerToken) {
+            if (! $active->isOwnedBy($ownerToken)) {
                 throw new RuntimeException('Update lease owner token mismatch.');
             }
 
             $now = Carbon::now();
 
             if ($active->expires_at->lte($now)) {
-                $this->deactivate($active, $now);
+                $active->deactivate($now);
+                $active->save();
                 $expired = true;
 
                 return $active->refresh();
@@ -169,104 +168,6 @@ class UpdateLeaseManager
             return $callback($lease);
         } finally {
             $this->release($lease->id, $ownerToken);
-        }
-    }
-
-    protected function beforeActiveLeaseCreate(
-        string $activeResourceKey,
-        string $resourceType,
-        string $resourceKey,
-    ): void {
-        //
-    }
-
-    /**
-     * @template TReturn
-     *
-     * @param  Closure(): TReturn  $callback
-     * @return TReturn
-     */
-    protected function runTransaction(Closure $callback): mixed
-    {
-        /** @var TReturn $result */
-        $result = DB::transaction($callback);
-
-        return $result;
-    }
-
-    protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
-    {
-        usleep(max(0, self::DATABASE_LOCK_RETRY_DELAY_MICROSECONDS * $attempt));
-    }
-
-    /**
-     * @template TReturn
-     *
-     * @param  Closure(): TReturn  $callback
-     * @return TReturn
-     */
-    private function transactionWithDatabaseLockRetry(Closure $callback): mixed
-    {
-        for ($attempt = 1; $attempt <= self::DATABASE_LOCK_RETRY_ATTEMPTS; $attempt++) {
-            try {
-                return $this->runTransaction($callback);
-            } catch (QueryException $exception) {
-                if (! $this->causedByDatabaseLock($exception) || $attempt === self::DATABASE_LOCK_RETRY_ATTEMPTS) {
-                    throw $exception;
-                }
-
-                $this->beforeDatabaseLockRetry($exception, $attempt);
-            }
-        }
-
-        throw new RuntimeException('Update lease transaction retry attempts were exhausted.');
-    }
-
-    private function attemptCreate(
-        string $resourceType,
-        string $resourceKey,
-        string $activeResourceKey,
-        string $operationRunId,
-        string $ownerToken,
-        Carbon $expiresAt,
-        Carbon $now,
-    ): UpdateLease {
-        $this->beforeActiveLeaseCreate($activeResourceKey, $resourceType, $resourceKey);
-
-        try {
-            return $this->createActiveLease(
-                resourceType: $resourceType,
-                resourceKey: $resourceKey,
-                activeResourceKey: $activeResourceKey,
-                operationRunId: $operationRunId,
-                ownerToken: $ownerToken,
-                expiresAt: $expiresAt,
-            );
-        } catch (QueryException $exception) {
-            if (! $this->causedByUniqueConstraint($exception)) {
-                throw $exception;
-            }
-
-            $active = $this->activeLease($activeResourceKey);
-
-            if (! $active instanceof UpdateLease) {
-                throw $exception;
-            }
-
-            if ($active->expires_at->lte($now)) {
-                $this->deactivate($active, $now);
-
-                return $this->createActiveLease(
-                    resourceType: $resourceType,
-                    resourceKey: $resourceKey,
-                    activeResourceKey: $activeResourceKey,
-                    operationRunId: $operationRunId,
-                    ownerToken: $ownerToken,
-                    expiresAt: $expiresAt,
-                );
-            }
-
-            throw UpdateLeaseConflict::fromLease($active);
         }
     }
 
@@ -319,14 +220,6 @@ class UpdateLeaseManager
         return $active;
     }
 
-    private function deactivate(UpdateLease $lease, Carbon $releasedAt): void
-    {
-        $lease->forceFill([
-            'active_resource_key' => null,
-            'released_at' => $lease->released_at ?? $releasedAt,
-        ])->save();
-    }
-
     private function activeResourceKey(string $resourceType, string $resourceKey): string
     {
         return "{$resourceType}:{$resourceKey}";
@@ -344,33 +237,5 @@ class UpdateLeaseManager
         if ($value === '') {
             throw new RuntimeException("Update lease {$label} cannot be empty.");
         }
-    }
-
-    private function causedByUniqueConstraint(QueryException $exception): bool
-    {
-        $sqlState = (string) ($exception->errorInfo[0] ?? '');
-        $driverCode = (string) ($exception->errorInfo[1] ?? '');
-        $message = strtolower($exception->getMessage());
-
-        return (
-            in_array($sqlState, ['23000', '23505'], true)
-            || in_array($driverCode, ['19', '1062'], true)
-            || str_contains($message, 'unique constraint')
-            || str_contains($message, 'duplicate entry')
-        );
-    }
-
-    private function causedByDatabaseLock(QueryException $exception): bool
-    {
-        $driverCode = (string) ($exception->errorInfo[1] ?? $exception->getCode());
-        $message = strtolower($exception->getMessage());
-
-        return (
-            in_array($driverCode, ['5', '6'], true)
-            || str_contains($message, 'database is locked')
-            || str_contains($message, 'database table is locked')
-            || str_contains($message, 'database schema is locked')
-            || str_contains($message, 'database is busy')
-        );
     }
 }

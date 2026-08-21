@@ -2477,11 +2477,6 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
         {
             public function __construct(private int \$replaceDelayMicroseconds) {}
 
-            public function pullSource(): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
             public function downloadBinary(string \$expectedVersion = ''): array
             {
                 return [
@@ -2511,22 +2506,12 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
                 return ['issues' => 0];
             }
 
-            public function installDependencies(): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
             public function ensureShellIntegrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
 
             public function verifyCurrentInstallation(string \$expectedVersion): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
-            public function runMigrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
@@ -2591,11 +2576,6 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
 
         \$app->instance(RunsLocalUpdate::class, new class implements RunsLocalUpdate
         {
-            public function pullSource(): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
             public function downloadBinary(string \$expectedVersion = ''): array
             {
                 return [
@@ -2617,22 +2597,12 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
                 return ['issues' => 0];
             }
 
-            public function installDependencies(): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
             public function ensureShellIntegrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
 
             public function verifyCurrentInstallation(string \$expectedVersion): array
-            {
-                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-            }
-
-            public function runMigrations(): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => ''];
             }
@@ -2836,7 +2806,6 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
      * @var array<string, mixed>
      */
     public array $results = [
-        'pull_source' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
         'download' => [
             'successful' => true,
             'exit_code' => 0,
@@ -2844,19 +2813,7 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
             'staged_path' => '/tmp/staged-orbit',
             'version' => '1.2.3',
         ],
-        'install_dependencies' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
-        'run_migrations' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
     ];
-
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function pullSource(): array
-    {
-        $this->calls[] = 'pull_source';
-
-        return $this->results['pull_source'];
-    }
 
     /**
      * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
@@ -2903,16 +2860,6 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
         return ['issues' => $this->doctorIssues];
     }
 
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function installDependencies(): array
-    {
-        $this->calls[] = 'install_dependencies';
-
-        return $this->results['install_dependencies'];
-    }
-
     public function ensureShellIntegrations(): array
     {
         $this->calls[] = 'ensure_shell_integrations';
@@ -2923,15 +2870,5 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     public function verifyCurrentInstallation(string $expectedVersion): array
     {
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function runMigrations(): array
-    {
-        $this->calls[] = 'run_migrations';
-
-        return $this->results['run_migrations'];
     }
 }

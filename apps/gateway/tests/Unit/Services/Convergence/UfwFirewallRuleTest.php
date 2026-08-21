@@ -204,6 +204,41 @@ it('canonicalizes host CIDR and both family in expected shape for convergence', 
         ]);
 });
 
+it('uses the same family-normalized rule body for UFW apply and delete commands', function (
+    string $addressFamily,
+    string $normalizedAny,
+): void {
+    $rule = new UfwFirewallRule(
+        name: 'public-https',
+        direction: 'incoming',
+        action: 'allow',
+        source: 'any',
+        destination: null,
+        port: '443',
+        protocol: 'tcp',
+        addressFamily: $addressFamily,
+        interface: null,
+        reason: 'public HTTPS',
+    );
+
+    $applyBody = str_replace(
+        search: " comment 'public HTTPS'",
+        replace: '',
+        subject: substr($rule->applyCommand(), strlen('sudo ufw ')),
+    );
+    $deleteBody = substr($rule->deleteCommand($rule->mutationShape()), strlen('sudo ufw delete '));
+
+    expect($applyBody)
+        ->toBe($deleteBody)
+        ->and($deleteBody)
+        ->toContain("from '{$normalizedAny}' to '{$normalizedAny}'")
+        ->and($rule->deleteCommand($rule->mutationShape()))
+        ->not->toContain('comment');
+})->with([
+    'IPv4' => ['v4', '0.0.0.0/0'],
+    'IPv6' => ['v6', '::/0'],
+]);
+
 it('plans ok when observed bare host IP matches host CIDR intent with both family', function (): void {
     Http::preventStrayRequests();
     Http::fake([

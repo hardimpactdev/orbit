@@ -162,29 +162,14 @@ final readonly class WorkspaceLogController implements Loggable
         return ActivityLogType::Read;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:GET /workspaces/runs/{run}/log';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return null;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -195,21 +180,8 @@ final readonly class WorkspaceLogController implements Loggable
         return [];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         return null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

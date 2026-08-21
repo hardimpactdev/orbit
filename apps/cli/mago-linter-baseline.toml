@@ -2707,12 +2707,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Services/OrbitConfigStoreImporter.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
 file = "app/Services/Platform/LocalPlatformDetector.php"
 code = "literal-named-argument"
 message = '''Literal argument `"\"'"` should be passed as a named argument for clarity.'''
@@ -8563,48 +8557,6 @@ message = 'Literal argument `"test\n"` should be passed as a named argument for 
 count = 1
 
 [[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "function-name"
-message = "Function name `seedSqlite` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'orbit-config-importer-'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'orbit-sqlite-'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 3
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "prefer-early-continue"
-message = "Consider using early continue pattern to reduce nesting."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "use-dedicated-expectation"
-message = "Use `toBeFile()` instead of `is_file()` with `toBeTrue()`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreImporterTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
-
-[[issues]]
 file = "tests/Feature/OrbitConfigStoreTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
@@ -9359,36 +9311,6 @@ file = "tests/Feature/Services/Updates/LocalUpdateRunnerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 5
-
-[[issues]]
-file = "tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php"
-code = "explicit-octal"
-message = "Use explicit octal numeral notation."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php"
-code = "file-name"
-message = "Class `LocalUpdateWorkflowFakeUpdater` should be in a file named `LocalUpdateWorkflowFakeUpdater.php`, found `LocalUpdateWorkflowTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0755` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Updates/LocalUpdateWorkflowTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
 
 [[issues]]
 file = "tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php"

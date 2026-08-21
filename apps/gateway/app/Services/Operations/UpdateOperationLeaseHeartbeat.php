@@ -6,6 +6,7 @@ namespace App\Services\Operations;
 
 use App\Models\OperationRun;
 use App\Models\UpdateLease;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 use SensitiveParameter;
@@ -42,7 +43,7 @@ final readonly class UpdateOperationLeaseHeartbeat
         ): int {
             $fleet = $this->leaseForUpdate($fleetLease);
 
-            if ($fleet->active_resource_key === null || $fleet->released_at !== null) {
+            if (! $fleet->isActive()) {
                 throw new RuntimeException('Fleet update lease is not active.');
             }
 
@@ -50,7 +51,7 @@ final readonly class UpdateOperationLeaseHeartbeat
                 throw new RuntimeException('Fleet update lease operation run mismatch.');
             }
 
-            if (! hash_equals($fleet->owner_token, $fleetOwnerToken)) {
+            if (! $fleet->isOwnedBy($fleetOwnerToken)) {
                 throw new RuntimeException('Fleet update lease owner token mismatch.');
             }
 
@@ -59,18 +60,18 @@ final readonly class UpdateOperationLeaseHeartbeat
                 ->where('operation_run_id', $operationRunId)
                 ->whereNotNull('active_resource_key')
                 ->whereNull('released_at');
-            $hasExpiredLease = (clone $activeLeases)
+            /** @mago-expect analyzer:docblock-type-mismatch */
+            /** @var Collection<int, UpdateLease> $expiredLeases */
+            $expiredLeases = (clone $activeLeases)
                 ->where('expires_at', '<=', $now)
                 ->lockForUpdate()
-                ->exists();
+                ->get();
 
-            if ($hasExpiredLease) {
-                (clone $activeLeases)
-                    ->where('expires_at', '<=', $now)
-                    ->update([
-                        'active_resource_key' => null,
-                        'released_at' => $now,
-                    ]);
+            if ($expiredLeases->isNotEmpty()) {
+                foreach ($expiredLeases as $lease) {
+                    $lease->deactivate($now);
+                    $lease->save();
+                }
 
                 return 0;
             }

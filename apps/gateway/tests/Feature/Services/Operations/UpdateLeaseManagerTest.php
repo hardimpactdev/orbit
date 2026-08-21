@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\UpdateLease;
+use App\Services\Operations\DatabaseLockRetry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\UpdateLeaseManager;
 use Illuminate\Database\QueryException;
@@ -143,11 +144,21 @@ it('releases an active lease and allows a later acquire', function (): void {
         ->toBe('new-owner');
 });
 
+it('rejects release attempts from a different owner', function (): void {
+    $run = updateLeaseOperationRun();
+    $lease = $this->manager->acquire('node', 'worker-01', $run, 'known-owner', 300);
+
+    expect(fn () => $this->manager->release($lease, 'different-owner'))
+        ->toThrow(RuntimeException::class, 'owner token mismatch');
+
+    expect($lease->refresh()->active_resource_key)->toBe('node:worker-01');
+});
+
 it('retries release transactions when SQLite reports the database is locked', function (): void {
     Carbon::setTestNow('2026-06-02 10:00:00');
 
     $run = updateLeaseOperationRun();
-    $manager = new class extends UpdateLeaseManager {
+    $retry = new class extends DatabaseLockRetry {
         public bool $failNextTransaction = false;
 
         public int $databaseLockRetries = 0;
@@ -174,8 +185,9 @@ it('retries release transactions when SQLite reports the database is locked', fu
         }
     };
 
+    $manager = new UpdateLeaseManager($retry);
     $lease = $manager->acquire('node', 'worker-01', $run, 'node-owner', 300);
-    $manager->failNextTransaction = true;
+    $retry->failNextTransaction = true;
 
     $released = $manager->release($lease, 'node-owner');
 
@@ -183,7 +195,7 @@ it('retries release transactions when SQLite reports the database is locked', fu
         ->toBeNull()
         ->and($released->released_at?->toIso8601String())
         ->toBe('2026-06-02T10:00:00+00:00')
-        ->and($manager->databaseLockRetries)
+        ->and($retry->databaseLockRetries)
         ->toBe(1);
 });
 
@@ -192,34 +204,41 @@ it('maps insert-time unique constraint races to update lease conflicts', functio
 
     $run = updateLeaseOperationRun();
     $competingRun = updateLeaseOperationRun();
-    $manager = new class($competingRun) extends UpdateLeaseManager {
-        private bool $injected = false;
+    $retry = new class($competingRun) extends DatabaseLockRetry {
+        private bool $injectCollision = true;
+
+        public int $collisionRetries = 0;
 
         public function __construct(
             private OperationRun $competingRun,
         ) {}
 
-        protected function beforeActiveLeaseCreate(
-            string $activeResourceKey,
-            string $resourceType,
-            string $resourceKey,
-        ): void {
-            if ($this->injected) {
-                return;
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->injectCollision) {
+                $this->injectCollision = false;
+
+                UpdateLease::query()->create([
+                    'resource_type' => 'scheduler',
+                    'resource_key' => 'orbit-scheduler',
+                    'active_resource_key' => 'scheduler:orbit-scheduler',
+                    'operation_run_id' => $this->competingRun->id,
+                    'owner_token' => 'race-owner',
+                    'expires_at' => Carbon::now()->addMinutes(5),
+                ]);
+
+                throw update_lease_unique_resource_exception();
             }
 
-            $this->injected = true;
+            return parent::runTransaction($callback);
+        }
 
-            UpdateLease::query()->create([
-                'resource_type' => $resourceType,
-                'resource_key' => $resourceKey,
-                'active_resource_key' => $activeResourceKey,
-                'operation_run_id' => $this->competingRun->id,
-                'owner_token' => 'race-owner',
-                'expires_at' => Carbon::now()->addMinutes(5),
-            ]);
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->collisionRetries++;
         }
     };
+    $manager = new UpdateLeaseManager($retry);
 
     try {
         $manager->acquire('scheduler', 'orbit-scheduler', $run, 'runner-owner', 300);
@@ -231,7 +250,9 @@ it('maps insert-time unique constraint races to update lease conflicts', functio
             ->and($exception->operationRunId)
             ->toBe($competingRun->id)
             ->and($exception->ownerToken)
-            ->toBe('race-owner');
+            ->toBe('race-owner')
+            ->and($retry->collisionRetries)
+            ->toBe(1);
 
         return;
     }
@@ -319,5 +340,25 @@ function updateLeaseOperationRun(): OperationRun
         operationId: (string) Str::uuid(),
         lane: 'gateway',
         operationType: 'update:all',
+    );
+}
+
+function update_lease_unique_resource_exception(): QueryException
+{
+    $previous = new \PDOException(
+        'SQLSTATE[23000]: Integrity constraint violation: 19 UNIQUE constraint failed: update_leases.active_resource_key',
+        19,
+    );
+    $previous->errorInfo = [
+        '23000',
+        19,
+        'UNIQUE constraint failed: update_leases.active_resource_key',
+    ];
+
+    return new QueryException(
+        'sqlite',
+        'insert into "update_leases" ("active_resource_key") values (?)',
+        ['scheduler:orbit-scheduler'],
+        $previous,
     );
 }

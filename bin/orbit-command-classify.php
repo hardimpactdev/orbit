@@ -410,14 +410,6 @@ function git_merge_command_arguments(string $command): array
 }
 
 /**
- * @return list<string>
- */
-function merge_head_operands(string $segment): array
-{
-    return merge_head_operands_from_words(shell_words($segment));
-}
-
-/**
  * @param  list<string>  $words
  * @return list<string>
  */
@@ -500,17 +492,6 @@ function shell_words(string $segment): array
     return $words;
 }
 
-function first_non_option_token(string $segment): ?string
-{
-    foreach (shell_words($segment) as $word) {
-        if (! str_starts_with($word, '-')) {
-            return $word;
-        }
-    }
-
-    return null;
-}
-
 /** @return list<string> */
 function non_option_tokens(string $segment): array
 {
@@ -518,38 +499,6 @@ function non_option_tokens(string $segment): array
         shell_words($segment),
         static fn (string $word): bool => ! str_starts_with($word, '-'),
     ));
-}
-
-function last_non_option_token(string $segment): ?string
-{
-    $target = null;
-
-    foreach (shell_words($segment) as $word) {
-        if (! str_starts_with($word, '-')) {
-            $target = $word;
-        }
-    }
-
-    return $target;
-}
-
-function branch_delete_target(string $segment): ?string
-{
-    $sawDelete = false;
-
-    foreach (shell_words($segment) as $word) {
-        if (in_array($word, ['-d', '-D', '--delete', '--force-delete'], true)) {
-            $sawDelete = true;
-
-            continue;
-        }
-
-        if ($sawDelete && ! str_starts_with($word, '-')) {
-            return $word;
-        }
-    }
-
-    return null;
 }
 
 /** @return list<string> */

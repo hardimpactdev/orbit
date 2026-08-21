@@ -470,19 +470,9 @@ final readonly class NodePermissionsController implements Loggable
         return ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:POST /nodes/permissions';
-    }
-
-    public function activityLogAction(): string
-    {
-        return $this->type();
     }
 
     public function subject(): ?Model
@@ -492,22 +482,12 @@ final readonly class NodePermissionsController implements Loggable
             ->first();
     }
 
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
-    }
-
     public function properties(): array
     {
         return [
             'consuming_node' => (string) request('consuming_node'),
             'serving_node' => (string) request('serving_node'),
         ];
-    }
-
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
     }
 
     public function description(): string
@@ -527,10 +507,5 @@ final readonly class NodePermissionsController implements Loggable
             (string) request('consuming_node'),
             (string) request('serving_node'),
         );
-    }
-
-    public function activityLogDescription(): string
-    {
-        return $this->description();
     }
 }

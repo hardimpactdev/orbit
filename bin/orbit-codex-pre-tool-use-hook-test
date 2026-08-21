@@ -298,14 +298,10 @@ expect_command_classify_module_boundary() {
         worktree_remove_command_count \
         branch_delete_command_count \
         git_merge_command_arguments \
-        merge_head_operands \
         merge_head_operands_from_words \
         command_segment_after \
         shell_words \
-        first_non_option_token \
         non_option_tokens \
-        last_non_option_token \
-        branch_delete_target \
         branch_delete_targets
     do
         grep -q "^function $function_name(" "$COMMAND_CLASSIFY_MODULE" \

@@ -22,9 +22,8 @@ use Orbit\Core\Progress\StreamedStepTree;
  *   no ceiling) → download → replace → doctor.
  *
  * Each step is surfaced to the caller through the `$onStep` progress callback so
- * the human renderer can animate the tree. The `update:all` runner keeps using
- * the simpler {@see LocalUpdateWorkflow}; this runner serves the public `update`
- * command only.
+ * the human renderer can animate the tree. This runner serves the public
+ * `update` command and the local preflight step of `update:all`.
  *
  * @mago-expect lint:cyclomatic-complexity -- Gate branches plus shell-integration ensure on already-current installs.
  */

@@ -64,35 +64,6 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     }
 
     /**
-     * Download, verify, and install the CLI binary in a single call. Composes
-     * {@see self::downloadBinary()} and {@see self::replaceBinary()} for callers
-     * that treat the local CLI update as one atomic step (the `update:all`
-     * runner).
-     *
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function pullSource(): array
-    {
-        $download = $this->downloadBinary();
-
-        if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
-            return [
-                'successful' => false,
-                'exit_code' => $download['exit_code'],
-                'output' => $download['output'],
-            ];
-        }
-
-        $replace = $this->replaceBinary($download['staged_path'], $download['version']);
-
-        return [
-            'successful' => $replace['successful'],
-            'exit_code' => $replace['exit_code'],
-            'output' => $replace['output'],
-        ];
-    }
-
-    /**
      * Download the prebuilt Orbit CLI binary for this host OS/arch to a staged
      * path, verify its declared checksum when present, make it executable, and
      * verify it responds to `--version`. The staged copy lives next to the
@@ -539,50 +510,6 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         }
 
         return hash_file('sha256', $versionedBinary) === hash_file('sha256', $stagedPath);
-    }
-
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function installDependencies(): array
-    {
-        $result = $this->runCommand(
-            [
-                'docker',
-                'exec',
-                'orbit-gateway',
-                'composer',
-                '--working-dir=apps/gateway',
-                'install',
-                '--no-interaction',
-            ],
-            120,
-            $this->checkoutPathResolver->resolve(),
-        );
-
-        return [
-            'successful' => $result->successful(),
-            'exit_code' => $result->exitCode() ?? 1,
-            'output' => $this->resultOutput($result),
-        ];
-    }
-
-    /**
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function runMigrations(): array
-    {
-        $result = $this->runCommand(
-            ['docker', 'exec', 'orbit-gateway', 'php', 'apps/gateway/artisan', 'migrate', '--force'],
-            60,
-            $this->checkoutPathResolver->resolve(),
-        );
-
-        return [
-            'successful' => $result->successful(),
-            'exit_code' => $result->exitCode() ?? 1,
-            'output' => $this->resultOutput($result),
-        ];
     }
 
     private function resultOutput(ProcessResult $result): string

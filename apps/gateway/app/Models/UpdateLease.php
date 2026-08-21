@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use SensitiveParameter;
 
 /**
  * @property int $id
@@ -47,5 +48,23 @@ class UpdateLease extends Model
     public function operationRun(): BelongsTo
     {
         return $this->belongsTo(OperationRun::class);
+    }
+
+    public function isActive(): bool
+    {
+        return $this->active_resource_key !== null && $this->released_at === null;
+    }
+
+    public function isOwnedBy(#[SensitiveParameter] string $ownerToken): bool
+    {
+        return hash_equals($this->owner_token, $ownerToken);
+    }
+
+    public function deactivate(Carbon $releasedAt): void
+    {
+        $this->forceFill([
+            'active_resource_key' => null,
+            'released_at' => $this->released_at ?? $releasedAt,
+        ]);
     }
 }

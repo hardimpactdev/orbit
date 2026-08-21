@@ -83,11 +83,6 @@ $source = <<<PHP
     {
         public function __construct(private int \$replaceDelayMicroseconds) {}
 
-        public function pullSource(): array
-        {
-            return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-        }
-
         public function downloadBinary(string \$expectedVersion = ''): array
         {
             return [
@@ -117,22 +112,12 @@ $source = <<<PHP
             return ['issues' => 0];
         }
 
-        public function installDependencies(): array
-        {
-            return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-        }
-
         public function ensureShellIntegrations(): array
         {
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];
         }
 
         public function verifyCurrentInstallation(string \$expectedVersion): array
-        {
-            return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-        }
-
-        public function runMigrations(): array
         {
             return ['successful' => true, 'exit_code' => 0, 'output' => ''];
         }

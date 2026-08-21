@@ -181,29 +181,14 @@ final class NodeRoleAddController implements Loggable
         return ActivityLogType::Write;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'node.role.added';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -214,21 +199,11 @@ final class NodeRoleAddController implements Loggable
         ];
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): ?string
     {
         $role = (string) request('role');
         $name = (string) request()->route('name');
 
         return $role !== '' && $name !== '' ? "Role {$role} added to {$name}" : null;
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

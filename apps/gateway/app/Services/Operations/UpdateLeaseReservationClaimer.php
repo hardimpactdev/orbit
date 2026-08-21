@@ -47,7 +47,7 @@ final readonly class UpdateLeaseReservationClaimer
         ): ?UpdateLease {
             $active = $this->leaseForUpdate($lease);
 
-            if ($active->active_resource_key === null || $active->released_at !== null) {
+            if (! $active->isActive()) {
                 throw new RuntimeException('Update lease is not active.');
             }
 
@@ -55,17 +55,15 @@ final readonly class UpdateLeaseReservationClaimer
                 throw new RuntimeException('Update lease operation run mismatch.');
             }
 
-            if (! hash_equals($active->owner_token, $reservationOwnerToken)) {
+            if (! $active->isOwnedBy($reservationOwnerToken)) {
                 throw new RuntimeException('Update lease owner token mismatch.');
             }
 
             $now = Carbon::now();
 
             if ($active->expires_at->lte($now)) {
-                $active->forceFill([
-                    'active_resource_key' => null,
-                    'released_at' => $active->released_at ?? $now,
-                ])->save();
+                $active->deactivate($now);
+                $active->save();
 
                 return null;
             }

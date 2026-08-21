@@ -232,6 +232,37 @@ describe(LocalResolver::class, function (): void {
         );
     });
 
+    it('writes the macOS system resolver and flushes the cache once when a mapping target changes', function (): void {
+        fakeSuccessfulLocalResolverProcesses($this, '10.6.0.7', resolverContents: "nameserver 10.6.0.1\n");
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        expect($resolver->resolve('test', '10.6.0.7'))->toBe([
+            'status' => 'resolved',
+            'changed' => true,
+        ]);
+
+        Process::assertRanTimes(
+            fn (PendingProcess $process): bool => (
+                $process->command
+                === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null'
+            ),
+            1,
+        );
+        Process::assertRanTimes(
+            fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache',
+            1,
+        );
+        Process::assertRanTimes(
+            fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder',
+            1,
+        );
+    });
+
     it('returns refresh_failed when an existing mapping cannot be served after refresh', function (): void {
         fakeLocalResolverProcesses($this, healthOutput: ['', '']);
         writeCurrentMasterDnsmasqConfig($this);
@@ -425,7 +456,13 @@ describe(LocalResolver::class, function (): void {
     });
 
     it('returns write_failed when writing the macOS system resolver exceeds the process timeout', function (): void {
-        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverWriteThrowsTimeout: true);
+        fakeLocalResolverProcesses(
+            $this,
+            healthOutput: '192.168.1.150',
+            resolverContents: "nameserver 10.6.0.1\n",
+            resolverWriteThrowsTimeout: true,
+        );
+        writeCurrentMasterDnsmasqConfig($this);
 
         $resolver = new LocalResolver;
         $resolver->setPlatform('macos');
@@ -510,7 +547,13 @@ describe(LocalResolver::class, function (): void {
     });
 
     it('returns write_failed when writing the macOS system resolver lacks cached sudo credentials', function (): void {
-        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverWriteFailsNoninteractive: true);
+        fakeLocalResolverProcesses(
+            $this,
+            healthOutput: '192.168.1.150',
+            resolverContents: "nameserver 10.6.0.1\n",
+            resolverWriteFailsNoninteractive: true,
+        );
+        writeCurrentMasterDnsmasqConfig($this);
 
         $resolver = new LocalResolver;
         $resolver->setPlatform('macos');

@@ -35,19 +35,9 @@ final class FakeWriteController implements Loggable
         return new JsonResponse(['success' => true]);
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function effect(): ActivityLogType
     {
         return ActivityLogType::Write;
-    }
-
-    public function activityLogAction(): string
-    {
-        return $this->type();
     }
 
     public function type(): string
@@ -55,19 +45,9 @@ final class FakeWriteController implements Loggable
         return 'api:POST /_test/fake-write';
     }
 
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
-    }
-
     public function subject(): ?Model
     {
         return null;
-    }
-
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
     }
 
     public function properties(): array
@@ -77,11 +57,6 @@ final class FakeWriteController implements Loggable
         }
 
         return ['probe' => 'ok'];
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 
     public function description(): ?string
@@ -97,19 +72,9 @@ final class FakeDestructiveController implements Loggable
         return new JsonResponse(['success' => true]);
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function effect(): ActivityLogType
     {
         return ActivityLogType::Destructive;
-    }
-
-    public function activityLogAction(): string
-    {
-        return $this->type();
     }
 
     public function type(): string
@@ -117,29 +82,14 @@ final class FakeDestructiveController implements Loggable
         return 'api:DELETE /_test/fake-destructive';
     }
 
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
-    }
-
     public function subject(): ?Model
     {
         return null;
     }
 
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function properties(): array
     {
         return [];
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 
     public function description(): ?string
@@ -178,31 +128,6 @@ final class FakeDoctrineController implements Loggable
     public function description(): ?string
     {
         return 'doctrine method names';
-    }
-
-    public function activityLogType(): ActivityLogType
-    {
-        throw new RuntimeException('legacy effect method should not be called');
-    }
-
-    public function activityLogAction(): string
-    {
-        throw new RuntimeException('legacy type method should not be called');
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        throw new RuntimeException('legacy subject method should not be called');
-    }
-
-    public function activityLogProperties(): array
-    {
-        throw new RuntimeException('legacy properties method should not be called');
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        throw new RuntimeException('legacy description method should not be called');
     }
 }
 

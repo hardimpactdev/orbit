@@ -8,7 +8,6 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Updates\UpdateApplyResult;
 use App\Services\Updates\UpdateDriver;
 use App\Services\Updates\UpdateDriverRegistry;
-use App\Services\Updates\UpdateDriverTarget;
 use App\Services\Updates\UpdatePostureSnapshot;
 use App\Services\Updates\UpdateTarget;
 use App\Services\Updates\UpdateTargetFactory;
@@ -120,11 +119,6 @@ final class RegistryFakeUpdateDriver implements UpdateDriver
     public function key(): string
     {
         return 'fake-updates';
-    }
-
-    public function supportedTargets(): array
-    {
-        return [new UpdateDriverTarget('node', 'ubuntu_24-04', 'managed-server-node')];
     }
 
     public function supports(UpdateTarget $target): bool

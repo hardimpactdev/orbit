@@ -7,18 +7,6 @@ namespace App\Services\Updates;
 interface RunsLocalUpdate
 {
     /**
-     * Download, verify, and install the prebuilt CLI binary in one call, then
-     * relink and verify the host launcher. Composes {@see self::downloadBinary()}
-     * and {@see self::replaceBinary()}.
-     *
-     * Retained as the single-call entry point for the durable `update:all`
-     * runner, which treats the local CLI update as one preflight step.
-     *
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function pullSource(): array;
-
-    /**
      * Download the prebuilt CLI binary for this host OS/arch to a staged path
      * away from the running binary, make it executable, and verify it responds
      * to `--version`. The resolved version is read back from the verify output.
@@ -59,16 +47,6 @@ interface RunsLocalUpdate
     public function runDoctor(): array;
 
     /**
-     * Install Composer dependencies inside orbit-gateway.
-     *
-     * Vestigial: `orbit update` no longer installs gateway dependencies. Retained
-     * for the durable `update:all` runner contract and its tests.
-     *
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function installDependencies(): array;
-
-    /**
      * Ensure supported shell integrations (for example zsh noglob for namespace
      * wildcards) without downloading or replacing the CLI binary.
      *
@@ -88,14 +66,4 @@ interface RunsLocalUpdate
      * @return array{successful: bool, exit_code: int, output: string}
      */
     public function verifyCurrentInstallation(string $expectedVersion): array;
-
-    /**
-     * Run Orbit database migrations inside orbit-gateway.
-     *
-     * Vestigial: `orbit update` no longer runs gateway migrations. Retained for
-     * the durable `update:all` runner contract and its tests.
-     *
-     * @return array{successful: bool, exit_code: int, output: string}
-     */
-    public function runMigrations(): array;
 }

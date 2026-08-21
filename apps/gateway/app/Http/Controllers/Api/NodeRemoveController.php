@@ -150,29 +150,14 @@ final class NodeRemoveController implements Loggable
         return ActivityLogType::Destructive;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'api:DELETE /nodes/{name}';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activitySubject;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     public function properties(): array
@@ -183,11 +168,6 @@ final class NodeRemoveController implements Loggable
             'grants_removed' => $this->activityGrantsRemoved,
             'wireguard_peer_removed' => $this->activityWireGuardPeerRemoved,
         ];
-    }
-
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
     }
 
     public function description(): ?string
@@ -201,10 +181,5 @@ final class NodeRemoveController implements Loggable
         return $this->activityRemovalCompleted
             ? "Node {$target} removed"
             : "Node {$target} removal failed";
-    }
-
-    public function activityLogDescription(): ?string
-    {
-        return $this->description();
     }
 }

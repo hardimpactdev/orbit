@@ -30,13 +30,6 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
     /** @var array{issues: int|null} */
     public array $doctorResult = ['issues' => 0];
 
-    public function pullSource(): array
-    {
-        $this->calls[] = 'pull_source';
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
     public function downloadBinary(string $expectedVersion = ''): array
     {
         $this->calls[] = 'download';
@@ -58,13 +51,6 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
         return $this->doctorResult;
     }
 
-    public function installDependencies(): array
-    {
-        $this->calls[] = 'install_dependencies';
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
     public function ensureShellIntegrations(): array
     {
         $this->calls[] = 'ensure_shell_integrations';
@@ -75,13 +61,6 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
     public function verifyCurrentInstallation(string $expectedVersion): array
     {
         $this->calls[] = "verify_current_installation:{$expectedVersion}";
-
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    public function runMigrations(): array
-    {
-        $this->calls[] = 'run_migrations';
 
         return ['successful' => true, 'exit_code' => 0, 'output' => ''];
     }

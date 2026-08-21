@@ -885,58 +885,6 @@ describe('LocalCheckoutUpdater', function (): void {
             ->toBeFalse();
     });
 
-    it('installs dependencies inside orbit-gateway', function (): void {
-        Process::fake(['*' => Process::result(output: 'Installing dependencies', exitCode: 0)]);
-        Process::preventStrayProcesses();
-
-        $installRoot = $this->installRoot;
-
-        $result = new LocalCheckoutUpdater(new CheckoutPathResolver)->installDependencies();
-
-        expect($result['successful'])->toBeTrue()->and($result['output'])->toBe('Installing dependencies');
-
-        Process::assertRan(
-            fn (PendingProcess $process): bool => (
-                $process->path === $installRoot
-                && $process->command === [
-                    'docker',
-                    'exec',
-                    'orbit-gateway',
-                    'composer',
-                    '--working-dir=apps/gateway',
-                    'install',
-                    '--no-interaction',
-                ]
-            ),
-        );
-    });
-
-    it('runs local migrations inside orbit-gateway with force', function (): void {
-        Process::fake(['*' => Process::result(output: 'Migrated', exitCode: 0)]);
-        Process::preventStrayProcesses();
-
-        $installRoot = $this->installRoot;
-
-        $result = new LocalCheckoutUpdater(new CheckoutPathResolver)->runMigrations();
-
-        expect($result['successful'])->toBeTrue()->and($result['output'])->toBe('Migrated');
-
-        Process::assertRan(
-            fn (PendingProcess $process): bool => (
-                $process->path === $installRoot
-                && $process->command === [
-                    'docker',
-                    'exec',
-                    'orbit-gateway',
-                    'php',
-                    'apps/gateway/artisan',
-                    'migrate',
-                    '--force',
-                ]
-            ),
-        );
-    });
-
     it('downloads, replaces, and verifies the binary end to end via a file artifact', function (): void {
         // Offline proof: ORBIT_BINARY_URL=file:// points at a local artifact.
         // This verifies the full local update mechanism without a network call:

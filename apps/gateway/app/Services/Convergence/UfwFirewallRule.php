@@ -164,23 +164,9 @@ final readonly class UfwFirewallRule
 
     public function applyCommand(): string
     {
-        $interface = $this->interfaceToken();
-
         $parts = [
             'sudo ufw',
-            $this->action,
-            $this->direction === 'outgoing' ? 'out' : 'in',
-            ...$interface,
-            'from',
-            escapeshellarg($this->endpointForFamily($this->source, source: true)),
-            'to',
-            $this->destination === null
-                ? $this->anyForFamily()
-                : escapeshellarg($this->endpointForFamily($this->destination, source: false)),
-            'port',
-            escapeshellarg($this->port),
-            'proto',
-            escapeshellarg($this->protocol),
+            ...$this->commandBody($this->mutationShape()),
         ];
 
         if (is_string($this->reason) && $this->reason !== '') {
@@ -196,23 +182,9 @@ final readonly class UfwFirewallRule
      */
     public function deleteCommand(array $shape): string
     {
-        $interface = is_string($shape['interface'] ?? null) && $shape['interface'] !== ''
-            ? ['on', '$('.$this->interfaceResolver($shape['interface']).')']
-            : [];
-
         $parts = [
             'sudo ufw delete',
-            (string) ($shape['action'] ?? 'allow'),
-            ($shape['direction'] ?? 'incoming') === 'outgoing' ? 'out' : 'in',
-            ...$interface,
-            'from',
-            escapeshellarg((string) ($shape['source'] ?? 'any')),
-            'to',
-            is_string($shape['destination'] ?? null) ? escapeshellarg($shape['destination']) : 'any',
-            'port',
-            escapeshellarg((string) ($shape['port'] ?? '*')),
-            'proto',
-            escapeshellarg((string) ($shape['protocol'] ?? 'tcp')),
+            ...$this->commandBody($shape),
         ];
 
         return implode(' ', $parts);
@@ -302,15 +274,31 @@ final readonly class UfwFirewallRule
     }
 
     /**
+     * @param  array<string, mixed>  $shape
      * @return list<string>
      */
-    private function interfaceToken(): array
+    private function commandBody(array $shape): array
     {
-        if (! is_string($this->interface) || $this->interface === '') {
-            return [];
-        }
+        $addressFamily = is_string($shape['address_family'] ?? null) ? $shape['address_family'] : 'both';
+        $source = is_string($shape['source'] ?? null) ? $shape['source'] : 'any';
+        $destination = is_string($shape['destination'] ?? null) ? $shape['destination'] : 'any';
+        $interface = is_string($shape['interface'] ?? null) && $shape['interface'] !== ''
+            ? ['on', '$('.$this->interfaceResolver($shape['interface']).')']
+            : [];
 
-        return ['on', '$('.$this->interfaceResolver($this->interface).')'];
+        return [
+            (string) ($shape['action'] ?? 'allow'),
+            ($shape['direction'] ?? 'incoming') === 'outgoing' ? 'out' : 'in',
+            ...$interface,
+            'from',
+            escapeshellarg($this->endpointForFamily($source, $addressFamily)),
+            'to',
+            escapeshellarg($this->endpointForFamily($destination, $addressFamily)),
+            'port',
+            escapeshellarg((string) ($shape['port'] ?? '*')),
+            'proto',
+            escapeshellarg((string) ($shape['protocol'] ?? 'tcp')),
+        ];
     }
 
     private function interfaceResolver(string $interface): string
@@ -322,30 +310,17 @@ final readonly class UfwFirewallRule
         return "ip route show default 0.0.0.0/0 2>/dev/null | awk '{print \$5; exit}'";
     }
 
-    private function endpointForFamily(string $endpoint, bool $source): string
+    private function endpointForFamily(string $endpoint, string $addressFamily): string
     {
         if ($endpoint !== 'any') {
             return $endpoint;
         }
 
-        if ($this->addressFamily === 'v4') {
+        if ($addressFamily === 'v4') {
             return '0.0.0.0/0';
         }
 
-        if ($this->addressFamily === 'v6') {
-            return '::/0';
-        }
-
-        return $source ? 'any' : 'any';
-    }
-
-    private function anyForFamily(): string
-    {
-        if ($this->addressFamily === 'v4') {
-            return '0.0.0.0/0';
-        }
-
-        if ($this->addressFamily === 'v6') {
+        if ($addressFamily === 'v6') {
             return '::/0';
         }
 

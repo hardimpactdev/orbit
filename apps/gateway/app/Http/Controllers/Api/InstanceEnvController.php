@@ -253,11 +253,6 @@ final class InstanceEnvController implements Loggable
         return $this->currentAction === 'set' ? ActivityLogType::Write : ActivityLogType::Read;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return match ($this->currentAction) {

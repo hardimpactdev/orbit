@@ -80,29 +80,14 @@ final class ActivityShowController implements Loggable
         return ActivityLogType::Read;
     }
 
-    public function activityLogType(): ActivityLogType
-    {
-        return $this->effect();
-    }
-
     public function type(): string
     {
         return 'activity.shown';
     }
 
-    public function activityLogAction(): string
-    {
-        return $this->type();
-    }
-
     public function subject(): ?Model
     {
         return $this->activity;
-    }
-
-    public function activityLogSubject(): ?Model
-    {
-        return $this->subject();
     }
 
     /**
@@ -117,21 +102,8 @@ final class ActivityShowController implements Loggable
         ];
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function activityLogProperties(): array
-    {
-        return $this->properties();
-    }
-
     public function description(): string
     {
         return "shown activity #{$this->activityId}";
-    }
-
-    public function activityLogDescription(): string
-    {
-        return $this->description();
     }
 }
