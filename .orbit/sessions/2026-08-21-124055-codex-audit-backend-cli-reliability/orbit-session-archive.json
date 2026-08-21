@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T10:40:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-audit-backend-cli-reliability/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-124055-codex-audit-backend-cli-reliability",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/audit-backend-cli-retained-incus-receipt.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T102004Z-fdb3f7bb64b8.json"
+    ],
+    "entry_digests": {
+        "evidence/audit-backend-cli-retained-incus-receipt.md": "908c0837190e3dc3d8df20f4d58095aa178e53ae9f73124ea770ace32a9a16ed",
+        "loop.md": "b058b8b81a1e697902f29f43328c02f490f8be93c5f82d9d5165e135f733aa4f",
+        "quality-gates/quality-check-2026-08-21T102004Z-fdb3f7bb64b8.json": "1a927768a2702f8a99287b11b5a887766feb8ea24d4a65c928e4b235e0a4dbcc"
+    },
+    "slug": "codex-audit-backend-cli-reliability",
+    "requested_slug": "codex-audit-backend-cli-reliability",
+    "compatible_slugs": [
+        "codex-audit-backend-cli-reliability"
+    ],
+    "branch": "codex/audit-backend-cli-reliability",
+    "candidate_commit": "6db5ad6d17fcea9b6dfbfe06b939cb12ed9e14fc",
+    "accepted_feature_tip": "6db5ad6d17fcea9b6dfbfe06b939cb12ed9e14fc",
+    "accepted_main_tip": "b2d41467c8be7a232fff7eca1364f1ebd7627eb9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
