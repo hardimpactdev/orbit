@@ -89,7 +89,7 @@ final readonly class WorkspaceStepListController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
                 'app' => $app->name,
             ]);
         }

@@ -634,7 +634,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -650,6 +651,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -704,7 +712,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -720,6 +729,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -772,7 +788,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
-                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -788,6 +805,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/CloudflareControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CloudflareControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -6460,7 +6484,6 @@
                 "instance",
                 "workspace",
                 "node",
-                "inherit",
                 "cli",
                 "json"
             ],
@@ -12251,8 +12274,10 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/cli/tests/Feature/GatewayApiClientTest.php",
                 "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php"
             ],
             "verification_hints": [
@@ -12262,6 +12287,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/GatewayApiClientTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/GatewayApiClientTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/GatewayApiClientTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Unit/Services/Tools/LocalToolRunScriptActionTest.php",
@@ -12276,6 +12308,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolLogReaderTest.php",
@@ -12430,8 +12469,10 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/cli/tests/Feature/GatewayApiClientTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
-                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php"
+                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "verification_hints": [
                 {
@@ -12440,6 +12481,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/GatewayApiClientTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/GatewayApiClientTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/GatewayApiClientTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
@@ -12454,6 +12502,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolCatalogTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCatalogTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14353,7 +14408,8 @@
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Actions/Workspaces/WorkspacePlanParityTest.php",
-                "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php"
             ],
             "verification_hints": [
                 {
@@ -14383,6 +14439,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/WorkspaceStoreControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/WorkspaceStoreControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Workspaces/WorkspaceNodeReachabilityTest.php"
                 }
             ],
             "p4_mapping": {
@@ -14722,22 +14785,10 @@
                     "not_found"
                 ],
                 "instance": [
-                    "exec_command_not_executable",
-                    "exec_command_not_found",
-                    "exec_container_not_running",
-                    "exec_docker_unavailable",
-                    "exec_node_unreachable",
-                    "exec_unsupported_runtime",
                     "not_found"
                 ],
                 "workspace": [
                     "ambiguous_name",
-                    "exec_command_not_executable",
-                    "exec_command_not_found",
-                    "exec_container_not_running",
-                    "exec_docker_unavailable",
-                    "exec_node_unreachable",
-                    "exec_unsupported_runtime",
                     "not_found",
                     "unsupported_for_production"
                 ],
@@ -14895,7 +14946,7 @@
                     "driver": "string",
                     "driver_config": "object|array",
                     "environment": "string|null",
-                    "latest_deployment_run_id": "int|string|null",
+                    "latest_deployment_run_id": "int|null",
                     "latest_deployment_status": "string|null",
                     "node": "string|object|null",
                     "path": "string|null",
@@ -14922,21 +14973,24 @@
             },
             "process": {
                 "required": {
-                    "name": "string"
+                    "app": "string|null",
+                    "instance": "string|null",
+                    "name": "string",
+                    "node": "string",
+                    "workspace": "string|null"
                 },
                 "optional": {
                     "command": "string",
                     "crash_notification": "string",
-                    "instance": "string|null",
                     "key": "string",
                     "label": "string|null",
                     "last_event": "object|null",
-                    "app": "string|null",
                     "restart_policy": "string",
                     "runtime": "string",
                     "runtime_unit": "string",
+                    "service": "object|null",
                     "status": "string",
-                    "workspace": "string|null"
+                    "tool": "string|null"
                 }
             },
             "workspace": {
@@ -14944,21 +14998,15 @@
                     "name": "string",
                     "app": "string",
                     "instance": "string",
-                    "node": "string|object",
+                    "node": "string|null",
                     "url": "string"
                 },
                 "optional": {
                     "adopted": "bool",
-                    "base": "string",
-                    "branch": "string|null",
-                    "inherited_processes": "array",
-                    "latest_setup_run": "object|null",
                     "lifecycle_status": "string",
                     "path": "string",
                     "php_inherited": "bool",
-                    "php_version": "string",
-                    "route": "object|null",
-                    "runtime_expectations": "object"
+                    "php_version": "string|null"
                 }
             }
         },
@@ -15422,21 +15470,6 @@
                     ]
                 },
                 "--host": {
-                    "allowed_contexts": [
-                        "foreign_command_reference",
-                        "doctor_command_reference",
-                        "machine_handoff",
-                        "admin_handoff"
-                    ],
-                    "allowed_command_families": [
-                        "node",
-                        "app",
-                        "instance",
-                        "workspace",
-                        "process"
-                    ]
-                },
-                "--inherit": {
                     "allowed_contexts": [
                         "foreign_command_reference",
                         "doctor_command_reference",

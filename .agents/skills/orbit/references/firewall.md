@@ -1,6 +1,6 @@
 # Firewall Commands
 
-UFW rule intent on each node. Spec: [`apps/docs/content/domains/4_firewall/`](../../../apps/docs/content/domains/4_firewall/).
+UFW rule intent on each node. Spec: [`apps/docs/content/domains/4_firewall/`](../../../../apps/docs/content/domains/4_firewall/).
 
 Bootstrap baselines are created by node provisioning. Only nodes carrying
 `ingress` should expose public HTTP/HTTPS; SSH stays reachable over WireGuard

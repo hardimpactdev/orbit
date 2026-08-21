@@ -32,7 +32,7 @@ This command follows the shared
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
-A bare parent app slug, marker, or parent path is shorthand only when exactly
+A bare App slug, marker, or owning Instance source path is shorthand only when exactly
 one registered instance matches. Zero or multiple matches fail with
 `error.meta.reason=instance_required`.
 
@@ -124,9 +124,9 @@ The command performs:
    product workspace source driver.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
    the driver-returned `name` and physical `path`, `app_id`, a mandatory
-   non-null `instance_id`, derived hostname, `php_version` (or `null` for
-   inheritance), and lifecycle fields. Workspace identity uniqueness is
-   enforced before any side effects and again at this step.
+   non-null `instance_id`, derived hostname, the concrete `php_version` snapshot
+   selected during input resolution, and lifecycle fields. The gateway enforces
+   workspace identity uniqueness before any side effects and again at this step.
 3. **Setup Pipeline (Remote, convergent):** Executes the same convergent
    logic as `workspace:setup`:
    - **Workspace-owned proxy route:** create or update the workspace
@@ -177,12 +177,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 - **Parent app ineligible** — the resolved parent app is missing,
   unauthorized, or unable to own workspaces
-  (`error.code=workspace.parent_project_invalid`).
+  (`error.code=workspace.parent_instance_invalid`).
 - **Production app unsupported** — the selected instance is served by an
   `app-prod` node (`error.code=workspace.unsupported_for_production`). The
   command fails before source-driver, registry, Agent-push, or runtime effects.
 - **Concrete instance required** — a bare app selector, parent-app marker,
-  or parent app path does not resolve to exactly one concrete instance
+  or owning Instance source path does not resolve to exactly one concrete Instance
   (`error.code=validation_failed`, `error.meta.field=instance`,
   `error.meta.reason=instance_required`). No workspace row or node artifact
   is created.
@@ -225,6 +225,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 - **Adoption:** Register an existing path with `workspace:setup --path`;
   `doctor --family=workspace --adopt` remains the disaster-recovery bulk path.
   `workspace:new` itself never adopts unmanaged paths.
+
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /workspaces` |
+| Effect | `write` |
+| Subject | The selected or created `Workspace`; `none` before resolution or persistence. |
+| Properties | No command-specific properties. |
+| Description | derived |
 
 ## Test Mapping
 

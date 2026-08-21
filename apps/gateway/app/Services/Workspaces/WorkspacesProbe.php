@@ -275,15 +275,21 @@ final readonly class WorkspacesProbe
             return [];
         }
 
-        if (! $this->phpRuntimeCatalog()->supports($workspace->effectivePhpVersion())) {
+        $phpVersion = $workspace->effectivePhpVersion();
+
+        if (! is_string($phpVersion) || $phpVersion === '') {
+            return [];
+        }
+
+        if (! $this->phpRuntimeCatalog()->supports($phpVersion)) {
             return [
                 new DriftEntry(
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "PHP {$workspace->effectivePhpVersion()} is not a supported FrankenPHP runtime image for workspace {$workspace->name}.",
+                    summary: "PHP {$phpVersion} is not a supported FrankenPHP runtime image for workspace {$workspace->name}.",
                     detail: [
-                        'php_version' => $workspace->effectivePhpVersion(),
+                        'php_version' => $phpVersion,
                     ],
                 ),
             ];
@@ -301,7 +307,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "Docker is not available to serve PHP {$workspace->effectivePhpVersion()} for workspace {$workspace->name} on the parent app node.",
+                    summary: "Docker is not available to serve PHP {$workspace->effectivePhpVersion()} for workspace {$workspace->name} on the owning instance node.",
                     detail: [
                         'php_version' => $workspace->effectivePhpVersion(),
                     ],
@@ -319,7 +325,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "FrankenPHP runtime image for PHP {$workspace->effectivePhpVersion()} is not available on the parent app node for workspace {$workspace->name}.",
+                    summary: "FrankenPHP runtime image for PHP {$workspace->effectivePhpVersion()} is not available on the owning instance node for workspace {$workspace->name}.",
                     detail: [
                         'php_version' => $workspace->effectivePhpVersion(),
                     ],
@@ -419,7 +425,7 @@ final readonly class WorkspacesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'workspace.parent_project_invalid',
+                    key: 'workspace.parent_instance_invalid',
                     kind: DriftKind::Divergent,
                     summary: "Workspace {$workspace->name} points at a missing parent app.",
                 ),
@@ -466,7 +472,7 @@ final readonly class WorkspacesProbe
     ): DriftEntry {
         return new DriftEntry(
             family: $this->key(),
-            key: 'workspace.app_instance_invalid',
+            key: 'workspace.instance_invalid',
             kind: DriftKind::Divergent,
             summary: "Workspace {$workspace->name} does not resolve to a valid instance on an active app node.",
             detail: [
@@ -494,10 +500,10 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.path_outside_policy',
                     kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} path is the parent app root, not a workspace path.",
+                    summary: "Workspace {$workspace->name} path is the owning instance source path, not a workspace path.",
                     detail: [
                         'path' => $workspace->path,
-                        'app_path' => $this->placement()->appPathForWorkspace($workspace),
+                        'app_path' => $this->placement()->instancePathForWorkspace($workspace),
                     ],
                 ),
             ];
@@ -515,7 +521,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.path_missing',
                     kind: DriftKind::Missing,
-                    summary: "Workspace {$workspace->name} path is missing on the parent app node.",
+                    summary: "Workspace {$workspace->name} path is missing on the owning instance node.",
                     detail: [
                         'expected' => $workspace->path,
                     ],
@@ -544,7 +550,7 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        $appPath = $this->placement()->appPathForWorkspace($workspace);
+        $appPath = $this->placement()->instancePathForWorkspace($workspace);
 
         if (! $workspace->app instanceof App || ! is_string($appPath) || $appPath === '') {
             return false;

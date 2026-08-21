@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
 describe('app:show', function (): void {
@@ -38,6 +39,43 @@ describe('app:show', function (): void {
             ->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])
             ->toBe('app');
+    });
+
+    it('resolves the app from the host cwd orbit marker', function (): void {
+        $root = sys_get_temp_dir().'/orbit-app-show-'.uniqid('', true);
+        $cwd = "{$root}/storage/cache";
+        File::makeDirectory("{$root}/.orbit", 0o777, recursive: true);
+        File::makeDirectory($cwd, 0o777, recursive: true);
+        File::put("{$root}/.orbit/config", json_encode([
+            'instance' => 'docs.development',
+        ], JSON_THROW_ON_ERROR));
+
+        $previousHostCwd = getenv('ORBIT_HOST_CWD');
+        putenv("ORBIT_HOST_CWD={$cwd}");
+
+        try {
+            fakeGateway(fakeSuccessEnvelope([
+                'app' => ['name' => 'docs'],
+                'details' => [],
+            ]));
+
+            [$exitCode, $output] = runCommand($this, 'app:show', ['--json' => true]);
+        } finally {
+            restoreHostCwd($previousHostCwd);
+            File::deleteDirectory($root);
+        }
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/apps/docs'),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['app']['name'])
+            ->toBe('docs');
     });
 
     it('renders human output with instance and workspace placement rows', function (): void {

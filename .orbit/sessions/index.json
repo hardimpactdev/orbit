@@ -1,9 +1,9 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 373,
-    "unique_candidate_commit_count": 269,
-    "orphan_count": 4,
+    "record_count": 392,
+    "unique_candidate_commit_count": 288,
+    "orphan_count": 0,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -9680,24 +9680,444 @@
                 "protection_failures": 0
             },
             "legacy": null
+        },
+        {
+            "archive": "2026-08-20-114102-codex-docs-drift-zero-round-1",
+            "slug": "codex-docs-drift-zero-round-1",
+            "timestamp": "2026-08-20-114102",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "49a0f876a7bfae1dc64b456887f436f3bc045162",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-123332-codex-docs-drift-zero-round-2",
+            "slug": "codex-docs-drift-zero-round-2",
+            "timestamp": "2026-08-20-123332",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "5a9a9fb1a8ad5f04c247ac06ea0b9e04350bfcdf",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-133221-codex-docs-drift-zero-round-3",
+            "slug": "codex-docs-drift-zero-round-3",
+            "timestamp": "2026-08-20-133221",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "5b465b40829b06c1144936044ef1145017139758",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-142841-codex-docs-drift-zero-round-4",
+            "slug": "codex-docs-drift-zero-round-4",
+            "timestamp": "2026-08-20-142841",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a7d08f385c7a22d0b6a6c5ad031efa832c914b6e",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-151913-codex-docs-drift-zero-round-5",
+            "slug": "codex-docs-drift-zero-round-5",
+            "timestamp": "2026-08-20-151913",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "20055a0c94add53c458aea017ea2b6e8e1330649",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-155629-codex-docs-drift-zero-round-6",
+            "slug": "codex-docs-drift-zero-round-6",
+            "timestamp": "2026-08-20-155629",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6bdff303f718a69546b8687df44ae5829e5bfe94",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-165045-codex-docs-drift-round-7-docs",
+            "slug": "codex-docs-drift-round-7-docs",
+            "timestamp": "2026-08-20-165045",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "0768be5e3f81371772b54e465e2bb8fe761f97c8",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-172809-codex-docs-drift-round-7-vocabulary",
+            "slug": "codex-docs-drift-round-7-vocabulary",
+            "timestamp": "2026-08-20-172809",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "88a596bf4f889104a8354d444295a570139ca5c1",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-183133-codex-docs-drift-round-7-activity",
+            "slug": "codex-docs-drift-round-7-activity",
+            "timestamp": "2026-08-20-183133",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "aa2b2cf68c22d6cc9cf9016e81d82f11baee7138",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-185351-codex-docs-drift-round-8",
+            "slug": "codex-docs-drift-round-8",
+            "timestamp": "2026-08-20-185351",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6d664a0419907761fc876c33bc4053b00787b5f7",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-193754-codex-docs-drift-round-9",
+            "slug": "codex-docs-drift-round-9",
+            "timestamp": "2026-08-20-193754",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6d299f4a5047a0fb2eab39065c8eba279b79d655",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-203154-codex-docs-drift-round-10",
+            "slug": "codex-docs-drift-round-10",
+            "timestamp": "2026-08-20-203154",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "7b1dbc7e5ef33d2f99d3e9e67098f4ffb7b0f397",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-205115-codex-metrics-ubuntu-only",
+            "slug": "codex-metrics-ubuntu-only",
+            "timestamp": "2026-08-20-205115",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "cf688dc0f7e496ba76f744567985242ec41424f9",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-213147-codex-round-11-docs-drift",
+            "slug": "codex-round-11-docs-drift",
+            "timestamp": "2026-08-20-213147",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "b12df44102324e77b74711123d60f841801498a6",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-220811-codex-round-12-docs-guidance",
+            "slug": "codex-round-12-docs-guidance",
+            "timestamp": "2026-08-20-220811",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "366d502324e56a5d1924c14d0a8d9f9d963c2d84",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-223041-codex-round-12-retire-cli-activity-writer",
+            "slug": "codex-round-12-retire-cli-activity-writer",
+            "timestamp": "2026-08-20-223041",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "3733246705151d0a08bcc13b9275a790bfd5d744",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-224557-codex-retained-operator-readiness",
+            "slug": "codex-retained-operator-readiness",
+            "timestamp": "2026-08-20-224557",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a6dd97cebcb83fb9998ae3d18b945a27dfc15574",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-232603-codex-docs-drift-round-13",
+            "slug": "codex-docs-drift-round-13",
+            "timestamp": "2026-08-20-232603",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "2feb55a3c18385ee3d1b5b48ab5f899d4afc6290",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-20-235715-codex-docs-drift-round-14",
+            "slug": "codex-docs-drift-round-14",
+            "timestamp": "2026-08-20-235715",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "3daa7f6d104a2e94b3d76b02a47fb4fb49883da0",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
         }
     ],
-    "orphans": [
-        {
-            "archive": "2026-07-13-004810-agent-push-transports",
-            "reason": "empty"
-        },
-        {
-            "archive": "2026-07-15-133249-docs-drift-alignment",
-            "reason": "empty"
-        },
-        {
-            "archive": "2026-07-16-011102-codex-loop-prevention-closure",
-            "reason": "missing_loop_md"
-        },
-        {
-            "archive": "2026-07-19-112810-postgres-multi-process",
-            "reason": "missing_loop_md"
-        }
-    ]
+    "orphans": []
 }

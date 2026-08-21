@@ -188,8 +188,9 @@ external notification adapter.
 
 ## Process Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -215,6 +216,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_unloaded` | A launchd-backed node-owned or non-`app-dev` runtime unit has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
+| `process.remote_shell_probe_failed` | The remote process probe raised before it could return a usable runtime observation for the selected node. |
 
 ## Process Fix Map
 

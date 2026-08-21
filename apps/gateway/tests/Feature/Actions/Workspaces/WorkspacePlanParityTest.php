@@ -19,6 +19,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -62,6 +63,7 @@ beforeEach(function (): void {
 
     Instance::factory()->for($app)->create([
         'name' => 'development',
+        'php_version' => '8.5',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             path: '/home/orbit/apps/demo',
@@ -209,6 +211,35 @@ it('executes one ordered create plan with the same final result for JSON and SSE
 
     workspace_plan_parity_expect_reporter($reporter, $result->completedSteps());
 })->with(['json', 'sse']);
+
+it('rejects a create plan when the parent instance has no owning node', function (): void {
+    $app = App::query()->where('name', 'demo')->firstOrFail();
+    $instance = Instance::query()->where('app_id', $app->id)->firstOrFail();
+    $instance->forceFill([
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            path: '/home/orbit/apps/demo',
+            document_root: 'public',
+            domain: 'demo.test',
+        ),
+    ])->save();
+
+    try {
+        app(CreateWorkspace::class)->plan($app, 'feature-a', $instance);
+    } catch (WorkspaceCreateFailed $exception) {
+        expect($exception->errorCode)
+            ->toBe('workspace.parent_instance_invalid')
+            ->and($exception->meta)
+            ->toMatchArray([
+                'field' => 'instance',
+                'app' => 'demo',
+                'instance' => 'development',
+            ]);
+
+        return;
+    }
+
+    expect(false)->toBeTrue('Expected invalid parent instance failure.');
+});
 
 it('returns the same create failure and retains source plus intent for JSON and SSE adapters', function (string $adapter): void {
     $app = App::query()->where('name', 'demo')->firstOrFail();
@@ -827,7 +858,7 @@ it('returns the same complete canonical setup success payload through JSON and S
                 'path' => '/home/orbit/apps/demo/.worktrees/setup-adapter',
                 'url' => 'https://setup-adapter.demo.test',
                 'php_version' => '8.5',
-                'php_inherited' => true,
+                'php_inherited' => false,
                 'adopted' => false,
                 'lifecycle_status' => 'expected',
             ],
@@ -1339,6 +1370,7 @@ function workspace_plan_parity_workspace(string $name = 'feature-a'): Workspace
         'instance_id' => $instance->id,
         'name' => $name,
         'path' => "/home/orbit/apps/demo/.worktrees/{$name}",
+        'php_version' => '8.5',
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 }

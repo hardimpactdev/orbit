@@ -1,6 +1,6 @@
 # Schedule Commands
 
-Recurring tasks evaluated by the Orbit Scheduler daemon. Minute-resolution. Spec: [`apps/docs/content/domains/9_schedule/`](../../../apps/docs/content/domains/9_schedule/).
+Recurring tasks evaluated by the Orbit Scheduler daemon. Minute-resolution. Spec: [`apps/docs/content/domains/9_schedule/`](../../../../apps/docs/content/domains/9_schedule/).
 
 Schedule scopes:
 
@@ -15,7 +15,7 @@ Create a recurring schedule.
 ```bash
 orbit schedule:add [<name>] [--command='<shell>' | --script=<path>]
                    --interval='<expr>' [--instance=<name>] [--node=<name>]
-                   [--timezone=UTC] [--json]
+                   [--timezone=UTC] [--timeout=900] [--json]
 ```
 
 | Option | Default | Notes |
@@ -23,10 +23,11 @@ orbit schedule:add [<name>] [--command='<shell>' | --script=<path>]
 | `name` |  -  | Schedule slug. |
 | `--command` |  -  | Inline shell command. |
 | `--script` |  -  | Managed script path (alternative to `--command`). One of the two is required. |
-| `--interval` | required | Portable interval expression (e.g. `every 5 minutes`, `daily at 03:00`, `cron(*/15 * * * *)`). See [`apps/docs/content/domains/9_schedule/schedule-concepts.md`](../../../apps/docs/content/domains/9_schedule/schedule-concepts.md). |
+| `--interval` | required | Portable interval expression (e.g. `every 5 minutes`, `daily at 03:00`, `cron(*/15 * * * *)`). See [`apps/docs/content/domains/9_schedule/schedule-concepts.md`](../../../../apps/docs/content/domains/9_schedule/schedule-concepts.md). |
 | `--instance` |  -  | Instance scope. |
 | `--node` |  -  | Node scope. |
 | `--timezone` | `UTC` | IANA timezone. |
+| `--timeout` | `900` | Execution timeout in seconds (`1` through `86400`). |
 
 Examples:
 

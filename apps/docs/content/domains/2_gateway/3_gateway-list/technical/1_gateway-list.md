@@ -60,6 +60,11 @@ gateway is marked per entry.
 
 `gateway:list` has no doctor relationship. It reads local CLI configuration only and does not verify gateway connectivity or CA trust.
 
+## Activity Logging
+
+`gateway:list` does not emit activity. It reads local configuration and does
+not call a gateway API or change state.
+
 ## Test Mapping
 
 | Path | Coverage |

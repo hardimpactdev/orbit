@@ -30,7 +30,8 @@ The gateway API runtime is the Swarm-managed `orbit-gateway` service. It uses
 the `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image, mounts
 `ORBIT_CONFIG_ROOT` for mutable gateway state, and serves the typed HTTPS API.
 Gateway bootstrap ensures Docker Swarm, `orbit-network`, the gateway config
-root, certificates, `orbit-gateway`, and `orbit-scheduler` are converged.
+root, certificates, `orbit-gateway`, `orbit-scheduler`, and
+`orbit-runtime-hibernator` are converged.
 Gateway commands verify and trust that API; they do not install host PHP, host
 Caddy, Composer, source checkouts, or PHP-FPM gateway fallbacks, and the gateway
 API path does not render PHP-FPM sockets or `php_fastcgi` upstream

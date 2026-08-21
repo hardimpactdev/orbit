@@ -189,6 +189,7 @@ function createDeployManagerTestApp(array $overrides = []): App
     Instance::factory()->create([
         'app_id' => $app->id,
         'name' => 'production',
+        'php_version' => $app->php_version,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,

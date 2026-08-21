@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -110,6 +111,17 @@ describe('CodexAppController', function (): void {
             ->assertJsonPath('success.data.codex_project.remote_path', '/home/orbit/apps/docs')
             ->assertJsonPath('success.data.codex_project.ssh_alias', 'app-node')
             ->assertJsonPath('success.data.codex_project.added', true);
+
+        $entry = Activity::query()->latest('id')->firstOrFail();
+
+        expect($entry->event)
+            ->toBe('api:POST /codex/apps/{project}')
+            ->and($entry->subject_type)
+            ->toBe(App::class)
+            ->and($entry->subject_id)
+            ->toBe($app->id)
+            ->and($entry->properties->only(['action', 'target_node'])->all())
+            ->toBe(['action' => 'add', 'target_node' => 'mini']);
 
         $requests = codex_app_agent_requests();
         $mutationPayload = json_decode(

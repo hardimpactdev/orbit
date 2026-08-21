@@ -61,7 +61,7 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
         $outcome = $this->runStepOperation(
             'Removing Cloudflare cache rule',
             [
-                ['label' => 'Resolve project domain'],
+                ['label' => 'Resolve instance domain'],
                 ['label' => 'Resolve Cloudflare zone'],
                 ['label' => 'Delete cache rule'],
             ],

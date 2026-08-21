@@ -17,7 +17,7 @@ remain valid for infrastructure roles and runtime containers; they are not
 public app command families.
 
 All app and instance commands flow through the gateway. Product contract:
-[`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
+[`apps/docs/content/domains/5_app/`](../../../../apps/docs/content/domains/5_app/).
 
 ## Create or adopt
 
@@ -123,7 +123,7 @@ Manage runtime mounts with:
 ```bash
 orbit instance:mount list <app.instance> [--json]
 orbit instance:mount add <app.instance> <source> <target> [--read-only] [--json]
-orbit instance:mount remove <app.instance> <target> [--force] [--json]
+orbit instance:mount remove <app.instance> <target> [--json]
 ```
 
 ## Setup pipeline

@@ -47,6 +47,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 The Solo domain does not own a doctor state family. Related drift belongs to node, process, or tool doctor families.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `solo.todo.reopen` |
+| Effect | `write` |
+| Subject | The target Solo-serving `Node`; `none` when target resolution fails. |
+| Properties | `operation` and `target_node`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -98,8 +98,9 @@ Observed backend routes without Orbit ownership markers are unmanaged node reali
 
 ## Proxy Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -114,6 +115,7 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.record_incomplete` | A selected gateway route lacks domain, kind, owner, serving node, target, redirect code, TLS policy, or backend identity metadata required for comparison. |
 | `proxy.owner_invalid` | An app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool owner reference does not resolve to a valid gateway-owned record. |
 | `proxy.node_invalid` | The route points at a missing, inactive, unsupported, or role-incompatible serving node. |
+| `proxy.node_probe_failed` | A node-scoped proxy probe raised before it could return a usable observation. |
 | `proxy.domain_conflict` | A custom route claims a domain owned by an app, instance, WebSocket binding, workspace, gateway, router service, S3 publication, or tool route. |
 | `proxy.docker_runtime_unavailable` | The serving node's Docker CLI is missing or the Docker daemon is unreachable, so `orbit-caddy` container readiness cannot be probed. Repair the Docker tool baseline through `doctor --family=tool --restore` first. |
 | `proxy.caddy_container_missing` | The `orbit-caddy` container is absent on a serving node that still owns proxy routes. |
@@ -127,6 +129,15 @@ Each code below identifies a specific proxy-family drift condition that the prob
 | `proxy.route_probe_failed` | Caddy is unavailable or its route probe returned an invalid reply, so Doctor could not verify whether the selected route artifact exists. |
 | `proxy.route_missing` | Gateway configuration expects a managed backend route, but the route is absent from node reality. |
 | `proxy.route_mismatch` | A managed backend route exists but differs from gateway configuration. |
+| `proxy.runtime_unreachable` | The selected route's runtime endpoint cannot be reached, so route readiness is unverifiable. |
+| `proxy.router_node_invalid` | A private route resolves to a missing, inactive, or otherwise invalid router node. |
+| `proxy.router_route_missing` | The expected private router route artifact is absent from the router node. |
+| `proxy.router_route_mismatch` | The private router route artifact differs from gateway proxy intent. |
+| `proxy.backend_node_invalid` | A private route resolves to a missing, inactive, or otherwise invalid backend node. |
+| `proxy.backend_route_missing` | The expected private backend route artifact is absent from the backend node. |
+| `proxy.backend_route_mismatch` | The private backend route artifact differs from gateway proxy intent. |
+| `proxy.public_route_missing` | The expected public ingress route artifact is absent from the ingress node. |
+| `proxy.public_route_mismatch` | The public ingress route artifact differs from gateway proxy intent. |
 | `proxy.enactment_incomplete` | Persisted enactment is failed, partial, or pending. Restore reports it with artifact drift and retries backend → router → ingress. |
 | `proxy.dns_mapping_mismatch` | Proxy-owned `dnsmasq.d/20-proxy-records.conf` differs from active router/private `.orbit` and exact-backend intent. |
 | `proxy.websocket.router_route_missing` | Gateway WebSocket route intent expects the private router-owned `websocket.orbit` route row, but it is missing or differs from the canonical WebSocket service route. |
@@ -178,8 +189,14 @@ server name before rendering.
 | `proxy.agent_tool_route_mismatch` | Rewrite a same-tool route row to canonical proxy intent, then re-render its Caddy artifact and TLS material. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
 | `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when it can be identified safely. |
+| `proxy.router_route_missing` | Render and enact the expected private router route from gateway proxy intent. |
+| `proxy.router_route_mismatch` | Replace the private router route with the artifact rendered from gateway proxy intent. |
+| `proxy.backend_route_missing` | Render and enact the expected private backend route on its resolved backend node. |
+| `proxy.backend_route_mismatch` | Replace the private backend route with the artifact rendered from gateway proxy intent. |
+| `proxy.public_route_missing` | Render and enact the expected public ingress route from gateway proxy intent. |
+| `proxy.public_route_mismatch` | Replace the public ingress route with the artifact rendered from gateway proxy intent. |
 | `proxy.enactment_incomplete` | Retry the instance route's complete backend → router → ingress enactment. The persisted state becomes converged only after every operation succeeds; a retry failure retains partial state and reports the exact node and operation. |
-| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
+| `proxy.dns_mapping_mismatch` | Re-render only `dnsmasq.d/20-proxy-records.conf`, atomically replace that artifact through the shared ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public WebSocket ingress routes from the owning instance binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |
@@ -194,7 +211,20 @@ server name before rendering.
 | `proxy.tls_mismatch` | Reissue or relink the TLS material so its path and 397-day validity match Orbit policy, then force-reload Caddy so an unchanged route configuration reprovisions the active certificate from disk. |
 | `proxy.route_extra` | Remove the extra backend route only when it carries Orbit ownership metadata or can otherwise be tied safely to an absent gateway route. |
 
-`doctor --restore` does not handle `proxy.record_incomplete`, `proxy.owner_invalid`, `proxy.node_invalid`, `proxy.domain_conflict`, `proxy.agent_tool_route_conflict`, `proxy.route_probe_failed`, or `proxy.docker_runtime_unavailable`. Re-run Doctor after Caddy is available when route inspection is blocked. The Docker runtime gap is tool-family capability drift; resolve it through `doctor --family=tool --restore` before re-running proxy doctor. For `proxy.owner_invalid` registry rows (owner reference missing while the route row remains — including tool-owned routes whose matching installed `NodeTool` is gone), remove the orphan row with [`proxy:remove --force`](3_proxy-remove/proxy-remove.md) after confirming the owner is gone; force is not a bypass for living owners.
+`doctor --restore` does not handle `proxy.record_incomplete`,
+`proxy.owner_invalid`, `proxy.node_invalid`, `proxy.backend_node_invalid`,
+`proxy.router_node_invalid`, `proxy.domain_conflict`,
+`proxy.agent_tool_route_conflict`, `proxy.route_probe_failed`,
+`proxy.node_probe_failed`, `proxy.runtime_unreachable`, or
+`proxy.docker_runtime_unavailable`. Re-run
+Doctor after Caddy is available when route inspection is blocked. The Docker
+runtime gap is tool-family capability drift; resolve it through
+`doctor --family=tool --restore` before re-running proxy doctor. A route can be
+removed with [`proxy:remove --force`](3_proxy-remove/proxy-remove.md) when it
+has structurally complete tool ownership and its matching installed `NodeTool`
+is absent on the serving node. Other `proxy.owner_invalid` rows are report-only
+until their owner domain or a later product decision supplies a safe repair;
+force is not a general ownership bypass.
 
 ## Proxy Adopt Map
 

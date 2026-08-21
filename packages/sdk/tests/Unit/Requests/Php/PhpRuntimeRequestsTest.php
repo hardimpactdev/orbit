@@ -37,7 +37,6 @@ it('serializes PHP runtime write payload', function (): void {
         instance: 'docs',
         workspace: null,
         node: null,
-        inherit: false,
         cli: false,
     );
 
@@ -49,7 +48,6 @@ it('serializes PHP runtime write payload', function (): void {
         ->toBe([
             'version' => '8.5',
             'instance' => 'docs',
-            'inherit' => false,
             'cli' => false,
         ]);
 });

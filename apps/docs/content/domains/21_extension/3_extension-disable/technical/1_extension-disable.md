@@ -67,6 +67,20 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `extension:disable` mutates explicit extension state. It does not create doctor
 issues or run restore flows.
 
+## Activity Logging
+
+Local disablement emits no activity because the CLI has no trusted shared
+activity writer. When this command calls the gateway disable API, it relies on
+the matching gateway endpoint entry defined below.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /extensions/{extension}/disable` |
+| Effect | `write` |
+| Subject | The selected `GatewayExtension`; `none` when the extension slug is unknown or state storage is unavailable. |
+| Properties | `extension`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

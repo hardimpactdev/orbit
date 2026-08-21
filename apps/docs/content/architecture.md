@@ -280,11 +280,10 @@ ClickHouse Docker service process selected from active `database` role nodes.
 The PostgreSQL process identity is stored in the analytics role settings.
 Assignment-time creation requires a stored PostgreSQL process identity. A
 one-time migration may backfill that identity from an unambiguous fleet row.
-Multiple candidates without a stored identity fail as ambiguous. A residual
-runtime single-candidate fallback still exists when stored identity is absent
-and exactly one PostgreSQL candidate is visible; that fallback remains until
-removed and is not the assignment-time contract. Those services publish
-only on their database nodes' WireGuard addresses and keep generated
+Runtime resolution requires the stored identity and fails closed when it is
+missing or stale; multiple candidates without a stored identity fail as
+ambiguous. Those services publish only on their database nodes' WireGuard
+addresses and keep generated
 credentials in encrypted gateway storage. The database processes may live on
 the same node as each other, and may live on the analytics node only when that
 node also has the active `database` role.

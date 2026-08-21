@@ -54,7 +54,7 @@ describe('interface contract', function (): void {
 });
 
 describe('source path reality', function (): void {
-    it('introspects workspace source path reality on the parent app node', function (): void {
+    it('introspects workspace source path reality on the owning instance node', function (): void {
         $app = workspaceableApp();
         $workspacePath = workspaceForAppPath($app).'/.worktrees/feature';
         $workspace = Workspace::factory()
@@ -130,7 +130,10 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
-        expect(issue($drift, 'workspace.path_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(issue($drift, 'workspace.path_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.path_missing')?->summary)
+            ->toBe('Workspace feature path is missing on the owning instance node.');
         expect(issue($drift, 'workspace.path_unusable'))->toBeNull();
     });
 
@@ -150,7 +153,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_unusable')?->kind)->toBe(DriftKind::Unverifiable);
     });
 
-    it('allows generic workspace paths outside the parent app path', function (): void {
+    it('allows generic workspace paths outside the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -178,7 +181,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
-    it('allows agent IDE workspace paths outside the parent app path', function (): void {
+    it('allows agent IDE workspace paths outside the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -194,7 +197,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
-    it('detects workspace paths that equal the parent app root', function (): void {
+    it('detects workspace paths that equal the owning instance source path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -205,7 +208,24 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.path_outside_policy')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(issue($drift, 'workspace.path_outside_policy')?->summary)
+            ->toBe('Workspace feature path is the owning instance source path, not a workspace path.');
+    });
+
+    it('uses owning instance placement vocabulary in runtime availability summaries', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => false,
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.php_version_unavailable')?->summary)
+            ->toBe('Docker is not available to serve PHP 8.5 for workspace feature on the owning instance node.');
     });
 });
 
@@ -214,7 +234,7 @@ describe('PHP runtime reality', function (): void {
         $app = workspaceableApp(['php_version' => '7.4']);
         $workspace = workspaceFor($app, [
             'name' => 'feature',
-            'php_version' => null,
+            'php_version' => '7.4',
             'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
         ]);
 
@@ -510,7 +530,7 @@ describe('registry intent', function (): void {
         expect($drift[0]->kind)->toBe(DriftKind::Missing);
     });
 
-    it('accepts PHP version inherited from the parent app', function (): void {
+    it('reports a null PHP snapshot as an incomplete record', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
         $workspace = workspaceFor($app, ['php_version' => null]);
 
@@ -520,12 +540,12 @@ describe('registry intent', function (): void {
             fn (DriftEntry $entry): bool => $entry->key === 'workspace.record_incomplete',
         );
 
-        expect($recordIssues)->toHaveCount(0);
+        expect($recordIssues)->toHaveCount(1);
     });
 
     it('requires an effective PHP version', function (): void {
         $app = workspaceableApp(['php_version' => '']);
-        $workspace = workspaceFor($app, ['php_version' => null]);
+        $workspace = workspaceFor($app, ['php_version' => '']);
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
@@ -542,7 +562,7 @@ describe('registry intent', function (): void {
 
         expect(issue($drift, 'workspace.record_incomplete')?->kind)
             ->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'workspace.app_instance_invalid')?->kind)
+            ->and(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent);
     });
 });
@@ -557,9 +577,9 @@ describe('app instance eligibility', function (): void {
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+        expect(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_project_invalid'))
+            ->and(issue($drift, 'workspace.parent_instance_invalid'))
             ->toBeNull();
     });
 
@@ -572,9 +592,9 @@ describe('app instance eligibility', function (): void {
 
         $drift = $this->probe->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.app_instance_invalid')?->kind)
+        expect(issue($drift, 'workspace.instance_invalid')?->kind)
             ->toBe(DriftKind::Divergent)
-            ->and(issue($drift, 'workspace.parent_project_invalid'))
+            ->and(issue($drift, 'workspace.parent_instance_invalid'))
             ->toBeNull();
     })->with([
         'gateway instance node' => [fn (): Node => Node::factory()->gateway()->create(['status' => 'active'])],
@@ -657,6 +677,7 @@ function workspaceFor(App $app, array $overrides = []): Workspace
         ->create([
             'name' => $name,
             'path' => workspaceForAppPath($app).'/.worktrees/'.$name,
+            'php_version' => '8.5',
             ...$overrides,
         ]);
 }

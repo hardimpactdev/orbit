@@ -1110,6 +1110,9 @@ development/E2E topologies point `/usr/local/bin/orbit` directly at
 `<source>/apps/cli/orbit`. The gateway finds its own node row through the
 singleton active `gateway` role assignment in its local registry.
 
-Non-gateway machines hold only gateway rows in their local `nodes` table — the gateways they know how to reach. Initially empty (fresh install), populated by `gateway:add`. There is no self-row on non-gateway machines.
+Non-gateway machines store the gateways they know how to reach in the
+`gateways` map in `~/.config/orbit/config.json`. The map is empty after a fresh
+install and `gateway:add` populates it. Non-gateway machines do not have a local
+`nodes` table or a self-row.
 
 Platform-specific behavior — installing packages, writing config files, controlling services — lives behind handlers and services, so the rest of Orbit doesn't branch on OS.

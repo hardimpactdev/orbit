@@ -1,7 +1,7 @@
 # Operation Commands
 
 Cross-family or local commands. Spec:
-[`apps/docs/content/domains/11_operation/`](../../../apps/docs/content/domains/11_operation/).
+[`apps/docs/content/domains/11_operation/`](../../../../apps/docs/content/domains/11_operation/).
 
 ## `orbit doctor`
 

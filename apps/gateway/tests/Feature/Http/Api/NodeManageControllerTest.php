@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -73,6 +74,19 @@ it('retains management intent when Agent push is unavailable', function (): void
         ->user->toBe('nicky')
         ->platform->toBe('macos_15-5')
         ->managed->toBeTrue();
+
+    $entry = Activity::query()->latest('id')->firstOrFail();
+
+    expect($entry->event)
+        ->toBe('node.managed')
+        ->and($entry->subject_type)
+        ->toBe(Node::class)
+        ->and($entry->subject_id)
+        ->toBe($node->id)
+        ->and($entry->properties->only(['user', 'platform', 'managed'])->all())
+        ->toBe(['user' => 'nicky', 'platform' => 'macos_15-5', 'managed' => true])
+        ->and($entry->properties->has('probe'))
+        ->toBeFalse();
 });
 
 it('rejects role-bearing callers before management side effects', function (): void {

@@ -342,14 +342,14 @@ Peer-specific behavior and test mapping live in:
 
 ## Activity Logging
 
-The local CLI command emits a best-effort activity entry for successful and
-failed doctor runs. The gateway API endpoints emit activity entries for remote
-doctor orchestration requests.
+The local CLI command does not emit activity because the CLI has no trusted
+shared activity writer. Gateway API endpoints emit their own activity entries
+for remote doctor orchestration requests.
 
 | Field | Value |
 | --- | --- |
-| Type | `doctor` for local CLI; `api:POST /doctor/run` for gateway API verify transport |
+| Type | `api:POST /doctor/run` |
 | Effect | `read` for verify-mode and `--dry-run` runs; `write` for `--fix`, `--restore`, and `--adopt` mode orchestration that actually applies changes |
 | Subject | `none` |
 | Properties | `mode`, selected `families`, optional `key`, `dry_run`, `healthy`, and `issues` when available. Action counts and status when in resolution modes. API transport context is added by middleware. |
-| Description | `Doctor verification run` for local CLI verify mode; `Doctor resolution run` for local CLI resolution modes; derived for gateway API |
+| Description | derived |

@@ -154,6 +154,16 @@ The next runtime convergence for the app or a workspace uses the stored mount
 configuration. The runtime manager creates safe source directories for bind
 mounts immediately before Docker creates the container.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /instances/{instance}/mounts` for `list`; `api:POST /instances/{instance}/mounts` for `add`; `api:DELETE /instances/{instance}/mounts` for `remove`. |
+| Effect | `read` for `list`; `write` for `add` and `remove`. |
+| Subject | The selected `Instance`; `none` when selection fails. |
+| Properties | `action` and the normalized mount `target`; source paths are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |
@@ -163,4 +173,4 @@ mounts immediately before Docker creates the container.
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App runtime configured instance mounts and runtime `spec_hash` changes. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | Workspace use of selected instance runtime mounts and runtime `spec_hash` changes. |
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php` | App runtime source-directory preparation before Docker run. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php` | Workspace runtime source-directory preparation for inherited app mounts before Docker run. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php` | Workspace runtime source-directory preparation for inherited instance mounts before Docker run. |

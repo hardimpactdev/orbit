@@ -1,13 +1,13 @@
 # Activity Commands
 
 Activity commands surface durable gateway activity history and define the
-cross-cutting logging contract that every state-changing command and API
-endpoint participates in.
+cross-cutting logging contract for gateway API endpoints. CLI commands do not
+write activity directly.
 
 The activity command domain does not own a state family. Activity commands read
-gateway-recorded events produced by other product families; the logging
-doctrine governs *how* every other command emits activity, not what those
-commands own.
+gateway-recorded events produced by other product families. The logging
+doctrine governs gateway emission for command-backed work. State changes that
+happen only in the local CLI do not emit activity.
 
 ## State Ownership
 
@@ -34,13 +34,15 @@ doctor contracts.
 
 ## Domain Rules
 
-These rules apply to every command and API endpoint in the Orbit product.
+These rules apply to gateway activity and to commands that call the gateway.
 
-- Every state-changing operation MUST be recorded as an activity entry at the
-  gateway chokepoint. Commands and API endpoints emit through the
-  gateway-owned activity logger when they are the canonical actor;
-  gateway-recorded flows such as `update:all` record at the gateway start
-  route and durable runner instead. See
+- Every gateway API operation that changes state MUST be recorded as an
+  activity entry at the gateway chokepoint. A CLI command that calls a matching
+  gateway endpoint relies on that endpoint's entry. State changes that happen
+  only in the local CLI do not emit activity because the CLI has no trusted
+  shared activity writer.
+  Gateway-recorded flows such as `update:all` record at the gateway start route
+  and durable runner instead. See
   [`activity-concepts.md`](activity-concepts.md) for the contract.
 - Activity logging records configuration and outcome, not raw request or command
   arguments. Properties are declared per command; secrets are never logged.

@@ -46,9 +46,10 @@ orbit workspace:setup feature-a --instance=my-app --stream-json
   context when it resolves one instance, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
-  that node. The path may live outside the parent app path, including external
-  agent worktrees such as Codex or Claude worktree directories. The parent app
-  root itself is not a valid workspace path. A relative or non-absolute value
+  that node. The path may live outside the owning Instance source path,
+  including external agent worktrees such as Codex or Claude worktree
+  directories. The owning Instance source path itself is not a valid workspace
+  path. A relative or non-absolute value
   fails before side effects.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
@@ -64,13 +65,14 @@ on (caller node identity, absolute CWD) returns one of:
   parent `app`, required selected instance, and `path` are resolved
   from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
-- **A registered app's own root path** — the CWD is the parent app's own
-  path, not a workspace path under it. The command fails before side effects
+- **An owning Instance's source path** — the CWD is the selected Instance's own
+  source path, not a workspace path. The command fails before side effects
   with a hint to run
   [`workspace:new`](../1_workspace-new/workspace-new.md) instead. Use
   `workspace:setup` only when the CWD is (or will be adopted as) a workspace
-  path; the app root is never itself a workspace.
-- **A path inside a registered app** — the CWD is under a known app's path
+  path; the Instance source path is never itself a workspace.
+- **A path inside a registered Instance source** — the CWD is under a known
+  Instance's source path
   but not a registered workspace. The parent app is resolved from the lookup.
   The lookup must also resolve exactly one concrete instance or fail with
   `instance_required`. The workspace identity is filled in through local Codex

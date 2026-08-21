@@ -1,0 +1,32 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T20:45:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-retained-operator-readiness/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-224557-codex-retained-operator-readiness",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/retained-operator-readiness-runtime.md",
+        "evidence/retained-operator-readiness-tdd.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-20T20-38-51Z-a6dd97cebcb8/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/retained-operator-readiness-runtime.md": "5bd47df8914eda38ac92cdb86974808d5646a2b77360e8c9b1c80b45350d9c0a",
+        "evidence/retained-operator-readiness-tdd.md": "68e7a8f059af7f4146a378648c8394f834eba2478c04eb82f2150f06c1d6858b",
+        "loop.md": "0ec3d14da3d9396ae50f8d6b4c2b811cd5862bff6c97b35cbe9a0d8b3fbf2a38",
+        "quality-gates/profiles/2026-08-20T20-38-51Z-a6dd97cebcb8/gateway_pest.junit.xml": "4d0ff7df74783fbe4bce176c372f8db4de0417d37523eedda0d1a16ef0c225b8"
+    },
+    "slug": "codex-retained-operator-readiness",
+    "requested_slug": "codex-retained-operator-readiness",
+    "compatible_slugs": [
+        "codex-retained-operator-readiness"
+    ],
+    "branch": "codex/retained-operator-readiness",
+    "candidate_commit": "a6dd97cebcb83fb9998ae3d18b945a27dfc15574",
+    "accepted_feature_tip": "a6dd97cebcb83fb9998ae3d18b945a27dfc15574",
+    "accepted_main_tip": "29177ab6ba594f1417449e159a2a52bf9c7e9fc3",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

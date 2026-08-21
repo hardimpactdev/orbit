@@ -99,6 +99,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `tool-reconfigure` changes gateway configuration only where the tool definition owns generated config, then performs command-owned apply. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /tools/{tool}/reconfigure` |
+| Effect | `write` |
+| Subject | The target `Node`; `none` when target resolution fails. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

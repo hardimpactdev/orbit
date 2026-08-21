@@ -239,7 +239,7 @@ final class NodeRoleRegistry
                 conflictsWith: [
                     NodeRoleName::Agent->value,
                 ],
-                supportedPlatforms: ['ubuntu', 'debian'],
+                supportedPlatforms: ['ubuntu'],
                 settingsClass: EmptyRoleSettings::class,
             ),
             NodeRoleName::Analytics->value => new NodeRoleDefinition(

@@ -66,6 +66,16 @@ doctor issue, fix drift, or adopt provider state. [`doctor --family=proxy`](../.
 owns ingress route health and [`doctor --family=instance`](../../../5_app/instance-doctor.md)
 owns app-domain health.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /cloudflare/zones/{zone}/dns` |
+| Effect | `read` |
+| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

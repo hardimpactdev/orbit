@@ -1,6 +1,7 @@
 # `orbit cf-cache-rule:add`
 
-Create the Cloudflare cache rule that Orbit manages for an app's Cloudflare-backed domain.
+Create the Cloudflare cache rule that Orbit manages for the selected concrete
+instance's Cloudflare-backed domain.
 
 ## Usage
 
@@ -11,35 +12,37 @@ orbit cf-cache-rule:add <app> [--json]
 ## Examples
 
 ```bash
-orbit cf-cache-rule:add docs
+orbit cf-cache-rule:add docs.production
 orbit cf-cache-rule:add docs --json
 ```
 
 ## Arguments and options
 
-- `app`: Bare app name. Current gateway resolution uses
-  `App.domain` to find the Cloudflare zone. Dotted `app.instance`
-  selectors are not implemented.
+- `app`: Dotted `app.instance` selector, or a bare app name when the app has
+  exactly one instance. The selected instance's domain determines the
+  Cloudflare zone.
 - `--json`: Return the cache rule result in the JSON output.
 
 ## What Happens
 
-Run `orbit cf-cache-rule:add <app>` to create or converge the standard
-Cloudflare cache rule for the app's Cloudflare zone.
+Run `orbit cf-cache-rule:add <app.instance>` to create or converge the standard
+Cloudflare cache rule for the selected instance's Cloudflare zone. A bare App
+selector is accepted only when it resolves to exactly one Instance.
 
 `cf-cache-rule:add` asks the gateway to create or converge the standard
-Cloudflare cache rule for the zone resolved from the app's domain. The rule
-lets Cloudflare cache public responses while respecting origin `Cache-Control`
-headers.
+Cloudflare cache rule for the zone resolved from the selected instance's
+domain. The rule lets Cloudflare cache public responses while respecting
+origin `Cache-Control` headers.
 
 The command does not change instance deployment policy, process state, or proxy
-routes. Direction (pending): zone resolution from instance-owned domains.
+routes.
 
 ## Output
 
-You will see a confirmation of the cache rule outcome for the resolved app.
+You will see a confirmation of the cache rule outcome for the selected
+instance.
 
-Human output confirms the app cache rule outcome. Use `--json` for
+Human output confirms the instance cache rule outcome. Use `--json` for
 machine-readable output.
 
 ## Requirements
@@ -47,7 +50,8 @@ machine-readable output.
 - The caller can reach the Orbit gateway.
 - The caller has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named app exists and has a Cloudflare-backed `App.domain`.
+- The selected instance exists and has a Cloudflare-backed domain.
+- A bare app selector resolves to exactly one instance.
 
 ## Related Commands
 

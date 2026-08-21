@@ -79,3 +79,10 @@ orbit internal:database-query-local --operation-token=<token> --json
 
 Local execution may emit node-local telemetry, but any structured activity
 mirrored back to the gateway must omit raw result rows and full SQL text.
+
+## Test Mapping
+
+| Path | Coverage |
+| --- | --- |
+| `apps/cli/tests/Feature/InternalDatabaseQueryLocalCommandTest.php` | Operation-token validation, stdin payload validation, write consent, strict JSON output, execution failures, and exclusion of result rows and full SQL from mirrored activity data. |
+| `packages/core/tests/Database/DatabaseReadOnlyGuardTest.php` | SQLite query-only enforcement, restoration of the prior query-only state, and transaction cleanup after success or failure. |

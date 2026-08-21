@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T20:08:11+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-round-12-docs-guidance/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-220811-codex-round-12-docs-guidance",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/round-12-docs-guidance-red-green.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-20T20-00-51Z-366d502324e5/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/round-12-docs-guidance-red-green.md": "33e1244de640a591221dc6d254d84b338edf5f2769322feaaa58705ec14354b0",
+        "loop.md": "490c95cad55226f39e97e38611e0a5ea01df4d37ad3e28b41a1f7487102a7bf6",
+        "quality-gates/profiles/2026-08-20T20-00-51Z-366d502324e5/gateway_pest.junit.xml": "0408aac1ba7055701d8de8f43aaf99aba6b73822e5cb5462cd2b736d40b839ff"
+    },
+    "slug": "codex-round-12-docs-guidance",
+    "requested_slug": "codex-round-12-docs-guidance",
+    "compatible_slugs": [
+        "codex-round-12-docs-guidance"
+    ],
+    "branch": "codex/round-12-docs-guidance",
+    "candidate_commit": "366d502324e56a5d1924c14d0a8d9f9d963c2d84",
+    "accepted_feature_tip": "366d502324e56a5d1924c14d0a8d9f9d963c2d84",
+    "accepted_main_tip": "66807a7c3c8967d9b975a88d69774fabc810087d",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

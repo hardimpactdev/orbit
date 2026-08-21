@@ -78,6 +78,16 @@ issues, fix drift, or adopt backend state. [`doctor --family=node`](../../../1_n
 owns Orbit node WireGuard identity, gateway-managed node peers, VPN-role
 runtime drift, and node reachability drift.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /vpn/clients` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

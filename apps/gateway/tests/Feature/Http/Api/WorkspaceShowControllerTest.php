@@ -71,6 +71,7 @@ describe('WorkspaceShowController', function (): void {
             'app_id' => $app->id,
             'instance_id' => $app->instances()->firstOrFail()->id,
             'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
+            'php_version' => '8.5',
             'adopted' => true,
         ]);
 
@@ -102,7 +103,7 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('success.data.workspace.node', 'app-1')
             ->assertJsonPath('success.data.workspace.path', '/home/orbit/apps/docs/.worktrees/feature-docs')
             ->assertJsonPath('success.data.workspace.php_version', '8.5')
-            ->assertJsonPath('success.data.workspace.php_inherited', true)
+            ->assertJsonPath('success.data.workspace.php_inherited', false)
             ->assertJsonPath('success.data.workspace.adopted', true)
             ->assertJsonPath('success.data.workspace.lifecycle_status', 'expected')
             // show-only siblings

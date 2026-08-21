@@ -999,6 +999,43 @@ it('requires a non-null instance on canonical workspace json entities', function
         );
 });
 
+it('allows the compact workspace show node sibling', function (): void {
+    config()->set('librarian.rules', [JsonRendererExampleRule::class]);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/6_workspace/4_workspace-show/technical/6.2_workspace-show_output-render_json.md',
+        contents: <<<'MARKDOWN'
+            # JSON Renderer
+
+            ```json
+            {
+              "success": {
+                "data": {
+                  "node": {
+                    "name": "app-1",
+                    "host": "1.2.3.4"
+                  }
+                },
+                "meta": []
+              }
+            }
+            ```
+            MARKDOWN,
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule($payload, 'command_docs.json_renderer_examples'))
+        ->toBeEmpty();
+});
+
 it('accepts the compact app list summary instead of the instance placement entity', function (): void {
     config()->set('librarian.rules', [JsonRendererExampleRule::class]);
     writeOrbitDocsFile(
@@ -1276,6 +1313,36 @@ it('reports canonical technical contracts without activity logging declarations'
             'rule' => 'command_docs.activity_logging_contract',
             'message' => 'Canonical technical contracts must include `## Activity Logging` declaring the per-command Loggable contract.',
         ]);
+});
+
+it('checks activity logging for commands outside the former allowlist', function (): void {
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/1_node/2_node-manage/node-manage.md',
+        contents: "# `orbit node:manage`\n\n[Technical](technical/1_node-manage.md)\n",
+    );
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/1_node/2_node-manage/technical/1_node-manage.md',
+        contents: validOrbitCanonicalContract(signature: 'orbit node:manage', activityLogging: ''),
+    );
+
+    $rule = new ActivityLoggingContractRule(new OrbitCommandDocs(
+        new DocsConfig("{$this->docsRoot}/docs"),
+    ));
+    $matchingFindings = array_map(
+        static fn ($finding): array => $finding->toArray(),
+        $rule->check(),
+    );
+
+    expect($matchingFindings)->toContainEqual([
+        'path' => 'docs/domains/1_node/2_node-manage/technical/1_node-manage.md',
+        'line' => null,
+        'severity' => 'error',
+        'rule' => 'command_docs.activity_logging_contract',
+        'message' => 'Canonical technical contracts must include `## Activity Logging` declaring the per-command Loggable contract.',
+    ]);
 });
 
 it('reports unregistered product error codes in json renderer examples', function (): void {

@@ -82,6 +82,16 @@ WireGuard peer outside `node:remove` may later surface as node-family drift.
 [`doctor --family=node`](../../../1_node/node-doctor.md) owns stale node-peer
 detection and safe node-peer cleanup.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:DELETE /vpn/clients/{name}` |
+| Effect | `destructive` |
+| Subject | `none` |
+| Properties | `client` is the selected VPN client name. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

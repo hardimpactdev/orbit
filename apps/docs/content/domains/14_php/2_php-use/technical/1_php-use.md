@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
+# Technical Contract: `orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--cli] [--json]
 ```
 
 ## Input Contract
@@ -24,11 +24,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `[version]` | Required unless `inherit=true`. | `inherit=true`. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
+| `version` | `[version]` | Always. | Never. | None. | Orbit-supported PHP image version available on the selected instance serving node, or on the resolved workspace node. For `cli=true`, only `8.5` is supported. |
 | `instance` | `--instance` | No instance or workspace context resolves for instance/workspace targets. | Never. | Cwd-inferred selector when present. | Visible `<app.instance>` selector. A bare app is accepted only when it resolves unambiguously to one concrete instance. The write changes that instance's own PHP version. |
-| `workspace` | `--workspace` | `inherit=true`, unless cwd resolves a workspace. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
-| `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
-| `cli` | `--cli` | Optional. | `instance`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
+| `workspace` | `--workspace` | No workspace context resolves for a workspace target. | Never. | Cwd-inferred workspace when present. | Visible workspace selector belonging to the resolved app and instance. |
+| `cli` | `--cli` | Optional. | `instance` or `workspace` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
 | `node` | `--node` | Optional. | Instance target. | Concrete workspace serving node for workspace scope; default node for CLI scope. | Visible node slug. For a workspace target it may only confirm placement; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
@@ -40,7 +39,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
    - `--instance` or cwd instance context selects that instance's own runtime version.
    - With no resolved target, interactive mode prompts from authorized instance,
      workspace choices; non-interactive mode fails.
-2. Resolve `version` from positional input or prompt unless `--inherit` is supplied.
+2. Resolve `version` from positional input or prompt.
 3. Validate mutually exclusive inputs.
 4. For an instance target, authorize `php:write` on its serving node and verify
    the approved image there. Refresh stale inventory before rejecting. Any
@@ -77,8 +76,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Requires the workspace to resolve to an active `app-dev` serving node and
   rejects `app-prod` callers with `workspace.unsupported_for_production`
   before inventory, configuration, proxy, or runtime effects.
-- Writes a workspace PHP override when `version` targets a workspace.
-- Clears the workspace PHP override when `--inherit` is supplied.
+- Writes the selected workspace's own concrete PHP version.
 - Re-renders and applies workspace runtime container artifacts through Agent
   push.
 - Re-renders the proxy backend artifacts owned by the workspace when the route
@@ -133,10 +131,20 @@ readiness checks.
 Instance and workspace proxy backend drift caused by runtime-target changes is
 verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /php/use` |
+| Effect | `write` |
+| Subject | `none` because the command can target different scope model types. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts instance/workspace selections, inherit semantics, mutual exclusion validation, result rendering, and gateway error pass-through. |
+| `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts explicit instance/workspace selections, validates mutually exclusive targets, renders results, and passes through gateway errors. |
 | `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Serving-node authorization, image preflight before mutation, concrete workspace placement, wrong-permission denial, and gateway implicit authority. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Instance-scoped selection that is not gated by a sibling instance's workspace, concrete instance results, and workspace selection/inheritance behavior. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Instance-scoped selection that is not gated by a sibling instance's workspace, concrete instance results, and explicit workspace selection behavior. |

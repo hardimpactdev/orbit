@@ -13,11 +13,14 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   exposes.
 - Every proxy route has a public owner: `instance`, `analytics`, `websocket`,
   `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom`. Persisted primary
-  routes use `owner_type=app` and `kind=app`; the registry projects both as
-  `instance` only when the complete App, Instance, kind, and null Workspace
-  ownership tuple is valid. Invalid tuples retain their stored owner type in
-  registry and conflict/removal metadata. Persisted `owner_type=instance` is
-  invalid. Convergence and destructive cleanup accept a route only when its
+  routes use `owner_type=app` and `kind=app`; registry and list rendering
+  project both as `instance` only when the complete App, Instance, kind, and
+  null Workspace ownership tuple is valid. Conflict and removal metadata carry
+  the raw stored owner type, so a valid primary route reports `app` there.
+  Conflict and removal metadata also retain the stored owner type for invalid
+  tuples. Public list and summary rendering omit invalid instance-backed
+  tuples. Persisted `owner_type=instance` is invalid. Convergence and
+  destructive cleanup accept a route only when its
   complete ownership tuple resolves to the intended owner; a domain collision
   with invalid or different ownership is a conflict. The owner value classifies
   which domain's convergence edits the route record; the private
@@ -128,7 +131,8 @@ Proxy API requests are authorized against the route's serving node.
 - `proxy:add` covers custom proxy and redirect route creation on the selected
   serving node.
 - `proxy:remove` covers removal of custom proxy and redirect routes on the
-  route's owning node, and registry rows whose owner record is proven missing.
+  route's owning node. It also covers a registry row with structurally complete
+  tool ownership when the matching installed `NodeTool` is absent on that node.
 
 Authorization failures use `authorization_failed` with standard
 `missing_permission` metadata.
@@ -227,8 +231,8 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `domain` | string | Hostname or host/path route identity. |
-| `kind` | `app`, `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
-| `owner.type` | `app`, `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `analytics` by public analytics host routes. |
+| `kind` | `instance`, `workspace`, `internal`, `proxy`, or `redirect` | Public route behavior. Persisted primary-instance rows use `kind=app` but always project `instance`. |
+| `owner.type` | `instance`, `analytics`, `websocket`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Public domain whose convergence edits the route record. Valid persisted primary routes project their compatibility `app` owner as `instance`. |
 | `owner.name` | string \| null | Owning app, instance, WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
 
 The remaining fields describe placement, backend target, TLS, and status.

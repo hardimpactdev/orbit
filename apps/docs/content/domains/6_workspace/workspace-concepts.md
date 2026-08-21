@@ -14,7 +14,7 @@ The terms below define the core identity vocabulary for the workspace family.
   `app-dev` node, with a canonical workspace name, workspace path, and one
   workspace route lifecycle.
 - **Concrete instance ownership:** Every workspace row stores a non-null
-  `instance_id`. A bare parent-app selector or parent-app path is only a
+  `instance_id`. A bare App selector or owning Instance source path is only a
   shorthand resolver: it succeeds when exactly one registered instance
   matches and otherwise fails with `instance_required`. It never creates a
   parent-app-only workspace. Every workspace ProxyRoute stores both its
@@ -45,7 +45,8 @@ The terms below define the core identity vocabulary for the workspace family.
   serves the workspace's web route through FrankenPHP. Workspace setup and
   teardown run through the selected app user's host tool path, not inside the
   container; PHP/Composer/Artisan commands include the node's versioned host PHP
-  toolchain. Workspaces whose parent app is on an `app-dev` node receive the
+  toolchain. Workspaces whose owning Instance is served by an active `app-dev`
+  node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.
@@ -74,16 +75,14 @@ The terms below define the core identity vocabulary for the workspace family.
 
 These terms describe how PHP version is resolved for workspaces.
 
-- **Workspace PHP override:** Gateway-tracked PHP version stored on the
-  workspace row, copied from the owning instance at creation unless an explicit
-  version is supplied. When the row keeps no version of its own, the workspace
-  resolves through its owning instance and then the app creation template, and
-  JSON renderers report `php_inherited=true` for exactly those rows. The selected
-  version chooses the workspace runtime container image; it does not install
-  host PHP or render host FPM pools.
-- **Workspace PHP inheritance flag:** Boolean entity field that records whether
-  a workspace's effective PHP version is resolved from an owning row (`true`) or
-  stored on the workspace itself (`false`). Exposed in JSON as `php_inherited`.
+- **Workspace PHP runtime version:** Gateway-tracked concrete PHP version stored
+  on the workspace row and copied from the owning instance at creation unless
+  an explicit version is supplied. A null value is invalid and remains visible
+  to Doctor instead of resolving through another row. The selected version
+  chooses the workspace runtime container image; it does not install host PHP
+  or render host FPM pools.
+- **Workspace PHP inheritance flag:** Compatibility field exposed as
+  `php_inherited`. It is always `false` under the snapshot ownership model.
 
 ## Setup and teardown
 
@@ -131,7 +130,7 @@ These boundaries define what the workspace family owns and what belongs to other
   workspace. The workspace family owns branch/path/setup state; the process
   family owns start/stop/restart/log lifecycle for the long-running units. They
   do not own proxy route convergence, process-unit convergence, app
-  configuration, app runtime mount intent, or node-level firewall policy.
+  configuration, instance runtime mount intent, or node-level firewall policy.
   Workspace commands do not install host PHP, Composer, or Caddy.
   Workspace setup initializes a missing workspace `.env` from that workspace's
   own `.env.example`, then overlays the effective workspace env. It preserves

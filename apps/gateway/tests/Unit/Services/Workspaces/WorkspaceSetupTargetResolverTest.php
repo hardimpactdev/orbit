@@ -20,7 +20,7 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('explicit path adoption', function (): void {
-    it('registers workspace paths outside the parent app path', function (): void {
+    it('registers workspace paths outside the owning instance source path', function (): void {
         $app = workspaceSetupResolverApp([
             'name' => 'dngdmt',
             'path' => '/home/nckrtl/apps/dngdmt',
@@ -147,18 +147,31 @@ describe('explicit path adoption', function (): void {
         expect(Workspace::query()->where('app_id', $app->id)->exists())->toBeFalse();
     });
 
-    it('rejects the parent project root as an explicit workspace path', function (): void {
+    it('rejects the owning instance source path as an explicit workspace path', function (): void {
         workspaceSetupResolverApp([
             'name' => 'dngdmt',
             'path' => '/home/nckrtl/apps/dngdmt',
         ]);
 
-        expect(fn () => app(WorkspaceSetupTargetResolver::class)->resolve(
-            name: 'y-fol-dng-202603-020',
-            appName: 'dngdmt',
-            path: '/home/nckrtl/apps/dngdmt',
-        ))
-            ->toThrow(WorkspaceSetupResolutionFailed::class, 'project root');
+        try {
+            app(WorkspaceSetupTargetResolver::class)->resolve(
+                name: 'y-fol-dng-202603-020',
+                appName: 'dngdmt',
+                path: '/home/nckrtl/apps/dngdmt',
+            );
+
+            $this->fail('Expected the owning instance source path to be rejected.');
+        } catch (WorkspaceSetupResolutionFailed $exception) {
+            expect($exception->errorCode)
+                ->toBe('workspace.path_is_instance_root')
+                ->and($exception->getMessage())
+                ->toContain('instance source path')
+                ->and($exception->meta)
+                ->toMatchArray([
+                    'instance' => 'dngdmt.development',
+                    'path' => '/home/nckrtl/apps/dngdmt',
+                ]);
+        }
     });
 
     it('rejects production placement before workspace registration', function (): void {

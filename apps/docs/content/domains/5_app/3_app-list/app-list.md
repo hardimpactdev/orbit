@@ -47,7 +47,8 @@ Run `app:list` to read visible apps from the gateway:
 - SSH into nodes.
 - Probe app health or path existence (use [`doctor --family=instance`](../instance-doctor.md)).
 - Mutate gateway configuration or node artifacts.
-- Treat an app's default node metadata as runtime placement or list scope.
+- Infer runtime placement or list scope from the logical App. Visibility and
+  counts come only from concrete Instances.
 
 ## Output
 

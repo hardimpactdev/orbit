@@ -69,7 +69,13 @@ This command uses the shared validation, authorization, and gateway failures in
 
 ## Activity Logging
 
-The gateway logs the API call as a write with type `api:PUT /manifest`.
+| Field | Value |
+| --- | --- |
+| Type | `api:PUT /manifest` |
+| Effect | `write` |
+| Subject | The authenticated caller `Node`; `none` when caller resolution fails. |
+| Properties | `action` and `manifest_url`; no manifest body or credentials. |
+| Description | derived |
 
 ## Doctor Relationship
 

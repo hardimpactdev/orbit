@@ -7,7 +7,7 @@
 **Effects:** `read`, `local-only`.
 
 **Prerequisites:**
-- The command is running on a non-gateway operator machine.
+- The command runs on the caller machine against local resolver state.
 - The caller platform is Linux or macOS.
 
 ## Signature
@@ -65,7 +65,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Not supported on gateway | The command is run on a gateway node. | Failure before local resolver reads |
 | Unsupported platform | The caller platform is neither Linux nor macOS. | Failure before local resolver reads |
 | Resolver read failed | Orbit-managed local resolver state cannot be inspected. | Failure |
 
@@ -81,17 +80,9 @@ No local DNS overrides is success with an empty result.
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed local
-resolver list attempts. Activity logging is best-effort and must not change
-the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `dns:list` |
-| Effect | `read` |
-| Subject | `none`; the command reads caller-local resolver files and does not own a durable DNS entity. |
-| Properties | `count` and `resolver_backend` when local resolver state is read. No resolver file contents, public DNS responses, gateway records, or secrets. |
-| Description | derived |
+This caller-local command does not emit activity because the CLI has no
+trusted shared activity writer. It does not call a gateway API endpoint.
+Resolver reads are reflected only in command output and exit status.
 
 ## Test Mapping
 

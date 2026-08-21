@@ -7129,63 +7129,72 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "data": {
+                        "success": {
                           "type": "object",
                           "properties": {
-                            "name": {
-                              "type": "string"
-                            },
-                            "action": {
-                              "type": "string",
-                              "const": "removed"
-                            },
-                            "removed_self": {
-                              "type": "boolean"
-                            },
-                            "wireguard_peer_removed": {
-                              "type": "boolean"
-                            },
-                            "grants_removed": {}
-                          },
-                          "required": [
-                            "name",
-                            "action",
-                            "removed_self",
-                            "wireguard_peer_removed",
-                            "grants_removed"
-                          ]
-                        },
-                        "meta": {
-                          "type": "object",
-                          "properties": {
-                            "warnings": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
+                            "data": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "action": {
+                                  "type": "string",
+                                  "const": "removed"
+                                },
+                                "removed_self": {
+                                  "type": "boolean"
+                                },
+                                "wireguard_peer_removed": {
+                                  "type": "boolean"
+                                },
+                                "grants_removed": {
+                                  "type": "integer"
+                                }
                               },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
+                              "required": [
+                                "name",
+                                "action",
+                                "removed_self",
+                                "wireguard_peer_removed",
+                                "grants_removed"
+                              ]
+                            },
+                            "meta": {
+                              "type": "object",
+                              "properties": {
+                                "warnings": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 0,
+                                  "additionalItems": false
+                                }
+                              },
+                              "required": [
+                                "warnings"
+                              ]
                             }
                           },
                           "required": [
-                            "warnings"
+                            "data",
+                            "meta"
                           ]
                         }
                       },
                       "required": [
-                        "data",
-                        "meta"
+                        "success"
                       ]
+                    },
+                    {
+                      "type": "string"
                     }
-                  },
-                  "required": [
-                    "success"
                   ]
                 }
               }
@@ -8285,8 +8294,10 @@
                                               "type": "string"
                                             },
                                             "php_version": {
-                                              "type": "string",
-                                              "description": "The instance's own version, which may differ from the app creation template."
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -8311,7 +8322,7 @@
                                               ]
                                             },
                                             "inherits": {
-                                              "type": "string"
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -8415,9 +8426,6 @@
                   "node": {
                     "type": "string"
                   },
-                  "inherit": {
-                    "type": "string"
-                  },
                   "cli": {
                     "type": "string"
                   }
@@ -8514,8 +8522,10 @@
                                               "type": "string"
                                             },
                                             "php_version": {
-                                              "type": "string",
-                                              "description": "The instance's own version, which may differ from the app creation template."
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -8540,7 +8550,7 @@
                                               ]
                                             },
                                             "inherits": {
-                                              "type": "string"
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -8690,8 +8700,10 @@
                                               "type": "string"
                                             },
                                             "php_version": {
-                                              "type": "string",
-                                              "description": "The instance's own version, which may differ from the app creation template."
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -8716,7 +8728,7 @@
                                               ]
                                             },
                                             "inherits": {
-                                              "type": "string"
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -8757,7 +8769,10 @@
                                           "type": "string"
                                         },
                                         "previous": {
-                                          "type": "string"
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
                                         },
                                         "version": {
                                           "type": [
@@ -8772,10 +8787,7 @@
                                           ]
                                         },
                                         "inherits": {
-                                          "type": [
-                                            "object",
-                                            "null"
-                                          ]
+                                          "type": "boolean"
                                         },
                                         "changed": {
                                           "type": "boolean"
@@ -8873,8 +8885,10 @@
                                               "type": "string"
                                             },
                                             "php_version": {
-                                              "type": "string",
-                                              "description": "The instance's own version, which may differ from the app creation template."
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
                                             }
                                           },
                                           "required": [
@@ -8899,7 +8913,7 @@
                                               ]
                                             },
                                             "inherits": {
-                                              "type": "string"
+                                              "type": "boolean"
                                             }
                                           },
                                           "required": [
@@ -8940,7 +8954,10 @@
                                           "type": "null"
                                         },
                                         "previous": {
-                                          "type": "string"
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
                                         },
                                         "version": {
                                           "type": "string"
@@ -10478,12 +10495,11 @@
                                           "type": "string",
                                           "enum": [
                                             "instance",
-                                            "app",
+                                            "upstream",
                                             "analytics",
                                             "websocket",
                                             "workspace",
                                             "gateway",
-                                            "upstream",
                                             "redirect"
                                           ]
                                         },
@@ -12961,283 +12977,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "object",
-                          "properties": {
-                            "data": {
-                              "type": "object",
-                              "properties": {
-                                "updated": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "tool": {
-                                        "type": "string"
-                                      },
-                                      "node": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "tool",
-                                      "node"
-                                    ]
-                                  }
-                                },
-                                "skipped": {
-                                  "type": "array",
-                                  "items": {
-                                    "anyOf": [
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "tool": {
-                                            "type": "string"
-                                          },
-                                          "node": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string"
-                                              },
-                                              {
-                                                "type": "string",
-                                                "enum": [
-                                                  ""
-                                                ]
-                                              }
-                                            ]
-                                          },
-                                          "reason": {
-                                            "type": "string",
-                                            "const": "update_capability_missing"
-                                          }
-                                        },
-                                        "required": [
-                                          "tool",
-                                          "node",
-                                          "reason"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "tool": {
-                                            "type": "string"
-                                          },
-                                          "node": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string"
-                                              },
-                                              {
-                                                "type": "string",
-                                                "enum": [
-                                                  ""
-                                                ]
-                                              }
-                                            ]
-                                          },
-                                          "reason": {
-                                            "type": "string",
-                                            "const": "null_latest_version"
-                                          }
-                                        },
-                                        "required": [
-                                          "tool",
-                                          "node",
-                                          "reason"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "tool": {
-                                            "type": "string"
-                                          },
-                                          "node": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string"
-                                              },
-                                              {
-                                                "type": "string",
-                                                "enum": [
-                                                  ""
-                                                ]
-                                              }
-                                            ]
-                                          },
-                                          "reason": {
-                                            "type": "string",
-                                            "const": "null_update_script"
-                                          }
-                                        },
-                                        "required": [
-                                          "tool",
-                                          "node",
-                                          "reason"
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                },
-                                "failed": {
-                                  "type": "array",
-                                  "items": {
-                                    "anyOf": [
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "tool": {
-                                            "type": "string"
-                                          },
-                                          "node": {
-                                            "type": "string"
-                                          },
-                                          "error": {
-                                            "type": "string",
-                                            "const": "Target node is missing."
-                                          }
-                                        },
-                                        "required": [
-                                          "tool",
-                                          "node",
-                                          "error"
-                                        ]
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "tool": {
-                                            "type": "string"
-                                          },
-                                          "node": {
-                                            "type": "string"
-                                          },
-                                          "error": {
-                                            "type": "string"
-                                          }
-                                        },
-                                        "required": [
-                                          "tool",
-                                          "node",
-                                          "error"
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                }
-                              },
-                              "required": [
-                                "updated",
-                                "skipped",
-                                "failed"
-                              ]
-                            },
-                            "meta": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "data",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success"
-                      ]
-                    },
-                    {
-                      "type": "object"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "This node is not authorized to manage tools."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "authorization_failed"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Peer identity unknown."
-                            },
-                            "meta": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
+                  "type": "object"
                 }
               }
             }
@@ -16204,103 +15944,20 @@
                             "data": {
                               "type": "object",
                               "properties": {
-                                "app": {
-                                  "type": "string"
-                                },
-                                "instance": {
+                                "result": {
                                   "type": "string"
                                 },
                                 "workspace": {
                                   "type": "string"
-                                },
-                                "node": {
-                                  "type": "string"
-                                },
-                                "url": {
-                                  "type": "string"
-                                },
-                                "action": {
-                                  "type": "string",
-                                  "const": "set_up"
-                                },
-                                "setup_steps": {
-                                  "type": "object",
-                                  "properties": {
-                                    "status": {
-                                      "type": "string"
-                                    },
-                                    "count": {
-                                      "type": "string"
-                                    },
-                                    "message": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "status",
-                                    "count",
-                                    "message"
-                                  ]
-                                },
-                                "processes": {
-                                  "type": "object",
-                                  "properties": {
-                                    "status": {
-                                      "type": "string",
-                                      "const": "started"
-                                    },
-                                    "count": {
-                                      "type": "string"
-                                    },
-                                    "names": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "status",
-                                    "count",
-                                    "names"
-                                  ]
-                                },
-                                "http_probe": {
-                                  "type": "object",
-                                  "properties": {
-                                    "reachable": {
-                                      "type": "boolean"
-                                    },
-                                    "status": {
-                                      "type": "string"
-                                    }
-                                  },
-                                  "required": [
-                                    "reachable",
-                                    "status"
-                                  ]
                                 }
                               },
                               "required": [
-                                "app",
-                                "instance",
-                                "workspace",
-                                "node",
-                                "url",
-                                "action",
-                                "setup_steps",
-                                "processes",
-                                "http_probe"
+                                "result",
+                                "workspace"
                               ]
                             },
                             "meta": {
-                              "type": "object",
-                              "properties": {
-                                "warnings": {
-                                  "type": "array",
-                                  "items": {}
-                                }
-                              },
-                              "required": [
-                                "warnings"
-                              ]
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -16434,22 +16091,37 @@
                               "const": "workspace.enactment_failed"
                             },
                             "message": {
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "Workspace setup failed."
+                                  ]
+                                }
+                              ]
                             },
                             "meta": {
                               "type": "object",
                               "properties": {
                                 "phase": {
                                   "type": "string",
-                                  "const": "artifacts"
+                                  "const": "planning"
                                 },
                                 "node": {
                                   "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "const": "plan_construction_failed"
                                 }
                               },
                               "required": [
                                 "phase",
-                                "node"
+                                "node",
+                                "reason"
                               ]
                             }
                           },

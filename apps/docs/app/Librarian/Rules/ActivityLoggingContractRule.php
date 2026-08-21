@@ -14,73 +14,6 @@ final readonly class ActivityLoggingContractRule implements GroupedRule
     /**
      * @var list<string>
      */
-    private const array ENFORCED_COMMANDS = [
-        'app-list',
-        'app-new',
-        'instance-register',
-        'instance-root',
-        'app-remove',
-        'instance-list',
-        'instance-show',
-        'instance-add',
-        'instance-remove',
-        'app-show',
-        'activity-list',
-        'activity-show',
-        'gateway-add',
-        'gateway-trust',
-        'update',
-        'update-all',
-        'doctor',
-        'profile',
-        'dns-list',
-        'dns-resolve-tld',
-        'tool-list',
-        'tool-show',
-        'node-new',
-        'node-list',
-        'node-show',
-        'node-grant',
-        'node-default',
-        'node-update',
-        'node-revoke',
-        'node-remove',
-        'workspace-list',
-        'workspace-show',
-        'workspace-history',
-        'workspace-log',
-        'workspace-setup-step-add',
-        'workspace-setup-step-list',
-        'workspace-setup-step-remove',
-        'workspace-teardown-step-add',
-        'workspace-teardown-step-list',
-        'workspace-teardown-step-remove',
-        'process-add',
-        'process-edit',
-        'process-remove',
-        'process-list',
-        'process-start',
-        'process-stop',
-        'process-restart',
-        'process-logs',
-        'schedule-add',
-        'schedule-list',
-        'schedule-show',
-        'schedule-remove',
-        'schedule-run',
-        'schedule-logs',
-        'firewall-list',
-        'firewall-allow',
-        'firewall-deny',
-        'firewall-remove',
-        'proxy-list',
-        'proxy-add',
-        'proxy-remove',
-    ];
-
-    /**
-     * @var list<string>
-     */
     private const array REQUIRED_FIELDS = [
         'Type',
         'Effect',
@@ -104,10 +37,6 @@ final readonly class ActivityLoggingContractRule implements GroupedRule
         foreach ($this->docs->familyDirectories() as $familyDirectory) {
             foreach ($this->docs->commandDirectories($familyDirectory) as $commandDirectory) {
                 $commandName = $this->docs->commandName($commandDirectory);
-
-                if (! in_array($commandName, self::ENFORCED_COMMANDS, true)) {
-                    continue;
-                }
 
                 $file = "{$commandDirectory}/technical/1_{$commandName}.md";
 

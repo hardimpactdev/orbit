@@ -44,9 +44,8 @@ Shared application-log flags match `instance:log` / `workspace:log`.
    Workspace. When the host text equals both a proxy domain and an
    `app.instance` selector, the exact registered proxy hostname wins. An
    Instance route requires `owner.type=instance` and a non-empty
-   `owner.name`. For compatibility with an older gateway projection that omits
-   `owner`, the CLI also accepts `target.type=instance` with a non-empty
-   `target.value`. It never treats a dotted name on another owner type, or a
+   `owner.name`. A target-only route projection is invalid. It never treats a
+   dotted name on another owner type, or a
    partial owner object, as Instance identity.
 4. Authorize with the permission for the resolved target type
    (`instance:read` or `workspace:read`).

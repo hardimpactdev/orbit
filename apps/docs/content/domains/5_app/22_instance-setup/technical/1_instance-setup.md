@@ -33,8 +33,8 @@ This command follows the shared
 
 ### Setup run rules
 
-1. Resolves one concrete instance and its serving node. App
-   node/path/root/domain defaults are never runtime placement.
+1. Resolves one concrete instance and its serving node. Placement comes only
+   from that Instance. The App record holds no placement fields.
 2. Loads that instance's setup steps ordered by `sort_order`.
 3. Returns a skipped result when no setup steps exist.
 4. Returns the latest completed run when its step-set hash matches.

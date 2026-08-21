@@ -18,9 +18,8 @@ final class WorkspaceDoctorIssueDefinitions implements DoctorIssueDefinitionProv
     {
         return [
             self::incident('workspace.artifact_extra', 'workspace'),
-            self::invalid('workspace.app_instance_invalid', 'workspace'),
             self::invalid('workspace.instance_invalid', 'workspace'),
-            self::invalid('workspace.parent_project_invalid', 'workspace'),
+            self::invalid('workspace.parent_instance_invalid', 'workspace'),
             self::incident('workspace.path_missing', 'workspace'),
             self::invalid('workspace.path_outside_policy', 'workspace'),
             self::incident('workspace.path_unusable', 'workspace'),

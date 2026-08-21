@@ -80,7 +80,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - `database_connection.not_found` when the selected or inferred connection does not exist.
 - `database_connection.target_not_found` when the target has no matching mapping.
-- `database_query.connection_ambiguous` when the target has multiple mappings and `--connection` is omitted.
+- `database_connection.ambiguous_target` when the target has multiple mappings and `--connection` is omitted.
 - `database_query.write_not_allowed` when write-capable SQL is attempted without `--write`.
 - `database_query.execution_failed` when connectivity fails, the native
   read-only control rejects a statement, query execution fails, or read-only

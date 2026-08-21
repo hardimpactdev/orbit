@@ -4,7 +4,7 @@ Run the deployment pipeline for concrete production app instances. Policy,
 ordered steps, runs, history, logs, and latest status are stored against one
 instance on the gateway. Steps execute in order on that instance's `app-prod`
 node through Agent push. Spec:
-[`apps/docs/content/domains/10_deploy/`](../../../apps/docs/content/domains/10_deploy/).
+[`apps/docs/content/domains/10_deploy/`](../../../../apps/docs/content/domains/10_deploy/).
 
 Production-only  -  development apps use `workspace:setup` instead.
 

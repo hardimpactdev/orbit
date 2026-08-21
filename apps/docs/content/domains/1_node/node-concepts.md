@@ -273,7 +273,7 @@ Role baselines are code-defined desired state, not editable package lists.
 
 | Role | Baseline intent |
 | --- | --- |
-| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, `orbit-runtime-hibernator` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
@@ -386,8 +386,8 @@ lanes; in those lanes `/usr/local/bin/orbit` points directly at
 `~/.config/orbit`.
 
 Host PHP and Composer are production prerequisites only on nodes with `app-dev`
-or `app-prod` roles. Those nodes carry a host PHP command-line toolchain: PHP 8.4
-and 8.5 plus Composer on both; the Laravel installer on `app-dev` only. Instance setup,
+or `app-prod` roles. Those nodes carry a host PHP command-line toolchain: PHP 8.3,
+8.4, and 8.5 plus Composer on both; the Laravel installer on `app-dev` only. Instance setup,
 deployment, and ad-hoc app CLI run Composer and Artisan on the host, matched to
 the resolved instance PHP version, against the instance source the FrankenPHP
 container serves.
@@ -610,7 +610,7 @@ These terms describe how grants are created and what shape they take.
 
 ## Node DNS Projection
 
-These terms describe the node family's private DNS projection. The appion
+These terms describe the node family's private DNS projection. The projection
 is served by the DNS tool runtime, but record ownership remains with the node
 family.
 

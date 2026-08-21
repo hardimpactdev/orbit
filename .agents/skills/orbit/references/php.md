@@ -1,17 +1,17 @@
 # PHP Runtime Commands
 
-Select PHP runtime intent for apps, workspaces, and the node CLI default. App
-and workspace web runtimes use FrankenPHP containers; host PHP is for
+Select PHP runtime intent for instances, workspaces, and the node CLI default.
+Instance and workspace web runtimes use FrankenPHP containers; host PHP is for
 ad-hoc/app-source workflows. The PHP image catalog is documented under the
-[`php` tool](../../../apps/docs/content/domains/3_tool/catalog/php.md). Spec:
-[`apps/docs/content/domains/14_php/`](../../../apps/docs/content/domains/14_php/).
+[`php` tool](../../../../apps/docs/content/domains/3_tool/catalog/php.md). Spec:
+[`apps/docs/content/domains/14_php/`](../../../../apps/docs/content/domains/14_php/).
 
 Supported versions: `8.3`, `8.4`, `8.5` (default for new apps).
 
-When changing an app or workspace PHP version, Orbit updates gateway-tracked
+When changing an instance or workspace PHP version, Orbit updates gateway-tracked
 runtime selection and recreates the affected FrankenPHP runtime artifact from
 the selected image through the owning node. PHP-FPM is not a fallback and must
-not be restored manually.
+not be restored manually. An instance write changes that instance alone.
 
 On `app-dev` nodes, classic PHP app and workspace containers include native
 FrankenPHP thread-pool tuning (`max_threads auto`, `max_idle_time 1h`).
@@ -28,7 +28,7 @@ orbit php:list [--instance=<name>] [--workspace=<name>] [--node=<name>] [--live]
 | Option | Notes |
 |---|---|
 | `--instance` | Show selected runtime for one `app.instance`. |
-| `--workspace` | Show effective runtime for one workspace (own override or inherited). |
+| `--workspace` | Show the workspace's own snapshot PHP version. |
 | `--node` | Show CLI default for the node. |
 | `--live` | Probe the node for actually-installed PHP versions instead of relying on gateway-tracked facts. |
 
@@ -36,27 +36,26 @@ Without scope flags, returns the global support matrix and currently-selected no
 
 ## `orbit php:use [version]`
 
-Select PHP runtime intent at one of three scopes: app, workspace, or node CLI default.
+Select PHP runtime intent at one of three scopes: one instance, one workspace, or the node CLI default.
 
 ```bash
 orbit php:use [<version>] [--instance=<name>] [--workspace=<name>] [--node=<name>]
-              [--inherit] [--cli] [--json]
+              [--cli] [--json]
 ```
 
 | Option | Notes |
 |---|---|
-| `version` | `8.3` / `8.4` / `8.5`. Required unless `--inherit`. |
-| `--instance` | Scope: PHP image selection for one instance runtime. |
-| `--workspace` | Scope: workspace PHP override (otherwise inherits the app). |
+| `version` | `8.3` / `8.4` / `8.5`. Required. |
+| `--instance` | Scope: PHP image selection for one instance runtime. Changes that instance only. |
+| `--workspace` | Scope: that workspace's own PHP version. New workspaces copy the owning instance version at creation. |
 | `--node` | Scope target node. Combine with `--cli` for the node CLI default. |
-| `--inherit` | Workspace only  -  clear the override and re-inherit the app's PHP. |
 | `--cli` | With `--node`, sets the node-wide CLI default PHP version. |
 
 Examples:
 
 ```bash
-orbit php:use 8.4 --instance=myapp.development      # change instance FrankenPHP image selection
-orbit php:use --inherit --workspace=feature-x --instance=myapp.development
+orbit php:use 8.4 --instance=myapp.development      # change that instance only
+orbit php:use 8.4 --workspace=feature-x --instance=myapp.development
 orbit php:use 8.5 --cli --node=beast           # default CLI PHP on the node
 ```
 

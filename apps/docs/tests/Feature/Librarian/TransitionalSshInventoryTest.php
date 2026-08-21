@@ -311,7 +311,7 @@ it('does not advertise the removed node transport selector in active docs or Orb
     }
 });
 
-it('advertises Valkey instead of Redis in the active Orbit process reference', function (): void {
+it('advertises catalog service identifiers and a Valkey example in the active Orbit process reference', function (): void {
     $repositoryRoot = realpath(base_path('../..'));
 
     if (! is_string($repositoryRoot)) {
@@ -322,8 +322,9 @@ it('advertises Valkey instead of Redis in the active Orbit process reference', f
 
     expect($reference)
         ->toBeString()
-        ->toContain('--service=<mysql|valkey>')
-        ->toContain('Managed service identifier (`mysql`, `valkey`, ...).')
+        ->toContain('--service=<service>')
+        ->toContain('Supported managed service identifier from the gateway catalog.')
+        ->toContain('--service=valkey')
         ->not->toContain('--service=<mysql|redis>')
         ->not->toContain('Managed service identifier (`mysql`, `redis`, ...).');
 });

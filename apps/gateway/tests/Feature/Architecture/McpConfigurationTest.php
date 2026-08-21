@@ -630,7 +630,7 @@ it('keeps the app-owned orbit skill aligned with current CLI stream-json guidanc
         ->toContain('[--with-process] [--no-process]')
         ->toContain('--json|--stream-json')
         ->toContain('orbit tool:reload caddy')
-        ->toContain('orbit tool:logs dns');
+        ->toContain('orbit tool:logs <tool> [--instance=<name>]');
 
     expect($skill)
         ->toContain('`orbit skill:install [provider] [path]`')

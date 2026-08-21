@@ -14,8 +14,8 @@
 
 This command registers a gateway-owned teardown step for an instance's workspace
 lifecycle. It mirrors `workspace-setup-step:add` exactly except for the
-lifecycle phase (`teardown` vs `setup`) and the read sites
-`workspace:setup`).
+lifecycle phase (`teardown` vs `setup`) and the consumer
+(`workspace:remove`).
 
 ## Signature
 
@@ -47,8 +47,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
      `instance:register` and any workspace-installed marker) that names the owning
      app slug.
    - Gateway path-ownership lookup keyed on `(caller node identity, absolute
-     cwd)` that returns the app slug whose registered app path or any
-     registered workspace path contains the caller's cwd.
+     cwd)` that returns the concrete Instance whose registered source path or
+     owned Workspace path contains the caller's cwd.
    - Interactive prompt in interactive mode; non-interactive failure with
      `error.code=validation_failed`, `error.meta.field=instance`.
    - **Forbidden**: `workspace-teardown-step:add` must not read
@@ -75,8 +75,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Teardown Step Addition Rules
 
 `workspace-teardown-step:add` writes a single teardown step record owned by
-the gateway for an instance's workspace lifecycle. The step is *not* executed during
-teardown phase, before destructive workspace cleanup.
+the gateway for an instance's workspace lifecycle. The step is *not* executed
+by this command; it is applied by `workspace:remove` during the teardown
+phase, before destructive workspace cleanup.
 
 1. **Registry Write**: Creates one new record in the gateway workspace
    teardown step policy with the resolved
@@ -104,17 +105,19 @@ teardown phase, before destructive workspace cleanup.
    creates two separate step records (each with its own `id`). There is no
    convergence by `command` text because steps are identified by `id`.
 6. **No Runtime Lock**: The command never blocks on, or aborts because of,
-   effect on the next teardown pipeline run that begins after the gateway
-   commit. Steps already executing in an in-flight run use the policy
-   snapshot the runner read at teardown-phase entry. Recovery from
-   policy/runtime drift is the doctor's job, not this command's.
+   in-flight `workspace:remove` runs. The new step takes effect on the next
+   teardown pipeline run that begins after the gateway commit. Steps already
+   executing in an in-flight run use the policy snapshot the runner read at
+   teardown-phase entry. Recovery from policy/runtime drift is the doctor's
+   job, not this command's.
 7. **No Filesystem Side Effects**: The command writes only to gateway
    configuration. Nodes are not contacted.
 8. **Consumer Failure Semantics**: When a teardown step fails during
-   structured non-fatal warning under `success.meta.warnings[]` of the
-   consumer command (code `workspace.teardown_step_failed`). Subsequent
-   teardown steps still run, and Phase B continues with runtime container and worktree
-   `workspace-teardown-step:add` itself never observes the warning.
+   `workspace:remove`, the consumer records a structured non-fatal warning
+   under `success.meta.warnings[]` (code `workspace.teardown_step_failed`).
+   Subsequent teardown steps still run, and Phase B continues with runtime
+   container and worktree cleanup. `workspace-teardown-step:add` itself never
+   observes the warning.
 9. **Lifecycle Ordering Guarantees**: Teardown steps run before runtime container removal
    and worktree removal during `workspace:remove` Phase B, so they observe
    `ORBIT_WORKSPACE_PATH`, `ORBIT_APP_PATH`, and any workspace database

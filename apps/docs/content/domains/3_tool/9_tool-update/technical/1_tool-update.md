@@ -83,6 +83,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `tool-update` changes the gateway expected version and performs command-owned apply only. [`tool-doctor.md`](../../tool-doctor.md) owns the authoritative tool-family probe, issue codes, fix map, and adopt map.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /tools/{tool}/update` |
+| Effect | `write` |
+| Subject | The target `Node`; `none` when target resolution fails. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

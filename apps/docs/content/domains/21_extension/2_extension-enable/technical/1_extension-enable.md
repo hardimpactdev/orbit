@@ -72,6 +72,20 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `extension:enable` mutates explicit extension state. It does not create doctor
 issues or run restore flows.
 
+## Activity Logging
+
+Local enablement emits no activity because the CLI has no trusted shared
+activity writer. When this command calls the gateway enable API, it relies on
+the matching gateway endpoint entry defined below.
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /extensions/{extension}/enable` |
+| Effect | `write` |
+| Subject | The selected `GatewayExtension`; `none` when the extension slug is unknown or state storage is unavailable. |
+| Properties | `extension`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -115,9 +115,9 @@ are not part of the initial contract.
   gateway.
 - There is no automatic time-based pruning and no global retention setting.
 - History rows are removed atomically with the workspace via
-  [`workspace:remove`](../../5_workspace-remove/workspace-remove.md), and via
-  [`app:remove`](../../../5_app/6_app-remove/app-remove.md) or
-  instance-level command removes a workspace.
+  [`workspace:remove`](../../5_workspace-remove/workspace-remove.md),
+  [`app:remove`](../../../5_app/6_app-remove/app-remove.md), or
+  instance-level removal when those commands remove a workspace.
 
 ## Renderer Contracts
 

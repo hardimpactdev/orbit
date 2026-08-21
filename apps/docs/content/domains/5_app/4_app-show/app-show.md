@@ -5,9 +5,8 @@
 Show one app's gateway registry details.
 
 Use `app:show` when you need an app's gateway-owned registry record and
-placement breakdown: repository, PHP version template used by new instances, visible instances,
-and each instance's path, workspaces, processes, and
-WebSocket, analytics, or route bindings. Live
+placement breakdown: repository, PHP version template used by new instances,
+visible instances, nested workspaces, and app-level process and route summaries. Live
 runtime drift, readiness, and repair belong to
 [`doctor --family=instance`](../instance-doctor.md).
 
@@ -48,7 +47,8 @@ Run `app:show` to inspect a single app's gateway configuration without triggerin
 
 `app:show` performs a read-only registry inspection of a single app:
 
-1. Resolves the target app from input, current directory context, or
+1. Resolves the target app from input, the nearest `.orbit/config` instance
+   marker in the current directory ancestry, or
    interactive prompt.
 2. Validates that the current caller can inspect at least one concrete Orbit app
    instance, unless the caller is the gateway.
@@ -75,12 +75,13 @@ Workspace rows are exposed only below their owning instance and only for
 
 ## Output
 
-Human output is a logical registry summary followed by one section per visible
-instance with its processes, bindings, and nested workspace rows.
-Instance and workspace URLs are shown when the
-registry can derive them. Apps have no server, path, root, URL, domain,
-or environment fields. The `APP DEPS` column is the app's aggregate
-dependency posture; workspace rows render `—`.
+Human output is a logical registry summary followed by one placement table.
+The table contains one row per visible instance and indents each workspace
+below its owner. Instance and workspace URLs are shown when the registry can
+derive them. App-level process and route summaries stay in the logical
+summary. Apps have no server, path, root, URL, domain, or environment fields.
+The `APP DEPS` column repeats the logical app's aggregate dependency posture on
+instance rows; workspace rows render `—`.
 
 JSON output returns the app record under a machine-readable output. See the
 [JSON renderer contract](technical/6.2_app-show_output-render_json.md) for the

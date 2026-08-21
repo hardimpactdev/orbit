@@ -12,7 +12,7 @@ and owns all durable state. Every other machine is a gateway client when it runs
 the gateway decide authorization from node grants.
 
 Nodes carry role assignments such as `app-dev`, `app-prod`, `database`,
-`agent`, `ingress`, `websocket`, `s3`, and `metrics`. Workload nodes run
+`agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. Workload nodes run
 role-specific artifacts: `orbit-caddy`, FrankenPHP app/workspace containers,
 systemd or launchd host command units, Docker-backed process units, Laravel
 Reverb, SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
@@ -22,7 +22,7 @@ fallbacks.
 The gateway role also renders an `orbit-operations-reverb` Swarm service for
 durable Orbit operation progress. That gateway-owned operations surface reuses the
 `orbit-reverb` image but is separate from app-facing `websocket` role traffic,
-`websocket.orbit`, app WebSocket bindings, and the websocket role's Redis
+`websocket.orbit`, app WebSocket bindings, and the websocket role's Valkey
 scaling dependency.
 
 Orbit Agent is a separate native lane. The headless Orbit Agent service lives
@@ -51,7 +51,7 @@ it is ported; it is never an implicit managed-execution fallback.
 ## Universal output rules
 
 - Every command supports `--help` for signature, arguments, and options.
-- Every command that returns structured data supports `--json` (`{"success":{"data":{...}}}` or `{"success":false,"error":...}`).
+- Every command that returns structured data supports `--json` (`{"success":{"data":{...},"meta":{...}}}` or `{"error":{"code":"...","message":"...","meta":{...}}}`).
 - Non-interactive mode (`-n`) auto-enables JSON. Always pass `--json` when parsing programmatically and only the final machine-readable result is needed.
 - For long-running commands that offer it, LLM agents should prefer `--stream-json` over final-only `--json` so progress arrives as newline-delimited frames during slow gateway work.
 - Destructive commands take `--force` to skip confirmation.
@@ -207,7 +207,7 @@ that tool definition.
 |---|---|
 | `orbit tool:list` | List tracked tools (filter by `--instance` / `--node`) |
 | `orbit tool:show <tool>` | Show one tool (`--live` for live probe) |
-| `orbit tool:install <tool>` | Install a managed tool (`--status=running` to also start) |
+| `orbit tool:install <tool>` | Install a managed tool |
 | `orbit tool:update [tool]` | Update a managed tool |
 | `orbit tool:remove <tool>` | Remove a managed tool |
 | `orbit tool:start\|stop\|restart <tool>` | Control lifecycle-capable tools such as `orbstack` |
@@ -232,7 +232,7 @@ that tool definition.
 | Command | What it does |
 |---|---|
 | `orbit php:list` | List PHP runtime support, installed facts, and selected intent (`--live` for live probe) |
-| `orbit php:use [version]` | Select PHP for an app, workspace, node CLI default, or `--inherit` |
+| `orbit php:use [version]` | Select PHP for one instance, one workspace, or a node CLI default |
 
 ### Deployments  -  [`references/deploy.md`](references/deploy.md)
 
@@ -277,7 +277,7 @@ that tool definition.
 | Command | What it does |
 |---|---|
 | `orbit proxy:add [domain]` | Create or update a custom proxy route or redirect |
-| `orbit proxy:list` | List proxy routes (`--filter=app\|workspace\|gateway\|tool\|custom\|redirect`) |
+| `orbit proxy:list` | List proxy routes (`--filter=all\|instance\|workspace\|gateway\|analytics\|websocket\|s3\|tool\|custom\|redirect`) |
 | `orbit proxy:remove [domain]` | Remove a custom proxy route |
 
 ### Firewall  -  [`references/firewall.md`](references/firewall.md)
@@ -397,9 +397,9 @@ start, update, restart, or uninstall the macOS app.
 - Resolve target order for `--node`-aware commands: explicit `--node` -> app/workspace ownership -> local `node:default` -> interactive prompt or non-interactive failure.
 - Slugs are `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`. App <=40, node <=63, workspace <=63, process <=64 chars.
 - Development apps are served at `{name}.{node-tld}`; workspaces at `{workspace}.{app}.{tld}`. Production apps at the configured `--domain`.
-- App, workspace, process, schedule, proxy, firewall, tool, and database
-  connection state are gateway-owned **state families**. Use
-  `doctor --family=<key>` to scope drift checks; family keys are `node`, `app`,
+- Node, instance, workspace, process, schedule, proxy, firewall, tool, and
+  database connection state are gateway-owned **state families**. Use
+  `doctor --family=<key>` to scope drift checks; family keys are `node`, `instance`,
   `workspace`, `process`, `proxy`, `schedule`, `tool`, `firewall_rule`, and
   `database_connection`.
 - `doctor --family=process --node=<node>` is valid for every node with at
@@ -421,7 +421,7 @@ start, update, restart, or uninstall the macOS app.
 - Recurring jobs and Laravel scheduler integration -> [`schedule.md`](references/schedule.md)
 - Node capabilities, mail, agent runtimes, service tools -> [`tool.md`](references/tool.md)
 - Database connection intent, target `.env` convergence, SQL/schema inspection -> [`database.md`](references/database.md)
-- PHP version selection at app/workspace/CLI scope -> [`php.md`](references/php.md)
+- PHP version selection at instance/workspace/CLI scope -> [`php.md`](references/php.md)
 - Production deployments and pipelines -> [`deploy.md`](references/deploy.md)
 - S3 service credentials and public S3 hosts -> [`s3.md`](references/s3.md)
 - Cloudflare DNS/cache/SSL commands -> [`cf.md`](references/cf.md)

@@ -14,6 +14,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -96,21 +97,24 @@ class ProxyRouteQuery
             }
         }
 
+        $proxyRoutes = $proxyRoutes
+            ->filter(
+                fn (Model $route, int $_key): bool => $route instanceof ProxyRoute
+                && $this->routeIsValidForPublicRegistry($route),
+            )
+            ->values();
+
         if ($filter !== 'workspace') {
             $proxyRoutes = $proxyRoutes
-                ->reject(fn (ProxyRoute $route): bool => ! $this->workspaceRouteIsSupported($route, $caller))
+                ->reject(
+                    fn (Model $route, int $_key): bool => $route instanceof ProxyRoute
+                    && ! $this->workspaceRouteIsSupported($route, $caller),
+                )
                 ->values();
         }
 
         /** @var list<ProxyRoute> $visibleRoutes */
         $visibleRoutes = $proxyRoutes->values()->all();
-
-        if ($filter === 'instance') {
-            $visibleRoutes = array_values(array_filter(
-                $visibleRoutes,
-                $this->appRouteIsValid(...),
-            ));
-        }
 
         usort(
             $visibleRoutes,
@@ -289,7 +293,7 @@ class ProxyRouteQuery
 
         $entity = [
             'domain' => $route->domain,
-            'kind' => $route->kind === 'app' && $this->appRouteIsValid($route)
+            'kind' => $route->kind === 'app'
                 ? $this->appRouteTargetType()
                 : $route->kind,
             'owner' => [
@@ -468,6 +472,19 @@ class ProxyRouteQuery
         $instance = $this->instanceRouteOwnership->resolve($route);
 
         return $instance?->app?->name;
+    }
+
+    private function routeIsValidForPublicRegistry(ProxyRoute $route): bool
+    {
+        if (InstanceProxyRouteOwnershipResolver::isDirectOwner($route->owner_type)) {
+            return $this->instanceRouteOwnership->resolve($route) instanceof Instance;
+        }
+
+        if ($route->owner_type === 'workspace') {
+            return $this->workspaceRouteOwnership->resolve($route) !== null;
+        }
+
+        return $route->owner_type !== 'instance';
     }
 
     /**

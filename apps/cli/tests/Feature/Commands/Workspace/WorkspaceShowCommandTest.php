@@ -83,7 +83,7 @@ describe('workspace:show', function (): void {
                 'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
                 'url' => 'https://feature-docs.docs.test',
                 'php_version' => '8.5',
-                'php_inherited' => true,
+                'php_inherited' => false,
                 'adopted' => false,
                 'lifecycle_status' => 'expected',
             ],

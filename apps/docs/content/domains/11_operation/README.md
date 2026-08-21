@@ -52,10 +52,10 @@ These rules constrain all commands in the operation domain.
   agents and is separate from the final-frame `--json` renderer.
 - Family doctor contracts own concrete probes, issue codes, and restore/adopt action maps.
 - Profiling reads request/runtime data and must not mutate app configuration.
-- Operation activity is recorded at the gateway. Commands emit through the
-  cross-cutting Loggable contract when they are the canonical actor, and the
-  `update`/`update:all` outcome entries are recorded by the gateway start route
-  and durable update runner. See
+- Operation activity is recorded by gateway endpoints and durable gateway
+  runners through the cross-cutting Loggable contract. The caller-local
+  `update` command does not emit activity. The `update:all` start route and
+  durable update runner record their own gateway activity. See
   [`activity-concepts.md`](../16_activity/activity-concepts.md).
 
 ## Commands

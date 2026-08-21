@@ -38,10 +38,13 @@ These rules govern all instance family commands.
 - Instance env values and database targets belong to the instance, not the
   app. Rendering an instance env merges explicit instance env values with
   database attachments for that instance.
-- App and instance hostnames are represented in `proxy` as app-owned route records.
-  App and instance commands create, update, and remove the app configuration that owns those
-  routes; proxy route registry, router route convergence, and backend artifact
-  convergence belong to the `proxy` family.
+- Instance hostnames are represented in `proxy` as Instance-owned route records.
+  The persisted `owner_type=app` tuple is a compatibility representation that
+  public registry and list surfaces project as `instance` only when the full
+  ownership tuple is valid. App and instance commands create, update, and
+  remove the instance configuration that owns those routes; proxy route
+  registry, router route convergence, and backend artifact convergence belong
+  to the `proxy` family.
 - Commands that create or set up instances use explicit `--node` first, then the
   local `node:default` node when configured.
 - `app:new` creates or clones one source path, then atomically creates the
@@ -237,23 +240,32 @@ whose value is inapplicable, such as an absent repository.
 
 ## Instance JSON Entity
 
-Instance renderers return this shape under `success.data.instance`, or under
-`success.data.instances[]` for list output.
+Instance renderers return the gateway Instance payload under
+`success.data.instance`, or under `success.data.instances[]` for list output.
+Placement is projected at the top level as `environment`, `node`, `url`,
+`path`, `root`, and `domain`. `driver_config` is the serialized driver-specific
+stored data object. For the Orbit driver it uses `node_id`, `node`, `path`,
+`document_root`, and `domain`.
 
 ```json
 {
   "app": "docs",
   "name": "production",
   "driver": "orbit",
+  "environment": "production",
+  "node": "app-1",
+  "url": "https://docs.example.com",
+  "path": "/home/docs/app",
+  "root": "public",
+  "domain": "docs.example.com",
+  "adopted": false,
   "driver_config": {
-    "environment": "production",
+    "node_id": 1,
     "node": "app-1",
-    "url": "https://docs.example.com",
     "path": "/home/docs/app",
-    "root": "public",
+    "document_root": "public",
     "domain": "docs.example.com"
   },
-  "adopted": false,
   "runtime": {
     "runtime": "php",
     "php_version": "8.5",
@@ -275,8 +287,14 @@ Instance renderers return this shape under `success.data.instance`, or under
 | `app` | string | App identity slug. |
 | `name` | string | Instance name, unique within the app. |
 | `driver` | string | Instance driver: `orbit` or `laravel-cloud`. |
-| `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
+| `environment` | string \| null | Public environment projection. Orbit Instances use the Instance name; Laravel Cloud uses the provider environment name. |
+| `node` | string \| null | Public serving-node projection for Orbit Instances. |
+| `url` | string \| null | Public HTTPS URL projection. |
+| `path` | string \| null | Public source-path projection for Orbit Instances. |
+| `root` | string \| null | Public document-root projection for Orbit Instances. |
+| `domain` | string \| null | Public domain projection. |
 | `adopted` | boolean | Whether this concrete path was adopted through `instance:register`. It never belongs to the app. |
+| `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
 | `runtime` | object | Effective runtime metadata for this instance. |
 | `runtime.runtime` | string | App runtime. |
 | `runtime.php_version` | string | The instance's own PHP version, which its runtime container uses. It may differ from the app creation template and from a sibling instance. |
@@ -358,6 +376,8 @@ Use these commands for analytics, instances, and env values.
 7. [`orbit instance:add [app.instance]`](27_instance-add/instance-add.md)
 8. [`orbit instance:remove [app.instance] --force`](28_instance-remove/instance-remove.md)
 9. [`orbit instance:env list|set|render [app.instance]`](20_instance-env/instance-env.md)
+10. [`orbit instance:log [target]`](29_instance-log/instance-log.md)
+11. [`orbit app:log [target]`](30_app-log/app-log.md)
 
 ### Instance Tooling and Setup
 

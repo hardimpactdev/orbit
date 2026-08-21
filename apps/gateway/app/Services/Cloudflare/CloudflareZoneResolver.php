@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Models\App;
+use App\Models\Instance;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -12,7 +15,8 @@ final readonly class CloudflareZoneResolver
 {
     public function __construct(
         private CloudflareClient $client,
-        private WorkspacePlacement $placement = new WorkspacePlacement,
+        private AppSelectorResolver $appSelectors,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
@@ -88,30 +92,37 @@ final readonly class CloudflareZoneResolver
 
         if ($projectName === '') {
             throw new GatewayApiException(
-                message: 'A app name is required.',
+                message: 'An app or instance selector is required.',
                 errorCode: 'validation_failed',
                 errorMeta: ['field' => 'app'],
             );
         }
 
-        $app = App::query()->where('name', $projectName)->first();
-
-        if (! $app instanceof App) {
+        try {
+            $selection = $this->appSelectors->requireInstance(
+                $this->appSelectors->resolveRequired($projectName, 'app'),
+                'app',
+            );
+        } catch (AppSelectionResolutionFailed $exception) {
             throw new GatewayApiException(
-                message: 'The selected app was not found.',
-                errorCode: 'validation_failed',
-                errorMeta: ['field' => 'app', 'app' => $projectName],
+                message: $exception->getMessage(),
+                errorCode: $exception->errorCode,
+                errorMeta: $exception->meta,
             );
         }
 
-        $resolvedDomain = $this->placement->runtimeDomain($app, null);
+        $app = $selection->app;
+        $instance = $selection->instance;
+        $resolvedDomain = $instance instanceof Instance
+            ? $this->placement->runtimeDomain($app, $instance)
+            : null;
         $domain = is_string($resolvedDomain) ? trim($resolvedDomain) : '';
 
         if ($domain === '' || ! str_contains($domain, '.')) {
             throw new GatewayApiException(
-                message: 'The app has no Cloudflare-backed domain.',
+                message: 'The selected instance has no Cloudflare-backed domain.',
                 errorCode: 'validation_failed',
-                errorMeta: ['field' => 'app', 'app' => $projectName],
+                errorMeta: ['field' => 'app', 'app' => $app->name, 'instance' => $instance?->name],
             );
         }
 
@@ -126,9 +137,9 @@ final readonly class CloudflareZoneResolver
      */
     public function resolveZoneOrProject(string $identifier): array
     {
-        $app = App::query()->where('name', $identifier)->first();
+        $selection = $this->appSelectors->resolve($identifier);
 
-        if ($app instanceof App) {
+        if ($selection !== null) {
             $resolved = $this->resolveProjectZone($identifier);
 
             return [

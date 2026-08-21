@@ -33,7 +33,7 @@ final readonly class AppRuntimeContainerRenderer
     /**
      * Canonical name of the Laravel Octane FrankenPHP worker file. Generated
      * by `php artisan octane:install --server=frankenphp` and resolved
-     * relative to the app's configured `document_root`.
+     * relative to the Instance `driver_config.document_root`.
      */
     public const string WorkerFileName = 'frankenphp-worker.php';
 

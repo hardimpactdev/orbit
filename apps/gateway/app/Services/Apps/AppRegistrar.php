@@ -855,11 +855,10 @@ final class AppRegistrar
         $path = (string) ($app['path'] ?? '');
 
         return match ($action) {
-            'adopted' => "Instance for project '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
-            'moved' => "Instance for project '{$name}' successfully moved to path '{$path}' on node '{$node}'.",
-            'converged'
-                => "Instance for project '{$name}' is already converged on node '{$node}'. No changes were needed.",
-            default => "Instance for project '{$name}' successfully registered on node '{$node}'.",
+            'adopted' => "Instance for app '{$name}' successfully adopted from path '{$path}' on node '{$node}'.",
+            'moved' => "Instance for app '{$name}' successfully moved to path '{$path}' on node '{$node}'.",
+            'converged' => "Instance for app '{$name}' is already converged on node '{$node}'. No changes were needed.",
+            default => "Instance for app '{$name}' successfully registered on node '{$node}'.",
         };
     }
 

@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Services\Cloudflare;
 
 use App\Models\App;
+use App\Services\Apps\AppSelectorResolver;
+use App\Services\Workspaces\WorkspacePlacement;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareManager
 {
     public function __construct(
         private CloudflareClientFactory $clients,
+        private AppSelectorResolver $appSelectors,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
@@ -315,6 +319,6 @@ final readonly class CloudflareManager
 
     private function resolver(CloudflareClient $client): CloudflareZoneResolver
     {
-        return new CloudflareZoneResolver($client);
+        return new CloudflareZoneResolver($client, $this->appSelectors, $this->placement);
     }
 }

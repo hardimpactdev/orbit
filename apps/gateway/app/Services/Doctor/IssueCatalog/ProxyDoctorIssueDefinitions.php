@@ -105,7 +105,6 @@ final class ProxyDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
                 'restore_proxy_public_route_missing',
             ),
             self::invalid('proxy.record_incomplete', 'proxy'),
-            self::blocked('proxy.remote_shell_probe_failed', 'proxy'),
             self::genuine(
                 'proxy.route_extra',
                 'proxy',

@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\Vpn\VpnBackendClient;
+use App\Enums\ActivityLogType;
+use App\Http\Controllers\Api\VpnClientRemoveController;
+use App\Http\Controllers\Api\VpnWebUiChangePasswordController;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -40,11 +43,25 @@ it('logs vpn api activity with safe metadata', function (): void {
     $entry = Activity::query()->first();
 
     expect($entry)->not->toBeNull();
-    expect($entry->event)->toBe('api:GET /api/vpn/clients');
+    expect($entry->event)->toBe('api:GET /vpn/clients');
     expect($entry->properties->get('type'))->toBe('read');
     expect($entry->properties->get('method'))->toBe('GET');
     expect($entry->properties->get('path'))->toBe('api/vpn/clients');
     expect(json_encode($entry->properties->toArray(), JSON_THROW_ON_ERROR))->not->toContain('123456');
+});
+
+it('marks VPN client removal and password changes as destructive with canonical types', function (): void {
+    $remove = new VpnClientRemoveController;
+    $password = new VpnWebUiChangePasswordController;
+
+    expect($remove->effect())
+        ->toBe(ActivityLogType::Destructive)
+        ->and($remove->type())
+        ->toBe('api:DELETE /vpn/clients/{name}')
+        ->and($password->effect())
+        ->toBe(ActivityLogType::Destructive)
+        ->and($password->type())
+        ->toBe('api:POST /vpn/web-ui/password');
 });
 
 it('returns vpn runtime unavailable when no active vpn role node exists', function (): void {

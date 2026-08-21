@@ -80,10 +80,19 @@ Probe failures mark the selected tool unverifiable for that run. Tool doctor
 does not guess observed state, adopt unknown probe output, or run fixes that
 depend on facts the probe could not establish.
 
+Ordinary single-tool and batched capability probes use one ordered JSONL
+observation contract. A failed command or empty batch output makes every
+requested tool unverifiable. Invalid evidence for one requested tool does not
+discard valid sibling observations. Empty, malformed, missing, duplicate,
+unexpectedly named, or incorrectly typed evidence produces
+`tool.capability_probe_failed`. Only a verified `installed=false` observation
+produces `tool.capability_missing`.
+
 ## Tool Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -100,7 +109,8 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
 | `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
-| `tool.capability_probe_failed` | The ordinary capability command failed or returned an empty, malformed, duplicate, missing, or incorrectly typed observation, so capability state is unverifiable for this run. |
+| `tool.capability_probe_failed` | The ordinary capability command failed or returned an empty, malformed, duplicate, missing, unexpectedly named, or incorrectly typed observation, so capability state is unverifiable for this run. |
+| `tool.remote_shell_probe_failed` | The remote tool probe raised before it could return a usable result for the selected node. |
 | `tool.php_cli_coverage_missing` | `php-cli` effective runtime is the `coverage` variant (matrix install contract) but a supported minor lacks a working statically linked PCOV (`extension_loaded('pcov')`, `function_exists('pcov\\start')`, `pcov.enabled`, or `php --ri pcov`). Under `install_contract=compatibility`, doctor validates the retained standard runtime instead and does not emit this code for desired coverage alone. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |
@@ -110,6 +120,10 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.credentials_mismatch` | Managed credential metadata exists but differs from gateway configuration. |
 | `tool.credentials_probe_failed` | Managed credential material could not be inspected reliably, so credential drift is unverifiable for this run. |
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
+| `tool.docker_provider_unreachable` | A container-backed tool cannot be inspected because the Docker CLI is missing or the Docker daemon is unreachable. |
+| `tool.container_missing` | A container-backed tool's expected container is absent. |
+| `tool.container_not_running` | A container-backed tool's container exists but is not running. |
+| `tool.container_spec_mismatch` | A container-backed tool is running with a container specification that differs from gateway intent. |
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
 | `tool.dns_base_config_mismatch` | Base `dnsmasq.conf` differs from the tool-owned resolver policy/explicit includes, or the running container/task does not mount the configured projection directory at `/etc/dnsmasq.d` read-only. Record-content drift is excluded. |
@@ -120,6 +134,8 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.agent_runtime_probe_failed` | Agent-user/runtime inspection raised, returned non-success, or produced an empty/malformed payload, so agent runtime drift is unverifiable for this run. |
 | `tool.agent_consumer_url_unreachable` | An installed autonomous-agent tool's exact consumer HTTPS URL (for example `https://hermes.agent`) is not reachable from the gateway trust path with a 2xx/3xx response. Tool family owns this service-readiness check; proxy family owns route rows, Caddy artifacts, and TLS. Details include `expected_url`, observed state, and `next_command` pointing at `doctor --family=proxy` — no unsafe route restore is invented here. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
+| `tool.websocket.reverb_unavailable` | A WebSocket role probe cannot verify a usable Reverb runtime on the selected node. |
+| `tool.websocket.valkey_unavailable` | A WebSocket role probe cannot verify Valkey availability from the Reverb runtime on the selected node. |
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; reconverge the `s3` role baseline (restore does not create tool rows). |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
 
@@ -152,6 +168,9 @@ credential repair logic.
 | Code | `doctor --restore` behavior |
 | --- | --- |
 | `tool.capability_missing` | Install or restore the managed capability only when the tool definition declares a safe install or repair path. |
+| `tool.container_missing` | Reconcile the managed container from the selected tool's declared container specification. |
+| `tool.container_not_running` | Reconcile and start the managed container from the selected tool's declared container specification. |
+| `tool.container_spec_mismatch` | Reconcile the managed container so its specification matches gateway intent. |
 | `tool.php_cli_coverage_missing` | Reinstall `php-cli` using the role-resolved `coverage` variant so the node receives Orbit-owned PCOV-enabled matrix artifacts. |
 | `tool.version_mismatch` | Update or downgrade the managed tool only when the tool definition supports the target version transition. |
 | `tool.config_missing` | Recreate managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
@@ -169,6 +188,8 @@ credential repair logic.
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
 `tool.capability_probe_failed`, `tool.config_probe_failed`, `tool.credentials_probe_failed`,
+`tool.docker_provider_unreachable`, `tool.remote_shell_probe_failed`,
+`tool.websocket.reverb_unavailable`, `tool.websocket.valkey_unavailable`,
 `tool.agent_runtime_probe_failed`,
 `tool.agent_orbit_cli_inaccessible`, `tool.agent_consumer_url_unreachable`,
 `tool.seaweedfs.credentials_missing`, or

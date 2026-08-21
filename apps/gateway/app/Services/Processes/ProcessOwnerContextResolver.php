@@ -315,7 +315,7 @@ final readonly class ProcessOwnerContextResolver
 
         if (! $instance instanceof Instance) {
             throw new GatewayApiException(
-                'A concrete instance is required for project and workspace process ownership.',
+                'A concrete instance is required for app and workspace process ownership.',
                 'validation_failed',
                 [
                     'field' => 'instance',

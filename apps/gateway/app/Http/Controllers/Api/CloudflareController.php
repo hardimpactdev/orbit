@@ -19,10 +19,14 @@ final class CloudflareController implements Loggable
 {
     private ?Node $activitySubject = null;
 
+    private ActivityLogType $activityEffect = ActivityLogType::Read;
+
+    private string $activityType = 'api:GET /cloudflare/zones';
+
     #[RequiresPermission('cf:zone:list', servingNode: ServingNode::Gateway)]
     public function zones(Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:GET /cloudflare/zones', ActivityLogType::Read);
 
         return $this->run(fn (): array => $cloudflare->listZones());
     }
@@ -30,7 +34,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:dns:list', servingNode: ServingNode::Gateway)]
     public function dnsRecords(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:GET /cloudflare/zones/{zone}/dns', ActivityLogType::Read);
 
         return $this->run(fn (): array => $cloudflare->listDnsRecords($zone));
     }
@@ -38,7 +42,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:dns:add', servingNode: ServingNode::Gateway)]
     public function storeDnsRecord(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:POST /cloudflare/zones/{zone}/dns', ActivityLogType::Write);
 
         $name = $this->stringInput($request, 'name');
         $content = $this->stringInput($request, 'content');
@@ -68,7 +72,11 @@ final class CloudflareController implements Loggable
         Request $request,
         CloudflareManager $cloudflare,
     ): JsonResponse {
-        $this->captureActivitySubject($request);
+        $this->beginActivity(
+            $request,
+            'api:DELETE /cloudflare/zones/{zone}/dns/{record}',
+            ActivityLogType::Destructive,
+        );
 
         if (! $request->boolean('destructive_consent')) {
             return $this->error(
@@ -88,7 +96,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:cache:flush', servingNode: ServingNode::Gateway)]
     public function flushCache(Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:POST /cloudflare/cache/flush', ActivityLogType::Write);
 
         $zone = $this->stringInput($request, 'zone');
 
@@ -102,7 +110,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:cache:rule:add', servingNode: ServingNode::Gateway)]
     public function addCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:POST /cloudflare/cache-rules/{app}', ActivityLogType::Write);
 
         return $this->run(fn (): array => $cloudflare->addCacheRule($app));
     }
@@ -110,7 +118,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:cache:rule:remove', servingNode: ServingNode::Gateway)]
     public function removeCacheRule(string $app, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:DELETE /cloudflare/cache-rules/{app}', ActivityLogType::Destructive);
 
         if (! $request->boolean('destructive_consent')) {
             return $this->error(
@@ -130,7 +138,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:ssl:enable', servingNode: ServingNode::Gateway)]
     public function enableSsl(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:PUT /cloudflare/zones/{zone}/ssl', ActivityLogType::Write);
 
         $mode = $this->stringInput($request, 'mode') ?? 'strict';
 
@@ -140,7 +148,7 @@ final class CloudflareController implements Loggable
     #[RequiresPermission('cf:ssl:disable', servingNode: ServingNode::Gateway)]
     public function disableSsl(string $zone, Request $request, CloudflareManager $cloudflare): JsonResponse
     {
-        $this->captureActivitySubject($request);
+        $this->beginActivity($request, 'api:PUT /cloudflare/zones/{zone}/ssl/disable', ActivityLogType::Destructive);
 
         if (! $request->boolean('destructive_consent')) {
             return $this->error(
@@ -181,8 +189,11 @@ final class CloudflareController implements Loggable
         ]);
     }
 
-    private function captureActivitySubject(Request $request): void
+    private function beginActivity(Request $request, string $type, ActivityLogType $effect): void
     {
+        $this->activityType = $type;
+        $this->activityEffect = $effect;
+
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -221,12 +232,12 @@ final class CloudflareController implements Loggable
 
     public function effect(): ActivityLogType
     {
-        return request()->isMethod('GET') ? ActivityLogType::Read : ActivityLogType::Write;
+        return $this->activityEffect;
     }
 
     public function type(): string
     {
-        return 'api:'.request()->method().' /'.request()->path();
+        return $this->activityType;
     }
 
     public function subject(): ?Model

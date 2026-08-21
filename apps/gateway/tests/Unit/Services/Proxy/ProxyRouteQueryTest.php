@@ -214,7 +214,7 @@ describe('ProxyRouteQuery', function (): void {
             ]);
     });
 
-    it('does not project invalid app routes as instance-owned registry entities', function (string $invalidity): void {
+    it('keeps the public instance kind while exposing invalid persisted app ownership', function (string $invalidity): void {
         $node = Node::factory()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $instance = Instance::factory()->for($app)->create(['name' => 'development']);
@@ -246,14 +246,17 @@ describe('ProxyRouteQuery', function (): void {
         $query = app(ProxyRouteQuery::class);
         $entity = $query->toRouteEntity($route->fresh());
 
+        $expectedKind = $invalidity === 'malformed kind' ? 'proxy' : 'instance';
+
         expect($entity['kind'])
-            ->not
-            ->toBe('instance')
+            ->toBe($expectedKind)
             ->and($entity['owner'])
             ->toBe(['type' => 'app', 'name' => null])
             ->and($entity['target'])
             ->toBe(['type' => 'upstream', 'value' => null])
             ->and($query->list(filter: 'instance')['routes'])
+            ->toBeEmpty()
+            ->and($query->list()['routes'])
             ->toBeEmpty();
     })->with([
         'missing instance',
@@ -261,8 +264,20 @@ describe('ProxyRouteQuery', function (): void {
         'malformed kind',
     ]);
 
+    it('does not render the invalid persisted instance owner type', function (): void {
+        $node = Node::factory()->create();
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'owner_type' => 'instance',
+            'kind' => 'app',
+        ]);
+
+        expect(app(ProxyRouteQuery::class)->list()['routes'])->toBeEmpty();
+    });
+
     it('fails closed when workspace ownership cannot be resolved', function (string $invalidity): void {
-        $node = Node::factory()->create(['name' => 'app-1']);
+        $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         $app = App::factory()->create(['name' => 'docs']);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature']);
         $route = ProxyRoute::factory()->create([
@@ -287,7 +302,8 @@ describe('ProxyRouteQuery', function (): void {
             $route->forceFill(['kind' => 'proxy'])->saveQuietly();
         }
 
-        $entity = app(ProxyRouteQuery::class)->toRouteEntity($route->fresh());
+        $query = app(ProxyRouteQuery::class);
+        $entity = $query->toRouteEntity($route->fresh());
 
         expect($entity)
             ->not
@@ -295,7 +311,9 @@ describe('ProxyRouteQuery', function (): void {
             ->and($entity['owner'])
             ->toBe(['type' => 'workspace', 'name' => null])
             ->and($entity['target'])
-            ->toBe(['type' => 'workspace', 'value' => null]);
+            ->toBe(['type' => 'workspace', 'value' => null])
+            ->and($query->list()['routes'])
+            ->toBeEmpty();
     })->with([
         'missing workspace',
         'conflicting app',
@@ -540,16 +558,17 @@ describe('ProxyRouteQuery', function (): void {
 
         $query = app(ProxyRouteQuery::class);
         $entity = $query->toRouteEntity($route->fresh());
-        $listed = $query->list(filter: $filter)['routes'][0];
+        $listed = $query->list(filter: $filter)['routes'];
+        $allRoutes = $query->list()['routes'];
 
         expect($entity['owner'])
             ->toBe(['type' => $ownerType, 'name' => null])
             ->and($entity['target'])
             ->toBe(['type' => 'upstream', 'value' => "https://{$filter}.orbit"])
-            ->and($listed['owner']['type'])
-            ->toBe($ownerType)
-            ->and($listed['target']['type'])
-            ->toBe('upstream');
+            ->and($listed)
+            ->toBeEmpty()
+            ->and($allRoutes)
+            ->toBeEmpty();
     })->with([
         'analytics missing app' => ['app-analytics', 'analytics', 'missing app'],
         'analytics missing instance' => ['app-analytics', 'analytics', 'missing instance'],
@@ -563,7 +582,7 @@ describe('ProxyRouteQuery', function (): void {
         'websocket workspace identity' => ['app-websocket', 'websocket', 'workspace identity'],
     ]);
 
-    it('uses stored direct owner types for malformed public ownership metadata', function (
+    it('retains stored owner types for malformed public ownership metadata', function (
         string $ownerType,
         string $validKind,
         string $invalidity,

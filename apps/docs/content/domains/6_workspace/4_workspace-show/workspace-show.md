@@ -8,8 +8,8 @@ Show workspace registry configuration and runtime expectations.
 configuration. It reports the parent app, required selected instance,
 effective owning node, branch, path, and canonical URL.
 
-It also returns runtime expectations (effective PHP version and inheritance
-process definitions, the workspace-owned proxy route, and a summary of the most
+It also returns runtime expectations (the concrete PHP version and inherited
+process definitions), the workspace-owned proxy route, and a summary of the most
 recent setup run.
 
 This command is a registry-only read; it does not perform live probes on app
@@ -89,7 +89,7 @@ orbit workspace:show feature-docs --instance=docs --json
 - [`orbit workspace:list`](../3_workspace-list/workspace-list.md): List all workspaces.
 - [`orbit workspace:history [name]`](../6_workspace-history/workspace-history.md): View full setup/teardown history.
 - [`orbit workspace:run:log [run]`](../7_workspace-run-log/workspace-run-log.md): View logs for a specific lifecycle run.
-- [`doctor --family=workspace`](../workspace-doctor.md): Verify and repair live workspace reality.
+- [`doctor --family=workspace`](../workspace-doctor.md): Verify and report live workspace reality.
 
 ***
 

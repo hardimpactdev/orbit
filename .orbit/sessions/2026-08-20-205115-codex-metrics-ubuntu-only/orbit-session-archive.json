@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T18:51:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-metrics-ubuntu-only/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-205115-codex-metrics-ubuntu-only",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/metrics-ubuntu-only-retained-incus.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/metrics-ubuntu-only-retained-incus.md": "636a6154826ad9cf8825cd506c70a44bd7412dafc658bffa8ac171ef68c79cf9",
+        "loop.md": "ded997968bc1040d284cac83eaf19803a0ba32f60cc2a385280055808a0a6655"
+    },
+    "slug": "codex-metrics-ubuntu-only",
+    "requested_slug": "codex-metrics-ubuntu-only",
+    "compatible_slugs": [
+        "codex-metrics-ubuntu-only"
+    ],
+    "branch": "codex/metrics-ubuntu-only",
+    "candidate_commit": "cf688dc0f7e496ba76f744567985242ec41424f9",
+    "accepted_feature_tip": "cf688dc0f7e496ba76f744567985242ec41424f9",
+    "accepted_main_tip": "4c54e13bdbcb8b269723bb3e64e3b0b0237b5903",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

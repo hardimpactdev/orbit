@@ -114,6 +114,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - [Human renderer](6.1_node-role-add_output-render_human.md)
 - [JSON renderer](6.2_node-role-add_output-render_json.md)
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.role.added` |
+| Effect | `write` |
+| Subject | The selected `Node`; `none` when resolution fails. |
+| Properties | `node` and `role`. |
+| Description | derived |
+
 ## Test Mapping
 
 Primary test owners:

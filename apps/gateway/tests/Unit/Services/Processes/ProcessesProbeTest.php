@@ -2137,6 +2137,7 @@ it('reports launchd processes on linux placement as unrenderable instead of inve
         ]);
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
+        'php_version' => '8.5',
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $linux->id,
             node: $linux->name,

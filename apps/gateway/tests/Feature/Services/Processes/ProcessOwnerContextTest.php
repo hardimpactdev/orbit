@@ -28,6 +28,7 @@ it('uses the workspace managed frankenphp runtime and keeps inherited non-web pr
 
     $instance = Instance::factory()->for($app)->create([
         'name' => 'development',
+        'php_version' => '8.5',
         'driver' => InstanceDriver::Orbit,
         'driver_config' => new OrbitInstanceDriverConfigData(
             node_id: $node->id,

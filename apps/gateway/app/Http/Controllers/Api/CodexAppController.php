@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Contracts\Loggable;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\CodexApp\CodexAppConfigMerger;
@@ -13,12 +15,19 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Workspaces\WorkspacePlacement;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class CodexAppController
+final class CodexAppController implements Loggable
 {
     private const string ConfigPath = '~/.codex/codex-app/config.json';
+
+    private string $activityAction = 'list';
+
+    private ?Model $activitySubject = null;
+
+    private ?string $activityTargetNode = null;
 
     public function add(
         Request $request,
@@ -26,6 +35,7 @@ final readonly class CodexAppController
         RemoteCodexAppConfig $codexConfig,
         ToolCatalog $catalog,
     ): JsonResponse {
+        $this->beginActivity('add', $request);
         $context = $this->mutationContext($request, $project, $catalog);
 
         if ($context instanceof JsonResponse) {
@@ -62,6 +72,7 @@ final readonly class CodexAppController
         RemoteCodexAppConfig $codexConfig,
         ToolCatalog $catalog,
     ): JsonResponse {
+        $this->beginActivity('remove', $request);
         $context = $this->mutationContext($request, $project, $catalog);
 
         if ($context instanceof JsonResponse) {
@@ -100,6 +111,7 @@ final readonly class CodexAppController
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
+        $this->beginActivity('list', $request);
         $caller = $this->caller($request);
 
         if (! $caller instanceof Node) {
@@ -153,6 +165,8 @@ final readonly class CodexAppController
         if (! $model instanceof App) {
             return $this->error('project.not_found', "Project '{$project}' not found.", ['project' => $project], 404);
         }
+
+        $this->activitySubject = $model;
 
         // App owns no node: the serving node comes from the app's primary instance.
         $servingNode = app(WorkspacePlacement::class)->runtimeNode($model, null);
@@ -213,6 +227,12 @@ final readonly class CodexAppController
             );
         }
 
+        $this->activityTargetNode = $target->name;
+
+        if ($this->activityAction === 'list') {
+            $this->activitySubject = $target;
+        }
+
         if (app(NodeRoleAssignments::class)->nodeIsGateway($target)) {
             return $this->error(
                 'validation_failed',
@@ -239,6 +259,48 @@ final readonly class CodexAppController
         }
 
         return $target;
+    }
+
+    private function beginActivity(string $action, Request $request): void
+    {
+        $this->activityAction = $action;
+        $this->activitySubject = null;
+        $this->activityTargetNode = $this->stringInput($request, 'node');
+    }
+
+    public function effect(): ActivityLogType
+    {
+        return $this->activityAction === 'list' ? ActivityLogType::Read : ActivityLogType::Write;
+    }
+
+    public function type(): string
+    {
+        return match ($this->activityAction) {
+            'add' => 'api:POST /codex/apps/{project}',
+            'remove' => 'api:DELETE /codex/apps/{project}',
+            default => 'api:GET /codex/projects',
+        };
+    }
+
+    public function subject(): ?Model
+    {
+        return $this->activitySubject;
+    }
+
+    public function properties(): array
+    {
+        return array_filter(
+            [
+                'action' => $this->activityAction,
+                'target_node' => $this->activityTargetNode,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
+    }
+
+    public function description(): ?string
+    {
+        return null;
     }
 
     private function unsupportedTarget(ToolCatalog $catalog, Node $target): ?JsonResponse

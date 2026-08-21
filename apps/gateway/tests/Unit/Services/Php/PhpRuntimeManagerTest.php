@@ -76,7 +76,7 @@ function place_php_runtime_manager_app(App $app, Node $node): Instance
     ]);
 }
 
-it('maps PHP runtime view with inherited workspace version', function (): void {
+it('does not mask an invalid null workspace PHP snapshot with an inherited version', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -94,8 +94,8 @@ it('maps PHP runtime view with inherited workspace version', function (): void {
         ->and($result->payload['workspace'])
         ->toBe([
             'name' => 'feature-docs',
-            'php_version' => '8.5',
-            'inherits' => true,
+            'php_version' => null,
+            'inherits' => false,
         ]);
 });
 
@@ -618,7 +618,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
         ]);
 });
 
-it('frankenphp rejects workspace inheritance when inherited app version lacks approved image evidence', function (): void {
+it('requires an explicit version for workspace PHP writes', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -632,22 +632,14 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
     place_php_runtime_manager_app($app, $node);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => '8.4']);
 
-    $result = app(PhpRuntimeManager::class)->use(
-        version: null,
-        instance: 'docs',
-        workspace: 'feature-docs',
-        inherit: true,
-    );
+    $result = app(PhpRuntimeManager::class)->use(version: null, instance: 'docs', workspace: 'feature-docs');
 
     expect($result->failed())
         ->toBeTrue()
         ->and($workspace->refresh()->php_version)
         ->toBe('8.4')
+        ->and($result->failure?->code)
+        ->toBe('validation_failed')
         ->and($result->failure?->meta)
-        ->toMatchArray([
-            'field' => 'version',
-            'reason' => 'not_installed',
-            'version' => '8.5',
-            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
-        ]);
+        ->toBe(['field' => 'version', 'reason' => 'missing_required_input']);
 });

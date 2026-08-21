@@ -13,6 +13,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 final readonly class LogActivity
 {
@@ -33,20 +34,25 @@ final readonly class LogActivity
         try {
             $response = $next($request);
         } finally {
-            $loggable = $this->resolveLoggable($request);
+            try {
+                $loggable = $this->resolveLoggable($request);
 
-            if ($loggable instanceof Loggable) {
-                $causer = $request->user();
-                $this->logger->log(
-                    $loggable,
-                    channel: 'api',
-                    causer: $causer instanceof Node ? $causer : null,
-                    extraProperties: $this->extraProperties($request),
-                );
-            }
+                if ($loggable instanceof Loggable) {
+                    $causer = $request->user();
 
-            if ($ownsCorrelation) {
-                $this->correlation->end();
+                    $this->logger->log(
+                        $loggable,
+                        channel: 'api',
+                        causer: $causer instanceof Node ? $causer : null,
+                        extraProperties: $this->extraProperties($request),
+                    );
+                }
+            } catch (Throwable $throwable) {
+                report($throwable);
+            } finally {
+                if ($ownsCorrelation) {
+                    $this->correlation->end();
+                }
             }
         }
 

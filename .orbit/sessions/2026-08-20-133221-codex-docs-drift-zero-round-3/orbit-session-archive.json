@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T11:32:21+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-docs-drift-zero-round-3/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-133221-codex-docs-drift-zero-round-3",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/docs-drift-round3-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-20T111654Z-00fd660a34d1.json"
+    ],
+    "entry_digests": {
+        "evidence/docs-drift-round3-retained-incus.md": "201e217b527f13aa11e9609cae0a0bb089a1898d4dd7fb5761d358891659a2e1",
+        "loop.md": "94ea77405f0f2341d3f2566bab77a39ae7c003c2fb98a80081f610f4b6b7cd2b",
+        "quality-gates/quality-check-2026-08-20T111654Z-00fd660a34d1.json": "6b916d1def9660821ab044027da789359728b12123807a94d7fee15091d70471"
+    },
+    "slug": "codex-docs-drift-zero-round-3",
+    "requested_slug": "codex-docs-drift-zero-round-3",
+    "compatible_slugs": [
+        "codex-docs-drift-zero-round-3"
+    ],
+    "branch": "codex/docs-drift-zero-round-3",
+    "candidate_commit": "5b465b40829b06c1144936044ef1145017139758",
+    "accepted_feature_tip": "5b465b40829b06c1144936044ef1145017139758",
+    "accepted_main_tip": "6ebd95263a76bfed8b39dbe18294a62f3471bf1b",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

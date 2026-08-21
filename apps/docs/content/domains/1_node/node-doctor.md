@@ -32,7 +32,7 @@ The node family owns these facts:
   and installed-Agent expectation must not remain after the last workload role
   is removed unless the roleless node is explicitly managed;
 - node identity and related defaults: every active node has a mandatory valid
-  node-owned TLD; the node family apps a concrete DNS record for every
+  node-owned TLD; the node family maps a concrete DNS record for every
   active node and wildcard records for active development and agent roles,
   alongside `vpn` role settings and WireGuard runtime, local
   `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
@@ -229,8 +229,9 @@ is `removing`, or the baseline convergence path when the assignment is `error`.
 
 ## Node Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -265,14 +266,21 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
 | `node.transport_unreachable` | Gateway-local execution is unavailable for the gateway target, or the gateway cannot reach an Agent-eligible non-gateway node through Agent push. |
+| `node.local_executor_probe_failed` | The gateway-local Doctor executor raised before it could return a usable node probe result. |
+| `node.remote_shell_probe_failed` | The Agent-push or compatibility remote probe raised before it could return a usable node probe result. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. Report-only; recovery returns to the initiating client bootstrap flow. |
+| `node.docker_runtime_unavailable` | The Docker CLI is missing or the daemon is unreachable on the gateway node, so the gateway runtime container cannot be inspected. |
+| `node.runtime_container_missing` | The expected gateway runtime container is absent from the gateway node. This is a runtime incident, not restorable configuration drift. |
+| `node.runtime_container_stopped` | The gateway runtime container exists but is not running. This is a runtime incident, not restorable configuration drift. |
 | `node.dns_mapping_mismatch` | A source node's concrete or role-gated wildcard directives are missing or wrong, or the active gateway projection anchor finds an orphan directive for a deleted or renamed node. |
 | `node.s3_data_path_invalid` | An active `s3` role assignment has a missing, relative, or otherwise invalid `data_path` setting. |
 | `node.s3.wireguard_missing` | An active `s3` role node has a missing or empty WireGuard address. SeaweedFS requires a WireGuard address to bind its API endpoint. |
 | `node.node_identity_artifact_missing` | A node is missing bootstrap identity material required to prove its node record. |
 | `node.bootstrap_network_policy_mismatch` | A gateway or node's role bootstrap network policy is missing, unsafe, or inconsistent with its role assignments. |
 | `node.security.runtime_user` | A persisted managed node record has no Orbit owner/runtime user, or that user is absent on the host. |
+| `node.security.sshd_config` | Managed SSH daemon hardening configuration is absent or differs from the node security baseline. |
+| `node.security.sshd_listen` | The SSH daemon listen posture differs from the node security baseline. |
 | `node.security.public_ssh_deny` | A provisioned Linux node does not deny public SSH exposure according to node-owned bootstrap policy. |
 | `node.security.sysctl` | A provisioned Linux node is missing or diverges from the node-owned sysctl baseline. |
 | `node.security.home_perms` | Managed home is weaker than owner `0700`-equivalent posture. Linux may keep managed Agent traversal ACL `u:agent:--x` (mask `--x`); broader ACLs or group/world access remain findings. |
@@ -307,10 +315,12 @@ This table describes what `doctor --restore --family=node` does for each resolva
 | `node.managed_agent_intent_invalid` | Clear the invalid `managed` flag; workload role intent remains derived from active roles. |
 | `node.agent_expectation_stale` | Clear stale installed-Agent expectation metadata after Agent intent is absent. |
 | `node.gateway_runtime_unready` | Restart or reinstall the gateway service artifacts required by Orbit API readiness. |
-| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the appion directory mount is not active, leave drift unresolved rather than reporting success. |
+| `node.dns_mapping_mismatch` | Re-render only `dnsmasq.d/10-node-records.conf` from active node intent, atomically replace that artifact through the ownership-neutral materializer, and reload or restart DNS once. If the projection directory mount is not active, leave drift unresolved rather than reporting success. |
 | `node.node_identity_artifact_missing` | Reinstall node identity material from the active node record. |
 | `node.bootstrap_network_policy_mismatch` | Reapply the node-owned bootstrap network policy for the node's role assignments with rollback and reachability checks, preserving gateway-owned `firewall_rule` extras. |
 | `node.security.public_ssh_deny` | Reapply the node-owned public provisioning-SSH deny policy gateway-locally or through Agent push while preserving user-owned firewall rules. |
+| `node.security.sshd_config` | Reapply the hardened SSH daemon configuration through `SshdHardenedInstaller`. |
+| `node.security.sshd_listen` | Reapply the hardened SSH daemon listen posture through `SshdHardenedInstaller`. |
 | `node.security.sysctl` | Restore the managed sysctl baseline and reload sysctl. |
 | `node.security.home_perms` | Through the authenticated node path, chmod only `/home/{nodes.user}` to `0700` after passwd-home and ownership checks. Runtime-user absence is report-only. Does not run against a correctly ACL-hardened Agent home (owner `0700` bits plus managed `u:agent:--x`), so restore cannot fight role-baseline ACL repair. |
 | `node.updates` | For exact `--key=node.updates`, repair apt auto-upgrade config through `UnattendedUpgradesInstaller`, run `sudo unattended-upgrade`, re-probe, and report any remaining drift. Orbit never reboots automatically. |
@@ -319,7 +329,10 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
 `node.platform_record_mismatch`, `node.transport_unreachable`,
-`node.runtime_missing`, `node.security.runtime_user`,
+`node.local_executor_probe_failed`, `node.remote_shell_probe_failed`,
+`node.docker_runtime_unavailable`, `node.runtime_missing`,
+`node.runtime_container_missing`, `node.runtime_container_stopped`,
+`node.security.runtime_user`,
 `node.security.posture_probe_failed`, `node.wireguard_peer_extra`,
 or `node.local_default_invalid`.
 

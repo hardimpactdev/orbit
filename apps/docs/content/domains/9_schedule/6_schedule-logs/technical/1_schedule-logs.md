@@ -61,7 +61,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Schedule not found | No visible schedule matches the name and filters. | `error.code=schedule.not_found` |
 | Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Run not found | No run-history record matches the selected schedule and run id. | `error.code=schedule.run_not_found` |
-| Log read failed | The gateway could not read stored run output. | `error.code=schedule.log_read_failed` |
 
 ## Doctor Relationship
 

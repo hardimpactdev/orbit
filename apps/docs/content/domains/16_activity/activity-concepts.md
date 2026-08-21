@@ -46,7 +46,7 @@ Each activity entry carries the following fields.
   `node:revoke`, `vpn-client:remove`, and deploy retention prune are
   `destructive`.
 - **Subject:** Product-family entity the action targets, when there is one.
-  Examples: the `Node` granted, the `App` deployed, the `Instance` configured, the `Workspace` created,
+  Examples: the `Node` granted, the `DeploymentRun` created, the `Instance` configured, the `Workspace` created,
   the `ProxyRoute` stored. `null` when the action has no single domain
   target.
 - **Causer (actor):** Node identity that initiated the action, resolved from
@@ -64,11 +64,12 @@ Each activity entry carries the following fields.
   command in the command's technical contract.
 - **Description:** Optional one-line human summary for human renderers.
   Renderers may fall back to type plus subject when description is absent.
-- **Channel:** Origin of the entry. The canonical public values are `cli`
-  (command-side emission) and `api` (gateway controller emission). Internal
-  execution rows use channel `api` plus `properties.lane = internal` and a
-  current `properties.transport` marker. Channel does not change which fields
-  are required.
+- **Channel:** Origin of the entry. `api` is the current emission channel for
+  gateway controller and internal execution rows. Read paths accept `cli` only
+  for stored records; current CLI commands do not emit activity. Internal rows
+  use channel `api` plus `properties.lane = internal` and a current
+  `properties.transport` marker. Channel does not change which fields are
+  required.
 
 ### Canonical Activity DTO
 
@@ -110,8 +111,8 @@ These terms describe how related activity entries are grouped.
 
 ## Loggable Contract
 
-Every API controller and every CLI command participates in activity logging
-through one shared contract.
+Gateway API controllers participate in activity logging through one shared
+contract. CLI commands do not write activity directly.
 
 - **Loggable interface:** Controllers and command handlers that emit
   activity declare:
@@ -125,10 +126,10 @@ through one shared contract.
   matched controller and, if it implements Loggable, records an entry after
   the response is produced (success or failure). The controller decides
   what to log; the middleware is the transport. Causer is resolved from
-  the WireGuard identity middleware. On the CLI, a small command-side
-  helper emits an entry through the gateway client when the command itself
-  is the canonical actor (CLI paths that do not flow through a single
-  matching API endpoint); causer is the local node identity.
+  the WireGuard identity middleware. A CLI command that calls a matching
+  gateway API endpoint relies on that endpoint's activity entry. A CLI-only
+  command does not emit activity because the CLI has no trusted shared
+  activity writer.
 - **Logging failure handling:** Activity write failures must not change
   command or API outcomes. Logging is a side channel; commands succeed or
   fail on their documented contracts, and activity emission errors are
@@ -144,8 +145,9 @@ Activity covers the following categories of operations.
   retention prunes).
 - All gateway API endpoints that read state (lists, shows, status). Effect
   `read`. Default-on for consistent activity visibility.
-- CLI commands that perform CLI-only state changes (e.g. local gateway
-  connection setup) emit through the CLI helper.
+- CLI-only state changes, including local gateway connection setup and local
+  skill installation, do not emit activity. Their command contracts state
+  this explicitly.
 - Node-local executor operations are recorded through the existing gateway
   activity and operation history surfaces. The gateway records
   `RemoteLocalExecutor` dispatch/completion for the intended lane

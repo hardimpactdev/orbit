@@ -24,7 +24,6 @@ final class PhpUseCommand extends GatewayCommand
         {--instance= : Instance selector (app.instance); changes only the selected instance own PHP version, never a sibling}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
-        {--inherit : Restore workspace PHP inheritance}
         {--cli : Select node CLI PHP default}
         {--json : Output JSON}';
 
@@ -78,39 +77,23 @@ final class PhpUseCommand extends GatewayCommand
 
     private function validateOptionCombination(): ?int
     {
-        if ($this->option('inherit') === true && $this->stringArgument('version') !== null) {
-            return $this->renderFailure(
-                'validation_failed',
-                'Cannot provide both a PHP version and --inherit.',
-                ['fields' => ['version', 'inherit'], 'reason' => 'mutually_exclusive_input'],
-            );
-        }
-
         if ($this->option('cli') !== true) {
             return null;
         }
 
-        if (
-            $this->stringOption('instance') === null
-            && $this->stringOption('workspace') === null
-            && $this->option('inherit') !== true
-        ) {
+        if ($this->stringOption('instance') === null && $this->stringOption('workspace') === null) {
             return null;
         }
 
         return $this->renderFailure(
             'validation_failed',
-            'CLI PHP selection cannot be combined with instance, workspace, or inheritance targets.',
-            ['fields' => ['cli', 'instance', 'workspace', 'inherit'], 'reason' => 'mutually_exclusive_input'],
+            'CLI PHP selection cannot be combined with instance or workspace targets.',
+            ['fields' => ['cli', 'instance', 'workspace'], 'reason' => 'mutually_exclusive_input'],
         );
     }
 
     private function resolveVersion(): string|int|null
     {
-        if ($this->option('inherit') === true) {
-            return null;
-        }
-
         $version = $this->stringArgument('version');
 
         if ($version !== null) {
@@ -154,7 +137,6 @@ final class PhpUseCommand extends GatewayCommand
                 'instance' => $cli ? null : $this->stringOption('instance') ?? $this->instanceFromOrbitMarker(),
                 'workspace' => $cli ? null : $this->stringOption('workspace'),
                 'node' => $node,
-                'inherit' => $this->option('inherit') === true,
                 'cli' => $cli,
             ],
             static fn (mixed $value): bool => $value !== null && $value !== '',

@@ -70,16 +70,17 @@ once.
 1. **Query gateway registry.** Read visible app registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
 2. **Resolve app visibility.** Include each app once when the
-   caller can inspect at least one concrete Orbit instance. Do not filter or
-   sort by the app's default node metadata.
+   caller can inspect at least one concrete Orbit instance. Resolve node
+   visibility from concrete Instances. Never filter or sort the logical App by
+   node.
 3. **Sort results.** Apps are sorted by app name (ascending,
    case-insensitive). Every output renderer uses this single ordering.
 4. **Build compact summaries.** Put `repository`, aggregate dependency-audit
    posture, `instance_count`, and `workspace_count` directly on each app
    row. Gateway callers count every visible instance and every workspace on an
    `app-dev` instance. For callers outside the gateway, count only placements
-   they are authorized to see. Do not attach instance/workspace rows or logical
-   default-node fields.
+   they are authorized to see. Do not attach instance/workspace rows or
+   placement fields.
 5. **Render output.** JSON returns the compact app summaries. Human interactive
    output renders `Laravel\Prompts\datatable` with `Name`, `Repository`,
    `Instances`, and `Workspaces` columns, then opens the selected app's

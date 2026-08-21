@@ -4643,13 +4643,13 @@ export interface operations {
                                 action: "removed";
                                 removed_self: boolean;
                                 wireguard_peer_removed: boolean;
-                                grants_removed: unknown;
+                                grants_removed: number;
                             };
                             meta: {
                                 warnings: string[];
                             };
                         };
-                    };
+                    } | string;
                 };
             };
             403: {
@@ -4915,13 +4915,12 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
-                                        /** @description The instance's own version, which may differ from the app creation template. */
-                                        php_version: string;
+                                        php_version: string | null;
                                     } | null;
                                     workspace: {
                                         name: string;
                                         php_version: string | null;
-                                        inherits: string;
+                                        inherits: boolean;
                                     } | null;
                                 } | string;
                             };
@@ -4948,7 +4947,6 @@ export interface operations {
                     instance?: string;
                     workspace?: string;
                     node?: string;
-                    inherit?: string;
                     cli?: string;
                 };
             };
@@ -4979,13 +4977,12 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
-                                        /** @description The instance's own version, which may differ from the app creation template. */
-                                        php_version: string;
+                                        php_version: string | null;
                                     } | null;
                                     workspace: {
                                         name: string;
                                         php_version: string | null;
-                                        inherits: string;
+                                        inherits: boolean;
                                     } | null;
                                 };
                                 result: {
@@ -5018,13 +5015,12 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
-                                        /** @description The instance's own version, which may differ from the app creation template. */
-                                        php_version: string;
+                                        php_version: string | null;
                                     } | null;
                                     workspace: {
                                         name: string;
                                         php_version: string | null;
-                                        inherits: string;
+                                        inherits: boolean;
                                     } | null;
                                 };
                                 result: {
@@ -5034,10 +5030,10 @@ export interface operations {
                                     app: string;
                                     instance: string;
                                     workspace: string;
-                                    previous: string;
+                                    previous: string | null;
                                     version: string | null;
                                     image: string | null;
-                                    inherits: Record<string, never> | null;
+                                    inherits: boolean;
                                     changed: boolean;
                                 };
                             } | {
@@ -5058,13 +5054,12 @@ export interface operations {
                                     instance: {
                                         name: string;
                                         app: string;
-                                        /** @description The instance's own version, which may differ from the app creation template. */
-                                        php_version: string;
+                                        php_version: string | null;
                                     } | null;
                                     workspace: {
                                         name: string;
                                         php_version: string | null;
-                                        inherits: string;
+                                        inherits: boolean;
                                     } | null;
                                 };
                                 result: {
@@ -5074,7 +5069,7 @@ export interface operations {
                                     app: string;
                                     instance: string;
                                     workspace: null;
-                                    previous: string;
+                                    previous: string | null;
                                     version: string;
                                     image: string;
                                     inherits: boolean;
@@ -5651,7 +5646,7 @@ export interface operations {
                                     node: string;
                                     target: {
                                         /** @enum {string} */
-                                        type: "instance" | "app" | "analytics" | "websocket" | "workspace" | "gateway" | "upstream" | "redirect";
+                                        type: "instance" | "upstream" | "analytics" | "websocket" | "workspace" | "gateway" | "redirect";
                                         value: string | null;
                                     };
                                     redirect_code: number | null;
@@ -6575,67 +6570,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                updated: {
-                                    tool: string;
-                                    node: string;
-                                }[];
-                                skipped: ({
-                                    tool: string;
-                                    node: string | "";
-                                    /** @constant */
-                                    reason: "update_capability_missing";
-                                } | {
-                                    tool: string;
-                                    node: string | "";
-                                    /** @constant */
-                                    reason: "null_latest_version";
-                                } | {
-                                    tool: string;
-                                    node: string | "";
-                                    /** @constant */
-                                    reason: "null_update_script";
-                                })[];
-                                failed: ({
-                                    tool: string;
-                                    node: string;
-                                    /** @constant */
-                                    error: "Target node is missing.";
-                                } | {
-                                    tool: string;
-                                    node: string;
-                                    error: string;
-                                })[];
-                            };
-                            meta: string;
-                        };
-                    } | Record<string, never>;
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "This node is not authorized to manage tools.";
-                            meta: string[];
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string[];
-                        };
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -7700,32 +7635,10 @@ export interface operations {
                     "application/json": {
                         success: {
                             data: {
-                                app: string;
-                                instance: string;
+                                result: string;
                                 workspace: string;
-                                node: string;
-                                url: string;
-                                /** @constant */
-                                action: "set_up";
-                                setup_steps: {
-                                    status: string;
-                                    count: string;
-                                    message: string;
-                                };
-                                processes: {
-                                    /** @constant */
-                                    status: "started";
-                                    count: string;
-                                    names: string;
-                                };
-                                http_probe: {
-                                    reachable: boolean;
-                                    status: string;
-                                };
                             };
-                            meta: {
-                                warnings: unknown[];
-                            };
+                            meta: string;
                         };
                     } | Record<string, never>;
                 };
@@ -7766,11 +7679,13 @@ export interface operations {
                         error: {
                             /** @constant */
                             code: "workspace.enactment_failed";
-                            message: string;
+                            message: string | "Workspace setup failed.";
                             meta: {
                                 /** @constant */
-                                phase: "artifacts";
+                                phase: "planning";
                                 node: string;
+                                /** @constant */
+                                reason: "plan_construction_failed";
                             };
                         };
                     } | {

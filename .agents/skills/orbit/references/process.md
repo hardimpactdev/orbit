@@ -1,6 +1,6 @@
 # Process Commands
 
-Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). App/workspace host-command process definitions render as one systemd unit per target on Linux and one Orbit-owned launchd user LaunchAgent per target on macOS. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`; launchd labels are `dev.hardimpact.orbit.<runtimeUnit>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
+Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). App/workspace host-command process definitions render as one systemd unit per target on Linux and one Orbit-owned launchd user LaunchAgent per target on macOS. Runtime unit name: `orbit_<app>_<instance>_<workspace|main>_<process>`; launchd labels are `dev.hardimpact.orbit.<runtimeUnit>`. Spec: [`apps/docs/content/domains/7_process/`](../../../../apps/docs/content/domains/7_process/).
 
 App/workspace runtime units receive Laravel Vite-compatible URL/TLS env fields:
 `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
@@ -13,7 +13,10 @@ Add a process definition for an app, workspace, or node.
 
 ```bash
 orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
-                  [--service=<mysql|valkey>] [--version=<version>] [--image=<image>]
+                  [--workspace=<workspace>] [--label=<label>] [--tool=<tool>]
+                  [--service=<service>] [--version=<version>]
+                  [--database=<name>] [--username=<name>]
+                  [--published-port=<port>] [--image=<image>]
                   [--bind=wireguard|loopback]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none]
@@ -28,8 +31,14 @@ orbit process:add [<name>] [<command>] [--instance=<name>] [--node=<node>]
 | `command` |  -  | Shell command (run inside the app/workspace path). Omit when `--service` is present. |
 | `--instance` |  -  | Parent `app.instance` selector. |
 | `--node` |  -  | Owning node for node-owned processes and managed services. |
-| `--service` |  -  | Managed service identifier (`mysql`, `valkey`, ...). Node-owned only. |
+| `--workspace` |  -  | Workspace-owned scope. Use `--instance` when the workspace name is ambiguous. |
+| `--label` | process name | Human-readable display label. |
+| `--tool` |  -  | Installed tool capability used by this process. Tools do not own lifecycle. |
+| `--service` |  -  | Supported managed service identifier from the gateway catalog. Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
+| `--database` |  -  | PostgreSQL initial database name. PostgreSQL only. |
+| `--username` |  -  | PostgreSQL initial username. PostgreSQL only. |
+| `--published-port` | catalog default | Published host port override for a single-port managed service. Required for PostgreSQL. |
 | `--image` | resolved catalog image | Explicit Docker image override for managed services. |
 | `--bind` | `wireguard` | Repeatable. Node-owned Docker managed services only. `wireguard` publishes on the node WireGuard service address; `loopback` publishes on host-local `127.0.0.1` (not reachable as `127.0.0.1` from another container). Both publish every target port on both hosts. Rejects host commands, instance/workspace, Docker Swarm, empty/unsupported values, and arbitrary IPs. |
 | `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |
@@ -68,8 +77,9 @@ orbit process:add valkey --node=database-1 --service=valkey --runtime=docker \
 Update a process definition. Only the supplied fields change.
 
 ```bash
-orbit process:update [<name>] [--instance=<name>] [--command='<shell>']
-                     [--name=<new-slug>] [--restart-policy=<p>]
+orbit process:update [<name>] [--instance=<name>] [--workspace=<workspace>]
+                     [--node=<node>] [--name=<new-slug>] [--label=<label>]
+                     [--command='<shell>'] [--restart-policy=<p>]
                      [--crash-notification=<n>] [--runtime=<backend>]
                      [--bind=wireguard|loopback]
                      [--restart] [--json]
@@ -80,35 +90,49 @@ orbit process:update [<name>] [--instance=<name>] [--command='<shell>']
 `process:add` apply when changing it. Omitting `--bind` preserves existing
 publish binds for managed Docker services; supplying `--bind` replaces the
 entire bind list and re-renders while preserving unrelated service config.
+Use `--node` for node-owned processes, or `--workspace` with an optional
+`--instance` disambiguator for workspace-owned processes. `--label` changes
+only the display label; `--name` changes the process identity slug.
 
 ## `orbit process:remove [name]`
 
 Remove a process definition and its runtime units.
 
 ```bash
-orbit process:remove [<name>] [--instance=<name>] [--force] [--json]
+orbit process:remove [<name>] [--instance=<name>] [--workspace=<workspace>]
+                     [--node=<node>] [--force] [--json]
 ```
 
 ## `orbit process:list`
 
 ```bash
-orbit process:list [--instance=<name>] [--workspace=<name>] [--json]
+orbit process:list [--instance=<name>] [--workspace=<workspace>]
+                   [--node=<node>] [--app=<hostname>] [--json]
 ```
 
 Without `--workspace`, lists instance-scoped definitions and the runtime units
-they render across the instance's main path and active workspaces.
+they render across the instance's main path and active workspaces. Use
+`--node` for node-owned processes. `--app` resolves an exact registered
+app-instance or workspace hostname and is mutually exclusive with the other
+scope selectors.
 
 ## `orbit process:start | stop | restart [name]`
 
 Control runtime units.
 
 ```bash
-orbit process:start   [<name>] [--instance=<name>] [--workspace=<name>] [--json]
-orbit process:stop    [<name>] [--instance=<name>] [--workspace=<name>] [--json]
-orbit process:restart [<name>] [--instance=<name>] [--workspace=<name>] [--json]
+orbit process:start   [<name>] [--instance=<name>] [--workspace=<workspace>]
+                      [--node=<node>] [--app=<hostname>] [--json]
+orbit process:stop    [<name>] [--instance=<name>] [--workspace=<workspace>]
+                      [--node=<node>] [--app=<hostname>] [--json]
+orbit process:restart [<name>] [--instance=<name>] [--workspace=<workspace>]
+                      [--node=<node>] [--app=<hostname>] [--json]
 ```
 
-Without `--workspace`, the command targets the main app instance. Use `--workspace=<slug>` to target a specific workspace's rendered unit.
+Without `--workspace`, the command targets the main app instance. Use
+`--workspace=<slug>` to target a specific workspace's rendered unit,
+`--node` for node-owned processes, or `--app` for an exact registered
+app-instance or workspace hostname.
 
 ## `orbit process:log [name]`
 
@@ -116,7 +140,7 @@ Read runtime logs.
 
 ```bash
 orbit process:log [<name>] [--instance=<name>] [--workspace=<name>]
-                   [--follow] [--lines=100] [--json]
+                   [--node=<node>] [--follow] [--lines=100] [--json]
 ```
 
 `--follow` streams new lines as they arrive (Ctrl-C to stop). Launchd-backed
@@ -124,3 +148,5 @@ processes read Orbit-owned stdout/stderr files under
 `~/Library/Logs/Orbit/processes`. On agent-capable nodes, bounded reads and
 follow streams use gateway-to-Agent command transport and fail clearly when
 Agent push is unavailable. They never fall back to SSH.
+Use `--node` for node-owned process logs. A workspace name can use
+`--instance` to disambiguate its owning instance.

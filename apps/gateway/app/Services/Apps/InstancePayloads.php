@@ -94,12 +94,10 @@ final readonly class InstancePayloads
         $app = $instance->app;
         $image = null;
         $runtime = $app->runtimeKind();
-        // The instance owns its version; the app value is only the creation
-        // template, so reporting it here would misstate what actually runs.
-        $phpVersion = $instance->php_version ?? $app->php_version;
+        $phpVersion = $instance->php_version;
 
         try {
-            if ($runtime === AppRuntimeKind::Php) {
+            if ($runtime === AppRuntimeKind::Php && is_string($phpVersion)) {
                 $image = $this->phpRuntimeCatalog->imageFor($phpVersion);
             }
         } catch (InvalidArgumentException) {

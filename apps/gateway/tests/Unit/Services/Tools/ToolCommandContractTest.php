@@ -310,7 +310,7 @@ describe('tool command shared contract', function (): void {
             ->toBe('tool.not_found');
     });
 
-    it('exposes the shared tool failure shape and allowed remote action metadata', function (): void {
+    it('exposes the shared tool failure shapes and allowed metadata', function (): void {
         $failure = ToolRegistryFailure::remoteActionFailed(
             tool: 'caddy',
             node: 'app-contract-a',
@@ -336,6 +336,38 @@ describe('tool command shared contract', function (): void {
                 'action' => 'start',
                 'exit_code' => 7,
                 'stderr' => 'systemctl failed',
+            ]);
+
+        $runtimeMissing = ToolRegistryFailure::runtimeMissing(
+            tool: 'caddy',
+            node: 'app-contract-a',
+            action: 'reload',
+        );
+        $runtimeAmbiguous = ToolRegistryFailure::runtimeAmbiguous(
+            tool: 'caddy',
+            node: 'app-contract-a',
+            action: 'logs',
+            processes: ['caddy-blue', 'caddy-green'],
+            toolOwnedRuntime: true,
+        );
+
+        expect($runtimeMissing->code)
+            ->toBe('tool.runtime_missing')
+            ->and($runtimeMissing->meta)
+            ->toBe([
+                'tool' => 'caddy',
+                'node' => 'app-contract-a',
+                'action' => 'reload',
+            ])
+            ->and($runtimeAmbiguous->code)
+            ->toBe('tool.runtime_ambiguous')
+            ->and($runtimeAmbiguous->meta)
+            ->toBe([
+                'tool' => 'caddy',
+                'node' => 'app-contract-a',
+                'action' => 'logs',
+                'processes' => ['caddy-blue', 'caddy-green'],
+                'tool_owned_runtime' => true,
             ]);
     });
 });

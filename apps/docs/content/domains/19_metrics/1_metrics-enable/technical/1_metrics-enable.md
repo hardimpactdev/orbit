@@ -92,6 +92,16 @@ drift for private node-exporter scrape access belongs to
 `metrics.orbit` route drift belongs to
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.role.added` |
+| Effect | `write` |
+| Subject | The selected `Node`; `none` when resolution fails. |
+| Properties | `node` and `role`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

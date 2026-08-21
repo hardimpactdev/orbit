@@ -42,7 +42,8 @@ The gateway bootstrap runs in this order:
 
 1. WireGuard kernel + interface install.
 2. Root CA materialized.
-3. Gateway `orbit-gateway` and `orbit-scheduler` Swarm services created and started.
+3. Gateway `orbit-gateway`, `orbit-scheduler`, and
+   `orbit-runtime-hibernator` Swarm services created and started.
 4. Router-owned `orbit-caddy` container created, started, and configured to
    route HTTPS gateway traffic to `orbit-gateway` over `orbit-network` when
    router and gateway are colocated.

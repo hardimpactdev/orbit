@@ -74,8 +74,8 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --tld=agent --grant-to=al
   effects.
 - `--host`: required for gateway bootstrap and for every path that provisions a
   workload role (`app-dev`, `app-prod`, `ingress`, `agent`, `websocket`, `s3`,
-  `metrics`, `analytics`, and gateway bootstrap/convergence). Forbidden for bare client identities,
-  `--operator`, and `database`-only identities that do not provision a host.
+  `database`, `metrics`, `analytics`, and gateway bootstrap/convergence).
+  Forbidden only for bare client identities and `--operator`.
   This is the SSH/bootstrap endpoint and never the canonical node address.
 - `--operator-name`: initiating client name for first-gateway bootstrap
   (a client with no configured gateway running gateway bootstrap via
@@ -209,7 +209,7 @@ existing active `ingress` node.
 Creates an active `database` role assignment. It may combine with `app-dev`,
 `websocket`, `s3`, and `analytics` on the same provisioned host.
 
-Requires `--host` when the template provisions a host.
+Requires `--host` because the template provisions a host.
 
 **`websocket` template**
 

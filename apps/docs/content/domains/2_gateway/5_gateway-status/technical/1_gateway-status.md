@@ -80,6 +80,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `gateway:status` is a signal to run `doctor --family=node` for diagnosis and
   guided repair.
 
+## Activity Logging
+
+`gateway:status` does not emit activity. It reads local connectivity and does
+not call a state-reading gateway product endpoint or change state.
+
 ## Test Mapping
 
 | Path | Coverage |

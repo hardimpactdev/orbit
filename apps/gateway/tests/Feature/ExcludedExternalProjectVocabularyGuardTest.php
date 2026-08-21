@@ -32,11 +32,10 @@ it('keeps Solo proxy controller Solo project list route and method names', funct
 
     expect($source)
         ->toContain('public function projects(')
-        ->toContain("\$this->operation = 'projects';")
+        ->toContain("\$this->operation = 'project/list';")
         ->toContain("requiredDataKey: 'projects'")
-        ->toContain("'projects' => 'solo.projects.listed'")
         ->not->toContain('public function apps(')
-        ->not->toContain("\$this->operation = 'apps';")
+        ->not->toContain("\$this->operation = 'app/list';")
         ->not->toContain("requiredDataKey: 'apps'");
 });
 

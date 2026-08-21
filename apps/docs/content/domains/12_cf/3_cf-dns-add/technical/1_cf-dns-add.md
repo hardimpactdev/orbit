@@ -71,6 +71,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 `cf-dns:add` may help apply provider DNS for a proxy or app hostname, but it does not create a Cloudflare doctor family. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md) owns ingress route health and [`doctor --family=instance`](../../../5_app/instance-doctor.md) owns app-domain health.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /cloudflare/zones/{zone}/dns` |
+| Effect | `write` |
+| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -98,7 +98,7 @@ final class WorkspaceStepDeleteController implements Loggable
         }
 
         if (! $servingNode instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for project '{$app->name}'.", [
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
                 'app' => $app->name,
             ]);
         }
@@ -189,7 +189,7 @@ final class WorkspaceStepDeleteController implements Loggable
         return response()->json([
             'error' => [
                 'code' => 'workspace.step_not_found',
-                'message' => "{$label} step '{$id}' not found for project '{$app}' in phase '{$phase->value}'.",
+                'message' => "{$label} step '{$id}' not found for app '{$app}' in phase '{$phase->value}'.",
                 'meta' => [
                     'step_id' => $id,
                     'app' => $app,

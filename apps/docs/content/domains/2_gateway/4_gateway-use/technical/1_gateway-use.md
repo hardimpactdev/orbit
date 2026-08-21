@@ -58,6 +58,12 @@ Human output reports the selected gateway name and endpoint.
 
 `gateway:use` has no doctor relationship. It writes local CLI configuration only and does not verify gateway connectivity or CA trust.
 
+## Activity Logging
+
+This command does not emit activity. It changes caller-local CLI settings, and
+the CLI has no trusted shared activity helper. The gateway records API work;
+`gateway:use` does not make a gateway API request.
+
 ## Test Mapping
 
 | Path | Coverage |

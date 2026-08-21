@@ -11,6 +11,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -28,6 +29,36 @@ beforeEach(function (): void {
 afterEach(function (): void {
     Http::allowStrayRequests();
 });
+
+it('logs destructive Cloudflare attempts with canonical API types', function (
+    string $method,
+    string $uri,
+    string $type,
+): void {
+    createCloudflareApiCallerNode();
+
+    $this->call($method, $uri, server: ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP])
+        ->assertUnprocessable();
+
+    $entry = Activity::query()->latest('id')->firstOrFail();
+
+    expect($entry->event)
+        ->toBe($type)
+        ->and($entry->properties->get('type'))
+        ->toBe('destructive');
+})->with([
+    'DNS remove' => [
+        'DELETE',
+        '/api/cloudflare/zones/example.com/dns/record-1',
+        'api:DELETE /cloudflare/zones/{zone}/dns/{record}',
+    ],
+    'cache-rule remove' => ['DELETE', '/api/cloudflare/cache-rules/docs', 'api:DELETE /cloudflare/cache-rules/{app}'],
+    'SSL disable' => [
+        'PUT',
+        '/api/cloudflare/zones/example.com/ssl/disable',
+        'api:PUT /cloudflare/zones/{zone}/ssl/disable',
+    ],
+]);
 
 function createCloudflareApiCallerNode(string $role = 'gateway'): Node
 {
@@ -231,4 +262,94 @@ it('adds a cache rule for an app without exposing project vocabulary', function 
         ->assertOk()
         ->assertJsonPath('success.data.rule.app', 'docs')
         ->assertJsonMissingPath('success.data.rule.project');
+});
+
+it('requires an explicit instance for a multi-instance cache rule target', function (): void {
+    $gateway = createCloudflareApiCallerNode();
+    $app = App::factory()->create(['name' => 'docs']);
+
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.staging.example.com',
+        ),
+    ]);
+
+    Http::fake();
+
+    $response = $this->call(
+        'POST',
+        '/api/cloudflare/cache-rules/docs',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation_failed')
+        ->assertJsonPath('error.meta.field', 'app')
+        ->assertJsonPath('error.meta.reason', 'instance_required');
+
+    Http::assertNothingSent();
+});
+
+it('adds a cache rule for an explicit dotted instance target', function (): void {
+    $gateway = createCloudflareApiCallerNode();
+    $app = App::factory()->create(['name' => 'docs']);
+
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'production',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.example.com',
+        ),
+    ]);
+    Instance::factory()->for($app, 'app')->create([
+        'name' => 'staging',
+        'driver_config' => new OrbitInstanceDriverConfigData(
+            node_id: $gateway->id,
+            node: $gateway->name,
+            domain: 'docs.staging.example.net',
+        ),
+    ]);
+
+    Http::fake([
+        'https://api.cloudflare.com/client/v4/zones*' => Http::response([
+            'success' => true,
+            'result' => [[
+                'id' => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                'name' => 'example.net',
+                'status' => 'active',
+            ]],
+        ]),
+        'https://api.cloudflare.com/client/v4/zones/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/rulesets' => Http::sequence()
+            ->push(['success' => true, 'result' => []])
+            ->push(['success' => true, 'result' => ['id' => 'cache-rules']]),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/cloudflare/cache-rules/docs.staging',
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.rule.app', 'docs');
 });

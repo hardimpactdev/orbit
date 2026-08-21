@@ -26,7 +26,6 @@ final readonly class UsePhpRuntime
         ?string $instance = null,
         ?string $workspace = null,
         ?string $node = null,
-        bool $inherit = false,
         bool $cli = false,
         ?Node $caller = null,
     ): PhpRuntimeOperation {
@@ -35,7 +34,6 @@ final readonly class UsePhpRuntime
             instance: $instance,
             workspace: $workspace,
             node: $node,
-            inherit: $inherit,
             cli: $cli,
             caller: $caller,
         );

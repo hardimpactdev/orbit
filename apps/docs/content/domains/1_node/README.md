@@ -127,7 +127,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 
 | Role | Baseline intent |
 | --- | --- |
-| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, gateway config root, SQLite database, and Orbit CA/certificate material |
+| `gateway` | Swarm-managed `orbit-gateway` API service, `orbit-scheduler` service, `orbit-runtime-hibernator` service, gateway config root, SQLite database, and Orbit CA/certificate material |
 | `vpn` | WireGuard server runtime, public endpoint settings, VPN peer defaults, and required DNS tool capability |
 | `router` | Private `orbit-caddy` router and proxy-family intent for private `.orbit` service names, route artifacts, backend pools, and private HTTP/WebSocket/S3 routing |
 | `app-dev` | Git, GitHub CLI, app runtime baseline, node-owned wildcard DNS projection, `orbit-caddy` app/workspace routes, and process-backed runtime units using the platform-supported backend where configured |
@@ -289,10 +289,11 @@ These rules apply to all node commands and define the invariants the family enfo
   not separate product domains in the command contract.
 - Local node defaults do not grant access. The gateway still authenticates the
   caller and authorizes the requested operation through node access policy.
-- For gateway nodes, node readiness includes the `orbit-gateway` service,
-  `orbit-scheduler` service, gateway config root, and the selected gateway
-  exposure mode. Runtime container provisioning commands specific to the
-  process manager are not a public node command surface.
+- For gateway nodes, node readiness includes the `orbit-gateway`,
+  `orbit-scheduler`, and `orbit-runtime-hibernator` services, gateway config
+  root, and the selected gateway exposure mode. Runtime container provisioning
+  commands specific to the process manager are not a public node command
+  surface.
 - `orbit doctor --family=node` verifies role, platform, WireGuard, Agent
   transport, provisioning SSH policy, and reachability expectations, including
   gateway service readiness for gateway nodes.
@@ -311,8 +312,8 @@ It does not require host PHP, host Composer, Git, or an Orbit source checkout.
 Source-mounted Docker and Incus topologies are development and E2E lanes; in those
 lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit` and
 mutable Orbit state local to the node lives under `~/.config/orbit`. `app-dev` and
-`app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.4 and 8.5 and
-Composer; the Laravel installer on `app-dev` only) for app setup, deployment,
+`app-prod` nodes additionally carry a host PHP toolchain (host PHP 8.3, 8.4, and
+8.5 plus Composer; the Laravel installer on `app-dev` only) for app setup, deployment,
 and ad-hoc app CLI. Host Caddy (the `orbit-caddy` container) and host PHP-FPM
 remain non-prerequisites and non-fallbacks.
 
@@ -510,12 +511,14 @@ being requested.
 Gateway, node, and client identities are minted or adopted during
 [`orbit node:new [name]`](1_node-new/node-new.md). Preparing a client
 starts with local CLI installation. Production installs download the native
-Orbit CLI binary artifact and link the host `bin/orbit` launcher as `orbit`.
+Orbit CLI binary and link it at `$HOME/.local/bin/orbit` by default.
+`ORBIT_BIN_PATH` or `--bin` selects another explicit host launcher path.
 Source-mounted Docker and Incus topologies are development and E2E lanes; in
 those lanes `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`.
 The `orbit-gateway` and `orbit-scheduler` Swarm services remain gateway-role
-concerns, not blanket client prerequisites. The app README owns those
-installation steps.
+concerns, not blanket client prerequisites. The [Tech Stack installation
+contract](../../tech-stack.md#installation) owns client, gateway-service, and
+scheduler installation steps.
 
 First-gateway bootstrap is a complete onboarding flow for the initiating
 client. When a client with no configured gateway runs

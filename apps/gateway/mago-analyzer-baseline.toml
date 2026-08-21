@@ -469,18 +469,6 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
-file = "app/Concerns/LogsCommandActivity.php"
-code = "impossible-condition"
-message = "Redundant ternary operator: condition is always falsy."
-count = 1
-
-[[issues]]
-file = "app/Concerns/LogsCommandActivity.php"
-code = "possibly-invalid-argument"
-message = 'Possible argument type mismatch for argument #1 of `App\Services\ActivityLogger::log`: expected `App\Contracts\Loggable`, but possibly received `$this(App\Concerns\LogsCommandActivity)`.'
-count = 1
-
-[[issues]]
 file = "app/Concerns/PromptsForRegistryEntities.php"
 code = "invalid-argument"
 message = 'Invalid argument type for argument #1 of `App\Concerns\PromptsForRegistryEntities::applyNodePromptRoleFilter`: expected `Illuminate\Database\Eloquent\Builder<App\Models\Node>`, but found `$this(Illuminate\Database\Query\Builder)`.'
@@ -2668,12 +2656,6 @@ count = 1
 file = "app/Services/Activity/ActivityPayloadFormatter.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/ActivityLogTargets.php"
-code = "redundant-null-coalesce"
-message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
 count = 1
 
 [[issues]]

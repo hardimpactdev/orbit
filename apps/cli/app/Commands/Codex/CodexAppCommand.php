@@ -22,7 +22,7 @@ final class CodexAppCommand extends GatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Register Orbit projects in Codex App on a target node.';
+    protected $description = 'Register Orbit apps in Codex App on a target node.';
 
     public function handle(): int
     {

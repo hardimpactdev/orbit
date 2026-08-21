@@ -96,7 +96,8 @@ Release A storage cleanup migration.
 
 Orbit retains durable process lifecycle history for list and status surfaces.
 Existing `crashed` events remain readable, but current runtime paths do not
-install a crash hook or ingest new process-exit reports.
+install a crash hook or ingest new process-exit reports. Operators use process
+list, logs, and Doctor to observe unit health.
 
 ### Lifecycle events
 
@@ -193,7 +194,7 @@ Supported managed services in this vertical slice:
 | Service | Versions | Default runtime | Notes |
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
-| `postgres` | `16` -> `16-alpine`, `18` -> `18-alpine` | `docker` | Requires an initial database, initial username, and per-process published port. Containers always target port `5432`; distinct WireGuard-bound published ports allow multiple PostgreSQL processes on one node. One explicitly selected process may back the analytics role. |
+| `postgres` | `16` -> `16-alpine`, `17` -> `17-alpine`, `18` -> `18-alpine` | `docker` | Requires an initial database, initial username, and per-process published port. Containers always target port `5432`; distinct WireGuard-bound published ports allow multiple PostgreSQL processes on one node. One explicitly selected process may back the analytics role. |
 | `clickhouse` | `24.12` -> `24.12-alpine` | `docker` | Publishes the ClickHouse HTTP endpoint on the owning node's WireGuard service address and can back the analytics role. |
 | `valkey` | `8` -> `8.1` | `docker` | Publishes the Valkey TCP endpoint from the owning node's WireGuard service address and is the required app-facing WebSocket broker. |
 | `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |
@@ -293,14 +294,6 @@ npm run dev -- --host=0.0.0.0
 Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the instance/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.
 
 Firewall permissions, proxy routes, DNS names, and TLS trust remain owned by their respective families. The process family owns the stored command, runtime unit environment, and process lifecycle, not public exposure policy.
-
-## Crash Event History
-
-With `crash_notification=none`, Orbit does not install a process crash hook or
-post crash notifications to third-party tools. Operators still use process list,
-logs, and Doctor to observe unit health. Existing `crashed` events remain
-readable, but there is no active product command that ingests or fans out crash
-notifications.
 
 ## Commands
 

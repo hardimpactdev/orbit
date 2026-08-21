@@ -75,7 +75,7 @@ owns route drift.
 | Type | `api:POST /instances/{instance}/analytics/disable` |
 | Effect | `write` |
 | Subject | Instance resolved from `{instance}`. |
-| Properties | `action=disable`, `target_instance`, `target_instance`, and `serving_node`. |
+| Properties | `action=disable`, `target_instance`, and `public_hosts`. |
 
 ## Test Mapping
 

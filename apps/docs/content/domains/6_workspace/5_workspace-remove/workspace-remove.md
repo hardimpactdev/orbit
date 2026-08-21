@@ -130,7 +130,7 @@ These commands work alongside `workspace:remove` when creating, listing, or repa
 - [`workspace:new`](../1_workspace-new/workspace-new.md) — create a new workspace
 - [`workspace:setup`](../2_workspace-setup/workspace-setup.md) — provision a workspace
 - [`workspace:list`](../3_workspace-list/workspace-list.md) — list all workspaces
-- [`doctor --family=workspace`](../workspace-doctor.md) — verify and repair workspace drift
+- [`doctor --family=workspace`](../workspace-doctor.md) — verify and report workspace drift
 
 ## Technical Contract
 

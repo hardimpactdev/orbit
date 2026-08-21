@@ -1,6 +1,6 @@
 # Orbit Concepts
 
-Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/content/architecture.md), [`apps/docs/content/concepts.md`](../../../apps/docs/content/concepts.md), [`apps/docs/content/tech-stack.md`](../../../apps/docs/content/tech-stack.md). This file is a quick reference for the parts that matter when calling the CLI.
+Authoritative source: [`apps/docs/content/architecture.md`](../../../../apps/docs/content/architecture.md), [`apps/docs/content/concepts.md`](../../../../apps/docs/content/concepts.md), [`apps/docs/content/tech-stack.md`](../../../../apps/docs/content/tech-stack.md). This file is a quick reference for the parts that matter when calling the CLI.
 
 ## Node roles
 
@@ -16,11 +16,12 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 | `ingress` | Ubuntu | Public production HTTP/HTTPS edge and forwarding to `router` over WireGuard |
 | `websocket` | Ubuntu | Private Laravel Reverb backend, reached through router-owned routes |
 | `s3` | Ubuntu | Private SeaweedFS backend, reached through router-owned S3 routes |
-| `metrics` | Ubuntu/Debian | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
+| `metrics` | Ubuntu | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
+| `analytics` | Ubuntu | Fleet-singleton Plausible CE analytics backend, reached through `analytics.orbit` and app tracking routes |
 
 The gateway-owned operations Reverb service is not the app-facing `websocket`
 role. It is a single gateway Swarm service for durable operation progress, uses
-its own operations app config path, and does not require Redis or a
+its own operations app config path, and does not require Valkey or a
 database-role node in v1.
 
 An **operator** is a node identity with the operator permission preset and
@@ -144,7 +145,7 @@ For commands that accept `--node`, `--instance`, or `--workspace`:
 Failure:
 
 ```json
-{ "success": false, "error": "human-readable message" }
+{ "error": { "code": "validation_failed", "message": "Invalid input.", "meta": { "field": "name" } } }
 ```
 
 Pass `--json` to force JSON. Non-interactive mode (`-n`) auto-enables JSON. Same data shape regardless of who renders it.

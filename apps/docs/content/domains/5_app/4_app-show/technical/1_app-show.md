@@ -29,7 +29,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `[app]` | When no default can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or app-owned hostname visible to the caller. Name match wins when a string matches both a app name and a different app's hostname. |
+| `app` | `[app]` | When no default can resolve a target in non-interactive input mode; interactive input mode may prompt instead. | Never. | See [Default resolution](5.1_app-show_input-mode_interactive.md#default-resolution). | Must match an existing app name (slug) or instance-owned hostname visible to the caller. Name match wins when a string matches both an app name and a different app's hostname. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `app:show` does not accept a `--node` flag. App slugs are globally unique in
@@ -38,17 +38,19 @@ Supplying an unknown option fails with `error.code=validation_failed`.
 
 ## Input Resolution
 
-1. **Resolve `app_show.app`** from `[app]`, current working directory, or input
+1. **Resolve `app_show.app`** from `[app]`, the nearest `.orbit/config`
+   instance marker in the current directory ancestry, or input
    mode.
    - If `[app]` is provided:
      - Check if it matches an app **name (slug)** visible to the caller.
-     - If no name match, check if it matches an app-owned **hostname** in
+     - If no name match, check if it matches an instance-owned **hostname** in
        `proxy` visible to the caller.
      - If both match (a name on one app and a hostname on a different app),
        **name match wins**. Hostnames are a convenience addressing form;
        identity slugs are the canonical key.
    - If `[app]` is not provided:
-     - Attempt to resolve the app from the current working directory context.
+     - Read the nearest `.orbit/config` marker and derive the logical app name
+       from its canonical `app.instance` selector.
      - Interactive mode prompts if CWD resolution fails. See
        [`5.1_app-show_input-mode_interactive.md`](5.1_app-show_input-mode_interactive.md).
      - Non-interactive mode fails if CWD resolution fails. See
@@ -117,7 +119,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Instance not found | No visible app record matches the resolved name or hostname. | Failure |
+| App not found | No visible app record matches the resolved name or hostname. | Failure |
 | Not authorized | The caller is not allowed to inspect the target app. | Failure |
 
 `app:show` exits zero whenever the registry read succeeds. Runtime drift and

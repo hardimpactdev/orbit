@@ -10,7 +10,7 @@
 - The CLI caller can reach the Orbit gateway, or the command is running on the gateway.
 - The current node identity has `cf:cache:rule:add` on the gateway.
 - The gateway has a Cloudflare API token configured.
-- The named app exists and has a Cloudflare-backed `App.domain`.
+- The selected instance exists and has a Cloudflare-backed domain.
 
 ## Signature
 
@@ -24,19 +24,18 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Bare app name. Current resolver uses `App.domain` for the Cloudflare zone. |
+| `app` | Argument `app` | `Always.` | `Never.` | `None.` | Dotted `app.instance` selector, or a bare app name that resolves to exactly one instance. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract
 
 ### App Zone Resolution Rules
 
-- Resolves a bare app name and reads `App.domain` through
-  `CloudflareZoneResolver` (current implementation).
-- Fails before provider mutation when the app is missing or has no
+- Resolves a dotted selector to one concrete instance. A bare app selector is
+  accepted only when the app has exactly one instance.
+- Reads the selected instance's domain through `CloudflareZoneResolver`.
+- Fails before provider mutation when the instance is missing or has no
   Cloudflare-backed domain.
-- Direction (pending implementation): instance-owned domain resolution via
-  dotted `app.instance` selectors.
 
 ### Cache Rule Rules
 
@@ -61,6 +60,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
+| Instance required | A bare app selector has zero or multiple instances. | `error.code=validation_failed`; `error.meta.reason=instance_required`. |
 | Cloudflare unavailable | The gateway token is missing, invalid, or Cloudflare cannot be reached. | `error.code=cloudflare_unavailable` |
 
 ## Doctor Relationship
@@ -70,13 +70,26 @@ Cloudflare doctor family. Instance-domain and deployment health remain owned by
 [`doctor --family=instance`](../../../5_app/instance-doctor.md). Ingress route health
 remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /cloudflare/cache-rules/{app}` |
+| Effect | `write` |
+| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{app}` and JSON success envelope passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php` | Bare single-instance resolution, multi-instance rejection, and explicit dotted-instance resolution. |
 
-There is no gateway-side coverage for this command contract: authorization denial, instance lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and instance/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
+Cache-rule convergence, provider authorization, provider failures, and
+instance/proxy mutation guards remain coverage gaps. CLI forwarding and
+envelope passthrough are covered by the linked CLI test above.
 
 Renderer-specific test mapping lives in:
 

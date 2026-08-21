@@ -42,12 +42,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   explicit `--node` selector must match that node; `--node` is not an alternate
   image inventory source for instance or workspace runtime facts.
 - Reads the app-level creation template and the selected instance's own version and reports both alongside the
-  selected instance and serving-node inventory. Reads workspace override or
-  inheritance when that scope is resolved.
+  selected instance and serving-node inventory. Reads the workspace's own
+  stored version when that scope is resolved.
 - Rejects an explicit workspace scope before configuration or live inventory
   reads unless its serving node is active `app-dev` and the caller is not
   `app-prod`. When the caller or selected instance is production, the app view omits
-  workspace inheritance and override facts.
+  workspace facts.
 - Reads the Orbit-supported PHP version set from the PHP runtime catalog.
 - Reads gateway-tracked image facts by default.
 - Performs live image inspection through Agent push only when `--live` is
@@ -83,10 +83,20 @@ owns PHP image capability drift. [`doctor --family=instance`](../../../5_app/ins
 and [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md)
 own PHP runtime health for instance and workspace artifacts.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /php/runtime` |
+| Effect | `read` |
+| Subject | `none` because the command can target different scope model types. |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | Concrete instance target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Permission-specific gateway authorization, concrete instance/workspace placement, bare-app denial, runtime view reads, and structured success/error envelopes. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Inherited workspace view mapping and PHP runtime view DTO shape. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Workspace snapshot view mapping, invalid-null visibility, and PHP runtime view DTO shape. |

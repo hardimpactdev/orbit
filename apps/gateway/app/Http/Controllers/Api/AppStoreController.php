@@ -75,7 +75,7 @@ final class AppStoreController implements Loggable
 
             return $this->error(
                 'app.collision',
-                "App name '{$input['name']}' is already registered in the gateway project registry on node '{$existingNodeName}'.",
+                "App name '{$input['name']}' is already registered in the gateway app registry on node '{$existingNodeName}'.",
                 [
                     'name' => $input['name'],
                     'node' => $existingNodeName,
@@ -197,10 +197,10 @@ final class AppStoreController implements Loggable
             $input,
             $node,
         ): void {
-            $events->tree('Creating Project', [
-                ['key' => 'operation', 'label' => 'Prepare project creation'],
-                ['key' => 'source', 'label' => 'Create project source'],
-                ['key' => 'registry', 'label' => 'Register project'],
+            $events->tree('Creating App', [
+                ['key' => 'operation', 'label' => 'Prepare app creation'],
+                ['key' => 'source', 'label' => 'Create app source'],
+                ['key' => 'registry', 'label' => 'Register app'],
                 ['key' => 'runtime', 'label' => 'Apply instance runtime'],
             ]);
 

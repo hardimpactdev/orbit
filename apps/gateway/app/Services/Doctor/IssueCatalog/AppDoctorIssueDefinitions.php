@@ -24,7 +24,6 @@ final class AppDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::blocked('app.remote_shell_probe_failed', 'app'),
             self::blocked('app.runtime_config_probe_failed', 'app'),
             self::blocked('app.runtime_extensions_unverifiable', 'app'),
-            self::blocked('app.runtime_image_probe_failed', 'app'),
             // No safe AppsFixer restorer; report-only until a deterministic repair exists.
             self::incident('app.production_user_mismatch', 'app'),
             self::incident('app.production_user_missing', 'app'),
@@ -63,7 +62,6 @@ final class AppDoctorIssueDefinitions implements DoctorIssueDefinitionProvider
             self::incident('app.runtime_extension_missing', 'app'),
             self::incident('app.security.runtime_container_isolation', 'app'),
             self::invalid('app.deployment_pipeline_invalid', 'app'),
-            self::invalid('app.owner_node_invalid', 'app'),
             self::invalid('app.record_incomplete', 'app'),
             self::invalid('app.root_outside_path', 'app'),
             self::invalid('app.serving_node_invalid', 'app'),

@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 return [
     'required' => [
+        'app' => 'string|null',
+        'instance' => 'string|null',
         'name' => 'string',
+        'node' => 'string',
+        'workspace' => 'string|null',
     ],
     'optional' => [
         'command' => 'string',
         'crash_notification' => 'string',
-        'instance' => 'string|null',
         'key' => 'string',
         'label' => 'string|null',
         'last_event' => 'object|null',
-        'app' => 'string|null',
         'restart_policy' => 'string',
         'runtime' => 'string',
         'runtime_unit' => 'string',
+        'service' => 'object|null',
         'status' => 'string',
-        'workspace' => 'string|null',
+        'tool' => 'string|null',
     ],
 ];

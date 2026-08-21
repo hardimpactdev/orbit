@@ -100,7 +100,7 @@ The gateway API endpoint emits an activity entry for every credentials read.
 | Type | `api:GET /instances/{instance}/websocket/credentials` |
 | Effect | `read` |
 | Subject | Instance resolved from `{instance}`. |
-| Properties | `action=credentials`, `target_instance`, `target_instance`, and `serving_node`. Secret values are never logged. |
+| Properties | `action=credentials`, `target_instance`, and `public_hosts=[]`. Secret values are never logged. |
 
 ## Test Mapping
 

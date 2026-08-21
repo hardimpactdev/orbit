@@ -58,6 +58,16 @@ There are no command-specific hard failures.
 `extension:list` is a read-only state view. It does not create doctor issues or
 repair local or gateway extension state.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /extensions` |
+| Effect | `read` |
+| Subject | `none` |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

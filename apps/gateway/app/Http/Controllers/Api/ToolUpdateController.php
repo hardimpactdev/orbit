@@ -71,6 +71,7 @@ final class ToolUpdateController implements Loggable
 
         $node = $target['node'];
         $app = $target['app'];
+        $this->activitySubject = $this->resolvedToolActivityTarget($target);
 
         $agentSelfAuth = $this->authorizeAgentToolAction($caller, $node, $tool, 'update');
 
@@ -121,6 +122,7 @@ final class ToolUpdateController implements Loggable
         }
 
         $version = $this->requestString($request, 'version');
+        $this->activitySubject = $caller;
 
         return $this->executeUpdate(
             $request,
@@ -168,8 +170,6 @@ final class ToolUpdateController implements Loggable
         if ($result instanceof ToolRegistryFailure) {
             return $this->failureResponse($result);
         }
-
-        $this->activitySubject = $caller;
 
         return response()->json([
             'success' => [

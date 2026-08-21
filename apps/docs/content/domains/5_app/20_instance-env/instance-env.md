@@ -48,7 +48,8 @@ bootstrap cache files at that instance path as its runtime user, and reapplies
 that instance's FrankenPHP runtime container for PHP apps. Consecutive applies
 therefore preserve every stored and derived value instead of reducing the file
 to the latest mutation.
-It never targets the app's default path or a sibling instance. Running from
+It writes only the selected Instance's path and never a sibling Instance's
+path. Running from
 inside a workspace does not infer its parent app: `instance:env` still
 requires explicit app and instance selectors; use `workspace:env` for the
 registered workspace.

@@ -92,7 +92,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Instance required | No eligible instance exists for a bare app, or more than one eligible instance is visible. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Interval invalid | The interval cannot be parsed against the schedule expression contract. | `error.code=schedule.interval_invalid` |
 | Timeout invalid | The timeout is outside `1..86400` seconds. | `error.code=validation_failed`, `error.meta.field=timeout` |
-| Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=schedule.execution_source_invalid` |
+| Execution source invalid | The selected command or script is rejected by schedule execution policy. | `error.code=validation_failed`; `error.meta.field=command` or `script`. |
 
 ## Doctor Relationship
 

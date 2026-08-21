@@ -49,7 +49,7 @@ trait PromptsForRegistryEntities
 
         return (string) $this->promptDataTable(
             label: $label,
-            headers: ['Project', 'Host', 'Node', 'Repository'],
+            headers: ['App', 'Host', 'Node', 'Repository'],
             rows: $this->appPromptRows($apps),
         );
     }
@@ -151,7 +151,7 @@ trait PromptsForRegistryEntities
     {
         $selected = (string) $this->promptDataTable(
             label: $label,
-            headers: ['Workspace', 'Project', 'Node', 'URL', 'Status'],
+            headers: ['Workspace', 'App', 'Node', 'URL', 'Status'],
             rows: $this->workspacePromptRows($workspaces),
         );
 

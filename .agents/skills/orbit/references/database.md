@@ -3,7 +3,7 @@
 Database commands manage reusable database connection intent, instance and
 workspace target mappings, `.env` convergence, schema
 inspection, and audited SQL execution. Spec:
-[`apps/docs/content/domains/18_database/`](../../../apps/docs/content/domains/18_database/).
+[`apps/docs/content/domains/17_database/`](../../../../apps/docs/content/domains/17_database/).
 
 `database_connection` is a state family. Use
 `doctor --family=database_connection --restore` to write gateway-owned

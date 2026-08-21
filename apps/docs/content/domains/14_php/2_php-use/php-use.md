@@ -5,7 +5,7 @@ Change the PHP image version used by an instance or workspace runtime container.
 ## Usage
 
 ```bash
-orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [--node=<node>] [--cli] [--json]
 ```
 
 ## Examples
@@ -13,20 +13,17 @@ orbit php:use [version] [--instance=<app.instance>] [--workspace=<workspace>] [-
 ```bash
 orbit php:use 8.5 --instance=docs
 orbit php:use 8.4 --instance=docs --workspace=feature-docs
-orbit php:use --instance=docs --workspace=feature-docs --inherit
 orbit php:use 8.5 --node=app-1 --cli
 orbit php:use 8.5 --instance=docs --json
 ```
 
 ## Arguments and options
 
-- `version`: PHP version to select. Required unless `--inherit` is supplied.
+- `version`: Required PHP version to select.
 - `--instance=<app.instance>`: Select the concrete instance whose own PHP
   version is changed. Each instance owns its version outright; sibling
   instances and workspaces are never changed by this run.
-- `--workspace=<workspace>`: Target workspace override.
-- `--inherit`: Clear a workspace override so the workspace resolves through its owning
-  instance, falling back to the app template.
+- `--workspace=<workspace>`: Target one workspace's own PHP version.
 - `--cli`: Select the node CLI PHP default. Only PHP 8.5 is supported,
   matching the production native Orbit CLI binary artifact's embedded PHP
   version. Source-mounted Docker/Incus development and E2E nodes invoke
@@ -47,7 +44,7 @@ orbit php:use 8.5 --instance=docs --json
 Run this command to select the PHP image version for an instance or workspace.
 
 `php:use` resolves exactly one target scope: one instance's own runtime
-version, a workspace runtime override, workspace inheritance, or the node CLI
+version, one workspace's own runtime version, or the node CLI
 default. It validates that the requested version is supported by Orbit. Before
 an instance write it authorizes `php:write` and verifies the image only on that
 instance's serving node; any denial or missing image stops before the write. Node CLI selection only accepts PHP 8.5.

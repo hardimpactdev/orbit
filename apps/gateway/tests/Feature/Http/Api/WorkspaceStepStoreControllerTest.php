@@ -316,8 +316,13 @@ describe('WorkspaceStepStoreController', function (): void {
 
         $timeout->assertStatus(400)
             ->assertJsonPath('error.meta.field', 'timeout');
-        $anchor->assertNotFound()
-            ->assertJsonPath('error.code', 'workspace.step_not_found');
+        $anchor
+            ->assertNotFound()
+            ->assertJsonPath('error.code', 'workspace.step_not_found')
+            ->assertJsonPath(
+                'error.message',
+                "Referenced insertion step '999' not found for app 'docs' in phase 'setup'.",
+            );
     });
 
     it('rejects rows from another app instance as anchors', function (): void {
@@ -360,7 +365,11 @@ describe('WorkspaceStepStoreController', function (): void {
 
         $response
             ->assertNotFound()
-            ->assertJsonPath('error.code', 'workspace.step_not_found');
+            ->assertJsonPath('error.code', 'workspace.step_not_found')
+            ->assertJsonPath(
+                'error.message',
+                "Referenced insertion step '{$foreignStep->id}' not found for app 'hauser' in phase 'setup'.",
+            );
 
         expect(WorkspaceStep::query()->count())
             ->toBe(1)

@@ -2,7 +2,7 @@
 
 Cloudflare commands let Orbit manage public DNS, cache rules, cache flushes,
 and SSL mode through the gateway's configured Cloudflare token. Spec:
-[`apps/docs/content/domains/12_cf/`](../../../apps/docs/content/domains/12_cf/).
+[`apps/docs/content/domains/12_cf/`](../../../../apps/docs/content/domains/12_cf/).
 
 Cloudflare is for public DNS/CDN concerns. It is separate from gateway-owned
 development DNS mappings and caller-local `dns:*` resolver overrides.

@@ -89,6 +89,16 @@ drift.
 WireGuard or node identity readiness failures caused by a broken VPN backend,
 but it does not rotate the VPN web UI password.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:POST /vpn/web-ui/password` |
+| Effect | `destructive` |
+| Subject | `none` |
+| Properties | No command-specific properties. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

@@ -153,6 +153,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 currently restored by [`doctor --family=instance`](../../../5_app/instance-doctor.md); later drift
 automation must use the same source-agnostic config services.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /codex/projects` for `list`; `api:POST /codex/apps/{project}` for `add`; `api:DELETE /codex/apps/{project}` for `remove`. |
+| Effect | `read` for `list`; `write` for `add` and `remove`. |
+| Subject | The selected target `Node` for `list`; the resolved Orbit `App` for `add` and `remove`; `none` when resolution fails. |
+| Properties | `action` and `target_node`; never project paths, raw config, or credentials. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

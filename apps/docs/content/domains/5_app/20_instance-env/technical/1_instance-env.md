@@ -73,8 +73,8 @@ serving node. These defaults are not stored as explicit instance env rows.
    and writes that map to the selected instance's live `.env` on its serving
    node through authenticated Agent push over WireGuard. Consecutive applies
    include previously stored values, Orbit-derived values, and attached
-   database values. It cannot write the app default path or a sibling
-   instance path. Workspace CWD never supplies an implicit instance target;
+   database values. It cannot write any path except the selected Instance's
+   path. Workspace CWD never supplies an implicit instance target;
    app and instance selection remains explicit.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config and deletes generated bootstrap cache files at the selected
@@ -106,6 +106,16 @@ serving node. These defaults are not stored as explicit instance env rows.
 this slice. Instance env rendering is gateway state. Database connection
 drift and restore for instance/workspace `.env` files remain owned by
 [`doctor --family=database_connection`](../../../17_database/database-doctor.md).
+
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /apps/{app}/instances/{instance}/env` for `list`; `api:GET /apps/{app}/instances/{instance}/env/render` for `render`; `api:POST /apps/{app}/instances/{instance}/env` for `set`. |
+| Effect | `read` for `list` and `render`; `write` for `set`. |
+| Subject | The selected `Instance`; `none` when selection fails. |
+| Properties | No command-specific properties. Environment keys and values are not logged. |
+| Description | derived |
 
 ## Test Mapping
 

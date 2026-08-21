@@ -111,6 +111,16 @@ connection env drift remains owned by `doctor --family=database_connection`.
 - [Human renderer](6.1_workspace-env_output-render_human.md)
 - [JSON renderer](6.2_workspace-env_output-render_json.md)
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `api:GET /workspaces/{workspace}/env` for `list`; `api:GET /workspaces/{workspace}/env/render` for `render`; `api:POST /workspaces/{workspace}/env` for `set`. |
+| Effect | `read` for `list` and `render`; `write` for `set`. |
+| Subject | The selected `Workspace`; `none` when selection fails. |
+| Properties | No command-specific properties. Environment keys and values are not logged. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

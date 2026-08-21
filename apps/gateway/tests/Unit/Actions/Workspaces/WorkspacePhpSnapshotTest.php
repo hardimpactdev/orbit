@@ -60,7 +60,7 @@ it('resolves a workspace to its own stored version', function (): void {
     expect($workspace->effectivePhpVersion())->toBe('8.3');
 });
 
-it('falls back to the owning instance before the app for legacy rows', function (): void {
+it('keeps an invalid null workspace snapshot detectable', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
     $instance = Instance::factory()->for($app)->create(['name' => 'development', 'php_version' => '8.3']);
@@ -71,7 +71,7 @@ it('falls back to the owning instance before the app for legacy rows', function 
         'php_version' => null,
     ]);
 
-    expect($workspace->effectivePhpVersion())->toBe('8.3');
+    expect($workspace->effectivePhpVersion())->toBeNull();
 });
 
 it('does not move a workspace when the app default changes', function (): void {
@@ -116,8 +116,6 @@ it('stamps the owning instance version onto a workspace adopted by path', functi
         $node,
     );
 
-    // Adoption creates the row after the migration has run, so an empty value
-    // here is a brand-new live-inheriting workspace, not a legacy one.
     $workspace = Workspace::query()->where('name', 'adopted')->sole();
 
     expect($workspace->php_version)->toBe('8.3');

@@ -52,7 +52,7 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
         $outcome = $this->runStepOperation(
             'Adding Cloudflare cache rule',
             [
-                ['label' => 'Resolve project domain'],
+                ['label' => 'Resolve instance domain'],
                 ['label' => 'Resolve Cloudflare zone'],
                 ['label' => 'Write cache rule'],
             ],

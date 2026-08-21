@@ -6,11 +6,13 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
+use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
@@ -252,10 +254,18 @@ describe('AppRuntimeMountController', function (): void {
             'read_only' => true,
         ])->assertOk();
 
+        $entry = Activity::query()->latest('id')->firstOrFail();
+
         expect($instance->runtimeMounts()->count())
             ->toBe(1)
             ->and($instance->runtimeMounts()->first()?->source)
-            ->toBe('/Users/nckrtl/apps');
+            ->toBe('/Users/nckrtl/apps')
+            ->and($entry->subject_type)
+            ->toBe(Instance::class)
+            ->and($entry->subject_id)
+            ->toBe($instance->id)
+            ->and($entry->properties->get('target'))
+            ->toBe('/apps');
     });
 
     it('returns app instance target metadata and validates source against the instance node home', function (): void {

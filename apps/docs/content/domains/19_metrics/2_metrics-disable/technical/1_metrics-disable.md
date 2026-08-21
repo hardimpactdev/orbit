@@ -84,6 +84,16 @@ runtime artifacts are process-family drift; leftover node-exporter firewall
 rules are firewall-rule-family drift; leftover proxy artifacts are proxy-family
 drift.
 
+## Activity Logging
+
+| Field | Value |
+| --- | --- |
+| Type | `node.role.removed` |
+| Effect | `destructive` |
+| Subject | The selected `Node`; `none` when resolution fails. |
+| Properties | `node`, `role`, `force`, `purge_data`, and `dependents`. |
+| Description | derived |
+
 ## Test Mapping
 
 | Path | Coverage |

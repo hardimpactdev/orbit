@@ -23,7 +23,6 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
         public readonly ?string $instance = null,
         public readonly ?string $workspace = null,
         public readonly ?string $node = null,
-        public readonly bool $inherit = false,
         public readonly bool $cli = false,
     ) {}
 
@@ -43,7 +42,6 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
                 'instance' => $this->instance,
                 'workspace' => $this->workspace,
                 'node' => $this->node,
-                'inherit' => $this->inherit,
                 'cli' => $this->cli,
             ],
             static fn (mixed $value): bool => $value !== null,

@@ -17,7 +17,7 @@ records.
 The workspace family owns these facts:
 
 - gateway-owned workspace records: name, parent app, selected instance,
-  workspace path, derived hostname, PHP version override or inheritance, and
+  workspace path, derived hostname, concrete PHP version, and
   lifecycle status;
 - workspace source location: the managed workspace path exists on the
   effective workspace node and is allowed by the workspace source driver that
@@ -65,7 +65,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
    never uses that issue as permission to target an `app-prod` node.
 4. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
-   app root. Workspace sources may live outside the parent app path,
+   owning Instance source path. Workspace sources may live outside that path,
    including external agent worktree directories.
 5. **PHP runtime:** workspaces in the `expected` lifecycle state have an effective PHP image that can serve
    the workspace runtime on the owning node. Concrete FrankenPHP unit presence
@@ -90,8 +90,9 @@ results as workspace-family issue codes.
 
 ## Workspace Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -104,12 +105,12 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | Code | Detected when |
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app identity, selected instance identity, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
-| `workspace.parent_project_invalid` | The workspace record points at a missing parent app. |
+| `workspace.parent_instance_invalid` | The workspace record points at a missing parent app and cannot resolve its required parent instance. |
 | `workspace.instance_invalid` | The selected instance is missing, belongs to another app, or does not resolve to an active `app-dev` node for a reason other than production placement. |
 | `workspace.unsupported_for_production` | Defensive gateway validation encounters a persisted workspace row belonging to an `app-prod` instance while evaluating a supported development scope. The production node is never probed. |
 | `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | The workspace path equals the parent app root instead of a distinct workspace path. |
+| `workspace.path_outside_policy` | The workspace path equals the owning Instance source path instead of a distinct workspace path. |
 | `workspace.php_version_unavailable` | An `expected` workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |
 | `workspace.runtime_config_mismatch` | Managed workspace runtime configuration exists but differs from gateway workspace configuration. |
@@ -118,6 +119,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.artifact_extra` | An Orbit-owned workspace worktree or managed workspace artifact exists without matching registered workspace configuration. |
 | `workspace.unregistered_path` | During an explicit adoption scope, a selected workspace path exists without a matching gateway workspace record. |
 | `workspace.php_hint_unsupported` | During adoption, `composer.json` provides a PHP version hint that Orbit does not support. |
+| `workspace.remote_shell_probe_failed` | The remote workspace probe raised before it could return a usable observation for the selected node. |
 
 ## Workspace Fix Map
 

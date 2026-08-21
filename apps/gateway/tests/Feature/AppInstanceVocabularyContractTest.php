@@ -105,6 +105,8 @@ it('keeps active CLI app and instance command surfaces on App vocabulary', funct
     $instanceList = (string) file_get_contents($cliRoot.'/app/Commands/App/InstanceListCommand.php');
     $appShow = (string) file_get_contents($cliRoot.'/app/Commands/App/AppShowCommand.php');
     $prompts = (string) file_get_contents($cliRoot.'/app/Commands/Concerns/PromptsForGatewayRegistryEntities.php');
+    $gatewayPrompts = (string) file_get_contents(base_path('app/Concerns/PromptsForRegistryEntities.php'));
+    $codexApp = (string) file_get_contents($cliRoot.'/app/Commands/Codex/CodexAppCommand.php');
 
     expect($instanceList)
         ->toContain('{--app= : Limit results to one app}')
@@ -124,6 +126,90 @@ it('keeps active CLI app and instance command surfaces on App vocabulary', funct
         ->toContain("headers: ['App', 'Host', 'Node', 'Repository']")
         ->not->toContain('function promptForVisibleProject')
         ->not->toContain("headers: ['Project', 'Host', 'Node', 'Repository']");
+
+    expect($gatewayPrompts)
+        ->toContain("headers: ['App', 'Host', 'Node', 'Repository']")
+        ->toContain("headers: ['Workspace', 'App', 'Node', 'URL', 'Status']")
+        ->not->toContain("headers: ['Project', 'Host', 'Node', 'Repository']")
+        ->not->toContain("headers: ['Workspace', 'Project', 'Node', 'URL', 'Status']");
+
+    expect($codexApp)
+        ->toContain('Register Orbit apps in Codex App on a target node.')
+        ->not->toContain('Register Orbit projects in Codex App on a target node.');
+});
+
+it('keeps public workload help and messages on App and Instance vocabulary', function (): void {
+    $repoRoot = dirname(base_path());
+    $expectedByPath = [
+        'cli/app/Commands/Schedule/ScheduleAddCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleListCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleShowCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleRemoveCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleRunCommand.php' => ['bare app only when unambiguous'],
+        'cli/app/Commands/Schedule/ScheduleLogsCommand.php' => ['bare app only when unambiguous'],
+        'gateway/app/Http/Controllers/Api/AppStoreController.php' => [
+            'gateway app registry',
+            "tree('Creating App'",
+            "'label' => 'Prepare app creation'",
+            "'label' => 'Create app source'",
+            "'label' => 'Register app'",
+        ],
+        'gateway/app/Http/Controllers/Api/InstanceController.php' => [
+            'already exists for app',
+            'was not found for app',
+        ],
+        'gateway/app/Http/Controllers/Api/InstanceEnvController.php' => ['was not found for app'],
+        'gateway/app/Services/Apps/AppRegistrar.php' => [
+            "Instance for app '{\$name}' successfully adopted",
+            "Instance for app '{\$name}' successfully moved",
+            "Instance for app '{\$name}' is already converged",
+            "Instance for app '{\$name}' successfully registered",
+        ],
+        'gateway/app/Services/Processes/ProcessOwnerContext.php' => [
+            'required for app and workspace process ownership',
+        ],
+        'gateway/app/Services/Processes/ProcessOwnerContextResolver.php' => [
+            'required for app and workspace process ownership',
+        ],
+        'gateway/app/Services/Php/PhpRuntimeManager.php' => ['does not own app'],
+        'cli/app/Commands/Cloudflare/CfCacheRuleAddCommand.php' => ['Resolve instance domain'],
+        'cli/app/Commands/Cloudflare/CfCacheRuleRemoveCommand.php' => ['Resolve instance domain'],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepListController.php' => [
+            'Could not resolve owning node for app',
+        ],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepStoreController.php' => [
+            'Could not resolve owning node for app',
+            'not found for app',
+        ],
+        'gateway/app/Http/Controllers/Api/WorkspaceStepDeleteController.php' => [
+            'Could not resolve owning node for app',
+            'not found for app',
+        ],
+    ];
+    $forbidden = [
+        'bare project only when unambiguous',
+        'gateway project registry',
+        "tree('Creating Project'",
+        "'label' => 'Prepare project creation'",
+        "'label' => 'Create project source'",
+        "'label' => 'Register project'",
+        'already exists for project',
+        'was not found for project',
+        'Instance for project',
+        'required for project and workspace process ownership',
+        'does not own project',
+        'Resolve project domain',
+        'Could not resolve owning node for project',
+        'not found for project',
+    ];
+
+    foreach ($expectedByPath as $relativePath => $expected) {
+        $contents = (string) file_get_contents($repoRoot.'/'.$relativePath);
+
+        expect($contents, $relativePath)
+            ->toContain(...$expected)
+            ->not->toContain(...$forbidden);
+    }
 });
 
 /**

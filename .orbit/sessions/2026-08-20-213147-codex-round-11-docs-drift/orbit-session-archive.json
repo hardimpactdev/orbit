@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-20T19:31:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-round-11-docs-drift/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-20-213147-codex-round-11-docs-drift",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/round-11-skill-reference-tdd.md",
+        "loop.md",
+        "quality-gates/profiles/2026-08-20T19-23-11Z-b12df4410232/gateway_pest.junit.xml"
+    ],
+    "entry_digests": {
+        "evidence/round-11-skill-reference-tdd.md": "b98f12fbc01bae812e70ea6d4cf5309ac082fd01fbcb41721b2b5ea587209fd4",
+        "loop.md": "1e769b43d543424a216a6e8242778c968b329c96309703ab35cd091d9717c2e1",
+        "quality-gates/profiles/2026-08-20T19-23-11Z-b12df4410232/gateway_pest.junit.xml": "13d31521af6c91cef87dfb31088d1e08ae143af7eecbda8041cc2b5ecb202703"
+    },
+    "slug": "codex-round-11-docs-drift",
+    "requested_slug": "codex-round-11-docs-drift",
+    "compatible_slugs": [
+        "codex-round-11-docs-drift"
+    ],
+    "branch": "codex/round-11-docs-drift",
+    "candidate_commit": "b12df44102324e77b74711123d60f841801498a6",
+    "accepted_feature_tip": "b12df44102324e77b74711123d60f841801498a6",
+    "accepted_main_tip": "be7e3a1f62fb45c4f196750f4269d34ad5849cbc",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -144,16 +144,7 @@ class Workspace extends Model
 
     public function effectivePhpVersion(): ?string
     {
-        if (is_string($this->php_version) && $this->php_version !== '') {
-            return $this->php_version;
-        }
-
-        // Rows predating the snapshot migration may still be null. Resolve
-        // through the owning instance first, since a workspace is a copy of
-        // that instance, and only then the app template.
-        $this->loadMissing(['instance', 'app']);
-
-        return $this->instance?->php_version ?? $this->app?->php_version;
+        return is_string($this->php_version) && $this->php_version !== '' ? $this->php_version : null;
     }
 
     public function url(): string

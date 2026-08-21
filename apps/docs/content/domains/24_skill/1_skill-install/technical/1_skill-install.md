@@ -119,6 +119,12 @@ not repair Orbit state. Provider tools may need to reload or restart their own
 skill discovery after installation; that reload is outside Orbit's doctor
 contract.
 
+## Activity Logging
+
+This command does not emit activity. It installs files in the caller-local CLI
+environment, and the CLI has no trusted shared activity helper. The gateway
+records API work; `skill:install` does not make a gateway API request.
+
 ## Test Mapping
 
 | Path | Coverage |

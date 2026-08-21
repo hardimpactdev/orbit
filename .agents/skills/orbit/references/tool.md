@@ -7,42 +7,46 @@ declare explicit `start`, `stop`, `restart`, `reload`, and `logs` capabilities.
 Orbit exposes only the declared verbs: `orbstack` owns start/stop/restart,
 while catalog entries such as `caddy` and `dns` can own reload or logs. The
 catalog is fixed and lives in
-[`apps/docs/content/domains/3_tool/catalog/`](../../../apps/docs/content/domains/3_tool/catalog/).
+[`apps/docs/content/domains/3_tool/catalog/`](../../../../apps/docs/content/domains/3_tool/catalog/).
 
 ## Catalog
 
 **Required / role-baseline tools** (provisioned by node bootstrap or role
 baseline; Orbit observes and keeps converged):
 
-- `caddy`, `docker`, `viteplus`, `php-cli`, `gh`, `composer`,
-  `laravel-installer`, `dns`, `php`, `seaweedfs`, `node-exporter`
+- `caddy`, `docker`, `git`, `gh`, `dns`, `php`, `seaweedfs`, `node-exporter`
 
 For the `metrics` role, `tool` owns the Docker substrate on the metrics node
 and the node-exporter host binary on metrics/workload nodes. The
 `node-exporter` systemd lifecycle, logs, and runtime drift stay in `process`.
 
-**Installable tools** (provisioned by `tool:install`, removed by `tool:remove`):
+**Installable / observational tools** (provisioned by `tool:install` when the
+definition supports install, removed by `tool:remove` when supported):
 
-- `mailpit`  -  local SMTP capture (Docker)
-- `reverb`  -  compatibility WebSocket service; prefer the `websocket` role for fleet realtime
-- `claude-code`  -  Anthropic Claude Code CLI runtime; no required node role; installs for the node default user and optional extra OS users via repeatable `--user`
-- `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
+- `php-cli`, `composer`, `laravel-installer`  -  host toolchain on app-role nodes
+- `viteplus`  -  observational runtime inventory
+- `mailpit`  -  local SMTP capture (Docker); lifecycle and logs through `process:*`
+- `claude-code`, `codex-cli`, `grok-cli`, `antigravity-cli`, `cursor-cli`  -  user-scoped runtime CLIs
+- `hermes`  -  first-party autonomous agent runtime on `agent` nodes
 - `orbstack`  -  macOS-only Docker-compatible provider; supports explicit start/stop/restart through `orbctl`
+- `codex-app`  -  macOS Codex App project registration through `codex:app`
 
 HTTP/WS tool endpoints surface as tool-owned proxy routes. TCP service
 endpoints are WireGuard-only host/port records. Database connection inventory,
 env convergence, schema inspection, and audited SQL execution live under
 `database:*`, not `postgres:*` or `mysql:*` command families.
 
-For `php:*` workflow (selecting a runtime for an app/workspace/CLI), see [`php.md`](php.md). The `php` catalog tool installs the runtime; `php:use` selects it.
+For `php:*` workflow (selecting a runtime for an instance/workspace/CLI), see [`php.md`](php.md). The `php` catalog tool installs the runtime; `php:use` selects it.
 
 ## `orbit tool:list`
 
 List tracked tool state.
 
 ```bash
-orbit tool:list [--instance=<name>] [--node=<name>] [--json]
+orbit tool:list [--instance=<name>] [--node=<name>] [--all] [--json]
 ```
+
+`--all` lists all visible tool rows instead of using the default node scope.
 
 ## `orbit tool:show <tool>`
 
@@ -60,13 +64,12 @@ Provision a managed tool on a node.
 
 ```bash
 orbit tool:install <tool> [--instance=<name>] [--node=<name>]
-                   [--status=installed|running] [--tool-version=<v>]
+                   [--tool-version=<v>]
                    [--user=<name>] [--with-process] [--no-process] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--status` | `installed` | Desired capability state after install (`installed` or `running`). |
 | `--tool-version` |  -  | Version or installer channel to install (catalog-dependent); Claude Code accepts `latest`, `stable`, or a specific version. |
 | `--user` |  -  | `claude-code` only. Repeatable additional existing Linux OS user; fails for other tools. Additive install targeting, not account creation or a node-role gate. |
 | `--with-process` | on for service tools | Also configure the related service process. Default for tools that declare one. |
@@ -108,8 +111,10 @@ capability. The gateway resolves the tool's one declared runtime; process-backed
 tools do not use a second parallel lifecycle implementation.
 
 ```bash
-orbit tool:logs dns --node=<node> [--lines=100] [--json]
+orbit tool:logs <tool> [--instance=<name>] [--node=<node>] [--lines=100] [--json]
 ```
+
+`--instance` resolves the serving node from a visible app instance.
 
 ## `orbit tool:remove <tool>`
 
@@ -133,6 +138,9 @@ use `--json` when only the final result envelope is needed.
 
 Examples:
 
+```bash
+orbit tool:reconfigure hermes --instance=docs --password=<new-password>
+```
 
 ## `orbit tool:credentials [tool]`
 
@@ -147,4 +155,5 @@ Without `<tool>`, returns credentials for every credential-bearing tool on the r
 Examples:
 
 ```bash
+orbit tool:credentials seaweedfs --node=storage-1 --json
 ```

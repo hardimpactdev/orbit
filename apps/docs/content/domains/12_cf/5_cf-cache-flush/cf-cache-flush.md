@@ -1,6 +1,6 @@
 # `orbit cf-cache:flush`
 
-Purge Cloudflare cache for a zone or app-owned domain.
+Purge Cloudflare cache for a zone or instance-owned domain.
 
 ## Usage
 
@@ -13,14 +13,15 @@ orbit cf-cache:flush [--zone=<zone>] [--json]
 ```bash
 orbit cf-cache:flush --zone=example.com
 orbit cf-cache:flush --zone=docs
+orbit cf-cache:flush --zone=docs.production
 orbit cf-cache:flush --zone=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
 ```
 
 ## Arguments and options
 
-- `--zone=<zone>`: Cloudflare zone ID, exact zone domain name, or bare app
-  name whose `App.domain` maps to a configured Cloudflare zone. Current
-  gateway resolution does not implement dotted `app.instance` selectors.
+- `--zone=<zone>`: Cloudflare zone ID, exact zone domain name, dotted
+  `app.instance` selector, or a bare app name with exactly one instance. App
+  selectors resolve through the selected instance's domain.
 - `--json`: Return the flush result in the JSON output.
 
 ## What Happens
@@ -47,6 +48,7 @@ output.
 - The caller has `cf:cache:flush` on the gateway.
 - The gateway has a Cloudflare API token configured.
 - The selected zone exists in the Cloudflare account.
+- A bare app selector resolves to exactly one instance.
 
 ## Related Commands
 

@@ -499,18 +499,6 @@ message = "This closure does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
-file = "app/Concerns/LogsCommandActivity.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
-file = "app/Concerns/LogsCommandActivity.php"
-code = "too-many-methods"
-message = "Trait has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Concerns/PromptsForRegistryEntities.php"
 code = "cyclomatic-complexity"
 message = "Trait has high complexity."

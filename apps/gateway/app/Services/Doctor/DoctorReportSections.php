@@ -25,7 +25,7 @@ final readonly class DoctorReportSections
     {
         $roles = $this->nodeRoleAssignments->activeRoleNames($node);
 
-        return $roles === [] ? ['operator'] : $roles;
+        return $roles;
     }
 
     /**

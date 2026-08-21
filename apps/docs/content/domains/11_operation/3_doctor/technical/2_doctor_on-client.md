@@ -68,8 +68,10 @@ The CLI owns:
 
 - command-line validation that can be performed before forwarding (mutually exclusive flags, family-key validity);
 - gateway transport and gateway-unavailable handling;
-- human or JSON rendering of the gateway result;
-- activity logging for the local CLI invocation.
+- human or JSON rendering of the gateway result.
+
+The local CLI does not write activity. Forwarded `POST /doctor/run` owns the
+gateway activity entry.
 
 Operator peers must not:
 

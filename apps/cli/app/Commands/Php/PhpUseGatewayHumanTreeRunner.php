@@ -21,14 +21,9 @@ final readonly class PhpUseGatewayHumanTreeRunner
         array $payload,
         ?string $version,
         callable $gatewayUse,
-        bool $inherit,
     ): int {
-        $title = $inherit
-            ? 'Restoring workspace PHP inheritance'
-            : "Updating PHP runtime to PHP {$version}";
-        $doneFooter = $inherit
-            ? 'Successfully restored workspace PHP inheritance'
-            : "Successfully updated PHP runtime to PHP {$version}";
+        $title = "Updating PHP runtime to PHP {$version}";
+        $doneFooter = "Successfully updated PHP runtime to PHP {$version}";
 
         $node = is_string($payload['node'] ?? null) ? $payload['node'] : null;
         $instance = is_string($payload['instance'] ?? null) ? $payload['instance'] : null;

@@ -321,7 +321,10 @@ escapes every positional argument and option value, always appends
 `--operation-token` and `--json`, and exposes a token-redacted audit line. Do
 not hand-build local-executor shell strings at call sites.
 
-Current allowed hidden CLI commands:
+The table below is an illustrative subset of hidden CLI commands admitted by
+the lane. It is not the complete current allow-list. The source of truth is
+`LocalExecutorCommandBuilder::ALLOWED_COMMAND_ROLES` in
+`apps/gateway/app/Services/RemoteShell/LocalExecutorCommandBuilder.php`.
 
 | Command | Allowed target roles |
 | --- | --- |

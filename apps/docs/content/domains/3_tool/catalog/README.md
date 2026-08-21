@@ -87,7 +87,7 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`seaweedfs`](seaweedfs.md) | `s3` |
 | [`node-exporter`](node-exporter.md) | `metrics`; active Ubuntu workload nodes selected by metrics convergence |
 
-VitePlus is optional observational runtime inventory, not a role baseline tool.
+[VitePlus](viteplus.md) is optional observational runtime inventory, not a role baseline tool.
 An explicitly selected existing `vp` binary may be adopted into a tool row, but
 an absent row or binary is not role-baseline drift.
 

@@ -396,7 +396,7 @@ final class SetupWorkspacePlan
                 'path' => $this->workspace->path,
                 'url' => $this->workspace->url(),
                 'php_version' => $this->workspace->effectivePhpVersion(),
-                'php_inherited' => $this->workspace->php_version === null,
+                'php_inherited' => false,
                 'adopted' => $this->workspace->adopted,
                 'lifecycle_status' => $this->workspace->lifecycle_status->value,
             ],

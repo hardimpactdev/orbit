@@ -43,12 +43,12 @@ touch.
   comparisons materialize `*_HOST` as the owning node's WireGuard service
   address when the consuming instance or workspace reaches the database over Orbit's
   private network.
-- When a stored connection record matches a managed Docker MySQL process on the
+- When a stored connection record matches a managed Docker MySQL or PostgreSQL process on the
   same node as the target instance or workspace, doctor restore and comparisons
   materialize the process Docker service alias and internal target port.
-- Doctor adoption recognizes the managed Docker MySQL alias as the same
+- Doctor adoption recognizes the managed Docker MySQL or PostgreSQL alias as the same
   canonical connection instead of replacing the stored gateway endpoint.
-- When the matching managed Docker MySQL process is renamed through
+- When the matching managed Docker MySQL or PostgreSQL process is renamed through
   `process:update --name=<new-slug>`, same-node instance and workspace `.env`
   materialization uses the new Docker service alias, while gateway
   `database:query` continues to use the stored canonical endpoint.

@@ -7,7 +7,7 @@
 **Effects:** `read`, `write`, `destructive`, `local-only`, `stream`.
 
 **Prerequisites:**
-- The command is running on a non-gateway operator machine.
+- The command runs on the caller machine against local resolver state.
 - The caller platform has a local resolver backend that Orbit supports.
 - The process has the local OS privileges required to update resolver
   configuration and refresh the resolver backend.
@@ -116,7 +116,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Not supported on gateway | The command is run on a gateway node. | Failure before prompts or side effects |
 | Destructive consent missing | `--reset` is selected in non-interactive mode without `--force`, or the interactive confirmation is rejected. | `error.code=validation_failed`, `error.meta.field=force`, `error.meta.reason=destructive_consent_required` |
 | Unsupported platform | The caller platform has no supported local resolver backend. | Failure before resolver writes |
 | Resolver write failed | Orbit-managed resolver configuration cannot be written or removed. | Failure |
@@ -131,17 +130,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Activity Logging
 
-The local CLI command emits an activity entry for successful and failed local
-resolver mutation attempts. Activity logging is best-effort and must not
-change the documented command result.
-
-| Field | Value |
-| --- | --- |
-| Type | `dns:resolve-tld` |
-| Effect | `write` for resolve path; `destructive` for reset path. |
-| Subject | `none`; the command mutates caller-local resolver files and does not own a durable DNS entity. |
-| Properties | `tld`, `target` for resolve path, `action` (`resolve` or `reset`), `status`, `changed`, and `resolver_backend` when known. No resolver file contents, process output, public DNS responses, gateway records, or secrets. |
-| Description | derived |
+This caller-local command does not emit activity because the CLI has no
+trusted shared activity writer. It does not call a gateway API endpoint.
+Resolver attempts are reflected only in command output and exit status.
 
 ## Test Mapping
 

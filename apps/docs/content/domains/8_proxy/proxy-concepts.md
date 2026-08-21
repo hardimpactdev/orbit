@@ -34,8 +34,10 @@ These terms define the types of routes that the proxy family owns and manages.
   `gateway`, `router`, `s3`, `tool`, and `custom`. The registry maps the stored
   app-route value `app` to the public owner `instance`, and maps the two binding
   values to `analytics` and `websocket`, only when the complete ownership tuple
-  is valid. Invalid tuples retain their stored owner type in conflict, removal,
-  and registry metadata. A stored `owner_type=instance` is invalid. Direct rows
+  is valid. Conflict and removal metadata carry the raw stored owner type, so a
+  valid primary route reports `app` there. Invalid tuples also retain their
+  stored owner type in registry metadata. A stored `owner_type=instance` is
+  invalid. Direct rows
   use only `app` + `app`, `app-analytics` + `proxy`, or `app-websocket` +
   `proxy`. Each tuple requires one matching App and Instance, matching `app_id`,
   and `workspace_id=null`. Eloquent saves reject incomplete tuples and unknown
@@ -253,7 +255,7 @@ These terms define what the proxy family owns and what remains outside its scope
   proxy and TLS artifacts. The family also owns
   `dnsmasq.d/20-proxy-records.conf` for router/private `.orbit` and exact
   backend DNS records. It uses the shared ownership-neutral DNS materializer
-  and restart path when that appion changes. It does not own app, instance WebSocket binding, instance
+  and restart path when that projection changes. It does not own app, instance WebSocket binding, instance
   analytics binding, workspace, gateway, websocket service, S3 service,
   analytics service, or tool identity, does not create or remove owner-side
   records, and does not manage TCP tool service endpoints or firewall policy.

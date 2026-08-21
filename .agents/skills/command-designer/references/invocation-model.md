@@ -110,9 +110,9 @@ codes use dotted singular `<domain>.<condition>` form, such as
 `app.not_found`, `node.wireguard_peer_missing`, or
 `workspace.path_missing`, rather than snake-case domain prefixes or plural
 family prefixes. Doctor family selector keys and warning `family` values are
-singular (`node`, `app`, `workspace`, `process`, `proxy`,
-`firewall_rule`, `tool`, `schedule`); the machine-readable `code` beside
-that family uses the singular product prefix.
+singular (`node`, `instance`, `workspace`, `process`, `proxy`,
+`firewall_rule`, `tool`, `schedule`, `database_connection`); the
+machine-readable `code` beside that family uses the singular product prefix.
 
 Fields that are structural members of an entity object are serialized as `null`
 when they are inapplicable for the returned entity. Purely optional metadata
@@ -124,7 +124,7 @@ When a command family defines a canonical JSON entity DTO, every renderer in
 that family that returns that entity must embed the canonical object unchanged
 under the documented key. Command-specific state belongs beside the entity in
 another object, not as ad hoc fields on the entity. The app family defines its
-canonical `success.data.app` DTO in `docs/domains/5_app/README.md#app-json-entity`.
+canonical `success.data.app` DTO in `apps/docs/content/domains/5_app/README.md#app-json-entity`.
 
 All commands that return data must support `--json`. Every command base
 (`GatewayCommand`, `LocalOnlyCommand`, `BootstrapGatewayCommand`) includes

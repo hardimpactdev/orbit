@@ -103,8 +103,9 @@ probe results as instance-family issue codes.
 
 ## Instance Issue Codes
 
-Every code below is registered in the Doctor issue catalog owned by this
-family, with an explicit public disposition (`genuine_drift`,
+Every public issue code that this family can emit is listed below and registered
+in the Doctor issue catalog with an explicit public disposition
+(`genuine_drift`,
 `blocked_inspection`, `invalid_intent`, or `runtime_incident`). Genuine drift
 codes declare a restore action in the Fix Map and catalog; non-genuine
 dispositions are never auto-repaired as if they were restorable drift. See the
@@ -127,6 +128,7 @@ Each code below corresponds to a specific layer in the instance probe.
 | `instance.runtime_config_mismatch` | Managed instance runtime configuration differs from the selected instance configuration. |
 | `instance.runtime_config_extra` | An Orbit-owned runtime artifact has a dotted identity with no matching active instance. |
 | `instance.runtime_config_probe_failed` | The managed runtime configuration directory could not be reliably scanned for orphan artifacts. Reported once per node so stale `instance.runtime_config_extra` is not hidden. |
+| `instance.remote_shell_probe_failed` | The remote instance probe raised before it could return a usable observation for the selected node. |
 | `instance.runtime_extensions_unverifiable` | Required PHP extensions are configured for an Orbit instance, but the FrankenPHP runtime cannot be queried. |
 | `instance.runtime_extension_missing` | Required PHP extensions are configured for an Orbit instance and one or more are absent from the running FrankenPHP runtime. |
 | `instance.production_user_missing` | A production app that requires app-user isolation has no matching path-derived instance runtime user or ownership policy. |
