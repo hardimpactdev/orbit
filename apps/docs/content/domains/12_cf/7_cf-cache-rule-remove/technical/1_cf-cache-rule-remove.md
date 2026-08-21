@@ -84,7 +84,7 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 | --- | --- |
 | Type | `api:DELETE /cloudflare/cache-rules/{app}` |
 | Effect | `destructive` |
-| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Subject | The authenticated caller `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
 | Description | derived |
 

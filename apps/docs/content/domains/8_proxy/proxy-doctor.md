@@ -216,15 +216,19 @@ server name before rendering.
 `proxy.router_node_invalid`, `proxy.domain_conflict`,
 `proxy.agent_tool_route_conflict`, `proxy.route_probe_failed`,
 `proxy.node_probe_failed`, `proxy.runtime_unreachable`, or
-`proxy.docker_runtime_unavailable`. Re-run
-Doctor after Caddy is available when route inspection is blocked. The Docker
-runtime gap is tool-family capability drift; resolve it through
-`doctor --family=tool --restore` before re-running proxy doctor. A route can be
-removed with [`proxy:remove --force`](3_proxy-remove/proxy-remove.md) when it
-has structurally complete tool ownership and its matching installed `NodeTool`
-is absent on the serving node. Other `proxy.owner_invalid` rows are report-only
-until their owner domain or a later product decision supplies a safe repair;
-force is not a general ownership bypass.
+`proxy.docker_runtime_unavailable`. Re-run Doctor after Caddy is available when
+route inspection is blocked. The Docker runtime gap is tool-family capability
+drift; resolve it through `doctor --family=tool --restore` before re-running
+proxy doctor.
+
+A route can be removed with
+[`proxy:remove --force`](3_proxy-remove/proxy-remove.md) when it is a direct
+app, analytics, or WebSocket route whose owning Instance is gone. Removal is
+also allowed when the route has structurally complete tool ownership and its
+matching installed `NodeTool` is absent on the serving node. A conflicting
+tuple whose Instance still exists and other `proxy.owner_invalid` rows are
+report-only until their owner domain or a later product decision supplies a
+safe repair. Force is not a general ownership bypass.
 
 ## Proxy Adopt Map
 

@@ -236,7 +236,7 @@ family doctor — not a removal failure.
 | --- | --- |
 | Type | `api:DELETE /workspaces/{name}` |
 | Effect | `destructive` |
-| Subject | The selected or created `Workspace`; `none` before resolution or persistence. |
+| Subject | The selected `Workspace`; `none` before resolution. |
 | Properties | `name`. |
 | Description | derived |
 

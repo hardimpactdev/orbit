@@ -34,6 +34,8 @@ it('logs destructive Cloudflare attempts with canonical API types', function (
     string $method,
     string $uri,
     string $type,
+    ?string $zone,
+    ?string $app,
 ): void {
     createCloudflareApiCallerNode();
 
@@ -45,18 +47,32 @@ it('logs destructive Cloudflare attempts with canonical API types', function (
     expect($entry->event)
         ->toBe($type)
         ->and($entry->properties->get('type'))
-        ->toBe('destructive');
+        ->toBe('destructive')
+        ->and($entry->properties->get('zone'))
+        ->toBe($zone)
+        ->and($entry->properties->get('app'))
+        ->toBe($app);
 })->with([
     'DNS remove' => [
         'DELETE',
         '/api/cloudflare/zones/example.com/dns/record-1',
         'api:DELETE /cloudflare/zones/{zone}/dns/{record}',
+        'example.com',
+        null,
     ],
-    'cache-rule remove' => ['DELETE', '/api/cloudflare/cache-rules/docs', 'api:DELETE /cloudflare/cache-rules/{app}'],
+    'cache-rule remove' => [
+        'DELETE',
+        '/api/cloudflare/cache-rules/docs',
+        'api:DELETE /cloudflare/cache-rules/{app}',
+        null,
+        'docs',
+    ],
     'SSL disable' => [
         'PUT',
         '/api/cloudflare/zones/example.com/ssl/disable',
         'api:PUT /cloudflare/zones/{zone}/ssl/disable',
+        'example.com',
+        null,
     ],
 ]);
 

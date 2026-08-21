@@ -207,6 +207,13 @@ final class CloudflareController implements Loggable
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
+    private function stringRouteOrInput(Request $request, string $key): ?string
+    {
+        $value = $request->route($key) ?? $request->input($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
     private function statusFor(GatewayApiException $exception): int
     {
         return match ($exception->errorCode()) {
@@ -251,7 +258,7 @@ final class CloudflareController implements Loggable
     public function properties(): array
     {
         return [
-            'zone' => $this->stringInput(request(), 'zone'),
+            'zone' => $this->stringRouteOrInput(request(), 'zone'),
             'app' => request()->route('app'),
         ];
     }

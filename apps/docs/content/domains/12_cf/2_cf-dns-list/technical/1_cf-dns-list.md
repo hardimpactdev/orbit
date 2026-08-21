@@ -72,7 +72,7 @@ owns app-domain health.
 | --- | --- |
 | Type | `api:GET /cloudflare/zones/{zone}/dns` |
 | Effect | `read` |
-| Subject | The authenticated gateway `Node`; `none` before identity resolution. |
+| Subject | The authenticated caller `Node`; `none` before identity resolution. |
 | Properties | `zone` and `app` when those selectors apply; record content and credentials are not logged. |
 | Description | derived |
 
