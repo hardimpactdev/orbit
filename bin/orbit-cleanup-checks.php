@@ -768,7 +768,13 @@ function compact_feature_check(
 
     try {
         $compactChangedFiles = orbitLoopExactProofRoute($worktree, $compactDiffBase, 'HEAD')['changed_files'];
-    } catch (Throwable) {
+    } catch (Throwable $exception) {
+        $message = $exception->getMessage();
+
+        if (str_contains($message, 'orthogonal non-automated acceptance venue')) {
+            return block_result($subject, $message);
+        }
+
         return block_result(
             $subject,
             'unable to derive candidate changed-file inventory for acceptance venue resolution',

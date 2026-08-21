@@ -116,16 +116,16 @@ other commit, without that decision, or with unresolved blast-radius gaps.
 
 ## Acceptance Venues
 
-Immediately after FRAME and before expensive PROVE work, run the read-only
-diff-derived route (no loop packet or cleanliness/review gates):
+After FRAME, run the read-only diff-derived route before expensive PROVE work
+(no loop packet or cleanliness/review gates):
 
 ```bash
 bin/orbit-feature-acceptance route
 ```
 
-It prints the exact candidate HEAD, base tip, merge base, changed files, and
-derived venue; the same derivation feeds `ready` and `accept`. Default base is
-`main`. Fail closed when the route cannot be derived.
+It prints the candidate and base identities, changed files, and venue.
+`route`/`ready`/`accept` share this derivation; base defaults to `main` and
+errors fail closed.
 
 `bin/orbit-feature-acceptance ready` uses that same venue from the changed
 files:
@@ -144,12 +144,13 @@ Repository tooling and TypeScript SDK automation still require diff-routed
 claim a live/production surface must use exact `environment=live`; ordinary
 retained topology proof may keep `environment=dev-fixture`.
 
-Work that still requires human judgment needs explicit user acceptance before
-merge. The venue selects the required proof surface; the actor selects whether
-a user judgment remains. A `human-judgment=not-required` review permits the
-automated actor only after reviewer PASS and the proven diff-derived venue,
-and never downgrades `retained-incus`, `browser`, or `host-macos` proof to
-`automated`.
+Work that needs human judgment needs explicit user acceptance before merge.
+The venue selects proof; the actor selects judgment. A
+`human-judgment=not-required` review permits automated acceptance only after
+reviewer PASS and venue proof; it never changes the venue. `retained-incus`,
+`browser`, and `host-macos` are orthogonal, not a strength ladder. At most one
+per candidate; mixed diffs fail closed and must be split. Automation-only
+paths may coexist.
 
 Agents run every deterministic check and inspect its output before acceptance.
 Never ask the user to execute a check the agent can execute. The user receives

@@ -717,25 +717,28 @@ it('preserves unchanged candidate venue enforcement at the finalization boundary
     'browser rejects retained-incus' => [['apps/gateway/resources/js/app.js'], 'browser', 'retained-incus', false],
     'host-macos matching' => [['apps/macos/src/main.rs'], 'host-macos', 'host-macos', true],
     'host-macos rejects browser' => [['apps/macos/src/main.rs'], 'host-macos', 'browser', false],
-    'mixed escalation matching' => [
-        [
-            'apps/gateway/resources/js/app.js',
-            'apps/macos/src/main.rs',
-        ],
-        'host-macos',
-        'host-macos',
-        true,
-    ],
-    'mixed escalation rejects browser' => [
-        [
-            'apps/gateway/resources/js/app.js',
-            'apps/macos/src/main.rs',
-        ],
-        'host-macos',
-        'browser',
-        false,
-    ],
 ]);
+
+it('fails closed at the finalization boundary when a candidate needs more than one orthogonal non-automated venue', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/gateway/resources/js/app.js', "changed\n");
+        commit_finalization_gate_file($worktree, 'apps/macos/src/main.rs', "changed\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('orthogonal')
+            ->toContain('split the feature slice');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
 
 it('fails closed when candidate acceptance venue resolution times out', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());

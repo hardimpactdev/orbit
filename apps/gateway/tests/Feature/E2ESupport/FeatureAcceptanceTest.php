@@ -94,6 +94,60 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         'browser',
     ],
     'native mac app' => [['apps/macos/src/main.rs'], 'host-macos'],
+    'automation-only may coexist with host-macos' => [
+        [
+            'apps/docs/content/mission.md',
+            'apps/macos/src/main.rs',
+        ],
+        'host-macos',
+    ],
+    'automation-only may coexist with browser' => [
+        [
+            'apps/docs/content/mission.md',
+            'apps/gateway/resources/js/app.js',
+        ],
+        'browser',
+    ],
+]);
+
+it('fails closed when a candidate diff needs more than one orthogonal non-automated venue', function (
+    array $files,
+    string $needle,
+): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    expect(fn () => orbitLoopAcceptanceVenue($files))->toThrow(RuntimeException::class, $needle);
+})->with([
+    'retained+browser' => [
+        [
+            'apps/cli/app/Commands/FooCommand.php',
+            'apps/gateway/resources/js/app.js',
+        ],
+        'orthogonal',
+    ],
+    'retained+host-macos' => [
+        [
+            'apps/cli/app/Commands/FooCommand.php',
+            'apps/macos/src/main.rs',
+        ],
+        'split the feature slice',
+    ],
+    'browser+host-macos' => [
+        [
+            'apps/gateway/resources/js/app.js',
+            'apps/macos/src/main.rs',
+        ],
+        'browser, host-macos',
+    ],
+    'triple + automation-only' => [
+        [
+            'apps/cli/app/Commands/FooCommand.php',
+            'apps/gateway/resources/js/app.js',
+            'apps/macos/src/main.rs',
+            'apps/docs/content/mission.md',
+        ],
+        'browser, host-macos, retained-incus',
+    ],
 ]);
 
 it('routes proof venue from the exact candidate diff without a loop packet', function (): void {

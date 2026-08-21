@@ -902,7 +902,7 @@ function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, 
 
 function orbitLoopAcceptanceVenue(array $changedFiles): string
 {
-    $venue = 'automated';
+    $venues = [];
 
     foreach ($changedFiles as $path) {
         $path = (string) $path;
@@ -915,23 +915,37 @@ function orbitLoopAcceptanceVenue(array $changedFiles): string
             continue;
         }
 
-        if (str_starts_with($path, 'apps/macos/')) {
-            return 'host-macos';
-        }
+        $venue = 'retained-incus';
 
-        if (
+        if (str_starts_with($path, 'apps/macos/')) {
+            $venue = 'host-macos';
+        } elseif (
             str_starts_with($path, 'apps/gateway/resources/')
             || str_starts_with($path, 'apps/docs/resources/')
         ) {
-            $venue = orbitLoopStrongerVenue($venue, 'browser');
-
-            continue;
+            $venue = 'browser';
         }
 
-        $venue = orbitLoopStrongerVenue($venue, 'retained-incus');
+        $venues[$venue] = $venue;
     }
 
-    return $venue;
+    $venues = array_values($venues);
+
+    if ($venues === []) {
+        return 'automated';
+    }
+
+    if (count($venues) === 1) {
+        return $venues[0];
+    }
+
+    sort($venues, SORT_STRING);
+
+    throw new RuntimeException(
+        'candidate diff requires more than one orthogonal non-automated acceptance venue ('
+        .implode(', ', $venues)
+        .'); retained-incus, browser, and host-macos proof are not substitutes—split the feature slice so each candidate needs at most one non-automated venue',
+    );
 }
 
 function orbitLoopPathIsAutomationOnly(string $path): bool
@@ -969,18 +983,6 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
             true,
         )
     );
-}
-
-function orbitLoopStrongerVenue(string $left, string $right): string
-{
-    $strength = [
-        'automated' => 0,
-        'retained-incus' => 1,
-        'browser' => 2,
-        'host-macos' => 3,
-    ];
-
-    return ($strength[$right] ?? -1) > ($strength[$left] ?? -1) ? $right : $left;
 }
 
 /**
