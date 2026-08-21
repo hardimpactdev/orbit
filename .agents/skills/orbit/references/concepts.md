@@ -48,8 +48,9 @@ self-service workflow. It records the local user, detected platform, and
 explicit managed intent, then probes Agent reachability. A failed probe retains
 the intent for doctor. An authorized administrator can use
 `orbit node:update --managed` or `--no-managed` to adjust registry intent for a
-selected roleless node without that local probe. Active workload roles provide
-the same intent. These commands do not install, start, update, restart, or
+selected roleless node without that local probe.
+Active workload roles provide the same intent. These commands do not install,
+start, update, restart, or
 uninstall the macOS app or headless service. For source changes under `apps/agent` or
 `apps/macos`, use the `tauri-agent-development` skill and verify native
 tray/menu behavior on the implementing Mac host when `apps/macos` changes.
