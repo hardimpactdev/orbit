@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T11:40:27+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-quality-subgate-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-134027-codex-quality-subgate-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T113912Z-01094c54a44e.json"
+    ],
+    "entry_digests": {
+        "loop.md": "640676c582eb71ce27d57119448c2e44c4d422376c3e2accfa6c12051a662e53",
+        "quality-gates/quality-check-2026-08-21T113912Z-01094c54a44e.json": "42d559c6122029c6f76b942b109eb5419c70571abc85e52700685dee03f16cbb"
+    },
+    "slug": "codex-quality-subgate-bootstrap",
+    "requested_slug": "codex-quality-subgate-bootstrap",
+    "compatible_slugs": [
+        "codex-quality-subgate-bootstrap"
+    ],
+    "branch": "codex/quality-subgate-bootstrap",
+    "candidate_commit": "00e14969f2b3586182dd859e2273a8e40274c745",
+    "accepted_feature_tip": "00e14969f2b3586182dd859e2273a8e40274c745",
+    "accepted_main_tip": "96f066f09f3eb76f54b8203f0842c08a20e77032",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
