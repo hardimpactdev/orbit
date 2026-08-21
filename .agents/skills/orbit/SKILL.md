@@ -89,6 +89,14 @@ built from the live CLI surface and command docs; prefer it over hand-maintained
 lists when you need exact current command names, options, docs paths, or linked
 verification hints.
 
+Treat generated command signatures as a discovery aid, not the authority on the
+public flag spelling. A generated option name can differ from an intentional
+native public alias that the owning command doc documents; when they diverge,
+the current product authority and the latest product decision win. For example
+`orbit process:add` takes the documented public `--version` flag, which the
+generated catalog records under its internal `service-version` option name
+because Symfony reserves the global `--version`.
+
 ## Command index
 
 Commands are grouped by family for quick navigation. The grouped index is not

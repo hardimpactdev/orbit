@@ -1317,6 +1317,7 @@ it('keeps finalization quality-check subgates aligned with quality-check.sh CHEC
         ->toBe($producerLabels)
         ->and($producerLabels)
         ->toContain('sdk_typescript_build')
+        ->toContain('sdk_typescript_runtime')
         ->toContain('sdk_typescript_typecheck');
 });
 
@@ -4851,6 +4852,7 @@ function finalization_quality_check_subgates(): array
         'sdk_pest',
         'sdk_rector',
         'sdk_typescript_build',
+        'sdk_typescript_runtime',
         'sdk_typescript_typecheck',
     ];
 

@@ -23,6 +23,7 @@ it('builds compact routing entries for every known Orbit unit', function (): voi
             'apps-reverb',
             'packages-core',
             'packages-sdk',
+            'packages-sdk-typescript',
             'root',
         ]);
 });
@@ -71,6 +72,28 @@ it('maps app and package units to their local tooling and preferred verification
         ->toHaveKey('facts.tooling.composer_json', 'packages/sdk/composer.json')
         ->and($map['units']['packages-sdk']['verification']['preferred_commands'])
         ->toContain('cd packages/sdk && vendor/bin/pest --compact');
+});
+
+it('routes the TypeScript SDK package to its Node toolchain and npm verification', function (): void {
+    $sdkTypescript = app(MonorepoUnitMapBuilder::class)->build()['units']['packages-sdk-typescript'];
+
+    expect($sdkTypescript)
+        ->toHaveKey('type', 'typescript-sdk-package')
+        ->toHaveKey('facts.tooling.package_json', 'packages/sdk-typescript/package.json')
+        ->toHaveKey('facts.tooling.composer_json', null)
+        ->and($sdkTypescript['owning_paths'])
+        ->toContain('packages/sdk-typescript')
+        ->and($sdkTypescript['agent_skills'])
+        ->toContain('.agents/skills/spatie-javascript/SKILL.md')
+        ->and($sdkTypescript['verification']['preferred_commands'])
+        ->toContain('cd packages/sdk-typescript && npm test')
+        ->toContain('cd packages/sdk-typescript && npm run build')
+        ->not
+        ->toContain('cd packages/sdk-typescript && npm run typecheck')
+        ->and($sdkTypescript['verification']['path_argument_rules'])
+        ->toContain(
+            'After cd packages/sdk-typescript, run the package npm scripts (npm test, npm run typecheck, npm run build); this Node/npm package does not use Composer, Pest, or Mago.',
+        );
 });
 
 it('maps the Orbit Agent service and macOS UI to separate Cargo verification', function (): void {
@@ -292,6 +315,13 @@ it('keeps preferred verification commands pointed at current repo entrypoints', 
                 }
 
                 if ($executable === 'cargo' && is_file("{$repoRoot}/{$directory}/Cargo.toml")) {
+                    continue;
+                }
+
+                if (
+                    in_array($executable, ['npm', 'npx', 'node'], strict: true)
+                    && is_file("{$repoRoot}/{$directory}/package.json")
+                ) {
                     continue;
                 }
             }

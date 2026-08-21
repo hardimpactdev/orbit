@@ -450,6 +450,46 @@ final readonly class MonorepoUnitMapBuilder
             ],
             'tooling_base_path' => 'packages/sdk',
         ],
+        'packages-sdk-typescript' => [
+            'type' => 'typescript-sdk-package',
+            'purpose' => 'Generated public TypeScript gateway client. It owns the typed openapi-fetch client, the durable process-stream EventSource subscriber, and the OpenAPI-derived schema regenerated from the gateway contract.',
+            'start_when' => [
+                'Changing the TypeScript gateway client, process-stream subscriber, base URL resolution, or the public OpenAPI surface consumed by browser toolbar and dashboard callers.',
+                'Regenerating src/generated/schema.ts from the gateway OpenAPI contract or verifying the package with its Node toolchain.',
+            ],
+            'do_not_start_when' => [
+                'Changing gateway HTTP/API behavior or the OpenAPI export itself; route to apps/gateway first and then regenerate here.',
+                'Changing the PHP Laravel SDK request/response contracts; use packages/sdk.',
+            ],
+            'owning_paths' => [
+                'packages/sdk-typescript',
+            ],
+            'entrypoints' => [
+                'packages/sdk-typescript/package.json',
+                'packages/sdk-typescript/src/index.ts',
+                'packages/sdk-typescript/openapi/public-gateway-openapi.json',
+            ],
+            'authority_docs' => [
+                'apps/docs/content/architecture.md',
+                'apps/docs/content/tech-stack.md',
+            ],
+            'agent_skills' => [
+                '.agents/skills/implementing-features/SKILL.md',
+                '.agents/skills/spatie-javascript/SKILL.md',
+            ],
+            'verification' => [
+                'preferred_commands' => [
+                    'cd packages/sdk-typescript && npm test',
+                    'cd packages/sdk-typescript && npm run build',
+                ],
+                'path_argument_rules' => [
+                    'After cd packages/sdk-typescript, run the package npm scripts (npm test, npm run typecheck, npm run build); this Node/npm package does not use Composer, Pest, or Mago.',
+                    'src/generated/schema.ts is generated from the gateway OpenAPI contract; regenerate it with npm run generate instead of hand-editing.',
+                ],
+                'manual_only_commands' => [],
+            ],
+            'tooling_base_path' => 'packages/sdk-typescript',
+        ],
     ];
 
     public function __construct(

@@ -814,6 +814,7 @@ CHECK_LABELS=(
     sdk_pest
     sdk_typescript_typecheck
     sdk_typescript_build
+    sdk_typescript_runtime
 )
 
 if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
@@ -1207,6 +1208,7 @@ sdk_component() {
 sdk_typescript_component() {
     run_subgate sdk_typescript_typecheck bash -lc 'cd packages/sdk-typescript && npm run typecheck'
     run_subgate sdk_typescript_build bash -lc 'cd packages/sdk-typescript && npm run build'
+    run_subgate sdk_typescript_runtime bash -lc 'cd packages/sdk-typescript && npm run test:runtime'
 }
 
 core_component() {

@@ -8,25 +8,31 @@
  * full gateway path including `/api`.
  */
 
+const PROCESS_LIFECYCLE_EVENT_TYPES = [
+    'starting',
+    'started',
+    'stopping',
+    'stopped',
+    'restarting',
+    'crashed',
+    'failed',
+] as const;
+
 /** Durable process_events.event values persisted by the gateway. */
-export type ProcessLifecycleEventType =
-    | 'starting'
-    | 'started'
-    | 'stopping'
-    | 'stopped'
-    | 'restarting'
-    | 'crashed'
-    | 'failed';
+export type ProcessLifecycleEventType = (typeof PROCESS_LIFECYCLE_EVENT_TYPES)[number];
+
+const PROCESS_RUNTIME_STATUSES = [
+    'starting',
+    'running',
+    'stopping',
+    'stopped',
+    'restarting',
+    'crashed',
+    'unknown',
+] as const;
 
 /** Normalized process status derived from the latest durable lifecycle event. */
-export type ProcessRuntimeStatus =
-    | 'starting'
-    | 'running'
-    | 'stopping'
-    | 'stopped'
-    | 'restarting'
-    | 'crashed'
-    | 'unknown';
+export type ProcessRuntimeStatus = (typeof PROCESS_RUNTIME_STATUSES)[number];
 
 export interface ProcessStreamLastEvent {
     id: number;
@@ -133,32 +139,22 @@ export interface ProcessStreamSubscription {
     eventSource: EventSource;
 }
 
-const LIFECYCLE_EVENTS = new Set<string>([
-    'starting',
-    'started',
-    'stopping',
-    'stopped',
-    'restarting',
-    'crashed',
-    'failed',
-]);
+const LIFECYCLE_EVENTS = new Set<string>(PROCESS_LIFECYCLE_EVENT_TYPES);
 
-const RUNTIME_STATUSES = new Set<string>([
-    'starting',
-    'running',
-    'stopping',
-    'stopped',
-    'restarting',
-    'crashed',
-    'unknown',
-]);
+const RUNTIME_STATUSES = new Set<string>(PROCESS_RUNTIME_STATUSES);
 
 export function buildProcessStreamUrl(baseUrl: string, app: string): string {
-    const normalizedBase = baseUrl.replace(/\/+$/, '');
-    const url = new URL('api/processes/stream', ensureTrailingSlash(normalizedBase));
+    const url = new URL('processes/stream', ensureTrailingSlash(resolveApiBaseUrl(baseUrl)));
     url.searchParams.set('app', app);
 
     return url.toString();
+}
+
+/** Keep aligned with `resolveOrbitGatewayApiBaseUrl` in client.ts. */
+function resolveApiBaseUrl(baseUrl: string): string {
+    const normalized = baseUrl.replace(/\/+$/, '');
+
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
 }
 
 export function subscribeProcessStream(options: SubscribeProcessStreamOptions): ProcessStreamSubscription {

@@ -75,6 +75,17 @@ describe('buildProcessStreamUrl', () => {
         assert.ok(url.includes('app=my+app.example') || url.includes('app=my%20app.example'));
         assert.ok(url.startsWith('https://gateway.orbit/api/processes/stream?'));
     });
+
+    it('does not double /api when the base already ends with /api', () => {
+        assert.equal(
+            buildProcessStreamUrl('https://gateway.orbit/api', 'app.example.test'),
+            'https://gateway.orbit/api/processes/stream?app=app.example.test',
+        );
+        assert.equal(
+            buildProcessStreamUrl('https://gateway.orbit/api/', 'app.example.test'),
+            'https://gateway.orbit/api/processes/stream?app=app.example.test',
+        );
+    });
 });
 
 describe('subscribeProcessStream', () => {
@@ -97,6 +108,21 @@ describe('subscribeProcessStream', () => {
                 globalThis.EventSource = previous;
             }
         }
+    });
+
+    it('opens the exact /api/processes/stream URL for an /api base without doubling', () => {
+        FakeEventSource.reset();
+
+        subscribeProcessStream({
+            baseUrl: 'https://gateway.orbit/api',
+            app: 'test.app.example',
+            EventSourceImpl: FakeEventSource as unknown as typeof EventSource,
+        });
+
+        assert.equal(
+            FakeEventSource.instances[0]?.url,
+            'https://gateway.orbit/api/processes/stream?app=test.app.example',
+        );
     });
 
     it('parses snapshot and update frames with durable unions', () => {

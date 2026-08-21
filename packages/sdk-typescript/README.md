@@ -80,8 +80,10 @@ when present.
 
 `subscribeProcessStream` opens native `EventSource` against the exact gateway
 route `GET /api/processes/stream?app=<hostname>` (app hostname URL-encoded).
-Pass the same gateway-root `baseUrl` as `createOrbitGatewayClient`; the
-subscriber builds the full `/api/processes/stream` path. Snapshot
+Pass the same `baseUrl` as `createOrbitGatewayClient`: the subscriber accepts a
+gateway root (`https://gateway.orbit`) or the `/api` base
+(`https://gateway.orbit/api`) under the same idempotent contract, resolves it to
+a single `/api` segment, and never doubles it onto `/api/api`. Snapshot
 `high_water_mark`, snapshot `last_event.id`, and update `id` must be
 non-negative safe integers or the subscriber surfaces
 `process.stream_protocol_error`.

@@ -14,6 +14,7 @@ The repository root is orchestration only. Current applications and packages:
 - `apps/macos` — Tauri/Rust Orbit Agent macOS menu-bar runtime.
 - `packages/core` — shared Orbit contracts and helpers.
 - `packages/sdk` — Laravel SDK for the gateway API.
+- `packages/sdk-typescript` — generated public TypeScript gateway client.
 
 The generated unit map at
 [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json)

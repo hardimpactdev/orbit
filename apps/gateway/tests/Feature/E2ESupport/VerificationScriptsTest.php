@@ -431,7 +431,7 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
             'cd packages/core && vendor/bin/mago format',
         )->toContain('cd packages/sdk && vendor/bin/mago format')->toContain(
             'cd apps/e2e && vendor/bin/mago format',
-        );
+        )->toContain('cd packages/sdk-typescript && npm run test:runtime');
 });
 
 it('keeps the aggregate quality gate Pest lanes complete', function (): void {
@@ -712,7 +712,7 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         'apps/macos=4',
         'packages/core=5',
         'packages/sdk=5',
-        'packages/sdk-typescript=2',
+        'packages/sdk-typescript=3',
         'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,apps/macos,packages/core,packages/sdk,packages/sdk-typescript',
         'failed=apps/gateway',
     ]);
