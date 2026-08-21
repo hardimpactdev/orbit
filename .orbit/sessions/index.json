@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 394,
-    "unique_candidate_commit_count": 290,
+    "record_count": 395,
+    "unique_candidate_commit_count": 291,
     "orphan_count": 0,
     "records": [
         {
@@ -10151,6 +10151,29 @@
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-21-115028-codex-audit-harness-acceptance",
+            "slug": "codex-audit-harness-acceptance",
+            "timestamp": "2026-08-21-115028",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "79260f7ab2a16674907077659f09b52de38b58cf",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
             "feedback_count": 0,

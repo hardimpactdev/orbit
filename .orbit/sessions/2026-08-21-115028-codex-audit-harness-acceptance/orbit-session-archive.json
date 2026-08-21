@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T09:50:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-audit-harness-acceptance/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-115028-codex-audit-harness-acceptance",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T094326Z-df0fa6d19165.json"
+    ],
+    "entry_digests": {
+        "loop.md": "a53db9ef60f138cf9742d152b7e121de7e8cde9571b5617449548e16df114cc5",
+        "quality-gates/quality-check-2026-08-21T094326Z-df0fa6d19165.json": "c0c6908ae49377a353ff2090025bdabb5269df63f95b800c3515992e2bc82049"
+    },
+    "slug": "codex-audit-harness-acceptance",
+    "requested_slug": "codex-audit-harness-acceptance",
+    "compatible_slugs": [
+        "codex-audit-harness-acceptance"
+    ],
+    "branch": "codex/audit-harness-acceptance",
+    "candidate_commit": "79260f7ab2a16674907077659f09b52de38b58cf",
+    "accepted_feature_tip": "79260f7ab2a16674907077659f09b52de38b58cf",
+    "accepted_main_tip": "78b023d37d24ae1c7a5880d340cd812eacaf2b59",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
