@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 397,
-    "unique_candidate_commit_count": 293,
+    "record_count": 398,
+    "unique_candidate_commit_count": 294,
     "orphan_count": 0,
     "records": [
         {
@@ -10217,6 +10217,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "00e14969f2b3586182dd859e2273a8e40274c745",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-21-134720-codex-audit-typescript-docs-skill",
+            "slug": "codex-audit-typescript-docs-skill",
+            "timestamp": "2026-08-21-134720",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "97dade62e73409a8cd0023474f45c6706a53bcf3",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

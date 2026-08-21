@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T11:47:20+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-audit-typescript-docs-skill/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-134720-codex-audit-typescript-docs-skill",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T114537Z-d262c2bb6487.json"
+    ],
+    "entry_digests": {
+        "loop.md": "0ee7bd7600915c4c5504b1d87e86e2a684e819d7bd7f01701f5cdee7fa0600d2",
+        "quality-gates/quality-check-2026-08-21T114537Z-d262c2bb6487.json": "10966844a2ec7bfa07e5f20086d646a593fcd25f8e2af296de20d0a6f1de5e20"
+    },
+    "slug": "codex-audit-typescript-docs-skill",
+    "requested_slug": "codex-audit-typescript-docs-skill",
+    "compatible_slugs": [
+        "codex-audit-typescript-docs-skill"
+    ],
+    "branch": "codex/audit-typescript-docs-skill",
+    "candidate_commit": "97dade62e73409a8cd0023474f45c6706a53bcf3",
+    "accepted_feature_tip": "97dade62e73409a8cd0023474f45c6706a53bcf3",
+    "accepted_main_tip": "772a8880560fa6192ad8d56455322775cc31f220",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
