@@ -914,7 +914,10 @@ it('requires a regular non-symlink candidate acceptance venue contract', functio
         run_fixture_command($worktree, ['git', 'rm', 'bin/orbit-loop-contract.php']);
 
         if ($replaceWithSymlink) {
-            mkdir("{$worktree}/bin", recursive: true);
+            if (! is_dir("{$worktree}/bin")) {
+                mkdir("{$worktree}/bin", recursive: true);
+            }
+
             symlink('../HARNESS.md', "{$worktree}/bin/orbit-loop-contract.php");
             run_fixture_command($worktree, ['git', 'add', 'bin/orbit-loop-contract.php']);
         }
@@ -1296,24 +1299,36 @@ it('keeps finalization quality-check subgates aligned with quality-check.sh CHEC
     $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
     $producerLabels = finalization_quality_check_script_labels($script, 'CHECK_LABELS');
 
-    $hook = (string) file_get_contents(repo_path('bin/orbit-codex-pre-tool-use-hook'));
+    $declaration = (string) file_get_contents(repo_path('bin/orbit-quality-subgates.php'));
     expect(preg_match(
         '/const QUALITY_CHECK_EXPECTED_SUBGATES = \[(.*?)\];/s',
-        $hook,
+        $declaration,
         $matches,
     ))->toBe(1);
 
     preg_match_all("/'([^']+)'/", $matches[1], $labelMatches);
-    $hookLabels = $labelMatches[1];
+    $declaredLabels = $labelMatches[1];
     $fixtureLabels = array_keys(finalization_quality_check_subgates());
+    $declarationPath = repo_path('bin/orbit-quality-subgates.php');
+    $runtime = new Process([
+        PHP_BINARY,
+        '-r',
+        'require '
+            .var_export($declarationPath, true)
+            .'; echo json_encode(QUALITY_CHECK_EXPECTED_SUBGATES, JSON_THROW_ON_ERROR);',
+    ]);
+    $runtimeLabels = json_decode($runtime->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
     sort($producerLabels);
-    sort($hookLabels);
+    sort($declaredLabels);
     sort($fixtureLabels);
+    sort($runtimeLabels);
 
-    expect($hookLabels)
+    expect($declaredLabels)
         ->toBe($producerLabels)
         ->and($fixtureLabels)
+        ->toBe($producerLabels)
+        ->and($runtimeLabels)
         ->toBe($producerLabels)
         ->and($producerLabels)
         ->toContain('sdk_typescript_build')
@@ -1369,6 +1384,233 @@ it('rejects forged or incomplete reserved quality-check evidence', function (
     'failed subgate' => ['failed-subgate', 'all subgates must be integer exit code 0'],
     'extra subgate' => ['extra-subgate', 'exact expected subgate set'],
 ]);
+
+it('allows an exact additive candidate quality-check subgate set', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [...array_keys(finalization_quality_check_subgates()), 'candidate_new_subgate'];
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        rewrite_finalization_quality_subgates(
+            $worktree,
+            array_fill_keys($candidateLabels, 0),
+        );
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a candidate quality-check subgate set that removes a current subgate', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = array_keys(finalization_quality_check_subgates());
+        array_pop($candidateLabels);
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        rewrite_finalization_quality_subgates(
+            $worktree,
+            array_fill_keys($candidateLabels, 0),
+        );
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('exact expected subgate set');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects candidate quality-check declarations that disagree', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [...array_keys(finalization_quality_check_subgates()), 'candidate_new_subgate'];
+        commit_finalization_candidate_quality_labels(
+            $worktree,
+            $candidateLabels,
+            array_keys(finalization_quality_check_subgates()),
+        );
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        rewrite_finalization_quality_subgates(
+            $worktree,
+            array_fill_keys($candidateLabels, 0),
+        );
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('exact expected subgate set');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects an additive candidate declaration when the artifact omits its new subgate', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [...array_keys(finalization_quality_check_subgates()), 'candidate_new_subgate'];
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('exact expected subgate set');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects duplicate labels in an additive candidate quality-check declaration', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [
+            ...array_keys(finalization_quality_check_subgates()),
+            'candidate_new_subgate',
+            'candidate_new_subgate',
+        ];
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        rewrite_finalization_quality_subgates(
+            $worktree,
+            array_fill_keys($candidateLabels, 0),
+        );
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('exact expected subgate set');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a failed additive candidate quality-check subgate', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [...array_keys(finalization_quality_check_subgates()), 'candidate_new_subgate'];
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        $candidateSubgates = array_fill_keys($candidateLabels, 0);
+        $candidateSubgates['candidate_new_subgate'] = 1;
+        rewrite_finalization_quality_subgates($worktree, $candidateSubgates);
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('all subgates must be integer exit code 0');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects an additive candidate quality-check declaration with executable content', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $candidateLabels = [...array_keys(finalization_quality_check_subgates()), 'candidate_new_subgate'];
+        commit_finalization_candidate_quality_labels($worktree, $candidateLabels);
+        file_put_contents(
+            "{$worktree}/bin/orbit-quality-subgates.php",
+            (string) file_get_contents("{$worktree}/bin/orbit-quality-subgates.php")."\necho 'unexpected';\n",
+        );
+        run_fixture_command($worktree, ['git', 'add', 'bin/orbit-quality-subgates.php']);
+        run_fixture_command($worktree, ['git', 'commit', '-m', 'Add executable declaration content']);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        rewrite_finalization_quality_subgates(
+            $worktree,
+            array_fill_keys($candidateLabels, 0),
+        );
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: finalization_structured_runtime($worktree, $featureTip),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('exact expected subgate set');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
 
 it('rejects forged reserved docs-lint evidence', function (string $mutation, string $reason): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
@@ -4176,6 +4418,8 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
     mkdir("{$repo}/bin", recursive: true);
     file_put_contents(filename: "{$repo}/apps/cli/runtime.php", data: "<?php\n");
     copy(repo_path('bin/orbit-loop-contract.php'), "{$repo}/bin/orbit-loop-contract.php");
+    copy(repo_path('bin/orbit-quality-subgates.php'), "{$repo}/bin/orbit-quality-subgates.php");
+    copy(repo_path('bin/quality-check.sh'), "{$repo}/bin/quality-check.sh");
 
     run_fixture_command(cwd: $repo, command: ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps', 'bin']);
     run_fixture_command(cwd: $repo, command: ['git', 'commit', '-m', 'Initial commit']);
@@ -4780,6 +5024,63 @@ function latest_finalization_artifact_path(string $worktree, string $gate): stri
     rsort($paths);
 
     return $paths[0] ?? throw new RuntimeException("Missing {$gate} fixture artifact");
+}
+
+/**
+ * @param  list<string>  $declaredLabels
+ * @param  list<string>|null  $producerLabels
+ */
+function commit_finalization_candidate_quality_labels(
+    string $worktree,
+    array $declaredLabels,
+    ?array $producerLabels = null,
+): void {
+    $producerLabels ??= $declaredLabels;
+    $declarationBody = implode("\n", array_map(
+        static fn (string $label): string => "    '{$label}',",
+        $declaredLabels,
+    ));
+    $producerBody = implode("\n", array_map(
+        static fn (string $label): string => "    {$label}",
+        $producerLabels,
+    ));
+
+    $declaration = <<<PHP
+        <?php
+
+        declare(strict_types=1);
+
+        const QUALITY_CHECK_EXPECTED_SUBGATES = [
+        {$declarationBody}
+        ];
+        PHP;
+    $producer = <<<BASH
+        #!/usr/bin/env bash
+
+        CHECK_LABELS=(
+        {$producerBody}
+        )
+        BASH;
+
+    $declarationPath = "{$worktree}/bin/orbit-quality-subgates.php";
+    $producerPath = "{$worktree}/bin/quality-check.sh";
+    file_put_contents($declarationPath, $declaration.PHP_EOL);
+    file_put_contents($producerPath, $producer.PHP_EOL);
+    run_fixture_command($worktree, ['git', 'add', 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
+    run_fixture_command($worktree, ['git', 'commit', '-m', 'Change candidate quality labels']);
+}
+
+/** @param array<string, int> $subgates */
+function rewrite_finalization_quality_subgates(string $worktree, array $subgates): void
+{
+    $artifactPath = latest_finalization_artifact_path($worktree, 'quality-check');
+    $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
+    $artifact['subgates'] = $subgates;
+
+    file_put_contents(
+        $artifactPath,
+        json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
 }
 
 /**

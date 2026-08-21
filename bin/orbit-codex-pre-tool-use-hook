@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-quality-subgates.php';
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-loop-lint.php';
 require_once __DIR__.'/orbit-feedback-events.php';
@@ -19,54 +20,6 @@ require_once __DIR__.'/orbit-finalization-solo-land.php';
 const BLOCK_EXIT_CODE = 2;
 
 const USAGE_EXIT_CODE = 64;
-
-const QUALITY_CHECK_EXPECTED_SUBGATES = [
-    'agent_cargo_check',
-    'agent_cargo_clippy',
-    'agent_cargo_fmt',
-    'agent_cargo_test',
-    'cli_mago_analyze',
-    'cli_mago_format',
-    'cli_mago_lint',
-    'cli_pest',
-    'cli_rector',
-    'core_mago_analyze',
-    'core_mago_format',
-    'core_mago_lint',
-    'core_pest',
-    'core_rector',
-    'docs_lint',
-    'docs_mago_analyze',
-    'docs_mago_format',
-    'docs_mago_lint',
-    'docs_pest',
-    'docs_rector',
-    'docs_references',
-    'docs_testing',
-    'e2e_mago_analyze',
-    'e2e_mago_format',
-    'e2e_mago_lint',
-    'e2e_rector',
-    'gateway_mago_analyze',
-    'gateway_mago_format',
-    'gateway_mago_lint',
-    'gateway_pest',
-    'gateway_rector',
-    'macos_cargo_check',
-    'macos_cargo_clippy',
-    'macos_cargo_fmt',
-    'macos_cargo_test',
-    'reverb_mago_analyze',
-    'reverb_mago_format',
-    'reverb_mago_lint',
-    'sdk_mago_analyze',
-    'sdk_mago_format',
-    'sdk_mago_lint',
-    'sdk_pest',
-    'sdk_rector',
-    'sdk_typescript_build',
-    'sdk_typescript_typecheck',
-];
 
 if (($argv[1] ?? null) === '--lint') {
     exit(run_lint($argv[2] ?? './.orbit/loop.md'));
