@@ -36,7 +36,7 @@ run_prepare_worktree() {
 REPO="$TMP/repo"
 STUB_BIN="$TMP/bin"
 
-mkdir -p "$REPO/bin" "$STUB_BIN"
+mkdir -p "$REPO/bin" "$REPO/packages/sdk-typescript" "$STUB_BIN"
 cp "$ROOT/bin/orbit-prepare-worktree" "$REPO/bin/orbit-prepare-worktree"
 
 cat >"$REPO/bin/quality-gate-seed-baselines" <<'STUB'
@@ -49,7 +49,10 @@ cat >"$STUB_BIN/composer" <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
-chmod +x "$STUB_BIN/composer"
+cp "$STUB_BIN/composer" "$STUB_BIN/npm"
+chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm"
+
+printf '{}\n' >"$REPO/packages/sdk-typescript/package.json"
 
 cat >"$REPO/LOOP.md.example" <<'EOF'
 # Loop Template
@@ -65,7 +68,7 @@ EOF
     git config user.email 'orbit-prepare-worktree-test@example.invalid'
 
     printf '.worktrees\n/.worktrees/\n' >.gitignore
-    git add .gitignore LOOP.md.example bin/orbit-prepare-worktree bin/quality-gate-seed-baselines
+    git add .gitignore LOOP.md.example bin/orbit-prepare-worktree bin/quality-gate-seed-baselines packages/sdk-typescript/package.json
     git commit -m 'Initial fixture' >/dev/null
 )
 

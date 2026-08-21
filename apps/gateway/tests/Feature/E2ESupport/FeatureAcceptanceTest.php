@@ -730,7 +730,9 @@ it('keeps LOOP.md.example free of compact proof path citations', function (): vo
         ->not->toContain('.orbit/evidence/')
         ->not->toContain('.orbit/quality-gates/')
         ->not->toContain('.orbit/release-evidence/')
-        ->not->toContain('target=<target>|command=<cmd>')->toContain('exactly one of target= or command=')->toContain(
+        ->not->toContain('target=<target>|command=<cmd>')
+        ->not->toContain('exactly one of target= or command=')
+        ->not->toContain(
             'worktree evidence tree',
         );
 });
