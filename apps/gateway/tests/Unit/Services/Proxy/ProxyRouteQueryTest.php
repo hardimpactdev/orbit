@@ -267,11 +267,11 @@ describe('ProxyRouteQuery', function (): void {
     it('does not render the invalid persisted instance owner type', function (): void {
         $node = Node::factory()->create();
 
-        ProxyRoute::factory()->create([
+        persist_made_proxy_route_bypassing_owner_guard(ProxyRoute::factory()->make([
             'node_id' => $node->id,
             'owner_type' => 'instance',
             'kind' => 'app',
-        ]);
+        ]));
 
         expect(app(ProxyRouteQuery::class)->list()['routes'])->toBeEmpty();
     });

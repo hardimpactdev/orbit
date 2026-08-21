@@ -281,7 +281,7 @@ trait ResolvesVisibleToolNodes
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
-    /** @param array{node: ?string, app: ?string} $target */
+    /** @param array{node: ?string, app: ?string, resolved?: ?Node} $target */
     private function resolvedToolActivityTarget(array $target): ?Node
     {
         if ($target['node'] !== null) {
