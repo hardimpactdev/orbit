@@ -1,0 +1,5 @@
+Command: bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/FeatureFinalizationGateTest.php tests/Feature/E2ESupport/FeatureAcceptanceTest.php
+Result: passed
+Tests: 303 passed
+Assertions: 1059
+Duration: 76496 ms

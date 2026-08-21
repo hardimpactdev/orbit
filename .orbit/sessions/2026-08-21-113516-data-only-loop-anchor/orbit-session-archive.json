@@ -1,0 +1,34 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T09:35:16+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/data-only-loop-anchor/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-113516-data-only-loop-anchor",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/prepare-worktree-test.txt",
+        "evidence/tdd-green-data-only-loop-anchor.txt",
+        "evidence/tdd-red-data-only-loop-anchor.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-21T093052Z-7f0210ec22e0.json"
+    ],
+    "entry_digests": {
+        "evidence/prepare-worktree-test.txt": "db27831520f84e098c2cf8707f5a619d632128f541a431c2fa681878d89651fc",
+        "evidence/tdd-green-data-only-loop-anchor.txt": "2715eed693bd7cdd2416537137ec34a463601faa78a462125f3e52ea534137e9",
+        "evidence/tdd-red-data-only-loop-anchor.txt": "6a356ca068c3eec335883b51ac079977f5511595cc4025a5692ef80c89b43a14",
+        "loop.md": "a6199f8c837dff5ea2599feb1291129d01af8c1515a2504de4bf38af155f6899",
+        "quality-gates/quality-check-2026-08-21T093052Z-7f0210ec22e0.json": "530cf348e4b4b77229abcf5b1977b96a26dc02953c986a0de259b3f129839fdc"
+    },
+    "slug": "data-only-loop-anchor",
+    "requested_slug": "data-only-loop-anchor",
+    "compatible_slugs": [
+        "data-only-loop-anchor"
+    ],
+    "branch": "data-only-loop-anchor",
+    "candidate_commit": "7d7cbb069f3e1f0864ff93c92692e06d90b06e20",
+    "accepted_feature_tip": "7d7cbb069f3e1f0864ff93c92692e06d90b06e20",
+    "accepted_main_tip": "499b77507ee6319c92f6f0ec33c824e9f06baed4",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
