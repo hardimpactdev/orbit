@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     $this->installer = new MacOsTrustStoreInstaller;
-    $this->tempStorage = sys_get_temp_dir().'/orbit-trust-test-'.uniqid();
+    $this->tempStorage = sys_get_temp_dir().'/orbit-trust-test-'.bin2hex(random_bytes(8));
     mkdir($this->tempStorage.'/app/orbit/gateway-ca', 0777, true);
     app()->useStoragePath($this->tempStorage);
 
