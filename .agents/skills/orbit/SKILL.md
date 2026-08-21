@@ -278,7 +278,7 @@ that tool definition.
 |---|---|
 | `orbit proxy:add [domain]` | Create or update a custom proxy route or redirect |
 | `orbit proxy:list` | List proxy routes (`--filter=all\|instance\|workspace\|gateway\|analytics\|websocket\|s3\|tool\|custom\|redirect`) |
-| `orbit proxy:remove [domain]` | Remove a custom proxy route |
+| `orbit proxy:remove [domain]` | Remove a custom route or a proven missing-instance/missing-tool orphan with `--force` |
 
 ### Firewall  -  [`references/firewall.md`](references/firewall.md)
 

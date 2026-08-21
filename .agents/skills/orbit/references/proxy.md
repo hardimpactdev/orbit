@@ -2,7 +2,12 @@
 
 Manage **custom** proxy routes (Caddy site intent)  -  for routes that aren't owned by an app, workspace, or tool. App and workspace ingress are managed automatically by `app:*` and `workspace:*`; `proxy:*` adds redirects and side-channel domains. Spec: [`apps/docs/content/domains/8_proxy/`](../../../../apps/docs/content/domains/8_proxy/).
 
-The `proxy` state family also covers app, workspace, gateway, and tool-owned routes  -  `proxy:list` shows all of them, but you can only mutate **custom** ones with `proxy:add` / `proxy:remove`. Drift in the other route kinds is repaired through `doctor --fix --family=proxy --restore`.
+The `proxy` state family also covers app, workspace, gateway, and tool-owned
+routes. `proxy:list` shows all of them. `proxy:add` mutates only custom routes.
+`proxy:remove` normally does the same, but `--force` also permits two proven
+orphan repairs: a direct-instance route whose Instance is gone, or a
+structurally complete tool-owned route whose installed tool is gone. Other
+route-kind drift is repaired through `doctor --fix --family=proxy --restore`.
 
 ## `orbit proxy:add [domain]`
 
@@ -44,10 +49,22 @@ orbit proxy:list [--node=<name>] [--filter=all|instance|workspace|gateway|analyt
 
 ## `orbit proxy:remove [domain]`
 
-Remove a custom proxy route.
+Remove a custom proxy route or one of the two proven orphan-owner forms.
 
 ```bash
 orbit proxy:remove [<domain>] [--force] [--json]
 ```
 
-Only removes custom-kind routes. To remove an app's route, remove the app; to remove a workspace's, remove the workspace.
+Without `--force`, removal requires interactive destructive confirmation.
+With destructive consent, Orbit can also remove:
+
+- a direct-instance route (`app`, `app-analytics`, or `app-websocket`) whose
+  owning Instance is genuinely gone; or
+- a structurally complete tool-owned route when no matching installed tool
+  remains on its serving node.
+
+A route whose owner still exists is denied. A conflicting tuple whose Instance
+still exists remains repairable drift and is not an orphan. Missing or invalid
+workspace, gateway, S3, or other ownership is ambiguous and fails closed. To
+remove a living app, workspace, binding, or tool route, use that owner's
+lifecycle command.
