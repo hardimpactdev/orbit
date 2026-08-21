@@ -1,0 +1,26 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-21T06:40:30+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-orbit-skill-current/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-21-084030-orbit-skill-current",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "6071782c23d6545a6dd85a3cde28625dd1eefcef3069dba3768488cc98179e77"
+    },
+    "slug": "orbit-skill-current",
+    "requested_slug": "orbit-skill-current",
+    "compatible_slugs": [
+        "orbit-skill-current"
+    ],
+    "branch": "codex/orbit-skill-current",
+    "candidate_commit": "01dfe663a61085eae548e0d14eef513e0f366de6",
+    "accepted_feature_tip": "01dfe663a61085eae548e0d14eef513e0f366de6",
+    "accepted_main_tip": "53613cedbffa3b8cc4c9af61b0fde8df33fffba9",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

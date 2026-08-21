@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 392,
-    "unique_candidate_commit_count": 288,
+    "record_count": 393,
+    "unique_candidate_commit_count": 289,
     "orphan_count": 0,
     "records": [
         {
@@ -10102,6 +10102,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "3daa7f6d104a2e94b3d76b02a47fb4fb49883da0",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-21-084030-orbit-skill-current",
+            "slug": "orbit-skill-current",
+            "timestamp": "2026-08-21-084030",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "01dfe663a61085eae548e0d14eef513e0f366de6",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
