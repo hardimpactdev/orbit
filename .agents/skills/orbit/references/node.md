@@ -136,6 +136,26 @@ active node fails with `node.tld_in_use`. Gateway VPN DNS publishes
 `--no-managed` clears that explicit opt-in. Workload-role nodes derive intent
 from their active role assignments. Gateway nodes remain ineligible.
 
+Use `node:manage` for the normal self-service operator workflow. Use
+`node:update --managed` or `--no-managed` when an authorized administrator
+must adjust registry intent for a selected node without the local Agent probe.
+
+## `orbit node:manage`
+
+Run this command locally on an active roleless operator node to opt it into
+managed Agent execution and verify gateway-to-Agent reachability.
+
+```bash
+orbit node:manage [--user=<user>] [--json]
+```
+
+`--user` defaults to the current local account and must match it. The command
+stores the local user, detected platform, and `managed=true`, then dispatches a
+typed Agent probe over WireGuard. If the probe fails, Orbit returns
+`node.agent_unreachable` but retains the stored intent so
+`doctor --family=node` can report the drift. It does not add a role, install
+SSH keys, or open public SSH.
+
 ## `orbit node:remove [name]`
 
 Remove a node from the registry. Destructive.

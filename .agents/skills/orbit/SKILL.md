@@ -1,6 +1,6 @@
 ---
 name: orbit
-description: Operate the Orbit CLI for sovereign Laravel environments - bootstrap gateways and clients, provision workload nodes, create apps, manage workspaces/processes/schedules, configure database/S3/metrics/DNS/VPN/firewall, deploy, profile, diagnose drift via `orbit doctor`, or inspect Orbit Agent capability state. Triggers include "set up orbit", "register an app", "create a workspace", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or fleet tasks.
+description: Operate the Orbit CLI for sovereign Laravel environments - bootstrap gateways and clients, provision workload nodes, create apps, manage workspaces/processes/schedules, configure database/S3/metrics/analytics/DNS/VPN/firewall, register Codex App projects, manage release sources, deploy, profile, diagnose drift via `orbit doctor`, or inspect Orbit Agent capability state. Triggers include "set up orbit", "register an app", "create a workspace", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or fleet tasks.
 allowed-tools: Bash(orbit *)
 ---
 
@@ -71,6 +71,12 @@ See [`references/solo.md`](references/solo.md) for the optional Solo extension,
 including local/gateway enablement, the gateway proxy boundary, and how to
 discover exact `solo:*` command names.
 
+See [`references/analytics.md`](references/analytics.md) for changing the
+Plausible CE version on the active analytics node.
+
+See [`references/codex.md`](references/codex.md) for registering concrete Orbit
+instances in Codex App on an eligible macOS node.
+
 ## Command discovery
 
 Use `orbit list --format=json` for the commands visible on the current node.
@@ -96,6 +102,9 @@ command catalog when command completeness matters.
 | `orbit doctor` | Diagnose state-family drift; `--restore` reapplies intent, `--adopt` records node reality, `--all` verifies the fleet |
 | `orbit update` | Update the caller-local Orbit CLI binary, gated by the active gateway version |
 | `orbit update:all` | Update Orbit nodes gateway-first, then caller-local and workload nodes as fan-out targets |
+| `orbit version` | Show caller-local install and release metadata; `--local` skips public lookups |
+| `orbit manifest:update <url>` | Select a custom gateway release manifest for future fleet updates |
+| `orbit manifest:remove` | Clear the custom manifest so future fleet updates use the configured default |
 | `orbit profile [url]` | Locally profile one direct absolute URL (DNS/connect/TLS/TTFB + Toolbar enrichment) |
 
 ### Local skill install  -  [`references/skill.md`](references/skill.md)
@@ -123,6 +132,7 @@ command catalog when command completeness matters.
 | `orbit node:list` | List nodes in the gateway registry |
 | `orbit node:show [name]` | Show one node's registry record |
 | `orbit node:update [name]` | Update node host/user/TLD, endpoint and public-IP metadata, or roleless managed opt-in |
+| `orbit node:manage` | Run locally on a roleless operator node to persist managed intent and verify Agent reachability |
 | `orbit node:remove [name]` | Remove a node from the registry |
 | `orbit node:default [name]` | Choose, show, or clear the local default development node |
 | `orbit node:grant <consumer> <server>` | Grant one node access to another |
@@ -169,6 +179,7 @@ command catalog when command completeness matters.
 | `orbit workspace:history [name]` | Show workspace lifecycle history |
 | `orbit workspace:log [workspace]` | Read/follow fixed Laravel application log (`storage/logs/laravel.log`) |
 | `orbit workspace:run:log [run]` | Show captured stdout/stderr for a lifecycle run |
+| `orbit workspace:env list\|set\|render [name]` | Manage and optionally apply one workspace's non-secret environment overlay |
 | `orbit instance:log [instance]` | Read/follow fixed Laravel application log for an Instance |
 | `orbit app:log [url or hostname]` | Read/follow Laravel application log from an exact registered proxy URL or bare hostname (no https required; proxy domain wins over app.instance spelling collisions) |
 | `orbit workspace-setup-step:add\|list\|remove` | Manage an instance-scoped workspace setup pipeline |
@@ -261,6 +272,18 @@ that tool definition.
 | `orbit metrics:disable --node=<node> --force` | Remove the metrics role and owned metrics intent |
 | `orbit metrics:status` | Read metrics role and process intent from gateway configuration |
 | `orbit metrics:credentials` | Show or rotate Grafana admin credentials |
+
+### Analytics  -  [`references/analytics.md`](references/analytics.md)
+
+| Command | What it does |
+|---|---|
+| `orbit analytics:update --requested-version=<version>` | Update the Plausible CE process version on the active analytics node |
+
+### Codex App  -  [`references/codex.md`](references/codex.md)
+
+| Command | What it does |
+|---|---|
+| `orbit codex:app add\|remove\|list [project.instance]` | Manage concrete Orbit instance entries in Codex App on an eligible macOS node |
 
 ### Cloudflare  -  [`references/cf.md`](references/cf.md)
 
@@ -384,13 +407,14 @@ orbit php:use 8.5 --cli --node=beast # default CLI PHP for that node
 **Opt a supported roleless node into managed Agent execution**
 
 ```bash
-orbit node:update mini --managed
+orbit node:manage
 ```
 
-This records explicit managed intent for a roleless node. Workload roles already
-provide that intent. Eligibility still requires a supported platform, a
-WireGuard address, and a non-gateway identity; this option does not install,
-start, update, restart, or uninstall the macOS app.
+Run this on the roleless operator machine that owns the current WireGuard
+identity. It records local user, platform, and explicit managed intent, then
+asks the gateway to probe Agent reachability. A failed probe retains the intent
+so `doctor --family=node` can report and repair the drift. Workload roles
+already provide managed intent.
 
 ## Conventions when calling Orbit
 
@@ -417,6 +441,7 @@ start, update, restart, or uninstall the macOS app.
 - Understanding Orbit Agent capability or the native macOS app boundary -> [`concepts.md`](references/concepts.md), `.agents/skills/tauri-agent-development/SKILL.md`
 - Creating, removing, or registering apps -> [`app.md`](references/app.md)
 - Workspace lifecycle, setup/teardown step pipelines -> [`workspace.md`](references/workspace.md)
+- Workspace-specific non-secret environment overlays -> [`workspace.md`](references/workspace.md)
 - Long-running app processes (queues, websockets, vite) -> [`process.md`](references/process.md)
 - Recurring jobs and Laravel scheduler integration -> [`schedule.md`](references/schedule.md)
 - Node capabilities, mail, agent runtimes, service tools -> [`tool.md`](references/tool.md)
@@ -424,11 +449,14 @@ start, update, restart, or uninstall the macOS app.
 - PHP version selection at instance/workspace/CLI scope -> [`php.md`](references/php.md)
 - Production deployments and pipelines -> [`deploy.md`](references/deploy.md)
 - S3 service credentials and public S3 hosts -> [`s3.md`](references/s3.md)
+- Plausible CE version updates on the analytics node -> [`analytics.md`](references/analytics.md)
+- Codex App project registration on macOS -> [`codex.md`](references/codex.md)
 - Cloudflare DNS/cache/SSL commands -> [`cf.md`](references/cf.md)
 - Custom domains, redirects, ingress drift -> [`proxy.md`](references/proxy.md)
 - UFW intent, opening or closing ports -> [`firewall.md`](references/firewall.md)
 - Local TLD resolution on a caller machine -> [`dns.md`](references/dns.md)
 - Audit trail / who did what -> [`activity.md`](references/activity.md)
+- Local version metadata, updates, and release manifest selection -> [`operation.md`](references/operation.md)
 - Solo extension commands, projects, agents, scratchpads, todos, timers -> [`solo.md`](references/solo.md)
 - WireGuard client provisioning, web UI password -> [`vpn.md`](references/vpn.md)
 - Node roles, doctor model, slugs, JSON shape -> [`concepts.md`](references/concepts.md)

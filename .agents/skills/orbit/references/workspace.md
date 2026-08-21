@@ -87,6 +87,23 @@ orbit workspace:run:log [<run>] [--json]
 
 `<run>` is the run id from `workspace:history`.
 
+## `orbit workspace:env list|set|render [name]`
+
+Manage a non-secret environment overlay owned by one concrete workspace.
+
+```bash
+orbit workspace:env list [<name>] [--instance=<app.instance>] [--json]
+orbit workspace:env set [<name>] [--instance=<app.instance>] --key=<KEY> --value=<value> [--apply] [--json]
+orbit workspace:env render [<name>] [--instance=<app.instance>] [--json]
+```
+
+When the name is omitted, Orbit resolves a registered workspace from the
+caller's current directory. `--instance` disambiguates duplicate workspace
+names. `set` stores gateway intent. `set --apply` atomically writes the selected
+workspace's `.env`, preserves unrelated variables and file mode, clears its
+Laravel config and bootstrap caches, and restarts its PHP runtime. It never
+writes the parent instance or a sibling workspace.
+
 ## Setup-step pipeline
 
 App-instance-scoped, ordered list of shell commands that run during

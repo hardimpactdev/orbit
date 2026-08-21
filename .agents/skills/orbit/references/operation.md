@@ -89,6 +89,44 @@ two flags are mutually exclusive. A caller-local fan-out failure after the
 gateway phase is reported as a terminal `event=error` frame under
 `--stream-json` and as a `local_update_failed` error envelope under `--json`.
 
+## `orbit version`
+
+Show caller-local Orbit version, release timestamp, install timestamp, and
+best-effort newer-release metadata. This command never contacts the gateway.
+
+```bash
+orbit version [--local] [--json]
+orbit --version [--local] [--json]
+```
+
+`--local` skips public release lookups. On zsh login shells it also ensures the
+supported Orbit `noglob` shell integration. Without matching install metadata,
+Orbit falls back to the invoked launcher modification time.
+
+## `orbit manifest:update <url>`
+
+Select a custom HTTP or HTTPS release manifest on the gateway for future
+`update:all` runs. Gateway-admin authority is required.
+
+```bash
+orbit manifest:update <url> [--json]
+```
+
+The command stores the URL but does not fetch, validate, or install its
+contents. The next `update:all` snapshots and validates the selected manifest
+before side effects.
+
+## `orbit manifest:remove`
+
+Clear the custom gateway manifest so future `update:all` runs use the
+configured default release source. Gateway-admin authority is required.
+
+```bash
+orbit manifest:remove [--json]
+```
+
+This does not start an update or delete candidate or GitHub release assets.
+
 ## `orbit profile`
 
 Profile one HTTP request directly from the caller machine. This local-only,
