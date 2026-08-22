@@ -228,6 +228,12 @@ case "$path" in
         ;;
 esac
 
+worktree_slug="$(basename "$worktree_path")"
+if ! [[ "$worktree_slug" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    suggested="$(printf '%s' "$worktree_slug" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
+    fail "worktree directory name must match ^[a-z0-9][a-z0-9-]*$; got ${worktree_slug} (try ${suggested})"
+fi
+
 printf 'WORKTREE_ASSIGNMENT path=%s branch=%s base_ref=%s\n' "$worktree_path" "$branch" "$base_ref"
 
 if [ "$dry_run" -eq 1 ]; then

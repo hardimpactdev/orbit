@@ -580,6 +580,86 @@ it('still classifies an exact kill-session whose command line opens a heredoc', 
     }
 });
 
+it('does not treat a quoted << as a heredoc opener that hides a following kill-session', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $process = land_run_finalization(
+            $fixture,
+            "echo \"a << b\"\ntmux kill-session -t '=feat-x'",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|exactly one|blocked|kill-session/')
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('does not silent-pass a quoted << search chained with kill-session', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $process = land_run_finalization(
+            $fixture,
+            "rg -n '<<' bin/ && tmux kill-session -t '=feat-x'",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|exactly one|blocked|kill-session/')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('does not excise an unterminated heredoc so the kill-session line stays classified', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $process = land_run_finalization(
+            $fixture,
+            "cat <<'EOF'\ntmux kill-session -t '=feat-x'",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|exactly one|blocked|kill-session/')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('still counts merge plus kill-session when a quoted << precedes both', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $process = land_run_finalization(
+            $fixture,
+            "echo \"a << b\"\ngit merge main\ntmux kill-session -t '=feat-x'",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('exactly one destructive boundary action is allowed; found 2')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
 it('still rejects two real kill-session lines outside a heredoc as chained', function (): void {
     $fixture = land_prepare(accepted: true, merged: true);
 

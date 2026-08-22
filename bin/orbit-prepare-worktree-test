@@ -89,4 +89,16 @@ run_prepare_worktree feature-loop
 
 assert_file_equals "$LOOP_PATH" 'custom active packet'
 
+if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" My_Feature --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree accepted invalid slug My_Feature"
+fi
+grep -q 'My_Feature' /tmp/orbit-prepare-worktree-test.err || fail "invalid-slug error must name My_Feature"
+grep -Fq '^[a-z0-9][a-z0-9-]*$' /tmp/orbit-prepare-worktree-test.err || fail "invalid-slug error must name the pattern"
+grep -q 'my-feature' /tmp/orbit-prepare-worktree-test.err || fail "invalid-slug error must suggest my-feature"
+
+if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" My_Feature --dry-run >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree --dry-run accepted invalid slug My_Feature"
+fi
+grep -q 'My_Feature' /tmp/orbit-prepare-worktree-test.err || fail "dry-run invalid-slug error must name My_Feature"
+
 printf 'orbit-prepare-worktree tests passed\n'

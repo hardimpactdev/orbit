@@ -26,12 +26,11 @@ direction.
 
 ## Entry format
 
-`- YYYY-MM-DD — <decision, present tense, current direction; include the topic noun>. (solo todo #NNNN)`
+`- YYYY-MM-DD — <decision, present tense, current direction; include the topic noun>. (source: <spec path or codex:// / claude:// session ref>)`
 
 - Present tense ("Gateway runs as…"); the date carries when it became intent.
 - Put the topic noun in the line so `grep` finds it.
-- The `(solo todo #NNNN)` link is optional — include it when a Solo todo drove
-  the decision (it is the context trail and timeline anchor); omit it otherwise.
+- The `(source: ...)` trail is optional; include it when a spec or session drove the decision. Historical entries keep their `(solo todo #NNNN)` trails.
 - Newest entry first.
 
 ## Decisions

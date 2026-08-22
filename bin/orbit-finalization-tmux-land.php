@@ -356,48 +356,161 @@ function tmux_excise_heredoc_bodies(string $command): string
     $count = count($lines);
 
     while ($index < $count) {
-        $line = $lines[$index];
+        $opener = tmux_line_heredoc_opener($lines[$index]);
 
-        if (
-            preg_match('/<<(?!<)(-?)\s*(?:\'([^\']+)\'|"([^"]+)"|(\S+))/', $line, $matches, PREG_OFFSET_CAPTURE) !== 1
-        ) {
-            $kept[] = $line;
+        if ($opener === null) {
+            $kept[] = $lines[$index];
             $index++;
 
             continue;
         }
 
-        $stripTabs = ($matches[1][0] ?? '') === '-';
-        $tag = '';
+        $terminatorAt = null;
 
-        foreach ([2, 3, 4] as $group) {
-            if (isset($matches[$group][0]) && $matches[$group][0] !== '') {
-                $tag = $matches[$group][0];
+        for ($look = $index + 1; $look < $count; $look++) {
+            $candidate = $opener['strip_tabs'] ? ltrim($lines[$look], "\t") : $lines[$look];
+
+            if ($candidate === $opener['tag']) {
+                $terminatorAt = $look;
 
                 break;
             }
         }
 
-        $prefix = rtrim(substr($line, 0, $matches[0][1]));
+        if ($terminatorAt === null) {
+            $kept[] = $lines[$index];
+            $index++;
+
+            continue;
+        }
+
+        $prefix = rtrim(substr($lines[$index], 0, $opener['offset']));
 
         if ($prefix !== '') {
             $kept[] = $prefix;
         }
 
-        $index++;
-
-        while ($index < $count) {
-            $bodyLine = $lines[$index];
-            $index++;
-            $candidate = $stripTabs ? ltrim($bodyLine, "\t") : $bodyLine;
-
-            if ($tag !== '' && $candidate === $tag) {
-                break;
-            }
-        }
+        $index = $terminatorAt + 1;
     }
 
     return implode("\n", $kept);
+}
+
+/**
+ * @return array{offset: int, tag: string, strip_tabs: bool}|null
+ */
+function tmux_line_heredoc_opener(string $line): ?array
+{
+    $length = strlen($line);
+    $inSingle = false;
+    $inDouble = false;
+    $index = 0;
+
+    while ($index < $length) {
+        $character = $line[$index];
+
+        if ($inSingle) {
+            if ($character === "'") {
+                $inSingle = false;
+            }
+
+            $index++;
+
+            continue;
+        }
+
+        if ($inDouble) {
+            if ($character === '\\' && ($index + 1) < $length) {
+                $index += 2;
+
+                continue;
+            }
+
+            if ($character === '"') {
+                $inDouble = false;
+            }
+
+            $index++;
+
+            continue;
+        }
+
+        if ($character === '\\' && ($index + 1) < $length) {
+            $index += 2;
+
+            continue;
+        }
+
+        if ($character === '#') {
+            break;
+        }
+
+        if ($character === "'") {
+            $inSingle = true;
+            $index++;
+
+            continue;
+        }
+
+        if ($character === '"') {
+            $inDouble = true;
+            $index++;
+
+            continue;
+        }
+
+        if (
+            $character === '<'
+            && ($index + 1) < $length
+            && $line[$index + 1] === '<'
+            && (($index + 2) >= $length
+            || $line[$index + 2] !== '<')
+        ) {
+            $cursor = $index + 2;
+            $stripTabs = false;
+
+            if ($cursor < $length && $line[$cursor] === '-') {
+                $stripTabs = true;
+                $cursor++;
+            }
+
+            while ($cursor < $length && ($line[$cursor] === ' ' || $line[$cursor] === "\t")) {
+                $cursor++;
+            }
+
+            $remaining = substr($line, $cursor);
+
+            if (
+                preg_match(
+                    '/^(?:\'([A-Za-z_][A-Za-z0-9_]*)\'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))(?=$|[\s;&|<>()#])/',
+                    $remaining,
+                    $matches,
+                ) === 1
+            ) {
+                $tag = '';
+
+                foreach ([1, 2, 3] as $group) {
+                    if (isset($matches[$group]) && $matches[$group] !== '') {
+                        $tag = $matches[$group];
+
+                        break;
+                    }
+                }
+
+                if ($tag !== '') {
+                    return [
+                        'offset' => $index,
+                        'tag' => $tag,
+                        'strip_tabs' => $stripTabs,
+                    ];
+                }
+            }
+        }
+
+        $index++;
+    }
+
+    return null;
 }
 
 function tmux_socket_value_rejected(string $value): bool

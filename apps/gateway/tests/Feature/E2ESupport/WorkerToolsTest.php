@@ -990,6 +990,33 @@ function worker_tools_kill_server(?string $socket): void
     }
 
     worker_tools_tmux($socket, ['kill-server']);
+
+    foreach (worker_tools_tmux_socket_dirs() as $dir) {
+        $path = $dir.'/'.$socket;
+
+        if (file_exists($path)) {
+            unlink($path);
+        }
+    }
+}
+
+/**
+ * @return list<string>
+ */
+function worker_tools_tmux_socket_dirs(): array
+{
+    $uid = posix_getuid();
+    $dirs = [];
+    $tmuxTmpdir = getenv('TMUX_TMPDIR');
+
+    if (is_string($tmuxTmpdir) && $tmuxTmpdir !== '') {
+        $dirs[] = rtrim($tmuxTmpdir, '/').'/tmux-'.$uid;
+    }
+
+    $dirs[] = rtrim(sys_get_temp_dir(), '/').'/tmux-'.$uid;
+    $dirs[] = '/tmp/tmux-'.$uid;
+
+    return array_values(array_unique($dirs));
 }
 
 function worker_tools_remove_fixture(string $root): void
