@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T22:19:42+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-lean-feature-delivery/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-001942-codex-lean-feature-delivery",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-22T221527Z-426ae4308ea8.json"
+    ],
+    "entry_digests": {
+        "loop.md": "ad91f4b97760e379df6ac0e5300cfb18196dc3252e8193aff3576faf0d449178",
+        "quality-gates/quality-check-2026-08-22T221527Z-426ae4308ea8.json": "b7d5baa6ba9d0703b9b535caf93144acdc18d85a544c52ba2606e8b655f4e0a3"
+    },
+    "slug": "codex-lean-feature-delivery",
+    "requested_slug": "codex-lean-feature-delivery",
+    "compatible_slugs": [
+        "codex-lean-feature-delivery"
+    ],
+    "branch": "codex/lean-feature-delivery",
+    "candidate_commit": "89c99a42b4135bba6fbdd03ea01a4a23b2d9d301",
+    "accepted_feature_tip": "89c99a42b4135bba6fbdd03ea01a4a23b2d9d301",
+    "accepted_main_tip": "6ca8b38d5a21ca23a63e9d20cb488ad797b12306",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
