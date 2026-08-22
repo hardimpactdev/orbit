@@ -74,6 +74,63 @@ it('spawns a worker window, pipes the log, and delivers the bootstrap line', fun
     });
 });
 
+it('captures a bounded rendered tmux snapshot for an exact worker without changing status', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $token = 'orbit-capture-'.bin2hex(random_bytes(4));
+        worker_tools_run(
+            'orbit-worker-send',
+            ['impl-1', $token],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        $seen = worker_tools_wait_for(function () use ($fixture, $token): bool {
+            $log = (string) file_get_contents($fixture['worktree'].'/.orbit/workers/logs/impl-1.log');
+
+            return str_contains($log, $token);
+        });
+        expect($seen)->toBeTrue();
+
+        $before = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
+            true,
+        );
+        $missing = worker_tools_run(
+            'orbit-worker-capture',
+            ['missing-worker'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($missing->getExitCode())
+            ->toBe(2)
+            ->and($missing->getErrorOutput())
+            ->toContain('worker not found');
+
+        $process = worker_tools_run(
+            'orbit-worker-capture',
+            ['impl-1'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain($token);
+
+        $after = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
+            true,
+        );
+        expect($after['status'])
+            ->toBe($before['status'])
+            ->and($after['heartbeat_at'])
+            ->toBe($before['heartbeat_at']);
+    });
+});
+
 it('sends a one-line message into the worker window', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');

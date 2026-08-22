@@ -1,0 +1,54 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_CAPTURE_USAGE = 'Usage: bin/orbit-worker-capture <id>';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+    $id = $parsed['positional'][0] ?? null;
+
+    if (! is_string($id) || $id === '' || count($parsed['positional']) !== 1) {
+        throw new RuntimeException(ORBIT_WORKER_CAPTURE_USAGE);
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $entry = orbit_worker_require_entry($worktree, $id);
+    $session = (string) $entry['tmux']['session'];
+    $window = (string) $entry['tmux']['window'];
+    $alive = orbit_worker_window_alive($entry);
+
+    if ($alive === 'unknown') {
+        throw new RuntimeException(
+            "tmux lookup failed for worker {$id} ({$session}:{$window})",
+        );
+    }
+
+    if ($alive === 'gone') {
+        throw new RuntimeException(
+            "worker window is gone: {$id} ({$session}:{$window})",
+        );
+    }
+
+    $target = '='.$session.':'.$window;
+    $captured = orbit_tmux_run(
+        ['capture-pane', '-p', '-J', '-t', $target],
+        orbit_worker_tmux_socket($entry),
+    );
+
+    if ($captured['exit'] !== 0) {
+        $reason = trim($captured['stderr']);
+
+        throw new RuntimeException(
+            $reason === '' ? "tmux capture-pane failed for {$target}" : $reason,
+        );
+    }
+
+    fwrite(STDOUT, $captured['stdout']);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
