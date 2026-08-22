@@ -1,0 +1,26 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T20:23:13+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/tmux-flow-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-22-222312-tmux-flow-hardening",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "aaa897d7f744d914c3f62aac254685edeff2122a7855c302b303a32025822607"
+    },
+    "slug": "tmux-flow-hardening",
+    "requested_slug": "tmux-flow-hardening",
+    "compatible_slugs": [
+        "tmux-flow-hardening"
+    ],
+    "branch": "tmux-flow-hardening",
+    "candidate_commit": "17f8ca13ec602eb953082e0b70c3d84f80fa7475",
+    "accepted_feature_tip": "17f8ca13ec602eb953082e0b70c3d84f80fa7475",
+    "accepted_main_tip": "d631318731897d0285938b6dbd67cf566d988da7",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
