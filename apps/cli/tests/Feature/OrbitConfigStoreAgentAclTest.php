@@ -7,11 +7,17 @@ use App\Services\OrbitConfigStore;
 use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
-    $this->tempPath = orbit_test_config_path(prefix: 'orbit-config-agent-acl-');
+    $this->tempDir = sys_get_temp_dir().'/orbit-config-agent-acl-'.bin2hex(random_bytes(6));
+    mkdir($this->tempDir, 0700);
+    $this->tempPath = $this->tempDir.'/config.json';
 });
 
 afterEach(function (): void {
     unlink_orbit_test_file($this->tempPath);
+
+    if (is_string($this->tempDir ?? null) && is_dir($this->tempDir)) {
+        rmdir($this->tempDir);
+    }
 });
 
 /**

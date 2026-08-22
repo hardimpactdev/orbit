@@ -72,7 +72,11 @@ describe('install-orbit gateway bootstrap', function (): void {
                 ensure_forward_install_image_archives_flag() { :; }
                 bootstrap_gateway_state
                 mode() {
-                    stat -c '%%a' "$1" 2>/dev/null || stat -f '%%Lp' "$1"
+                    if stat --version >/dev/null 2>&1; then
+                        stat -c '%%a' "$1"
+                    else
+                        stat -f '%%Lp' "$1"
+                    fi
                 }
                 printf 'root=%%s\ncerts=%%s\nenv=%%s\ndb=%%s\n' \
                     "$(mode "$CONFIG_ROOT")" \
@@ -87,7 +91,7 @@ describe('install-orbit gateway bootstrap', function (): void {
             escapeshellarg(repo_path('bin/install-orbit')),
         );
 
-        $process = Process::fromShellCommandline($command);
+        $process = new Process(['bash', '-c', $command]);
         $process->run();
 
         try {

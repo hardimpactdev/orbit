@@ -149,7 +149,7 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             escapeshellarg(repo_path('bin/install-orbit')),
         );
 
-        $process = Process::fromShellCommandline($command);
+        $process = new Process(['bash', '-c', $command]);
         $process->run();
 
         expect($process->getExitCode())

@@ -74,7 +74,7 @@ try {
     }
 
     $briefPath = realpath($brief) ?: $brief;
-    $defaults = orbit_worker_default_commands()[$cli];
+    $defaults = orbit_worker_default_commands($role)[$cli];
     $command = array_merge(
         [
             'env',
@@ -108,7 +108,8 @@ try {
     }
 
     $logPath = orbit_worker_log_path($worktree, $id);
-    $bootstrap = "Orbit worker: {$id}. Read {$briefPath} and execute it.";
+    $loopPath = $worktree.'/.orbit/loop.md';
+    $bootstrap = "Orbit worker: {$id}. Read {$loopPath} as the goal authority and {$briefPath} as the assignment only.";
 
     if (! is_file($logPath) && file_put_contents($logPath, '') === false) {
         throw new RuntimeException("unable to create worker log: {$logPath}");
@@ -192,7 +193,7 @@ try {
         );
     }
 
-    sleep(1);
+    orbit_worker_resolve_setup_prompt($session, $id, $socket);
 
     orbit_worker_send_keys(
         $session,
@@ -202,21 +203,7 @@ try {
     );
 
     usleep(400_000);
-
-    $retryEnter = orbit_tmux_run(
-        ['send-keys', '-t', '='.$session.':'.$id, 'Enter'],
-        $socket,
-    );
-
-    if ($retryEnter['exit'] !== 0) {
-        $reason = trim($retryEnter['stderr']);
-
-        throw new RuntimeException(
-            $reason === ''
-                ? "tmux send-keys Enter failed for {$session}:{$id}"
-                : $reason,
-        );
-    }
+    orbit_worker_send_enter($session, $id, $socket);
 
     if ($json) {
         fwrite(
@@ -266,5 +253,129 @@ function orbit_worker_wait_for_cli(string $session, string $id, int $readyDelay,
         }
 
         usleep(250_000);
+    }
+}
+
+/**
+ * Confirm a first-use CLI setup prompt before bootstrap is typed.
+ *
+ * On Linux/Beast, Claude Code can show a folder-trust dialog that discards
+ * text entered before confirmation. Poll the pane and send Enter only while
+ * that prompt is visible, then return so bootstrap reaches the editor once.
+ *
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_worker_resolve_setup_prompt(string $session, string $id, ?array $socket): void
+{
+    $deadline = microtime(true) + 1.0;
+    $confirmedAt = null;
+    $snapshotAtConfirm = null;
+
+    while (true) {
+        $raw = orbit_worker_capture_pane($session, $id, $socket);
+        $now = microtime(true);
+
+        if (orbit_worker_pane_has_setup_prompt($raw) && $confirmedAt === null) {
+            orbit_worker_send_enter($session, $id, $socket);
+            $confirmedAt = $now;
+            $snapshotAtConfirm = $raw;
+            usleep(100_000);
+
+            continue;
+        }
+
+        if ($confirmedAt !== null) {
+            if ($raw !== $snapshotAtConfirm || orbit_worker_pane_looks_like_editor($raw)) {
+                return;
+            }
+
+            if ($now - $confirmedAt >= 2.0) {
+                return;
+            }
+
+            usleep(100_000);
+
+            continue;
+        }
+
+        if (orbit_worker_pane_looks_like_editor($raw) || $now >= $deadline) {
+            return;
+        }
+
+        usleep(100_000);
+    }
+}
+
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_worker_capture_pane(string $session, string $id, ?array $socket): string
+{
+    $captured = orbit_tmux_run(
+        ['capture-pane', '-p', '-J', '-t', '='.$session.':'.$id],
+        $socket,
+    );
+
+    if ($captured['exit'] !== 0) {
+        return '';
+    }
+
+    return $captured['stdout'];
+}
+
+function orbit_worker_pane_plain_text(string $raw): string
+{
+    $withoutOsc = preg_replace('/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\\\)/', '', $raw) ?? $raw;
+    $withoutCsi = preg_replace('/\x1b\[[0-9;?]*[A-Za-z]/', '', $withoutOsc) ?? $withoutOsc;
+
+    return strtolower(trim(preg_replace('/\s+/', ' ', $withoutCsi) ?? $withoutCsi));
+}
+
+function orbit_worker_pane_has_setup_prompt(string $raw): bool
+{
+    $text = orbit_worker_pane_plain_text($raw);
+
+    foreach ([
+        'yes, i trust this folder',
+        'accessing workspace',
+        'quick safety check',
+        'is this a project you created or one you trust',
+        'do you trust the files in this folder',
+        "claude code'll",
+    ] as $marker) {
+        if (str_contains($text, $marker)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function orbit_worker_pane_looks_like_editor(string $raw): bool
+{
+    if (orbit_worker_pane_has_setup_prompt($raw)) {
+        return false;
+    }
+
+    $text = orbit_worker_pane_plain_text($raw);
+
+    return str_contains($text, 'claude code')
+        || str_contains($text, 'bypass permissions');
+}
+
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_worker_send_enter(string $session, string $id, ?array $socket): void
+{
+    $target = '='.$session.':'.$id;
+    $enter = orbit_tmux_run(['send-keys', '-t', $target, 'Enter'], $socket);
+
+    if ($enter['exit'] !== 0) {
+        $reason = trim($enter['stderr']);
+
+        throw new RuntimeException(
+            $reason === '' ? "tmux send-keys Enter failed for {$target}" : $reason,
+        );
     }
 }
