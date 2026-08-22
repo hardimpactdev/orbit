@@ -271,18 +271,18 @@ function check_tmux_session_kill(array $action, string $root, string $cwd): arra
 
     $has = orbit_tmux_has_session($session, $socket);
 
-    if ($has['status'] === 'not_found') {
-        return ok();
-    }
-
     if ($has['status'] === 'error') {
         return block_result($subject, 'tmux lookup failed: '.($has['reason'] ?? 'unknown'));
+    }
+
+    if ($has['status'] === 'not_found') {
+        return check_absent_tmux_session_kill($session, $root, $cwd, $subject);
     }
 
     $pathLookup = orbit_tmux_session_path($session, $socket);
 
     if ($pathLookup['status'] === 'not_found') {
-        return ok();
+        return check_absent_tmux_session_kill($session, $root, $cwd, $subject);
     }
 
     if ($pathLookup['status'] === 'error') {
@@ -327,6 +327,132 @@ function check_tmux_session_kill(array $action, string $root, string $cwd): arra
         return block_result(
             $subject,
             "{$subject} requires exact canonical project path to equal a linked feature worktree of this checkout; got `{$canonical}`",
+        );
+    }
+
+    return land_tmux_session_kill_owned($session, $root, $cwd, $subject, $canonical, $branch);
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
+ */
+function check_absent_tmux_session_kill(string $session, string $root, string $cwd, string $subject): array
+{
+    $bound = land_bind_absent_tmux_session($session, $root, $subject);
+
+    if ($bound['ok'] !== true) {
+        return $bound;
+    }
+
+    $path = $bound['path'] ?? null;
+    $branch = $bound['branch'] ?? null;
+
+    if (! is_string($path) || $path === '' || ! is_string($branch) || $branch === '') {
+        return block_result(
+            $subject,
+            "{$subject} unknown absent session cannot be bound to one linked non-primary feature worktree",
+        );
+    }
+
+    return land_tmux_session_kill_owned($session, $root, $cwd, $subject, $path, $branch);
+}
+
+/**
+ * @return array{ok: true, path: string, branch: string, subject: string, reason: string, warnings: list<string>}|array{ok: false, subject: string, reason: string, warnings: list<string>}
+ */
+function land_bind_absent_tmux_session(string $session, string $root, string $subject): array
+{
+    $rootReal = realpath($root) ?: $root;
+    $matches = [];
+
+    foreach (worktrees($root) as $worktree) {
+        $path = realpath($worktree['path']) ?: $worktree['path'];
+
+        if ($path === $rootReal) {
+            continue;
+        }
+
+        if ('feat-'.basename($path) !== $session) {
+            continue;
+        }
+
+        $matches[] = [
+            'path' => $path,
+            'branch' => $worktree['branch'] ?? null,
+        ];
+    }
+
+    if ($matches === []) {
+        return block_result(
+            $subject,
+            "{$subject} unknown absent session cannot be bound to one linked non-primary feature worktree",
+        );
+    }
+
+    if (count($matches) > 1) {
+        return block_result(
+            $subject,
+            "{$subject} absent session is ambiguous across ".count($matches).' linked feature worktrees',
+        );
+    }
+
+    $path = $matches[0]['path'];
+    $branch = $matches[0]['branch'];
+
+    if (! is_string($branch) || $branch === '') {
+        return block_result(
+            $subject,
+            "{$subject} requires exact canonical project path to equal a linked feature worktree of this checkout; got `{$path}`",
+        );
+    }
+
+    $loopPath = $path.'/.orbit/loop.md';
+
+    if (! is_file($loopPath)) {
+        return block_result(
+            $subject,
+            "{$subject} requires {$loopPath} to declare - Session: {$session}",
+        );
+    }
+
+    $contents = (string) file_get_contents($loopPath);
+
+    if (preg_match('/^- Session:\s*(\S+)\s*$/m', $contents, $loopSession) !== 1 || $loopSession[1] !== $session) {
+        $declared = $loopSession[1] ?? 'missing';
+
+        return block_result(
+            $subject,
+            "{$subject} worktree loop Session `{$declared}` does not declare the exact session {$session}",
+        );
+    }
+
+    return [
+        'ok' => true,
+        'path' => $path,
+        'branch' => $branch,
+        'subject' => '',
+        'reason' => '',
+        'warnings' => [],
+    ];
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
+ */
+function land_tmux_session_kill_owned(
+    string $session,
+    string $root,
+    string $cwd,
+    string $subject,
+    string $canonical,
+    string $branch,
+): array {
+    $cwdReal = realpath($cwd) ?: $cwd;
+
+    if ($cwdReal === $canonical || str_starts_with($cwdReal, rtrim($canonical, '/').'/')) {
+        return block_result(
+            $subject,
+            "{$subject} refuses self-cleanup while the caller cwd lives inside the target project path `{$canonical}`",
         );
     }
 

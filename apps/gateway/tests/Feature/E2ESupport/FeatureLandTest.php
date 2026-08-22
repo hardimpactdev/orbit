@@ -32,6 +32,57 @@ it('blocks direct cleanup when the matching archive and index are present but un
     }
 });
 
+it('refuses unaccepted zero-delta LAND --plan and does not claim archive', function (): void {
+    $fixture = land_prepare(accepted: false, merged: false);
+
+    try {
+        $headBefore = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['repo'])->mustRun()->getOutput());
+        $plan = land_run_land($fixture, land_args($fixture, ['--plan']));
+        $headAfter = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['repo'])->mustRun()->getOutput());
+
+        expect($plan->getExitCode())
+            ->toBe(1, $plan->getErrorOutput().$plan->getOutput())
+            ->and(strtolower($plan->getErrorOutput().$plan->getOutput()))
+            ->not
+            ->toContain('phase=archive')
+            ->and(strtolower($plan->getErrorOutput().$plan->getOutput()))
+            ->toMatch('/accept|unaccepted|not accepted/')
+            ->and($headAfter)
+            ->toBe($headBefore);
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('refuses zero-delta LAND --plan when accepted words hide stale feature tips', function (): void {
+    $fixture = land_prepare(accepted: false, merged: false);
+
+    try {
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $staleTip = str_repeat('a', 40);
+        $loop = (string) file_get_contents("{$fixture['worktree']}/.orbit/loop.md");
+        $loop = (string) preg_replace('/^- Reviewed feature tip: .+$/m', "- Reviewed feature tip: {$staleTip}", $loop);
+        $loop = (string) preg_replace('/^- Accepted feature tip: .+$/m', "- Accepted feature tip: {$staleTip}", $loop);
+        file_put_contents("{$fixture['worktree']}/.orbit/loop.md", $loop);
+
+        $headBefore = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['repo'])->mustRun()->getOutput());
+        $plan = land_run_land($fixture, land_args($fixture, ['--plan']));
+        $headAfter = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['repo'])->mustRun()->getOutput());
+
+        expect($plan->getExitCode())
+            ->toBe(1, $plan->getErrorOutput().$plan->getOutput())
+            ->and(strtolower($plan->getErrorOutput().$plan->getOutput()))
+            ->not
+            ->toContain('phase=archive')
+            ->and(strtolower($plan->getErrorOutput().$plan->getOutput()))
+            ->toMatch('/reviewed feature tip|accepted feature tip|does not equal/')
+            ->and($headAfter)
+            ->toBe($headBefore);
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
 it('exposes one-step resume after merge and keeps archive-commit as the next ordered phase', function (): void {
     $fixture = land_prepare(accepted: true, merged: true);
 
@@ -312,6 +363,69 @@ it('treats a missing session as idempotent and resumes at remove-worktree', func
             ->toContain('phase=done')
             ->and($headAfter)
             ->toBe($headBefore);
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('blocks kill-session of an unknown absent exact tmux session', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $process = land_run_finalization($fixture, 'tmux kill-session -t =feat-nosuch');
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unknown|cannot bind|linked feature worktree|absent/')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('blocks an absent owned session until the landed archive gate is proved', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+
+    try {
+        new Process([
+            'tmux',
+            '-L',
+            $fixture['socket'],
+            'kill-session',
+            '-t',
+            '='.$fixture['session'],
+        ])->mustRun();
+        land_tmux_new_session($fixture['socket'], name: 'feat-keep-server', cwd: $fixture['repo']);
+
+        $blocked = land_run_finalization($fixture, 'tmux kill-session -t =feat-feature');
+
+        expect($blocked->getExitCode())
+            ->toBe(2, $blocked->getErrorOutput().$blocked->getOutput())
+            ->and($blocked->getOutput())
+            ->not
+            ->toContain('FINALIZATION: PASS')
+            ->and(strtolower($blocked->getErrorOutput().$blocked->getOutput()))
+            ->toMatch('/archive|landed|ancestor|session archive/');
+
+        $archive = land_write_compact_archive($fixture['repo'], $fixture['worktree']);
+        land_write_session_index($fixture['repo'], basename($archive));
+        land_commit_sessions($fixture['repo'], $archive);
+
+        $passed = land_run_finalization($fixture, 'tmux kill-session -t =feat-feature');
+
+        expect($passed->getExitCode())
+            ->toBe(0, $passed->getErrorOutput().$passed->getOutput())
+            ->and($passed->getOutput())
+            ->toContain('FINALIZATION: PASS');
+
+        $again = land_run_finalization($fixture, 'tmux kill-session -t =feat-feature');
+
+        expect($again->getExitCode())
+            ->toBe(0, $again->getErrorOutput().$again->getOutput())
+            ->and($again->getOutput())
+            ->toContain('FINALIZATION: PASS');
     } finally {
         land_remove_fixture($fixture);
     }

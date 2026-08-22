@@ -460,6 +460,44 @@ it('does not mark a worker exited when tmux lookup fails', function (): void {
     });
 });
 
+it('writes one contiguous bootstrap marker for a silent fake CLI', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=impl',
+                '--cli=grok',
+                "--brief={$brief}",
+                '--name=impl-1',
+                '--ready-delay=0',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $logPath = $fixture['worktree'].'/.orbit/workers/logs/impl-1.log';
+        $briefPath = realpath($brief) ?: $brief;
+        $marker = "Orbit worker: impl-1. Read {$briefPath} and execute it.";
+        $seen = worker_tools_wait_for(function () use ($logPath, $marker): bool {
+            if (! is_file($logPath)) {
+                return false;
+            }
+
+            return preg_match('/^'.preg_quote($marker, '/').'$/m', (string) file_get_contents($logPath)) === 1;
+        });
+
+        expect($seen)
+            ->toBeTrue()
+            ->and((string) file_get_contents($logPath))
+            ->toContain($marker);
+    }, echoing: false);
+});
+
 it('sends the spawn bootstrap after the fake CLI is running', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         file_put_contents(

@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__.'/orbit-finalization-tmux-land.php';
+require_once __DIR__.'/orbit-loop-contract.php';
 
 $binRoot = __DIR__;
 
@@ -323,6 +324,12 @@ function landObserve(
         return landState('merge', "git merge {$branch}", 'feature tip is not an ancestor of main');
     }
 
+    $acceptanceProblem = landUnacceptedPacketProblem($primary, $branch, $worktree);
+
+    if ($acceptanceProblem !== null) {
+        throw new RuntimeException($acceptanceProblem);
+    }
+
     if (! landArchivePresent($primary, $branch)) {
         return landState('archive', 'archive', 'matching session archive is missing');
     }
@@ -574,6 +581,52 @@ function landFeatureLanded(string $primary, string $branch): bool
             $primary,
         )['exit_code'] === 0
     );
+}
+
+function landUnacceptedPacketProblem(string $primary, string $branch, string $worktree): ?string
+{
+    $worktreeReal = realpath($worktree) ?: $worktree;
+
+    if (! is_dir($worktreeReal)) {
+        return null;
+    }
+
+    $loopPath = $worktreeReal.'/.orbit/loop.md';
+
+    if (! is_file($loopPath)) {
+        return "refuses to start LAND archive: missing loop at {$loopPath}";
+    }
+
+    $markdown = (string) file_get_contents($loopPath);
+    $state = orbitLoopStatusHead(orbitLoopLabel($markdown, 'Status', 'State'));
+    $acceptance = orbitLoopStatusHead(orbitLoopLabel($markdown, 'Proof', 'Acceptance'));
+
+    if (! in_array($state, ['accepted', 'land'], true) || $acceptance !== 'accepted') {
+        return 'refuses to start LAND archive: loop is not accepted';
+    }
+
+    $featureTip = trim(landRun(
+        ['git', 'rev-parse', '--verify', "refs/heads/{$branch}^{commit}"],
+        $primary,
+    )['stdout']);
+
+    if (preg_match('/^[0-9a-f]{40}$/', $featureTip) !== 1) {
+        return 'refuses to start LAND archive: unable to read the current feature branch tip';
+    }
+
+    $reviewProblem = orbitLoopReviewedIdentityProblem($markdown, $featureTip);
+
+    if ($reviewProblem !== null) {
+        return 'refuses to start LAND archive: '.$reviewProblem;
+    }
+
+    $acceptedFeature = orbitLoopLabel($markdown, 'Proof', 'Accepted feature tip');
+
+    if ($acceptedFeature === null || ! hash_equals($featureTip, $acceptedFeature)) {
+        return 'refuses to start LAND archive: accepted feature tip does not equal the feature branch tip';
+    }
+
+    return null;
 }
 
 function landBranchExists(string $primary, string $branch): bool

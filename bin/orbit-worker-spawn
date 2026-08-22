@@ -97,9 +97,14 @@ try {
     }
 
     $logPath = orbit_worker_log_path($worktree, $id);
+    $bootstrap = "Orbit worker: {$id}. Read {$briefPath} and execute it.";
 
     if (! is_file($logPath) && file_put_contents($logPath, '') === false) {
         throw new RuntimeException("unable to create worker log: {$logPath}");
+    }
+
+    if (file_put_contents($logPath, $bootstrap.PHP_EOL, FILE_APPEND | LOCK_EX) === false) {
+        throw new RuntimeException("unable to write worker bootstrap log: {$logPath}");
     }
 
     $pipe = orbit_tmux_run([
@@ -181,7 +186,7 @@ try {
     orbit_worker_send_keys(
         $session,
         $id,
-        "Orbit worker: {$id}. Read {$briefPath} and execute it.",
+        $bootstrap,
         $socket,
     );
 
