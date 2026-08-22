@@ -336,13 +336,15 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
         ->toContain('point Grok at the exact feature worktree without a model override')
         ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus')
         ->and($todoHandoff)
-        ->toContain('dispatch substantive edits to Grok in the main Orbit Solo project with --cwd at the exact worktree')
-        ->not->toContain('implement directly or use bounded workers only when useful')
-        ->and($intake)
-        ->toContain('hand the outcome to Desktop Codex using')
-        ->not->toContain('whether any bounded worker is useful')
-        ->and($intakePrompt)
-        ->toContain('hand implementation ownership to Desktop Codex using implementing-features')
+        ->toContain(
+            'dispatch substantive edits to Grok in the main Orbit Solo project with --cwd at the exact worktree',
+        )
+        ->not->toContain('implement directly or use bounded workers only when useful')->and($intake)->toContain(
+            'hand the outcome to Desktop Codex using',
+        )
+        ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
+            'hand implementation ownership to Desktop Codex using implementing-features',
+        )
         ->not->toContain('optional delegation');
 });
 

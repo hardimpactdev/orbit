@@ -70,13 +70,14 @@ runtime receipt on the `Verification.runtime` row per `HARNESS.md` PROVE. A
 same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX
 resets them.
 
-After focused checks pass, commit the candidate and require a clean worktree.
+After focused checks pass, commit the candidate and confirm the worktree is
+clean.
 Spawn one fresh read-only Claude general reviewer in the main project with
 `claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
 First prompt: change active cwd to exact worktree before persona identity
-commands. Require identity proof. That reviewer owns blast radius, ESCALATE,
-and terminal PASS or FIX. On FIX, reset Review, reviewed tip, and Blast radius;
-return to Grok BUILD, prove and commit, then spawn a new Claude Opus process.
+commands; require proof. The same general reviewer owns blast radius, ESCALATE,
+and terminal PASS or FIX. FIX resets Review, reviewed tip, and Blast radius;
+return to Grok BUILD, prove, commit, then spawn fresh Claude Opus.
 Missing Solo or Claude is a blocker.
 On PASS record the exact reviewed HEAD and
 `human-judgment=required|not-required`.
