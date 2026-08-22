@@ -1821,6 +1821,13 @@ function make_fleet_update_install_cli_failing_agent_config_bin(string $workspac
         SH);
     chmod(filename: "{$bin}/systemctl", permissions: 0o755);
 
+    file_put_contents("{$bin}/sudo", <<<SH
+        #!/usr/bin/env sh
+        echo "sudo \$*" >> {$log}
+        exit 1
+        SH);
+    chmod(filename: "{$bin}/sudo", permissions: 0o755);
+
     return $bin;
 }
 
