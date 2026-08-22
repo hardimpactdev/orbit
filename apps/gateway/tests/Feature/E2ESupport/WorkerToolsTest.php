@@ -809,10 +809,116 @@ it('retries bootstrap submit for a delayed interactive CLI', function (string $c
 
         $log = is_file($logPath) ? (string) file_get_contents($logPath) : '';
 
+        $normalized = str_replace("\r", '', $log);
+
         expect($seen)
             ->toBeTrue($log)
-            ->and(str_replace("\r", '', $log))
-            ->toMatch('/^accepted-bootstrap:'.preg_quote($marker, '/').'$/m');
+            ->and($normalized)
+            ->toMatch('/^accepted-bootstrap:'.preg_quote($marker, '/').'$/m')
+            ->and(preg_match_all('/^accepted-bootstrap:/m', $normalized))
+            ->toBe(1);
+    });
+})->with([
+    'grok' => ['grok'],
+    'claude' => ['claude'],
+]);
+
+it('resolves a first-use trust prompt before submitting bootstrap once', function (string $cli): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin) use ($cli): void {
+        file_put_contents(
+            $fakeBin.'/'.$cli,
+            data: <<<'PHP'
+                #!/usr/bin/env php
+                <?php
+                fwrite(STDOUT, "Accessing workspace:\n");
+                fwrite(STDOUT, "Quick safety check: Is this a project you created or one you trust?\n");
+                fwrite(STDOUT, "Claude Code'll be able to read, edit, and execute files here.\n");
+                fwrite(STDOUT, "1. Yes, I trust this folder\n");
+                fwrite(STDOUT, "2. No, exit\n");
+                fwrite(STDOUT, "Enter to confirm · Esc to cancel\n");
+                fflush(STDOUT);
+
+                $stdin = fopen('php://stdin', 'r');
+                if ($stdin === false) {
+                    exit(1);
+                }
+
+                while (($char = fgetc($stdin)) !== false) {
+                    if ($char === "\n" || $char === "\r") {
+                        break;
+                    }
+                }
+
+                fwrite(STDOUT, "Yes, I trust this folder\n");
+                fwrite(STDOUT, "cli-editor-ready\n");
+                fflush(STDOUT);
+
+                $buffer = '';
+                while (($char = fgetc($stdin)) !== false) {
+                    if ($char === "\n" || $char === "\r") {
+                        if ($buffer === '') {
+                            continue;
+                        }
+
+                        fwrite(STDOUT, 'accepted-bootstrap:'.$buffer."\n");
+                        fflush(STDOUT);
+                        break;
+                    }
+
+                    $buffer .= $char;
+                }
+
+                while (fgets($stdin) !== false) {
+                }
+                PHP,
+        );
+        chmod($fakeBin.'/'.$cli, permissions: 0o755);
+
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=review',
+                "--cli={$cli}",
+                "--brief={$brief}",
+                '--name=review-1',
+                '--ready-delay=8',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            20,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $entry = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/review-1.json'),
+            true,
+        );
+        $logPath = $fixture['worktree'].'/.orbit/workers/logs/review-1.log';
+        $briefPath = realpath($brief) ?: $brief;
+        $marker = "Orbit worker: review-1. Read {$briefPath} and execute it.";
+        $seen = worker_tools_wait_for(function () use ($logPath): bool {
+            return is_file($logPath) && str_contains((string) file_get_contents($logPath), 'accepted-bootstrap:');
+        }, 12);
+        $log = is_file($logPath) ? str_replace("\r", '', (string) file_get_contents($logPath)) : '';
+
+        expect($entry['id'])
+            ->toBe('review-1')
+            ->and($entry['role'])
+            ->toBe('review')
+            ->and($entry['status'])
+            ->toBe('spawned')
+            ->and($entry['tmux']['window'])
+            ->toBe('review-1')
+            ->and($seen)
+            ->toBeTrue($log)
+            ->and($log)
+            ->toMatch('/^accepted-bootstrap:'.preg_quote($marker, '/').'$/m')
+            ->and(preg_match_all('/^accepted-bootstrap:/m', $log))
+            ->toBe(1);
     });
 })->with([
     'grok' => ['grok'],
@@ -1296,6 +1402,7 @@ function worker_tools_make_fixture(): array
 {
     $root = sys_get_temp_dir().'/orbit-worker-tools-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);
+    worker_tools_seed_home($root);
 
     new Process(['git', 'init', '-b', 'main'], $root)->mustRun();
     new Process(['git', 'config', 'user.email', 'orbit@example.test'], $root)->mustRun();
@@ -1384,12 +1491,14 @@ function worker_tools_commit_docs_change(array $fixture, string $contents = "upd
 
 function worker_tools_write_docs_lint_artifact(string $worktree, string $commit): void
 {
+    static $sequence = 0;
     $directory = $worktree.'/.orbit/quality-gates';
 
     if (! is_dir($directory)) {
         mkdir($directory, recursive: true);
     }
 
+    $sequence++;
     $payload = [
         'gate' => 'docs-lint',
         'producer' => 'quality-gate-run',
@@ -1398,7 +1507,7 @@ function worker_tools_write_docs_lint_artifact(string $worktree, string $commit)
         'exit_code' => 0,
         'duration_ms' => 10,
         'started_at' => gmdate('c'),
-        'ended_at' => gmdate('c'),
+        'ended_at' => gmdate('c', time() + $sequence),
         'git' => [
             'branch' => 'feature',
             'commit' => $commit,
@@ -1507,6 +1616,12 @@ function worker_tools_env(string $socket, string $fakeBin): array
     $env['PATH'] = $fakeBin.PATH_SEPARATOR.($env['PATH'] ?? '/usr/bin:/bin');
     $env['TMUX'] = false;
     $env['TMUX_PANE'] = false;
+    $home = dirname($fakeBin).'-home';
+
+    if (is_dir($home)) {
+        $env['HOME'] = $home;
+        $env['ZDOTDIR'] = $home;
+    }
 
     return $env;
 }
@@ -1600,7 +1715,7 @@ function worker_tools_tmux_socket_dirs(): array
 
 function worker_tools_remove_fixture(string $root): void
 {
-    new Process(['rm', '-rf', $root])->run();
+    new Process(['rm', '-rf', $root, $root.'-home'])->run();
 }
 
 function worker_tools_tmux_available(): bool
@@ -1652,9 +1767,20 @@ function worker_tools_wait_for(callable $predicate, float $seconds = 8): bool
     return $predicate();
 }
 
+function worker_tools_seed_home(string $root): string
+{
+    $home = $root.'-home';
+    mkdir($home, recursive: true);
+    file_put_contents($home.'/.zshrc', data: "# orbit worker-tools fixture\n");
+    file_put_contents($home.'/.bashrc', data: "# orbit worker-tools fixture\n");
+
+    return $home;
+}
+
 function worker_tools_make_prepare_repo(string $root, string $stubBin): void
 {
     mkdir($root.'/bin', recursive: true);
+    worker_tools_seed_home($root);
     mkdir($root.'/packages/sdk-typescript', recursive: true);
     mkdir($stubBin, recursive: true);
     copy(repo_path('bin/orbit-prepare-worktree'), $root.'/bin/orbit-prepare-worktree');

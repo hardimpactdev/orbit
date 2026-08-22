@@ -293,6 +293,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
     $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
     $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.';
     $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.';
+    $setupPromptSentence = '`bin/orbit-worker-spawn` confirms a first-use folder-trust or setup prompt from the pane before submitting the bootstrap line once to the editor.';
     $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).';
     $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
     $watchSentence = 'Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.';
@@ -312,6 +313,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->toContain($ownerSentence)
         ->toContain($workersSentence)
         ->toContain($dispatchSentence)
+        ->toContain($setupPromptSentence)
         ->toContain($reviewerSentence)
         ->toContain($missingToolsSentence)
         ->toContain($watchSentence)
@@ -328,6 +330,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->toContain($ownerSentence)
         ->toContain($workersSentence)
         ->toContain($dispatchSentence)
+        ->toContain($setupPromptSentence)
         ->toContain($reviewerSentence)
         ->toContain($missingToolsSentence)
         ->toContain($watchSentence)
