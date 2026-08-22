@@ -144,7 +144,7 @@ verify_native_assets() {
     [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'native Agent SHA-256 is invalid.'
     actual_sha="$(compute_sha256 "$artifact")"
     [ "$actual_sha" = "$expected_sha" ] || fail 'sha256_agent_darwin_arm64 does not match.'
-    file "$artifact" | grep -Eq 'Mach-O 64-bit executable arm64' \
+    file "$artifact" | grep -Eq 'Mach-O 64-bit (executable arm64|arm64 executable)\b' \
         || fail 'native Agent artifact is not a Mach-O arm64 executable.'
 
     printf '%s\n' "$actual_sha"

@@ -59,6 +59,9 @@ parent_dir="$(dirname "$worktree_path")"
 resolved_parent="$(cd "$parent_dir" && pwd -P)"
 resolved_worktrees_root="$(cd "$worktrees_root" && pwd -P)"
 [ "$resolved_parent" = "$resolved_worktrees_root" ] || fail 'build worktree path must be a direct child of .worktrees.'
+case "$(basename "$worktree_path")" in
+    .|..) fail 'build worktree path must be a direct child of .worktrees.' ;;
+esac
 [ ! -L "$worktree_path" ] || fail 'build worktree path must not be a symlink.'
 
 assert_existing_worktree() {
@@ -73,7 +76,10 @@ if [ "$action" = 'prepare' ]; then
     fetch_ref="refs/orbit-release-build/${source_commit}"
     git -C "$repo_root" fetch --no-tags "$source_url" "refs/heads/${source_branch}:${fetch_ref}"
     fetched_commit="$(git -C "$repo_root" rev-parse "${fetch_ref}^{commit}")"
-    [ "$fetched_commit" = "$source_commit" ] || fail 'fetched branch does not match requested commit.'
+    if [ "$fetched_commit" != "$source_commit" ]; then
+        git -C "$repo_root" update-ref -d "$fetch_ref" >/dev/null 2>&1 || true
+        fail 'fetched branch does not match requested commit.'
+    fi
 
     if [ -e "$worktree_path" ]; then
         assert_existing_worktree

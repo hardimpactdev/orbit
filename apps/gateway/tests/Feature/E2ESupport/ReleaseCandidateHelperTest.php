@@ -421,6 +421,38 @@ it('fails the candidate build when the imported Agent bytes change after copy', 
     }
 });
 
+it('accepts GNU libmagic Mach-O arm64 file output when verifying native assets', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'verify-native-gnu-file');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+        );
+
+        $process = release_candidate_process(
+            arguments: ['verify-native', "--native-assets={$nativeDir}"],
+            env: release_candidate_process_env(root: $root, overrides: [
+                'ORBIT_TEST_FILE_RESULT' => 'Mach-O 64-bit arm64 executable, flags:<NOUNDEFS|DYLDLINK|TWOLEVEL|PIE>',
+            ]),
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS sha256_agent_darwin_arm64');
+
+        expect((string) file_get_contents("{$root}/stub.log"))
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
 it('verifies a native bundle without building or publishing a candidate', function (): void {
     $temp = release_candidate_make_temp_dir(suffix: 'verify-native');
 

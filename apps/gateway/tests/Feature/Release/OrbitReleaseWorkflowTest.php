@@ -901,6 +901,11 @@ it('documents Beast coordinated Mini native candidate builds over the LAN', func
         ->toContain('rsync')
         ->toContain('bin/orbit-release-candidate verify-native')
         ->toContain('bin/orbit-release-candidate build --native-assets=')
+        ->toContain('mini_hostname="$(ssh -G nckrtl@192.168.6.10')
+        ->toContain('mini_seen_beast="$(ssh -o BatchMode=yes nckrtl@192.168.6.10')
+        ->toContain('verify the Beast address from Mini')
+        ->toContain('Mini originates both')
+        ->not->toContain('beast_hostname="$(ssh -G nckrtl@192.168.6.20')
         ->not->toContain('nckrtl@10.6.0.8')
         ->not->toContain('nckrtl@10.6.0.7');
 

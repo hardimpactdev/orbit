@@ -168,15 +168,17 @@ manifests.
    in an isolated exact-commit worktree. Do not modify Mini's primary checkout.
    Branch names are transport context; the full 40-character SHA is identity.
 
-   Before any SSH, confirm strict host-key verification is already in place and
-   that `ssh -G` resolves the two LAN hosts. If either host resolves to another
-   address, stop. Do not add `StrictHostKeyChecking=no` and do not fall back to
-   WireGuard:
+   Before any SSH, confirm strict host-key verification is already in place.
+   Check Mini's address from Beast, and verify the Beast address from Mini
+   because Mini originates both the Beast Git fetch and the rsync transfer.
+   If either configured host resolves to another address, stop. Do not add
+   `StrictHostKeyChecking=no` and do not fall back to WireGuard:
 
    ```bash
    mini_hostname="$(ssh -G nckrtl@192.168.6.10 | awk '$1 == "hostname" { print $2; exit }')"
-   beast_hostname="$(ssh -G nckrtl@192.168.6.20 | awk '$1 == "hostname" { print $2; exit }')"
-   if [ "$mini_hostname" != '192.168.6.10' ] || [ "$beast_hostname" != '192.168.6.20' ]; then
+   mini_seen_beast="$(ssh -o BatchMode=yes nckrtl@192.168.6.10 \
+     "ssh -G nckrtl@192.168.6.20 | awk '\$1 == \"hostname\" { print \$2; exit }'")"
+   if [ "$mini_hostname" != '192.168.6.10' ] || [ "$mini_seen_beast" != '192.168.6.20' ]; then
      echo "Native candidate build hosts must resolve to the LAN addresses." >&2
      exit 1
    fi

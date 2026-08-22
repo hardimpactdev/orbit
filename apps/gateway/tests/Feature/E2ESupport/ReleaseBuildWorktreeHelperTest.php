@@ -59,7 +59,7 @@ it('rejects a fetched branch whose tip differs from the requested commit', funct
             ->not->toBeDirectory()->and(
                 $fixture['mini'].'/.worktrees/release-native-'.substr($fixture['commit'], 0, 12),
             )
-            ->not->toBeDirectory();
+            ->not->toBeDirectory()->and(release_build_worktree_ref_exists($fixture['mini'], $wrongCommit))->toBeFalse();
     } finally {
         release_build_worktree_remove_fixture($fixture['root']);
     }
@@ -144,6 +144,42 @@ it('refuses to remove a worktree with the wrong commit or dirty state', function
         release_build_worktree_remove_fixture($fixture['root']);
     }
 });
+
+it('rejects a worktree path whose final component is . or .. before any Git mutation', function (string $suffix): void {
+    $fixture = release_build_worktree_fixture();
+
+    try {
+        file_put_contents($fixture['mini'].'/.codex-config-user-change', "preserve\n");
+        $miniHead = trim(release_build_worktree_git($fixture['mini'], ['rev-parse', 'HEAD']));
+        $miniStatus = trim(release_build_worktree_git($fixture['mini'], ['status', '--porcelain']));
+
+        $process = release_build_worktree_process($fixture, [
+            'prepare',
+            "--source={$fixture['source']}",
+            '--branch=main',
+            "--commit={$fixture['commit']}",
+            "--path={$fixture['mini']}/.worktrees/{$suffix}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('build worktree path must be a direct child of .worktrees.')
+            ->and(trim((string) file_get_contents($fixture['mini'].'/.codex-config-user-change')))
+            ->toBe('preserve')
+            ->and(trim(release_build_worktree_git($fixture['mini'], ['rev-parse', 'HEAD'])))
+            ->toBe($miniHead)
+            ->and(trim(release_build_worktree_git($fixture['mini'], ['status', '--porcelain'])))
+            ->toBe($miniStatus)
+            ->and(release_build_worktree_ref_exists($fixture['mini'], $fixture['commit']))
+            ->toBeFalse();
+    } finally {
+        release_build_worktree_remove_fixture($fixture['root']);
+    }
+})->with([
+    '.' => ['.'],
+    '..' => ['..'],
+]);
 
 it('removes only the clean exact build worktree', function (): void {
     $fixture = release_build_worktree_fixture();
@@ -231,6 +267,17 @@ function release_build_worktree_fixture(): array
         'mini' => $mini,
         'commit' => $commit,
     ];
+}
+
+function release_build_worktree_ref_exists(string $repo, string $commit): bool
+{
+    $process = new Process(
+        ['git', 'show-ref', '--verify', '--quiet', "refs/orbit-release-build/{$commit}"],
+        $repo,
+    );
+    $process->run();
+
+    return $process->getExitCode() === 0;
 }
 
 function release_build_worktree_remove_fixture(string $root): void
