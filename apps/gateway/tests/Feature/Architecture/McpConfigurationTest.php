@@ -340,7 +340,9 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->and($prompt)
         ->toContain('use the feature tmux session')
         ->toContain('point Grok workers at the exact feature worktree with grok --yolo --reasoning-effort medium')
-        ->toContain('point one independent Claude general reviewer at that worktree with claude --dangerously-skip-permissions --model opus --effort high')
+        ->toContain(
+            'point one independent Claude general reviewer at that worktree with claude --dangerously-skip-permissions --model opus --effort high',
+        )
         ->and($intake)
         ->toContain('hand the outcome to the orchestrating feature owner using')
         ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
