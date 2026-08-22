@@ -177,6 +177,166 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
     }
 });
 
+it('imports a verified Darwin Agent bundle instead of building it locally', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'native-import');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+        );
+
+        $process = release_candidate_process(
+            arguments: ['build', "--native-assets={$nativeDir}"],
+            env: release_candidate_process_env(root: $root),
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+        expect($stubLog)
+            ->toContain('orbit-build-agent-binary linux x64')
+            ->not->toContain('orbit-build-agent-binary mac arm');
+
+        $latestPointer = "{$root}/.orbit/release-candidates/latest";
+        expect($latestPointer)->toBeFile();
+        $buildId = trim((string) file_get_contents($latestPointer));
+        $stateDir = "{$root}/.orbit/release-candidates/{$buildId}";
+        $state = release_candidate_parse_state(path: "{$stateDir}/candidate.env");
+
+        expect($state)
+            ->toMatchArray([
+                'sha256_agent_darwin_arm64' => hash_file('sha256', "{$nativeDir}/orbit-agent-macos-arm64"),
+                'native_builder_os' => 'Darwin',
+                'native_builder_arch' => 'arm64',
+                'native_source_commit' => str_repeat('a', 40),
+            ])
+            ->and((string) file_get_contents("{$stateDir}/orbit-agent-macos-arm64"))
+            ->toBe((string) file_get_contents("{$nativeDir}/orbit-agent-macos-arm64"));
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('rejects an imported native bundle that fails verification', function (string $key, string $value, string $needle): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'native-fail-'.$key);
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+            manifestOverrides: [$key => $value],
+        );
+
+        $process = release_candidate_process(
+            arguments: ['build', "--native-assets={$nativeDir}"],
+            env: release_candidate_process_env(root: $root),
+        );
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain($needle);
+
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+        expect($stubLog)
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+})->with([
+    'wrong commit' => ['commit', str_repeat('b', 40), 'native source commit'],
+    'wrong version' => ['version', '9.9.9', 'native source version'],
+    'wrong builder os' => ['builder_os', 'Linux', 'builder_os'],
+    'wrong builder arch' => ['builder_arch', 'x86_64', 'builder_arch'],
+    'wrong hash' => ['sha256_agent_darwin_arm64', str_repeat('0', 64), 'sha256_agent_darwin_arm64'],
+]);
+
+it('rejects imported native bundles with inventory or architecture problems', function (string $case, string $needle): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'native-inventory-'.preg_replace('/[^a-z]+/', '-', $case));
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+        );
+        $env = release_candidate_process_env(root: $root);
+
+        if ($case === 'missing artifact') {
+            unlink("{$nativeDir}/orbit-agent-macos-arm64");
+        } elseif ($case === 'extra file') {
+            file_put_contents("{$nativeDir}/extra.bin", "undeclared\n");
+        } elseif ($case === 'symlink') {
+            $realDir = "{$nativeDir}.real";
+            rename($nativeDir, $realDir);
+            symlink($realDir, $nativeDir);
+        } else {
+            $env['ORBIT_TEST_FILE_RESULT'] = 'ELF 64-bit LSB executable, x86-64';
+        }
+
+        $process = release_candidate_process(
+            arguments: ['build', "--native-assets={$nativeDir}"],
+            env: $env,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain($needle);
+
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+        expect($stubLog)
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+})->with([
+    'missing artifact' => ['missing artifact', 'orbit-agent-macos-arm64 is missing or unsafe'],
+    'extra file' => ['extra file', 'native assets directory contains missing or undeclared files'],
+    'symlink' => ['symlink', 'native assets path must be a directory, not a symlink'],
+    'wrong file type' => ['wrong file type', 'native Agent artifact is not a Mach-O arm64 executable'],
+]);
+
+it('verifies a native bundle without building or publishing a candidate', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'verify-native');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+        );
+
+        $process = release_candidate_process(
+            arguments: ['verify-native', "--native-assets={$nativeDir}"],
+            env: release_candidate_process_env(root: $root),
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->toContain('PASS sha256_agent_darwin_arm64');
+
+        expect((string) file_get_contents("{$root}/stub.log"))
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
 it('promotes the accepted FrankenPHP candidate digest without creating a GitHub release', function (): void {
     $temp = release_candidate_make_temp_dir(suffix: 'promote-runtime');
 
@@ -478,6 +638,9 @@ function release_candidate_prepare_root(string $temp): string
 
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'git', body: <<<'BASH'
         printf 'git %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        while [ "${1:-}" = '-C' ]; do
+            shift 2
+        done
         case "$*" in
             'rev-parse HEAD') printf '%s\n' "${ORBIT_TEST_HEAD_COMMIT}" ;;
             'rev-parse --short HEAD') printf '%s\n' "${ORBIT_TEST_HEAD_COMMIT:0:8}" ;;
@@ -485,6 +648,11 @@ function release_candidate_prepare_root(string $temp): string
             'status --porcelain') [ -z "${ORBIT_TEST_GIT_STATUS:-}" ] || printf '%s\n' "${ORBIT_TEST_GIT_STATUS}" ;;
             *) exit 1 ;;
         esac
+        BASH);
+
+    release_candidate_write_stub(binDir: "{$root}/bin", name: 'file', body: <<<'BASH'
+        printf 'file %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        printf '%s: %s\n' "$1" "${ORBIT_TEST_FILE_RESULT:-Mach-O 64-bit executable arm64}"
         BASH);
 
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'docker', body: <<<'BASH'
@@ -750,6 +918,44 @@ function release_candidate_write_state(
     }
 
     return $stateDir;
+}
+
+/**
+ * @return array<string, string>
+ */
+/**
+ * @param  array<string, string>  $manifestOverrides
+ */
+function release_candidate_write_native_bundle(
+    string $root,
+    string $commit,
+    string $version,
+    array $manifestOverrides = [],
+): string {
+    $dir = "{$root}/native-assets";
+
+    mkdir($dir, recursive: true);
+    file_put_contents("{$dir}/orbit-agent-macos-arm64", "imported-agent-{$commit}\n");
+    chmod("{$dir}/orbit-agent-macos-arm64", 0o755);
+
+    $values = array_merge([
+        'schema' => '1',
+        'commit' => $commit,
+        'version' => $version,
+        'builder_os' => 'Darwin',
+        'builder_arch' => 'arm64',
+        'sha256_agent_darwin_arm64' => (string) hash_file('sha256', "{$dir}/orbit-agent-macos-arm64"),
+    ], $manifestOverrides);
+
+    $lines = '';
+
+    foreach ($values as $key => $value) {
+        $lines .= "{$key}={$value}\n";
+    }
+
+    file_put_contents("{$dir}/native-assets.env", $lines);
+
+    return $dir;
 }
 
 /**
