@@ -164,6 +164,18 @@ it('requires quality-check evidence for a non-docs candidate', function (): void
             ->toContain('non-docs diff requires exact `composer quality-check` evidence');
 
         proof_receipt_write_quality_check_artifact($fixture);
+        $candidate = proof_receipt_git($fixture, ['rev-parse', 'HEAD']);
+        mkdir("{$fixture}/.orbit/evidence", recursive: true);
+        file_put_contents("{$fixture}/.orbit/evidence/runtime-proof.txt", "ok\n");
+        proof_receipt_write_loop(
+            $fixture,
+            $candidate,
+            runtime: 'passed - candidate='
+            .$candidate
+            .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture'
+            .'; expected=exit 0; observed=exit 0; result=passed'
+            .'; evidence=`.orbit/evidence/runtime-proof.txt`',
+        );
         $ok = proof_receipt_run($fixture);
         $payload = json_decode($ok->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
