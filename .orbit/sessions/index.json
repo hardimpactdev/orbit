@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 400,
-    "unique_candidate_commit_count": 296,
+    "record_count": 401,
+    "unique_candidate_commit_count": 297,
     "orphan_count": 4,
     "records": [
         {
@@ -3253,14 +3253,14 @@
             "blast_radius_status": null,
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
-            "feedback_count": 21,
+            "feedback_count": null,
             "feedback": {
-                "status": "valid",
-                "event_count": 21,
-                "raw_count": 11,
-                "promoted_count": 10,
-                "waived_count": 0,
-                "protection_failures": 0
+                "status": "invalid",
+                "event_count": null,
+                "raw_count": null,
+                "promoted_count": null,
+                "waived_count": null,
+                "protection_failures": null
             },
             "legacy": null
         },
@@ -4219,14 +4219,14 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
-            "feedback_count": 2,
+            "feedback_count": null,
             "feedback": {
-                "status": "valid",
-                "event_count": 2,
-                "raw_count": 1,
-                "promoted_count": 1,
-                "waived_count": 0,
-                "protection_failures": 0
+                "status": "invalid",
+                "event_count": null,
+                "raw_count": null,
+                "promoted_count": null,
+                "waived_count": null,
+                "protection_failures": null
             },
             "legacy": null
         },
@@ -6381,14 +6381,14 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "browser",
-            "feedback_count": 2,
+            "feedback_count": null,
             "feedback": {
-                "status": "valid",
-                "event_count": 2,
-                "raw_count": 2,
-                "promoted_count": 0,
-                "waived_count": 0,
-                "protection_failures": 0
+                "status": "invalid",
+                "event_count": null,
+                "raw_count": null,
+                "promoted_count": null,
+                "waived_count": null,
+                "protection_failures": null
             },
             "legacy": null
         },
@@ -6404,14 +6404,14 @@
             "blast_radius_status": "not-required",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
-            "feedback_count": 1,
+            "feedback_count": null,
             "feedback": {
-                "status": "valid",
-                "event_count": 1,
-                "raw_count": 1,
-                "promoted_count": 0,
-                "waived_count": 0,
-                "protection_failures": 0
+                "status": "invalid",
+                "event_count": null,
+                "raw_count": null,
+                "promoted_count": null,
+                "waived_count": null,
+                "protection_failures": null
             },
             "legacy": null
         },
@@ -8842,14 +8842,14 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
-            "feedback_count": 1,
+            "feedback_count": null,
             "feedback": {
-                "status": "valid",
-                "event_count": 1,
-                "raw_count": 1,
-                "promoted_count": 0,
-                "waived_count": 0,
-                "protection_failures": 0
+                "status": "invalid",
+                "event_count": null,
+                "raw_count": null,
+                "promoted_count": null,
+                "waived_count": null,
+                "protection_failures": null
             },
             "legacy": null
         },
@@ -10297,6 +10297,29 @@
                 "event_count": 2,
                 "raw_count": 1,
                 "promoted_count": 1,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-22-173847-tmux-worker-flow",
+            "slug": "tmux-worker-flow",
+            "timestamp": "2026-08-22-173847",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "02ac571f390e100cabdee51fe766143a26a20950",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
                 "waived_count": 0,
                 "protection_failures": 0
             },

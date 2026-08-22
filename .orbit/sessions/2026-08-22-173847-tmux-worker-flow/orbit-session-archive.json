@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T15:38:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/tmux-worker-flow/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-22-173847-tmux-worker-flow",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/2026-08-22-worker-tools-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-22T150225Z-33626b709036.json"
+    ],
+    "entry_digests": {
+        "evidence/2026-08-22-worker-tools-runtime-proof.md": "0cad9e065eae4235db746b6d840ab4b1ebebef0b6d133790caafcc761d275769",
+        "loop.md": "deb10cb416cf9fde2a9d4e7a488a8c86e4bb0b49144fb3564517bd6cebb07a79",
+        "quality-gates/quality-check-2026-08-22T150225Z-33626b709036.json": "dfade68db413459fc3667997b5681e5a69013bdc5271a68207c3f925550b5fb3"
+    },
+    "slug": "tmux-worker-flow",
+    "requested_slug": "tmux-worker-flow",
+    "compatible_slugs": [
+        "tmux-worker-flow"
+    ],
+    "branch": "tmux-worker-flow",
+    "candidate_commit": "02ac571f390e100cabdee51fe766143a26a20950",
+    "accepted_feature_tip": "02ac571f390e100cabdee51fe766143a26a20950",
+    "accepted_main_tip": "6603011b139a2d11cebb08d3cc5c75255684d387",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
