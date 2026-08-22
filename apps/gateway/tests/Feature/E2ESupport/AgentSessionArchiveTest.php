@@ -401,6 +401,187 @@ it('archives the prefix worker transcript instead of a newer colliding sibling',
     'operator named docs ids' => ['docs', 'docs-2'],
 ]);
 
+it('archives the owning claude transcript instead of a newer mid-line mention', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'claude-ownership');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $workerId = 'review-1';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        $projectDir = "{$home}/.claude/projects/synthetic-project";
+        mkdir($projectDir, recursive: true);
+        write_worker_registry_entry($cwd, $workerId, 'claude --model opus', ['workingDir' => $cwd]);
+
+        $ownerFile = "{$projectDir}/7be4b950-owner.jsonl";
+        $mentionFile = "{$projectDir}/3810d77b-mention.jsonl";
+        write_jsonl($ownerFile, [
+            [
+                'type' => 'user',
+                'message' => [
+                    'role' => 'user',
+                    'content' => "Orbit worker: {$workerId}. Read /tmp/x/.orbit/workers/briefs/{$workerId}.md and execute it.",
+                ],
+            ],
+            [
+                'type' => 'assistant',
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Reviewing.']],
+                    'model' => 'claude-opus',
+                    'usage' => ['input_tokens' => 11, 'output_tokens' => 2],
+                ],
+            ],
+        ]);
+        write_jsonl($mentionFile, [
+            [
+                'type' => 'user',
+                'message' => [
+                    'role' => 'user',
+                    'content' => "I tailed the log: spawn_agent logged Orbit worker: {$workerId}",
+                ],
+            ],
+            [
+                'type' => 'assistant',
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Owner session.']],
+                    'model' => 'claude-opus',
+                    'usage' => ['input_tokens' => 1000, 'output_tokens' => 100],
+                ],
+            ],
+        ]);
+        touch($ownerFile, time() - 10);
+        touch($mentionFile, time());
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-archive'),
+            "--worker-id={$workerId}",
+            "--home={$home}",
+            "--cwd={$cwd}",
+        ], repo_path());
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results[0] ?? [])
+            ->toMatchArray([
+                'worker_id' => $workerId,
+                'status' => 'ok',
+                'input_tokens' => 11,
+                'output_tokens' => 2,
+            ])
+            ->and($results[0]['artifact'] ?? null)
+            ->toContain('7be4b950-owner.jsonl')
+            ->not->toContain('3810d77b-mention.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('reports partial when the only claude transcript mentions the worker mid-line', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'claude-mention-only');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $workerId = 'review-1';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        $projectDir = "{$home}/.claude/projects/synthetic-project";
+        mkdir($projectDir, recursive: true);
+        write_worker_registry_entry($cwd, $workerId, 'claude --model opus', ['workingDir' => $cwd]);
+        write_jsonl("{$projectDir}/mention-only.jsonl", [
+            [
+                'type' => 'user',
+                'message' => [
+                    'role' => 'user',
+                    'content' => "spawn_agent logged Orbit worker: {$workerId}",
+                ],
+            ],
+        ]);
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-archive'),
+            "--worker-id={$workerId}",
+            "--home={$home}",
+            "--cwd={$cwd}",
+        ], repo_path());
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results[0] ?? [])
+            ->toMatchArray([
+                'worker_id' => $workerId,
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('archives distinct grok sessions for same-cwd workers by spawn identity', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'grok-three-workers');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+
+        foreach (['impl-1', 'impl-2', 'impl-3'] as $workerId) {
+            write_worker_registry_entry($cwd, $workerId, 'grok --yolo', ['workingDir' => $cwd]);
+            write_grok_worker_session($home, $cwd, $workerId);
+        }
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-archive'),
+            '--worker-id=impl-1,impl-2,impl-3',
+            "--home={$home}",
+            "--cwd={$cwd}",
+        ], repo_path());
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $byId = [];
+
+        foreach ($results as $result) {
+            $byId[$result['worker_id']] = $result;
+        }
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($byId)
+            ->toHaveCount(3);
+
+        foreach (['impl-1', 'impl-2', 'impl-3'] as $workerId) {
+            expect($byId[$workerId] ?? [])
+                ->toMatchArray([
+                    'status' => 'ok',
+                    'agent' => 'grok',
+                ])
+                ->and($byId[$workerId]['artifact'] ?? null)
+                ->toContain($workerId.'-session');
+        }
+
+        expect($byId['impl-1']['artifact'])
+            ->not->toBe($byId['impl-2']['artifact'])->and($byId['impl-2']['artifact'])
+            ->not->toBe($byId['impl-3']['artifact']);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
 it('lane-close capture uses registry cli as the provider even when the worker id names another provider', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'cli-authoritative');
     $home = "{$temp}/home";
@@ -1088,6 +1269,30 @@ function write_claude_project_dir_fixture(string $home, string $cwd, string $mar
             ],
         ],
     ]);
+}
+
+function write_grok_worker_session(string $home, string $cwd, string $workerId): void
+{
+    $sessionDir = "{$home}/.grok/sessions/".rawurlencode($cwd).'/'.$workerId.'-session';
+    mkdir($sessionDir, recursive: true);
+    $bootstrap = "Orbit worker: {$workerId}. Read /tmp/x/.orbit/workers/briefs/{$workerId}.md and execute it.";
+    write_jsonl("{$sessionDir}/chat_history.jsonl", [
+        ['type' => 'user', 'content' => "<user_info>\nOS Version: macos\n</user_info>"],
+        ['type' => 'user', 'content' => "<user_query>\n{$bootstrap}\n</user_query>"],
+        ['type' => 'assistant', 'content' => "Working as {$workerId}."],
+    ]);
+    file_put_contents("{$sessionDir}/signals.json", json_encode([
+        'primaryModelId' => 'grok-4',
+        'contextTokensUsed' => 10,
+        'contextWindowTokens' => 1000,
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    file_put_contents("{$sessionDir}/summary.json", json_encode([
+        'created_at' => '2026-07-01T08:03:05Z',
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+    file_put_contents("{$sessionDir}/prompt_context.json", json_encode([
+        'cwd' => $cwd,
+        'working_directory' => $cwd,
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 }
 
 function write_grok_fixture(string $home, string $cwd, string $marker): void

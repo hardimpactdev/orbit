@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/orbit-agent-session-capture-filesystem.php';
+require_once __DIR__.'/orbit-worker-identity.php';
 
 /**
  * Lane-close agent session capture.
@@ -876,31 +877,6 @@ function codexCandidateContext(string $path): array
             : $baseInstructionsIdentity ?? $firstUserIdentity,
         'timestamp' => $timestamp,
     ];
-}
-
-/** @return list<string> */
-function workerIdsFromText(string $text): array
-{
-    if (preg_match_all('/Orbit worker:\s*([a-z][a-z0-9-]*)\b/', $text, $matches) === false) {
-        return [];
-    }
-
-    return array_values(array_unique($matches[1]));
-}
-
-/** @return list<string> */
-function standaloneWorkerIdsFromIdentityText(string $text): array
-{
-    if (preg_match_all('/(?:^|\R)\h*Orbit worker:\h*([a-z][a-z0-9-]*)\b/', $text, $matches) === false) {
-        return [];
-    }
-
-    return array_values(array_unique($matches[1]));
-}
-
-function textHasWorkerId(string $text, string $workerId): bool
-{
-    return in_array($workerId, workerIdsFromText($text), true);
 }
 
 function normalizeCodexCwd(?string $cwd): ?string

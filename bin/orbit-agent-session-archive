@@ -3,6 +3,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-worker-identity.php';
+
 /**
  * Normalize local agent token telemetry and, when requested, archive the raw
  * provider session files used to produce it.
@@ -129,6 +131,13 @@ foreach ($processes as $process) {
     $processCwd = processCwd($process, $cwd);
     $requireCwdMatch = $targetWorkerIds === [];
     $workerId = processIdentity($process['id'] ?? null);
+    $requireOwnership =
+        $processMetadataSource === 'worker_registry' && is_string($workerId) && $workerId !== '' && $marker === null;
+    $joinMarker = $marker;
+
+    if ($requireOwnership) {
+        $joinMarker = "Orbit worker: {$workerId}";
+    }
 
     $base = [
         'worker_id' => $workerId,
@@ -143,17 +152,28 @@ foreach ($processes as $process) {
     }
 
     $usage = match ($runtime) {
-        'claude' => extractClaudeSession($home, $processCwd, $process, $marker),
+        'claude' => extractClaudeSession($home, $processCwd, $process, $marker, $requireOwnership),
         'codex' => extractCodexSession(
             $home,
             $processCwd,
             $startedAt,
-            $marker,
+            $joinMarker,
             $maxStartDistance,
             $requireCwdMatch,
             $process['provider_ref'] ?? null,
+            $workerId,
+            $requireOwnership,
         ),
-        'grok' => extractGrokSession($home, $processCwd, $startedAt, $marker, $maxStartDistance, $requireCwdMatch),
+        'grok' => extractGrokSession(
+            $home,
+            $processCwd,
+            $startedAt,
+            $joinMarker,
+            $maxStartDistance,
+            $requireCwdMatch,
+            $workerId,
+            $requireOwnership,
+        ),
         'opencode' => unsupported('unsupported_provider'),
         'antigravity' => unsupported('antigravity_session_contract_unsupported'),
         default => unsupported('unsupported_provider'),
@@ -574,8 +594,13 @@ function resolveProviderRefArtifact(string $home, string $providerRef): ?string
  *
  * @return array<string, mixed>
  */
-function extractClaudeSession(string $home, string $cwd, array $process, ?string $marker): array
-{
+function extractClaudeSession(
+    string $home,
+    string $cwd,
+    array $process,
+    ?string $marker,
+    bool $requireOwnership = false,
+): array {
     $pid = $process['pid'] ?? null;
     $projectFile = null;
     $sessionMapPath = null;
@@ -622,18 +647,33 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
         $checked[] = "{$home}/.claude/sessions/<pid>.json (worker pane pid unavailable)";
     }
 
+    $ownershipStatus = null;
+    $ownershipReason = null;
+
     if ($projectFile === null) {
         $workerId = processIdentity($process['id'] ?? $process['processId'] ?? null);
 
         if ($workerId !== null) {
             $checked[] = "{$home}/.claude/projects (Orbit worker: {$workerId} marker scan)";
-            $projectFile = findClaudeProjectFileForWorker($home, $workerId, $marker);
+            $owned = findClaudeProjectFileForWorker($home, $workerId, $marker);
+            $ownershipStatus = $owned['status'];
+            $ownershipReason = $owned['reason'];
+            $projectFile = is_string($owned['file'] ?? null) ? $owned['file'] : null;
             $source = 'claude_session_jsonl_worker_marker';
             $match = 'worker_marker';
+
+            if ($owned['status'] === 'ambiguous') {
+                return [
+                    'status' => 'ambiguous',
+                    'reason' => 'ambiguous_duplicate_markers',
+                    'metric_confidence' => 'unavailable',
+                    'checked' => $checked,
+                ];
+            }
         }
     }
 
-    if ($projectFile === null) {
+    if ($projectFile === null && ! $requireOwnership) {
         $encodedProjectDir = claudeProjectDirForCwd($home, $cwd);
         $checked[] = "{$encodedProjectDir}/*.jsonl";
         $projectFile = findClaudeProjectFileForCwd($encodedProjectDir, $marker);
@@ -642,7 +682,10 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     }
 
     if ($projectFile === null) {
-        return missing('claude_session_not_found', ['checked' => $checked]);
+        return missing(
+            ($requireOwnership ? $ownershipReason : null) ?? 'claude_session_not_found',
+            ['checked' => $checked],
+        );
     }
 
     if ($marker !== null && ! fileContainsWorkerMarker($projectFile, $marker)) {
@@ -704,10 +747,13 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
         array_unshift($sourceFiles, ['path' => $sessionMapPath, 'archive_name' => basename($sessionMapPath)]);
     }
 
+    $status = $ownershipStatus === 'partial' ? 'partial' : 'ok';
+
     return [
-        'status' => 'ok',
+        'status' => $status,
+        'reason' => $status === 'partial' ? $ownershipReason ?? 'missing_primary_identity' : null,
         'source' => $source,
-        'metric_confidence' => 'measured',
+        'metric_confidence' => $status === 'ok' ? 'measured' : 'unavailable',
         'artifact_match' => $match,
         'artifact' => $projectFile,
         'models' => array_keys($models),
@@ -718,23 +764,110 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     ] + $totals;
 }
 
-function findClaudeProjectFileForWorker(string $home, string $workerId, ?string $marker): ?string
+/**
+ * @return array{status: 'ok'|'partial'|'ambiguous'|'missing', reason: ?string, file: ?string}
+ */
+function findClaudeProjectFileForWorker(string $home, string $workerId, ?string $marker): array
 {
-    $matches = [];
+    $candidates = [];
 
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
         if ($marker !== null && ! fileContainsWorkerMarker($file, $marker)) {
             continue;
         }
 
-        if (fileContainsOrbitWorkerId($file, $workerId)) {
-            $matches[] = $file;
+        $mentions = fileContainsOrbitWorkerId($file, $workerId);
+
+        if (! $mentions) {
+            continue;
         }
+
+        $candidates[] = [
+            'path' => $file,
+            'file' => $file,
+            'primary_worker_id' => claudeJsonlPrimaryWorkerId($file),
+            'mentions' => true,
+        ];
     }
 
-    usort($matches, fn (string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
+    if ($candidates === []) {
+        return ['status' => 'missing', 'reason' => 'claude_session_not_found', 'file' => null];
+    }
 
-    return $matches[0] ?? null;
+    $owned = orbitWorkerSelectOwnedCandidates($candidates, $workerId);
+
+    return [
+        'status' => $owned['status'],
+        'reason' => $owned['reason'],
+        'file' => is_array($owned['chosen'] ?? null)
+            ? $owned['chosen']['file'] ?? $owned['chosen']['path'] ?? null
+            : null,
+    ];
+}
+
+function claudeJsonlPrimaryWorkerId(string $path): ?string
+{
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $content = is_array($row['message'] ?? null) ? $row['message']['content'] ?? '' : $row['content'] ?? '';
+        $ids = standaloneWorkerIdsFromIdentityText(orbitWorkerExtractText($content));
+
+        return count($ids) === 1 ? $ids[0] : null;
+    }
+
+    return null;
+}
+
+function codexFilePrimaryWorkerId(string $path): ?string
+{
+    $baseInstructionsIdentity = null;
+    $baseInstructionsIdentityAmbiguous = false;
+    $firstUserIdentity = null;
+    $firstUserMessageSeen = false;
+
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) === 'session_meta') {
+            $payload = $row['payload'] ?? [];
+            $base = $payload['base_instructions'] ?? '';
+            $baseText = is_array($base) && isset($base['text'])
+                ? (string) $base['text']
+                : (is_string($base) ? $base : '');
+            $baseInstructionIdentities = standaloneWorkerIdsFromIdentityText($baseText);
+
+            if (count($baseInstructionIdentities) > 1) {
+                $baseInstructionsIdentityAmbiguous = true;
+            } elseif (count($baseInstructionIdentities) === 1) {
+                $baseInstructionsIdentity = $baseInstructionIdentities[0];
+            }
+
+            continue;
+        }
+
+        if ($firstUserMessageSeen || ($row['type'] ?? null) !== 'response_item') {
+            continue;
+        }
+
+        $payload = $row['payload'] ?? [];
+
+        if (($payload['type'] ?? null) !== 'message' || ($payload['role'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $firstUserMessageSeen = true;
+        $firstUserIdentities = standaloneWorkerIdsFromIdentityText(
+            orbitWorkerExtractText($payload['content'] ?? ''),
+        );
+        $firstUserIdentity = count($firstUserIdentities) === 1 ? $firstUserIdentities[0] : null;
+    }
+
+    if ($baseInstructionsIdentityAmbiguous) {
+        return null;
+    }
+
+    return $baseInstructionsIdentity ?? $firstUserIdentity;
 }
 
 function claudeProjectDirForCwd(string $home, string $cwd): string
@@ -773,6 +906,8 @@ function extractCodexSession(
     int $maxStartDistance,
     bool $requireCwdMatch,
     mixed $providerRef = null,
+    ?string $workerId = null,
+    bool $requireOwnership = false,
 ): array {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
@@ -858,6 +993,7 @@ function extractCodexSession(
 
         $candidates[] = [
             'file' => $file,
+            'path' => $file,
             'cwd_match' => $isProviderRef ? true : $cwdMatches,
             'provider_ref' => $isProviderRef,
             'distance' => $isProviderRef ? -1 : $distance,
@@ -867,18 +1003,70 @@ function extractCodexSession(
         ];
     }
 
-    usort(
-        $candidates,
-        fn (array $a, array $b): int => (
-            [$b['provider_ref'], $b['cwd_match'], $a['distance'], $b['created_at']] <=> [
-                $a['provider_ref'],
-                $a['cwd_match'],
-                $b['distance'],
-                $a['created_at'],
-            ]
-        ),
-    );
-    $candidate = $candidates[0] ?? null;
+    $ownershipStatus = 'ok';
+    $ownershipReason = null;
+
+    $hasProviderRefCandidate = false;
+
+    foreach ($candidates as $candidate) {
+        if ($candidate['provider_ref'] ?? false) {
+            $hasProviderRefCandidate = true;
+
+            break;
+        }
+    }
+
+    if ($requireOwnership && is_string($workerId) && $workerId !== '' && ! $hasProviderRefCandidate) {
+        $graded = [];
+
+        foreach ($candidates as $candidate) {
+            $graded[] = [
+                ...$candidate,
+                'primary_worker_id' => codexFilePrimaryWorkerId((string) $candidate['file']),
+                'mentions' => fileContainsOrbitWorkerId((string) $candidate['file'], $workerId),
+            ];
+        }
+
+        $owned = orbitWorkerSelectOwnedCandidates($graded, $workerId);
+
+        if ($owned['status'] === 'ambiguous') {
+            return [
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+                'metric_confidence' => 'unavailable',
+                'rollouts_scanned' => $rolloutsScanned,
+                'rejected' => $rejected,
+            ];
+        }
+
+        if ($owned['status'] === 'missing' || $owned['chosen'] === null) {
+            return missing($owned['reason'] ?? 'codex_token_count_not_found', [
+                'checked' => [
+                    "{$root}/**/rollout-*.jsonl",
+                    'event_msg payload.type=token_count with session_meta payload.cwd='.$cwd,
+                ],
+                'rollouts_scanned' => $rolloutsScanned,
+                'rejected' => $rejected,
+            ]);
+        }
+
+        $candidate = $owned['chosen'];
+        $ownershipStatus = $owned['status'];
+        $ownershipReason = $owned['reason'];
+    } else {
+        usort(
+            $candidates,
+            fn (array $a, array $b): int => (
+                [$b['provider_ref'], $b['cwd_match'], $a['distance'], $b['created_at']] <=> [
+                    $a['provider_ref'],
+                    $a['cwd_match'],
+                    $b['distance'],
+                    $a['created_at'],
+                ]
+            ),
+        );
+        $candidate = $candidates[0] ?? null;
+    }
 
     if ($candidate === null) {
         return missing('codex_token_count_not_found', [
@@ -892,14 +1080,16 @@ function extractCodexSession(
     }
 
     $usage = $candidate['payload']['info']['total_token_usage'] ?? [];
+    $status = $ownershipStatus === 'partial' ? 'partial' : 'ok';
 
     return [
-        'status' => 'ok',
+        'status' => $status,
+        'reason' => $status === 'partial' ? $ownershipReason ?? 'missing_primary_identity' : null,
         'source' => 'codex_jsonl_token_count',
-        'metric_confidence' => 'measured',
+        'metric_confidence' => $status === 'ok' ? 'measured' : 'unavailable',
         'artifact_match' => $candidate['provider_ref'] ?? false
             ? 'provider_ref'
-            : ($candidate['cwd_match'] ? 'cwd' : 'start_distance'),
+            : ($requireOwnership ? 'worker_marker' : ($candidate['cwd_match'] ? 'cwd' : 'start_distance')),
         'artifact' => $candidate['file'],
         'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
         'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
@@ -924,6 +1114,8 @@ function extractGrokSession(
     ?string $marker,
     int $maxStartDistance,
     bool $requireCwdMatch,
+    ?string $workerId = null,
+    bool $requireOwnership = false,
 ): array {
     $roots = grokSessionRoots($home, $cwd, $requireCwdMatch);
     $candidates = [];
@@ -992,13 +1184,60 @@ function extractGrokSession(
         }
     }
 
-    usort(
-        $candidates,
-        fn (array $a, array $b): int => (
-            [$b['cwd_match'], $a['distance'], $b['created_at']] <=> [$a['cwd_match'], $b['distance'], $a['created_at']]
-        ),
-    );
-    $candidate = $candidates[0] ?? null;
+    if ($requireOwnership && is_string($workerId) && $workerId !== '') {
+        $graded = [];
+
+        foreach ($candidates as $candidate) {
+            $primary = grokSessionPrimaryWorkerId((string) $candidate['dir']);
+            $graded[] = [
+                ...$candidate,
+                'path' => $candidate['dir'],
+                'primary_worker_id' => $primary,
+                'mentions' => sessionDirContains((string) $candidate['dir'], "Orbit worker: {$workerId}"),
+            ];
+        }
+
+        $owned = orbitWorkerSelectOwnedCandidates($graded, $workerId);
+
+        if ($owned['status'] === 'ambiguous') {
+            return [
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+                'metric_confidence' => 'unavailable',
+                'sessions_scanned' => $sessionsScanned,
+                'rejected' => $rejected,
+            ];
+        }
+
+        if ($owned['status'] === 'missing' || $owned['chosen'] === null) {
+            return missing($owned['reason'] ?? 'grok_signals_not_found', [
+                'checked' => [
+                    "{$home}/.grok/sessions/".rawurlencode($cwd).'/*/signals.json',
+                    "{$home}/.grok/sessions/*/*/signals.json",
+                ],
+                'sessions_scanned' => $sessionsScanned,
+                'rejected' => $rejected,
+            ]);
+        }
+
+        $candidate = $owned['chosen'];
+        $ownershipStatus = $owned['status'];
+        $ownershipReason = $owned['reason'];
+    } else {
+        usort(
+            $candidates,
+            fn (array $a, array $b): int => (
+                [$b['cwd_match'], $a['distance'], $b['created_at']] <=> [
+                    $a['cwd_match'],
+                    $b['distance'],
+                    $a['created_at'],
+                ]
+            ),
+        );
+        $candidate = $candidates[0] ?? null;
+        $ownershipStatus = 'ok';
+        $ownershipReason = null;
+    }
 
     if ($candidate === null) {
         return missing('grok_signals_not_found', [
@@ -1012,12 +1251,16 @@ function extractGrokSession(
     }
 
     $signals = $candidate['signals'];
+    $status = $ownershipStatus === 'partial' ? 'partial' : 'ok';
 
     return [
-        'status' => 'ok',
+        'status' => $status,
+        'reason' => $status === 'partial' ? $ownershipReason ?? 'missing_primary_identity' : null,
         'source' => 'grok_signals_json',
-        'metric_confidence' => 'proxy',
-        'artifact_match' => $candidate['cwd_match'] ? 'cwd' : 'start_distance',
+        'metric_confidence' => $status === 'ok' ? 'proxy' : 'unavailable',
+        'artifact_match' => $requireOwnership
+            ? 'worker_marker'
+            : ($candidate['cwd_match'] ? 'cwd' : 'start_distance'),
         'artifact' => $candidate['file'],
         'model' => $signals['primaryModelId'] ?? null,
         'context_tokens_used' => (int) ($signals['contextTokensUsed'] ?? 0),
@@ -1048,6 +1291,31 @@ function grokSessionRoots(string $home, string $cwd, bool $requireCwdMatch): arr
     }
 
     return glob("{$home}/.grok/sessions/*", GLOB_ONLYDIR) ?: [];
+}
+
+function grokSessionPrimaryWorkerId(string $sessionDir): ?string
+{
+    $chatHistory = "{$sessionDir}/chat_history.jsonl";
+
+    if (! is_file($chatHistory)) {
+        return null;
+    }
+
+    foreach (jsonl($chatHistory) as $row) {
+        if (($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $ids = standaloneWorkerIdsFromIdentityText(orbitWorkerExtractText($row['content'] ?? ''));
+
+        if ($ids === []) {
+            continue;
+        }
+
+        return count($ids) === 1 ? $ids[0] : null;
+    }
+
+    return null;
 }
 
 function grokSessionMatchesCwd(string $sessionDir, string $cwd): bool
