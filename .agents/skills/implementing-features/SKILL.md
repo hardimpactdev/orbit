@@ -18,6 +18,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 - Never run, delegate, background, schedule, hook, script, or trigger a
   `composer test:e2e*` command; canonical rule: `HARNESS.md`.
 - `human-judgment=required` work needs explicit user acceptance before merge.
+  Do not rebase or amend an accepted feature tip.
 
 ## FRAME
 
@@ -33,7 +34,12 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 
 ## BUILD
 
-Start with failing coverage. macOS Agent: `tauri-agent-development`.
+Start with failing coverage in the owning framework; capture red, make the
+smallest change, rerun. Load owning skills: commands `command-designer` +
+`orbit-cli-development`; Laravel/PHP Spatie + Pest; shared contracts
+`orbit-core-development` / `orbit-sdk-development`; docs `librarian` +
+`orbit-docs-development`;
+macOS Agent: `tauri-agent-development`.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.

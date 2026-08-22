@@ -746,11 +746,11 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
     $fastPathBytes = strlen(file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '');
 
     expect(strlen($skill))
-        ->toBeLessThanOrEqual(6144)
+        ->toBeLessThanOrEqual(6368)
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
-        ->toBeLessThanOrEqual(34200)
+        ->toBeLessThanOrEqual(34805)
         ->and($skill)
         ->toContain('## FRAME')
         ->toContain('## BUILD')

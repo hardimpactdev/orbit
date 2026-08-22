@@ -5,7 +5,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
 
-const ORBIT_WORKER_STOP_USAGE = 'Usage: bin/orbit-worker-stop <id> [--all-finished]';
+const ORBIT_WORKER_STOP_USAGE = 'Usage: bin/orbit-worker-stop <id> [--all-finished]
+--all-finished stops every worker at handoff';
 
 try {
     $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
@@ -26,7 +27,7 @@ try {
         $targets = [];
 
         foreach (orbit_worker_list($worktree) as $entry) {
-            if (! in_array((string) $entry['status'], ['handoff', 'blocked'], true)) {
+            if ((string) $entry['status'] !== 'handoff') {
                 continue;
             }
 

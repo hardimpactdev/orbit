@@ -553,11 +553,10 @@ it('stops one worker window and marks it exited', function (): void {
     });
 });
 
-it('stops every handoff and blocked worker with --all-finished', function (): void {
+it('stops only handoff workers with --all-finished and leaves blocked windows alive', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-2');
-        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-3');
         $source = $fixture['worktree'].'/done.md';
         file_put_contents($source, data: "handoff\n");
         worker_tools_run(
@@ -588,22 +587,17 @@ it('stops every handoff and blocked worker with --all-finished', function (): vo
 
         $ids = preg_split('/\R/', trim($process->getOutput())) ?: [];
         expect($ids)
-            ->toContain('impl-1')
-            ->toContain('impl-2')
-            ->not
-            ->toContain('impl-3')
+            ->toBe(['impl-1'])
             ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-1'))
             ->toBeFalse()
             ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-2'))
-            ->toBeFalse()
-            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-3'))
             ->toBeTrue();
 
-        $kept = json_decode(
-            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-3.json'),
+        $blocked = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-2.json'),
             true,
         );
-        expect($kept['status'])->toBe('spawned');
+        expect($blocked['status'])->toBe('blocked');
     });
 });
 

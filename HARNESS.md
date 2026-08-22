@@ -29,9 +29,8 @@ main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land
    docs; stop only for unresolved intent or missing external authority.
 3. Create the isolated worktree with `bin/orbit-prepare-worktree`; it seeds
    `.orbit/loop.md` when missing. Fill Goal, Scope, branch, worktree, and
-   Session before editing. For stateful, lifecycle, or
-   concrete UX features, append one optional compact clause on the existing
-   Scope `Owned` row:
+   Session before editing. For stateful, lifecycle, or concrete UX features,
+   append one optional compact clause on the existing Scope `Owned` row:
    `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
    Omit the clause for ordinary/local changes. Deterministic lint checks only
    marker syntax, not statefulness or prose; `bin/orbit-loop-contract.php`
@@ -43,14 +42,17 @@ main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land
 
 ### BUILD
 
-Keep docs, tests, and code aligned. Start with failing coverage. Prefer a
-small working vertical slice.
+Keep docs, executable coverage, and implementation aligned. Start with failing
+coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
+for other stacks. Prefer a small working vertical slice and existing project
+abstractions.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
 Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
+From a repository shell, raw `tmux kill*` commands are always blocked; clean up unrelated scratch tmux servers from a shell outside the repository.
 Missing tmux, grok, or claude on the machine is a blocker.
 
 ### PROVE
@@ -177,6 +179,7 @@ build as the default acceptance path:
    make. Do not hand off a command or check an agent can run.
 
 CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
+
 Otherwise it is agent-owned proof and may close after completion. On feedback,
 keep the topology, invalidate acceptance, fix, resync only what changed, and
 repeat the affected proof.

@@ -433,6 +433,18 @@ it('strictly classifies tmux kill-session commands', function (string $command, 
         '/kill-window|not an allowed|invalid|blocked/',
     ],
     'kill-pane' => ['tmux kill-pane', '/kill-pane|not an allowed|invalid|blocked/'],
+    'killw alias' => [
+        'tmux killw -t =feat-x:impl-1',
+        '/killw|not an allowed|invalid|blocked/',
+    ],
+    'killp alias' => [
+        'tmux killp -t =feat-x:impl-1',
+        '/killp|not an allowed|invalid|blocked/',
+    ],
+    'killw alias with -L' => [
+        'tmux -L sock killw -t =feat-x:impl-1',
+        '/killw|not an allowed|invalid|blocked/',
+    ],
 ]);
 
 it('accepts -L and -S socket forms for an owned kill-session', function (string $flagTemplate): void {
@@ -492,7 +504,7 @@ it('blocks kill-session when the command socket is a foreign unlinked path', fun
             ->and($process->getOutput())
             ->not->toContain('FINALIZATION: PASS');
     } finally {
-        new Process(['tmux', '-L', $foreignSocket, 'kill-server'])->run();
+        land_tmux_kill_server($foreignSocket);
         new Process(['rm', '-rf', $foreignRoot])->run();
         land_remove_fixture($fixture);
     }
@@ -519,6 +531,66 @@ it('looks up an owned session through the command -L even when ORBIT_TMUX_SOCKET
             ->toContain('FINALIZATION: PASS')
             ->and($process->getOutput())
             ->toContain('tmux kill-session feat-feature');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('does not treat a documented kill-session line inside a heredoc as a LAND boundary', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $command = <<<'BASH'
+            cat > notes.md <<'EOF'
+            tmux kill-session -t '=feat-x'
+            EOF
+            BASH;
+
+        $hook = land_run_hook($fixture, $command, explicit: false);
+
+        expect($hook->getExitCode())
+            ->toBe(0, $hook->getErrorOutput().$hook->getOutput())
+            ->and($hook->getErrorOutput().$hook->getOutput())
+            ->not->toContain('FINALIZATION: BLOCKED')
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('still classifies an exact kill-session whose command line opens a heredoc', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+
+    try {
+        $archive = land_write_compact_archive($fixture['repo'], $fixture['worktree']);
+        land_write_session_index($fixture['repo'], basename($archive));
+        land_commit_sessions($fixture['repo'], $archive);
+
+        $command = "tmux -L {$fixture['socket']} kill-session -t =feat-feature <<'EOF'\nbody\nEOF";
+        $process = land_run_finalization($fixture, $command);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS')
+            ->and($process->getOutput())
+            ->toContain('tmux kill-session feat-feature');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('still rejects two real kill-session lines outside a heredoc as chained', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+
+    try {
+        $command = "tmux kill-session -t =feat-feature\ntmux kill-session -t =feat-other";
+        $process = land_run_finalization($fixture, $command);
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|exactly one|blocked/');
     } finally {
         land_remove_fixture($fixture);
     }
@@ -1157,8 +1229,40 @@ function land_remove_fixture(array $fixture): void
         return;
     }
 
-    new Process(['tmux', '-L', $fixture['socket'], 'kill-server'])->run();
+    land_tmux_kill_server($fixture['socket']);
     new Process(['rm', '-rf', $fixture['root']])->run();
+}
+
+/**
+ * @return list<string>
+ */
+function land_tmux_socket_dirs(): array
+{
+    $uid = posix_getuid();
+    $dirs = [];
+    $tmuxTmpdir = getenv('TMUX_TMPDIR');
+
+    if (is_string($tmuxTmpdir) && $tmuxTmpdir !== '') {
+        $dirs[] = rtrim($tmuxTmpdir, '/').'/tmux-'.$uid;
+    }
+
+    $dirs[] = rtrim(sys_get_temp_dir(), '/').'/tmux-'.$uid;
+    $dirs[] = '/tmp/tmux-'.$uid;
+
+    return array_values(array_unique($dirs));
+}
+
+function land_tmux_kill_server(string $socket): void
+{
+    new Process(['tmux', '-L', $socket, 'kill-server'])->run();
+
+    foreach (land_tmux_socket_dirs() as $dir) {
+        $path = $dir.'/'.$socket;
+
+        if (file_exists($path)) {
+            unlink($path);
+        }
+    }
 }
 
 function land_mkdir(string $path): void

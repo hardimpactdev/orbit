@@ -35,7 +35,7 @@ function orbit_land_archive_slug(string $value): string
  */
 function tmux_boundary_actions(string $command): array
 {
-    $trimmed = trim($command);
+    $trimmed = trim(tmux_excise_heredoc_bodies($command));
 
     if ($trimmed === '') {
         return [];
@@ -179,7 +179,7 @@ function classify_tmux_land_command(array $words): ?array
     }
 
     if ($subcommand !== 'kill-session') {
-        if (is_string($subcommand) && preg_match('/^kill-/', $subcommand) === 1) {
+        if (is_string($subcommand) && preg_match('/^kill/', $subcommand) === 1) {
             return tmux_kill_invalid(
                 "tmux {$subcommand} is not an allowed LAND boundary; only kill-session -t =feat-<slug> is accepted",
             );
@@ -346,6 +346,58 @@ function land_require_tmux_helper(): void
 
     require_once $path;
     $loaded = true;
+}
+
+function tmux_excise_heredoc_bodies(string $command): string
+{
+    $lines = preg_split('/\R/', $command) ?: [];
+    $kept = [];
+    $index = 0;
+    $count = count($lines);
+
+    while ($index < $count) {
+        $line = $lines[$index];
+
+        if (
+            preg_match('/<<(?!<)(-?)\s*(?:\'([^\']+)\'|"([^"]+)"|(\S+))/', $line, $matches, PREG_OFFSET_CAPTURE) !== 1
+        ) {
+            $kept[] = $line;
+            $index++;
+
+            continue;
+        }
+
+        $stripTabs = ($matches[1][0] ?? '') === '-';
+        $tag = '';
+
+        foreach ([2, 3, 4] as $group) {
+            if (isset($matches[$group][0]) && $matches[$group][0] !== '') {
+                $tag = $matches[$group][0];
+
+                break;
+            }
+        }
+
+        $prefix = rtrim(substr($line, 0, $matches[0][1]));
+
+        if ($prefix !== '') {
+            $kept[] = $prefix;
+        }
+
+        $index++;
+
+        while ($index < $count) {
+            $bodyLine = $lines[$index];
+            $index++;
+            $candidate = $stripTabs ? ltrim($bodyLine, "\t") : $bodyLine;
+
+            if ($tag !== '' && $candidate === $tag) {
+                break;
+            }
+        }
+    }
+
+    return implode("\n", $kept);
 }
 
 function tmux_socket_value_rejected(string $value): bool
