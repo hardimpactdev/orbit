@@ -7,9 +7,10 @@ description: Use when implementing an Orbit feature, bug fix, command behavior c
 
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
 `HARNESS.md` is the canonical loop contract; this skill is the compact route.
-Open only the section for the current state.
-The current feature owner may implement directly.
-Use workers only when useful: bounded slices with exact scope and checks.
+Open only the section for current state.
+Desktop Codex is the sole feature owner.
+Use the existing main Orbit Solo project.
+Never create or register a Solo project for a feature worktree.
 
 ## Non-Negotiable Boundaries
 
@@ -40,13 +41,17 @@ Use workers only when useful: bounded slices with exact scope and checks.
 
 ## BUILD
 
-Start behavior changes with failing coverage in the owning framework (Pest for
-PHP/Laravel; native frameworks elsewhere); capture the literal red result,
-make the smallest change, rerun. Domain skills — commands:
-`command-designer` + `orbit-cli-development`; Laravel/PHP: Spatie + Pest;
-shared contracts: `orbit-core-development` / `orbit-sdk-development`;
-docs/Librarian: `librarian` + `orbit-docs-development`;
+Start with failing coverage in the owning framework; capture red, make the
+smallest change, rerun. Load owning skills: commands `command-designer` +
+`orbit-cli-development`; Laravel/PHP Spatie + Pest; shared contracts
+`orbit-core-development` / `orbit-sdk-development`; docs `librarian` +
+`orbit-docs-development`;
 macOS Agent: `tauri-agent-development`.
+
+Dispatch substantive repository edits to Grok through Solo with no model
+override and `['--cwd', '<exact-feature-worktree>']`. Give exact owned paths
+and checks. Do not substitute a Codex subagent or direct Codex implementation.
+Missing Solo or Grok is a blocker.
 
 ## PROVE
 
@@ -66,12 +71,13 @@ same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX
 resets them.
 
 After focused checks pass, commit the candidate and confirm the worktree is
-clean; gates and review bind the committed HEAD. Use one fresh reviewer from
-`.agents/review-personas/general.md`. Blast-radius closure and ESCALATE
-answers stay with that same general reviewer, which issues the
-terminal PASS or FIX. On FIX: record `Review: fix`, reset
-`Reviewed feature tip: none` and
-`Blast radius: pending`, return to BUILD, commit the proven delta, re-review.
+clean. Spawn one fresh read-only Claude general reviewer in the main project with
+`claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
+Allow only that checkout and require identity proof. Blast-radius closure and
+ESCALATE stay with the same general reviewer, which issues the terminal PASS or FIX.
+On FIX, reset Review, reviewed tip, and Blast radius; return to Grok BUILD,
+prove and commit, then spawn a new Claude Opus process. Missing Solo or Claude
+is a blocker.
 On terminal PASS record the exact reviewed HEAD and
 `human-judgment=required|not-required`.
 
@@ -93,25 +99,22 @@ Do not send an acceptance handoff when the actor is automated. On
 `actor=user`, prepare the experience, send one handoff, and record the
 verbatim acceptance with `--actor=user --source-ref=<codex-or-solo-ref>`.
 
-On feedback: `bin/orbit-feature-feedback record`, invalidate acceptance, fix
-in BUILD, resync what changed, repeat affected proof and review, return the
-surface. If main advances, merge it in and return through PROVE; any HEAD
-change invalidates prior acceptance. Close actionable feedback via the
-`HARNESS.md` Feedback And Protections ladder before ACCEPT or LAND. Never
-solicit a waiver; record only user-volunteered ones with source ref and
-verbatim message.
+On feedback, use `bin/orbit-feature-feedback record`, invalidate acceptance,
+return to BUILD, and repeat affected proof and review. Main movement requires
+merge and PROVE. Close feedback through `HARNESS.md` Feedback And Protections;
+Never solicit a waiver; record only a user-volunteered one.
 
 ## LAND
 
 Prefer the resumable coordinator from primary `main`:
 `bin/orbit-feature-land --branch=<feature> --worktree=<exact-feature-worktree>
---solo-project-id=<session-owned-id>` (`--status`/`--plan`/`--one-step`
+--solo-project-id=<main-orbit-project-id>` (`--status`/`--plan`/`--one-step`
 inspect or resume). Manual LAND follows `HARNESS.md` LAND exactly: lint the
 packet with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`,
 validate every destructive mutation via the same check on `<exact command>`;
 execute only after `FINALIZATION: PASS`, then run the now-landed compact
 `bin/orbit-session-archive` from the feature worktree (never cwd main;
 `--full` only for failure/escalation/security/release scope) and commit the
-archive/index before the ordered cleanup. Then report outcome, acceptance
-surface, verification, reviewer verdict, accepted feature/main tips, archive,
-and unresolved blockers.
+archive/index, remove the worktree and branch, and preserve the main Solo
+project and unrelated processes. Report outcome, proof, review, accepted tips,
+archive, and blockers.

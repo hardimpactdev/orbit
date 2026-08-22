@@ -216,6 +216,43 @@ it('completes LAND when the exact candidate contract lowers the main-derived ven
     }
 });
 
+it('preserves the main Orbit Solo project and its processes while cleaning the feature worktree', function (): void {
+    [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: false);
+
+    try {
+        land_fake_solo_state($solo, [
+            'projects' => [
+                73 => ['id' => 73, 'path' => $repo, 'name' => 'orbit'],
+            ],
+            'processes' => [
+                501 => ['id' => 501, 'projectId' => 73, 'status' => 'running'],
+            ],
+        ]);
+
+        $full = land_run_land(
+            $repo,
+            land_args($worktree, $solo),
+            ['SOLO_PROJECT_ID' => '73'],
+        );
+        $state = json_decode((string) file_get_contents($solo['state']), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($full->getExitCode())
+            ->toBe(0, $full->getErrorOutput().$full->getOutput())
+            ->and($full->getOutput())
+            ->toContain('phase=done')
+            ->and(is_dir($worktree))
+            ->toBeFalse()
+            ->and(land_branch_exists($repo, 'feature'))
+            ->toBeFalse()
+            ->and($state['projects'])
+            ->toHaveKey(73)
+            ->and($state['processes'][501]['status'] ?? null)
+            ->toBe('running');
+    } finally {
+        land_remove_fixture($repo, $worktree);
+    }
+});
+
 it('refuses dirty feature worktrees and unmerged identity for cleanup mutations', function (): void {
     [$repo, $worktree, $solo] = land_prepare(accepted: true, merged: false);
 

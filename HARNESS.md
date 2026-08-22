@@ -9,9 +9,8 @@ Every feature uses one state machine:
 
 `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
 
-The current feature owner owns FRAME through LAND and may implement directly.
-Workers are optional and bounded: use them only when an independent slice can
-finish materially faster or improve a concrete decision.
+Desktop Codex is the sole feature owner. Use existing main Orbit Solo project.
+Never create or register a Solo project for a feature worktree.
 
 The local anchor is the compact `.orbit/loop.md` seeded by
 `bin/orbit-prepare-worktree`. It records only Goal, Scope, Proof, Status, and a
@@ -44,9 +43,9 @@ coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
 for other stacks. Prefer a small working vertical slice and existing project
 abstractions.
 
-If a bounded worker is useful, give it an exact checkout, owned paths, done
-condition, and verification; the owner remains responsible for the integrated
-result and stops workers that leave scope.
+Dispatch substantive repository edits to Grok through Solo with no model override,
+using main-project `['--cwd', '<exact-feature-worktree>']` plus exact scope and
+checks. Do not substitute a Codex subagent. Missing Solo or Grok blocks BUILD.
 
 ### PROVE
 
@@ -89,9 +88,10 @@ artifacts and decisions bind the exact committed HEAD.
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-After checks pass, use one independent general reviewer from
-`.agents/review-personas/general.md`; that persona defines the verdict,
-blast-radius, and human-judgment output contract.
+Spawn one fresh read-only Claude general reviewer in the main project with
+`.agents/review-personas/general.md` and
+`claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
+Require checkout proof; missing Solo or Claude blocks PROVE.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
 lane. Use `not-required - <reason>` for a local change. A product decision,
@@ -101,9 +101,8 @@ result=<summary>`. `gaps` cannot PASS or enter acceptance.
 
 - `PASS`: continue.
 - `FIX`: record `Review: fix`, reset `Reviewed feature tip: none` and `Blast
-  radius: pending`, return to
-  BUILD, add or adjust executable coverage, fix, commit the clean delta, repeat
-  affected proof, and re-review the delta.
+  radius: pending`, return to Grok BUILD, fix and commit the clean delta, repeat
+  affected proof, and spawn a new Claude Opus process to review the new tip.
 - `ESCALATE`: name one specialist and one concrete high-risk question; the
   specialist answers only back to the same general reviewer, which then issues
   the terminal `PASS` or `FIX` even without a code delta. There are no
@@ -255,14 +254,13 @@ Prefer the resumable coordinator on primary `main`:
 bin/orbit-feature-land \
   --branch=<feature> \
   --worktree=<exact-feature-worktree> \
-  --solo-project-id=<session-owned-numeric-id>
+  --solo-project-id=<main-orbit-project-id>
 ```
 
 Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
-only the next incomplete boundary. Resume is idempotent from Git, the committed
-session archive/index, and Solo state. Solo ownership is exact: the project
-path equals the feature worktree path; the tool refuses primary/root projects,
-self-cwd, and unsafe deletion flags.
+only the next incomplete boundary. Resume is idempotent from Git and the committed
+session archive/index. The project path must equal the primary
+Orbit checkout. LAND preserves that project and all its processes.
 
 LAND gets minimum venue from the exact accepted candidate contract in an
 isolated subprocess; all other finalization checks stay main-owned.
@@ -290,11 +288,9 @@ Manual LAND remains validate-then-execute for each destructive mutation:
 7. Update the session index and commit the archive/index. Cleanup requires
    those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
-   - Cleanup in this order so each gated Solo ownership check remains
-     satisfiable: stop session-owned running/starting processes; delete the
-     session-owned Solo project (exact path == feature worktree); remove the
-     exact clean merged worktree; delete the exact merged feature branch.
-     Solo project deletion must complete before worktree removal.
+   - Stop only feature-owned Grok or Claude processes. Never delete the main
+     Orbit Solo project or stop unrelated processes. Remove the exact clean
+     merged worktree, then delete the exact merged feature branch.
    - Validate each cleanup mutation with
      `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.

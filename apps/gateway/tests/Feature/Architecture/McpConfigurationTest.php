@@ -307,19 +307,29 @@ it('requires direct final outcome proof for runtime claims before reviewer PASS'
         )->toContain('return `FIX`');
 });
 
-it('keeps the current feature owner in charge with optional bounded workers', function (): void {
+it('keeps Codex in charge while Solo dispatches Grok implementation and Claude Opus review', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $prompt = file_get_contents(repo_path('.agents/skills/implementing-features/agents/openai.yaml')) ?: '';
 
     expect($harness)
         ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
-        ->toContain('current feature owner owns FRAME through LAND')
-        ->toContain('Workers are optional and bounded')
+        ->toContain('Desktop Codex is the sole feature owner')
+        ->toContain('existing main Orbit Solo project')
+        ->toContain('Never create or register a Solo project for a feature worktree')
+        ->toContain("['--cwd', '<exact-feature-worktree>']")
+        ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
         ->and($skill)
-        ->toContain('The current feature owner may implement directly')
-        ->toContain('Use workers only when useful')
-        ->not->toContain('It must spawn')
-        ->not->toContain('substantive repository edits are forbidden');
+        ->toContain('Desktop Codex is the sole feature owner')
+        ->toContain('existing main Orbit Solo project')
+        ->toContain('Never create or register a Solo project for a feature worktree')
+        ->toContain("['--cwd', '<exact-feature-worktree>']")
+        ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
+        ->toContain('Do not substitute a Codex subagent')
+        ->and($prompt)
+        ->toContain('use the existing main Orbit Solo project')
+        ->toContain('point Grok at the exact feature worktree without a model override')
+        ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {

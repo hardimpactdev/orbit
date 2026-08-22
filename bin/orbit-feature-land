@@ -36,7 +36,7 @@ try {
     $mode = $options['status'] || $options['plan'] ? 'status' : ($options['one-step'] ? 'one-step' : 'execute');
 
     landRefuseSelfCwd($worktree);
-    landRefuseSelfProject($projectId);
+    landRefuseSelfProject($projectId, $primary, $soloCli);
     landRequireMain($primary);
     landRequireIdentity($primary, $branch, $worktree, $projectId, $soloCli);
 
@@ -51,7 +51,7 @@ try {
         // Re-bind ownership before every mutation so path/project drift mid-run
         // cannot clean another linked feature.
         landRefuseSelfCwd($worktree);
-        landRefuseSelfProject($projectId);
+        landRefuseSelfProject($projectId, $primary, $soloCli);
         landRequireMain($primary);
         landRequireIdentity($primary, $branch, $worktree, $projectId, $soloCli);
 
@@ -188,15 +188,37 @@ function landRefuseSelfCwd(string $worktree): void
     }
 }
 
-function landRefuseSelfProject(int $projectId): void
+function landRefuseSelfProject(int $projectId, string $primary, string $soloCli): void
 {
     $callerProject = getenv('SOLO_PROJECT_ID');
 
-    if (is_string($callerProject) && preg_match('/^\d+$/', $callerProject) === 1 && (int) $callerProject === $projectId) {
-        throw new RuntimeException(
-            "refuses self-project cleanup while SOLO_PROJECT_ID={$projectId} matches the target project",
-        );
+    if (! is_string($callerProject) || preg_match('/^\d+$/', $callerProject) !== 1 || (int) $callerProject !== $projectId) {
+        return;
     }
+
+    $lookup = solo_cli_lookup($soloCli, ['projects', 'get', (string) $projectId, '--json'], $primary);
+
+    if ($lookup['status'] === 'error') {
+        throw new RuntimeException('solo project lookup failed: '.$lookup['reason']);
+    }
+
+    $path = $lookup['status'] === 'ok' ? ($lookup['data']['path'] ?? null) : null;
+
+    if (! is_string($path) || $path === '') {
+        throw new RuntimeException("solo project {$projectId} has no path");
+    }
+
+    $projectPath = realpath($path) ?: $path;
+    $primaryReal = realpath($primary) ?: $primary;
+
+    // LAND never stops or deletes the primary checkout's Solo project.
+    if ($projectPath === $primaryReal) {
+        return;
+    }
+
+    throw new RuntimeException(
+        "refuses self-project cleanup while SOLO_PROJECT_ID={$projectId} matches the target project",
+    );
 }
 
 function landRequireIdentity(
@@ -249,11 +271,7 @@ function landRequireIdentity(
 
     $projectPath = realpath($path) ?: $path;
 
-    if ($projectPath === $primaryReal) {
-        throw new RuntimeException("refuses primary/root Solo project path `{$projectPath}`");
-    }
-
-    if ($projectPath !== $worktreeReal) {
+    if ($projectPath !== $primaryReal && $projectPath !== $worktreeReal) {
         throw new RuntimeException(
             "solo project {$projectId} path `{$projectPath}` does not equal feature worktree `{$worktreeReal}`",
         );
@@ -293,27 +311,33 @@ function landObserve(
     }
 
     if ($project['status'] === 'ok') {
-        $phase = solo_process_phase_ids($soloCli, $projectId, $primary);
+        $path = $project['data']['path'] ?? null;
+        $projectPath = is_string($path) && $path !== '' ? (realpath($path) ?: $path) : '';
+        $primaryReal = realpath($primary) ?: $primary;
 
-        if ($phase['status'] === 'error') {
-            throw new RuntimeException('solo process list failed: '.$phase['reason']);
+        if ($projectPath !== $primaryReal) {
+            $phase = solo_process_phase_ids($soloCli, $projectId, $primary);
+
+            if ($phase['status'] === 'error') {
+                throw new RuntimeException('solo process list failed: '.$phase['reason']);
+            }
+
+            if ($phase['stoppable'] !== []) {
+                $id = $phase['stoppable'][0];
+
+                return landState('stop-process', "solo processes stop {$id}", 'session-owned process still running/starting');
+            }
+
+            if ($phase['stopping'] !== []) {
+                return landState(
+                    'await-process-terminal',
+                    'await process terminal: '.implode(',', $phase['stopping']),
+                    'stopping processes are non-terminal; do not project-delete yet',
+                );
+            }
+
+            return landState('delete-project', "solo projects delete {$projectId}", 'session-owned Solo project still present');
         }
-
-        if ($phase['stoppable'] !== []) {
-            $id = $phase['stoppable'][0];
-
-            return landState('stop-process', "solo processes stop {$id}", 'session-owned process still running/starting');
-        }
-
-        if ($phase['stopping'] !== []) {
-            return landState(
-                'await-process-terminal',
-                'await process terminal: '.implode(',', $phase['stopping']),
-                'stopping processes are non-terminal; do not project-delete yet',
-            );
-        }
-
-        return landState('delete-project', "solo projects delete {$projectId}", 'session-owned Solo project still present');
     }
 
     $worktreeReal = realpath($worktree) ?: $worktree;
