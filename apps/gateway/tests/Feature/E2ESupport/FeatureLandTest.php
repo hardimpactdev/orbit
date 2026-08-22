@@ -536,7 +536,7 @@ it('looks up an owned session through the command -L even when ORBIT_TMUX_SOCKET
     }
 });
 
-it('does not treat a documented kill-session line inside a heredoc as a LAND boundary', function (): void {
+it('blocks a documented kill-session line inside a heredoc as a chained boundary', function (): void {
     $fixture = land_create_fixture();
 
     try {
@@ -546,35 +546,52 @@ it('does not treat a documented kill-session line inside a heredoc as a LAND bou
             EOF
             BASH;
 
-        $hook = land_run_hook($fixture, $command, explicit: false);
+        $process = land_run_finalization($fixture, $command);
 
-        expect($hook->getExitCode())
-            ->toBe(0, $hook->getErrorOutput().$hook->getOutput())
-            ->and($hook->getErrorOutput().$hook->getOutput())
-            ->not->toContain('FINALIZATION: BLOCKED')
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|heredoc|file-write|blocked/')
+            ->and($process->getOutput())
             ->not->toContain('FINALIZATION: PASS');
     } finally {
         land_remove_fixture($fixture);
     }
 });
 
-it('still classifies an exact kill-session whose command line opens a heredoc', function (): void {
-    $fixture = land_prepare(accepted: true, merged: true);
+it('blocks kill-session chained on the same line as a heredoc opener', function (): void {
+    $fixture = land_create_fixture();
 
     try {
-        $archive = land_write_compact_archive($fixture['repo'], $fixture['worktree']);
-        land_write_session_index($fixture['repo'], basename($archive));
-        land_commit_sessions($fixture['repo'], $archive);
+        $process = land_run_finalization(
+            $fixture,
+            "cat <<'EOF' && tmux kill-session -t '=feat-x'",
+        );
 
-        $command = "tmux -L {$fixture['socket']} kill-session -t =feat-feature <<'EOF'\nbody\nEOF";
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|heredoc|file-write|blocked/')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('blocks kill-session after a multi-line quoted string that contains <<', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $command = "echo 'first line\n<<EOF second'\ntmux kill-session -t '=feat-x'\nEOF";
         $process = land_run_finalization($fixture, $command);
 
         expect($process->getExitCode())
-            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/unchained|heredoc|file-write|blocked|kill-session/')
             ->and($process->getOutput())
-            ->toContain('FINALIZATION: PASS')
-            ->and($process->getOutput())
-            ->toContain('tmux kill-session feat-feature');
+            ->not->toContain('FINALIZATION: PASS');
     } finally {
         land_remove_fixture($fixture);
     }
@@ -670,7 +687,7 @@ it('still rejects two real kill-session lines outside a heredoc as chained', fun
         expect($process->getExitCode())
             ->toBe(2, $process->getErrorOutput().$process->getOutput())
             ->and(strtolower($process->getErrorOutput().$process->getOutput()))
-            ->toMatch('/unchained|exactly one|blocked/');
+            ->toMatch('/unchained|heredoc|file-write|exactly one|blocked/');
     } finally {
         land_remove_fixture($fixture);
     }
