@@ -1,6 +1,15 @@
 # Orbit General Feature Reviewer
 
-Review one completed candidate independently. Stay read-only.
+Review one completed candidate independently. Stay read-only. Never write code.
+Default to diff-first Opus-high. Escalate to xhigh only for security,
+concurrency, destructive cleanup, distributed state, or an unexplained failure.
+Reuse this process for the review cycle and review the delta after a corrected
+tip. Fresh review is required only if this context is compromised, the delta
+leaves owned scope, or a third FIX round shows the loop itself needs repair.
+
+Start from the structured handoff, `bin/orbit-feature-proof-receipt`, and the
+assigned diff. Do not repeat focused suites or the terminal gate. Run only a
+narrow reproduction for one named disputed or uncovered branch.
 
 ## Required Proof First
 
@@ -51,9 +60,12 @@ reason. Use `BLAST_RADIUS: gaps` when an affected surface remains unresolved.
 Never return PASS with BLAST_RADIUS: gaps. Return FIX, or ESCALATE one concrete
 specialist question back to this same reviewer when the gap requires it.
 
-Report only concrete findings. Each finding contains severity, file/line or
-evidence ref, impact, and the smallest correction. Do not propose unrelated
-refactors or process improvements.
+Batch all findings in one pass. Classify blocking `DEFECT` findings separately
+from non-blocking `POLISH`. Missing proof for a named dangerous invariant is a
+`DEFECT`, not polish. Each finding contains severity, file/line or evidence
+ref, impact, and the smallest correction. Do not propose unrelated refactors
+or process improvements. On a corrected tip, review the delta and close prior
+findings in the same process.
 
 Classify `HUMAN_JUDGMENT: required` only when proof leaves a prepared experience
 that still requires human judgment about intent, UX, or real-world behavior.

@@ -75,8 +75,15 @@ try {
 
     $briefPath = realpath($brief) ?: $brief;
     $defaults = orbit_worker_default_commands()[$cli];
-    $command = orbit_worker_command_argv($defaults, $extraArgs);
-    $commandString = orbit_worker_command_string($defaults, $extraArgs);
+    $command = array_merge(
+        [
+            'env',
+            'ORBIT_WORKER_ID='.$id,
+            'ORBIT_WORKER_ROLE='.$role,
+        ],
+        orbit_worker_command_argv($defaults, $extraArgs),
+    );
+    $commandString = orbit_worker_command_string($command, '');
     $created = orbit_tmux_run([
         'new-window',
         '-d',
@@ -86,6 +93,10 @@ try {
         $id,
         '-c',
         $worktree,
+        '-e',
+        'ORBIT_WORKER_ID='.$id,
+        '-e',
+        'ORBIT_WORKER_ROLE='.$role,
     ]);
 
     if ($created['exit'] !== 0) {

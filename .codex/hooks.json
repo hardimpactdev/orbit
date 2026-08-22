@@ -9,6 +9,12 @@
             "command": "/usr/bin/env bash -lc 'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; exec \"$root/bin/orbit-codex-pre-tool-use-hook\"'",
             "timeout": 10,
             "statusMessage": "Checking Orbit finalization gate"
+          },
+          {
+            "type": "command",
+            "command": "/usr/bin/env bash -lc 'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; exec \"$root/bin/orbit-review-pre-tool-use-hook\"'",
+            "timeout": 5,
+            "statusMessage": "Checking Orbit review gate tripwire"
           }
         ]
       }

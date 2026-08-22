@@ -402,6 +402,8 @@ expect_proof_requirements_module_boundary() {
     [ -f "$PROOF_REQUIREMENTS_MODULE" ] || fail 'proof requirements module is missing'
     grep -Fq "require_once __DIR__.'/orbit-feature-proof-requirements.php';" "$HOOK" \
         || fail 'hook does not load the proof requirements module'
+    grep -Fq "require_once __DIR__.'/orbit-proof-receipt.php';" "$HOOK" \
+        || fail 'hook does not load the proof receipt module'
     php -r 'ob_start(); require_once $argv[1]; require_once $argv[1]; exit(ob_get_clean() === "" ? 0 : 1);' \
         "$PROOF_REQUIREMENTS_MODULE" \
         || fail 'proof requirements module emitted output while loading'

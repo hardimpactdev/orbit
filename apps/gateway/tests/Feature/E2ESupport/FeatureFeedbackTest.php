@@ -422,6 +422,65 @@ it('retrieves only exact and parent-scope feedback from active and archived stre
     }
 });
 
+it('skips an invalid historical archive source reference and keeps valid relevant events', function (): void {
+    $workspace = feedback_test_workspace('relevant-invalid-archive');
+    $sessions = "{$workspace}/.orbit/sessions";
+    mkdir("{$sessions}/2026-07-10-180000-prior", recursive: true);
+
+    try {
+        $record = feedback_test_run(
+            $workspace,
+            [
+                'record',
+                '--session-ref=codex://threads/example#1',
+                '--surface=cli.progress',
+            ],
+            "Valid active feedback.\n",
+        );
+        expect($record->getExitCode())->toBe(0, $record->getErrorOutput());
+
+        require_once repo_path('bin/orbit-feedback-events.php');
+        orbitFeedbackAppend(
+            "{$sessions}/2026-07-10-180000-prior/feedback.jsonl",
+            feedback_test_recorded_event('archived-valid', surface: 'cli.progress'),
+        );
+        file_put_contents(
+            "{$sessions}/2026-07-10-180000-prior/feedback.jsonl",
+            json_encode([
+                'schema_version' => 1,
+                'type' => 'feedback.recorded',
+                'id' => 'archived-invalid-ref',
+                'recorded_at' => '2026-07-10T18:02:00Z',
+                'raw_text' => 'Historical event with a broken source reference.',
+                'session_ref' => 'not-a-safe-ref',
+                'candidate_commit' => str_repeat('c', 40),
+                'surface' => 'cli.progress',
+                'context' => [],
+                'evidence' => [],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+            FILE_APPEND,
+        );
+
+        $process = feedback_test_run($workspace, [
+            'relevant',
+            '--surface=cli.progress',
+            '--json',
+        ]);
+        $events = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('WARNING:')
+            ->toContain('archived-invalid-ref')
+            ->and(array_column($events, 'id'))
+            ->toContain('archived-valid')
+            ->not->toContain('archived-invalid-ref');
+    } finally {
+        feedback_test_remove($workspace);
+    }
+});
+
 it('allows only user-volunteered waivers and requires calibrated promotion examples', function (): void {
     $workspace = feedback_test_workspace('promotion');
 

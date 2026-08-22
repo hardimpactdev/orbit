@@ -4,6 +4,13 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
+require_once __DIR__.'/orbit-quality-subgates.php';
+require_once __DIR__.'/orbit-git-process.php';
+require_once __DIR__.'/orbit-loop-contract.php';
+require_once __DIR__.'/orbit-quality-gate-artifacts.php';
+require_once __DIR__.'/orbit-feature-proof-requirements.php';
+require_once __DIR__.'/orbit-cleanup-checks.php';
+require_once __DIR__.'/orbit-proof-receipt.php';
 
 const ORBIT_WORKER_HANDOFF_USAGE = 'Usage: bin/orbit-worker-handoff <id> <file> [--force]';
 
@@ -22,19 +29,46 @@ try {
 
     $worktree = orbit_worker_worktree((string) getcwd());
     $entry = orbit_worker_require_entry($worktree, $id);
-    $destination = orbit_worker_handoff_path($worktree, $id);
     $force = ($parsed['options']['force'] ?? false) === true;
+    $contents = file_get_contents($file);
+
+    if ($contents === false) {
+        throw new RuntimeException("unable to read handoff source: {$file}");
+    }
+
+    $sha = orbit_worker_handoff_named_sha($contents);
+    $role = (string) ($entry['role'] ?? '');
+
+    if ($role === 'impl') {
+        $head = trim(orbit_worker_run_command(['git', 'rev-parse', 'HEAD'], $worktree)['stdout']);
+
+        if ($sha === null) {
+            throw new RuntimeException(
+                'impl handoff must name candidate=<40-character sha> for the exact clean HEAD',
+            );
+        }
+
+        if (! hash_equals($head, $sha)) {
+            throw new RuntimeException(
+                "impl handoff candidate={$sha} does not match clean HEAD {$head}",
+            );
+        }
+
+        $receiptProblem = orbit_proof_receipt_problem($worktree);
+
+        if ($receiptProblem !== null) {
+            throw new RuntimeException($receiptProblem);
+        }
+    }
+
+    $destination = $sha === null
+        ? orbit_worker_handoff_path($worktree, $id)
+        : orbit_worker_handoff_path($worktree, $id, $sha);
 
     if (is_file($destination) && ! $force) {
         throw new RuntimeException(
             "handoff file already exists: {$destination}. Re-run with --force to overwrite.",
         );
-    }
-
-    $contents = file_get_contents($file);
-
-    if ($contents === false) {
-        throw new RuntimeException("unable to read handoff source: {$file}");
     }
 
     if (file_put_contents($destination, $contents) === false) {
@@ -48,4 +82,13 @@ try {
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);
     exit(2);
+}
+
+function orbit_worker_handoff_named_sha(string $contents): ?string
+{
+    if (preg_match('/(?:^|\n)candidate=([0-9a-f]{40})(?:\n|$)/', $contents, $match) !== 1) {
+        return null;
+    }
+
+    return $match[1];
 }

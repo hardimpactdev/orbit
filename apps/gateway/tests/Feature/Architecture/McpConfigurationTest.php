@@ -293,11 +293,11 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
     $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
     $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.';
     $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.';
-    $reviewerSentence = 'Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).';
+    $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).';
     $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
     $watchSentence = 'Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.';
-    $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.';
-    $rearmSentence = 'Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.';
+    $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.';
+    $rearmSentence = 'Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.';
     $stopSentence = 'Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.';
     $proofWindowSentence = 'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.';
     $ownershipSentence = 'Session ownership is exact: the loop `Session:` line equals `feat-<slug>` and the tmux session path equals the feature worktree; LAND refuses to run inside the feature session.';
@@ -336,7 +336,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->and($prompt)
         ->toContain('use the feature tmux session')
         ->toContain('point Grok workers at the exact feature worktree without a model override')
-        ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus')
+        ->toContain('point one independent Claude general reviewer at that worktree with --model opus')
         ->and($intake)
         ->toContain('hand the outcome to the orchestrating feature owner using')
         ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(

@@ -6,6 +6,12 @@ declare(strict_types=1);
 require_once __DIR__.'/orbit-feedback-events.php';
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-secret-rules.php';
+require_once __DIR__.'/orbit-quality-subgates.php';
+require_once __DIR__.'/orbit-git-process.php';
+require_once __DIR__.'/orbit-quality-gate-artifacts.php';
+require_once __DIR__.'/orbit-feature-proof-requirements.php';
+require_once __DIR__.'/orbit-cleanup-checks.php';
+require_once __DIR__.'/orbit-proof-receipt.php';
 
 const ORBIT_FEATURE_ACCEPTANCE_USAGE = 'Usage: bin/orbit-feature-acceptance route|ready|accept|reprove|invalidate|show [options]';
 
@@ -136,6 +142,16 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
     }
 
+    $receiptProblem = orbit_proof_receipt_problem($cwd, [
+        'loop' => $loopPath,
+        'changed_files' => $changedFiles,
+        'venue' => $venue,
+    ]);
+
+    if ($receiptProblem !== null) {
+        throw new RuntimeException($receiptProblem);
+    }
+
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'pending');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', 'none');
@@ -196,6 +212,16 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
 
     if ($runtimeProblem !== null) {
         acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
+    }
+
+    $receiptProblem = orbit_proof_receipt_problem($cwd, [
+        'loop' => $loopPath,
+        'changed_files' => $changedFiles,
+        'venue' => $venue,
+    ]);
+
+    if ($receiptProblem !== null) {
+        throw new RuntimeException($receiptProblem);
     }
 
     if ($actor === 'automated' && ! orbitLoopReviewSaysNoHumanJudgment($review)) {

@@ -1,0 +1,87 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-quality-subgates.php';
+require_once __DIR__.'/orbit-git-process.php';
+require_once __DIR__.'/orbit-loop-contract.php';
+require_once __DIR__.'/orbit-quality-gate-artifacts.php';
+require_once __DIR__.'/orbit-feature-proof-requirements.php';
+require_once __DIR__.'/orbit-cleanup-checks.php';
+require_once __DIR__.'/orbit-proof-receipt.php';
+
+const ORBIT_FEATURE_PROOF_RECEIPT_USAGE = 'Usage: bin/orbit-feature-proof-receipt [--cwd=<path>] [--loop=<path>] [--json]';
+
+try {
+    $parsed = orbit_proof_receipt_parse_argv(array_slice($argv, 1));
+
+    if (($parsed['options']['help'] ?? false) === true || ($parsed['options']['h'] ?? false) === true) {
+        fwrite(STDOUT, ORBIT_FEATURE_PROOF_RECEIPT_USAGE.PHP_EOL);
+        exit(0);
+    }
+
+    if ($parsed['positional'] !== []) {
+        throw new RuntimeException(ORBIT_FEATURE_PROOF_RECEIPT_USAGE);
+    }
+
+    $cwdOption = $parsed['options']['cwd'] ?? null;
+    $cwd = is_string($cwdOption) && $cwdOption !== '' ? $cwdOption : (string) getcwd();
+    $resolved = realpath($cwd);
+
+    if ($resolved === false) {
+        throw new RuntimeException("cwd does not exist: {$cwd}");
+    }
+
+    $loopOption = $parsed['options']['loop'] ?? null;
+    $loopPath = is_string($loopOption) && $loopOption !== ''
+        ? $loopOption
+        : (is_file($resolved.'/.orbit/loop.md') ? $resolved.'/.orbit/loop.md' : null);
+
+    $receipt = orbit_proof_receipt($resolved, [
+        'root' => $resolved,
+        'loop' => $loopPath,
+    ]);
+
+    fwrite(
+        STDOUT,
+        json_encode($receipt, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    if (! $receipt['ok']) {
+        fwrite(STDERR, (string) $receipt['problem'].PHP_EOL);
+        exit(2);
+    }
+
+    exit(0);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
+
+/**
+ * @param  list<string>  $arguments
+ * @return array{options: array<string, string|bool>, positional: list<string>}
+ */
+function orbit_proof_receipt_parse_argv(array $arguments): array
+{
+    $options = [];
+    $positional = [];
+
+    foreach ($arguments as $argument) {
+        if ($argument === '--') {
+            continue;
+        }
+
+        if (! str_starts_with($argument, '--')) {
+            $positional[] = $argument;
+
+            continue;
+        }
+
+        $parts = explode('=', substr($argument, 2), 2);
+        $options[$parts[0]] = $parts[1] ?? true;
+    }
+
+    return ['options' => $options, 'positional' => $positional];
+}

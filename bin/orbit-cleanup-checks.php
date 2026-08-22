@@ -826,7 +826,13 @@ function compact_feature_check(
         return block_result($subject, $acceptanceProblem);
     }
 
-    $proofProblem = compact_diff_proof_problem($root, $worktree, $subject, $compactChangedFiles);
+    $proofProblem = orbit_proof_receipt_problem($worktree, [
+        'root' => $root,
+        'subject' => $subject,
+        'changed_files' => $compactChangedFiles,
+        'loop' => $worktree.'/.orbit/loop.md',
+        'venue' => $candidateVenue['venue'],
+    ]);
 
     if ($proofProblem !== null) {
         return block_result($subject, $proofProblem);

@@ -101,4 +101,32 @@ if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" My_Feature --dry-ru
 fi
 grep -q 'My_Feature' /tmp/orbit-prepare-worktree-test.err || fail "dry-run invalid-slug error must name My_Feature"
 
+cat >"$STUB_BIN/composer" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${COMPOSER_LOG:-/tmp/orbit-prepare-worktree-composer.log}"
+exit 0
+STUB
+chmod +x "$STUB_BIN/composer"
+
+COMPOSER_LOG="$TMP/composer-default.log"
+: >"$COMPOSER_LOG"
+if ! PATH="$STUB_BIN:$PATH" COMPOSER_LOG="$COMPOSER_LOG" "$REPO/bin/orbit-prepare-worktree" feature-default-skip >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    cat /tmp/orbit-prepare-worktree-test.err >&2
+    fail "prepare-worktree default should skip baseline tests"
+fi
+grep -q 'skip composer test: baseline tests are opt-in' /tmp/orbit-prepare-worktree-test.out \
+    || fail "default prepare-worktree must skip baseline tests"
+if grep -qx 'test' "$COMPOSER_LOG"; then
+    fail "default prepare-worktree must not invoke composer test"
+fi
+
+COMPOSER_LOG="$TMP/composer-with-tests.log"
+: >"$COMPOSER_LOG"
+if ! PATH="$STUB_BIN:$PATH" COMPOSER_LOG="$COMPOSER_LOG" "$REPO/bin/orbit-prepare-worktree" feature-with-tests --with-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    cat /tmp/orbit-prepare-worktree-test.err >&2
+    fail "prepare-worktree --with-tests failed"
+fi
+grep -qx 'test' "$COMPOSER_LOG" \
+    || fail "prepare-worktree --with-tests must invoke composer test"
+
 printf 'orbit-prepare-worktree tests passed\n'

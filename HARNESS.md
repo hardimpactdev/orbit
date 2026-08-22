@@ -49,9 +49,10 @@ abstractions.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
-Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
-Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.
+Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
+Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
+Impl handoff names `candidate=<40-character sha>` and `bin/orbit-feature-proof-receipt`.
 From a repository shell, every `tmux kill*` form is blocked except the validated LAND `kill-session -t '=feat-<slug>'` boundary; clean up unrelated scratch tmux servers from a shell outside the repository.
 Missing tmux, grok, or claude on the machine is a blocker.
 
@@ -90,13 +91,13 @@ strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Those
-artifacts and decisions bind the exact committed HEAD.
+artifacts and decisions bind the exact committed HEAD (`bin/orbit-feature-proof-receipt`).
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
+Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
 Use `.agents/review-personas/general.md`. Require checkout proof. Missing tmux, grok, or claude on the machine is a blocker.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
@@ -108,7 +109,7 @@ result=<summary>`. `gaps` cannot PASS or enter acceptance.
 - `PASS`: continue.
 - `FIX`: record `Review: fix`, reset `Reviewed feature tip: none` and `Blast
   radius: pending`, return to Grok BUILD, fix and commit the clean delta, repeat
-  affected proof, and spawn a new Claude Opus process to review the new tip.
+  affected proof, and reuse the same reviewer for the new tip.
 - `ESCALATE`: name one specialist and one concrete high-risk question; the
   specialist answers only back to the same general reviewer, which then issues
   the terminal `PASS` or `FIX` even without a code delta. There are no

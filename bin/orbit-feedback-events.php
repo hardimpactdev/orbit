@@ -115,6 +115,77 @@ function orbitFeedbackRead(string $path): array
     return $events;
 }
 
+/**
+ * @return list<array<string, mixed>>
+ */
+function orbitFeedbackReadRelevant(string $path, bool $skipInvalidSourceRefs = false): array
+{
+    if (! $skipInvalidSourceRefs) {
+        return orbitFeedbackRead($path);
+    }
+
+    $initialIdentity = orbitFeedbackPathIdentity($path);
+
+    if ($initialIdentity === null) {
+        return [];
+    }
+
+    $directory = dirname($path);
+    $directoryIdentity = orbitFeedbackDirectoryIdentity($directory);
+    $handle = fopen($path, 'rb');
+
+    if ($handle === false) {
+        throw new RuntimeException("Unable to open feedback stream: {$path}");
+    }
+
+    try {
+        if (! flock($handle, LOCK_SH)) {
+            throw new RuntimeException("Unable to lock feedback stream: {$path}");
+        }
+
+        orbitFeedbackAssertDirectoryIdentity($directory, $directoryIdentity);
+        orbitFeedbackAssertOpenFileIdentity($path, $handle, $initialIdentity);
+        $decoded = orbitFeedbackDecode((string) stream_get_contents($handle), $path);
+    } finally {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
+
+    $events = [];
+    $validated = [];
+
+    foreach ($decoded as $event) {
+        try {
+            orbitFeedbackValidate($event, $validated);
+            orbitFeedbackAssertNoSecrets($event);
+        } catch (RuntimeException $exception) {
+            if (! orbitFeedbackIsSkippableSourceRefProblem($exception->getMessage())) {
+                throw $exception;
+            }
+
+            $eventId = is_string($event['id'] ?? null) ? (string) $event['id'] : 'unknown';
+            fwrite(
+                STDERR,
+                "WARNING: skipping invalid historical feedback event {$eventId}: {$exception->getMessage()}\n",
+            );
+
+            continue;
+        }
+
+        $events[] = $event;
+        $validated[] = $event;
+    }
+
+    return $events;
+}
+
+function orbitFeedbackIsSkippableSourceRefProblem(string $message): bool
+{
+    return str_contains($message, 'source_ref')
+        || str_contains($message, 'session_ref')
+        || str_contains($message, 'source reference');
+}
+
 /** @param list<array<string, mixed>> $events */
 function orbitFeedbackValidateStream(array $events): void
 {

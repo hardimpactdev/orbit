@@ -35,7 +35,13 @@ it('spawns a worker window, pipes the log, and delivers the bootstrap line', fun
             ->and($payload['cli'])
             ->toBe('grok')
             ->and($payload['command'])
-            ->toBe(['grok', '--yolo']);
+            ->toBe([
+                'env',
+                'ORBIT_WORKER_ID=impl-1',
+                'ORBIT_WORKER_ROLE=impl',
+                'grok',
+                '--yolo',
+            ]);
 
         $entry = json_decode(
             (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
@@ -147,8 +153,8 @@ it('refuses heartbeat handoff when the handoff file is missing', function (): vo
 it('copies a handoff file and sets status=handoff', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
-        $source = $fixture['worktree'].'/notes.md';
-        file_put_contents($source, data: "done\n");
+        $source = worker_tools_impl_handoff_source($fixture, "done\n");
+        $sha = worker_tools_head($fixture['worktree']);
 
         $missing = worker_tools_run(
             'orbit-worker-handoff',
@@ -170,11 +176,12 @@ it('copies a handoff file and sets status=handoff', function (): void {
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput().$process->getOutput());
 
-        $destination = $fixture['worktree'].'/.orbit/workers/handoff/impl-1.md';
+        $destination = $fixture['worktree'].'/.orbit/workers/handoff/impl-1-'.$sha.'.md';
         expect($destination)
             ->toBeFile()
             ->and((string) file_get_contents($destination))
-            ->toBe("done\n");
+            ->toContain('candidate='.$sha)
+            ->toContain("done\n");
 
         $entry = json_decode(
             (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
@@ -183,7 +190,152 @@ it('copies a handoff file and sets status=handoff', function (): void {
         expect($entry['status'])
             ->toBe('handoff')
             ->and($entry['handoff'])
-            ->toEndWith('/.orbit/workers/handoff/impl-1.md');
+            ->toEndWith('/.orbit/workers/handoff/impl-1-'.$sha.'.md');
+    });
+});
+
+it('rejects an impl handoff that omits the candidate SHA, names the wrong SHA, or lacks a clean HEAD receipt', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        worker_tools_commit_docs_change($fixture);
+        $sha = worker_tools_head($fixture['worktree']);
+        $source = $fixture['worktree'].'/.orbit/workers/inbox/notes.md';
+
+        if (! is_dir(dirname($source))) {
+            mkdir(dirname($source), recursive: true);
+        }
+
+        file_put_contents($source, data: "done without sha\n");
+        $missingSha = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($missingSha->getExitCode())
+            ->toBe(2)
+            ->and($missingSha->getErrorOutput())
+            ->toContain('candidate=')
+            ->toContain('40-character');
+
+        file_put_contents($source, data: 'candidate='.str_repeat('b', 40)."\n");
+        $wrongSha = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($wrongSha->getExitCode())
+            ->toBe(2)
+            ->and($wrongSha->getErrorOutput())
+            ->toContain($sha);
+
+        file_put_contents($source, data: "candidate={$sha}\n");
+        $missingReceipt = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($missingReceipt->getExitCode())
+            ->toBe(2)
+            ->and($missingReceipt->getErrorOutput())
+            ->toContain('docs-lint');
+
+        worker_tools_write_docs_lint_artifact($fixture['worktree'], $sha);
+        file_put_contents("{$fixture['worktree']}/README.md", data: "dirty after receipt\n");
+        $dirty = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($dirty->getExitCode())
+            ->toBe(2)
+            ->and($dirty->getErrorOutput())
+            ->toContain('dirty');
+    });
+});
+
+it('keeps SHA-keyed impl handoffs inspectable across correction rounds', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $firstSource = worker_tools_impl_handoff_source($fixture, "first\n");
+        $firstSha = worker_tools_head($fixture['worktree']);
+        $first = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $firstSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+
+        worker_tools_commit_docs_change($fixture, "second candidate\n");
+        $secondSource = worker_tools_impl_handoff_source($fixture, "second\n");
+        $secondSha = worker_tools_head($fixture['worktree']);
+        $second = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $secondSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($second->getExitCode())
+            ->toBe(0, $second->getErrorOutput().$second->getOutput())
+            ->and($fixture['worktree'].'/.orbit/workers/handoff/impl-1-'.$firstSha.'.md')
+            ->toBeFile()
+            ->and($fixture['worktree'].'/.orbit/workers/handoff/impl-1-'.$secondSha.'.md')
+            ->toBeFile()
+            ->and((string) file_get_contents($fixture['worktree'].'/.orbit/workers/handoff/impl-1-'.$firstSha.'.md'))
+            ->toContain("first\n")
+            ->and(json_decode((string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'), true)['handoff'])
+            ->toEndWith('/.orbit/workers/handoff/impl-1-'.$secondSha.'.md');
+    });
+});
+
+it('allows non-impl handoffs without a proof receipt', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $spawn = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=review',
+                '--cli=claude',
+                "--brief={$brief}",
+                '--name=review-1',
+                '--ready-delay=1',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($spawn->getExitCode())->toBe(0, $spawn->getErrorOutput().$spawn->getOutput());
+
+        $source = $fixture['worktree'].'/.orbit/workers/inbox/review.md';
+
+        if (! is_dir(dirname($source))) {
+            mkdir(dirname($source), recursive: true);
+        }
+
+        file_put_contents($source, data: "VERDICT: PASS\n");
+        $process = worker_tools_run(
+            'orbit-worker-handoff',
+            ['review-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($fixture['worktree'].'/.orbit/workers/handoff/review-1.md')
+            ->toBeFile();
     });
 });
 
@@ -224,8 +376,7 @@ it('marks a worker exited when its window is gone', function (): void {
 it('watch reports handoff immediately', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
-        $source = $fixture['worktree'].'/done.md';
-        file_put_contents($source, data: "handoff\n");
+        $source = worker_tools_impl_handoff_source($fixture, "handoff\n");
         $handoff = worker_tools_run(
             'orbit-worker-handoff',
             ['impl-1', $source],
@@ -606,6 +757,120 @@ it('retries bootstrap submit for a delayed interactive CLI', function (string $c
     'claude' => ['claude'],
 ]);
 
+it('watch can acknowledge a consumed handoff and wait for a later snapshot on the same worker', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $firstSource = worker_tools_impl_handoff_source($fixture, "first\n");
+        $first = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $firstSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+
+        $initial = worker_tools_run(
+            'orbit-worker-watch',
+            ['--interval=1', '--timeout=3', '--target=impl-1'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($initial->getExitCode())->toBe(0, $initial->getErrorOutput().$initial->getOutput());
+        $firstEvent = json_decode(trim($initial->getOutput()), true);
+        expect($firstEvent['event'])->toBe('handoff')->and($firstEvent['snapshot'])->toBeString();
+
+        $acked = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--timeout=2',
+                '--target=impl-1',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($acked->getExitCode())->toBe(3);
+        $timeout = json_decode(trim($acked->getOutput()), true);
+        expect($timeout['event'])->toBe('timeout');
+
+        worker_tools_commit_docs_change($fixture, "corrected candidate\n");
+        $secondSource = worker_tools_impl_handoff_source($fixture, "second\n");
+        $second = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $secondSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($second->getExitCode())->toBe(0, $second->getErrorOutput().$second->getOutput());
+
+        $changed = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--timeout=3',
+                '--target=impl-1',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($changed->getExitCode())->toBe(0, $changed->getErrorOutput().$changed->getOutput());
+        $secondEvent = json_decode(trim($changed->getOutput()), true);
+        expect($secondEvent['event'])
+            ->toBe('handoff')
+            ->and($secondEvent['snapshot'])
+            ->not->toBe($firstEvent['snapshot'])
+            ->and($secondEvent['handoff'])
+            ->not->toBe($firstEvent['handoff']);
+    });
+});
+
+it('watch still accepts --ignore as cheap compatibility', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $source = worker_tools_impl_handoff_source($fixture, "done\n");
+        worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        $process = worker_tools_run(
+            'orbit-worker-watch',
+            ['--interval=1', '--timeout=2', '--ignore=impl-1'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and(trim($process->getOutput()))
+            ->toBe('{"event":"none"}');
+    });
+});
+
+it('documents the default watch interval and ack targeting', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-worker-watch'));
+
+    expect($source)
+        ->toContain('[--interval=30]')
+        ->toContain('[--target=<id>]')
+        ->toContain('[--ack=<snapshot>]');
+});
+
 it('watch returns none when no workers are registered', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         $process = worker_tools_run(
@@ -666,8 +931,7 @@ it('stops only handoff workers with --all-finished and leaves blocked windows al
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-2');
-        $source = $fixture['worktree'].'/done.md';
-        file_put_contents($source, data: "handoff\n");
+        $source = worker_tools_impl_handoff_source($fixture, "handoff\n");
         worker_tools_run(
             'orbit-worker-handoff',
             ['impl-1', $source],
@@ -941,8 +1205,13 @@ function worker_tools_make_fixture(): array
         - Events: `.orbit/feedback.jsonl`
         MARKDOWN);
     file_put_contents($root.'/README.md', data: "fixture\n");
+    file_put_contents($root.'/.gitignore', data: ".orbit/quality-gates/\n.orbit/workers/\nfake-bin/\n");
     new Process(['git', 'add', '.'], $root)->mustRun();
     new Process(['git', 'commit', '-m', 'fixture'], $root)->mustRun();
+    new Process(['git', 'checkout', '-b', 'feature'], $root)->mustRun();
+    file_put_contents($root.'/README.md', data: "feature candidate\n");
+    new Process(['git', 'add', 'README.md'], $root)->mustRun();
+    new Process(['git', 'commit', '-m', 'feature'], $root)->mustRun();
 
     return ['root' => $root, 'worktree' => $root];
 }
@@ -956,8 +1225,72 @@ function worker_tools_make_fake_cli(string $root, bool $echoing): string
         : "#!/usr/bin/env bash\nexec sleep 3600\n";
     file_put_contents($bin.'/grok', data: $script);
     chmod($bin.'/grok', permissions: 0o755);
+    file_put_contents($bin.'/claude', data: $script);
+    chmod($bin.'/claude', permissions: 0o755);
 
     return $bin;
+}
+
+function worker_tools_head(string $worktree): string
+{
+    return trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+}
+
+function worker_tools_commit_docs_change(array $fixture, string $contents = "updated docs\n"): string
+{
+    file_put_contents($fixture['worktree'].'/README.md', data: $contents);
+    new Process(['git', 'add', 'README.md'], $fixture['worktree'])->mustRun();
+    new Process(['git', 'commit', '-m', 'Update docs candidate'], $fixture['worktree'])->mustRun();
+
+    return worker_tools_head($fixture['worktree']);
+}
+
+function worker_tools_write_docs_lint_artifact(string $worktree, string $commit): void
+{
+    $directory = $worktree.'/.orbit/quality-gates';
+
+    if (! is_dir($directory)) {
+        mkdir($directory, recursive: true);
+    }
+
+    $payload = [
+        'gate' => 'docs-lint',
+        'producer' => 'quality-gate-run',
+        'command' => 'composer docs-lint',
+        'mode' => 'check',
+        'exit_code' => 0,
+        'duration_ms' => 10,
+        'started_at' => gmdate('c'),
+        'ended_at' => gmdate('c'),
+        'git' => [
+            'branch' => 'feature',
+            'commit' => $commit,
+            'dirty' => false,
+        ],
+        'subgates' => [],
+    ];
+    file_put_contents(
+        $directory.'/docs-lint-'.$commit.'.json',
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+}
+
+/**
+ * @param  array{root: string, worktree: string}  $fixture
+ */
+function worker_tools_impl_handoff_source(array $fixture, string $body = "done\n"): string
+{
+    $sha = worker_tools_head($fixture['worktree']);
+    worker_tools_write_docs_lint_artifact($fixture['worktree'], $sha);
+    $path = $fixture['worktree'].'/.orbit/workers/inbox/handoff-source.md';
+
+    if (! is_dir(dirname($path))) {
+        mkdir(dirname($path), recursive: true);
+    }
+
+    file_put_contents($path, data: "candidate={$sha}\n{$body}");
+
+    return $path;
 }
 
 function worker_tools_write_brief(string $worktree): string

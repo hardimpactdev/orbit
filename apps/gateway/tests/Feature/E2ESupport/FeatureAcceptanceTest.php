@@ -1329,6 +1329,7 @@ it('keeps a failed terminal runtime proof in PROVE and completes FIX -> BUILD ->
             $fixture,
             acceptance_test_structured_runtime($repairedTip),
         );
+        acceptance_test_write_gate_artifact($fixture);
 
         $ready = acceptance_test_run($fixture, ['ready']);
         $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
@@ -1872,7 +1873,8 @@ function acceptance_test_workspace(string $suffix, string $changedPath): string
     acceptance_test_git($workspace, ['config', 'user.name', 'Orbit Test']);
     file_put_contents("{$workspace}/README.md", "# Fixture\n");
     file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
-    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore']);
+    acceptance_test_write_quality_label_files($workspace);
+    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
     acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
     acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
     $absolute = "{$workspace}/{$changedPath}";
@@ -1900,7 +1902,8 @@ function acceptance_test_rename_workspace(string $suffix, string $sourcePath, st
     file_put_contents("{$workspace}/README.md", "# Fixture\n");
     file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
     file_put_contents("{$workspace}/{$sourcePath}", "authority\n");
-    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', $sourcePath]);
+    acceptance_test_write_quality_label_files($workspace);
+    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', $sourcePath, 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
     acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
     acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
     $destinationDirectory = dirname("{$workspace}/{$destinationPath}");
@@ -1931,6 +1934,7 @@ function acceptance_test_seed_loop(
         $venue === 'automated' ? 'retained-incus' : $venue,
     );
     acceptance_test_seed_runtime_evidence($fixture);
+    acceptance_test_write_gate_artifact($fixture);
 
     file_put_contents("{$fixture}/.orbit/loop.md", <<<MARKDOWN
         # Orbit Feature Loop
@@ -1972,6 +1976,82 @@ function acceptance_test_seed_loop(
 
         - Events: `.orbit/feedback.jsonl`
         MARKDOWN);
+}
+
+function acceptance_test_write_quality_label_files(string $workspace): void
+{
+    require_once repo_path('bin/orbit-quality-subgates.php');
+
+    $declarationBody = implode("\n", array_map(
+        static fn (string $label): string => "    '{$label}',",
+        QUALITY_CHECK_EXPECTED_SUBGATES,
+    ));
+    $producerBody = implode("\n", array_map(
+        static fn (string $label): string => "    {$label}",
+        QUALITY_CHECK_EXPECTED_SUBGATES,
+    ));
+
+    if (! is_dir("{$workspace}/bin")) {
+        mkdir("{$workspace}/bin", recursive: true);
+    }
+
+    file_put_contents("{$workspace}/bin/orbit-quality-subgates.php", <<<PHP
+        <?php
+
+        declare(strict_types=1);
+
+        const QUALITY_CHECK_EXPECTED_SUBGATES = [
+        {$declarationBody}
+        ];
+
+        PHP);
+    file_put_contents("{$workspace}/bin/quality-check.sh", <<<BASH
+        #!/usr/bin/env bash
+
+        CHECK_LABELS=(
+        {$producerBody}
+        )
+
+        BASH);
+}
+
+function acceptance_test_write_gate_artifact(string $fixture): void
+{
+    require_once repo_path('bin/orbit-quality-subgates.php');
+
+    $directory = "{$fixture}/.orbit/quality-gates";
+
+    if (! is_dir($directory)) {
+        mkdir($directory, recursive: true);
+    }
+
+    $commit = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
+    $subgates = [];
+
+    foreach (QUALITY_CHECK_EXPECTED_SUBGATES as $label) {
+        $subgates[$label] = 0;
+    }
+
+    $payload = [
+        'gate' => 'quality-check',
+        'producer' => 'quality-check.sh',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'exit_code' => 0,
+        'duration_ms' => 10,
+        'started_at' => gmdate('c'),
+        'ended_at' => gmdate('c'),
+        'git' => [
+            'branch' => 'feature',
+            'commit' => $commit,
+            'dirty' => false,
+        ],
+        'subgates' => $subgates,
+    ];
+    file_put_contents(
+        "{$directory}/quality-check-{$commit}.json",
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
 }
 
 function acceptance_test_structured_runtime(
@@ -2036,6 +2116,7 @@ function acceptance_test_replace_orbit_root_with_symlink(string $fixture, string
     acceptance_test_unlink_if_present("{$fixture}/.orbit/evidence/runtime-proof.txt");
     acceptance_test_unlink_if_present("{$fixture}/.orbit/loop.md");
     acceptance_test_remove_empty_dir("{$fixture}/.orbit/evidence");
+    acceptance_test_remove_empty_dir("{$fixture}/.orbit/quality-gates");
     acceptance_test_remove_empty_dir("{$fixture}/.orbit");
     symlink($outside, "{$fixture}/.orbit");
 }

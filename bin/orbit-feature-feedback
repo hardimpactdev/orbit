@@ -188,8 +188,9 @@ function feedbackRelevant(string $stream, string $cwd, array $options): never
     $allEvents = [];
     $seen = [];
 
-    foreach ($paths as $path) {
-        foreach (orbitFeedbackRead($path) as $event) {
+    foreach ($paths as $index => $path) {
+        $lenient = $index > 0;
+        foreach (orbitFeedbackReadRelevant($path, $lenient) as $event) {
             if (isset($seen[$event['id']])) {
                 continue;
             }

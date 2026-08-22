@@ -24,10 +24,14 @@ try {
     $worktree = orbit_worker_worktree((string) getcwd());
     $entry = orbit_worker_require_entry($worktree, $id);
 
-    if ($status === 'handoff' && ! is_file(orbit_worker_handoff_path($worktree, $id))) {
+    $handoffPath = is_string($entry['handoff'] ?? null) && $entry['handoff'] !== ''
+        ? (string) $entry['handoff']
+        : orbit_worker_handoff_path($worktree, $id);
+
+    if ($status === 'handoff' && ! is_file($handoffPath)) {
         throw new RuntimeException(
             'handoff file is missing: '
-            .orbit_worker_handoff_path($worktree, $id)
+            .$handoffPath
             .'. Write the handoff with bin/orbit-worker-handoff before --status=handoff.',
         );
     }
@@ -50,7 +54,7 @@ try {
     }
 
     if ($status === 'handoff' && $entry['handoff'] === null) {
-        $entry['handoff'] = orbit_worker_handoff_path($worktree, $id);
+        $entry['handoff'] = $handoffPath;
     }
 
     orbit_worker_write($worktree, $entry);

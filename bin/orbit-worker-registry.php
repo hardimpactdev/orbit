@@ -220,8 +220,12 @@ function orbit_worker_log_path(string $worktree, string $id): string
     return orbit_worker_dir($worktree).'/logs/'.$id.'.log';
 }
 
-function orbit_worker_handoff_path(string $worktree, string $id): string
+function orbit_worker_handoff_path(string $worktree, string $id, ?string $sha = null): string
 {
+    if (is_string($sha) && $sha !== '') {
+        return orbit_worker_dir($worktree).'/handoff/'.$id.'-'.$sha.'.md';
+    }
+
     return orbit_worker_dir($worktree).'/handoff/'.$id.'.md';
 }
 

@@ -1,0 +1,66 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-command-classify.php';
+
+const ORBIT_REVIEW_HOOK_BLOCK_EXIT = 2;
+
+$role = getenv('ORBIT_WORKER_ROLE');
+
+if (! is_string($role) || $role !== 'review') {
+    exit(0);
+}
+
+$command = command_from_argv($argv) ?? extract_command((string) stream_get_contents(STDIN));
+
+if (! is_string($command) || trim($command) === '') {
+    exit(0);
+}
+
+$blocked = orbit_review_blocked_gate(trim($command));
+
+if ($blocked === null) {
+    exit(0);
+}
+
+fwrite(
+    STDERR,
+    "review worker cannot run {$blocked}; consume bin/orbit-feature-proof-receipt for the candidate instead of repeating the terminal gate. Targeted reproduction of one named finding remains allowed.\n",
+);
+
+exit(ORBIT_REVIEW_HOOK_BLOCK_EXIT);
+
+function orbit_review_blocked_gate(string $command): ?string
+{
+    foreach (preg_split('/\s*(?:&&|\|\||;|\n)\s*/', $command) ?: [] as $segment) {
+        $words = function_exists('shell_words')
+            ? shell_words($segment)
+            : (preg_split('/\s+/', trim($segment)) ?: []);
+
+        foreach ($words as $index => $word) {
+            $binary = basename($word);
+
+            if (in_array($binary, ['quality-check.sh'], true)) {
+                return 'bin/quality-check.sh';
+            }
+
+            if (! in_array($binary, ['composer', 'composer.phar'], true)) {
+                continue;
+            }
+
+            $script = composer_script_operand(array_slice($words, $index + 1));
+
+            if ($script === null) {
+                continue;
+            }
+
+            if (in_array($script, ['quality-check', 'quality-check:fix', 'docs-lint', 'test', 'test:slow'], true)) {
+                return "composer {$script}";
+            }
+        }
+    }
+
+    return null;
+}

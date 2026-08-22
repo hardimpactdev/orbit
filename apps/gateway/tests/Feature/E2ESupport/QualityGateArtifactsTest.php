@@ -1214,7 +1214,9 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     $e2ePrompt = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/agents/openai.yaml'));
     $defaultGateScripts = [
         'bin/orbit-feature-finalization-check',
+        'bin/orbit-feature-proof-receipt',
         'bin/orbit-prepare-worktree',
+        'bin/orbit-review-pre-tool-use-hook',
         'bin/quality-check.sh',
         'bin/quality-gate-final-check',
     ];
@@ -1259,7 +1261,9 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         ->not->toContain('bin/quality-gate-run')
         ->not->toContain('.env.e2e')->and((string) file_get_contents(repo_path('.claude/settings.json')))->toContain(
             'orbit-codex-pre-tool-use-hook',
-        )->and((string) file_get_contents(repo_path('.codex/hooks.json')))->toContain('orbit-codex-pre-tool-use-hook');
+        )->toContain('orbit-review-pre-tool-use-hook')->and((string) file_get_contents(repo_path('.codex/hooks.json')))->toContain(
+            'orbit-codex-pre-tool-use-hook',
+        )->toContain('orbit-review-pre-tool-use-hook');
 });
 
 it('installs locked TypeScript SDK tools in every prepared worktree', function (): void {
@@ -1292,7 +1296,7 @@ it('keeps retained cli proof agent-owned unless human judgment remains', functio
             'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`',
         )
         ->toContain(
-            'Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).',
+            'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).',
         )
         ->toContain('Otherwise it is agent-owned proof')
         ->and($normalizedImplementingFeaturesSkill)

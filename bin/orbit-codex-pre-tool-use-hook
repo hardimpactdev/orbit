@@ -10,6 +10,7 @@ require_once __DIR__.'/orbit-feedback-events.php';
 require_once __DIR__.'/orbit-feature-acceptance-contract.php';
 require_once __DIR__.'/orbit-feature-proof-requirements.php';
 require_once __DIR__.'/orbit-quality-gate-artifacts.php';
+require_once __DIR__.'/orbit-proof-receipt.php';
 require_once __DIR__.'/orbit-session-archive-receipt.php';
 require_once __DIR__.'/orbit-session-capture-health.php';
 require_once __DIR__.'/orbit-command-classify.php';

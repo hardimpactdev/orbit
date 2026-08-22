@@ -5,7 +5,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
 
-const ORBIT_WORKER_WATCH_USAGE = 'Usage: bin/orbit-worker-watch [--interval=30] [--stale=900] [--timeout=<seconds>] [--ignore=<id,id>]';
+const ORBIT_WORKER_WATCH_USAGE = 'Usage: bin/orbit-worker-watch [--interval=30] [--stale=900] [--timeout=<seconds>] [--target=<id>] [--ack=<snapshot>] [--ignore=<id,id>]';
 
 try {
     $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
@@ -17,6 +17,8 @@ try {
     $intervalRaw = orbit_worker_option_string($parsed['options'], 'interval', '30') ?? '30';
     $staleRaw = orbit_worker_option_string($parsed['options'], 'stale', '900') ?? '900';
     $timeoutRaw = orbit_worker_option_string($parsed['options'], 'timeout');
+    $target = orbit_worker_option_string($parsed['options'], 'target');
+    $ack = orbit_worker_option_string($parsed['options'], 'ack', '') ?? '';
     $ignoreRaw = orbit_worker_option_string($parsed['options'], 'ignore', '') ?? '';
 
     if (! preg_match('/^[1-9]\d*$/', $intervalRaw) || ! preg_match('/^[1-9]\d*$/', $staleRaw)) {
@@ -47,7 +49,13 @@ try {
         $entries = [];
 
         foreach (orbit_worker_list($worktree) as $entry) {
-            if (isset($ignored[(string) $entry['id']])) {
+            $id = (string) $entry['id'];
+
+            if (isset($ignored[$id])) {
+                continue;
+            }
+
+            if ($target !== null && $id !== $target) {
                 continue;
             }
 
@@ -60,6 +68,10 @@ try {
         }
 
         $event = orbit_worker_watch_event($worktree, $entries, $stale);
+
+        if ($event !== null && $ack !== '' && ($event['snapshot'] ?? null) === $ack) {
+            $event = null;
+        }
 
         if ($event !== null) {
             fwrite(STDOUT, json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
@@ -161,5 +173,27 @@ function orbit_worker_watch_payload(string $worktree, array $entry, string $even
         'handoff' => is_string($handoff) && $handoff !== '' ? $handoff : null,
         'log' => orbit_worker_log_path($worktree, (string) $entry['id']),
         'seen_at' => orbit_worker_now(),
+        'snapshot' => orbit_worker_watch_snapshot($entry, $event),
     ];
+}
+
+/**
+ * @param  array<string, mixed>  $entry
+ */
+function orbit_worker_watch_snapshot(array $entry, string $event): string
+{
+    $id = (string) $entry['id'];
+
+    if ($event === 'handoff') {
+        $path = is_string($entry['handoff'] ?? null) ? (string) $entry['handoff'] : '';
+        $stamp = is_file($path) ? filesize($path).':'.filemtime($path) : 'missing';
+
+        return $id.':handoff:'.$path.':'.$stamp;
+    }
+
+    if ($event === 'exited') {
+        return $id.':exited:'.((string) ($entry['exited_at'] ?? ''));
+    }
+
+    return $id.':'.$event;
 }
