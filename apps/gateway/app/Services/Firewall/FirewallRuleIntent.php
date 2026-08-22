@@ -11,6 +11,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Illuminate\Database\Eloquent\Builder;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 class FirewallRuleIntent
@@ -222,7 +223,9 @@ class FirewallRuleIntent
         $node = Node::query()
             ->where('name', $nodeName)
             ->where('status', NodeStatus::Active->value)
-            ->where('platform', 'ubuntu')
+            ->where(fn (Builder $query): Builder => $query
+                ->where('platform', 'ubuntu')
+                ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']))
             ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()))
             ->first();
 

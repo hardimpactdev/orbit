@@ -202,4 +202,50 @@ describe('FirewallRuleQuery', function (): void {
 
         app(FirewallRuleQuery::class)->list(caller: $caller);
     })->throws(GatewayApiException::class, 'This node is not authorized to read the firewall rule registry.');
+
+    it('lists firewall rules on versioned Ubuntu nodes and omits ineligible nodes', function (): void {
+        $versionedNode = Node::factory()->create(['name' => 'app-24', 'platform' => 'ubuntu_24-04']);
+        $plainUbuntuNode = Node::factory()->create(['name' => 'app-plain', 'platform' => 'ubuntu']);
+        $inactiveVersionedNode = Node::factory()
+            ->appDev()
+            ->create(['name' => 'inactive-24', 'platform' => 'ubuntu_24-04', 'status' => 'inactive']);
+        $rolelessVersionedNode = Node::factory()->create(['name' => 'roleless-24', 'platform' => 'ubuntu_24-04']);
+        $hyphenatedUbuntuNode = Node::factory()->appDev()->create(['name' => 'hyphen-1', 'platform' => 'ubuntu-24-04']);
+        $debianNode = Node::factory()->appDev()->create(['name' => 'debian-1', 'platform' => 'debian']);
+        assignFirewallRuleQueryAppHostRole($versionedNode);
+        assignFirewallRuleQueryAppHostRole($plainUbuntuNode);
+
+        FirewallRule::factory()->create(['node_id' => $versionedNode->id, 'name' => 'versioned']);
+        FirewallRule::factory()->create(['node_id' => $plainUbuntuNode->id, 'name' => 'plain']);
+        FirewallRule::factory()->create(['node_id' => $inactiveVersionedNode->id, 'name' => 'inactive-versioned']);
+        FirewallRule::factory()->create(['node_id' => $rolelessVersionedNode->id, 'name' => 'roleless-versioned']);
+        FirewallRule::factory()->create(['node_id' => $hyphenatedUbuntuNode->id, 'name' => 'hyphenated']);
+        FirewallRule::factory()->create(['node_id' => $debianNode->id, 'name' => 'debian']);
+
+        $result = app(FirewallRuleQuery::class)->list();
+
+        expect(array_column($result['rules'], 'name'))->toBe(['versioned', 'plain']);
+    });
+
+    it('scopes firewall reads to a versioned Ubuntu node', function (): void {
+        $versionedNode = Node::factory()->create(['name' => 'app-24', 'platform' => 'ubuntu_24-04']);
+        assignFirewallRuleQueryAppHostRole($versionedNode);
+        FirewallRule::factory()->create(['node_id' => $versionedNode->id, 'name' => 'versioned']);
+
+        $result = app(FirewallRuleQuery::class)->list(node: 'app-24');
+
+        expect(array_column($result['rules'], 'name'))
+            ->toBe(['versioned'])
+            ->and($result['meta']['node'])
+            ->toBe('app-24');
+    });
+
+    it('rejects scoped firewall reads for inactive versioned Ubuntu nodes', function (): void {
+        $inactiveVersionedNode = Node::factory()
+            ->appDev()
+            ->create(['name' => 'inactive-24', 'platform' => 'ubuntu_24-04', 'status' => 'inactive']);
+        FirewallRule::factory()->create(['node_id' => $inactiveVersionedNode->id, 'name' => 'inactive-versioned']);
+
+        app(FirewallRuleQuery::class)->list(node: 'inactive-24');
+    })->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
 });

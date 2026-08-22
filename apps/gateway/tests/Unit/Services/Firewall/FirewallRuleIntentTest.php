@@ -384,6 +384,75 @@ describe('FirewallRuleIntent', function (): void {
         'agent',
         'ingress',
     ]);
+
+    it('creates and removes firewall intent on versioned Ubuntu nodes', function (): void {
+        $node = createFirewallRuleIntentAppHostNode(['platform' => 'ubuntu_24-04']);
+
+        $stored = app(FirewallRuleIntent::class)->store(
+            action: 'allow',
+            name: 'local-vite',
+            nodeName: 'app-1',
+            direction: 'incoming',
+            source: '10.6.0.0/24',
+            destination: null,
+            port: '5173',
+            protocol: 'tcp',
+            reason: 'local development',
+        );
+
+        expect(FirewallRule::query()->count())
+            ->toBe(1)
+            ->and($stored['data']['rule']['node'])
+            ->toBe($node->name)
+            ->and($stored['meta']['action'])
+            ->toBe('created')
+            ->and($stored['meta']['backend_enacted'])
+            ->toBeTrue();
+
+        $removed = app(FirewallRuleIntent::class)->remove('local-vite', 'app-1');
+
+        expect(FirewallRule::query()->count())
+            ->toBe(0)
+            ->and($removed['meta']['backend_removed'])
+            ->toBeTrue();
+    });
+
+    it('rejects firewall writes on inactive roleless or non-Ubuntu nodes', function (
+        array $attributes,
+        bool $assignRole,
+    ): void {
+        $node = Node::factory()->create([
+            'name' => 'target-1',
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+            ...$attributes,
+        ]);
+
+        if ($assignRole) {
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $node->id,
+                'role' => 'app-dev',
+                'status' => 'active',
+                'settings' => ['tld' => 'test'],
+            ]);
+        }
+
+        app(FirewallRuleIntent::class)->store(
+            'deny',
+            'block-test',
+            $node->name,
+            'incoming',
+            'any',
+            null,
+            '8080',
+            'tcp',
+            null,
+        );
+    })->with([
+        'inactive versioned ubuntu' => [['status' => 'inactive'], true],
+        'roleless versioned ubuntu' => [[], false],
+        'non-ubuntu' => [['platform' => 'macos'], true],
+    ])->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
 });
 
 final class FirewallRuleIntentRecordingRemoteShell implements RemoteShell

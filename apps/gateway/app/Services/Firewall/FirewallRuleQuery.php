@@ -116,8 +116,15 @@ class FirewallRuleQuery
     {
         return $query
             ->where('status', NodeStatus::Active->value)
-            ->where('platform', 'ubuntu')
+            ->where(fn (Builder $platformQuery): Builder => $this->ubuntuPlatformQuery($platformQuery))
             ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()));
+    }
+
+    private function ubuntuPlatformQuery(Builder $query): Builder
+    {
+        return $query
+            ->where('platform', 'ubuntu')
+            ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']);
     }
 
     /**
