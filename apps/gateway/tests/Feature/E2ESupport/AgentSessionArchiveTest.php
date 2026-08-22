@@ -341,6 +341,101 @@ it('accepts string worker ids in --processes-json fixtures', function (): void {
     }
 });
 
+it('archives the prefix worker transcript instead of a newer colliding sibling', function (
+    string $shortId,
+    string $longId,
+): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'prefix-'.$shortId);
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        $projectDir = "{$home}/.claude/projects/synthetic-project";
+        mkdir($projectDir, recursive: true);
+
+        write_worker_registry_entry($cwd, $shortId, 'claude --model opus', ['workingDir' => $cwd]);
+        write_worker_registry_entry($cwd, $longId, 'claude --model opus', ['workingDir' => $cwd]);
+
+        $shortFile = "{$projectDir}/{$shortId}.jsonl";
+        $longFile = "{$projectDir}/{$longId}.jsonl";
+        write_claude_worker_transcript($shortFile, $shortId, inputTokens: 11, outputTokens: 1);
+        write_claude_worker_transcript($longFile, $longId, inputTokens: 1000, outputTokens: 100);
+        touch($shortFile, time() - 10);
+        touch($longFile, time());
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--worker-id={$shortId}",
+                "--home={$home}",
+                "--cwd={$cwd}",
+            ],
+            repo_path(),
+        );
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(1)
+            ->and($results[0])
+            ->toMatchArray([
+                'worker_id' => $shortId,
+                'status' => 'ok',
+                'input_tokens' => 11,
+                'output_tokens' => 1,
+            ])
+            ->and($results[0]['artifact'] ?? null)
+            ->toEndWith("{$shortId}.jsonl")
+            ->not->toContain("{$longId}.jsonl");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'generated review ids' => ['review-1', 'review-10'],
+    'operator named docs ids' => ['docs', 'docs-2'],
+]);
+
+it('lane-close capture uses registry cli as the provider even when the worker id names another provider', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'cli-authoritative');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $orbitDir = "{$temp}/.orbit";
+    $workerId = 'claude-notes';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+        write_worker_registry_entry(
+            $cwd,
+            $workerId,
+            'grok --yolo',
+            ['workingDir' => $cwd, 'cli' => 'grok'],
+        );
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            $workerId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--orbit-dir={$orbitDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getErrorOutput())
+            ->toContain('worker_id=claude-notes provider=grok')
+            ->not->toContain('provider=claude');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
 it('continues past unresolvable target workers and records them with an explicit status', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'unresolved-target');
     $home = "{$temp}/home";
@@ -814,6 +909,7 @@ function write_agent_session_archive_processes(string $path, string $cwd): void
  *     pid?: ?int,
  *     startedAt?: string,
  *     providerRef?: mixed,
+ *     cli?: string,
  * } $options
  */
 function write_worker_registry_entry(
@@ -836,7 +932,7 @@ function write_worker_registry_entry(
     $entry = [
         'id' => $workerId,
         'role' => 'impl',
-        'cli' => $binary,
+        'cli' => $options['cli'] ?? $binary,
         'command' => preg_split('/\s+/', trim($command)) ?: [$command],
         'tmux' => [
             'session' => 'feat-fixture',
@@ -915,6 +1011,27 @@ function write_codex_fixture(string $home, string $cwd, string $marker): void
                         'reasoning_output_tokens' => 2,
                         'total_tokens' => 17,
                     ],
+                ],
+            ],
+        ],
+    ]);
+}
+
+function write_claude_worker_transcript(string $path, string $workerId, int $inputTokens, int $outputTokens): void
+{
+    write_jsonl($path, [
+        ['type' => 'user', 'message' => ['role' => 'user', 'content' => "Orbit worker: {$workerId}"]],
+        [
+            'type' => 'assistant',
+            'message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => "Claude for {$workerId}"]],
+                'model' => 'claude-opus',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => $outputTokens,
+                    'cache_read_input_tokens' => 0,
+                    'cache_creation_input_tokens' => 0,
                 ],
             ],
         ],

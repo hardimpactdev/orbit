@@ -645,7 +645,7 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
         return missing('claude_session_not_found', ['checked' => $checked]);
     }
 
-    if ($marker !== null && ! fileContains($projectFile, $marker)) {
+    if ($marker !== null && ! fileContainsWorkerMarker($projectFile, $marker)) {
         return missing('claude_marker_not_found', ['artifact' => $projectFile]);
     }
 
@@ -721,21 +721,14 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
 function findClaudeProjectFileForWorker(string $home, string $workerId, ?string $marker): ?string
 {
     $matches = [];
-    $needles = [
-        "Orbit worker: {$workerId}",
-    ];
 
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
-        if ($marker !== null && ! fileContains($file, $marker)) {
+        if ($marker !== null && ! fileContainsWorkerMarker($file, $marker)) {
             continue;
         }
 
-        foreach ($needles as $needle) {
-            if (fileContains($file, $needle)) {
-                $matches[] = $file;
-
-                continue 2;
-            }
+        if (fileContainsOrbitWorkerId($file, $workerId)) {
+            $matches[] = $file;
         }
     }
 
@@ -758,7 +751,10 @@ function findClaudeProjectFileForCwd(string $projectDir, ?string $marker): ?stri
     $files = array_values(array_filter(glob("{$projectDir}/*.jsonl") ?: [], 'is_file'));
 
     if ($marker !== null) {
-        $files = array_values(array_filter($files, fn (string $file): bool => fileContains($file, $marker)));
+        $files = array_values(array_filter($files, fn (string $file): bool => fileContainsWorkerMarker(
+            $file,
+            $marker,
+        )));
     }
 
     usort($files, fn (string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
@@ -800,7 +796,7 @@ function extractCodexSession(
         $rolloutsScanned++;
         $isProviderRef = $preferredFile !== null && $file === $preferredFile;
 
-        if (! $isProviderRef && $marker !== null && ! fileContains($file, $marker)) {
+        if (! $isProviderRef && $marker !== null && ! fileContainsWorkerMarker($file, $marker)) {
             $rejected['marker_not_found']++;
 
             continue;
@@ -1211,12 +1207,47 @@ function fileContains(string $path, string $needle): bool
     return false;
 }
 
+function textContainsOrbitWorkerId(string $text, string $workerId): bool
+{
+    return preg_match('/Orbit worker:\s*'.preg_quote($workerId, '/').'(?![a-z0-9-])/', $text) === 1;
+}
+
+function fileContainsOrbitWorkerId(string $path, string $workerId): bool
+{
+    $handle = fopen($path, 'rb');
+
+    if ($handle === false) {
+        return false;
+    }
+
+    while (($line = fgets($handle)) !== false) {
+        if (textContainsOrbitWorkerId($line, $workerId)) {
+            fclose($handle);
+
+            return true;
+        }
+    }
+
+    fclose($handle);
+
+    return false;
+}
+
+function fileContainsWorkerMarker(string $path, string $marker): bool
+{
+    if (preg_match('/^Orbit worker:\s*([a-z][a-z0-9-]*)\s*$/', $marker, $match) === 1) {
+        return fileContainsOrbitWorkerId($path, $match[1]);
+    }
+
+    return fileContains($path, $marker);
+}
+
 function sessionDirContains(string $dir, string $needle): bool
 {
     foreach (['chat_history.jsonl', 'updates.jsonl', 'events.jsonl', 'summary.json', 'prompt_context.json'] as $file) {
         $path = "{$dir}/{$file}";
 
-        if (is_file($path) && fileContains($path, $needle)) {
+        if (is_file($path) && fileContainsWorkerMarker($path, $needle)) {
             return true;
         }
     }

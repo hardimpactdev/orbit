@@ -135,8 +135,14 @@ function orbitAgentSessionCaptureMain(array $argv): int
         ? $cwd
         : normalizeCodexCwd($rowWorkingDir) ?? $rowWorkingDir;
     $name = (string) ($processRow['id'] ?? $processRow['name'] ?? $workerId);
+    $cli = strtolower((string) ($processRow['cli'] ?? ''));
 
-    $provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
+    $provider = $explicitProvider
+    ?: (
+        in_array($cli, ['grok', 'claude', 'codex', 'opencode'], true)
+            ? $cli
+            : inferProviderFromCommandOrName($command, $name, $kind)
+    );
 
     if ($incarnationFloor !== null && $provider !== 'codex') {
         fwrite(STDERR, "incarnation_floor_unsupported_provider\n");
