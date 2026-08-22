@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+    printf 'orbit-build-native-release-assets: %s\n' "$*" >&2
+    exit 1
+}
+
+repo_root="${ORBIT_NATIVE_RELEASE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)}"
+output=''
+for argument in "$@"; do
+    case "$argument" in
+        --output=*) output="${argument#*=}" ;;
+        *) fail "unknown option: ${argument}" ;;
+    esac
+done
+
+[ -n "$output" ] || fail '--output is required.'
+case "$output" in
+    /*) ;;
+    *) output="${repo_root}/${output}" ;;
+esac
+
+[ "$(uname -s)" = 'Darwin' ] || fail 'native release asset builder requires Darwin.'
+[ "$(uname -m)" = 'arm64' ] || fail 'native release asset builder requires arm64.'
+[ -z "$(git -C "$repo_root" status --porcelain)" ] || fail 'native release source checkout must be clean.'
+
+commit="$(git -C "$repo_root" rev-parse HEAD)"
+[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail 'native release source commit is invalid.'
+version="$("${repo_root}/bin/orbit-version")"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'native release version is invalid.'
+[ ! -e "$output" ] || fail "native release output already exists: ${output}"
+
+parent_dir="$(dirname "$output")"
+[ -d "$parent_dir" ] || fail 'native release output parent directory is missing.'
+[ ! -L "$parent_dir" ] || fail 'native release output parent must not be a symlink.'
+
+staging="${output}.staging.$$"
+cleanup() { [ ! -d "$staging" ] || rm -rf "$staging"; }
+trap cleanup EXIT
+mkdir -p "$staging"
+
+"${repo_root}/bin/orbit-build-agent-binary" mac arm
+source_artifact="${repo_root}/apps/agent/builds/dist/mac/mac-arm"
+file "$source_artifact" | grep -Eq 'Mach-O 64-bit executable arm64' \
+    || fail 'native Agent artifact is not a Mach-O arm64 executable.'
+
+install -m 0755 "$source_artifact" "${staging}/orbit-agent-macos-arm64"
+artifact_sha256="$(shasum -a 256 "${staging}/orbit-agent-macos-arm64" | awk '{ print $1 }')"
+
+{
+    printf 'schema=1\n'
+    printf 'commit=%s\n' "$commit"
+    printf 'version=%s\n' "$version"
+    printf 'builder_os=Darwin\n'
+    printf 'builder_arch=arm64\n'
+    printf 'sha256_agent_darwin_arm64=%s\n' "$artifact_sha256"
+} > "${staging}/native-assets.env"
+
+mv "$staging" "$output"
+printf 'NATIVE_RELEASE_ASSETS path=%s commit=%s version=%s\n' "$output" "$commit" "$version"

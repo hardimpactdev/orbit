@@ -888,6 +888,38 @@ it('builds local e2e cli binary artifacts through the shared helper', function (
         ->not->toContain('vendor/bin/phpacker build linux x64');
 });
 
+it('documents Beast coordinated Mini native candidate builds over the LAN', function (): void {
+    $skill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
+    $techStack = (string) file_get_contents(repo_path('apps/docs/content/tech-stack.md'));
+    $decisions = (string) file_get_contents(repo_path('PRODUCT_DECISIONS.md'));
+
+    expect($skill)
+        ->toContain('nckrtl@192.168.6.10')
+        ->toContain('nckrtl@192.168.6.20')
+        ->toContain('bin/orbit-release-build-worktree prepare')
+        ->toContain('bin/orbit-build-native-release-assets')
+        ->toContain('rsync')
+        ->toContain('bin/orbit-release-candidate verify-native')
+        ->toContain('bin/orbit-release-candidate build --native-assets=')
+        ->toContain('mini_hostname="$(ssh -G nckrtl@192.168.6.10')
+        ->toContain('mini_seen_beast="$(ssh -o BatchMode=yes nckrtl@192.168.6.10')
+        ->toContain('verify the Beast address from Mini')
+        ->toContain('Mini originates both')
+        ->not->toContain('beast_hostname="$(ssh -G nckrtl@192.168.6.20')
+        ->not->toContain('nckrtl@10.6.0.8')
+        ->not->toContain('nckrtl@10.6.0.7');
+
+    expect($techStack)
+        ->toContain('Beast')
+        ->toContain('Mini')
+        ->toContain('Darwin ARM64')
+        ->toContain('exact source commit')
+        ->and($decisions)
+        ->toContain('Beast coordinates release-candidate builds')
+        ->toContain('192.168.6.10')
+        ->toContain('192.168.6.20');
+});
+
 it('documents the compressed phar runtime extension contract', function (): void {
     $documents = [
         file_get_contents(repo_path('apps/docs/content/tech-stack.md')),

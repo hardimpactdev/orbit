@@ -24,7 +24,8 @@ trap cleanup EXIT
 usage() {
     cat <<'EOF'
 Usage:
-  bin/orbit-release-candidate build
+  bin/orbit-release-candidate build [--native-assets=<dir>]
+  bin/orbit-release-candidate verify-native --native-assets=<dir> [--commit=<sha>] [--version=<version>]
   bin/orbit-release-candidate env [--build-id=<id>]
   bin/orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted
   bin/orbit-release-candidate verify [--build-id=<id>] [--release-image=<ref>]
@@ -39,7 +40,11 @@ Formalizes the release-candidate publication flow from step 7 of
           .orbit/release-candidates/<build_id>/ (candidate.env includes
           sha256_linux_amd64, sha256_darwin_arm64, and
           sha256_agent_linux_amd64/sha256_agent_darwin_arm64) and update the
-          .orbit/release-candidates/latest pointer file.
+          .orbit/release-candidates/latest pointer file. With --native-assets,
+          import a verified Darwin ARM64 Agent bundle instead of building it.
+  verify-native
+          Verify a transferred native Agent bundle without building, pushing,
+          uploading, or mutating candidate state.
   env     Print eval-able `export key=value` lines from the recorded
           candidate.env of the latest (or --build-id) candidate.
   promote-runtime
@@ -81,6 +86,70 @@ state_value() {
     awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
 }
 
+native_value() {
+    local key="$1"
+    local manifest="$2"
+
+    awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$manifest"
+}
+
+verify_native_assets() {
+    local dir="$1"
+    local expected_commit="$2"
+    local expected_version="$3"
+    local manifest="${dir}/native-assets.env"
+    local artifact="${dir}/orbit-agent-macos-arm64"
+
+    [ -d "$dir" ] && [ ! -L "$dir" ] || fail 'native assets path must be a directory, not a symlink.'
+    [ -f "$manifest" ] && [ ! -L "$manifest" ] || fail 'native-assets.env is missing or unsafe.'
+    [ -f "$artifact" ] && [ ! -L "$artifact" ] || fail 'orbit-agent-macos-arm64 is missing or unsafe.'
+
+    local inventory
+    inventory="$(find "$dir" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort)"
+    [ "$inventory" = $'native-assets.env\norbit-agent-macos-arm64' ] \
+        || fail 'native assets directory contains missing or undeclared files.'
+
+    [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || fail 'native expected commit is invalid.'
+    [[ "$expected_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'native expected version is invalid.'
+
+    local manifest_keys
+    if ! manifest_keys="$(awk '
+        {
+            eq = index($0, "=")
+            if (eq <= 1) {
+                status = 1
+                exit
+            }
+            print substr($0, 1, eq - 1)
+        }
+        END {
+            if (status || NR != 6) {
+                exit 1
+            }
+        }
+    ' "$manifest" | LC_ALL=C sort)"; then
+        fail 'native manifest contains blank, malformed, or extra lines.'
+    fi
+    [ "$manifest_keys" = $'builder_arch\nbuilder_os\ncommit\nschema\nsha256_agent_darwin_arm64\nversion' ] \
+        || fail 'native manifest contains missing, duplicate, or undeclared keys.'
+
+    [ "$(native_value schema "$manifest")" = '1' ] || fail 'native manifest schema is invalid.'
+    [ "$(native_value commit "$manifest")" = "$expected_commit" ] || fail 'native source commit does not match.'
+    [ "$(native_value version "$manifest")" = "$expected_version" ] || fail 'native source version does not match.'
+    [ "$(native_value builder_os "$manifest")" = 'Darwin' ] || fail 'native builder_os must be Darwin.'
+    [ "$(native_value builder_arch "$manifest")" = 'arm64' ] || fail 'native builder_arch must be arm64.'
+
+    local expected_sha actual_sha
+    expected_sha="$(native_value sha256_agent_darwin_arm64 "$manifest")"
+    [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'native Agent SHA-256 is invalid.'
+    actual_sha="$(compute_sha256 "$artifact")"
+    [ "$actual_sha" = "$expected_sha" ] || fail 'sha256_agent_darwin_arm64 does not match.'
+    file "$artifact" | grep -Eq 'Mach-O 64-bit (executable arm64|arm64 executable)\b' \
+        || fail 'native Agent artifact is not a Mach-O arm64 executable.'
+
+    printf '%s\n' "$actual_sha"
+}
+
 resolve_state_dir() {
     local build_id="$1"
 
@@ -112,7 +181,27 @@ resolve_state_dir() {
 }
 
 cmd_build() {
-    [ $# -eq 0 ] || fail "build takes no options. Usage: bin/orbit-release-candidate build"
+    local native_assets_dir=''
+    local argument
+
+    for argument in "$@"; do
+        case "$argument" in
+            --native-assets=*)
+                native_assets_dir="${argument#--native-assets=}"
+                ;;
+            *)
+                fail "unknown build option: ${argument}. Usage: bin/orbit-release-candidate build [--native-assets=<dir>]"
+                ;;
+        esac
+    done
+
+    if [ -n "$native_assets_dir" ]; then
+        case "$native_assets_dir" in
+            /*) ;;
+            *) native_assets_dir="${repo_root}/${native_assets_dir}" ;;
+        esac
+        native_assets_dir="${native_assets_dir%/}"
+    fi
 
     cd "$repo_root"
 
@@ -196,12 +285,25 @@ cmd_build() {
     "${repo_root}/bin/orbit-build-cli-binary" mac arm "$version"
     "${repo_root}/bin/orbit-build-cli-binary" linux x64 "$version"
     "${repo_root}/bin/orbit-build-agent-binary" linux x64
-    "${repo_root}/bin/orbit-build-agent-binary" mac arm
 
     cp apps/cli/builds/dist/linux/linux-x64 "${work_dir}/orbit-linux-x64"
     cp apps/cli/builds/dist/mac/mac-arm "${work_dir}/orbit-macos-arm64"
     cp apps/agent/builds/dist/linux/linux-x64 "${work_dir}/orbit-agent-linux-x64"
-    cp apps/agent/builds/dist/mac/mac-arm "${work_dir}/orbit-agent-macos-arm64"
+
+    local imported_agent_sha='' copied_agent_sha='' native_builder_os='' native_builder_arch='' native_source_commit=''
+    if [ -n "$native_assets_dir" ]; then
+        imported_agent_sha="$(verify_native_assets "$native_assets_dir" "$source_commit" "$version")"
+        cp "${native_assets_dir}/orbit-agent-macos-arm64" "${work_dir}/orbit-agent-macos-arm64"
+        copied_agent_sha="$(compute_sha256 "${work_dir}/orbit-agent-macos-arm64")"
+        [ "$copied_agent_sha" = "$imported_agent_sha" ] || fail 'imported Agent artifact changed after copy.'
+        native_builder_os="$(native_value builder_os "${native_assets_dir}/native-assets.env")"
+        native_builder_arch="$(native_value builder_arch "${native_assets_dir}/native-assets.env")"
+        native_source_commit="$(native_value commit "${native_assets_dir}/native-assets.env")"
+    else
+        "${repo_root}/bin/orbit-build-agent-binary" mac arm
+        cp apps/agent/builds/dist/mac/mac-arm "${work_dir}/orbit-agent-macos-arm64"
+        imported_agent_sha=''
+    fi
 
     docker buildx build \
         --platform linux/amd64 \
@@ -420,6 +522,11 @@ cmd_build() {
         printf 'sha256_agent_darwin_arm64=%s\n' "$sha256_agent_darwin_arm64"
         printf 'sha256_frankenphp_linux_amd64=%s\n' "$sha256_frankenphp_linux_amd64"
         printf 'sha256_reverb_linux_amd64=%s\n' "$sha256_reverb_linux_amd64"
+        if [ -n "$native_assets_dir" ]; then
+            printf 'native_builder_os=%s\n' "$native_builder_os"
+            printf 'native_builder_arch=%s\n' "$native_builder_arch"
+            printf 'native_source_commit=%s\n' "$native_source_commit"
+        fi
     } > "${state_dir}/candidate.env"
 
     printf '%s\n' "$build_id" > "$latest_pointer"
@@ -509,6 +616,50 @@ cmd_promote_runtime() {
 
     printf 'PASS frankenphp_digest %s\n' "$actual_digest"
     printf 'Runtime promotion evidence: %s\n' "${state_dir}/frankenphp-promotion.log"
+}
+
+cmd_verify_native() {
+    local native_assets_dir=''
+    local expected_commit=''
+    local expected_version=''
+    local argument
+
+    for argument in "$@"; do
+        case "$argument" in
+            --native-assets=*)
+                native_assets_dir="${argument#--native-assets=}"
+                ;;
+            --commit=*)
+                expected_commit="${argument#--commit=}"
+                ;;
+            --version=*)
+                expected_version="${argument#--version=}"
+                ;;
+            *)
+                fail "unknown verify-native option: ${argument}. Usage: bin/orbit-release-candidate verify-native --native-assets=<dir> [--commit=<sha>] [--version=<version>]"
+                ;;
+        esac
+    done
+
+    [ -n "$native_assets_dir" ] || fail 'verify-native requires --native-assets=<dir>.'
+
+    case "$native_assets_dir" in
+        /*) ;;
+        *) native_assets_dir="${repo_root}/${native_assets_dir}" ;;
+    esac
+    native_assets_dir="${native_assets_dir%/}"
+
+    if [ -z "$expected_commit" ]; then
+        expected_commit="$(git -C "$repo_root" rev-parse HEAD)"
+    fi
+
+    if [ -z "$expected_version" ]; then
+        expected_version="$("${repo_root}/bin/orbit-version")"
+    fi
+
+    local actual_sha
+    actual_sha="$(verify_native_assets "$native_assets_dir" "$expected_commit" "$expected_version")"
+    printf 'PASS sha256_agent_darwin_arm64 %s\n' "$actual_sha"
 }
 
 cmd_env() {
@@ -638,6 +789,10 @@ case "$subcommand" in
     build)
         shift
         cmd_build "$@"
+        ;;
+    verify-native)
+        shift
+        cmd_verify_native "$@"
         ;;
     env)
         shift

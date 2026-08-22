@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+    printf 'orbit-release-build-worktree: %s\n' "$*" >&2
+    exit 1
+}
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+action="${1:-}"
+[ -n "$action" ] || fail 'expected prepare or remove.'
+shift
+
+case "$action" in
+    prepare|remove) ;;
+    *) fail 'expected prepare or remove.' ;;
+esac
+
+source_url=''
+source_branch=''
+source_commit=''
+requested_path=''
+
+for argument in "$@"; do
+    case "$argument" in
+        --source=*) source_url="${argument#*=}" ;;
+        --branch=*) source_branch="${argument#*=}" ;;
+        --commit=*) source_commit="${argument#*=}" ;;
+        --path=*) requested_path="${argument#*=}" ;;
+        *) fail "unknown option: ${argument}" ;;
+    esac
+done
+
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail 'commit must be a full lowercase 40-character SHA.'
+
+case "$action" in
+    prepare)
+        [ -n "$source_url" ] || fail 'prepare requires --source.'
+        [ -n "$source_branch" ] || fail 'prepare requires --branch.'
+        git check-ref-format --branch "$source_branch" >/dev/null 2>&1 || fail "invalid branch: ${source_branch}"
+        ;;
+    remove)
+        [ -z "$source_url" ] || fail 'remove does not accept --source.'
+        [ -z "$source_branch" ] || fail 'remove does not accept --branch.'
+        ;;
+esac
+
+default_path="${repo_root}/.worktrees/release-native-${source_commit:0:12}"
+worktree_path="${requested_path:-$default_path}"
+case "$worktree_path" in
+    /*) ;;
+    *) worktree_path="${repo_root}/${worktree_path}" ;;
+esac
+
+worktrees_root="${repo_root}/.worktrees"
+mkdir -p "$worktrees_root"
+parent_dir="$(dirname "$worktree_path")"
+[ -d "$parent_dir" ] || fail 'build worktree path must be a direct child of .worktrees.'
+resolved_parent="$(cd "$parent_dir" && pwd -P)"
+resolved_worktrees_root="$(cd "$worktrees_root" && pwd -P)"
+[ "$resolved_parent" = "$resolved_worktrees_root" ] || fail 'build worktree path must be a direct child of .worktrees.'
+case "$(basename "$worktree_path")" in
+    .|..) fail 'build worktree path must be a direct child of .worktrees.' ;;
+esac
+[ ! -L "$worktree_path" ] || fail 'build worktree path must not be a symlink.'
+
+assert_existing_worktree() {
+    git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        || fail 'build worktree path exists but is not a Git worktree.'
+    [ -z "$(git -C "$worktree_path" status --porcelain)" ] || fail 'build worktree is dirty.'
+    [ "$(git -C "$worktree_path" rev-parse HEAD)" = "$source_commit" ] \
+        || fail 'existing build worktree is on the wrong commit.'
+}
+
+if [ "$action" = 'prepare' ]; then
+    fetch_ref="refs/orbit-release-build/${source_commit}"
+    git -C "$repo_root" fetch --no-tags "$source_url" "refs/heads/${source_branch}:${fetch_ref}"
+    fetched_commit="$(git -C "$repo_root" rev-parse "${fetch_ref}^{commit}")"
+    if [ "$fetched_commit" != "$source_commit" ]; then
+        git -C "$repo_root" update-ref -d "$fetch_ref" >/dev/null 2>&1 || true
+        fail 'fetched branch does not match requested commit.'
+    fi
+
+    if [ -e "$worktree_path" ]; then
+        assert_existing_worktree
+    else
+        git -C "$repo_root" worktree add --detach "$worktree_path" "$source_commit"
+    fi
+
+    worktree_path="$(cd "$worktree_path" && pwd)"
+
+    printf 'RELEASE_BUILD_WORKTREE path=%s branch=%s commit=%s\n' \
+        "$worktree_path" "$source_branch" "$source_commit"
+    exit 0
+fi
+
+[ -e "$worktree_path" ] || fail 'build worktree path does not exist.'
+assert_existing_worktree
+git -C "$repo_root" worktree remove "$worktree_path"
+git -C "$repo_root" update-ref -d "refs/orbit-release-build/${source_commit}"
+printf 'RELEASE_BUILD_WORKTREE_REMOVED path=%s commit=%s\n' "$worktree_path" "$source_commit"
