@@ -46,10 +46,49 @@ function tmux_boundary_actions(string $command): array
     $actions = [];
 
     foreach ($segments as $segment) {
-        $action = classify_tmux_land_command(shell_words(trim($segment)));
+        $words = shell_words(trim($segment));
+        $wrappedPrefix = null;
+        $segmentActions = [];
 
-        if ($action !== null) {
-            $actions[] = $action;
+        foreach ($words as $index => $word) {
+            if (basename($word) !== 'tmux') {
+                continue;
+            }
+
+            $action = classify_tmux_land_command(array_slice($words, $index));
+
+            if ($action === null) {
+                continue;
+            }
+
+            if ($index > 0) {
+                $wrappedPrefix = implode(' ', array_slice($words, 0, $index));
+            }
+
+            $segmentActions[] = $action;
+        }
+
+        if ($wrappedPrefix !== null) {
+            return [[
+                'type' => 'invalid',
+                'subject' => 'tmux LAND command',
+                'reason' =>
+                    'tmux kill* must be the bare first word of a single unchained command; found it after `'
+                        .$wrappedPrefix
+                        .'`',
+            ]];
+        }
+
+        if (count($segmentActions) > 1) {
+            return [[
+                'type' => 'invalid',
+                'subject' => 'tmux LAND command',
+                'reason' => 'tmux kill* must be the bare first word of a single unchained command; found a second tmux kill* in the same command',
+            ]];
+        }
+
+        if ($segmentActions !== []) {
+            $actions[] = $segmentActions[0];
         }
     }
 

@@ -445,6 +445,34 @@ it('strictly classifies tmux kill-session commands', function (string $command, 
         'tmux -L sock killw -t =feat-x:impl-1',
         '/killw|not an allowed|invalid|blocked/',
     ],
+    'pipe prefix' => [
+        "echo x | tmux kill-session -t '=feat-feature'",
+        '/bare first word|found it after|unchained|invalid|blocked/',
+    ],
+    'background prefix' => [
+        "sleep 1 & tmux kill-session -t '=feat-feature'",
+        '/bare first word|found it after|unchained|invalid|blocked/',
+    ],
+    'subshell group' => [
+        "( tmux kill-session -t '=feat-feature' )",
+        '/bare first word|found it after|unchained|invalid|blocked/',
+    ],
+    'env prefix' => [
+        "TMUX= tmux kill-session -t '=feat-feature'",
+        '/bare first word|found it after|unchained|invalid|blocked/',
+    ],
+    'nohup kill-server' => [
+        'nohup tmux kill-server',
+        '/bare first word|found it after|kill-server|not an allowed|invalid|blocked/',
+    ],
+    'xargs killw' => [
+        'xargs tmux killw',
+        '/bare first word|found it after|killw|not an allowed|invalid|blocked/',
+    ],
+    'pipe between two tmux' => [
+        "tmux ls | tmux kill-session -t '=feat-feature'",
+        '/bare first word|found it after|unchained|invalid|blocked/',
+    ],
 ]);
 
 it('accepts -L and -S socket forms for an owned kill-session', function (string $flagTemplate): void {
