@@ -40,8 +40,9 @@ not as proof that no defect escaped.
 
 ## One Bounded Experiment
 
-There may be one active loop experiment at a time. Create a Solo scratchpad
-tagged `loop-experiment` only after a qualifying trigger:
+There may be one active loop experiment at a time. Create a file under
+`~/shared-knowledge/projects/orbit/loop-analysis/` tagged `loop-experiment`
+only after a qualifying trigger:
 
 ```markdown
 # Loop Experiment: <id>

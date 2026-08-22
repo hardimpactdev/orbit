@@ -1,0 +1,179 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_SPAWN_USAGE = 'Usage: bin/orbit-worker-spawn --role=<role> --cli=<grok|claude|codex|opencode> --brief=<path> [--name=<id>] [--extra-args=<string>] [--ready-delay=<seconds>] [--json]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+
+    if ($parsed['positional'] !== []) {
+        throw new RuntimeException(ORBIT_WORKER_SPAWN_USAGE);
+    }
+
+    $role = orbit_worker_option_string($parsed['options'], 'role');
+    $cli = orbit_worker_option_string($parsed['options'], 'cli');
+    $brief = orbit_worker_option_string($parsed['options'], 'brief');
+    $name = orbit_worker_option_string($parsed['options'], 'name');
+    $extraArgs = orbit_worker_option_string($parsed['options'], 'extra-args', '') ?? '';
+    $readyDelayRaw = orbit_worker_option_string($parsed['options'], 'ready-delay', '8') ?? '8';
+    $json = ($parsed['options']['json'] ?? false) === true;
+
+    if (! is_string($role) || $role === '' || ! is_string($cli) || ! is_string($brief) || $brief === '') {
+        throw new RuntimeException(ORBIT_WORKER_SPAWN_USAGE);
+    }
+
+    if (! in_array($cli, ORBIT_WORKER_CLIS, true)) {
+        throw new RuntimeException(ORBIT_WORKER_SPAWN_USAGE);
+    }
+
+    if (preg_match('/^[a-z][a-z0-9-]*$/', $role) !== 1) {
+        throw new RuntimeException("worker --role must match /^[a-z][a-z0-9-]*\$/; current: {$role}");
+    }
+
+    if (! preg_match('/^\d+$/', $readyDelayRaw)) {
+        throw new RuntimeException('--ready-delay must be a non-negative integer');
+    }
+
+    $readyDelay = (int) $readyDelayRaw;
+    orbit_worker_reject_newline('brief path', $brief);
+    orbit_worker_reject_newline('extra-args', $extraArgs);
+
+    if (! is_file($brief)) {
+        throw new RuntimeException("brief file does not exist: {$brief}");
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $session = orbit_worker_session_name($worktree);
+    $hasSession = orbit_tmux_has_session($session);
+
+    if ($hasSession['status'] === 'error') {
+        throw new RuntimeException('tmux lookup failed: '.($hasSession['reason'] ?? 'unknown error'));
+    }
+
+    if ($hasSession['status'] !== 'ok') {
+        throw new RuntimeException(
+            "feature tmux session {$session} was not found. Run bin/orbit-prepare-worktree to create it.",
+        );
+    }
+
+    $id = orbit_worker_allocate_id($worktree, $role, $name);
+
+    if (orbit_tmux_window_exists($session, $id)) {
+        throw new RuntimeException("tmux window already exists: {$session}:{$id}");
+    }
+
+    $briefPath = realpath($brief) ?: $brief;
+    $defaults = orbit_worker_default_commands()[$cli];
+    $command = orbit_worker_command_argv($defaults, $extraArgs);
+    $commandString = orbit_worker_command_string($defaults, $extraArgs);
+    $created = orbit_tmux_run([
+        'new-window',
+        '-d',
+        '-t',
+        '='.$session,
+        '-n',
+        $id,
+        '-c',
+        $worktree,
+    ]);
+
+    if ($created['exit'] !== 0) {
+        $reason = trim($created['stderr']);
+
+        throw new RuntimeException(
+            $reason === '' ? "tmux new-window failed for {$id}" : $reason,
+        );
+    }
+
+    $logPath = orbit_worker_log_path($worktree, $id);
+
+    if (! is_file($logPath) && file_put_contents($logPath, '') === false) {
+        throw new RuntimeException("unable to create worker log: {$logPath}");
+    }
+
+    $pipe = orbit_tmux_run([
+        'pipe-pane',
+        '-o',
+        '-t',
+        '='.$session.':'.$id,
+        'cat >> '.escapeshellarg($logPath),
+    ]);
+
+    if ($pipe['exit'] !== 0) {
+        $reason = trim($pipe['stderr']);
+
+        throw new RuntimeException(
+            $reason === '' ? "tmux pipe-pane failed for {$id}" : $reason,
+        );
+    }
+
+    $pane = null;
+
+    foreach (orbit_tmux_list_windows($session) as $window) {
+        if ($window['name'] === $id) {
+            $pane = $window;
+
+            break;
+        }
+    }
+
+    if ($pane === null) {
+        throw new RuntimeException("tmux window was created but could not be listed: {$id}");
+    }
+
+    $now = orbit_worker_now();
+    $entry = [
+        'id' => $id,
+        'role' => $role,
+        'cli' => $cli,
+        'command' => $command,
+        'tmux' => [
+            'session' => $session,
+            'window' => $id,
+            'pane_id' => $pane['pane_id'],
+            'pane_pid' => $pane['pane_pid'],
+        ],
+        'cwd' => $worktree,
+        'brief' => $briefPath,
+        'status' => 'spawned',
+        'heartbeat_at' => $now,
+        'note' => '',
+        'started_at' => $now,
+        'exited_at' => null,
+        'provider_ref' => null,
+        'handoff' => null,
+    ];
+    orbit_worker_write($worktree, $entry);
+    orbit_worker_send_keys($session, $id, $commandString);
+
+    if ($readyDelay > 0) {
+        sleep($readyDelay);
+    }
+
+    orbit_worker_send_keys(
+        $session,
+        $id,
+        "Orbit worker: {$id}. Read {$briefPath} and execute it.",
+    );
+
+    if ($json) {
+        fwrite(
+            STDOUT,
+            json_encode(
+                orbit_worker_read($worktree, $id),
+                JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+            )
+                .PHP_EOL,
+        );
+        exit(0);
+    }
+
+    fwrite(STDOUT, $id.PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}

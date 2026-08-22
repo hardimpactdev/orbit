@@ -31,7 +31,7 @@ implementation handoff needs aligned before code changes.
 6. Intent-ledger backstop: if this pass lands a direction-changing edit to an
    authority doc, confirm a matching line exists in
    `PRODUCT_DECISIONS.md`. If not, append it (newest first,
-   `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`). The ledger
+   `- YYYY-MM-DD — <decision with topic noun>. (source: <codex:// or claude:// ref or spec path>)`). The ledger
    is the dated intent anchor the drift audit consults.
 7. Run the documentation quality gate:
 

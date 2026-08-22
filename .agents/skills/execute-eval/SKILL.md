@@ -56,7 +56,7 @@ Load only what the run needs:
    - Use repeated trials for nondeterministic agents.
    - Report pass@k, pass^k, confidence intervals, paired comparisons, or the reason they are not applicable.
    - For comparative evals, report baseline and treatment aggregates separately plus paired deltas; avoid claiming small improvements from one pair.
-   - Store `eval-run` and `eval-trial` artifacts in a Solo scratchpad unless the user requested durable repo fixtures.
+   - Store `eval-run` and `eval-trial` artifacts in files under `~/shared-knowledge/projects/orbit/evals/` unless the user requested durable repo fixtures.
 
 ## Output Contract
 

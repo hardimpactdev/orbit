@@ -4,14 +4,12 @@
 declare(strict_types=1);
 
 /**
- * Resumable LAND coordinator. Observes Git/archive/Solo state to choose the next
- * phase. Destructive mutations are validated by bin/orbit-feature-finalization-check
- * then executed separately. Solo requests go through orbit-finalization-solo-land.php.
+ * Resumable LAND coordinator. Observes Git, archive, and tmux session state
+ * to choose the next phase. Destructive mutations are validated by
+ * bin/orbit-feature-finalization-check then executed separately.
  */
 
-require_once __DIR__.'/orbit-finalization-solo-land.php';
-
-const LAND_DEFAULT_SOLO_CLI = '/Applications/Solo.app/Contents/MacOS/solo-cli';
+require_once __DIR__.'/orbit-finalization-tmux-land.php';
 
 $binRoot = __DIR__;
 
@@ -23,6 +21,8 @@ try {
         exit(0);
     }
 
+    land_require_tmux_helper();
+
     $primary = landGitRoot((string) getcwd());
 
     if ($primary === null || ! is_file("{$primary}/HARNESS.md") || ! is_file("{$primary}/AGENTS.md")) {
@@ -31,16 +31,15 @@ try {
 
     $branch = $options['branch'];
     $worktree = landAbs($options['worktree'], $primary);
-    $projectId = (int) $options['solo-project-id'];
-    $soloCli = $options['solo-cli'] ?? LAND_DEFAULT_SOLO_CLI;
+    $session = landSessionName($worktree);
     $mode = $options['status'] || $options['plan'] ? 'status' : ($options['one-step'] ? 'one-step' : 'execute');
 
     landRefuseSelfCwd($worktree);
-    landRefuseSelfProject($projectId, $primary, $soloCli);
+    landRefuseSelfSession($session);
     landRequireMain($primary);
-    landRequireIdentity($primary, $branch, $worktree, $projectId, $soloCli);
+    landRequireIdentity($primary, $branch, $worktree, $session);
 
-    $state = landObserve($primary, $branch, $worktree, $projectId, $soloCli);
+    $state = landObserve($primary, $branch, $worktree, $session);
 
     if ($mode === 'status' || $state['phase'] === 'done') {
         landEmit($state);
@@ -48,22 +47,22 @@ try {
     }
 
     do {
-        // Re-bind ownership before every mutation so path/project drift mid-run
+        // Re-bind ownership before every mutation so path/session drift mid-run
         // cannot clean another linked feature.
         landRefuseSelfCwd($worktree);
-        landRefuseSelfProject($projectId, $primary, $soloCli);
+        landRefuseSelfSession($session);
         landRequireMain($primary);
-        landRequireIdentity($primary, $branch, $worktree, $projectId, $soloCli);
+        landRequireIdentity($primary, $branch, $worktree, $session);
 
-        $before = landObserve($primary, $branch, $worktree, $projectId, $soloCli);
+        $before = landObserve($primary, $branch, $worktree, $session);
 
         if ($before['phase'] === 'done') {
             landEmit($before);
             exit(0);
         }
 
-        landExecute($primary, $binRoot, $branch, $worktree, $projectId, $soloCli, $before);
-        $state = landObserve($primary, $branch, $worktree, $projectId, $soloCli);
+        landExecute($primary, $binRoot, $branch, $worktree, $session, $before);
+        $state = landObserve($primary, $branch, $worktree, $session);
         landEmit($state);
 
         if (
@@ -93,7 +92,7 @@ try {
 
 /**
  * @param  list<string>  $args
- * @return array{branch: string, worktree: string, solo-project-id: string, solo-cli?: string, status: bool, plan: bool, one-step: bool, help: bool}
+ * @return array{branch: string, worktree: string, status: bool, plan: bool, one-step: bool, help: bool}
  */
 function landOptions(array $args): array
 {
@@ -118,21 +117,17 @@ function landOptions(array $args): array
 
         [$name, $value] = explode('=', substr($arg, 2), 2);
 
-        if (! in_array($name, ['branch', 'worktree', 'solo-project-id', 'solo-cli'], true) || $value === '') {
+        if (! in_array($name, ['branch', 'worktree'], true) || $value === '') {
             throw new RuntimeException("invalid option: {$arg}");
         }
 
         $options[$name] = $value;
     }
 
-    foreach (['branch', 'worktree', 'solo-project-id'] as $required) {
+    foreach (['branch', 'worktree'] as $required) {
         if (! isset($options[$required]) || ! is_string($options[$required])) {
             throw new RuntimeException("missing --{$required}");
         }
-    }
-
-    if (preg_match('/^\d+$/', $options['solo-project-id']) !== 1) {
-        throw new RuntimeException('--solo-project-id must be numeric');
     }
 
     return $options;
@@ -142,15 +137,15 @@ function landUsage(): void
 {
     fwrite(STDOUT, <<<'EOF'
         Usage:
-          bin/orbit-feature-land --branch=<feature> --worktree=<path> --solo-project-id=<id> [options]
+          bin/orbit-feature-land --branch=<feature> --worktree=<path> [options]
 
         Options:
-          --solo-cli=<path>   Solo CLI (default: /Applications/Solo.app/Contents/MacOS/solo-cli)
           --status|--plan     Read-only phase and next_action
           --one-step          Execute only the next incomplete phase
           --help
 
-        Run from primary checkout on main. Destructive steps are validated by
+        Run from primary checkout on main. Observes Git, archive, and tmux
+        session state. Destructive steps are validated by
         bin/orbit-feature-finalization-check then executed separately.
         EOF);
 }
@@ -188,49 +183,59 @@ function landRefuseSelfCwd(string $worktree): void
     }
 }
 
-function landRefuseSelfProject(int $projectId, string $primary, string $soloCli): void
+function landRefuseSelfSession(string $session): void
 {
-    $callerProject = getenv('SOLO_PROJECT_ID');
+    $current = orbit_tmux_current_session();
 
-    if (! is_string($callerProject) || preg_match('/^\d+$/', $callerProject) !== 1 || (int) $callerProject !== $projectId) {
-        return;
+    if ($current === $session) {
+        throw new RuntimeException(
+            "refuses to land from inside the feature session {$session}; run LAND from the orchestrator session or outside tmux",
+        );
+    }
+}
+
+function landSessionName(string $worktree): string
+{
+    $worktreeReal = realpath($worktree) ?: $worktree;
+    $expected = 'feat-'.basename($worktreeReal);
+    $loopPath = $worktreeReal.'/.orbit/loop.md';
+
+    if (! is_file($loopPath)) {
+        if (! is_dir($worktreeReal)) {
+            return $expected;
+        }
+
+        throw new RuntimeException("missing - Session: line in {$loopPath}");
     }
 
-    $lookup = solo_cli_lookup($soloCli, ['projects', 'get', (string) $projectId, '--json'], $primary);
+    $contents = (string) file_get_contents($loopPath);
 
-    if ($lookup['status'] === 'error') {
-        throw new RuntimeException('solo project lookup failed: '.$lookup['reason']);
+    if (preg_match('/^- Session:\s*(\S+)\s*$/m', $contents, $matches) !== 1) {
+        throw new RuntimeException("missing - Session: line in {$loopPath}");
     }
 
-    if ($lookup['status'] === 'not_found') {
-        return;
+    $session = $matches[1];
+
+    if (preg_match('/^feat-[a-z0-9][a-z0-9-]*$/', $session) !== 1) {
+        throw new RuntimeException(
+            "invalid - Session: `{$session}` in {$loopPath}; expected feat-<slug> matching /^feat-[a-z0-9][a-z0-9-]*$/",
+        );
     }
 
-    $path = $lookup['status'] === 'ok' ? ($lookup['data']['path'] ?? null) : null;
-
-    if (! is_string($path) || $path === '') {
-        throw new RuntimeException("solo project {$projectId} has no path");
+    if ($session !== $expected) {
+        throw new RuntimeException(
+            "- Session: `{$session}` does not match worktree basename (expected `{$expected}`)",
+        );
     }
 
-    $projectPath = realpath($path) ?: $path;
-    $primaryReal = realpath($primary) ?: $primary;
-
-    // LAND never stops or deletes the primary checkout's Solo project.
-    if ($projectPath === $primaryReal) {
-        return;
-    }
-
-    throw new RuntimeException(
-        "refuses self-project cleanup while SOLO_PROJECT_ID={$projectId} matches the target project",
-    );
+    return $session;
 }
 
 function landRequireIdentity(
     string $primary,
     string $branch,
     string $worktree,
-    int $projectId,
-    string $soloCli,
+    string $session,
 ): void {
     if (in_array($branch, ['main', 'master'], true)) {
         throw new RuntimeException('refuses to land main/master as a feature branch');
@@ -257,27 +262,43 @@ function landRequireIdentity(
         );
     }
 
-    $lookup = solo_cli_lookup($soloCli, ['projects', 'get', (string) $projectId, '--json'], $primary);
+    $has = orbit_tmux_has_session($session);
 
-    if ($lookup['status'] === 'error') {
-        throw new RuntimeException('solo project lookup failed: '.$lookup['reason']);
+    if ($has['status'] === 'error') {
+        throw new RuntimeException('tmux lookup failed: '.($has['reason'] ?? 'unknown'));
     }
 
-    if ($lookup['status'] === 'not_found') {
+    if ($has['status'] === 'not_found') {
         return;
     }
 
-    $path = $lookup['data']['path'] ?? null;
+    $pathLookup = orbit_tmux_session_path($session);
 
-    if (! is_string($path) || $path === '') {
-        throw new RuntimeException("solo project {$projectId} has no path");
+    if ($pathLookup['status'] === 'error') {
+        throw new RuntimeException('tmux lookup failed: '.($pathLookup['reason'] ?? 'unknown'));
     }
 
-    $projectPath = realpath($path) ?: $path;
+    if ($pathLookup['status'] === 'not_found') {
+        return;
+    }
 
-    if ($projectPath !== $primaryReal && $projectPath !== $worktreeReal) {
+    $sessionPath = $pathLookup['path'] ?? null;
+
+    if (! is_string($sessionPath) || $sessionPath === '') {
+        throw new RuntimeException("tmux session {$session} has no path");
+    }
+
+    $sessionPath = realpath($sessionPath) ?: $sessionPath;
+
+    if ($sessionPath === $primaryReal) {
         throw new RuntimeException(
-            "solo project {$projectId} path `{$projectPath}` does not equal feature worktree `{$worktreeReal}`",
+            "tmux session {$session} path `{$sessionPath}` equals the primary checkout `{$primaryReal}`",
+        );
+    }
+
+    if ($sessionPath !== $worktreeReal) {
+        throw new RuntimeException(
+            "tmux session {$session} path `{$sessionPath}` does not equal feature worktree `{$worktreeReal}`",
         );
     }
 }
@@ -289,8 +310,7 @@ function landObserve(
     string $primary,
     string $branch,
     string $worktree,
-    int $projectId,
-    string $soloCli,
+    string $session,
 ): array {
     if (! landFeatureLanded($primary, $branch)) {
         return landState('merge', "git merge {$branch}", 'feature tip is not an ancestor of main');
@@ -308,40 +328,18 @@ function landObserve(
         );
     }
 
-    $project = solo_cli_lookup($soloCli, ['projects', 'get', (string) $projectId, '--json'], $primary);
+    $has = orbit_tmux_has_session($session);
 
-    if ($project['status'] === 'error') {
-        throw new RuntimeException('solo project lookup failed: '.$project['reason']);
+    if ($has['status'] === 'error') {
+        throw new RuntimeException('tmux lookup failed: '.($has['reason'] ?? 'unknown'));
     }
 
-    if ($project['status'] === 'ok') {
-        $path = $project['data']['path'] ?? null;
-        $projectPath = is_string($path) && $path !== '' ? (realpath($path) ?: $path) : '';
-        $primaryReal = realpath($primary) ?: $primary;
-
-        if ($projectPath !== $primaryReal) {
-            $phase = solo_process_phase_ids($soloCli, $projectId, $primary);
-
-            if ($phase['status'] === 'error') {
-                throw new RuntimeException('solo process list failed: '.$phase['reason']);
-            }
-
-            if ($phase['stoppable'] !== []) {
-                $id = $phase['stoppable'][0];
-
-                return landState('stop-process', "solo processes stop {$id}", 'session-owned process still running/starting');
-            }
-
-            if ($phase['stopping'] !== []) {
-                return landState(
-                    'await-process-terminal',
-                    'await process terminal: '.implode(',', $phase['stopping']),
-                    'stopping processes are non-terminal; do not project-delete yet',
-                );
-            }
-
-            return landState('delete-project', "solo projects delete {$projectId}", 'session-owned Solo project still present');
-        }
+    if ($has['status'] === 'ok') {
+        return landState(
+            'kill-session',
+            "tmux kill-session -t ={$session}",
+            'feature tmux session still present',
+        );
     }
 
     $worktreeReal = realpath($worktree) ?: $worktree;
@@ -355,7 +353,11 @@ function landObserve(
             );
         }
 
-        return landState('remove-worktree', "git worktree remove {$worktreeReal}", 'merged feature worktree still linked');
+        return landState(
+            'remove-worktree',
+            "git worktree remove {$worktreeReal}",
+            'merged feature worktree still linked',
+        );
     }
 
     if (landBranchExists($primary, $branch)) {
@@ -385,8 +387,7 @@ function landExecute(
     string $binRoot,
     string $branch,
     string $worktree,
-    int $projectId,
-    string $soloCli,
+    string $session,
     array $state,
 ): void {
     match ($state['phase']) {
@@ -398,16 +399,7 @@ function landExecute(
         ),
         'archive' => landArchive($primary, $binRoot, $worktree, $branch),
         'archive-commit' => landCommitArchive($primary, $binRoot, $branch),
-        'stop-process' => landStop($primary, $binRoot, $soloCli, $state['next_action']),
-        'await-process-terminal' => throw new RuntimeException(
-            'phase=await-process-terminal next_action='.$state['next_action'],
-        ),
-        'delete-project' => landValidated(
-            $primary,
-            $binRoot,
-            escapeshellarg($soloCli)." projects delete {$projectId} --json",
-            [$soloCli, 'projects', 'delete', (string) $projectId, '--json'],
-        ),
+        'kill-session' => landKillSession($primary, $binRoot, $session),
         'remove-worktree' => landValidated(
             $primary,
             $binRoot,
@@ -424,23 +416,52 @@ function landExecute(
     };
 }
 
+function landKillSession(string $primary, string $binRoot, string $session): void
+{
+    $socket = getenv('ORBIT_TMUX_SOCKET');
+    $check = 'tmux';
+    $command = ['tmux'];
+
+    if (is_string($socket) && $socket !== '') {
+        $check .= ' -L '.$socket;
+        $command[] = '-L';
+        $command[] = $socket;
+    }
+
+    $check .= ' kill-session -t ='.$session;
+    array_push($command, 'kill-session', '-t', '='.$session);
+
+    landValidated($primary, $binRoot, $check, $command);
+}
+
 /** @param  list<string>  $command */
 function landValidated(string $primary, string $binRoot, string $checkCommand, array $command): void
 {
+    $environment = ['ORBIT_FINALIZATION_EXPLICIT' => '1'];
+    $socket = getenv('ORBIT_TMUX_SOCKET');
+
+    if (is_string($socket) && $socket !== '') {
+        $environment['ORBIT_TMUX_SOCKET'] = $socket;
+    }
+
     $check = landRun(
         ['bash', "{$binRoot}/orbit-feature-finalization-check", $checkCommand],
         $primary,
-        ['ORBIT_FINALIZATION_EXPLICIT' => '1'],
+        $environment,
     );
 
     if ($check['exit_code'] !== 0 || ! str_contains($check['stdout'], 'FINALIZATION: PASS')) {
-        throw new RuntimeException('finalization blocked '.$checkCommand.': '.trim($check['stderr']."\n".$check['stdout']));
+        throw new RuntimeException(
+            'finalization blocked '.$checkCommand.': '.trim($check['stderr']."\n".$check['stdout']),
+        );
     }
 
     $result = landRun($command, $primary);
 
     if ($result['exit_code'] !== 0) {
-        throw new RuntimeException('mutation failed '.$checkCommand.': '.trim($result['stderr']."\n".$result['stdout']));
+        throw new RuntimeException(
+            'mutation failed '.$checkCommand.': '.trim($result['stderr']."\n".$result['stdout']),
+        );
     }
 }
 
@@ -473,12 +494,17 @@ function landCommitArchive(string $primary, string $binRoot, string $branch): vo
         throw new RuntimeException('session index write failed: '.trim($index['stderr']."\n".$index['stdout']));
     }
 
-    $archiveDir = landLatestArchive($primary, $branch)
-        ?? throw new RuntimeException('no matching archive directory to commit');
-    $relative = landRel($primary, $archiveDir)
-        ?? throw new RuntimeException("archive {$archiveDir} is outside primary checkout");
+    $archiveDir = landLatestArchive($primary, $branch) ?? throw new RuntimeException(
+        'no matching archive directory to commit',
+    );
+    $relative = landRel($primary, $archiveDir) ?? throw new RuntimeException(
+        "archive {$archiveDir} is outside primary checkout",
+    );
 
-    foreach (preg_split('/\R/', trim(landRun(['git', 'status', '--porcelain', '--untracked-files=all'], $primary)['stdout'])) ?: [] as $line) {
+    foreach (preg_split(
+        '/\R/',
+        trim(landRun(['git', 'status', '--porcelain', '--untracked-files=all'], $primary)['stdout']),
+    ) ?: [] as $line) {
         $line = trim($line);
 
         if ($line === '') {
@@ -509,32 +535,18 @@ function landCommitArchive(string $primary, string $binRoot, string $branch): vo
     }
 }
 
-function landStop(string $primary, string $binRoot, string $soloCli, string $nextAction): void
-{
-    if (preg_match('/solo processes stop (\d+)/', $nextAction, $matches) !== 1) {
-        throw new RuntimeException("cannot parse process stop action: {$nextAction}");
-    }
-
-    $id = $matches[1];
-
-    landValidated(
-        $primary,
-        $binRoot,
-        escapeshellarg($soloCli)." processes stop {$id} --json",
-        [$soloCli, 'processes', 'stop', $id, '--json'],
-    );
-}
-
 function landFeatureLanded(string $primary, string $branch): bool
 {
     if (! landBranchExists($primary, $branch)) {
         return true;
     }
 
-    return landRun(
-        ['git', 'merge-base', '--is-ancestor', "refs/heads/{$branch}", 'refs/heads/main'],
-        $primary,
-    )['exit_code'] === 0;
+    return (
+        landRun(
+            ['git', 'merge-base', '--is-ancestor', "refs/heads/{$branch}", 'refs/heads/main'],
+            $primary,
+        )['exit_code'] === 0
+    );
 }
 
 function landBranchExists(string $primary, string $branch): bool
@@ -634,10 +646,12 @@ function landArchiveCommitted(string $primary, string $branch): bool
         return false;
     }
 
-    $dirty = trim(landRun(
-        ['git', 'status', '--porcelain', '--untracked-files=all', '--', $relative, $index],
-        $primary,
-    )['stdout']);
+    $dirty = trim(
+        landRun(
+            ['git', 'status', '--porcelain', '--untracked-files=all', '--', $relative, $index],
+            $primary,
+        )['stdout'],
+    );
 
     if ($dirty !== '') {
         return false;

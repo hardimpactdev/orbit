@@ -586,7 +586,7 @@ write_loop() {
   - Includes orchestrator steering notes: yes
 - Fresh analyzer:
   - Persona: not used
-  - Solo process or analyzer: not used; tiny mechanical hook test
+  - Analyzer: not used; tiny mechanical hook test
   - Verdict: not used with rationale
 - Candidate signals:
   - none

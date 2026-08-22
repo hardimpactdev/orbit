@@ -54,7 +54,7 @@ function capture_health_problem_for_sources(string $loopPath, array $agentSessio
 
 function packet_names_agent_lanes(string $loopContent): bool
 {
-    return preg_match('/^\s*-\s*(Worker|Reviewer|Analyzer):.*\bSolo process(?: ID)?\s+\d+/im', $loopContent) === 1;
+    return preg_match('/^\s*-\s*(Worker|Reviewer|Analyzer):.*\bworker\s+[a-z][a-z0-9-]*\b/im', $loopContent) === 1;
 }
 
 function packet_has_agent_session_capture_waiver(string $loopContent): bool

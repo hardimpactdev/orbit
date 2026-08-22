@@ -15,9 +15,10 @@ require_once __DIR__.'/orbit-session-capture-health.php';
 require_once __DIR__.'/orbit-command-classify.php';
 require_once __DIR__.'/orbit-git-process.php';
 require_once __DIR__.'/orbit-cleanup-checks.php';
-require_once __DIR__.'/orbit-finalization-solo-land.php';
+require_once __DIR__.'/orbit-finalization-tmux-land.php';
 
 const BLOCK_EXIT_CODE = 2;
+
 const USAGE_EXIT_CODE = 64;
 
 if (($argv[1] ?? null) === '--lint') {
@@ -58,7 +59,8 @@ $action = classify_command($command);
 
 if ($action === null) {
     exit(unclassifiable_exit(
-        'could not classify command as a merge, worktree-remove, branch-delete, solo-process-stop, or solo-project-delete boundary: '.$command,
+        'could not classify command as a merge, worktree-remove, branch-delete, or tmux kill-session boundary: '
+        .$command,
     ));
 }
 
@@ -72,8 +74,7 @@ $check = match ($action['type']) {
     'merge' => check_merge($root, $action['targets']),
     'worktree-remove' => check_worktree_remove($root, $action['path']),
     'branch-delete' => check_branch_delete($root, $action['branch']),
-    'solo-process-stop' => check_solo_process_stop($root, $action),
-    'solo-project-delete' => check_solo_project_delete($root, $action),
+    'tmux-session-kill' => check_tmux_session_kill($action, $root, (string) getcwd()),
     'invalid' => block_result($action['subject'], $action['reason']),
 };
 
@@ -108,7 +109,7 @@ function unclassifiable_exit(string $message): int
 }
 
 /**
- * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}  $action
+ * @param  array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'tmux-session-kill', session: string}|array{type: 'invalid', subject: string, reason: string}  $action
  */
 function action_summary(array $action): string
 {
@@ -116,8 +117,7 @@ function action_summary(array $action): string
         'merge' => 'git merge '.($action['targets'] === [] ? '(missing)' : implode(' ', $action['targets'])),
         'worktree-remove' => "git worktree remove {$action['path']}",
         'branch-delete' => "git branch delete {$action['branch']}",
-        'solo-process-stop' => "solo processes stop {$action['process_id']}",
-        'solo-project-delete' => "solo projects delete {$action['project_id']}",
+        'tmux-session-kill' => tmux_session_kill_subject($action),
         'invalid' => $action['subject'],
     };
 }

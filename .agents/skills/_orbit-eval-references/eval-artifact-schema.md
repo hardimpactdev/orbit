@@ -1,6 +1,6 @@
 # Orbit Eval Artifact Schema
 
-Use these shapes in Solo scratchpads or durable fixtures. Omit fields only when they are not applicable and say why.
+Use these shapes in files under `~/shared-knowledge/projects/orbit/evals/` or durable fixtures. Omit fields only when they are not applicable and say why.
 
 ## `eval-suite`
 
@@ -186,4 +186,4 @@ comparative_validity:
 - Separate grader failures from agent failures.
 - For comparative fresh-agent evals, record the condition, pair id, prompt delta, visible artifacts, tracked metrics, and contamination status per trial.
 - `source` fields accept an archive-slug value: the `.orbit/sessions/<timestamp>-<slug>` archive directory name, optionally suffixed with the provider/session path inside `agent-sessions/`.
-- Keep private session details in scratchpads unless the user approves repo fixtures.
+- Keep private session details in files under `~/shared-knowledge/projects/orbit/evals/` unless the user approves repo fixtures.

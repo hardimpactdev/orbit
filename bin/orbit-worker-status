@@ -1,0 +1,54 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_STATUS_USAGE = 'Usage: bin/orbit-worker-status [--json]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+
+    if ($parsed['positional'] !== []) {
+        throw new RuntimeException(ORBIT_WORKER_STATUS_USAGE);
+    }
+
+    $json = ($parsed['options']['json'] ?? false) === true;
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $entries = [];
+
+    foreach (orbit_worker_list($worktree) as $entry) {
+        if (! orbit_worker_window_alive($entry) && $entry['status'] !== 'exited') {
+            $entry = orbit_worker_mark_exited($worktree, $entry);
+        }
+
+        $entries[] = $entry;
+    }
+
+    if ($json) {
+        fwrite(
+            STDOUT,
+            json_encode($entries, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+        );
+        exit(0);
+    }
+
+    printf("%-12s %-8s %-8s %-10s %-6s %-6s %s\n", 'ID', 'ROLE', 'CLI', 'STATUS', 'AGE', 'ALIVE', 'NOTE');
+
+    foreach ($entries as $entry) {
+        printf(
+            "%-12s %-8s %-8s %-10s %-6s %-6s %s\n",
+            (string) $entry['id'],
+            (string) $entry['role'],
+            (string) $entry['cli'],
+            (string) $entry['status'],
+            orbit_worker_heartbeat_age((string) $entry['heartbeat_at']),
+            orbit_worker_window_alive($entry) ? 'yes' : 'no',
+            (string) $entry['note'],
+        );
+    }
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}

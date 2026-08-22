@@ -35,7 +35,7 @@ Agents may:
 Agents may not:
 
 - Run any `composer test:e2e*` command.
-- Spawn a Solo worker to run any `composer test:e2e*` command.
+- Spawn a worker to run any `composer test:e2e*` command.
 - Add a hook, quality gate, release flow, or skill instruction that runs E2E.
 - Treat missing E2E output as a feature-completion blocker; use retained
   topology proof for the feature gate.

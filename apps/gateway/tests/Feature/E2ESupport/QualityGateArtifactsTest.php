@@ -1288,13 +1288,17 @@ it('keeps retained cli proof agent-owned unless human judgment remains', functio
     $normalizedImplementingFeaturesSkill = preg_replace('/\s+/', ' ', $implementingFeaturesSkill) ?: '';
 
     expect($normalizedHarness)
-        ->toContain('CLI retained topology proof must run in a Solo terminal')
-        ->toContain('Keep that terminal open for a user only when')
-        ->toContain('`HUMAN_JUDGMENT: required`')
-        ->toContain('otherwise it is agent-owned proof')
+        ->toContain(
+            'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`',
+        )
+        ->toContain(
+            'Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).',
+        )
+        ->toContain('Otherwise it is agent-owned proof')
         ->and($normalizedImplementingFeaturesSkill)
-        ->toContain('use one agent-owned Solo terminal at `/home/orbit/orbit-run`')
-        ->toContain('Keep it open for the user only when `HUMAN_JUDGMENT: required`');
+        ->toContain(
+            'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`',
+        );
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {

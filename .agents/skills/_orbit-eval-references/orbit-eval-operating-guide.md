@@ -10,11 +10,11 @@ Eval skills do not replace Orbit's implementation workflow, quality gates, or re
 
 ## Artifact Locations
 
-Use Solo scratchpads by default:
+Use files under `~/shared-knowledge/projects/orbit/evals/` by default:
 
-- design scratchpad: research notes, suite intent, case drafts, open questions
-- eval artifact scratchpad: `eval-suite`, `eval-case`, `eval-run`, `eval-trial`, and `eval-run-review` records
-- execution scratchpad: transcript refs, outcome refs, environment snapshots, grader results
+- design notes: research notes, suite intent, case drafts, open questions
+- eval artifact files: `eval-suite`, `eval-case`, `eval-run`, `eval-trial`, and `eval-run-review` records
+- execution files: transcript refs, outcome refs, environment snapshots, grader results
 
 Move fixtures into the repository only when the user explicitly asks for durable fixtures or regression coverage. Raw transcripts, private session excerpts, answer keys, hidden grader prompts, and live-node details stay out of the repo unless the user explicitly approves a sanitized form.
 
@@ -35,7 +35,7 @@ Do not execute from a vague idea. The minimum executable unit is an `eval-case` 
 | candidate | Useful idea or failure mode, not yet structured. | Construct suite and case artifacts. |
 | constructed | Suite/cases exist with scorer and reference evidence. | Execute isolated trials. |
 | executed | Trials exist with transcript refs, outcomes, grader results, and reset notes. | Review execution quality. |
-| trusted | Review found evidence, isolation, scorer, and case balance sufficient. | Keep in scratchpad, repeat, or promote. |
+| trusted | Review found evidence, isolation, scorer, and case balance sufficient. | Keep in `~/shared-knowledge/projects/orbit/evals/`, repeat, or promote. |
 | regression candidate | Trusted eval protects behavior that should stay near 100%. | User decides whether to create durable fixtures. |
 | stale or invalid | Docs, cases, scorer, isolation, or evidence no longer support conclusions. | Repair or retire. |
 
@@ -44,7 +44,7 @@ Do not execute from a vague idea. The minimum executable unit is an `eval-case` 
 The first recommended family is Orbit repo-agent process compliance. It measures whether an agent working on Orbit follows the workflow that protects the codebase:
 
 - reads authority docs before changing behavior
-- uses Solo scratchpads only when feature complexity or durable eval artifacts warrant them
+- uses files under `~/shared-knowledge/projects/orbit/evals/` only when feature complexity or durable eval artifacts warrant them
 - prepares an isolated worktree before repository edits
 - keeps docs, tests, code, and verification aligned
 - leaves every E2E invocation to a human at a shell and limits agents to
@@ -66,7 +66,7 @@ Construct:
 
 Execute:
 
-- Start each trial in a fresh Solo process or fresh Codex thread.
+- Start each trial in a fresh worker window via `bin/orbit-worker-spawn` or fresh Codex thread.
 - Pair baseline and treatment trials by runtime/model when possible.
 - For LLM-facing affordance evals with cited docs or evidence, prefer file-captured outcomes when practical. See `llm-affordance-file-capture.md` for the one-outcome-file-per-trial contract, deterministic path checks, and semantic proof checks.
 - Capture transcript refs, final outcome refs, visible artifacts, environment snapshot, and reset notes. Keep transcript refs separate from outcome refs.
@@ -96,13 +96,13 @@ When starting a fresh LLM agent on Orbit eval work, include:
 
 ```text
 Read `.agents/skills/orbit-evals/SKILL.md` first, then load only the referenced eval skill that matches the stage.
-Store eval artifacts in Solo scratchpads unless the user explicitly asks for durable repo fixtures.
+Store eval artifacts in files under `~/shared-knowledge/projects/orbit/evals/` unless the user explicitly asks for durable repo fixtures.
 Never run, invoke, dispatch, delegate, schedule, or trigger a `composer test:e2e*` command, including through an eval trial or agent under test.
 Only a human may manually invoke the Composer command from a shell; agents may inspect the resulting artifact.
 Keep answer keys and reference solutions out of the agent-under-test context.
 ```
 
-Add the exact scratchpad URLs for the current suite, run, and review if they already exist.
+Add the exact file paths under `~/shared-knowledge/projects/orbit/evals/` for the current suite, run, and review if they already exist.
 
 ## Common Mistakes
 

@@ -35,7 +35,7 @@ native UI verification.
 
 ## Default Agent
 
-Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
+Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. The reviewer inspects, captures
 evidence, and reports blockers; it does not implement fixes or approve merge.
 If the selected reviewer has no provider-session archive support, preserve the
 reviewer report itself as the evidence artifact.

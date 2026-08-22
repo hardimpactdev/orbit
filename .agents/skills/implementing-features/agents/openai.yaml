@@ -1,4 +1,4 @@
 interface:
   display_name: "Implementing Features"
   short_description: "Own an Orbit feature from frame through land."
-  default_prompt: "Own FRAME through LAND; use the existing main Orbit Solo project. Dispatch substantive BUILD edits to Grok, point Grok at the exact feature worktree without a model override, then point one fresh read-only Claude general reviewer at that worktree with --model opus. Never create a Solo project for the worktree. Run every deterministic check, complete the diff-derived proof venue, and involve the user only for remaining human judgment. Preserve the main Solo project."
+  default_prompt: "Own FRAME through LAND; use the feature tmux session. Dispatch substantive BUILD edits to Grok workers, point Grok workers at the exact feature worktree without a model override, then point one fresh read-only Claude general reviewer at that worktree with --model opus. Run every deterministic check, complete the diff-derived proof venue, and involve the user only for remaining human judgment. Preserve unrelated tmux sessions and files."

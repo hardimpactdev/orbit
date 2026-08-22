@@ -328,7 +328,11 @@ function session_archive_tracked_problem(string $root, string $branch): ?string
     $candidates = matching_session_archive_dirs($root, $branch);
 
     if ($candidates === []) {
-        return 'no session archive matching slug `'.archive_slug($branch).'` is tracked for cleanup; commit the archive directory and .orbit/sessions/index.json on main first';
+        return (
+            'no session archive matching slug `'
+            .archive_slug($branch)
+            .'` is tracked for cleanup; commit the archive directory and .orbit/sessions/index.json on main first'
+        );
     }
 
     $archiveDir = null;
@@ -444,7 +448,10 @@ function tracked_files_under(string $root, string $relativeDirectory): array
         return [];
     }
 
-    $files = array_values(array_filter(explode("\0", $result['stdout']), static fn (string $path): bool => $path !== ''));
+    $files = array_values(array_filter(
+        explode("\0", $result['stdout']),
+        static fn (string $path): bool => $path !== '',
+    ));
 
     sort($files);
 
@@ -466,7 +473,7 @@ function session_archive_required_relative_entries(string $archiveDir, string $r
     if (is_file($receiptPath) && ! is_link($receiptPath)) {
         $entries[] = $relativeArchive.'/orbit-session-archive.json';
         $receipt = json_decode((string) file_get_contents($receiptPath), true);
-        $copied = is_array($receipt) ? ($receipt['copied_entries'] ?? null) : null;
+        $copied = is_array($receipt) ? $receipt['copied_entries'] ?? null : null;
 
         if (is_array($copied)) {
             foreach ($copied as $entry) {
@@ -609,6 +616,14 @@ function session_archive_receipt_matches_branch_slug(string $archiveDir, string 
 function archive_slug(string $value): string
 {
     return orbit_land_archive_slug($value);
+}
+
+/**
+ * @param  array{type: 'tmux-session-kill', session: string}  $action
+ */
+function tmux_session_kill_subject(array $action): string
+{
+    return "tmux kill-session {$action['session']}";
 }
 
 /**
@@ -819,7 +834,6 @@ function compact_feature_check(
 
     return ok();
 }
-
 
 function normalize_branch(string $target): ?string
 {

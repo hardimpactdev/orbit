@@ -46,12 +46,12 @@ Search by date, task terms, file paths, command names, skill names, error text, 
 1. Start with narrow `rg` searches over likely paths or copied file lists.
 2. Sample a small number of relevant sessions before broad mining.
 3. Extract patterns, not raw conversation.
-4. Store detailed provenance in Solo scratchpads by default.
+4. Store detailed provenance in files under `~/shared-knowledge/projects/orbit/evals/` by default.
 5. Put only sanitized observations in repository files.
 
 ## Redaction Checklist
 
-Before moving any observation out of the source session or scratchpad, remove:
+Before moving any observation out of the source session or eval file, remove:
 
 - secrets, tokens, keys, cookies, credentials, bearer strings
 - IP addresses, private hostnames, customer identifiers, email addresses, and account ids unless explicitly approved

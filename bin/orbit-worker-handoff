@@ -1,0 +1,51 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_HANDOFF_USAGE = 'Usage: bin/orbit-worker-handoff <id> <file> [--force]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+    $id = $parsed['positional'][0] ?? null;
+    $file = $parsed['positional'][1] ?? null;
+
+    if (! is_string($id) || $id === '' || ! is_string($file) || $file === '' || count($parsed['positional']) !== 2) {
+        throw new RuntimeException(ORBIT_WORKER_HANDOFF_USAGE);
+    }
+
+    if (! is_file($file) || is_link($file)) {
+        throw new RuntimeException("handoff source is missing or not a regular file: {$file}");
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $entry = orbit_worker_require_entry($worktree, $id);
+    $destination = orbit_worker_handoff_path($worktree, $id);
+    $force = ($parsed['options']['force'] ?? false) === true;
+
+    if (is_file($destination) && ! $force) {
+        throw new RuntimeException(
+            "handoff file already exists: {$destination}. Re-run with --force to overwrite.",
+        );
+    }
+
+    $contents = file_get_contents($file);
+
+    if ($contents === false) {
+        throw new RuntimeException("unable to read handoff source: {$file}");
+    }
+
+    if (file_put_contents($destination, $contents) === false) {
+        throw new RuntimeException("unable to write handoff file: {$destination}");
+    }
+
+    $entry['status'] = 'handoff';
+    $entry['handoff'] = $destination;
+    $entry['heartbeat_at'] = orbit_worker_now();
+    orbit_worker_write($worktree, $entry);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}

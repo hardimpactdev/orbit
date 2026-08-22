@@ -13,11 +13,11 @@ Ordinary changes do not require full `HARNESS.md` ingestion before routing.
 | Product docs or Librarian/docs-lint work | `.agents/skills/librarian/SKILL.md` and `apps/docs/content/` authority docs | `composer docs-lint` and focused docs Pest/Mago when PHP rules changed |
 | Eval design, execution, or review | `.agents/skills/orbit-evals/SKILL.md`, then construct, execute, evaluate | Structured eval suite/case/run/trial/review artifacts |
 | Quality-gate failure or timing warning | `.agents/skills/quality-gate-triage/SKILL.md` | Narrow failing lane first; do not rerun E2E |
-| Release, git, or branch cleanup / LAND | `HARNESS.md` LAND; prefer `bin/orbit-feature-land` | `bin/orbit-feature-finalization-check` before each destructive merge/cleanup/Solo mutation |
+| Release, git, or branch cleanup / LAND | `HARNESS.md` LAND; prefer `bin/orbit-feature-land` | `bin/orbit-feature-finalization-check` before each destructive merge/cleanup/tmux-session mutation |
 
 ## Implementation Route
 
-1. Use a Solo scratchpad only when a complex roadmap or durable design needs
+1. Use `~/shared-knowledge/projects/orbit/` only when a complex roadmap or durable design needs
    one; ordinary features use the compact local loop anchor.
 2. For repository implementation, create an isolated worktree with
    `bin/orbit-prepare-worktree`; it seeds `.orbit/loop.md` when missing. Do

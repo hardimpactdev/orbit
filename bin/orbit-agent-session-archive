@@ -10,42 +10,36 @@ declare(strict_types=1);
 
 $options = getopt('', [
     'processes-json:',
-    'solo-project-id:',
-    'solo-process-id:',
-    'solo-app-data-dir:',
-    'solo-db:',
-    'solo-cli:',
+    'worker-id:',
     'cwd:',
     'marker:',
     'home:',
     'max-start-distance:',
     'archive-dir:',
     'only-ok',
-    'discover-by-cwd',
     'help',
 ]);
 
 if (array_key_exists('help', $options)) {
     fwrite(STDOUT, <<<'EOF'
         Usage:
-          bin/orbit-agent-session-archive [--processes-json=<path> | --solo-process-id=<id> | --solo-project-id=<id>] [--archive-dir=<path>]
+          bin/orbit-agent-session-archive [--processes-json=<path> | --worker-id=<id>] [--archive-dir=<path>]
 
         Options:
-          --processes-json=<path>       Read Solo process records from a JSON fixture/export.
-          --solo-process-id=<id>        Use one Solo process as the root and include descendants when available.
-          --solo-project-id=<id>        Read agent processes for one Solo project.
-          --discover-by-cwd             Discover the Solo project for --cwd.
+          --processes-json=<path>       Read process records from a JSON fixture/export.
+          --worker-id=<id,...>          Select registry workers by id. Unknown ids become worker_not_found.
           --archive-dir=<path>          Write provider archives directly under this agent-sessions directory.
           --home=<path>                 Override the home directory used for provider session roots.
           --cwd=<path>                  Override the artifact working directory filter.
           --marker=<text>               Require provider session files to contain a narrow marker.
           --only-ok                     Emit only successful provider extractions.
 
-        Without an explicit Solo/process/project/fixture context, this command prints [] and exits 0.
+        Without --processes-json, this command reads <cwd>/.orbit/workers/*.json. When that
+        registry is absent or empty, it prints [] and exits 0.
 
-        Target process ids that resolve neither via the Solo CLI nor the local SQLite DB do not abort
-        the run: each one is reported with a WARNING and recorded as a solo_process_not_found session
-        entry in the results and the agent-sessions manifest. With --only-ok, unresolved entries are
+        Target worker ids that are missing from the registry do not abort the run: each one
+        is reported with a WARNING and recorded as a worker_not_found session entry in the
+        results and the agent-sessions manifest. With --only-ok, unresolved entries are
         excluded like every other non-ok status.
         EOF);
 
@@ -57,133 +51,66 @@ $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['c
 $marker = isset($options['marker']) ? (string) $options['marker'] : null;
 $maxStartDistance = isset($options['max-start-distance']) ? (int) $options['max-start-distance'] : 600;
 $archiveDir = isset($options['archive-dir']) ? rtrim((string) $options['archive-dir'], '/') : null;
-$appDataDir = (string) ($options['solo-app-data-dir'] ?? "{$home}/.config/soloterm");
-$soloDb = (string) ($options['solo-db'] ?? "{$appDataDir}/solo.db");
-$soloCli = (string) ($options['solo-cli'] ?? defaultSoloCliPath());
 $onlyOk = array_key_exists('only-ok', $options);
-$targetProcessIds = targetSoloProcessIds($options);
+$targetWorkerIds = targetWorkerIds($options);
 $processMetadataSource = 'fixture';
 $unresolvedProcessResults = [];
+$processes = [];
 
 if (isset($options['processes-json'])) {
     $processesPath = (string) $options['processes-json'];
     $processes = json_decode((string) file_get_contents($processesPath), true);
 
-    if (!is_array($processes)) {
+    if (! is_array($processes)) {
         fwrite(STDERR, "Could not parse process JSON: {$processesPath}\n");
         exit(2);
     }
 
     $processes = normalizeProcessListPayload($processes);
 
-    if ($targetProcessIds !== []) {
-        $processes = filterProcessTrees($processes, $targetProcessIds);
+    if ($targetWorkerIds !== []) {
+        $processes = filterProcessTrees($processes, $targetWorkerIds);
     }
 } else {
-    if ($targetProcessIds !== []) {
-        $processes = [];
-        $seenProcessIds = [];
-        $processMetadataSource = 'solo_cli';
+    $registryDir = workerRegistryDir($cwd);
+    $registryProcesses = loadWorkerRegistryProcesses($cwd);
 
-        foreach ($targetProcessIds as $targetProcessId) {
-            $rootProcess = loadProcessFromSoloCli($soloCli, $targetProcessId, $appDataDir);
-            $rootProcessMetadataSource = 'solo_cli';
+    if ($targetWorkerIds !== []) {
+        $processMetadataSource = 'worker_registry';
+        $registryById = [];
 
-            if ($rootProcess === null) {
-                $rootProcess = loadProcessFromSoloDb($soloDb, $targetProcessId);
+        foreach ($registryProcesses as $registryProcess) {
+            $registryId = processIdentity($registryProcess['id'] ?? null);
 
-                if ($rootProcess !== null) {
-                    $rootProcessMetadataSource = 'solo_sqlite';
-                    $processMetadataSource = $processMetadataSource === 'solo_cli'
-                        ? 'solo_sqlite'
-                        : $processMetadataSource;
-                }
+            if ($registryId !== null) {
+                $registryById[$registryId] = $registryProcess;
             }
+        }
 
-            if ($rootProcess === null) {
+        foreach ($targetWorkerIds as $targetWorkerId) {
+            if (! isset($registryById[$targetWorkerId])) {
                 fwrite(
                     STDERR,
-                    "WARNING: could not resolve Solo process {$targetProcessId} via Solo CLI ({$soloCli}) or "
-                    . "local Solo DB ({$soloDb}); recording it as solo_process_not_found and continuing.\n",
+                    "WARNING: could not resolve worker {$targetWorkerId} in {$registryDir}; "
+                    ."recording it as worker_not_found and continuing.\n",
                 );
-                $unresolvedProcessResults[] = unresolvedProcessResult($targetProcessId, $soloCli, $soloDb, $cwd);
+                $unresolvedProcessResults[] = unresolvedProcessResult($targetWorkerId, $registryDir, $cwd);
 
                 continue;
             }
 
-            $projectId = normalizeOptionalInt($rootProcess['project_id'] ?? null);
-            $projectProcesses = $projectId === null ? null : loadProcessesFromSoloCli($soloCli, $projectId, $appDataDir);
-
-            if ($projectProcesses === null && $projectId !== null) {
-                $projectProcesses = loadProcessesFromSoloDb($soloDb, $projectId);
-                $rootProcessMetadataSource = 'solo_sqlite';
-                $processMetadataSource = $processMetadataSource === 'solo_cli' ? 'solo_sqlite' : $processMetadataSource;
-            }
-
-            if ($rootProcessMetadataSource !== $processMetadataSource) {
-                $processMetadataSource = 'mixed';
-            }
-
-            $targetProcesses = $projectProcesses === null
-                ? [$rootProcess]
-                : filterProcessTree($projectProcesses, $targetProcessId);
-
-            if ($targetProcesses === []) {
-                $targetProcesses = [$rootProcess];
-            }
-
-            foreach ($targetProcesses as $process) {
-                $processId = normalizeOptionalInt($process['id'] ?? null);
-
-                if ($processId === null) {
-                    $processes[] = $process;
-
-                    continue;
-                }
-
-                if (isset($seenProcessIds[$processId])) {
-                    continue;
-                }
-
-                $seenProcessIds[$processId] = true;
-                $processes[] = $process;
-            }
+            $processes[] = $registryById[$targetWorkerId];
         }
+    } elseif ($registryProcesses !== []) {
+        $processMetadataSource = 'worker_registry';
+        $processes = $registryProcesses;
     } else {
-        if (!shouldLoadSoloProject($options)) {
-            if ($archiveDir !== null) {
-                writeArchiveManifest($archiveDir, []);
-            }
-
-            echo json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
-            exit(0);
+        if ($archiveDir !== null) {
+            writeArchiveManifest($archiveDir, []);
         }
 
-        $projectId = isset($options['solo-project-id'])
-            ? (int) $options['solo-project-id']
-            : discoverSoloProjectId($soloCli, $soloDb, $cwd, $appDataDir);
-
-        if ($projectId === null) {
-            fwrite(STDERR, "Could not discover Solo project id for cwd: {$cwd}\n");
-            fwrite(
-                STDERR,
-                "Usage: bin/orbit-agent-session-archive [--processes-json=<path> | --solo-project-id=<id> | --solo-process-id=<id>] [--cwd=<path>] [--marker=<marker>] [--archive-dir=<path>] [--only-ok] [--discover-by-cwd]\n",
-            );
-            exit(2);
-        }
-
-        $processes = loadProcessesFromSoloCli($soloCli, $projectId, $appDataDir);
-        $processMetadataSource = 'solo_cli';
-
-        if ($processes === null) {
-            $processes = loadProcessesFromSoloDb($soloDb, $projectId);
-            $processMetadataSource = 'solo_sqlite';
-        }
-
-        if ($processes === null) {
-            fwrite(STDERR, "Could not load Solo processes from CLI/API discovery or local SQLite DB.\n");
-            exit(2);
-        }
+        echo json_encode([], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;
+        exit(0);
     }
 }
 
@@ -200,10 +127,11 @@ foreach ($processes as $process) {
 
     $startedAt = processStartedAt($process, $now);
     $processCwd = processCwd($process, $cwd);
-    $requireCwdMatch = $targetProcessIds === [];
+    $requireCwdMatch = $targetWorkerIds === [];
+    $workerId = processIdentity($process['id'] ?? null);
 
     $base = [
-        'solo_process_id' => $process['id'] ?? null,
+        'worker_id' => $workerId,
         'process_name' => $process['name'] ?? null,
         'agent' => $runtime,
         'process_metadata_source' => $processMetadataSource,
@@ -216,20 +144,29 @@ foreach ($processes as $process) {
 
     $usage = match ($runtime) {
         'claude' => extractClaudeSession($home, $processCwd, $process, $marker),
-        'codex' => extractCodexSession($home, $processCwd, $startedAt, $marker, $maxStartDistance, $requireCwdMatch),
+        'codex' => extractCodexSession(
+            $home,
+            $processCwd,
+            $startedAt,
+            $marker,
+            $maxStartDistance,
+            $requireCwdMatch,
+            $process['provider_ref'] ?? null,
+        ),
         'grok' => extractGrokSession($home, $processCwd, $startedAt, $marker, $maxStartDistance, $requireCwdMatch),
+        'opencode' => unsupported('unsupported_provider'),
         'antigravity' => unsupported('antigravity_session_contract_unsupported'),
         default => unsupported('unsupported_provider'),
     };
 
     $result = array_merge($base, $usage);
 
-    if (!$onlyOk || ($result['status'] ?? null) === 'ok') {
+    if (! $onlyOk || ($result['status'] ?? null) === 'ok') {
         $results[] = $result;
     }
 }
 
-if (!$onlyOk) {
+if (! $onlyOk) {
     foreach ($unresolvedProcessResults as $unresolvedResult) {
         $results[] = $unresolvedResult;
     }
@@ -239,7 +176,7 @@ if ($archiveDir !== null) {
     archiveResults($archiveDir, $results);
 }
 
-echo json_encode(array_map('publicResult', $results), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+echo json_encode(array_map('publicResult', $results), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL;
 
 function inferRuntime(string $command): string
 {
@@ -249,411 +186,151 @@ function inferRuntime(string $command): string
         'claude' => 'claude',
         'codex' => 'codex',
         'grok' => 'grok',
+        'opencode' => 'opencode',
         'antigravity' => 'antigravity',
         default => 'unknown',
     };
 }
 
-function defaultSoloCliPath(): string
-{
-    return '/Applications/Solo.app/Contents/MacOS/solo-cli';
-}
-
-/**
- * @param array<string, mixed> $options
- */
-function shouldLoadSoloProject(array $options): bool
-{
-    if (isset($options['solo-project-id']) || array_key_exists('discover-by-cwd', $options)) {
-        return true;
-    }
-
-    $soloProjectId = getenv('SOLO_PROJECT_ID');
-
-    return is_string($soloProjectId) && ctype_digit($soloProjectId);
-}
-
 /**
  * @param array<string, mixed> $options
  *
- * @return list<int>
+ * @return list<string>
  */
-function targetSoloProcessIds(array $options): array
+function targetWorkerIds(array $options): array
 {
-    if (isset($options['solo-process-id']) && is_string($options['solo-process-id'])) {
-        return normalizeProcessIdList($options['solo-process-id']);
+    if (isset($options['worker-id']) && is_string($options['worker-id'])) {
+        return normalizeWorkerIdList($options['worker-id']);
     }
 
-    $soloProcessId = getenv('SOLO_PROCESS_ID');
-
-    return is_string($soloProcessId) ? normalizeProcessIdList($soloProcessId) : [];
+    return [];
 }
 
 /**
- * @return list<int>
+ * @return list<string>
  */
-function normalizeProcessIdList(string $value): array
+function normalizeWorkerIdList(string $value): array
 {
     $ids = [];
 
     foreach (preg_split('/[,\s]+/', $value) ?: [] as $part) {
-        if (!ctype_digit($part)) {
+        if ($part === '' || preg_match('/^(?:[a-z][a-z0-9-]*|[1-9][0-9]*)$/', $part) !== 1) {
             continue;
         }
 
-        $id = (int) $part;
-
-        if ($id > 0 && !in_array($id, $ids, true)) {
-            $ids[] = $id;
+        if (! in_array($part, $ids, true)) {
+            $ids[] = $part;
         }
     }
 
     return $ids;
 }
 
-function discoverSoloProjectId(string $soloCli, string $soloDb, string $cwd, string $appDataDir): ?int
+function workerRegistryDir(string $cwd): string
 {
-    return (
-        discoverSoloProjectIdFromEnvironment($soloCli, $soloDb, $appDataDir) ?? discoverSoloProjectIdFromCli(
-            $soloCli,
-            $cwd,
-            $appDataDir,
-        ) ?? discoverSoloProjectIdFromDb($soloDb, $cwd)
-    );
+    return rtrim($cwd, '/').'/.orbit/workers';
 }
 
-function discoverSoloProjectIdFromEnvironment(string $soloCli, string $soloDb, string $appDataDir): ?int
+function processIdentity(mixed $value): ?string
 {
-    $soloProjectId = getenv('SOLO_PROJECT_ID');
-
-    if (is_string($soloProjectId) && ctype_digit($soloProjectId)) {
-        return (int) $soloProjectId;
+    if (is_int($value)) {
+        return (string) $value;
     }
 
-    $soloProcessId = getenv('SOLO_PROCESS_ID');
-
-    if (!is_string($soloProcessId) || !ctype_digit($soloProcessId)) {
-        return null;
+    if (is_string($value) && $value !== '') {
+        return $value;
     }
 
-    return (
-        discoverSoloProjectIdForProcessFromCli(
-            $soloCli,
-            (int) $soloProcessId,
-            $appDataDir,
-        ) ?? discoverSoloProjectIdForProcessFromDb($soloDb, (int) $soloProcessId)
-    );
+    if (is_float($value) || is_numeric($value) && ! is_bool($value)) {
+        return (string) $value;
+    }
+
+    return null;
 }
 
-function discoverSoloProjectIdForProcessFromCli(string $soloCli, int $processId, string $appDataDir): ?int
+function loadWorkerRegistryProcesses(string $cwd): array
 {
-    if (!is_file($soloCli)) {
-        return null;
+    $processes = [];
+
+    foreach (workerRegistryEntryPaths($cwd) as $path) {
+        $entry = loadWorkerRegistryEntry($path);
+
+        if ($entry === null) {
+            continue;
+        }
+
+        $processes[] = processRecordFromWorkerEntry($entry);
     }
 
-    $command = implode(' ', [
-        escapeshellarg($soloCli),
-        '--app-data-dir',
-        escapeshellarg($appDataDir),
-        'processes',
-        'get',
-        (string) $processId,
-        '--json',
-        '2>/dev/null',
-    ]);
-
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    $process = normalizeProcessGetPayload($payload);
-
-    return normalizeOptionalInt($process['project_id'] ?? null);
+    return $processes;
 }
 
-function discoverSoloProjectIdForProcessFromDb(string $soloDb, int $processId): ?int
+/**
+ * @return list<string>
+ */
+function workerRegistryEntryPaths(string $cwd): array
 {
-    if (!is_file($soloDb)) {
-        return null;
+    $dir = workerRegistryDir($cwd);
+
+    if (! is_dir($dir)) {
+        return [];
     }
 
-    $sql = 'select project_id from processes where id = ' . $processId . ' limit 1;';
-    $command = 'sqlite3 -json ' . escapeshellarg($soloDb) . ' ' . escapeshellarg($sql) . ' 2>/dev/null';
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
+    $paths = glob($dir.'/*.json') ?: [];
+    $paths = array_values(array_filter($paths, 'is_file'));
+    sort($paths, SORT_STRING);
 
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload) || !isset($payload[0]['project_id'])) {
-        return null;
-    }
-
-    return normalizeOptionalInt($payload[0]['project_id']);
-}
-
-function discoverSoloProjectIdFromCli(string $soloCli, string $cwd, string $appDataDir): ?int
-{
-    if (!is_file($soloCli)) {
-        return null;
-    }
-
-    $command = implode(' ', [
-        escapeshellarg($soloCli),
-        '--app-data-dir',
-        escapeshellarg($appDataDir),
-        'projects',
-        'list',
-        '--json',
-        '2>/dev/null',
-    ]);
-
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    return selectProjectIdForCwd(normalizeProjectListPayload($payload), $cwd);
-}
-
-function discoverSoloProjectIdFromDb(string $soloDb, string $cwd): ?int
-{
-    if (!is_file($soloDb)) {
-        return null;
-    }
-
-    $sql = 'select id, path, canonical_path from projects order by length(path) desc;';
-    $command = 'sqlite3 -json ' . escapeshellarg($soloDb) . ' ' . escapeshellarg($sql) . ' 2>/dev/null';
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    return selectProjectIdForCwd(normalizeProjectListPayload($payload), $cwd);
+    return $paths;
 }
 
 /**
  * @return array<string, mixed>|null
  */
-function loadProcessFromSoloCli(string $soloCli, int $processId, string $appDataDir): ?array
+function loadWorkerRegistryEntry(string $path): ?array
 {
-    if (!is_file($soloCli)) {
+    $payload = json_decode((string) file_get_contents($path), true);
+
+    if (! is_array($payload)) {
         return null;
     }
 
-    $command = implode(' ', [
-        escapeshellarg($soloCli),
-        '--app-data-dir',
-        escapeshellarg($appDataDir),
-        'processes',
-        'get',
-        (string) $processId,
-        '--json',
-        '2>/dev/null',
+    $id = processIdentity($payload['id'] ?? null);
+
+    if ($id === null) {
+        return null;
+    }
+
+    $payload['id'] = $id;
+
+    return $payload;
+}
+
+/**
+ * @param array<string, mixed> $entry
+ *
+ * @return array<string, mixed>
+ */
+function processRecordFromWorkerEntry(array $entry): array
+{
+    $command = $entry['command'] ?? '';
+
+    if (is_array($command)) {
+        $command = implode(' ', array_map(static fn (mixed $part): string => (string) $part, $command));
+    }
+
+    $tmux = is_array($entry['tmux'] ?? null) ? $entry['tmux'] : [];
+
+    return normalizeProcessRecord([
+        'id' => $entry['id'],
+        'name' => $entry['id'],
+        'kind' => 'agent',
+        'command' => is_string($command) ? $command : '',
+        'working_dir' => $entry['cwd'] ?? null,
+        'pid' => $tmux['pane_pid'] ?? null,
+        'started_at' => $entry['started_at'] ?? null,
+        'status' => $entry['status'] ?? null,
+        'provider_ref' => $entry['provider_ref'] ?? null,
     ]);
-
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    $process = normalizeProcessGetPayload($payload);
-
-    return $process === [] ? null : $process;
-}
-
-/**
- * @return array<string, mixed>|null
- */
-function loadProcessFromSoloDb(string $soloDb, int $processId): ?array
-{
-    if (!is_file($soloDb)) {
-        return null;
-    }
-
-    $sql = <<<SQL
-        select
-            p.id,
-            p.project_id,
-            p.name,
-            p.command,
-            coalesce(p.working_dir, pr.path) as working_dir,
-            p.kind,
-            p.agent_tool_id,
-            p.last_session_id,
-            p.parent_process_id,
-            p.created_at,
-            sp.pid,
-            sp.pgid,
-            sp.spawned_at,
-            replace(coalesce(sp.spawned_at, p.created_at), ' ', 'T') || 'Z' as started_at
-        from processes p
-        inner join projects pr on pr.id = p.project_id
-        left join spawned_processes sp on sp.id = (
-            select sp2.id
-            from spawned_processes sp2
-            where sp2.project_path = pr.path
-                and sp2.process_name = p.name
-            order by sp2.spawned_at desc, sp2.id desc
-            limit 1
-        )
-        where p.id = {$processId}
-        limit 1;
-        SQL;
-
-    $command = 'sqlite3 -json ' . escapeshellarg($soloDb) . ' ' . escapeshellarg($sql) . ' 2>/dev/null';
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload) || !isset($payload[0]) || !is_array($payload[0])) {
-        return null;
-    }
-
-    return normalizeProcessRecord($payload[0]);
-}
-
-/**
- * @return array<int, array<string, mixed>>|null
- */
-function loadProcessesFromSoloCli(string $soloCli, int $projectId, string $appDataDir): ?array
-{
-    if (!is_file($soloCli)) {
-        return null;
-    }
-
-    $command = implode(' ', [
-        escapeshellarg($soloCli),
-        '--app-data-dir',
-        escapeshellarg($appDataDir),
-        'processes',
-        'list',
-        '--project-id',
-        (string) $projectId,
-        '--json',
-        '2>/dev/null',
-    ]);
-
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    return normalizeProcessListPayload($payload);
-}
-
-/**
- * @return array<int, array<string, mixed>>|null
- */
-function loadProcessesFromSoloDb(string $soloDb, int $projectId): ?array
-{
-    if (!is_file($soloDb)) {
-        return null;
-    }
-
-    $sql = <<<SQL
-        select
-            p.id,
-            p.project_id,
-            p.name,
-            p.command,
-            coalesce(p.working_dir, pr.path) as working_dir,
-            p.kind,
-            p.agent_tool_id,
-            p.last_session_id,
-            p.parent_process_id,
-            p.created_at,
-            sp.pid,
-            sp.pgid,
-            sp.spawned_at,
-            replace(coalesce(sp.spawned_at, p.created_at), ' ', 'T') || 'Z' as started_at
-        from processes p
-        inner join projects pr on pr.id = p.project_id
-        left join spawned_processes sp on sp.id = (
-            select sp2.id
-            from spawned_processes sp2
-            where sp2.project_path = pr.path
-                and sp2.process_name = p.name
-            order by sp2.spawned_at desc, sp2.id desc
-            limit 1
-        )
-        where p.project_id = {$projectId}
-            and p.kind = 'agent'
-        order by p.id;
-        SQL;
-
-    $command = 'sqlite3 -json ' . escapeshellarg($soloDb) . ' ' . escapeshellarg($sql) . ' 2>/dev/null';
-    $output = [];
-    $exitCode = 0;
-    exec($command, $output, $exitCode);
-
-    if ($exitCode !== 0) {
-        return null;
-    }
-
-    $payload = json_decode(implode("\n", $output), true);
-
-    if (!is_array($payload)) {
-        return null;
-    }
-
-    return normalizeProcessListPayload($payload);
 }
 
 /**
@@ -673,117 +350,14 @@ function normalizeProcessListPayload(array $payload): array
         $processes = $payload['processes'];
     }
 
-    if (!is_array($processes) || !array_is_list($processes)) {
+    if (! is_array($processes) || ! array_is_list($processes)) {
         return [];
     }
 
     return array_map(
-        fn(array $process): array => normalizeProcessRecord($process),
+        fn (array $process): array => normalizeProcessRecord($process),
         array_filter($processes, 'is_array'),
     );
-}
-
-/**
- * @param array<mixed> $payload
- *
- * @return array<string, mixed>
- */
-function normalizeProcessGetPayload(array $payload): array
-{
-    $process = $payload;
-
-    if (isset($payload['data']) && is_array($payload['data'])) {
-        $process = $payload['data']['process'] ?? $payload['data'];
-    }
-
-    if (isset($payload['process']) && is_array($payload['process'])) {
-        $process = $payload['process'];
-    }
-
-    if (!is_array($process)) {
-        return [];
-    }
-
-    return normalizeProcessRecord($process);
-}
-
-/**
- * @param array<mixed> $payload
- *
- * @return array<int, array<string, mixed>>
- */
-function normalizeProjectListPayload(array $payload): array
-{
-    $projects = $payload;
-
-    if (isset($payload['data']) && is_array($payload['data'])) {
-        $projects = $payload['data']['projects'] ?? $payload['data'];
-    }
-
-    if (isset($payload['projects']) && is_array($payload['projects'])) {
-        $projects = $payload['projects'];
-    }
-
-    if (!is_array($projects) || !array_is_list($projects)) {
-        return [];
-    }
-
-    return array_map(
-        fn(array $project): array => [
-            'id' => normalizeOptionalInt($project['id'] ?? $project['projectId'] ?? null),
-            'path' => $project['path'] ?? null,
-            'canonical_path' => $project['canonical_path'] ?? $project['canonicalPath'] ?? null,
-        ],
-        array_filter($projects, 'is_array'),
-    );
-}
-
-/**
- * @param array<int, array<string, mixed>> $projects
- */
-function selectProjectIdForCwd(array $projects, string $cwd): ?int
-{
-    $bestProjectId = null;
-    $bestPathLength = -1;
-
-    foreach ($projects as $project) {
-        $projectId = $project['id'] ?? null;
-
-        if (!is_int($projectId)) {
-            continue;
-        }
-
-        foreach (['path', 'canonical_path'] as $pathKey) {
-            $path = $project[$pathKey] ?? null;
-
-            if (!is_string($path) || $path === '') {
-                continue;
-            }
-
-            $realPath = realpath($path) ?: rtrim($path, '/');
-
-            if (!cwdIsWithinProject($cwd, $realPath)) {
-                continue;
-            }
-
-            $pathLength = strlen($realPath);
-
-            if ($pathLength > $bestPathLength) {
-                $bestProjectId = $projectId;
-                $bestPathLength = $pathLength;
-            }
-        }
-    }
-
-    return $bestProjectId;
-}
-
-function cwdIsWithinProject(string $cwd, string $projectPath): bool
-{
-    $cwd = canonicalPath($cwd);
-    $projectPath = rtrim(canonicalPath($projectPath), '/');
-
-    return $cwd === $projectPath || str_starts_with($cwd . '/', $projectPath . '/');
 }
 
 function canonicalPath(string $path): string
@@ -814,9 +388,8 @@ function normalizeProcessRecord(array $process): array
         'spawned_at' => $process['spawned_at'] ?? $process['spawnedAt'] ?? null,
         'agent_tool_id' => $process['agent_tool_id'] ?? $process['agentToolId'] ?? null,
         'last_session_id' => $process['last_session_id'] ?? $process['lastSessionId'] ?? null,
-        'parent_process_id' => normalizeOptionalInt(
-            $process['parent_process_id'] ?? $process['parentProcessId'] ?? null,
-        ),
+        'parent_process_id' => $process['parent_process_id'] ?? $process['parentProcessId'] ?? null,
+        'provider_ref' => $process['provider_ref'] ?? $process['providerRef'] ?? null,
     ];
 }
 
@@ -830,7 +403,7 @@ function normalizeOptionalInt(mixed $value): ?int
  *
  * @return array<int, array<string, mixed>>
  */
-function filterProcessTree(array $processes, int $rootProcessId): array
+function filterProcessTree(array $processes, string $rootProcessId): array
 {
     $included = [$rootProcessId => true];
     $changed = true;
@@ -839,13 +412,13 @@ function filterProcessTree(array $processes, int $rootProcessId): array
         $changed = false;
 
         foreach ($processes as $process) {
-            $processId = normalizeOptionalInt($process['id'] ?? null);
-            $parentProcessId = normalizeOptionalInt($process['parent_process_id'] ?? null);
+            $processId = processIdentity($process['id'] ?? null);
+            $parentProcessId = processIdentity($process['parent_process_id'] ?? null);
 
             if (
                 $processId === null
                 || $parentProcessId === null
-                || !isset($included[$parentProcessId])
+                || ! isset($included[$parentProcessId])
                 || isset($included[$processId])
             ) {
                 continue;
@@ -858,13 +431,13 @@ function filterProcessTree(array $processes, int $rootProcessId): array
 
     return array_values(array_filter(
         $processes,
-        fn(array $process): bool => isset($included[normalizeOptionalInt($process['id'] ?? null) ?? -1]),
+        fn (array $process): bool => isset($included[processIdentity($process['id'] ?? null) ?? '']),
     ));
 }
 
 /**
  * @param array<int, array<string, mixed>> $processes
- * @param list<int> $rootProcessIds
+ * @param list<string> $rootProcessIds
  *
  * @return array<int, array<string, mixed>>
  */
@@ -875,7 +448,7 @@ function filterProcessTrees(array $processes, array $rootProcessIds): array
 
     foreach ($rootProcessIds as $rootProcessId) {
         foreach (filterProcessTree($processes, $rootProcessId) as $process) {
-            $processId = normalizeOptionalInt($process['id'] ?? null);
+            $processId = processIdentity($process['id'] ?? null);
 
             if ($processId === null) {
                 $filtered[] = $process;
@@ -933,7 +506,7 @@ function processCwd(array $process, string $fallbackCwd): string
     foreach (['working_dir', 'workingDir', 'cwd'] as $key) {
         $workingDir = $process[$key] ?? null;
 
-        if (!is_string($workingDir) || $workingDir === '') {
+        if (! is_string($workingDir) || $workingDir === '') {
             continue;
         }
 
@@ -941,6 +514,59 @@ function processCwd(array $process, string $fallbackCwd): string
     }
 
     return $fallbackCwd;
+}
+
+/**
+ * @return list<int>
+ */
+function descendantPids(int $pid): array
+{
+    $seen = [$pid => true];
+    $queue = [$pid];
+
+    while ($queue !== []) {
+        $parent = array_shift($queue);
+        $output = [];
+        exec('pgrep -P '.escapeshellarg((string) $parent).' 2>/dev/null', $output);
+
+        foreach ($output as $line) {
+            $child = trim((string) $line);
+
+            if ($child === '' || ! ctype_digit($child)) {
+                continue;
+            }
+
+            $childPid = (int) $child;
+
+            if (isset($seen[$childPid])) {
+                continue;
+            }
+
+            $seen[$childPid] = true;
+            $queue[] = $childPid;
+        }
+    }
+
+    return array_map(static fn (string|int $value): int => (int) $value, array_keys($seen));
+}
+
+function resolveProviderRefArtifact(string $home, string $providerRef): ?string
+{
+    if (preg_match('~^claude://sessions/([A-Za-z0-9][A-Za-z0-9-]{0,127})$~', $providerRef, $match) === 1) {
+        return findFileByName("{$home}/.claude/projects", $match[1].'.jsonl');
+    }
+
+    if (preg_match('~^codex://threads/([A-Za-z0-9][A-Za-z0-9-]{0,127})$~', $providerRef, $match) === 1) {
+        $suffix = '-'.$match[1].'.jsonl';
+
+        foreach (findFiles("{$home}/.codex/sessions", 'rollout-*.jsonl') as $file) {
+            if (str_ends_with($file, $suffix)) {
+                return $file;
+            }
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -956,32 +582,54 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     $source = 'claude_session_jsonl';
     $match = 'pid_session_map';
     $checked = [];
+    $providerRef = is_string($process['provider_ref'] ?? null) ? (string) $process['provider_ref'] : null;
 
-    if (is_int($pid)) {
-        $candidateSessionMapPath = "{$home}/.claude/sessions/{$pid}.json";
-        $checked[] = $candidateSessionMapPath;
+    if ($providerRef !== null) {
+        $checked[] = "provider_ref {$providerRef}";
+        $resolved = resolveProviderRefArtifact($home, $providerRef);
 
-        if (is_file($candidateSessionMapPath)) {
+        if ($resolved !== null) {
+            $projectFile = $resolved;
+            $source = 'claude_session_jsonl_provider_ref';
+            $match = 'provider_ref';
+        }
+    }
+
+    if ($projectFile === null && is_int($pid)) {
+        foreach (descendantPids($pid) as $candidatePid) {
+            $candidateSessionMapPath = "{$home}/.claude/sessions/{$candidatePid}.json";
+            $checked[] = $candidateSessionMapPath;
+
+            if (! is_file($candidateSessionMapPath)) {
+                continue;
+            }
+
             $sessionMap = json_decode((string) file_get_contents($candidateSessionMapPath), true);
             $sessionId = is_array($sessionMap) ? $sessionMap['sessionId'] ?? null : null;
 
-            if (is_string($sessionId) && $sessionId !== '') {
-                $projectFile = findFileByName("{$home}/.claude/projects", "{$sessionId}.jsonl");
-                $sessionMapPath = $candidateSessionMapPath;
+            if (! is_string($sessionId) || $sessionId === '') {
+                continue;
+            }
+
+            $projectFile = findFileByName("{$home}/.claude/projects", "{$sessionId}.jsonl");
+            $sessionMapPath = $candidateSessionMapPath;
+
+            if ($projectFile !== null) {
+                break;
             }
         }
-    } else {
-        $checked[] = "{$home}/.claude/sessions/<pid>.json (Solo process pid unavailable)";
+    } elseif ($projectFile === null) {
+        $checked[] = "{$home}/.claude/sessions/<pid>.json (worker pane pid unavailable)";
     }
 
     if ($projectFile === null) {
-        $soloProcessId = normalizeOptionalInt($process['id'] ?? $process['processId'] ?? null);
+        $workerId = processIdentity($process['id'] ?? $process['processId'] ?? null);
 
-        if ($soloProcessId !== null) {
-            $checked[] = "{$home}/.claude/projects (Solo process ID: {$soloProcessId} marker scan)";
-            $projectFile = findClaudeProjectFileForSoloProcess($home, $soloProcessId, $marker);
-            $source = 'claude_session_jsonl_solo_marker';
-            $match = 'solo_process_marker';
+        if ($workerId !== null) {
+            $checked[] = "{$home}/.claude/projects (Orbit worker: {$workerId} marker scan)";
+            $projectFile = findClaudeProjectFileForWorker($home, $workerId, $marker);
+            $source = 'claude_session_jsonl_worker_marker';
+            $match = 'worker_marker';
         }
     }
 
@@ -997,7 +645,7 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
         return missing('claude_session_not_found', ['checked' => $checked]);
     }
 
-    if ($marker !== null && !fileContains($projectFile, $marker)) {
+    if ($marker !== null && ! fileContains($projectFile, $marker)) {
         return missing('claude_marker_not_found', ['artifact' => $projectFile]);
     }
 
@@ -1019,15 +667,15 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
         if (is_array($usage) && is_string($model)) {
             $fingerprint =
                 $model
-                . ':'
-                . json_encode([
+                .':'
+                .json_encode([
                     $usage['input_tokens'] ?? null,
                     $usage['output_tokens'] ?? null,
                     $usage['cache_read_input_tokens'] ?? null,
                     $usage['cache_creation_input_tokens'] ?? null,
                 ]);
 
-            if (!isset($seenFingerprints[$fingerprint])) {
+            if (! isset($seenFingerprints[$fingerprint])) {
                 $seenFingerprints[$fingerprint] = true;
                 $models[$model] = true;
                 $totals['input_tokens'] += (int) ($usage['input_tokens'] ?? 0);
@@ -1070,17 +718,16 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     ] + $totals;
 }
 
-function findClaudeProjectFileForSoloProcess(string $home, int $soloProcessId, ?string $marker): ?string
+function findClaudeProjectFileForWorker(string $home, string $workerId, ?string $marker): ?string
 {
     $matches = [];
     $needles = [
-        "Solo process ID: {$soloProcessId}",
-        "SOLO_PROCESS_ID={$soloProcessId}",
-        "solo_process_id={$soloProcessId}",
+        "Orbit worker: {$workerId}",
+        "ORBIT_WORKER_ID={$workerId}",
     ];
 
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
-        if ($marker !== null && !fileContains($file, $marker)) {
+        if ($marker !== null && ! fileContains($file, $marker)) {
             continue;
         }
 
@@ -1093,29 +740,29 @@ function findClaudeProjectFileForSoloProcess(string $home, int $soloProcessId, ?
         }
     }
 
-    usort($matches, fn(string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
+    usort($matches, fn (string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
 
     return $matches[0] ?? null;
 }
 
 function claudeProjectDirForCwd(string $home, string $cwd): string
 {
-    return "{$home}/.claude/projects/" . preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+    return "{$home}/.claude/projects/".preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
 }
 
 function findClaudeProjectFileForCwd(string $projectDir, ?string $marker): ?string
 {
-    if (!is_dir($projectDir)) {
+    if (! is_dir($projectDir)) {
         return null;
     }
 
     $files = array_values(array_filter(glob("{$projectDir}/*.jsonl") ?: [], 'is_file'));
 
     if ($marker !== null) {
-        $files = array_values(array_filter($files, fn(string $file): bool => fileContains($file, $marker)));
+        $files = array_values(array_filter($files, fn (string $file): bool => fileContains($file, $marker)));
     }
 
-    usort($files, fn(string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
+    usort($files, fn (string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
 
     return $files[0] ?? null;
 }
@@ -1130,6 +777,7 @@ function extractCodexSession(
     ?string $marker,
     int $maxStartDistance,
     bool $requireCwdMatch,
+    mixed $providerRef = null,
 ): array {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
@@ -1140,11 +788,20 @@ function extractCodexSession(
         'cwd_mismatch' => 0,
         'start_distance_exceeded' => 0,
     ];
+    $preferredFile = is_string($providerRef) && $providerRef !== ''
+        ? resolveProviderRefArtifact($home, $providerRef)
+        : null;
+    $files = findFiles($root, 'rollout-*.jsonl');
 
-    foreach (findFiles($root, 'rollout-*.jsonl') as $file) {
+    if ($preferredFile !== null) {
+        $files = array_values(array_unique([$preferredFile, ...$files]));
+    }
+
+    foreach ($files as $file) {
         $rolloutsScanned++;
+        $isProviderRef = $preferredFile !== null && $file === $preferredFile;
 
-        if ($marker !== null && !fileContains($file, $marker)) {
+        if (! $isProviderRef && $marker !== null && ! fileContains($file, $marker)) {
             $rejected['marker_not_found']++;
 
             continue;
@@ -1186,7 +843,7 @@ function extractCodexSession(
         $sessionCwd = $sessionMeta['payload']['cwd'] ?? null;
         $cwdMatches = is_string($sessionCwd) && canonicalPath($sessionCwd) === canonicalPath($cwd);
 
-        if ($requireCwdMatch && !$cwdMatches) {
+        if (! $isProviderRef && $requireCwdMatch && ! $cwdMatches) {
             $rejected['cwd_mismatch']++;
 
             continue;
@@ -1198,7 +855,7 @@ function extractCodexSession(
 
         $distance = $startedAt === null ? 0 : abs((int) $createdAt - $startedAt);
 
-        if (!$cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
+        if (! $isProviderRef && ! $cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
             $rejected['start_distance_exceeded']++;
 
             continue;
@@ -1206,23 +863,33 @@ function extractCodexSession(
 
         $candidates[] = [
             'file' => $file,
-            'cwd_match' => $cwdMatches,
-            'distance' => $distance,
+            'cwd_match' => $isProviderRef ? true : $cwdMatches,
+            'provider_ref' => $isProviderRef,
+            'distance' => $isProviderRef ? -1 : $distance,
             'created_at' => (int) $createdAt,
             'payload' => $lastTokenCount,
             'messages' => $messages,
         ];
     }
 
-    usort($candidates, fn(array $a, array $b): int => [$b['cwd_match'], $a['distance'], $b['created_at']]
-        <=> [$a['cwd_match'], $b['distance'], $a['created_at']]);
+    usort(
+        $candidates,
+        fn (array $a, array $b): int => (
+            [$b['provider_ref'], $b['cwd_match'], $a['distance'], $b['created_at']] <=> [
+                $a['provider_ref'],
+                $a['cwd_match'],
+                $b['distance'],
+                $a['created_at'],
+            ]
+        ),
+    );
     $candidate = $candidates[0] ?? null;
 
     if ($candidate === null) {
         return missing('codex_token_count_not_found', [
             'checked' => [
                 "{$root}/**/rollout-*.jsonl",
-                'event_msg payload.type=token_count with session_meta payload.cwd=' . $cwd,
+                'event_msg payload.type=token_count with session_meta payload.cwd='.$cwd,
             ],
             'rollouts_scanned' => $rolloutsScanned,
             'rejected' => $rejected,
@@ -1235,7 +902,9 @@ function extractCodexSession(
         'status' => 'ok',
         'source' => 'codex_jsonl_token_count',
         'metric_confidence' => 'measured',
-        'artifact_match' => $candidate['cwd_match'] ? 'cwd' : 'start_distance',
+        'artifact_match' => $candidate['provider_ref'] ?? false
+            ? 'provider_ref'
+            : ($candidate['cwd_match'] ? 'cwd' : 'start_distance'),
         'artifact' => $candidate['file'],
         'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
         'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
@@ -1277,13 +946,13 @@ function extractGrokSession(
             $sessionDir = dirname($signalsFile);
             $cwdMatches = grokSessionMatchesCwd($sessionDir, $cwd);
 
-            if ($requireCwdMatch && !$cwdMatches) {
+            if ($requireCwdMatch && ! $cwdMatches) {
                 $rejected['cwd_mismatch']++;
 
                 continue;
             }
 
-            if ($marker !== null && !sessionDirContains($sessionDir, $marker)) {
+            if ($marker !== null && ! sessionDirContains($sessionDir, $marker)) {
                 $rejected['marker_not_found']++;
 
                 continue;
@@ -1301,7 +970,7 @@ function extractGrokSession(
 
             $signals = json_decode((string) file_get_contents($signalsFile), true);
 
-            if (!is_array($signals)) {
+            if (! is_array($signals)) {
                 $rejected['signals_invalid']++;
 
                 continue;
@@ -1309,7 +978,7 @@ function extractGrokSession(
 
             $distance = $startedAt === null ? 0 : abs((int) $createdAt - $startedAt);
 
-            if (!$cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
+            if (! $cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
                 $rejected['start_distance_exceeded']++;
 
                 continue;
@@ -1328,14 +997,18 @@ function extractGrokSession(
         }
     }
 
-    usort($candidates, fn(array $a, array $b): int => [$b['cwd_match'], $a['distance'], $b['created_at']]
-        <=> [$a['cwd_match'], $b['distance'], $a['created_at']]);
+    usort(
+        $candidates,
+        fn (array $a, array $b): int => (
+            [$b['cwd_match'], $a['distance'], $b['created_at']] <=> [$a['cwd_match'], $b['distance'], $a['created_at']]
+        ),
+    );
     $candidate = $candidates[0] ?? null;
 
     if ($candidate === null) {
         return missing('grok_signals_not_found', [
             'checked' => [
-                "{$home}/.grok/sessions/" . rawurlencode($cwd) . '/*/signals.json',
+                "{$home}/.grok/sessions/".rawurlencode($cwd).'/*/signals.json',
                 "{$home}/.grok/sessions/*/*/signals.json",
             ],
             'sessions_scanned' => $sessionsScanned,
@@ -1369,11 +1042,11 @@ function extractGrokSession(
  */
 function grokSessionRoots(string $home, string $cwd, bool $requireCwdMatch): array
 {
-    if (!$requireCwdMatch) {
+    if (! $requireCwdMatch) {
         return glob("{$home}/.grok/sessions/*", GLOB_ONLYDIR) ?: [];
     }
 
-    $encodedRoot = "{$home}/.grok/sessions/" . rawurlencode($cwd);
+    $encodedRoot = "{$home}/.grok/sessions/".rawurlencode($cwd);
 
     if (is_dir($encodedRoot)) {
         return [$encodedRoot];
@@ -1432,7 +1105,7 @@ function extractGrokMessages(string $sessionDir): array
  */
 function grokSourceFiles(string $sessionDir): array
 {
-    if (!is_dir($sessionDir)) {
+    if (! is_dir($sessionDir)) {
         return [];
     }
 
@@ -1443,7 +1116,7 @@ function grokSourceFiles(string $sessionDir): array
     ));
 
     foreach ($iterator as $fileInfo) {
-        if (!$fileInfo->isFile()) {
+        if (! $fileInfo->isFile()) {
             continue;
         }
 
@@ -1452,7 +1125,7 @@ function grokSourceFiles(string $sessionDir): array
         $files[] = ['path' => $path, 'archive_name' => $relativePath];
     }
 
-    usort($files, fn(array $a, array $b): int => strcmp($a['archive_name'], $b['archive_name']));
+    usort($files, fn (array $a, array $b): int => strcmp($a['archive_name'], $b['archive_name']));
 
     return $files;
 }
@@ -1493,7 +1166,7 @@ function jsonl(string $path): array
  */
 function findFiles(string $root, string $pattern): array
 {
-    if (!is_dir($root)) {
+    if (! is_dir($root)) {
         return [];
     }
 
@@ -1562,7 +1235,7 @@ function normalizeMessage(string $provider, array $row, string $source, int $sou
     $role = $row['role'] ?? $row['author'] ?? $row['speaker'] ?? roleFromMessageType($row['type'] ?? null);
     $content = $row['content'] ?? $row['text'] ?? $row['message'] ?? null;
 
-    if (!is_string($role) || $content === null) {
+    if (! is_string($role) || $content === null) {
         return null;
     }
 
@@ -1592,13 +1265,13 @@ function codexBaseInstructionsMessage(array $row, int $sourceIndex): ?array
 {
     $payload = $row['payload'] ?? null;
 
-    if (!is_array($payload)) {
+    if (! is_array($payload)) {
         return null;
     }
 
     $baseInstructions = $payload['base_instructions'] ?? null;
 
-    if (!is_array($baseInstructions)) {
+    if (! is_array($baseInstructions)) {
         return null;
     }
 
@@ -1621,7 +1294,7 @@ function codexBaseInstructionsMessage(array $row, int $sourceIndex): ?array
 
 function roleFromMessageType(mixed $type): ?string
 {
-    if (!is_string($type)) {
+    if (! is_string($type)) {
         return null;
     }
 
@@ -1637,7 +1310,7 @@ function contentToText(mixed $content): ?string
         return $content;
     }
 
-    if (!is_array($content)) {
+    if (! is_array($content)) {
         return null;
     }
 
@@ -1650,7 +1323,7 @@ function contentToText(mixed $content): ?string
             continue;
         }
 
-        if (!is_array($item)) {
+        if (! is_array($item)) {
             continue;
         }
 
@@ -1689,26 +1362,25 @@ function timestampFromRow(array $row): ?string
 }
 
 /**
- * A target Solo process id that resolves neither via the Solo CLI nor the
- * local SQLite DB still gets a per-session entry so post-analysis can see the
- * gap instead of the whole archive run aborting.
+ * A target worker id that is missing from the .orbit/workers registry still
+ * gets a per-session entry so post-analysis can see the gap instead of the
+ * whole archive run aborting.
  *
  * @return array<string, mixed>
  */
-function unresolvedProcessResult(int $targetProcessId, string $soloCli, string $soloDb, string $cwd): array
+function unresolvedProcessResult(string $workerId, string $registryDir, string $cwd): array
 {
     return [
-        'solo_process_id' => $targetProcessId,
+        'worker_id' => $workerId,
         'process_name' => null,
         'command' => null,
         'agent' => 'unknown',
         'process_metadata_source' => 'unresolved',
         'artifact_cwd' => $cwd,
-        'status' => 'solo_process_not_found',
-        'reason' => 'solo_process_not_found',
+        'status' => 'worker_not_found',
+        'reason' => 'worker_not_found',
         'checked' => [
-            "solo_cli: {$soloCli}",
-            "solo_db: {$soloDb}",
+            "worker_registry: {$registryDir}/{$workerId}.json",
         ],
         'metric_confidence' => 'unavailable',
     ];
@@ -1834,7 +1506,7 @@ function providerManifest(
             'checked' => $result['checked'] ?? null,
             'slug' => $slug,
             'relative_dir' => $relativeDir,
-            'solo_process_id' => $result['solo_process_id'] ?? null,
+            'worker_id' => $result['worker_id'] ?? null,
             'process_name' => $result['process_name'] ?? null,
             'source' => $result['source'] ?? null,
             'artifact' => $result['artifact'] ?? null,
@@ -1843,7 +1515,7 @@ function providerManifest(
             'messages_path' => $status === 'ok' ? 'messages.jsonl' : null,
             'message_count' => $status === 'ok' ? $messageCount : null,
         ],
-        fn(mixed $value): bool => $value !== null,
+        fn (mixed $value): bool => $value !== null,
     );
 }
 
@@ -1853,11 +1525,11 @@ function providerManifest(
 function processSlug(string $provider, array $result): string
 {
     $processName = $result['process_name'] ?? null;
-    $processId = $result['solo_process_id'] ?? null;
+    $workerId = $result['worker_id'] ?? null;
     $base = is_string($processName) && $processName !== '' ? $processName : $provider;
 
-    if ($processId !== null && $processId !== '') {
-        $base .= "-{$processId}";
+    if ($workerId !== null && $workerId !== '') {
+        $base .= "-{$workerId}";
     }
 
     return slugify($base);
@@ -1868,7 +1540,7 @@ function processSlug(string $provider, array $result): string
  */
 function uniqueSlug(string $slug, array $usedSlugs): string
 {
-    if (!isset($usedSlugs[$slug])) {
+    if (! isset($usedSlugs[$slug])) {
         return $slug;
     }
 
@@ -1903,7 +1575,7 @@ function copyArchiveSources(array $sourceFiles, string $rawDir): array
     foreach ($sourceFiles as $sourceFile) {
         $sourcePath = $sourceFile['path'] ?? null;
 
-        if (!is_string($sourcePath) || !is_file($sourcePath)) {
+        if (! is_string($sourcePath) || ! is_file($sourcePath)) {
             continue;
         }
 
@@ -1927,14 +1599,14 @@ function copyArchiveSources(array $sourceFiles, string $rawDir): array
  */
 function uniqueArchiveName(string $archiveName, array $used): string
 {
-    if (!isset($used[$archiveName])) {
+    if (! isset($used[$archiveName])) {
         return $archiveName;
     }
 
     $pathInfo = pathinfo($archiveName);
-    $dirname = ($pathInfo['dirname'] ?? '.') === '.' ? '' : $pathInfo['dirname'] . '/';
+    $dirname = ($pathInfo['dirname'] ?? '.') === '.' ? '' : $pathInfo['dirname'].'/';
     $filename = $pathInfo['filename'] ?? $archiveName;
-    $extension = isset($pathInfo['extension']) ? '.' . $pathInfo['extension'] : '';
+    $extension = isset($pathInfo['extension']) ? '.'.$pathInfo['extension'] : '';
     $counter = 2;
 
     do {
@@ -1966,12 +1638,12 @@ function safeRelativeArchiveName(string $name): string
 function writeMessagesFile(string $path, array $messages): void
 {
     ensureDirectory(dirname($path));
-    $lines = array_map(fn(array $message): string => json_encode(
+    $lines = array_map(fn (array $message): string => json_encode(
         $message,
         JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
     ), $messages);
 
-    file_put_contents($path, implode("\n", $lines) . ($lines === [] ? '' : "\n"));
+    file_put_contents($path, implode("\n", $lines).($lines === [] ? '' : "\n"));
 }
 
 /**
@@ -1982,7 +1654,7 @@ function writeJsonFile(string $path, array $payload): void
     ensureDirectory(dirname($path));
     file_put_contents(
         $path,
-        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL,
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 }
 
@@ -1992,7 +1664,7 @@ function ensureDirectory(string $directory): void
         return;
     }
 
-    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
+    if (! mkdir($directory, 0o775, true) && ! is_dir($directory)) {
         throw new RuntimeException("Unable to create directory: {$directory}");
     }
 }
@@ -2007,7 +1679,7 @@ function usagePayload(array $result): array
     $payload = publicResult($result);
 
     unset(
-        $payload['solo_process_id'],
+        $payload['worker_id'],
         $payload['process_name'],
         $payload['command'],
         $payload['agent'],

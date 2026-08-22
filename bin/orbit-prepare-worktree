@@ -21,8 +21,8 @@ Options:
   -h, --help         Show this help
 
 Examples:
-  bin/orbit-prepare-worktree solo-641
-  bin/orbit-prepare-worktree solo-641-gateway-update --base=main
+  bin/orbit-prepare-worktree feature-x
+  bin/orbit-prepare-worktree feature-x-gateway-update --base=main
 EOF
 }
 
@@ -68,6 +68,82 @@ seed_loop_packet() {
     step "Seeding loop packet"
     run mkdir -p "${worktree_path}/.orbit"
     run cp "$loop_template" "$loop_path"
+}
+
+fill_loop_headers() {
+    local loop_path="${worktree_path}/.orbit/loop.md"
+    local session_name="feat-$(basename "$worktree_path")"
+
+    [ -f "$loop_path" ] || fail "loop packet is missing: $loop_path"
+
+    php -r '
+        $path = $argv[1];
+        $replacements = [
+            "Session" => $argv[2],
+            "Worktree" => $argv[3],
+            "Branch" => $argv[4],
+        ];
+        $contents = file_get_contents($path);
+
+        if ($contents === false) {
+            fwrite(STDERR, "unable to read loop packet: {$path}\n");
+            exit(1);
+        }
+
+        foreach ($replacements as $label => $value) {
+            $updated = preg_replace_callback(
+                "/^(-[ \\t]+".preg_quote($label, "/").":[ \\t]*)([^\\r\\n]*)(\\r?\\n)/m",
+                static function (array $match) use ($value): string {
+                    if (trim($match[2]) !== "") {
+                        return $match[0];
+                    }
+
+                    $prefix = $match[1];
+
+                    if (! str_ends_with($prefix, " ") && ! str_ends_with($prefix, "\t")) {
+                        $prefix .= " ";
+                    }
+
+                    return $prefix.$value.$match[3];
+                },
+                $contents,
+                1,
+            );
+
+            if (! is_string($updated)) {
+                fwrite(STDERR, "unable to fill - {$label}: in {$path}\n");
+                exit(1);
+            }
+
+            $contents = $updated;
+        }
+
+        if (file_put_contents($path, $contents) === false) {
+            fwrite(STDERR, "unable to write loop packet: {$path}\n");
+            exit(1);
+        }
+    ' "$loop_path" "$session_name" "$worktree_path" "$branch" || fail "unable to fill loop packet headers"
+}
+
+ensure_tmux_session() {
+    local session_name="feat-$(basename "$worktree_path")"
+    local -a tmux_cmd=(tmux)
+
+    if ! command -v tmux >/dev/null 2>&1; then
+        fail "tmux is required to create the feature session ${session_name}. Install tmux and retry."
+    fi
+
+    if [ -n "${ORBIT_TMUX_SOCKET:-}" ]; then
+        tmux_cmd+=(-L "$ORBIT_TMUX_SOCKET")
+    fi
+
+    if "${tmux_cmd[@]}" has-session -t "=${session_name}" >/dev/null 2>&1; then
+        printf 'skip tmux session: %s already exists\n' "$session_name"
+        return 0
+    fi
+
+    step "Creating tmux session ${session_name}"
+    run "${tmux_cmd[@]}" new-session -d -s "$session_name" -c "$worktree_path"
 }
 
 branch=''
@@ -186,6 +262,8 @@ else
 fi
 
 seed_loop_packet
+fill_loop_headers
+ensure_tmux_session
 
 step "Linking local environment"
 common_git_dir="$(git -C "$worktree_path" rev-parse --path-format=absolute --git-common-dir)"
@@ -307,3 +385,4 @@ if [ "$run_e2e_preflight" -eq 1 ]; then
 fi
 
 printf '\nWORKTREE_PREPARED path=%s branch=%s base_ref=%s\n' "$worktree_path" "$branch" "$base_ref"
+printf "TMUX_SESSION=%s attach: tmux attach -t '=feat-%s'\n" "feat-$(basename "$worktree_path")" "$(basename "$worktree_path")"

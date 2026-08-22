@@ -138,7 +138,7 @@ function feedbackWaive(string $stream, array $options): never
     $sourceRef = feedbackRequiredOption($options, 'source-ref');
 
     if (! orbitFeedbackSourceRefIsValid($sourceRef)) {
-        throw new RuntimeException('feedback waiver requires a safe Codex or Solo source reference');
+        throw new RuntimeException('feedback waiver requires a safe Codex or Claude source reference');
     }
 
     $raw = rtrim((string) stream_get_contents(STDIN), "\r\n");

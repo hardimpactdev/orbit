@@ -30,12 +30,12 @@ from the evidence already gathered.
 
 ## Default Agent
 
-Spawn per the Solo Role Matrix in HARNESS.md. Run documentation/librarian
-workers and substantial docs-focused reviews as Codex through Solo: discover
-the enabled `Codex` tool with `list_agent_tools`, then `spawn_agent`. If Codex
-is not available through Solo, stop and report the blocker instead of
-substituting another model. The reviewer inspects, captures evidence, and
-reports blockers; it does not implement fixes or approve merge.
+Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. Run documentation/librarian
+workers and substantial docs-focused reviews as Codex via
+`bin/orbit-worker-spawn --cli=codex`. If Codex is not available, stop and
+report the blocker instead of substituting another model. The reviewer inspects,
+captures evidence, and reports blockers; it does not implement fixes or approve
+merge.
 
 Use this reviewer for Orbit documentation changes, documentation-heavy feature
 handoffs, command contract updates, product authority edits, and implementation

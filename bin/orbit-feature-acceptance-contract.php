@@ -38,10 +38,14 @@ function compact_acceptance_provenance_problem(
     }
 
     if (str_starts_with($acceptance, 'accepted - automated')) {
-        if (in_array($acceptance, [
-            'accepted - automated - reviewer-confirmed no-human-judgment',
-            'accepted - automated - reviewer-confirmed non-observable',
-        ], true)) {
+        if (in_array(
+            $acceptance,
+            [
+                'accepted - automated - reviewer-confirmed no-human-judgment',
+                'accepted - automated - reviewer-confirmed non-observable',
+            ],
+            true,
+        )) {
             return orbitLoopReviewSaysNoHumanJudgment($review)
                 ? null
                 : 'automated acceptance says no human judgment, but review requires human judgment';
@@ -61,7 +65,7 @@ function compact_acceptance_provenance_problem(
     $sourceRef = $match[1];
 
     if (! orbitFeedbackSourceRefIsValid($sourceRef)) {
-        return 'user acceptance source reference is not a safe Codex or Solo reference';
+        return 'user acceptance source reference is not a safe Codex or Claude reference';
     }
 
     $acceptanceEvents = array_values(array_filter(
@@ -175,8 +179,9 @@ function candidate_acceptance_venue(
     if ($result['stderr'] !== '') {
         return [
             'venue' => '',
-            'problem' => 'candidate acceptance venue subprocess wrote unexpected stderr: '
-                .strtok(trim($result['stderr']), "\r\n"),
+            'problem' =>
+                'candidate acceptance venue subprocess wrote unexpected stderr: '
+                    .strtok(trim($result['stderr']), "\r\n"),
         ];
     }
 
@@ -187,8 +192,11 @@ function candidate_acceptance_venue(
         $output = trim($result['stdout']);
         $problem = match (true) {
             $output === '' => 'candidate acceptance venue subprocess returned empty output',
-            str_contains($output, "\n"), str_contains($output, "\r") => 'candidate acceptance venue subprocess returned unexpected extra or multiple output',
-            preg_match('/^[a-z0-9-]+$/', $output) === 1 && ! in_array($output, $knownVenues, true) => "candidate acceptance venue subprocess returned unknown venue `{$output}`",
+            str_contains($output, "\n"),
+            str_contains($output, "\r"),
+                => 'candidate acceptance venue subprocess returned unexpected extra or multiple output',
+            preg_match('/^[a-z0-9-]+$/', $output) === 1 && ! in_array($output, $knownVenues, true)
+                => "candidate acceptance venue subprocess returned unknown venue `{$output}`",
             default => 'candidate acceptance venue subprocess returned malformed output',
         };
 

@@ -9,13 +9,21 @@ Every feature uses one state machine:
 
 `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
 
-Desktop Codex is the sole feature owner. Use existing main Orbit Solo project.
-Never create or register a Solo project for a feature worktree.
+The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
+Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.
 
 The local anchor is the compact `.orbit/loop.md` seeded by
 `bin/orbit-prepare-worktree`. It records only Goal, Scope, Proof, Status, and a
 pointer to `.orbit/feedback.jsonl`. Raw feedback, transcripts, and retrospective
 taxonomies do not belong in the anchor.
+
+Owner prepares the worktree (session created), fills `.orbit/loop.md`, and
+writes briefs under `.orbit/workers/briefs/`. Owner spawns workers and starts
+`bin/orbit-worker-watch` in the background; idle costs nothing. On wake the
+owner reads the event JSON and the small handoff or status files, acts, and
+re-arms the watcher. Stale or dead workers are the only time it inspects a
+log or a `capture-pane`. Landing serializes per branch: merge main,
+`composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land`.
 
 ### FRAME
 
@@ -24,7 +32,7 @@ taxonomies do not belong in the anchor.
    docs; stop only for unresolved intent or missing external authority.
 3. Create the isolated worktree with `bin/orbit-prepare-worktree`; it seeds
    `.orbit/loop.md` when missing. Fill Goal, Scope, branch, worktree, and
-   scratchpad/source reference before editing. For stateful, lifecycle, or
+   Session before editing. For stateful, lifecycle, or
    concrete UX features, append one optional compact clause on the existing
    Scope `Owned` row:
    `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
@@ -43,9 +51,9 @@ coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
 for other stacks. Prefer a small working vertical slice and existing project
 abstractions.
 
-Dispatch substantive repository edits to Grok through Solo with no model override,
-using main-project `['--cwd', '<exact-feature-worktree>']` plus exact scope and
-checks. Do not substitute a Codex subagent. Missing Solo or Grok blocks BUILD.
+Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
+Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
+Missing tmux, grok, or claude on the machine is a blocker.
 
 ### PROVE
 
@@ -88,12 +96,8 @@ artifacts and decisions bind the exact committed HEAD.
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-Spawn one fresh read-only Claude general reviewer in the main project with
-`.agents/review-personas/general.md` and
-`claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
-The first review prompt must change active cwd to the exact feature worktree
-before bare persona identity commands; require checkout proof. Missing Solo or
-Claude blocks PROVE.
+Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
+Use `.agents/review-personas/general.md`. Require checkout proof. Missing tmux, grok, or claude on the machine is a blocker.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
 lane. Use `not-required - <reason>` for a local change. A product decision,
@@ -166,17 +170,16 @@ build as the default acceptance path:
 1. Run `bin/orbit-secret-scan` and reject every nonignored untracked file.
 2. Start or reuse the smallest role set from the implementation worktree.
 3. Sync only the required checkout roles to `/home/orbit/orbit-run`.
-4. Open one ready Solo terminal in the VM at `/home/orbit/orbit-run` and
-   verify launcher identity.
+4. Open one user-attachable `proof-1` window of the feature tmux session at
+   `/home/orbit/orbit-run` and verify launcher identity.
 5. Exercise changed human output, JSON, failures, side effects, idempotency,
    performance, and PTY behavior yourself where applicable.
 6. Only when judgment still remains, send one concise `ACCEPTANCE READY`
    handoff naming the prepared experience and the decision the user must
    make. Do not hand off a command or check an agent can run.
 
-CLI retained topology proof must run in a Solo terminal. Keep that terminal open
-for a user only when `HUMAN_JUDGMENT: required`; otherwise it is agent-owned
-proof and may close after completion. On feedback, keep the topology, invalidate
+CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
+Otherwise it is agent-owned proof and may close after completion. On feedback, keep the topology, invalidate
 acceptance, fix, resync only what changed, and repeat the affected proof.
 
 The `composer test:e2e*` commands are human-only: they run only when the
@@ -198,8 +201,7 @@ the implementing Mac; Incus is not a substitute for native macOS proof.
 
 Record acceptance with `bin/orbit-feature-acceptance`:
 
-- user acceptance reads the verbatim message from STDIN and requires its
-  `codex://` or `solo://` source reference;
+- user acceptance reads the verbatim message from STDIN and requires its `codex://` or `claude://` source reference;
 - automated acceptance always requires `human-judgment=not-required`;
 - `Reviewed feature tip` is the exact HEAD that received reviewer PASS;
 - `Accepted feature tip` is the exact feature `HEAD`;
@@ -220,7 +222,7 @@ durable. The complete secret-bearing input is never written to a private side
 store.
 
 Feedback closes by a product protection or a user-volunteered waiver. A waiver
-requires a safe Codex/Solo source reference and the verbatim user message; a
+requires a safe Codex or Claude source reference and the verbatim user message; a
 bare `source=user` claim is not evidence. Never ask the user for a waiver merely
 to avoid doing the work. Promote reusable feedback in this order:
 
@@ -253,14 +255,11 @@ Prefer the resumable coordinator on primary `main`:
 ```bash
 bin/orbit-feature-land \
   --branch=<feature> \
-  --worktree=<exact-feature-worktree> \
-  --solo-project-id=<main-orbit-project-id>
+  --worktree=<exact-feature-worktree>
 ```
 
 Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
-only the next incomplete boundary. Resume is idempotent from Git and the committed
-session archive/index. The main Orbit project path is canonical. Historical
-worktree-owned projects remain accepted with old stop/delete cleanup.
+only the next incomplete boundary. Resume is idempotent from Git, the committed session archive/index, and the tmux session state.
 
 LAND gets minimum venue from the exact accepted candidate contract in an
 isolated subprocess; all other finalization checks stay main-owned.
@@ -288,11 +287,10 @@ Manual LAND remains validate-then-execute for each destructive mutation:
 7. Update the session index and commit the archive/index. Cleanup requires
    those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
-   - LAND never deletes or stops the main Solo project. Before LAND, the
-     orchestrator stops only its completed agents. Remove the clean
-     worktree, then delete the exact feature branch.
+   - Session ownership is exact: the loop `Session:` line equals `feat-<slug>` and the tmux session path equals the feature worktree; LAND refuses to run inside the feature session.
+   - kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch.
    - Validate each cleanup mutation with
-     `bin/orbit-feature-finalization-check <exact git or solo command>`.
+     `bin/orbit-feature-finalization-check <exact git or tmux command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.
    Leave the primary checkout on updated `main` without disturbing unrelated
    files.
@@ -311,8 +309,8 @@ metrics table, or signal record. Process improvement starts only after one of:
 - a reviewer-confirmed recurring process failure; or
 - explicit user process feedback.
 
-There may be one active loop experiment at a time. Keep it in a Solo scratchpad
-tagged `loop-experiment` with the trigger, smallest change, one target metric
+There may be one active loop experiment at a time. Keep it in `~/shared-knowledge/projects/orbit/loop-analysis/` tagged loop-experiment
+with the trigger, smallest change, one target metric
 derived from existing compact receipts, a fixed window, and a revert command.
 Revert by default when the target does not improve, a hard protection fails, or
 ordinary delivery slows materially. Do not create generic evaluator tooling for

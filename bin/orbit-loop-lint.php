@@ -91,6 +91,12 @@ function compact_loop_problems(string $contents): array
         $problems[] = 'Feedback Events must point to .orbit/feedback.jsonl';
     }
 
+    $sessionProblem = loop_session_header_problem($contents);
+
+    if ($sessionProblem !== null) {
+        $problems[] = $sessionProblem;
+    }
+
     return $problems;
 }
 
@@ -221,6 +227,12 @@ function run_lint(string $path): int
         $problems[] = $captureHealthProblem;
     }
 
+    $sessionProblem = loop_session_header_problem($contents);
+
+    if ($sessionProblem !== null) {
+        $problems[] = $sessionProblem;
+    }
+
     foreach ($warnings as $warning) {
         fwrite(STDOUT, "WARNING: {$warning}\n");
     }
@@ -241,6 +253,21 @@ function run_lint(string $path): int
 function branch_name_from_loop(string $contents): ?string
 {
     return orbitLoopTopLabel($contents, 'Branch');
+}
+
+function loop_session_header_problem(string $contents): ?string
+{
+    $session = orbitLoopTopLabel($contents, 'Session');
+
+    if ($session === null || $session === '') {
+        return null;
+    }
+
+    if (preg_match('/^feat-[a-z0-9][a-z0-9-]*$/', $session) !== 1) {
+        return 'Session must match feat-<slug> (lowercase, digits, hyphens); current: '.$session;
+    }
+
+    return null;
 }
 
 function markdown_section(string $contents, string $heading): ?string
@@ -368,7 +395,7 @@ function is_release_acceptance_topology_deferral(string $retainedTopologyProof, 
 
     $normalizedSection = strtolower($section);
 
-    foreach (['main-based rc', 'release acceptance', 'update:all', 'solo', '--node='] as $requiredPhrase) {
+    foreach (['main-based rc', 'release acceptance', 'update:all', '--node='] as $requiredPhrase) {
         if (! str_contains($normalizedSection, $requiredPhrase)) {
             return false;
         }
@@ -551,4 +578,3 @@ function normalize_markdown_label(string $value): string
 {
     return strtolower(trim($value, " \t\n\r\0\x0B`.'"));
 }
-

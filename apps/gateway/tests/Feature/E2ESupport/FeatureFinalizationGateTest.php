@@ -80,7 +80,7 @@ it('lints a completed packet copied from the data-only loop template', function 
     $template = (string) file_get_contents(repo_path('LOOP.md.example'));
     $packet = str_replace(
         [
-            '- Scratchpad:',
+            '- Session:',
             '- Worktree:',
             '- Branch:',
             '<one verifiable outcome>',
@@ -98,7 +98,7 @@ it('lints a completed packet copied from the data-only loop template', function 
             '- State: frame',
         ],
         [
-            '- Scratchpad: solo://proj/4/scratchpad/example--1',
+            '- Session: feat-fix-loop-template-placeholders',
             '- Worktree: .worktrees/fix-loop-template-placeholders',
             '- Branch: fix-loop-template-placeholders',
             'Prove a completed generated loop packet passes finalization lint.',
@@ -3824,8 +3824,8 @@ it('finalization gate blocks lanes-having packet with zero healthy captures and 
         - No-new-signal rationale:
           - test coverage for zero healthy capture block when lanes named and no waiver row
 
-        - Worker: lane-close-capture-worker (Solo process 801)
-        - Reviewer: post-feature-analyzer (Solo process 802)
+        - Worker: lane-close-capture-worker (worker lane-801)
+        - Reviewer: post-feature-analyzer (worker lane-802)
 
         - Agent session capture waivers: none
         MARKDOWN);
@@ -3853,7 +3853,7 @@ it('finalization gate blocks lanes-having packet with zero healthy captures and 
     file_put_contents("{$archiveDir}/agent-sessions/manifest.json", json_encode([
         'schema_version' => 1,
         'providers' => ['codex' => ['missing' => 1]],
-        'sessions' => [['solo_process_id' => 801, 'status' => 'missing', 'reason' => 'exact_marker_not_found']],
+        'sessions' => [['worker_id' => 'lane-801', 'status' => 'missing', 'reason' => 'exact_marker_not_found']],
     ], JSON_THROW_ON_ERROR)
         .PHP_EOL);
 
@@ -3906,7 +3906,7 @@ it('finalization merge gate blocks named lanes with zero active captures before 
         - No-new-signal rationale:
           - test coverage for merge blocking when named lanes have no active or archived healthy captures
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: none
         MARKDOWN);
@@ -3970,7 +3970,7 @@ it('finalization gate passes with waiver label naming missing providers for lane
         - No-new-signal rationale:
           - test coverage for waiver row allowing zero healthy when lanes named
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: codex, grok (terminal kind unsupported in this env)
         MARKDOWN);
@@ -3998,7 +3998,7 @@ it('finalization gate passes with waiver label naming missing providers for lane
         'schema_version' => 1,
         'providers' => ['codex' => ['unsupported' => 1]],
         'sessions' => [[
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
             'status' => 'unsupported',
             'reason' => 'terminal_kind_requires_waiver',
         ]],
@@ -4052,7 +4052,7 @@ it('finalization lint rejects waiver rows that do not name a provider', function
         - No-new-signal rationale:
           - lint coverage for rejecting generic waiver prose
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: unsupported
         MARKDOWN);
@@ -4107,7 +4107,7 @@ it('finalization lint blocks lanes-having packet with zero healthy active captur
         - No-new-signal rationale:
           - lint coverage for zero healthy capture block when lanes named and no waiver row
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: none
         MARKDOWN);
@@ -4162,7 +4162,7 @@ it('finalization lint accepts healthy archived captures when active staging is a
         - No-new-signal rationale:
           - lint coverage for healthy archived capture allowing named lanes
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: none
         MARKDOWN);
@@ -4172,7 +4172,7 @@ it('finalization lint accepts healthy archived captures when active staging is a
         file_put_contents("{$archiveDir}/agent-sessions/manifest.json", json_encode([
             'schema_version' => 1,
             'providers' => ['grok' => ['ok' => 1]],
-            'sessions' => [['solo_process_id' => 801, 'status' => 'ok']],
+            'sessions' => [['worker_id' => 'lane-801', 'status' => 'ok']],
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
 
@@ -4225,7 +4225,7 @@ it('finalization lint passes lanes-having packet with healthy active staged capt
         - No-new-signal rationale:
           - lint coverage for healthy active staged capture allowing named lanes
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: none
         MARKDOWN);
@@ -4237,7 +4237,7 @@ it('finalization lint passes lanes-having packet with healthy active staged capt
             'schema_version' => 1,
             'provider' => 'grok',
             'status' => 'ok',
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
 
@@ -4265,7 +4265,7 @@ it('finalization lint ignores direct provider transaction backup manifests', fun
             'schema_version' => 1,
             'provider' => 'grok',
             'status' => 'ok',
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
 
@@ -4293,7 +4293,7 @@ it('finalization lint counts direct provider backup-shaped evidence with an empt
             'schema_version' => 1,
             'provider' => 'grok',
             'status' => 'ok',
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
 
@@ -4321,7 +4321,7 @@ it('finalization lint counts non-dot backup-shaped evidence', function (): void 
             'schema_version' => 1,
             'provider' => 'grok',
             'status' => 'ok',
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
 
@@ -4830,7 +4830,7 @@ function capture_health_finalization_packet(): string
         - No-new-signal rationale:
           - capture health traversal boundary fixture
 
-        - Worker: lane-close-capture-worker (Solo process 801)
+        - Worker: lane-close-capture-worker (worker lane-801)
 
         - Agent session capture waivers: none
         MARKDOWN;

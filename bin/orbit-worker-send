@@ -1,0 +1,36 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_SEND_USAGE = 'Usage: bin/orbit-worker-send <id> <one-line text>';
+
+try {
+    $id = $argv[1] ?? null;
+    $parts = array_slice($argv, 2);
+
+    if (! is_string($id) || $id === '' || $parts === []) {
+        throw new RuntimeException(ORBIT_WORKER_SEND_USAGE);
+    }
+
+    $text = implode(' ', $parts);
+    orbit_worker_reject_newline('send text', $text);
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $entry = orbit_worker_require_entry($worktree, $id);
+    $session = (string) $entry['tmux']['session'];
+    $window = (string) $entry['tmux']['window'];
+
+    if (! orbit_tmux_window_exists($session, $window)) {
+        throw new RuntimeException(
+            "worker window is gone: {$id} ({$session}:{$window})",
+        );
+    }
+
+    orbit_worker_send_keys($session, $window, $text);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}

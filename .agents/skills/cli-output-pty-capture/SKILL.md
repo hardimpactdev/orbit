@@ -11,7 +11,7 @@ Use this skill to prove terminal rendering behavior with timed PTY frames. The g
 
 ## Workflow
 
-1. Reproduce the reported CLI behavior in the same runtime context when possible: local terminal, Solo retained terminal, Incus VM, bundled binary, dev launcher, CI shell, or non-interactive pipe.
+1. Reproduce the reported CLI behavior in the same runtime context when possible: local terminal, the `proof-1` window, Incus VM, bundled binary, dev launcher, CI shell, or non-interactive pipe.
 2. Run the command through `.agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py` so stdout/stderr are attached to a pseudo-terminal.
 3. Prove whether the CLI believed the stream was decorated/live. Record relevant
    environment such as `NO_COLOR`, `TERM`, the launcher path, and when possible
@@ -61,8 +61,8 @@ The command after `--` is executed exactly as the PTY child command. Use the abs
 
 ## Retained VM Review
 
-For retained Incus proof, prefer running the capture script from the same Solo
-terminal shell inside the target VM, usually from `/home/orbit/orbit-run`:
+For retained Incus proof, prefer running the capture script from the same
+`proof-1` window inside the target VM, usually from `/home/orbit/orbit-run`:
 
 ```bash
 python3 .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py \

@@ -8,8 +8,8 @@ require_once __DIR__.'/orbit-agent-session-capture-filesystem.php';
 /**
  * Lane-close agent session capture.
  *
- * While the Solo DB row for <solo-process-id> is alive, resolve provider/cwd/started_at
- * and extract that session's transcript via exact "Solo process ID: <id>" marker join
+ * While the worker registry entry for <worker-id> is present, resolve provider/cwd/started_at
+ * and extract that session's transcript via exact "Orbit worker: <id>" marker join
  * into staging .orbit/agent-sessions/<provider>/<lane-slug>/.
  *
  * Exact marker join: the marker text must select exactly one runtime-scoped provider
@@ -22,7 +22,7 @@ function orbitAgentSessionCaptureMain(array $argv): int
     $rawArgv = $argv;
     $script = array_shift($rawArgv); // drop script name
 
-    $soloProcessId = null;
+    $workerId = null;
     $options = [];
 
     foreach ($rawArgv as $a) {
@@ -30,44 +30,50 @@ function orbitAgentSessionCaptureMain(array $argv): int
             $key = str_replace('-', '_', $m[1]);
             $val = $m[2] ?? true;
             $options[$key] = $val;
-        } elseif ($soloProcessId === null && preg_match('/^\d+$/', $a)) {
-            $soloProcessId = (int) $a;
-        } elseif (preg_match('/^--solo-process-id=(.+)$/', $a, $m)) {
-            $soloProcessId = (int) $m[1];
+
+            if ($key === 'worker_id' && is_string($val)) {
+                $workerId = $val;
+            }
+        } elseif ($workerId === null && preg_match('/^[a-z][a-z0-9-]*$/', $a) === 1) {
+            $workerId = $a;
         }
     }
 
-    if (array_key_exists('help', $options) || $soloProcessId === null) {
+    if (array_key_exists('help', $options) || $workerId === null) {
         fwrite(STDOUT, <<<'EOF'
-    Usage:
-      bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...] [--incarnation-started-at=<ISO8601>]
+            Usage:
+              bin/orbit-agent-session-capture <worker-id> [--home=...] [--cwd=...] [--orbit-dir=...] [--incarnation-started-at=<ISO8601>]
 
-    Extracts the provider session for the given live Solo process id using exact marker match
-    "Solo process ID: <id>" (and close variants). Writes staged capture under
-    .orbit/agent-sessions/<provider>/<slug>/ containing manifest.json, usage.json,
-    messages.jsonl, and raw/ copies.
+            Extracts the provider session for the given worker id using exact marker match
+            "Orbit worker: <id>". Writes staged capture under
+            .orbit/agent-sessions/<provider>/<slug>/ containing manifest.json, usage.json,
+            messages.jsonl, and raw/ copies.
 
-    Exits non-zero with diagnostics on missing or ambiguous marker match.
-    EOF);
-        return $soloProcessId === null ? 2 : 0;
+            Exits non-zero with diagnostics on missing or ambiguous marker match.
+            EOF);
+
+        return $workerId === null ? 2 : 0;
     }
 
-    if ($soloProcessId <= 0) {
-        fwrite(STDERR, "solo-process-id is required and must be positive\n");
+    if (preg_match('/^[a-z][a-z0-9-]*$/', $workerId) !== 1) {
+        fwrite(STDERR, "worker-id is required and must be a worker id\n");
+
         return 2;
     }
 
     $home = (string) ($options['home'] ?? getenv('HOME'));
     $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
-    $soloDb = (string) ($options['solo_db'] ?? $options['solo-db'] ?? "{$home}/.config/soloterm/solo.db");
-    $orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? ($cwd.'/.orbit'));
+    $orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? $cwd.'/.orbit');
     $explicitProvider = $options['provider'] ?? null;
     $explicitSlug = $options['slug'] ?? null;
     $incarnationFloor = null;
     $incarnationFloorTimestamp = null;
 
     if (array_key_exists('provider', $options)) {
-        if (! is_string($explicitProvider) || ! in_array($explicitProvider, ['codex', 'claude', 'grok', 'terminal'], true)) {
+        if (
+            ! is_string($explicitProvider)
+            || ! in_array($explicitProvider, ['codex', 'claude', 'grok', 'terminal'], true)
+        ) {
             fwrite(STDERR, "invalid_explicit_provider\n");
 
             return 2;
@@ -85,29 +91,39 @@ function orbitAgentSessionCaptureMain(array $argv): int
     if (array_key_exists('incarnation_started_at', $options)) {
         $incarnationFloor = $options['incarnation_started_at'];
 
-        if (! is_string($incarnationFloor) || ($incarnationFloorTimestamp = parseIso8601Timestamp($incarnationFloor)) === null) {
+        if (
+            ! is_string($incarnationFloor)
+            || ($incarnationFloorTimestamp = parseIso8601Timestamp($incarnationFloor)) === null
+        ) {
             fwrite(STDERR, "incarnation-started-at must be a valid ISO-8601 timestamp\n");
+
             return 2;
         }
     }
 
-    if (! is_file($soloDb)) {
-        fwrite(STDERR, "solo db not found: {$soloDb}\n");
-        return 2;
-    }
-
-    $processRow = loadSoloProcessRow($soloDb, $soloProcessId);
+    $processRow = loadWorkerRegistryRow($cwd, $workerId);
 
     if ($processRow === null) {
-        fwrite(STDERR, "solo_process_not_found solo_process_id={$soloProcessId}\n");
+        fwrite(STDERR, "worker_not_found worker_id={$workerId}\n");
+
         return 2;
     }
 
-    $kind = strtolower((string) ($processRow['kind'] ?? $processRow['process_kind'] ?? 'command'));
-    $command = (string) ($processRow['command'] ?? '');
+    $kind = strtolower((string) ($processRow['kind'] ?? 'agent'));
+
+    if ($kind !== 'terminal') {
+        $kind = 'agent';
+    }
+    $command = $processRow['command'] ?? $processRow['cli'] ?? '';
+
+    if (is_array($command)) {
+        $command = implode(' ', array_map(static fn (mixed $part): string => (string) $part, $command));
+    }
+
+    $command = (string) $command;
     $rowWorkingDir = null;
 
-    foreach ([$processRow['working_dir'] ?? null, $processRow['project_path'] ?? null] as $candidateWorkingDir) {
+    foreach ([$processRow['cwd'] ?? null, $processRow['working_dir'] ?? null] as $candidateWorkingDir) {
         if (is_string($candidateWorkingDir) && trim($candidateWorkingDir) !== '') {
             $rowWorkingDir = $candidateWorkingDir;
 
@@ -117,31 +133,28 @@ function orbitAgentSessionCaptureMain(array $argv): int
 
     $workingDir = $rowWorkingDir === null
         ? $cwd
-        : (normalizeCodexCwd($rowWorkingDir) ?? $rowWorkingDir);
-    $name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent');
+        : normalizeCodexCwd($rowWorkingDir) ?? $rowWorkingDir;
+    $name = (string) ($processRow['id'] ?? $processRow['name'] ?? $workerId);
 
     $provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
 
     if ($incarnationFloor !== null && $provider !== 'codex') {
         fwrite(STDERR, "incarnation_floor_unsupported_provider\n");
+
         return 2;
     }
 
-    // Resolve started_at from Solo row (prefer runtime spawned_at when the row is alive)
-    $startedAt = $processRow['spawned_at']
-        ?? $processRow['created_at']
-        ?? $processRow['started_at']
-        ?? null;
+    $startedAt = $processRow['started_at'] ?? $processRow['spawned_at'] ?? $processRow['created_at'] ?? null;
 
     fwrite(STDERR, sprintf(
-        "resolved from solo.db: solo_process_id=%d provider=%s cwd=%s started_at=%s\n",
-        $soloProcessId,
+        "resolved from worker registry: worker_id=%s provider=%s cwd=%s started_at=%s\n",
+        $workerId,
         $provider,
         $workingDir,
-        $startedAt ?? 'null'
+        $startedAt ?? 'null',
     ));
 
-    $slug = is_string($explicitSlug) ? $explicitSlug : slugify($name ?: 'process-'.$soloProcessId).'-'.$soloProcessId;
+    $slug = is_string($explicitSlug) ? $explicitSlug : slugify($name ?: 'worker-'.$workerId).'-'.$workerId;
     $agentSessionsRoot = rtrim($orbitDir, '/').'/agent-sessions';
 
     if (is_link($agentSessionsRoot)) {
@@ -188,19 +201,19 @@ function orbitAgentSessionCaptureMain(array $argv): int
     $temporaryStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'tmp');
     $backupStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'backup');
 
-    $markerNeedle = "Solo process ID: {$soloProcessId}";
+    $markerNeedle = "Orbit worker: {$workerId}";
 
     $extract = match ($provider) {
         'codex' => captureCodexExact(
             $home,
             $workingDir,
-            $soloProcessId,
+            $workerId,
             $startedAt,
             $incarnationFloor,
             $incarnationFloorTimestamp,
         ),
-        'claude' => captureClaudeExact($home, $workingDir, $soloProcessId),
-        'grok' => captureGrokExact($home, $workingDir, $soloProcessId),
+        'claude' => captureClaudeExact($home, $workingDir, $workerId),
+        'grok' => captureGrokExact($home, $workingDir, $workerId),
         default => [
             'status' => 'unsupported',
             'reason' => $kind === 'terminal'
@@ -217,7 +230,7 @@ function orbitAgentSessionCaptureMain(array $argv): int
             'provider' => $provider,
             'status' => 'ok',
             'slug' => $slug,
-            'solo_process_id' => $soloProcessId,
+            'worker_id' => $workerId,
             'kind' => $kind,
             'started_at' => $startedAt,
             'marker_match' => 'exact',
@@ -254,7 +267,7 @@ function orbitAgentSessionCaptureMain(array $argv): int
             'provider' => $provider,
             'status' => $extract['status'] ?? 'missing',
             'slug' => $slug,
-            'solo_process_id' => $soloProcessId,
+            'worker_id' => $workerId,
             'kind' => $kind,
             'started_at' => $startedAt,
             'reason' => $extract['reason'] ?? 'capture_failed',
@@ -320,7 +333,7 @@ function orbitAgentSessionCaptureMain(array $argv): int
         $result = [
             'status' => 'ok',
             'provider' => $provider,
-            'solo_process_id' => $soloProcessId,
+            'worker_id' => $workerId,
             'slug' => $slug,
             'started_at' => $startedAt,
             'staging_dir' => $reportedStagingBase,
@@ -330,23 +343,33 @@ function orbitAgentSessionCaptureMain(array $argv): int
         return 0;
     }
 
-    fwrite(STDERR, "capture failed for solo_process_id={$soloProcessId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n");
+    fwrite(
+        STDERR,
+        "capture failed for worker_id={$workerId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n",
+    );
     if (($extract['status'] ?? null) === 'stale') {
-        fwrite(STDERR, 'stale diagnostics: '.json_encode([
-            'incarnation_floor' => $extract['incarnation_floor'],
-            'incarnation_floor_source' => $extract['incarnation_floor_source'],
-            'rollout_id' => $extract['rollout_id'],
-            'last_activity_at' => $extract['last_activity_at'],
-        ], JSON_UNESCAPED_SLASHES)."\n");
+        fwrite(
+            STDERR,
+            'stale diagnostics: '
+            .json_encode([
+                'incarnation_floor' => $extract['incarnation_floor'],
+                'incarnation_floor_source' => $extract['incarnation_floor_source'],
+                'rollout_id' => $extract['rollout_id'],
+                'last_activity_at' => $extract['last_activity_at'],
+            ], JSON_UNESCAPED_SLASHES)
+            ."\n",
+        );
     }
-    if (!empty($extract['checked'])) {
+    if (! empty($extract['checked'])) {
         fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
     }
     foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
         if (array_key_exists($diagnosticKey, $extract)) {
             fwrite(
                 STDERR,
-                "{$diagnosticKey}:\n".json_encode($extract[$diagnosticKey], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n",
+                "{$diagnosticKey}:\n"
+                .json_encode($extract[$diagnosticKey], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                ."\n",
             );
         }
     }
@@ -354,58 +377,32 @@ function orbitAgentSessionCaptureMain(array $argv): int
         fwrite(STDERR, "diagnostic: {$diagnostic}\n");
     }
     if (($extract['status'] ?? '') === 'ambiguous') {
-        fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect matched_candidates and owned_candidates above.\n");
+        fwrite(
+            STDERR,
+            "ambiguous: exact marker \"Orbit worker: {$workerId}\" matched multiple sessions; inspect matched_candidates and owned_candidates above.\n",
+        );
     }
+
     return 1;
 }
 
 // --- helpers ---
 
-function loadSoloProcessRow(string $dbPath, int $id): ?array
+function loadWorkerRegistryRow(string $cwd, string $workerId): ?array
 {
-    try {
-        $db = new PDO('sqlite:'.$dbPath);
-        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $columns = tableColumns($db, 'processes');
-        $selectedColumns = array_values(array_filter(
-            ['id', 'name', 'command', 'working_dir', 'kind', 'project_id', 'started_at', 'created_at', 'spawned_at'],
-            fn (string $column): bool => in_array($column, $columns, true),
-        ));
+    $path = rtrim($cwd, '/').'/.orbit/workers/'.$workerId.'.json';
 
-        if (! in_array('id', $selectedColumns, true)) {
-            return null;
-        }
-
-        $select = implode(', ', array_map(quoteIdentifier(...), $selectedColumns));
-        $stmt = $db->prepare("SELECT {$select} FROM processes WHERE id = ?");
-        $stmt->execute([$id]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
-    } catch (Throwable $e) {
+    if (! is_file($path) || is_link($path)) {
         return null;
     }
-}
 
-/**
- * @return list<string>
- */
-function tableColumns(PDO $db, string $table): array
-{
-    $columns = [];
-    $stmt = $db->query('PRAGMA table_info('.quoteIdentifier($table).')');
+    $payload = json_decode((string) file_get_contents($path), true);
 
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        if (isset($row['name']) && is_string($row['name'])) {
-            $columns[] = $row['name'];
-        }
+    if (! is_array($payload) || ($payload['id'] ?? null) !== $workerId) {
+        return null;
     }
 
-    return $columns;
-}
-
-function quoteIdentifier(string $identifier): string
-{
-    return '"'.str_replace('"', '""', $identifier).'"';
+    return $payload;
 }
 
 function inferProviderFromCommandOrName(string $command, string $name, string $kind): string
@@ -423,6 +420,7 @@ function inferProviderFromCommandOrName(string $command, string $name, string $k
     if ($kind === 'terminal') {
         return 'terminal';
     }
+
     return 'unknown';
 }
 
@@ -430,6 +428,7 @@ function slugify(string $value): string
 {
     $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
     $slug = trim($slug, '-');
+
     return $slug === '' ? 'session' : $slug;
 }
 
@@ -566,12 +565,11 @@ function isRegularFileNoFollow(string $path): bool
 function captureCodexExact(
     string $home,
     string $cwd,
-    int $soloProcessId,
+    string $workerId,
     mixed $startedAt,
     ?string $incarnationFloor,
     ?DateTimeImmutable $incarnationFloorTimestamp,
-): array
-{
+): array {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
     $checked = [];
@@ -601,7 +599,7 @@ function captureCodexExact(
 
     foreach ($rollouts as $file) {
         $checked[] = $file;
-        if (! codexFileHasScopedMarker($file, $soloProcessId)) {
+        if (! codexFileHasScopedMarker($file, $workerId)) {
             continue;
         }
         $candidates[] = $file;
@@ -625,15 +623,15 @@ function captureCodexExact(
         $context = codexCandidateContext($candidate);
         $ownershipClass = match (true) {
             $context['normalized_cwd'] !== $normalizedCwd => 'foreign_cwd',
-            $context['primary_solo_process_id'] === $soloProcessId => 'full',
-            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            $context['primary_worker_id'] === $workerId => 'full',
+            $context['primary_worker_id'] === null => 'partial(no_primary_identity)',
             default => 'foreign_primary_identity',
         };
         $diagnostic = [
             'path' => $candidate,
             'ownership_class' => $ownershipClass,
             'normalized_cwd' => $context['normalized_cwd'],
-            'primary_solo_process_id' => $context['primary_solo_process_id'],
+            'primary_worker_id' => $context['primary_worker_id'],
         ];
         $matchedCandidates[] = $diagnostic;
 
@@ -646,20 +644,20 @@ function captureCodexExact(
             'timestamp' => $context['timestamp'],
         ];
 
-        if ($context['primary_solo_process_id'] === $soloProcessId) {
+        if ($context['primary_worker_id'] === $workerId) {
             $fullOwners[] = $owner;
             $ownedCandidates[] = $diagnostic;
 
             continue;
         }
 
-        if ($context['primary_solo_process_id'] === null) {
+        if ($context['primary_worker_id'] === null) {
             $partialOwners[] = $owner;
             $ownedCandidates[] = $diagnostic;
         }
     }
 
-    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+    if (count($fullOwners) > 1 || $fullOwners === [] && count($partialOwners) > 1) {
         return [
             'status' => 'ambiguous',
             'reason' => 'ambiguous_duplicate_markers',
@@ -684,9 +682,9 @@ function captureCodexExact(
     $chosen = $chosenOwner['path'];
     $timestampCorroboration = codexTimestampCorroboration($chosenOwner['timestamp'], $startedAt);
     $disambiguationBasis = sprintf(
-        'provider=codex; ownership=%s; normalized_cwd=exact; primary_solo_process_id=%s; timestamp_corroboration=%s',
+        'provider=codex; ownership=%s; normalized_cwd=exact; primary_worker_id=%s; timestamp_corroboration=%s',
         $ownership,
-        $ownership === 'full' ? (string) $soloProcessId : 'none',
+        $ownership === 'full' ? (string) $workerId : 'none',
         $timestampCorroboration,
     );
 
@@ -732,7 +730,10 @@ function captureCodexExact(
         }
     }
 
-    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode(['role' => $m['role'], 'content' => $m['content']], JSON_UNESCAPED_SLASHES), $messages));
+    $messagesJsonl = implode("\n", array_map(fn ($m) => json_encode([
+        'role' => $m['role'],
+        'content' => $m['content'],
+    ], JSON_UNESCAPED_SLASHES), $messages));
 
     $result = [
         'status' => $ownership === 'full' ? 'ok' : 'partial',
@@ -805,7 +806,7 @@ function codexIncarnationActivity(string $path): array
 /**
  * @return array{
  *     normalized_cwd: ?string,
- *     primary_solo_process_id: ?int,
+ *     primary_worker_id: ?string,
  *     timestamp: mixed,
  * }
  */
@@ -835,7 +836,7 @@ function codexCandidateContext(string $path): array
                 $baseText = is_array($base) && isset($base['text'])
                     ? (string) $base['text']
                     : (is_string($base) ? $base : '');
-                $baseInstructionIdentities = standaloneSoloProcessIdsFromIdentityText($baseText);
+                $baseInstructionIdentities = standaloneWorkerIdsFromIdentityText($baseText);
 
                 if (count($baseInstructionIdentities) > 1) {
                     $baseInstructionsIdentityAmbiguous = true;
@@ -858,42 +859,42 @@ function codexCandidateContext(string $path): array
         }
 
         $firstUserMessageSeen = true;
-        $firstUserIdentities = standaloneSoloProcessIdsFromIdentityText(extractText($payload['content'] ?? ''));
+        $firstUserIdentities = standaloneWorkerIdsFromIdentityText(extractText($payload['content'] ?? ''));
         $firstUserIdentity = count($firstUserIdentities) === 1 ? $firstUserIdentities[0] : null;
     }
 
     return [
         'normalized_cwd' => normalizeCodexCwd($candidateCwd),
-        'primary_solo_process_id' => $baseInstructionsIdentityAmbiguous
+        'primary_worker_id' => $baseInstructionsIdentityAmbiguous
             ? null
-            : ($baseInstructionsIdentity ?? $firstUserIdentity),
+            : $baseInstructionsIdentity ?? $firstUserIdentity,
         'timestamp' => $timestamp,
     ];
 }
 
-/** @return list<int> */
-function soloProcessIdsFromText(string $text): array
+/** @return list<string> */
+function workerIdsFromText(string $text): array
 {
-    if (preg_match_all('/Solo process ID:\s*(\d+)(?!\d)/', $text, $matches) === false) {
+    if (preg_match_all('/Orbit worker:\s*([a-z][a-z0-9-]*)\b/', $text, $matches) === false) {
         return [];
     }
 
-    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
+    return array_values(array_unique($matches[1]));
 }
 
-/** @return list<int> */
-function standaloneSoloProcessIdsFromIdentityText(string $text): array
+/** @return list<string> */
+function standaloneWorkerIdsFromIdentityText(string $text): array
 {
-    if (preg_match_all('/(?:^|\R)\h*Solo process ID:\h*(\d+)(?!\d)\h*(?=\R|$)/', $text, $matches) === false) {
+    if (preg_match_all('/(?:^|\R)\h*Orbit worker:\h*([a-z][a-z0-9-]*)\h*(?=\R|$)/', $text, $matches) === false) {
         return [];
     }
 
-    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
+    return array_values(array_unique($matches[1]));
 }
 
-function textHasSoloProcessId(string $text, int $soloProcessId): bool
+function textHasWorkerId(string $text, string $workerId): bool
 {
-    return in_array($soloProcessId, soloProcessIdsFromText($text), true);
+    return in_array($workerId, workerIdsFromText($text), true);
 }
 
 function normalizeCodexCwd(?string $cwd): ?string
@@ -960,19 +961,19 @@ function codexTimestampCorroboration(mixed $timestamp, mixed $startedAt): string
     }
 
     $sessionTimestamp = parseCodexTimestamp($timestamp);
-    $soloStartedAt = parseCodexTimestamp($startedAt);
+    $workerStartedAt = parseCodexTimestamp($startedAt);
 
-    if ($sessionTimestamp === null || $soloStartedAt === null) {
+    if ($sessionTimestamp === null || $workerStartedAt === null) {
         return 'malformed';
     }
 
     $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 
-    if ($sessionTimestamp > $now || $soloStartedAt > $now) {
+    if ($sessionTimestamp > $now || $workerStartedAt > $now) {
         return 'malformed';
     }
 
-    if ($sessionTimestamp < $soloStartedAt) {
+    if ($sessionTimestamp < $workerStartedAt) {
         return 'resumed-predates-start';
     }
 
@@ -1035,7 +1036,7 @@ function parseIso8601Timestamp(mixed $timestamp): ?DateTimeImmutable
     return $parsed;
 }
 
-function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
+function codexFileHasScopedMarker(string $path, string $workerId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) === 'session_meta') {
@@ -1048,7 +1049,7 @@ function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
                 $text = $base;
             }
 
-            if (textHasSoloProcessId($text, $soloProcessId)) {
+            if (textHasWorkerId($text, $workerId)) {
                 return true;
             }
 
@@ -1065,7 +1066,7 @@ function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
             continue;
         }
 
-        if (textHasSoloProcessId(extractText($payload['content'] ?? ''), $soloProcessId)) {
+        if (textHasWorkerId(extractText($payload['content'] ?? ''), $workerId)) {
             return true;
         }
     }
@@ -1073,7 +1074,7 @@ function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
     return false;
 }
 
-function captureClaudeExact(string $home, string $cwd, int $soloProcessId): array
+function captureClaudeExact(string $home, string $cwd, string $workerId): array
 {
     $checked = [];
     $matches = [];
@@ -1109,7 +1110,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
     foreach ($discovery['files'] as $file) {
         $checked[] = $file;
 
-        if (claudeFileHasPromptMarker($file, $soloProcessId)) {
+        if (claudeFileHasPromptMarker($file, $workerId)) {
             $matches[] = $file;
         }
     }
@@ -1132,21 +1133,22 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
         $context = claudeCandidateContext($candidate, $expectedProjectDirectory, $normalizedCwd);
         $ownershipClass = match (true) {
             ! $context['cwd_matches'] => 'foreign_cwd',
-            $context['primary_solo_process_id'] === $soloProcessId => 'full',
-            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            $context['primary_worker_id'] === $workerId => 'full',
+            $context['primary_worker_id'] === null => 'partial(no_primary_identity)',
             default => 'foreign_primary_identity',
         };
         $diagnostic = [
             'path' => $candidate,
             'ownership_class' => $ownershipClass,
             'normalized_cwd' => $context['normalized_cwd'],
-            'primary_solo_process_id' => $context['primary_solo_process_id'],
+            'primary_worker_id' => $context['primary_worker_id'],
             'structural_cwd_matches' => $context['structural_cwd_matches'],
         ];
         $matchedCandidates[] = $diagnostic;
 
         if ($ownershipClass === 'foreign_cwd') {
-            $diagnostics[] = "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
+            $diagnostics[] =
+                "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
                 .'; lane spawned without a working-directory pin?';
 
             continue;
@@ -1165,7 +1167,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
         }
     }
 
-    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+    if (count($fullOwners) > 1 || $fullOwners === [] && count($partialOwners) > 1) {
         return [
             'status' => 'ambiguous',
             'reason' => 'ambiguous_duplicate_markers',
@@ -1207,7 +1209,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
         }
     }
 
-    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
+    $messagesJsonl = implode("\n", array_map(fn ($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
 
     $result = [
         'status' => $ownership === 'full' ? 'ok' : 'partial',
@@ -1216,8 +1218,10 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
         'usage' => $usage,
         'messages_jsonl' => $messagesJsonl,
         'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
-        'disambiguation_basis' => "provider=claude; ownership={$ownership}; normalized_cwd=exact; "
-            .'primary_solo_process_id='.($ownership === 'full' ? (string) $soloProcessId : 'none'),
+        'disambiguation_basis' =>
+            "provider=claude; ownership={$ownership}; normalized_cwd=exact; "
+                .'primary_worker_id='
+                .($ownership === 'full' ? (string) $workerId : 'none'),
     ];
 
     if ($ownership !== 'full') {
@@ -1227,7 +1231,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
     return $result;
 }
 
-function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
+function captureGrokExact(string $home, string $cwd, string $workerId): array
 {
     $checked = [];
     $candidates = [];
@@ -1263,7 +1267,7 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
     foreach ($discovery['files'] as $file) {
         $checked[] = $file;
 
-        if (grokChatHasPromptMarker($file, $soloProcessId)) {
+        if (grokChatHasPromptMarker($file, $workerId)) {
             $candidates[] = dirname($file);
         }
     }
@@ -1286,21 +1290,22 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
         $context = grokCandidateContext($candidate, $expectedSessionRoot, $normalizedCwd);
         $ownershipClass = match (true) {
             ! $context['cwd_matches'] => 'foreign_cwd',
-            $context['primary_solo_process_id'] === $soloProcessId => 'full',
-            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            $context['primary_worker_id'] === $workerId => 'full',
+            $context['primary_worker_id'] === null => 'partial(no_primary_identity)',
             default => 'foreign_primary_identity',
         };
         $diagnostic = [
             'path' => $candidate,
             'ownership_class' => $ownershipClass,
             'normalized_cwd' => $context['normalized_cwd'],
-            'primary_solo_process_id' => $context['primary_solo_process_id'],
+            'primary_worker_id' => $context['primary_worker_id'],
             'structural_cwd_matches' => $context['structural_cwd_matches'],
         ];
         $matchedCandidates[] = $diagnostic;
 
         if ($ownershipClass === 'foreign_cwd') {
-            $diagnostics[] = "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
+            $diagnostics[] =
+                "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
                 .'; lane spawned without a working-directory pin?';
 
             continue;
@@ -1319,7 +1324,7 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
         }
     }
 
-    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+    if (count($fullOwners) > 1 || $fullOwners === [] && count($partialOwners) > 1) {
         return [
             'status' => 'ambiguous',
             'reason' => 'ambiguous_duplicate_markers',
@@ -1356,10 +1361,20 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
         'session_duration_seconds' => (int) ($signals['sessionDurationSeconds'] ?? 0),
     ];
 
-    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
+    $messagesJsonl = implode("\n", array_map(fn ($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
 
     $raw = [['path' => "{$dir}/chat_history.jsonl", 'archive_name' => 'chat_history.jsonl']];
-    foreach (['chat_history.jsonl','events.jsonl','updates.jsonl','signals.json','summary.json','prompt_context.json','resources_state.json','system_prompt.txt','terminal.log'] as $rf) {
+    foreach ([
+        'chat_history.jsonl',
+        'events.jsonl',
+        'updates.jsonl',
+        'signals.json',
+        'summary.json',
+        'prompt_context.json',
+        'resources_state.json',
+        'system_prompt.txt',
+        'terminal.log',
+    ] as $rf) {
         if ($rf === 'chat_history.jsonl') {
             continue;
         }
@@ -1384,8 +1399,10 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
         'usage' => $usage,
         'messages_jsonl' => $messagesJsonl,
         'raw_files' => $raw,
-        'disambiguation_basis' => "provider=grok; ownership={$ownership}; normalized_cwd=exact; "
-            .'primary_solo_process_id='.($ownership === 'full' ? (string) $soloProcessId : 'none'),
+        'disambiguation_basis' =>
+            "provider=grok; ownership={$ownership}; normalized_cwd=exact; "
+                .'primary_worker_id='
+                .($ownership === 'full' ? (string) $workerId : 'none'),
         'diagnostics' => array_slice($diagnostics, 0, 20),
     ];
 
@@ -1399,7 +1416,7 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
 /**
  * @return array{
  *     normalized_cwd: ?string,
- *     primary_solo_process_id: ?int,
+ *     primary_worker_id: ?string,
  *     cwd_matches: bool,
  *     structural_cwd_matches: bool,
  *     cwd_diagnostic: string,
@@ -1421,7 +1438,7 @@ function claudeCandidateContext(string $path, string $expectedProjectDirectory, 
         }
 
         $firstUserMessageSeen = true;
-        $identities = standaloneSoloProcessIdsFromIdentityText(
+        $identities = standaloneWorkerIdsFromIdentityText(
             extractText($row['message']['content'] ?? ''),
         );
         $firstUserIdentity = count($identities) === 1 ? $identities[0] : null;
@@ -1438,7 +1455,7 @@ function claudeCandidateContext(string $path, string $expectedProjectDirectory, 
 
     return [
         'normalized_cwd' => $normalizedCandidateCwd ?? ($structuralCwdMatches ? $expectedCwd : null),
-        'primary_solo_process_id' => $firstUserIdentity,
+        'primary_worker_id' => $firstUserIdentity,
         'cwd_matches' => $structuralCwdMatches && $rowCwdMatches,
         'structural_cwd_matches' => $structuralCwdMatches,
         'cwd_diagnostic' => $cwdDiagnostic,
@@ -1448,7 +1465,7 @@ function claudeCandidateContext(string $path, string $expectedProjectDirectory, 
 /**
  * @return array{
  *     normalized_cwd: ?string,
- *     primary_solo_process_id: ?int,
+ *     primary_worker_id: ?string,
  *     cwd_matches: bool,
  *     structural_cwd_matches: bool,
  *     cwd_diagnostic: string,
@@ -1479,7 +1496,7 @@ function grokCandidateContext(string $sessionDir, string $expectedSessionRoot, s
     $structuralCwd = normalizeCodexCwd(rawurldecode(basename($sessionRoot)));
     $normalizedCandidateCwd = normalizeCodexCwd($candidateCwd);
     $contextCwdMatches = $normalizedCandidateCwd === null || $normalizedCandidateCwd === $expectedCwd;
-    $cwdDiagnostic = $normalizedCandidateCwd ?? ($structuralCwd ?? 'missing');
+    $cwdDiagnostic = $normalizedCandidateCwd ?? $structuralCwd ?? 'missing';
 
     if (! $structuralCwdMatches) {
         $cwdDiagnostic .= "; structural_root={$sessionRoot}";
@@ -1492,7 +1509,7 @@ function grokCandidateContext(string $sessionDir, string $expectedSessionRoot, s
             continue;
         }
 
-        $identities = standaloneSoloProcessIdsFromIdentityText(extractText($row['content'] ?? ''));
+        $identities = standaloneWorkerIdsFromIdentityText(extractText($row['content'] ?? ''));
         $firstUserIdentity = count($identities) === 1 ? $identities[0] : null;
 
         break;
@@ -1500,21 +1517,21 @@ function grokCandidateContext(string $sessionDir, string $expectedSessionRoot, s
 
     return [
         'normalized_cwd' => $normalizedCandidateCwd ?? ($structuralCwdMatches ? $expectedCwd : $structuralCwd),
-        'primary_solo_process_id' => $firstUserIdentity,
+        'primary_worker_id' => $firstUserIdentity,
         'cwd_matches' => $structuralCwdMatches && $contextCwdMatches,
         'structural_cwd_matches' => $structuralCwdMatches,
         'cwd_diagnostic' => $cwdDiagnostic,
     ];
 }
 
-function claudeFileHasPromptMarker(string $path, int $soloProcessId): bool
+function claudeFileHasPromptMarker(string $path, string $workerId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (textHasSoloProcessId(extractText($row['message']['content'] ?? ''), $soloProcessId)) {
+        if (textHasWorkerId(extractText($row['message']['content'] ?? ''), $workerId)) {
             return true;
         }
     }
@@ -1522,14 +1539,14 @@ function claudeFileHasPromptMarker(string $path, int $soloProcessId): bool
     return false;
 }
 
-function grokChatHasPromptMarker(string $path, int $soloProcessId): bool
+function grokChatHasPromptMarker(string $path, string $workerId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (textHasSoloProcessId(extractText($row['content'] ?? ''), $soloProcessId)) {
+        if (textHasWorkerId(extractText($row['content'] ?? ''), $workerId)) {
             return true;
         }
     }
@@ -1549,8 +1566,10 @@ function extractText($content): string
                 $parts[] = $c['text'];
             }
         }
+
         return implode(' ', $parts);
     }
+
     return '';
 }
 
@@ -1589,11 +1608,12 @@ function extractGrokMessages(string $sessionDir): array
     $chatHistory = "{$sessionDir}/chat_history.jsonl";
     foreach (jsonl($chatHistory) as $row) {
         $type = $row['type'] ?? '';
-        if (in_array($type, ['user','assistant','system'], true) && isset($row['content'])) {
+        if (in_array($type, ['user', 'assistant', 'system'], true) && isset($row['content'])) {
             $text = is_array($row['content']) ? extractText($row['content']) : (string) $row['content'];
             $messages[] = ['role' => $type, 'content' => $text];
         }
     }
+
     return $messages;
 }
 

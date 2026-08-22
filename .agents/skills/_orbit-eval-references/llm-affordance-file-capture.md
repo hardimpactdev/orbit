@@ -19,7 +19,7 @@ Each trial writes exactly one outcome JSON file when practical:
 
 - path: `/tmp/orbit-<suite>-<run>/<trial_id>.json`
 - one file per trial; do not split one trial across multiple outcome files
-- the transcript or trajectory stays a separate reference; do not paste the outcome into the scratchpad as a blob
+- the transcript or trajectory stays a separate reference; do not paste the outcome into the eval file as a blob
 - final assistant claims, terminal tails, and stdout are supporting evidence only; they are not the outcome
 
 Tell the agent under test to write only the assigned outcome file. Repository worktrees stay read-only unless the case explicitly measures edits.
@@ -119,7 +119,7 @@ the current checkout.
 Record in the `eval-trial` artifact:
 
 - `outcome_ref`: absolute path to the one outcome file
-- `transcript_ref`: separate Solo process, terminal, or scratchpad reference
+- `transcript_ref`: separate worker window, terminal, or file under `~/shared-knowledge/projects/orbit/evals/`
 - deterministic grader commands and results
 - `reset_or_teardown`: proof the worktree stayed clean and temp output stayed isolated
 
@@ -194,11 +194,11 @@ Mark the trial `invalid`, `harness`, or `infrastructure` when capture quality bl
 
 1. Prepare one temp directory per run: `/tmp/orbit-<suite>-<run>/`.
 2. Assign each trial a unique `trial_id` and outcome path before spawning the agent.
-3. Start a fresh Solo process or fresh thread per trial.
+3. Start a fresh worker window via `bin/orbit-worker-spawn` or fresh thread per trial.
 4. Give the agent the public task, output contract, assigned outcome path, and read-only rules.
 5. Keep answer keys, reference solutions, grader rubrics, and prior trial traces hidden.
 6. After the trial ends, verify the outcome file exists and run deterministic checks.
-7. Record `outcome_ref`, `transcript_ref`, grader results, and reset proof separately in the scratchpad.
+7. Record `outcome_ref`, `transcript_ref`, grader results, and reset proof separately in the eval file.
 8. Run semantic proof checks before comparing baseline and treatment aggregates.
 
 ## Review Expectations

@@ -1751,7 +1751,73 @@ it('rejects unsafe user acceptance source references before changing durable sta
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('safe Codex or Solo source reference')
+            ->toContain('safe Codex or Claude source reference')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toBe($before)
+            ->and("{$fixture}/.orbit/feedback.jsonl")
+            ->not->toBeFile();
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('accepts Claude session source references for user acceptance', function (): void {
+    $fixture = acceptance_test_workspace('claude-source', 'apps/cli/app/Commands/FooCommand.php');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'accept',
+            review: 'passed - reviewer - observable',
+            venue: 'retained-incus',
+        );
+
+        $process = acceptance_test_run(
+            $fixture,
+            ['accept', '--actor=user', '--source-ref=claude://sessions/abc123#acceptance-1'],
+            "Looks correct; accept.\n",
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        $events = acceptance_test_feedback($fixture);
+
+        expect($loop)
+            ->toContain('- Acceptance: accepted - user @ claude://sessions/abc123#acceptance-1')
+            ->and($events)
+            ->toHaveCount(1)
+            ->and($events[0])
+            ->toMatchArray([
+                'session_ref' => 'claude://sessions/abc123#acceptance-1',
+                'surface' => 'acceptance.retained-incus',
+            ]);
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('rejects Solo source references for user acceptance', function (): void {
+    $fixture = acceptance_test_workspace('solo-source', 'apps/cli/app/Commands/FooCommand.php');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'accept',
+            review: 'passed - reviewer - observable',
+            venue: 'retained-incus',
+        );
+        $before = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        $process = acceptance_test_run(
+            $fixture,
+            ['accept', '--actor=user', '--source-ref=solo://proj/4/scratchpad/example--1'],
+            "Accept.\n",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('safe Codex or Claude source reference')
             ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
             ->toBe($before)
             ->and("{$fixture}/.orbit/feedback.jsonl")
@@ -1869,7 +1935,7 @@ function acceptance_test_seed_loop(
     file_put_contents("{$fixture}/.orbit/loop.md", <<<MARKDOWN
         # Orbit Feature Loop
 
-        - Scratchpad: solo://proj/4/scratchpad/example--1
+        - Session: feat-fixture
         - Worktree: {$fixture}
         - Branch: feature
 

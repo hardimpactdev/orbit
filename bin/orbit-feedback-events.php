@@ -24,7 +24,7 @@ function orbitFeedbackAppend(string $path, array $event, ?callable $afterInitial
         $sessionRef = $event['session_ref'] ?? null;
 
         if (! is_string($sessionRef) || ! orbitFeedbackSourceRefIsValid($sessionRef)) {
-            throw new RuntimeException('feedback session_ref must be a safe Codex or Solo source reference');
+            throw new RuntimeException('feedback session_ref must be a safe Codex or Claude source reference');
         }
     }
 
@@ -220,7 +220,7 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
         }
 
         if (! orbitFeedbackSourceRefIsValid((string) $event['session_ref'])) {
-            throw new RuntimeException('feedback session_ref must be a safe Codex or Solo source reference');
+            throw new RuntimeException('feedback session_ref must be a safe Codex or Claude source reference');
         }
 
         if (preg_match('/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/', (string) $event['surface']) !== 1) {
@@ -243,7 +243,9 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
                 || ! str_starts_with((string) $event['surface'], 'acceptance.')
                 || ($event['actionable'] ?? false) !== false
             ) {
-                throw new RuntimeException('acceptance feedback must use its reserved id, surface, and non-actionable marker');
+                throw new RuntimeException(
+                    'acceptance feedback must use its reserved id, surface, and non-actionable marker',
+                );
             }
 
             return;
@@ -287,7 +289,7 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
         }
 
         if (! orbitFeedbackSourceRefIsValid((string) $event['source_ref'])) {
-            throw new RuntimeException('feedback waiver requires a safe Codex or Solo source reference');
+            throw new RuntimeException('feedback waiver requires a safe Codex or Claude source reference');
         }
 
         return;
@@ -306,7 +308,7 @@ function orbitFeedbackSourceRefIsValid(string $reference): bool
 
     return (
         preg_match('~^codex://threads/[A-Za-z0-9][A-Za-z0-9-]{0,127}'.$anchor.'$~', $reference) === 1
-        || preg_match('~^solo://[A-Za-z0-9][A-Za-z0-9._/\~-]{0,255}'.$anchor.'$~', $reference) === 1
+        || preg_match('~^claude://sessions/[A-Za-z0-9][A-Za-z0-9-]{0,127}'.$anchor.'$~', $reference) === 1
     );
 }
 

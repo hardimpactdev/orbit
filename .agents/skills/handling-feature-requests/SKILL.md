@@ -24,7 +24,7 @@ Capture only what changes the result:
    outcome.
 
 Do not edit repository files, create a worktree, or dispatch implementation
-from this intake skill. When clear, hand the outcome to Desktop Codex using
+from this intake skill. When clear, hand the outcome to the orchestrating feature owner using
 implementing-features.
 
 ## Clarification Standard
@@ -36,12 +36,9 @@ different product behavior, acceptance, risk, or scope.
 The user should not need to choose architecture, agent roles, test layout, or
 process ceremony. Those are delivery concerns.
 
-## Scratchpads
+## Roadmaps
 
-A Solo scratchpad is optional. Use one when the request has several dependent
-outcomes, unresolved product decisions, or a roadmap that must survive across
-feature loops. A single coherent outcome can move directly into the compact
-`.orbit/loop.md` Goal and Scope after worktree preparation.
+Roadmaps that must survive across loops live in `~/shared-knowledge/projects/orbit/`; a single coherent outcome goes straight into `.orbit/loop.md`.
 
 ## Handoff Shape
 

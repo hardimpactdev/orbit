@@ -15,8 +15,8 @@ Keep this skill narrow. Route construction through `construct-eval`, execution t
 
 Find golden-set artifacts in this order:
 
-1. Solo scratchpads tagged `eval-artifact`, `verifying-evals`, and `golden-set`.
-2. Selected Solo scratchpads named by the human.
+1. Files under `~/shared-knowledge/projects/orbit/evals/` tagged `eval-artifact`, `verifying-evals`, and `golden-set`.
+2. Selected files under `~/shared-knowledge/projects/orbit/evals/` named by the human.
 3. Repository fixtures only when the human explicitly asks to use durable repo fixtures.
 
 Do not mine `.orbit/sessions/index.json` or session archives unless the requested verification or update requires fresh evidence.
@@ -37,7 +37,7 @@ Use `Verify` when the human asks whether selected or all golden-set cases still 
 
 Use `Update` when the human asks whether a golden set needs maintenance.
 
-1. Start from the current golden-set scratchpad and its evidence pointers.
+1. Start from the current golden-set file under `~/shared-knowledge/projects/orbit/evals/` and its evidence pointers.
 2. Check staleness from renamed files, removed or dead commands, intentionally changed Orbit behavior, stale references, stale evidence, ambiguous graders, or cases that no longer isolate hidden material.
 3. When new evidence is needed, mine `.orbit/sessions/index.json` first, then open only the named archive, evidence, or latest `loop-review` files required for candidate cases.
 4. Propose case actions as `keep`, `retire`, `update`, or `add`, with the concrete evidence pointer and scorer impact for each.

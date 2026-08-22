@@ -22,7 +22,7 @@ Use the lightest boundary that prevents contamination:
 - isolated SQLite database or configured test database
 - reset command for local state
 - retained topology only when the behavior needs real VM or integrated topology proof
-- fresh Solo process when prior conversation would leak context
+- fresh worker window via `bin/orbit-worker-spawn` when prior conversation would leak context
 
 Shared state is unsafe when cached data, previous trial traces, answer keys, git history, generated artifacts, provider resources, or environment variables can influence the next attempt.
 
@@ -30,7 +30,7 @@ Shared state is unsafe when cached data, previous trial traces, answer keys, git
 
 - Do not expose expected hidden outputs, grader code, rubric internals, reference solution details, or previous trial transcripts to the agent under test.
 - Keep the public task statement separate from private grading notes.
-- Record which files or scratchpads are visible to the agent under test.
+- Record which files are visible to the agent under test.
 - If leakage occurs, mark the trial invalid and restart with a clean context.
 
 ## Transcript And Outcome Capture

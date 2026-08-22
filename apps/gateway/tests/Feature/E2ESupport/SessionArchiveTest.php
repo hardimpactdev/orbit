@@ -50,7 +50,7 @@ it('session archive stores a compact receipt by default', function (): void {
             ->and("{$archive}/agent-sessions")
             ->not->toBeDirectory()->and("{$archive}/evidence")
             ->not->toBeDirectory()->and($process->getErrorOutput())
-            ->not->toContain('no Solo process context');
+            ->not->toContain('no worker context');
     } finally {
         remove_session_archive_workspace($workspace);
     }
@@ -439,7 +439,7 @@ it('binds a compact receipt to the branch and accepted candidate identity', func
         file_put_contents($paths['loopPath'], <<<MARKDOWN
             # Orbit Feature Loop
 
-            - Scratchpad: solo://proj/4/scratchpad/example--1
+            - Session: feat-fixture
             - Worktree: `{$paths['cwd']}`
             - Branch: `feature`
 
@@ -1241,7 +1241,7 @@ it('session archive appends an evidence links section when the active loop lacks
     }
 });
 
-it('session archive warns loudly when no solo process context exists', function (): void {
+it('session archive warns loudly when no worker context exists', function (): void {
     $workspace = session_archive_workspace(suffix: 'context-warning');
 
     try {
@@ -1266,7 +1266,8 @@ it('session archive warns loudly when no solo process context exists', function 
 
         expect($process->getErrorOutput())
             ->toContain('WARNING')
-            ->toContain("{$paths['sourceOrbitDir']}/loop.md")
+            ->toContain('no worker context available')
+            ->toContain($paths['cwd'])
             ->and($manifest['archive_dir'])
             ->toBe($summary['archive_dir'].'/agent-sessions')
             ->and($manifest['sessions'])
@@ -1276,17 +1277,30 @@ it('session archive warns loudly when no solo process context exists', function 
     }
 });
 
-it('session archive completes with a warning when a prose-mentioned solo process cannot be resolved', function (): void {
+it('session archive completes with a warning when a registry worker cannot be resolved', function (): void {
     $workspace = session_archive_workspace(suffix: 'unresolved-process');
 
     try {
         $paths = session_archive_paths(workspace: $workspace);
-        file_put_contents($paths['loopPath'], <<<'MARKDOWN'
-            # Orbit Current Slice State
-
-            Solo process or analyzer: process 987654 handled the review pass.
-
-            MARKDOWN);
+        $workersDir = "{$paths['cwd']}/.orbit/workers";
+        mkdir($workersDir, recursive: true);
+        file_put_contents("{$workersDir}/missing-worker.json", json_encode([
+            'id' => 'other-worker',
+            'role' => 'impl',
+            'cli' => 'grok',
+            'command' => ['grok', '--yolo'],
+            'tmux' => ['session' => 'feat-fixture', 'window' => 'other-worker', 'pane_id' => '%1', 'pane_pid' => 1],
+            'cwd' => $paths['cwd'],
+            'brief' => '.orbit/workers/briefs/other-worker.md',
+            'status' => 'working',
+            'heartbeat_at' => '2026-07-02T10:00:00Z',
+            'note' => null,
+            'started_at' => '2026-07-02T10:00:00Z',
+            'exited_at' => null,
+            'provider_ref' => null,
+            'handoff' => null,
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
+            ."\n");
 
         $process = run_session_archive(arguments: [
             "--source-orbit-dir={$paths['sourceOrbitDir']}",
@@ -1295,8 +1309,7 @@ it('session archive completes with a warning when a prose-mentioned solo process
             '--slug=unresolved-process',
             "--cwd={$paths['cwd']}",
             "--home={$paths['home']}",
-            "--solo-cli={$workspace}/missing-solo-cli",
-            "--solo-db={$workspace}/missing-solo.db",
+            '--worker-id=missing-worker',
         ]);
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
@@ -1306,9 +1319,9 @@ it('session archive completes with a warning when a prose-mentioned solo process
 
         expect($process->getErrorOutput())
             ->toContain('WARNING')
-            ->toContain('987654')
-            ->and($summary['discovered_solo_process_ids'])
-            ->toBe([987654])
+            ->toContain('missing-worker')
+            ->and($summary['discovered_worker_ids'])
+            ->toBe([])
             ->and("{$archiveDir}/orbit-session-archive.json")
             ->toBeFile()
             ->and("{$archiveDir}/evidence/proof.txt")
@@ -1326,8 +1339,8 @@ it('session archive completes with a warning when a prose-mentioned solo process
             ->toHaveCount(1)
             ->and($manifest['sessions'][0])
             ->toMatchArray([
-                'status' => 'solo_process_not_found',
-                'solo_process_id' => 987654,
+                'status' => 'worker_not_found',
+                'worker_id' => 'missing-worker',
             ]);
 
         $agentResults = $summary['agent_results'];
@@ -1336,8 +1349,8 @@ it('session archive completes with a warning when a prose-mentioned solo process
             ->toHaveCount(1)
             ->and($agentResults[0])
             ->toMatchArray([
-                'status' => 'solo_process_not_found',
-                'solo_process_id' => 987654,
+                'status' => 'worker_not_found',
+                'worker_id' => 'missing-worker',
             ]);
 
         $activeLoop = (string) file_get_contents($paths['loopPath']);
@@ -1458,7 +1471,7 @@ function session_archive_prepare_accepted_feature(array $paths, bool $land = tru
     file_put_contents($paths['loopPath'], <<<MARKDOWN
         # Orbit Feature Loop
 
-        - Scratchpad: solo://proj/4/scratchpad/example--1
+        - Session: feat-fixture
         - Worktree: {$paths['cwd']}
         - Branch: feature
 
@@ -1946,7 +1959,7 @@ it(
                 'provider' => 'codex',
                 'status' => 'ok',
                 'slug' => 'staged-lane-801',
-                'solo_process_id' => 801,
+                'worker_id' => 'lane-801',
                 'marker_match' => 'exact',
             ], JSON_THROW_ON_ERROR)
                 .PHP_EOL);
@@ -2018,7 +2031,7 @@ it('session archive excludes direct provider temp and backup residue without del
             'provider' => 'codex',
             'status' => 'ok',
             'slug' => 'valid-lane-801',
-            'solo_process_id' => 801,
+            'worker_id' => 'lane-801',
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
         file_put_contents("{$stagedProvider}/usage.json", "{}\n");
@@ -2676,9 +2689,9 @@ it('session archive rejects invalid staged manifests without falling back: :data
     'missing status' => [[], null, 'status is required', ['status']],
     'missing failure reason' => [['status' => 'capture_failed'], null, 'non-empty reason'],
     'schema v2' => [['schema_version' => 2], null, 'schema_version must be 1'],
-    'zero process id' => [['solo_process_id' => 0], null, 'positive integer'],
-    'negative process id' => [['solo_process_id' => -1], null, 'positive integer'],
-    'string process id' => [['solo_process_id' => '801'], null, 'positive integer'],
+    'zero process id' => [['worker_id' => 0], null, 'worker id'],
+    'negative process id' => [['worker_id' => -1], null, 'worker id'],
+    'numeric string process id' => [['worker_id' => '801'], null, 'worker id'],
     'whitespace failure reason' => [['status' => 'capture_failed', 'reason' => " \t\n"], null, 'non-empty reason'],
     'provider path mismatch' => [['provider' => 'claude'], null, "provider must match directory 'codex'"],
     'slug path mismatch' => [['slug' => 'other-lane'], null, "slug must match directory 'lane-801'"],
@@ -3001,7 +3014,7 @@ function session_archive_transaction_directories(string $archiveRoot): array
 }
 
 /**
- * @return array{schema_version: int, provider: string, status: string, slug: string, solo_process_id: int}
+ * @return array{schema_version: int, provider: string, status: string, slug: string, worker_id: string}
  */
 function valid_staged_manifest(): array
 {
@@ -3010,7 +3023,7 @@ function valid_staged_manifest(): array
         'provider' => 'codex',
         'status' => 'ok',
         'slug' => 'lane-801',
-        'solo_process_id' => 801,
+        'worker_id' => 'lane-801',
     ];
 }
 

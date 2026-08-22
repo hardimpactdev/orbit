@@ -50,7 +50,13 @@ cat >"$STUB_BIN/composer" <<'STUB'
 exit 0
 STUB
 cp "$STUB_BIN/composer" "$STUB_BIN/npm"
-chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm"
+
+cat >"$STUB_BIN/tmux" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+
+chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm" "$STUB_BIN/tmux"
 
 printf '{}\n' >"$REPO/packages/sdk-typescript/package.json"
 

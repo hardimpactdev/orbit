@@ -1,0 +1,60 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_HEARTBEAT_USAGE = 'Usage: bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> [--note=<text>] [--provider-ref=<ref>]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+    $id = $parsed['positional'][0] ?? null;
+
+    if (! is_string($id) || $id === '' || count($parsed['positional']) !== 1) {
+        throw new RuntimeException(ORBIT_WORKER_HEARTBEAT_USAGE);
+    }
+
+    $status = orbit_worker_option_string($parsed['options'], 'status');
+
+    if (! is_string($status) || ! in_array($status, ORBIT_WORKER_HEARTBEAT_STATUSES, true)) {
+        throw new RuntimeException(ORBIT_WORKER_HEARTBEAT_USAGE);
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $entry = orbit_worker_require_entry($worktree, $id);
+
+    if ($status === 'handoff' && ! is_file(orbit_worker_handoff_path($worktree, $id))) {
+        throw new RuntimeException(
+            'handoff file is missing: '
+            .orbit_worker_handoff_path($worktree, $id)
+            .'. Write the handoff with bin/orbit-worker-handoff before --status=handoff.',
+        );
+    }
+
+    $entry['status'] = $status;
+    $entry['heartbeat_at'] = orbit_worker_now();
+
+    $note = orbit_worker_option_string($parsed['options'], 'note');
+
+    if ($note !== null) {
+        orbit_worker_reject_newline('note', $note);
+        $entry['note'] = $note;
+    }
+
+    $providerRef = orbit_worker_option_string($parsed['options'], 'provider-ref');
+
+    if ($providerRef !== null) {
+        orbit_worker_reject_newline('provider-ref', $providerRef);
+        $entry['provider_ref'] = $providerRef === '' ? null : $providerRef;
+    }
+
+    if ($status === 'handoff' && $entry['handoff'] === null) {
+        $entry['handoff'] = orbit_worker_handoff_path($worktree, $id);
+    }
+
+    orbit_worker_write($worktree, $entry);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}

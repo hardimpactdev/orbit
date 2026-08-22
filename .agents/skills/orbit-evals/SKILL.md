@@ -41,7 +41,7 @@ When more than one stage is requested, complete them in order: construct, execut
    - Name the Orbit behavior or agent behavior being measured.
    - Decide whether this is capability, regression, diagnostic, or release-gate-candidate work.
    - If measuring an LLM-facing affordance, decide whether this is a comparative fresh-agent eval with baseline and treatment conditions.
-   - Store iteration artifacts in Solo scratchpads unless the user asks for durable repo fixtures.
+   - Store iteration artifacts in files under `~/shared-knowledge/projects/orbit/evals/` unless the user asks for durable repo fixtures.
 
 2. Construct the eval.
    - Use `construct-eval`.
@@ -68,7 +68,7 @@ When more than one stage is requested, complete them in order: construct, execut
 When the user asks for the next Orbit eval and no narrower target exists, start with an Orbit repo-agent process eval:
 
 - Does the agent read authority docs before changing behavior?
-- Does it use a Solo scratchpad only when complexity or durable eval artifacts warrant one?
+- Does it use files under `~/shared-knowledge/projects/orbit/evals/` only when complexity or durable eval artifacts warrant one?
 - Does it prepare an isolated Orbit worktree before repository edits?
 - Does it keep docs, tests, code, and verification aligned?
 - Does it leave every E2E invocation to a human at a shell and limit agents to

@@ -15,7 +15,7 @@ consistency, find contradictions, or align documentation.
 
 **User-facing output contract:** Always present the complete final finding list.
 Every item must have a plain-language **Drift** explanation and a plain-language
-**Fix**. Counts, severity tallies, scratchpad links, and fix-only bullets are
+**Fix**. Counts, severity tallies, file links, and fix-only bullets are
 supporting context; they are not the finding list. This applies to the first
 audit result, the post-review synthesis, the approval handoff, and the final
 completion report.
@@ -136,7 +136,7 @@ The architecture's state-families list is the source of truth. Confirm:
 - Each `<family>-concepts.md` matches the architecture's family description.
 - Each `<family>-doctor.md` technical contract returns the correct singular family key (`node`, not `nodes`).
 
-### 5. Write findings to a Solo scratchpad (`docs-audit-findings-claude`)
+### 5. Write findings to a file under `~/shared-knowledge/projects/orbit/docs-audit/` (`docs-audit-findings-claude`)
 
 For each finding, use this exact shape:
 
@@ -167,18 +167,18 @@ options with pros/cons and a recommendation.
 
 Use IDs `A1, A2, ...`, `B1, B2, ...`, `C1, C2, ...` per severity.
 
-Tag the scratchpad with `["docs-audit", "review-input"]`.
+Tag the file with `["docs-audit", "review-input"]`.
 
 ### 6. Spawn an independent reviewer (Codex)
 
-Spawn a Codex agent in Solo with this exact prompt template:
+Spawn a second worker window with `bin/orbit-worker-spawn` using this exact prompt template:
 
 ```
 You are reviewing a docs consistency audit I performed across /Users/nckrtl/orbit/apps/docs/content/
 (excluding the porting subdir, and /Users/nckrtl/orbit/docs/superpowers/).
 
-My findings are in Solo scratchpad `docs-audit-findings-claude` (scratchpad_id N).
-Read it first using scratchpad_read with scratchpad_id=N.
+My findings are in `~/shared-knowledge/projects/orbit/docs-audit/docs-audit-findings-claude`.
+Read that file first.
 
 Authority order used: mission > architecture > concepts > tech-stack > domain READMEs > technical contracts.
 
@@ -186,8 +186,7 @@ Your job:
 1. Read my findings.
 2. Independently verify each finding by reading the cited docs at /Users/nckrtl/orbit/apps/docs/content/.
 3. Tell me: which of my findings are correct, which are wrong/overstated, and what I MISSED.
-4. Write your review to a new Solo scratchpad named `docs-audit-review-codex` so I can read it back.
-   Use scratchpad_write to create it.
+4. Write your review to a new file under `~/shared-knowledge/projects/orbit/docs-audit/` named `docs-audit-review-codex` so I can read it back.
 
 Be direct. Flag overstatements. Flag missed contradictions. Don't repeat my finding text — just state agreement/disagreement plus any additions.
 
@@ -197,12 +196,12 @@ Output your review in this shape:
 - Overall coherence score: how close are the docs to forming one coherent piece (1-10), and the biggest remaining blocker.
 ```
 
-Set an idle-trigger timer that fires when Codex goes idle. Codex typically
-takes 3–6 minutes for a full repo audit.
+Wait for the reviewer worker handoff. Codex typically takes 3–6 minutes for a
+full repo audit.
 
 ### 7. Synthesize Codex review with original findings
 
-Read `docs-audit-review-codex` from Solo. Build a final synthesis scratchpad
+Read `docs-audit-review-codex` from `~/shared-knowledge/projects/orbit/docs-audit/`. Build a final synthesis file
 named `docs-audit-final` with tag `["docs-audit", "final"]`. The synthesis must:
 
 - Apply every Codex downgrade or correction (e.g. A→B, mislabeled file path).
@@ -285,7 +284,7 @@ approved fixes through the `implementing-features` skill in a
 `bin/orbit-prepare-worktree` implementation worktree — do not edit docs
 in place from the audit session:
 
-1. Hand the approved findings (final synthesis scratchpad plus per-finding
+1. Hand the approved findings (final synthesis file plus per-finding
    approvals) to the implementation worktree. Apply docs changes in the order
    the user prefers (default: A-tier first because they tend to unblock other
    edits).
@@ -343,10 +342,10 @@ table, and the role driver concept) have all since landed.
 ```markdown
 ## Docs Drift Audit Report
 
-Scratchpads:
-- Original findings: docs-audit-findings-claude (id N1)
-- Reviewer findings: docs-audit-review-codex (id N2)
-- Synthesized final: docs-audit-final (id N3)
+Audit files (`~/shared-knowledge/projects/orbit/docs-audit/`):
+- Original findings: docs-audit-findings-claude
+- Reviewer findings: docs-audit-review-codex
+- Synthesized final: docs-audit-final
 
 Full findings (<total count>):
 

@@ -33,7 +33,7 @@ diff exists.
 
 ## Default Agent
 
-Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
+Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. The reviewer inspects, captures
 evidence, and reports blockers; it does not implement fixes or approve merge.
 If the selected reviewer has no provider-session archive support, preserve the
 reviewer report itself as the evidence artifact.
@@ -162,7 +162,7 @@ that corrected behavior. Require a fresh artifact directory or mark the review
 blocked.
 
 Use from the relevant runtime context. For retained Incus proof, prefer running
-inside the Solo terminal shell that is already attached to the target VM:
+inside the `proof-1` window of the feature tmux session that is already attached to the target VM:
 
 ```bash
 python3 .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py \
@@ -204,7 +204,7 @@ whether they come from UTF-8 bytes split across PTY reads before treating them
 as renderer output.
 
 For human rendering, progress, spinners, blinking indicators, prompts, or
-streaming output, retained Solo-terminal proof means the terminal is attached to
+streaming output, retained `proof-1` window proof means the terminal is attached to
 an interactive shell inside the target VM before the command starts. A one-shot
 host command that wraps `ssh ... incus exec ... <orbit command>` can support a
 transcript, but it does not prove the user-inspection flow for in-progress CLI
@@ -233,13 +233,13 @@ behavior.
   applicable.
 - E2E coverage exists when the behavior crosses node, topology, provider,
   launcher, gateway-stream, or retained VM boundaries.
-- CLI command changes that affect real terminal behavior are proven in a Solo
-  terminal inside the retained Incus topology before durable E2E or
+- CLI command changes that affect real terminal behavior are proven in a
+  `proof-1` window inside the retained Incus topology before durable E2E or
   release-candidate deployment.
 - Retained Incus proof names the launcher path that was exercised. Source
   topology evidence from an installed binary is not sufficient unless the
   installed binary is the artifact under review.
-- Retained Solo-terminal proof for human rendering starts from a VM shell prompt
+- Retained `proof-1` window proof for human rendering starts from a VM shell prompt
   inside the target VM; host-wrapped one-shot `incus exec` output is not enough
   when in-progress rendering is part of the contract.
 - Before asking the user to inspect CLI UX/output, the reviewer has run or

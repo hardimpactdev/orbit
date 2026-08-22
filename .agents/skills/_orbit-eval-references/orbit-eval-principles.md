@@ -6,7 +6,7 @@ Use these rules across Orbit eval construction, execution, and review.
 
 - Start from Orbit authority docs: `apps/docs/content/**` for product behavior and `PRODUCT_DECISIONS.md` for dated direction changes.
 - Treat code, tests, live-node incidents, failed commands, and prior sessions as evidence for failure modes, not as product authority.
-- Keep eval artifacts in Solo scratchpads while iterating. Graduate validated fixtures to the repo only with user approval.
+- Keep eval artifacts in files under `~/shared-knowledge/projects/orbit/evals/` while iterating. Graduate validated fixtures to the repo only with user approval.
 - Do not wire release gates from eval skills. The review skill may recommend a gate; Orbit's release and quality-gate process owns implementation.
 - Never run, invoke, dispatch, delegate, schedule, or trigger a
   `composer test:e2e*` command through an agent, eval trial, hook, release flow,

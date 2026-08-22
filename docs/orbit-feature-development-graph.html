@@ -386,11 +386,11 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 
 <section id="panel-responsibilities" class="panel" aria-labelledby="resp-title" hidden>
     <h2 id="resp-title">Responsibilities</h2>
-    <p class="note">This is the <strong>HARNESS-defined role policy</strong>. Desktop Codex is the sole FRAME→LAND feature owner; Grok via the existing main Orbit Solo project performs substantive edits in the exact worktree; fresh Claude Opus is the general reviewer.</p>
+    <p class="note">This is the <strong>HARNESS-defined role policy</strong>. The orchestrating session (Codex or Claude) that the human started is the sole feature owner. Grok worker via bin/orbit-worker-spawn at the exact worktree; fresh Claude Opus is the general reviewer.</p>
     <ul class="actor-list">
         <li><strong>User</strong> Supplies the goal and human judgment when required.</li>
-        <li><strong>Desktop Codex</strong> Frames, coordinates Grok implementation, integrates, and verifies.</li>
-        <li><strong>Grok via main Orbit Solo</strong> Owns substantive edits in the exact feature worktree.</li>
+        <li><strong>Orchestrating session (Codex or Claude)</strong> Frames, coordinates Grok implementation, integrates, and verifies.</li>
+        <li><strong>Grok worker via bin/orbit-worker-spawn</strong> Owns substantive edits in the exact feature worktree.</li>
         <li><strong>Claude Opus general reviewer</strong> Issues PASS, FIX, or ESCALATE (and human-judgment decision).</li>
         <li><strong>Orbit harness</strong> Records state and evidence; gates transitions (<code>.orbit/loop.md</code>, acceptance, finalization).</li>
     </ul>
@@ -410,7 +410,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
 
 <script type="application/json" id="orbit-feature-graph-data">
 {
-  "version": "3.2.0",
+  "version": "4.0.0",
   "scope": "feature-development-loop-current-and-proposed",
   "title": "Orbit feature-development graph",
   "model_status": "mixed-current-and-proposed",
@@ -789,8 +789,8 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "id": "build",
       "label": "BUILD",
       "enforcement": "already_enforced",
-      "inputs": ["Scoped Goal/Scope from FRAME", "Isolated worktree", "Grok via main Orbit Solo with --cwd at the exact worktree"],
-      "happens": ["Align docs, tests, and code", "Prefer small vertical slices", "Desktop Codex owns the integrated result"],
+      "inputs": ["Scoped Goal/Scope from FRAME", "Isolated worktree", "Grok worker via bin/orbit-worker-spawn at the exact worktree"],
+      "happens": ["Align docs, tests, and code", "Prefer small vertical slices", "The orchestrating session owns the integrated result"],
       "exit": ["Candidate committed", "Worktree clean → PROVE"],
       "problems": ["Failing tests or incomplete alignment → stay in BUILD", "Grok leaves owned scope → stop that process"],
       "mini_flow": ["edit/tests/docs → commit clean → PROVE"]
@@ -857,7 +857,7 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "label": "LAND",
       "enforcement": "already_enforced",
       "inputs": ["Valid acceptance", "Clean worktree", "Closed actionable feedback"],
-      "happens": ["Finalization gate per destructive step", "Merge to main", "Archive from feature worktree", "Preserve main Solo project and processes; remove worktree, then branch"],
+      "happens": ["Finalization gate per destructive step", "Merge to main", "Archive from feature worktree", "Kill the feature tmux session; remove worktree, then branch"],
       "exit": ["Merge + archive + cleanup complete → Done (feature loop complete)", "Optional later: enter release lifecycle — not required for Done"],
       "problems": ["Dirty files, unresolved feedback, stale acceptance, or failed check → block", "Never run destructive command without FINALIZATION: PASS"],
       "mini_flow": ["gate → merge → archive → cleanup → Done", "optional separate path → release lifecycle"]
@@ -892,8 +892,8 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
   },
   "actors": {
     "harness_generic": [
-      {"id": "desktop-codex", "label": "Desktop Codex", "note": "Sole feature owner for FRAME→LAND", "source": "HARNESS.md"},
-      {"id": "grok-solo", "label": "Grok via main Orbit Solo", "source": "HARNESS.md"},
+      {"id": "desktop-codex", "label": "Orchestrating session (Codex or Claude)", "note": "Sole feature owner for FRAME→LAND", "source": "HARNESS.md"},
+      {"id": "grok-worker", "label": "Grok worker via bin/orbit-worker-spawn", "source": "HARNESS.md"},
       {"id": "claude-opus-reviewer", "label": "Claude Opus general reviewer", "source": "HARNESS.md"},
       {"id": "user", "label": "User", "source": "HARNESS.md"},
       {"id": "harness", "label": "Orbit harness", "source": "HARNESS.md"}
@@ -903,8 +903,8 @@ text { font: 11px system-ui, sans-serif; fill: var(--fg); }
       "source": "HARNESS.md",
       "mapping": [
         {"id": "user", "label": "User", "role": "goal and human judgment"},
-        {"id": "desktop-codex", "label": "Desktop Codex", "role": "sole feature owner; frames, coordinates Grok, integrates, verifies"},
-        {"id": "grok-solo", "label": "Grok via main Orbit Solo", "role": "substantive edits in exact worktree"},
+        {"id": "desktop-codex", "label": "Orchestrating session (Codex or Claude)", "role": "sole feature owner; frames, coordinates Grok, integrates, verifies"},
+        {"id": "grok-worker", "label": "Grok worker via bin/orbit-worker-spawn", "role": "substantive edits in exact worktree"},
         {"id": "claude-opus-reviewer", "label": "Claude Opus general reviewer", "role": "PASS / FIX / ESCALATE"},
         {"id": "harness", "label": "Orbit harness", "role": "records state/evidence and gates transitions"}
       ]

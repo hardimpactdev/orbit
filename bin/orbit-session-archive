@@ -22,7 +22,7 @@ const STAGED_CAPTURE_STATUSES = [
     'extraction_failed',
     'invalid',
     'missing',
-    'solo_process_not_found',
+    'worker_not_found',
     'stale',
     'unsupported',
 ];
@@ -37,14 +37,9 @@ $options = getopt('', [
     'home:',
     'marker:',
     'processes-json:',
-    'solo-process-id:',
-    'solo-project-id:',
-    'solo-app-data-dir:',
-    'solo-db:',
-    'solo-cli:',
+    'worker-id:',
     'max-start-distance:',
     'only-ok',
-    'discover-by-cwd',
     'full',
     'help',
 ]);
@@ -69,9 +64,7 @@ if (array_key_exists('help', $options)) {
                                        inline-code paths, and a versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
-          --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
-          --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
-          --max-start-distance, --only-ok.
+          --processes-json, --worker-id, --home, --marker, --max-start-distance, --only-ok.
 
         The active <source-orbit-dir>/loop.md is required. When an existing compact
         schema-v2/v3 archive already has matching content identity (byte-identical
@@ -87,14 +80,13 @@ if (array_key_exists('help', $options)) {
         valid with evidence/quality-gates proof roots only. Historical loop packets
         retain their Evidence Links write-back behavior.
 
-        In --full mode, if no explicit provider process context is supplied, this command scans
-        <source-orbit-dir>/loop.md for Solo process ids and passes them as a
-        comma-separated --solo-process-id list. Without discovered process ids,
-        agent session archiving safely writes an empty manifest and a WARNING is
-        printed naming the missing context. Discovered process ids that cannot
-        be resolved do not abort the archive: each one is reported with a
-        WARNING and recorded in the agent-sessions manifest with status
-        solo_process_not_found, and the archive completes normally.
+        In --full mode, if no explicit --processes-json/--worker-id is supplied, this
+        command reads <cwd>/.orbit/workers/*.json ids and passes them as --worker-id.
+        Without a registry, agent session archiving safely writes an empty manifest
+        and a WARNING is printed naming the missing context. Discovered worker ids
+        that cannot be resolved do not abort the archive: each one is reported with
+        a WARNING and recorded in the agent-sessions manifest with status
+        worker_not_found, and the archive completes normally.
         EOF);
 
     exit(0);
@@ -189,8 +181,8 @@ if ($archiveMode === 'compact') {
     }
 }
 
-$loopDiscoveryAttempted = $archiveMode === 'full' && shouldDiscoverLoopProcessIds($options);
-$loopProcessIds = $loopDiscoveryAttempted ? loopSoloProcessIds($activeLoopPath) : [];
+$workerDiscoveryAttempted = $archiveMode === 'full' && shouldDiscoverWorkerIds($options);
+$discoveredWorkerIds = $workerDiscoveryAttempted ? discoverWorkerRegistryIds($cwd, $sourceOrbitDir) : [];
 
 $temporaryArchiveFinalPath = isset($options['archive-dir'])
     ? $archiveDir
@@ -225,16 +217,15 @@ try {
                 "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n",
             );
         } else {
-            if ($loopDiscoveryAttempted && $loopProcessIds === []) {
+            if ($workerDiscoveryAttempted && $discoveredWorkerIds === []) {
                 fwrite(
                     STDERR,
-                    'WARNING: no Solo process context available — no --processes-json/--solo-process-id/'
-                    .'--solo-project-id/--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, '
-                    ."and no Solo process ids found in {$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+                    'WARNING: no worker context available - no --processes-json/--worker-id option and no '
+                    .".orbit/workers registry in {$cwd}; agent-sessions will contain an empty manifest.\n",
                 );
             }
 
-            $agentResults = runAgentSessionArchive($options, $cwd, $temporaryArchiveDir, $loopProcessIds);
+            $agentResults = runAgentSessionArchive($options, $cwd, $temporaryArchiveDir, $discoveredWorkerIds);
             normalizeFallbackManifestArchiveDirectory($temporaryArchiveDir, $archiveDir);
         }
     }
@@ -256,7 +247,9 @@ try {
         '/^\d{4}-\d{2}-\d{2}-\d{6}-([a-z0-9-]+)$/',
         basename($archiveDir),
         $basenameParts,
-    ) === 1 ? $basenameParts[1] : $requestedSlug;
+    ) === 1
+        ? $basenameParts[1]
+        : $requestedSlug;
     $compatibleSlugs = archiveCompatibleSlugs($options, $cwd, $archiveDir, $mode);
 
     $summary = [
@@ -276,7 +269,7 @@ try {
         'candidate_commit' => $candidateCommit,
         'accepted_feature_tip' => orbitLoopLabel($updatedLoop, 'Proof', 'Accepted feature tip'),
         'accepted_main_tip' => orbitLoopLabel($updatedLoop, 'Proof', 'Accepted main tip'),
-        'discovered_solo_process_ids' => $loopProcessIds,
+        'discovered_worker_ids' => $discoveredWorkerIds,
         'agent_results' => $agentResults,
     ];
 
@@ -889,8 +882,7 @@ function isVersionedCompactArchive(string $archiveDir): bool
 
     $schemaVersion = $receipt['schema_version'] ?? null;
 
-    return in_array($schemaVersion, [2, 3], true)
-        && ($receipt['archive_mode'] ?? null) === 'compact';
+    return in_array($schemaVersion, [2, 3], true) && ($receipt['archive_mode'] ?? null) === 'compact';
 }
 
 /**
@@ -949,7 +941,7 @@ function archiveCompatibleSlugs(
 
     if ($mode === 'refreshed') {
         $previous = readArchiveReceipt($archiveDir);
-        $previousSlugs = is_array($previous) ? ($previous['compatible_slugs'] ?? null) : null;
+        $previousSlugs = is_array($previous) ? $previous['compatible_slugs'] ?? null : null;
 
         if (is_array($previousSlugs)) {
             foreach ($previousSlugs as $previousSlug) {
@@ -959,13 +951,13 @@ function archiveCompatibleSlugs(
             }
         }
 
-        $previousSlug = is_array($previous) ? ($previous['slug'] ?? null) : null;
+        $previousSlug = is_array($previous) ? $previous['slug'] ?? null : null;
 
         if (is_string($previousSlug) && $previousSlug !== '') {
             $slugs[] = slugify($previousSlug);
         }
 
-        $previousRequested = is_array($previous) ? ($previous['requested_slug'] ?? null) : null;
+        $previousRequested = is_array($previous) ? $previous['requested_slug'] ?? null : null;
 
         if (is_string($previousRequested) && $previousRequested !== '') {
             $slugs[] = slugify($previousRequested);
@@ -1330,61 +1322,55 @@ function isProviderTransactionDirectory(string $name): bool
 /**
  * @param array<string, mixed> $options
  */
-function shouldDiscoverLoopProcessIds(array $options): bool
+function shouldDiscoverWorkerIds(array $options): bool
 {
-    if (
-        isset($options['processes-json'])
-        || isset($options['solo-process-id'])
-        || isset($options['solo-project-id'])
-        || array_key_exists('discover-by-cwd', $options)
-    ) {
-        return false;
-    }
-
-    return getenv('SOLO_PROCESS_ID') === false && getenv('SOLO_PROJECT_ID') === false;
+    return ! isset($options['processes-json']) && ! isset($options['worker-id']);
 }
 
 /**
- * @return list<int>
+ * @return list<string>
  */
-function loopSoloProcessIds(string $loopPath): array
+function discoverWorkerRegistryIds(string $cwd, string $sourceOrbitDir): array
 {
-    if (! is_file($loopPath)) {
-        return [];
-    }
-
-    $content = (string) file_get_contents($loopPath);
+    $directories = array_unique([
+        rtrim($cwd, '/').'/.orbit/workers',
+        rtrim($sourceOrbitDir, '/').'/workers',
+    ]);
     $ids = [];
-    $patterns = [
-        '/\bSolo[^\n]*\bprocess(?:\s+id)?\s*`?(\d+)`?/i',
-        '/\b(?:worker|reviewer|analyzer|orchestrator)[^\n]*\bprocess(?:\s+id)?\s*`?(\d+)`?/i',
-        '/\bprocess\s+id\s*`?(\d+)`?/i',
-    ];
 
-    foreach ($patterns as $pattern) {
-        preg_match_all($pattern, $content, $matches);
+    foreach ($directories as $directory) {
+        if (! is_dir($directory)) {
+            continue;
+        }
 
-        foreach ($matches[1] ?? [] as $match) {
-            $id = (int) $match;
-
-            if ($id > 0 && ! in_array($id, $ids, true)) {
-                $ids[] = $id;
+        foreach (glob($directory.'/*.json') ?: [] as $path) {
+            if (! is_file($path) || is_link($path)) {
+                continue;
             }
+
+            $payload = json_decode((string) file_get_contents($path), true);
+            $id = is_array($payload) && is_string($payload['id'] ?? null) ? $payload['id'] : null;
+
+            if ($id === null || $id === '' || in_array($id, $ids, true)) {
+                continue;
+            }
+
+            $ids[] = $id;
         }
     }
 
-    sort($ids, SORT_NUMERIC);
+    sort($ids, SORT_STRING);
 
     return $ids;
 }
 
 /**
  * @param array<string, mixed> $options
- * @param list<int> $loopProcessIds
+ * @param list<string> $discoveredWorkerIds
  *
  * @return array<int, array<string, mixed>>
  */
-function runAgentSessionArchive(array $options, string $cwd, string $archiveDir, array $loopProcessIds): array
+function runAgentSessionArchive(array $options, string $cwd, string $archiveDir, array $discoveredWorkerIds): array
 {
     $command = [
         PHP_BINARY,
@@ -1395,11 +1381,7 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
 
     foreach ([
         'processes-json',
-        'solo-process-id',
-        'solo-project-id',
-        'solo-app-data-dir',
-        'solo-db',
-        'solo-cli',
+        'worker-id',
         'home',
         'marker',
         'max-start-distance',
@@ -1409,14 +1391,12 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
         }
     }
 
-    if (! isset($options['solo-process-id']) && $loopProcessIds !== []) {
-        $command[] = '--solo-process-id='.implode(',', $loopProcessIds);
+    if (! isset($options['worker-id']) && $discoveredWorkerIds !== []) {
+        $command[] = '--worker-id='.implode(',', $discoveredWorkerIds);
     }
 
-    foreach (['only-ok', 'discover-by-cwd'] as $flag) {
-        if (array_key_exists($flag, $options)) {
-            $command[] = "--{$flag}";
-        }
+    if (array_key_exists('only-ok', $options)) {
+        $command[] = '--only-ok';
     }
 
     [$exitCode, $stdout, $stderr] = runCommand($command);
@@ -1631,8 +1611,10 @@ function validateStagedCaptureManifest(string $manifestPath, string $provider, s
         throw new RuntimeException("Staged manifest slug must match directory '{$slug}': {$manifestPath}");
     }
 
-    if (! is_int($manifest['solo_process_id'] ?? null) || $manifest['solo_process_id'] <= 0) {
-        throw new RuntimeException("Staged manifest solo_process_id must be a positive integer: {$manifestPath}");
+    $workerId = $manifest['worker_id'] ?? null;
+
+    if (! is_string($workerId) || preg_match('/^[a-z][a-z0-9-]*$/', $workerId) !== 1) {
+        throw new RuntimeException("Staged manifest worker_id must be a worker id: {$manifestPath}");
     }
 
     $status = $manifest['status'] ?? null;

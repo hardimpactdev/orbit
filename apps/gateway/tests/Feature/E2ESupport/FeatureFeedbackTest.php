@@ -281,7 +281,24 @@ it('rejects unsafe source references and symlinked feedback paths without extern
         expect($unsafeReference->getExitCode())
             ->toBe(2)
             ->and($unsafeReference->getErrorOutput())
-            ->toContain('safe Codex or Solo source reference')
+            ->toContain('safe Codex or Claude source reference')
+            ->and("{$workspace}/.orbit/feedback.jsonl")
+            ->not->toBeFile();
+
+        $soloReference = feedback_test_run(
+            $workspace,
+            [
+                'record',
+                '--session-ref=solo://proj/4/scratchpad/example--1',
+                '--surface=cli.errors',
+            ],
+            "Must reject Solo refs.\n",
+        );
+
+        expect($soloReference->getExitCode())
+            ->toBe(2)
+            ->and($soloReference->getErrorOutput())
+            ->toContain('safe Codex or Claude source reference')
             ->and("{$workspace}/.orbit/feedback.jsonl")
             ->not->toBeFile();
 
@@ -504,6 +521,100 @@ it('binds a user waiver to a safe source and verbatim redacted message', functio
         feedback_test_remove($workspace);
     }
 });
+
+it('accepts Claude session source references when recording feedback and waiving it', function (): void {
+    $workspace = feedback_test_workspace('claude-source');
+
+    try {
+        $record = feedback_test_run(
+            $workspace,
+            [
+                'record',
+                '--session-ref=claude://sessions/abc123#feedback',
+                '--surface=cli.progress',
+            ],
+            "Progress regressed.\n",
+        );
+
+        expect($record->getExitCode())->toBe(0, $record->getErrorOutput());
+
+        $feedbackId = json_decode($record->getOutput(), true, flags: JSON_THROW_ON_ERROR)['id'];
+        $waiver = feedback_test_run(
+            $workspace,
+            [
+                'waive',
+                "--feedback-id={$feedbackId}",
+                '--source=user',
+                '--source-ref=claude://sessions/abc123#waiver',
+            ],
+            "I waive this case.\n",
+        );
+
+        expect($waiver->getExitCode())->toBe(0, $waiver->getErrorOutput());
+
+        $event = json_decode($waiver->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($event)
+            ->toMatchArray([
+                'type' => 'feedback.waived',
+                'feedback_id' => $feedbackId,
+                'source' => 'user',
+                'source_ref' => 'claude://sessions/abc123#waiver',
+            ]);
+    } finally {
+        feedback_test_remove($workspace);
+    }
+});
+
+it('rejects Solo source references on user waivers', function (): void {
+    $workspace = feedback_test_workspace('solo-waiver');
+
+    try {
+        $record = feedback_test_run(
+            $workspace,
+            [
+                'record',
+                '--session-ref=codex://threads/example#feedback',
+                '--surface=cli.progress',
+            ],
+            "Progress regressed.\n",
+        );
+        $feedbackId = json_decode($record->getOutput(), true, flags: JSON_THROW_ON_ERROR)['id'];
+        $before = (string) file_get_contents("{$workspace}/.orbit/feedback.jsonl");
+        $waiver = feedback_test_run(
+            $workspace,
+            [
+                'waive',
+                "--feedback-id={$feedbackId}",
+                '--source=user',
+                '--source-ref=solo://proj/4/scratchpad/example--1',
+            ],
+            "I waive this case.\n",
+        );
+
+        expect($waiver->getExitCode())
+            ->toBe(2)
+            ->and($waiver->getErrorOutput())
+            ->toContain('safe Codex or Claude source reference')
+            ->and((string) file_get_contents("{$workspace}/.orbit/feedback.jsonl"))
+            ->toBe($before);
+    } finally {
+        feedback_test_remove($workspace);
+    }
+});
+
+it('accepts Codex and Claude source references and rejects Solo ones', function (string $reference, bool $valid): void {
+    require_once repo_path('bin/orbit-feedback-events.php');
+
+    expect(orbitFeedbackSourceRefIsValid($reference))->toBe($valid);
+})->with([
+    'codex thread' => ['codex://threads/example', true],
+    'codex thread with anchor' => ['codex://threads/example#acceptance-1', true],
+    'claude session' => ['claude://sessions/abc123', true],
+    'claude session with anchor' => ['claude://sessions/abc123#waiver', true],
+    'solo scratchpad' => ['solo://proj/4/scratchpad/example--1', false],
+    'solo project' => ['solo://apps/12/scratchpads/34', false],
+]);
 
 function feedback_test_temp_path(): string
 {

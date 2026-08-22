@@ -169,30 +169,10 @@ it('keeps the app-owned orbit skill in the agents skill catalog', function (): v
         ->toBe(realpath(repo_path('.agents/skills')));
 });
 
-it('provides a compact Solo todo handoff skill for Codex implementation agents', function (): void {
-    $skillPath = repo_path('.agents/skills/solo-todo-handoff/SKILL.md');
-    $skill = is_file($skillPath) ? (file_get_contents($skillPath) ?: '') : '';
-
-    preg_match('/## Prompt Skeleton\n\n```text\n([\s\S]*?)\n```/', $skill, $promptSkeleton);
-    $promptSkeletonBody = $promptSkeleton[1] ?? '';
-
-    expect($skillPath)
-        ->toBeFile()
-        ->and($skill)
-        ->toContain('name: solo-todo-handoff')
-        ->toContain('todo_get')
-        ->toContain('list_agent_tools')
-        ->toContain('spawn_agent')
-        ->toContain('send_input')
-        ->toContain('.agents/skills/implementing-features/SKILL.md');
-
-    expect($promptSkeletonBody)
-        ->not
-        ->toBeEmpty()
-        ->and(str_starts_with($promptSkeletonBody, '/goal '))
-        ->toBeTrue()
-        ->and(mb_strlen($promptSkeletonBody))
-        ->toBeLessThanOrEqual(4000);
+it('does not keep a Solo todo handoff skill', function (): void {
+    expect(repo_path('.agents/skills/solo-todo-handoff/SKILL.md'))
+        ->not->toBeFile()->and(repo_path('.agents/skills/solo-todo-handoff'))
+        ->not->toBeDirectory();
 });
 
 it('keeps worktree preparation responsible for seeding the active loop packet', function (): void {
@@ -200,7 +180,6 @@ it('keeps worktree preparation responsible for seeding the active loop packet', 
     $fastPath = file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '';
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
-    $todoHandoff = file_get_contents(repo_path('.agents/skills/solo-todo-handoff/SKILL.md')) ?: '';
 
     expect($prepareWorktree)
         ->toContain('seed_loop_packet')
@@ -221,9 +200,6 @@ it('keeps worktree preparation responsible for seeding the active loop packet', 
         ->toContain('`.orbit/loop.md` when it is missing')
         ->toContain('Fill or update the seeded `.orbit/loop.md` Goal and Scope')
         ->toContain('do not recreate the setup flow manually');
-
-    expect($todoHandoff)
-        ->toContain('fill the seeded .orbit/loop.md Goal and Scope');
 });
 
 it('does not keep gateway-local generated agent artifacts', function (): void {
@@ -307,50 +283,61 @@ it('requires direct final outcome proof for runtime claims before reviewer PASS'
         )->toContain('return `FIX`');
 });
 
-it('keeps Codex in charge while Solo dispatches Grok implementation and Claude Opus review', function (): void {
+it('keeps the orchestrating session in charge while tmux workers implement and Claude Opus reviews', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
     $prompt = file_get_contents(repo_path('.agents/skills/implementing-features/agents/openai.yaml')) ?: '';
-    $todoHandoff = file_get_contents(repo_path('.agents/skills/solo-todo-handoff/SKILL.md')) ?: '';
     $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
     $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
     $featureGraph = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
+    $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
+    $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.';
+    $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.';
+    $reviewerSentence = 'Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).';
+    $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
+    $watchSentence = 'Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.';
+    $proofWindowSentence = 'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.';
+    $ownershipSentence = 'Session ownership is exact: the loop `Session:` line equals `feat-<slug>` and the tmux session path equals the feature worktree; LAND refuses to run inside the feature session.';
+    $cleanupSentence = "kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch.";
+    $acceptanceSentence = 'user acceptance reads the verbatim message from STDIN and requires its `codex://` or `claude://` source reference';
+    $waiverSentence = 'a safe Codex or Claude source reference';
 
     expect($harness)
         ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
-        ->toContain('Desktop Codex is the sole feature owner')
-        ->toContain('existing main Orbit Solo project')
-        ->toContain('Never create or register a Solo project for a feature worktree')
-        ->toContain("['--cwd', '<exact-feature-worktree>']")
-        ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
-        ->toContain('change active cwd to the exact feature worktree')
+        ->toContain($ownerSentence)
+        ->toContain($workersSentence)
+        ->toContain($dispatchSentence)
+        ->toContain($reviewerSentence)
+        ->toContain($missingToolsSentence)
+        ->toContain($watchSentence)
+        ->toContain($proofWindowSentence)
+        ->toContain($ownershipSentence)
+        ->toContain($cleanupSentence)
+        ->toContain($acceptanceSentence)
+        ->toContain($waiverSentence)
         ->and($skill)
-        ->toContain('Desktop Codex is the sole feature owner')
-        ->toContain('existing main Orbit Solo project')
-        ->toContain('Never create or register a Solo project for a feature worktree')
-        ->toContain("['--cwd', '<exact-feature-worktree>']")
-        ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
-        ->toContain('Do not substitute a Codex subagent')
-        ->toContain('First prompt: change active cwd to exact worktree before persona identity')
+        ->toContain($ownerSentence)
+        ->toContain($workersSentence)
+        ->toContain($dispatchSentence)
+        ->toContain($reviewerSentence)
+        ->toContain($missingToolsSentence)
+        ->toContain($watchSentence)
+        ->toContain($proofWindowSentence)
+        ->toContain($cleanupSentence)
         ->and($prompt)
-        ->toContain('use the existing main Orbit Solo project')
-        ->toContain('point Grok at the exact feature worktree without a model override')
+        ->toContain('use the feature tmux session')
+        ->toContain('point Grok workers at the exact feature worktree without a model override')
         ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus')
-        ->and($todoHandoff)
-        ->toContain(
-            'dispatch substantive edits to Grok in the main Orbit Solo project with --cwd at the exact worktree',
-        )
-        ->not->toContain('implement directly or use bounded workers only when useful')->and($intake)->toContain(
-            'hand the outcome to Desktop Codex using',
-        )
+        ->and($intake)
+        ->toContain('hand the outcome to the orchestrating feature owner using')
         ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
-            'hand implementation ownership to Desktop Codex using implementing-features',
+            'hand the outcome to the orchestrating feature owner using implementing-features',
         )
-        ->not->toContain('optional delegation')->and($featureGraph)->toContain('"version": "3.2.0"')->toContain(
+        ->not->toContain('optional delegation')->and($featureGraph)->toContain('"version": "4.0.0"')->toContain(
             'HARNESS-defined role policy',
-        )->toContain('Grok via main Orbit Solo with --cwd at the exact worktree')->toContain(
+        )->toContain('Grok worker via bin/orbit-worker-spawn at the exact worktree')->toContain(
             'Claude Opus general reviewer',
-        )->toContain('Preserve main Solo project and processes; remove worktree, then branch')->toContain(
+        )->toContain('Kill the feature tmux session; remove worktree, then branch')->toContain(
             'Codex/Grok/Claude role split',
         )
         ->not->toContain('Optional bounded workers')
@@ -358,6 +345,22 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
         ->not->toContain('out-of-repo operator instruction')
         ->not->toContain('implement directly')
         ->not->toContain('Ordered Solo/project/worktree/branch cleanup');
+
+    expect(str_replace(
+        search: 'never create or use a Solo project',
+        replace: '',
+        subject: $harness,
+    ))
+        ->not->toContain('Solo')->and(str_replace(
+            search: 'never create or use a Solo project',
+            replace: '',
+            subject: $skill,
+        ))
+        ->not->toContain('Solo')->and($prompt)
+        ->not->toContain('Solo')->and($intake)
+        ->not->toContain('Solo')->and($intakePrompt)
+        ->not->toContain('Solo')->and($featureGraph)
+        ->not->toContain('Solo');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {
@@ -371,7 +374,7 @@ it('keeps intake compact and e2e prompts execution-safe', function (): void {
         ->toContain('Constraints')
         ->toContain('Ambiguity')
         ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
-            'hand implementation ownership to Desktop Codex using implementing-features',
+            'hand the outcome to the orchestrating feature owner using implementing-features',
         )
         ->not->toContain('delegate documentation and implementation through Solo')->and($e2ePrompt)->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
@@ -427,7 +430,7 @@ it('reserves human acceptance for judgment instead of deterministic checks', fun
         ->toContain('diff-routed `composer quality-check`')
         ->toContain('--actor=automated')
         ->toContain('Do not send an acceptance handoff when the actor is automated')
-        ->toContain('Keep it open for the user only when')
+        ->toContain('keep it open for the user only when')
         ->and($reviewer)
         ->toContain('HUMAN_JUDGMENT: required|not-required')
         ->toContain('Executable files or a retained topology alone do not make a change human-observable')
@@ -738,7 +741,7 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
-        ->toBeLessThanOrEqual(33160)
+        ->toBeLessThanOrEqual(34200)
         ->and($skill)
         ->toContain('## FRAME')
         ->toContain('## BUILD')

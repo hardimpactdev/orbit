@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('noops without explicit solo context or archive directory', function (): void {
+it('noops without worker registry or process fixture context', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'noop');
 
     try {
@@ -119,7 +119,7 @@ it('archives supported provider sessions and records unsupported providers in th
     }
 });
 
-it('filters multiple target solo processes from fixture exports', function (): void {
+it('filters multiple target workers from fixture exports', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'multi-process');
     $home = "{$temp}/home";
     $cwd = "{$temp}/worktree";
@@ -138,7 +138,7 @@ it('filters multiple target solo processes from fixture exports', function (): v
             [
                 repo_path('bin/orbit-agent-session-archive'),
                 "--processes-json={$processesPath}",
-                '--solo-process-id=101,103',
+                '--worker-id=101,103',
                 "--home={$home}",
                 "--cwd={$cwd}",
                 "--marker={$marker}",
@@ -170,7 +170,178 @@ it('filters multiple target solo processes from fixture exports', function (): v
     }
 });
 
-it('continues past unresolvable target solo processes and records them with an explicit status', function (): void {
+it('builds the process list from the worker registry and infers providers from command argv', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'registry-list');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        write_agent_session_archive_fixtures(home: $home, cwd: $cwd, marker: $marker);
+        write_worker_registry_entry($cwd, 'impl-1', 'grok --yolo', [
+            'workingDir' => $cwd,
+            'startedAt' => '2026-07-01T08:03:00Z',
+        ]);
+        write_worker_registry_entry(
+            $cwd,
+            'review-1',
+            'claude --dangerously-skip-permissions --model opus',
+            ['workingDir' => $cwd, 'pid' => 4321, 'startedAt' => '2026-07-01T08:02:00Z'],
+        );
+        write_worker_registry_entry($cwd, 'proof-1', 'opencode', [
+            'workingDir' => $cwd,
+            'startedAt' => '2026-07-01T08:04:00Z',
+        ]);
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+        );
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(3)
+            ->and(provider_status(results: $results, provider: 'grok'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'claude'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'opencode'))
+            ->toBe('unsupported')
+            ->and(provider_result(results: $results, provider: 'grok')['process_metadata_source'])
+            ->toBe('worker_registry');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('resolves claude and codex transcripts from registry provider_ref values', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'provider-ref');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        write_agent_session_archive_fixtures(home: $home, cwd: $cwd, marker: $marker);
+        write_worker_registry_entry(
+            $cwd,
+            'review-1',
+            'claude --model opus',
+            ['workingDir' => $cwd, 'providerRef' => 'claude://sessions/claude-session-1'],
+        );
+        write_worker_registry_entry(
+            $cwd,
+            'impl-1',
+            'codex --model gpt-5',
+            [
+                'workingDir' => $cwd,
+                'startedAt' => '2026-07-01T08:00:00Z',
+                'providerRef' => 'codex://threads/codex-fixture',
+            ],
+        );
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--home={$home}",
+                "--cwd={$cwd}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+        );
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(provider_result(results: $results, provider: 'claude'))
+            ->toMatchArray([
+                'status' => 'ok',
+                'artifact_match' => 'provider_ref',
+                'worker_id' => 'review-1',
+            ])
+            ->and(provider_result(results: $results, provider: 'codex'))
+            ->toMatchArray([
+                'status' => 'ok',
+                'artifact_match' => 'provider_ref',
+                'worker_id' => 'impl-1',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('accepts string worker ids in --processes-json fixtures', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'string-ids');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        write_grok_fixture(home: $home, cwd: $cwd, marker: $marker);
+        $processesPath = "{$temp}/processes.json";
+        file_put_contents($processesPath, json_encode([
+            [
+                'id' => 'impl-1',
+                'name' => 'impl-1',
+                'kind' => 'agent',
+                'command' => 'grok --yolo',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T08:03:00Z',
+            ],
+        ], JSON_UNESCAPED_SLASHES));
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--processes-json={$processesPath}",
+                '--worker-id=impl-1',
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+        );
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(1)
+            ->and($results[0])
+            ->toMatchArray([
+                'worker_id' => 'impl-1',
+                'agent' => 'grok',
+                'status' => 'ok',
+                'process_metadata_source' => 'fixture',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('continues past unresolvable target workers and records them with an explicit status', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'unresolved-target');
     $home = "{$temp}/home";
     $cwd = "{$temp}/worktree";
@@ -184,15 +355,15 @@ it('continues past unresolvable target solo processes and records them with an e
         $cwd = (string) realpath($cwd);
 
         write_grok_fixture(home: $home, cwd: $cwd, marker: $marker);
-
-        $soloCliPath = write_agent_session_archive_solo_cli_stub(temp: $temp, cwd: $cwd);
+        write_worker_registry_entry($cwd, 'impl-1', 'grok', [
+            'workingDir' => $cwd,
+            'startedAt' => '2026-07-01T08:03:00Z',
+        ]);
 
         $process = new Process(
             [
                 repo_path('bin/orbit-agent-session-archive'),
-                '--solo-process-id=103,987654',
-                "--solo-cli={$soloCliPath}",
-                "--solo-db={$temp}/missing-solo.db",
+                '--worker-id=impl-1,missing-worker',
                 "--home={$home}",
                 "--cwd={$cwd}",
                 "--marker={$marker}",
@@ -200,10 +371,6 @@ it('continues past unresolvable target solo processes and records them with an e
                 '--max-start-distance=3600',
             ],
             repo_path(),
-            [
-                'SOLO_PROCESS_ID' => false,
-                'SOLO_PROJECT_ID' => false,
-            ],
         );
 
         $process->run();
@@ -212,7 +379,7 @@ it('continues past unresolvable target solo processes and records them with an e
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getErrorOutput())
             ->toContain('WARNING')
-            ->toContain('987654');
+            ->toContain('missing-worker');
 
         $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -225,8 +392,8 @@ it('continues past unresolvable target solo processes and records them with an e
 
         expect($unresolvedResult)
             ->toMatchArray([
-                'status' => 'solo_process_not_found',
-                'solo_process_id' => 987654,
+                'status' => 'worker_not_found',
+                'worker_id' => 'missing-worker',
             ]);
 
         $manifest = read_agent_session_archive_json(path: "{$archiveDir}/manifest.json");
@@ -234,12 +401,12 @@ it('continues past unresolvable target solo processes and records them with an e
         expect($manifest['providers'])
             ->toMatchArray([
                 'grok' => ['ok' => 1],
-                'unknown' => ['solo_process_not_found' => 1],
+                'unknown' => ['worker_not_found' => 1],
             ])
-            ->and(collect($manifest['sessions'])->firstWhere('solo_process_id', 987654))
+            ->and(collect($manifest['sessions'])->firstWhere('worker_id', 'missing-worker'))
             ->toMatchArray([
                 'provider' => 'unknown',
-                'status' => 'solo_process_not_found',
+                'status' => 'worker_not_found',
             ]);
     } finally {
         remove_agent_session_archive_temp_dir(path: $temp);
@@ -642,37 +809,58 @@ function write_agent_session_archive_processes(string $path, string $cwd): void
 }
 
 /**
- * Writes an executable Solo CLI stub that resolves only `processes get 103 --json`
- * so tests can mix one resolvable and one unresolvable target process id.
+ * @param array{
+ *     workingDir?: ?string,
+ *     pid?: ?int,
+ *     startedAt?: string,
+ *     providerRef?: mixed,
+ * } $options
  */
-function write_agent_session_archive_solo_cli_stub(string $temp, string $cwd): string
-{
-    $soloCliPath = "{$temp}/solo-cli-stub";
-    $processJson = json_encode([
-        'process' => [
-            'id' => 103,
-            'name' => 'grok-worker',
-            'kind' => 'agent',
-            'command' => 'grok',
-            'working_dir' => $cwd,
-            'started_at' => '2026-07-01T08:03:00Z',
+function write_worker_registry_entry(
+    string $worktree,
+    string $workerId,
+    string $command,
+    array $options = [],
+): string {
+    $dir = rtrim($worktree, '/').'/.orbit/workers';
+
+    if (! is_dir($dir)) {
+        mkdir($dir, recursive: true);
+    }
+
+    $workingDir = $options['workingDir'] ?? $worktree;
+    $pid = $options['pid'] ?? null;
+    $startedAt = $options['startedAt'] ?? '2026-07-09T09:00:00Z';
+    $providerRef = $options['providerRef'] ?? null;
+    $binary = strtok($command, " \t") ?: 'unknown';
+    $entry = [
+        'id' => $workerId,
+        'role' => 'impl',
+        'cli' => $binary,
+        'command' => preg_split('/\s+/', trim($command)) ?: [$command],
+        'tmux' => [
+            'session' => 'feat-fixture',
+            'window' => $workerId,
+            'pane_id' => '%1',
+            'pane_pid' => $pid,
         ],
-    ], JSON_UNESCAPED_SLASHES);
+        'cwd' => $workingDir,
+        'brief' => ".orbit/workers/briefs/{$workerId}.md",
+        'status' => 'working',
+        'heartbeat_at' => $startedAt,
+        'note' => null,
+        'started_at' => $startedAt,
+        'exited_at' => null,
+        'provider_ref' => $providerRef,
+        'handoff' => null,
+    ];
+    $path = "{$dir}/{$workerId}.json";
+    file_put_contents(
+        $path,
+        json_encode($entry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+    );
 
-    file_put_contents($soloCliPath, <<<BASH
-        #!/bin/sh
-        if [ "\$3" = "processes" ] && [ "\$4" = "get" ] && [ "\$5" = "103" ]; then
-            cat <<'JSON'
-        {$processJson}
-        JSON
-            exit 0
-        fi
-        exit 1
-
-        BASH);
-    chmod($soloCliPath, 0o755);
-
-    return $soloCliPath;
+    return $path;
 }
 
 function write_agent_session_archive_fixtures(string $home, string $cwd, string $marker): void
@@ -835,12 +1023,16 @@ function write_jsonl(string $path, array $rows): void
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
  *     codex_dir: string,
+ *     worker_id: string,
  * }
  */
-function make_incarnation_floor_capture_fixture(string $suffix, int $soloProcessId, string $command = 'codex'): array
-{
+function make_incarnation_floor_capture_fixture(
+    string $suffix,
+    string $workerId,
+    string $command = 'codex',
+    ?string $workingDir = null,
+): array {
     $temp = make_agent_session_archive_temp_dir(suffix: "incarnation-floor-{$suffix}");
     $home = "{$temp}/home";
     $cwd = "{$temp}/worktree";
@@ -850,31 +1042,20 @@ function make_incarnation_floor_capture_fixture(string $suffix, int $soloProcess
     mkdir($cwd, recursive: true);
     mkdir($orbitDir, recursive: true);
     mkdir($codexDir, recursive: true);
-
-    $soloDb = "{$temp}/solo.db";
-    $db = new PDO('sqlite:'.$soloDb);
-    $db->exec(
-        'CREATE TABLE processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+    write_worker_registry_entry(
+        worktree: $cwd,
+        workerId: $workerId,
+        command: $command,
+        options: ['workingDir' => $workingDir ?? $cwd],
     );
-    $statement = $db->prepare(
-        'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
-    );
-    $statement->execute([
-        $soloProcessId,
-        "incarnation-floor-{$suffix}",
-        $command,
-        $cwd,
-        'agent',
-        '2026-07-09T09:00:00Z',
-    ]);
 
     return [
         'temp' => $temp,
         'home' => $home,
         'cwd' => $cwd,
         'orbit_dir' => $orbitDir,
-        'solo_db' => $soloDb,
         'codex_dir' => $codexDir,
+        'worker_id' => $workerId,
     ];
 }
 
@@ -884,15 +1065,15 @@ function make_incarnation_floor_capture_fixture(string $suffix, int $soloProcess
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
  *     codex_dir: string,
+ *     worker_id?: string,
  * } $fixture
  * @param list<array<string, mixed>> $activityRows
  */
 function write_incarnation_floor_rollout(
     array $fixture,
     string $rolloutId,
-    int $soloProcessId,
+    string $workerId,
     array $activityRows,
     string $sessionMetaTimestamp = '2026-07-09T09:00:00Z',
 ): void {
@@ -904,7 +1085,7 @@ function write_incarnation_floor_rollout(
                 'id' => $rolloutId,
                 'cwd' => $fixture['cwd'],
                 'timestamp' => $sessionMetaTimestamp,
-                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
             ],
         ],
         ...$activityRows,
@@ -917,22 +1098,21 @@ function write_incarnation_floor_rollout(
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
  *     codex_dir: string,
+ *     worker_id?: string,
  * } $fixture
  */
 function run_incarnation_floor_capture(
     array $fixture,
-    int $soloProcessId,
+    string $workerId,
     string $slug,
     ?string $incarnationStartedAt = null,
 ): Process {
     $command = [
         repo_path('bin/orbit-agent-session-capture'),
-        (string) $soloProcessId,
+        $workerId,
         "--home={$fixture['home']}",
         "--cwd={$fixture['cwd']}",
-        "--solo-db={$fixture['solo_db']}",
         "--orbit-dir={$fixture['orbit_dir']}",
         "--slug={$slug}",
     ];
@@ -953,15 +1133,15 @@ function run_incarnation_floor_capture(
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
  *     codex_dir: string,
+ *     worker_id: string,
  * }
  */
-function make_provider_capture_fixture(string $provider, string $suffix, int $soloProcessId): array
+function make_provider_capture_fixture(string $provider, string $suffix, string $workerId): array
 {
     return make_incarnation_floor_capture_fixture(
         suffix: "r2-{$provider}-{$suffix}",
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         command: $provider,
     );
 }
@@ -972,15 +1152,15 @@ function make_provider_capture_fixture(string $provider, string $suffix, int $so
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
  *     codex_dir: string,
+ *     worker_id?: string,
  * } $fixture
  */
-function run_provider_capture(array $fixture, int $soloProcessId, string $slug): Process
+function run_provider_capture(array $fixture, string $workerId, string $slug): Process
 {
     return run_incarnation_floor_capture(
         fixture: $fixture,
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         slug: $slug,
     );
 }
@@ -991,12 +1171,12 @@ function run_provider_capture(array $fixture, int $soloProcessId, string $slug):
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
+ *     worker_id?: string,
  *     codex_dir: string,
  * } $fixture
  * @param array{
- *     marker_solo_process_id: int,
- *     primary_solo_process_id: int|null,
+ *     marker_worker_id: string,
+ *     primary_worker_id: ?string,
  *     structural_cwd?: string,
  *     context_cwd?: string|null,
  *     context_key?: string,
@@ -1009,16 +1189,16 @@ function write_provider_capture_candidate(
     string $candidateCwd,
     array $candidateConfig,
 ): string {
-    $markerSoloProcessId = $candidateConfig['marker_solo_process_id'];
-    $primarySoloProcessId = $candidateConfig['primary_solo_process_id'];
+    $markerWorkerId = $candidateConfig['marker_worker_id'];
+    $primaryWorkerId = $candidateConfig['primary_worker_id'];
     $structuralCwd = $candidateConfig['structural_cwd'] ?? $candidateCwd;
     $includeContextCwd =
         ! array_key_exists('context_cwd', $candidateConfig) || $candidateConfig['context_cwd'] !== null;
     $contextCwd = $candidateConfig['context_cwd'] ?? $candidateCwd;
     $contextKey = $candidateConfig['context_key'] ?? 'working_directory';
-    $primaryPrompt = $primarySoloProcessId === null
+    $primaryPrompt = $primaryWorkerId === null
         ? 'Legacy provider prompt without primary identity.'
-        : "[SOLO ORCHESTRATION CONTEXT]\nSolo process ID: {$primarySoloProcessId}\n[END SOLO ORCHESTRATION CONTEXT]";
+        : "Orbit worker: {$primaryWorkerId}";
 
     if ($provider === 'claude') {
         $projectDirectory = provider_fixture_claude_project_directory($fixture['home'], $structuralCwd);
@@ -1040,7 +1220,7 @@ function write_provider_capture_candidate(
                 ...$cwdContext,
                 'message' => [
                     'role' => 'user',
-                    'content' => "Implement lane for Solo process ID: {$markerSoloProcessId}",
+                    'content' => "Implement lane for Orbit worker: {$markerWorkerId}",
                 ],
             ],
             [
@@ -1062,7 +1242,7 @@ function write_provider_capture_candidate(
     mkdir($sessionDir, recursive: true);
     write_jsonl("{$sessionDir}/chat_history.jsonl", [
         ['type' => 'user', 'content' => $primaryPrompt],
-        ['type' => 'user', 'content' => "Implement lane for Solo process ID: {$markerSoloProcessId}"],
+        ['type' => 'user', 'content' => "Implement lane for Orbit worker: {$markerWorkerId}"],
         ['type' => 'assistant', 'content' => 'Grok response'],
     ]);
     $promptContext = $includeContextCwd ? [$contextKey => $contextCwd] : ['model' => 'grok-4'];
@@ -1084,7 +1264,7 @@ function write_provider_capture_candidate(
  *     home: string,
  *     cwd: string,
  *     orbit_dir: string,
- *     solo_db: string,
+ *     worker_id?: string,
  *     codex_dir: string,
  * } $fixture
  */
@@ -1293,7 +1473,7 @@ function assert_provider_archive(string $archiveDir, array $spec): void
     }
 }
 
-it('lane-close capture stages exactly one session via exact "Solo process ID: <id>" marker join', function (): void {
+it('lane-close capture stages exactly one session via exact "Orbit worker: <id>" marker join', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-exact');
 
     try {
@@ -1301,7 +1481,7 @@ it('lane-close capture stages exactly one session via exact "Solo process ID: <i
         $cwd = "{$temp}/worktree";
         $orbitDir = "{$temp}/.orbit";
         $stagingDir = "{$orbitDir}/agent-sessions";
-        $soloProcessId = 424242;
+        $workerId = 'w424242';
 
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
@@ -1318,7 +1498,7 @@ it('lane-close capture stages exactly one session via exact "Solo process ID: <i
                     'cwd' => $cwd,
                     'timestamp' => '2026-07-07T10:00:05Z',
                     'base_instructions' => [
-                        'text' => "You are implementing...\nSolo process ID: {$soloProcessId}\n",
+                        'text' => "You are implementing...\nOrbit worker: {$workerId}\n",
                     ],
                 ],
             ],
@@ -1335,7 +1515,7 @@ it('lane-close capture stages exactly one session via exact "Solo process ID: <i
                 'payload' => [
                     'type' => 'message',
                     'role' => 'user',
-                    'content' => [['type' => 'input_text', 'text' => 'Implement feature '.$soloProcessId]],
+                    'content' => [['type' => 'input_text', 'text' => 'Implement feature '.$workerId]],
                 ],
             ],
             [
@@ -1367,34 +1547,21 @@ it('lane-close capture stages exactly one session via exact "Solo process ID: <i
             ],
         ]);
 
-        // Simulate solo.db with the process row (for resolution of provider/cwd)
-        $soloDb = "{$temp}/solo.db";
-        // Minimal schema + row for test (capture command must query it)
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
-        );
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS spawned_processes (id INTEGER PRIMARY KEY, pid INTEGER, process_name TEXT, command TEXT, project_path TEXT, spawned_at TEXT, owner_pid INTEGER)',
-        );
-        $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
-        );
-        $stmt->execute([$soloProcessId, 'lane-close-capture-worker', 'php ... codex', $cwd, 'agent']);
-        // Also a spawned_processes row to simulate alive row
-        $db->exec(
-            "INSERT INTO spawned_processes (pid, process_name, command, project_path, spawned_at, owner_pid) VALUES (99999, 'lane-close-capture-worker', 'codex', '{$cwd}', datetime('now'), 800)",
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
         );
 
         $process = new Process(
             [
                 repo_path('bin/orbit-agent-session-capture'),
-                (string) $soloProcessId,
+                (string) $workerId,
                 "--home={$home}",
                 "--cwd={$cwd}",
-                "--solo-db={$soloDb}",
                 "--orbit-dir={$orbitDir}",
-                "--slug=capture-exact-{$soloProcessId}",
+                "--slug=capture-exact-{$workerId}",
             ],
             repo_path(),
         );
@@ -1404,14 +1571,14 @@ it('lane-close capture stages exactly one session via exact "Solo process ID: <i
         // This will be RED until the capture bin exists and implements exact marker + staging
         expect($process->getExitCode())->toBe(0, 'capture exit: '.$process->getErrorOutput().$process->getOutput());
 
-        $manifestPath = "{$stagingDir}/codex/capture-exact-{$soloProcessId}/manifest.json";
+        $manifestPath = "{$stagingDir}/codex/capture-exact-{$workerId}/manifest.json";
         expect($manifestPath)->toBeFile('staged manifest missing after exact capture');
 
         $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
         expect($manifest['status'] ?? null)
             ->toBe('ok')
-            ->and($manifest['solo_process_id'] ?? null)
-            ->toBe($soloProcessId)
+            ->and($manifest['worker_id'] ?? null)
+            ->toBe($workerId)
             ->and($manifest['marker_match'] ?? null)
             ->toBe('exact');
     } finally {
@@ -1426,7 +1593,7 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
         $home = "{$temp}/home";
         $cwd = "{$temp}/worktree";
         $orbitDir = "{$temp}/.orbit";
-        $soloProcessId = 434343;
+        $workerId = 'w434343';
 
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
@@ -1435,7 +1602,7 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
         $codexDir = "{$home}/.codex/sessions/2026/07/07";
         mkdir($codexDir, recursive: true);
 
-        write_jsonl("{$codexDir}/rollout-child-first-user-{$soloProcessId}.jsonl", [
+        write_jsonl("{$codexDir}/rollout-child-first-user-{$workerId}.jsonl", [
             [
                 'type' => 'session_meta',
                 'payload' => [
@@ -1452,7 +1619,7 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
                     'role' => 'user',
                     'content' => [[
                         'type' => 'input_text',
-                        'text' => "Solo process ID: {$soloProcessId}\nImplement the feature.",
+                        'text' => "Orbit worker: {$workerId}\nImplement the feature.",
                     ]],
                 ],
             ],
@@ -1465,42 +1632,38 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
                 'role' => 'assistant',
                 'content' => [[
                     'type' => 'output_text',
-                    'text' => "spawn_agent logged Solo process ID: {$soloProcessId}",
+                    'text' => "spawn_agent logged Orbit worker: {$workerId}",
                 ]],
             ],
         ]]);
 
-        $soloDb = "{$temp}/solo.db";
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
         );
-        $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
-        );
-        $stmt->execute([$soloProcessId, 'codex-first-user-worker', 'codex', $cwd, 'agent']);
 
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            (string) $soloProcessId,
+            (string) $workerId,
             "--home={$home}",
             "--cwd={$cwd}",
-            "--solo-db={$soloDb}",
             "--orbit-dir={$orbitDir}",
-            "--slug=codex-first-user-{$soloProcessId}",
+            "--slug=codex-first-user-{$workerId}",
         ], repo_path());
 
         $process->run();
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
 
-        $manifestPath = "{$orbitDir}/agent-sessions/codex/codex-first-user-{$soloProcessId}/manifest.json";
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/codex-first-user-{$workerId}/manifest.json";
         $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
 
         expect($manifest['status'])
             ->toBe('ok')
-            ->and($manifest['solo_process_id'])
-            ->toBe($soloProcessId)
+            ->and($manifest['worker_id'])
+            ->toBe($workerId)
             ->and($manifest['artifact'])
             ->toContain('rollout-child-first-user');
     } finally {
@@ -1515,7 +1678,7 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
         $home = "{$temp}/home";
         $cwd = "{$temp}/worktree";
         $orbitDir = "{$temp}/.orbit";
-        $soloProcessId = 555555;
+        $workerId = 'w555555';
 
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
@@ -1534,35 +1697,23 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
                     'id' => "dupe-{$suffix}",
                     'cwd' => $cwd,
                     'timestamp' => $timestamp,
-                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
                 ],
             ]]);
         }
 
-        $soloDb = "{$temp}/solo.db";
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
         );
-        $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
-        );
-        $stmt->execute([
-            $soloProcessId,
-            'dupe-worker',
-            'codex',
-            $cwd,
-            'agent',
-            '2026-07-07T11:00:00Z',
-        ]);
-        $db = null; // close to flush
 
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            (string) $soloProcessId,
+            (string) $workerId,
             "--home={$home}",
             "--cwd={$cwd}",
-            "--solo-db={$soloDb}",
             "--orbit-dir={$orbitDir}",
         ], repo_path());
 
@@ -1572,7 +1723,7 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
             ->toBeGreaterThan(0)
             ->and($process->getErrorOutput().$process->getOutput())
             ->toContain('ambiguous_duplicate_markers')
-            ->toContain((string) $soloProcessId);
+            ->toContain((string) $workerId);
     } finally {
         remove_agent_session_archive_temp_dir(path: $temp);
     }
@@ -1585,7 +1736,7 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
         $home = "{$temp}/home";
         $cwd = "{$temp}/worktree";
         $orbitDir = "{$temp}/.orbit";
-        $soloProcessId = 919191;
+        $workerId = 'w919191';
 
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
@@ -1594,14 +1745,14 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
         $codexDir = "{$home}/.codex/sessions/2026/07/09";
         mkdir($codexDir, recursive: true);
 
-        write_jsonl("{$codexDir}/rollout-child-{$soloProcessId}.jsonl", [
+        write_jsonl("{$codexDir}/rollout-child-{$workerId}.jsonl", [
             [
                 'type' => 'session_meta',
                 'payload' => [
                     'id' => 'target-child',
                     'cwd' => $cwd,
                     'timestamp' => '2026-07-09T10:00:05Z',
-                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
                 ],
             ],
             [
@@ -1611,13 +1762,13 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
                     'role' => 'user',
                     'content' => [[
                         'type' => 'input_text',
-                        'text' => "Solo process ID: {$soloProcessId}\nImplement the feature.",
+                        'text' => "Orbit worker: {$workerId}\nImplement the feature.",
                     ]],
                 ],
             ],
         ]);
 
-        write_jsonl("{$codexDir}/rollout-foreign-inherited-{$soloProcessId}.jsonl", [
+        write_jsonl("{$codexDir}/rollout-foreign-inherited-{$workerId}.jsonl", [
             [
                 'type' => 'session_meta',
                 'payload' => [
@@ -1645,50 +1796,39 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
                     'role' => 'user',
                     'content' => [[
                         'type' => 'input_text',
-                        'text' => "Solo process ID: {$soloProcessId}\nInherited child handoff.",
+                        'text' => "Orbit worker: {$workerId}\nInherited child handoff.",
                     ]],
                 ],
             ],
         ]);
 
-        $soloDb = "{$temp}/solo.db";
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
         );
-        $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
-        );
-        $stmt->execute([
-            $soloProcessId,
-            'target-child-worker',
-            'codex',
-            $cwd,
-            'agent',
-            '2026-07-09 10:00:00',
-        ]);
 
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            (string) $soloProcessId,
+            (string) $workerId,
             "--home={$home}",
             "--cwd={$cwd}",
-            "--solo-db={$soloDb}",
             "--orbit-dir={$orbitDir}",
-            "--slug=inherited-marker-{$soloProcessId}",
+            "--slug=inherited-marker-{$workerId}",
         ], repo_path());
 
         $process->run();
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
 
-        $manifestPath = "{$orbitDir}/agent-sessions/codex/inherited-marker-{$soloProcessId}/manifest.json";
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/inherited-marker-{$workerId}/manifest.json";
         $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
 
         expect($manifest['status'])
             ->toBe('ok')
             ->and($manifest['artifact'])
-            ->toContain("rollout-child-{$soloProcessId}")
+            ->toContain("rollout-child-{$workerId}")
             ->and($manifest['timestamp_corroboration'] ?? null)
             ->toBe('corroborated')
             ->and($manifest['disambiguation_basis'] ?? null)
@@ -1699,10 +1839,10 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
 });
 
 it('stage 2 exact identity rejects numeric-prefix marker collisions', function (string $provider): void {
-    $soloProcessId = 12;
+    $workerId = 'w12';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: "numeric-prefix-{$provider}",
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         command: $provider,
     );
     $slug = "numeric-prefix-{$provider}";
@@ -1712,26 +1852,26 @@ it('stage 2 exact identity rejects numeric-prefix marker collisions', function (
             write_incarnation_floor_rollout(
                 fixture: $fixture,
                 rolloutId: 'numeric-prefix',
-                soloProcessId: 123,
+                workerId: 'w123',
                 activityRows: [],
             );
         } elseif ($provider === 'claude') {
             write_claude_project_dir_fixture(
                 home: $fixture['home'],
                 cwd: $fixture['cwd'],
-                marker: 'Solo process ID: 123',
+                marker: 'Orbit worker: w123',
             );
         } else {
             write_grok_fixture(
                 home: $fixture['home'],
                 cwd: $fixture['cwd'],
-                marker: 'Solo process ID: 123',
+                marker: 'Orbit worker: w123',
             );
         }
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -1755,8 +1895,8 @@ it('stage 2 exact identity rejects numeric-prefix marker collisions', function (
 })->with(['codex', 'claude', 'grok']);
 
 it('stage 2 exact identity rejects a wrong-cwd Codex singleton', function (): void {
-    $soloProcessId = 979_810;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'wrong-cwd-singleton', soloProcessId: $soloProcessId);
+    $workerId = 'w979810';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'wrong-cwd-singleton', workerId: $workerId);
     $slug = 'wrong-cwd-singleton';
 
     try {
@@ -1766,13 +1906,13 @@ it('stage 2 exact identity rejects a wrong-cwd Codex singleton', function (): vo
                 'id' => 'wrong-cwd',
                 'cwd' => "{$fixture['temp']}/foreign-worktree",
                 'timestamp' => '2026-07-09T10:00:00Z',
-                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
             ],
         ]]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -1796,11 +1936,11 @@ it('stage 2 exact identity rejects a wrong-cwd Codex singleton', function (): vo
 });
 
 it('stage 2 exact identity rejects a foreign-primary Codex singleton with a later target marker', function (): void {
-    $soloProcessId = 979_811;
-    $foreignSoloProcessId = 979_812;
+    $workerId = 'w979811';
+    $foreignWorkerId = 'w979812';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'foreign-primary-singleton',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = 'foreign-primary-singleton';
 
@@ -1812,7 +1952,7 @@ it('stage 2 exact identity rejects a foreign-primary Codex singleton with a late
                     'id' => 'foreign-primary',
                     'cwd' => $fixture['cwd'],
                     'timestamp' => '2026-07-09T10:00:00Z',
-                    'base_instructions' => ['text' => "Solo process ID: {$foreignSoloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$foreignWorkerId}"],
                 ],
             ],
             [
@@ -1828,14 +1968,14 @@ it('stage 2 exact identity rejects a foreign-primary Codex singleton with a late
                 'payload' => [
                     'type' => 'message',
                     'role' => 'user',
-                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                    'content' => [['type' => 'input_text', 'text' => "Orbit worker: {$workerId}"]],
                 ],
             ],
         ]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -1859,8 +1999,8 @@ it('stage 2 exact identity rejects a foreign-primary Codex singleton with a late
 });
 
 it('stage 2 exact identity prefers a full Codex owner over a partial owner and records the basis', function (): void {
-    $soloProcessId = 979_813;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'full-over-partial', soloProcessId: $soloProcessId);
+    $workerId = 'w979813';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'full-over-partial', workerId: $workerId);
     $slug = 'full-over-partial';
 
     try {
@@ -1887,7 +2027,7 @@ it('stage 2 exact identity prefers a full Codex owner over a partial owner and r
                 'payload' => [
                     'type' => 'message',
                     'role' => 'user',
-                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                    'content' => [['type' => 'input_text', 'text' => "Orbit worker: {$workerId}"]],
                 ],
             ],
         ]);
@@ -1897,13 +2037,13 @@ it('stage 2 exact identity prefers a full Codex owner over a partial owner and r
                 'id' => 'full-older',
                 'cwd' => $fixture['cwd'],
                 'timestamp' => '2020-01-01T00:00:00Z',
-                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
             ],
         ]]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -1923,8 +2063,8 @@ it('stage 2 exact identity prefers a full Codex owner over a partial owner and r
 });
 
 it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as visibly partial ownership', function (): void {
-    $soloProcessId = 979_814;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy-partial', soloProcessId: $soloProcessId);
+    $workerId = 'w979814';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy-partial', workerId: $workerId);
     $slug = 'legacy-partial';
 
     try {
@@ -1951,14 +2091,14 @@ it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as vi
                 'payload' => [
                     'type' => 'message',
                     'role' => 'user',
-                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                    'content' => [['type' => 'input_text', 'text' => "Orbit worker: {$workerId}"]],
                 ],
             ],
         ]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -1982,10 +2122,10 @@ it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as vi
 });
 
 it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly ambiguous', function (): void {
-    $soloProcessId = 979_815;
+    $workerId = 'w979815';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'multiple-legacy-partials',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = 'multiple-legacy-partials';
 
@@ -2014,7 +2154,7 @@ it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly a
                     'payload' => [
                         'type' => 'message',
                         'role' => 'user',
-                        'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                        'content' => [['type' => 'input_text', 'text' => "Orbit worker: {$workerId}"]],
                     ],
                 ],
             ]);
@@ -2022,7 +2162,7 @@ it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly a
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -2046,8 +2186,8 @@ it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly a
 });
 
 it('stage 2 exact identity primary identity treats a mention-only first user candidate as visibly partial', function (): void {
-    $soloProcessId = 979_816;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'mention-only-partial', soloProcessId: $soloProcessId);
+    $workerId = 'w979816';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'mention-only-partial', workerId: $workerId);
     $slug = 'mention-only-partial';
 
     try {
@@ -2068,7 +2208,7 @@ it('stage 2 exact identity primary identity treats a mention-only first user can
                     'role' => 'user',
                     'content' => [[
                         'type' => 'input_text',
-                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                        'text' => "coordinate spawned child Orbit worker: {$workerId}",
                     ]],
                 ],
             ],
@@ -2076,7 +2216,7 @@ it('stage 2 exact identity primary identity treats a mention-only first user can
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -2100,8 +2240,8 @@ it('stage 2 exact identity primary identity treats a mention-only first user can
 });
 
 it('stage 2 exact identity primary identity prefers a standalone full owner over a mention-only candidate', function (): void {
-    $soloProcessId = 979_817;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'standalone-over-mention', soloProcessId: $soloProcessId);
+    $workerId = 'w979817';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'standalone-over-mention', workerId: $workerId);
     $slug = 'standalone-over-mention';
 
     try {
@@ -2122,7 +2262,7 @@ it('stage 2 exact identity primary identity prefers a standalone full owner over
                     'role' => 'user',
                     'content' => [[
                         'type' => 'input_text',
-                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                        'text' => "coordinate spawned child Orbit worker: {$workerId}",
                     ]],
                 ],
             ],
@@ -2133,13 +2273,13 @@ it('stage 2 exact identity primary identity prefers a standalone full owner over
                 'id' => 'standalone-full',
                 'cwd' => $fixture['cwd'],
                 'timestamp' => '2020-01-01T00:00:00Z',
-                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
             ],
         ]]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -2160,11 +2300,11 @@ it('stage 2 exact identity primary identity prefers a standalone full owner over
 });
 
 it('stage 2 exact identity primary identity treats multiple standalone identity markers as partial', function (): void {
-    $soloProcessId = 979_818;
-    $otherSoloProcessId = 979_819;
+    $workerId = 'w979818';
+    $otherWorkerId = 'w979819';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'multiple-standalone-identities',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = 'multiple-standalone-identities';
 
@@ -2176,14 +2316,14 @@ it('stage 2 exact identity primary identity treats multiple standalone identity 
                 'cwd' => $fixture['cwd'],
                 'timestamp' => '2026-07-09T10:00:00Z',
                 'base_instructions' => [
-                    'text' => "Solo process ID: {$soloProcessId}\nSolo process ID: {$otherSoloProcessId}",
+                    'text' => "Orbit worker: {$workerId}\nOrbit worker: {$otherWorkerId}",
                 ],
             ],
         ]]);
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -2207,11 +2347,11 @@ it('stage 2 exact identity primary identity treats multiple standalone identity 
 });
 
 it('R2 lane A classifies Claude and Grok ownership before cardinality with bounded truthful diagnostics', function (string $provider): void {
-    $soloProcessId = 979_920;
+    $workerId = 'w979920';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'foreign-diagnostics',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-foreign-diagnostics-{$provider}";
     $candidatePaths = [];
@@ -2225,15 +2365,15 @@ it('R2 lane A classifies Claude and Grok ownership before cardinality with bound
                 candidate: "foreign-{$index}",
                 candidateCwd: $candidateCwd,
                 candidateConfig: [
-                    'marker_solo_process_id' => $soloProcessId,
-                    'primary_solo_process_id' => $soloProcessId,
+                    'marker_worker_id' => $workerId,
+                    'primary_worker_id' => $workerId,
                 ],
             );
         }
 
         $process = run_provider_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
         $manifest = read_agent_session_archive_json(
@@ -2253,7 +2393,7 @@ it('R2 lane A classifies Claude and Grok ownership before cardinality with bound
 
         foreach ($manifest['matched_candidates'] as $candidate) {
             expect($candidate)
-                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_solo_process_id'])
+                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_worker_id'])
                 ->and($candidate['path'])
                 ->toBeIn($candidatePaths)
                 ->and($candidate['ownership_class'])
@@ -2274,8 +2414,8 @@ it('R2 lane A classifies Claude and Grok ownership before cardinality with bound
 })->with(['claude', 'grok']);
 
 it('R2 lane A records sole exact-cwd identity-less Claude and Grok candidates as partial', function (string $provider): void {
-    $soloProcessId = 979_921;
-    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'partial', soloProcessId: $soloProcessId);
+    $workerId = 'w979921';
+    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'partial', workerId: $workerId);
     $slug = "r2-partial-{$provider}";
 
     try {
@@ -2285,12 +2425,12 @@ it('R2 lane A records sole exact-cwd identity-less Claude and Grok candidates as
             candidate: 'legacy-partial',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => null,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => null,
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2312,8 +2452,8 @@ it('R2 lane A records sole exact-cwd identity-less Claude and Grok candidates as
 })->with(['claude', 'grok']);
 
 it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candidates', function (string $provider): void {
-    $soloProcessId = 979_922;
-    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'full-owner', soloProcessId: $soloProcessId);
+    $workerId = 'w979922';
+    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'full-owner', workerId: $workerId);
     $slug = "r2-full-owner-{$provider}";
 
     try {
@@ -2323,8 +2463,8 @@ it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candi
             candidate: 'partial',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => null,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => null,
             ],
         );
         write_provider_capture_candidate(
@@ -2333,8 +2473,8 @@ it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candi
             candidate: 'foreign-full',
             candidateCwd: "{$fixture['temp']}/foreign-worktree",
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
             ],
         );
         $fullOwner = write_provider_capture_candidate(
@@ -2343,12 +2483,12 @@ it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candi
             candidate: 'full-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2364,34 +2504,23 @@ it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candi
     }
 })->with(['claude', 'grok']);
 
-it('R2 lane A refuses a colliding spawned-process row when the canonical process row is absent', function (): void {
-    $soloProcessId = 979_923;
-    $temp = make_agent_session_archive_temp_dir(suffix: 'r2-spawned-collision');
+it('R2 lane A refuses capture when the worker registry entry is absent', function (): void {
+    $workerId = 'w979923';
+    $temp = make_agent_session_archive_temp_dir(suffix: 'r2-missing-worker');
     $home = "{$temp}/home";
     $cwd = "{$temp}/worktree";
     $orbitDir = "{$temp}/.orbit";
-    $soloDb = "{$temp}/solo.db";
 
     try {
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
         mkdir($orbitDir, recursive: true);
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec('CREATE TABLE processes (id INTEGER PRIMARY KEY, name TEXT)');
-        $db->exec(
-            'CREATE TABLE spawned_processes (id INTEGER PRIMARY KEY, pid INTEGER, process_name TEXT, command TEXT, project_path TEXT, spawned_at TEXT)',
-        );
-        $statement = $db->prepare(
-            'INSERT INTO spawned_processes (id, pid, process_name, command, project_path, spawned_at) VALUES (?, ?, ?, ?, ?, ?)',
-        );
-        $statement->execute([1, $soloProcessId, "colliding-{$soloProcessId}", 'codex', $cwd, '2026-07-10T12:00:00Z']);
 
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            (string) $soloProcessId,
+            $workerId,
             "--home={$home}",
             "--cwd={$cwd}",
-            "--solo-db={$soloDb}",
             "--orbit-dir={$orbitDir}",
         ], repo_path());
         $process->run();
@@ -2399,7 +2528,7 @@ it('R2 lane A refuses a colliding spawned-process row when the canonical process
         expect($process->getExitCode())
             ->toBeGreaterThan(0)
             ->and($process->getErrorOutput())
-            ->toContain('solo_process_not_found')
+            ->toContain('worker_not_found')
             ->and("{$orbitDir}/agent-sessions")
             ->not->toBeDirectory();
     } finally {
@@ -2408,18 +2537,18 @@ it('R2 lane A refuses a colliding spawned-process row when the canonical process
 });
 
 it('R2 lane A reports unknown lane-close and fallback commands as unsupported', function (): void {
-    $soloProcessId = 979_924;
+    $workerId = 'w979924';
     $sensitiveCommand = 'mystery-agent --token=super-secret --prompt=private-data';
     $sensitiveFragments = ['mystery-agent', '--token', 'super-secret', '--prompt', 'private-data'];
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'r2-unsupported',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         command: $sensitiveCommand,
     );
     $slug = 'r2-unsupported-command';
 
     try {
-        $capture = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $capture = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $captureManifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/unknown/{$slug}/manifest.json",
         );
@@ -2446,7 +2575,7 @@ it('R2 lane A reports unknown lane-close and fallback commands as unsupported', 
         $processesPath = "{$fixture['temp']}/processes.json";
         $archiveDir = "{$fixture['temp']}/archive";
         file_put_contents($processesPath, json_encode([[
-            'id' => $soloProcessId,
+            'id' => $workerId,
             'name' => 'mystery-worker',
             'kind' => 'agent',
             'command' => $sensitiveCommand,
@@ -2479,7 +2608,7 @@ it('R2 lane A reports unknown lane-close and fallback commands as unsupported', 
             ]);
 
         $fallbackManifest = read_agent_session_archive_json(
-            path: "{$archiveDir}/unknown/mystery-worker-{$soloProcessId}/manifest.json",
+            path: "{$archiveDir}/unknown/mystery-worker-{$workerId}/manifest.json",
         );
 
         expect($fallbackManifest)->toMatchArray([
@@ -2489,7 +2618,7 @@ it('R2 lane A reports unknown lane-close and fallback commands as unsupported', 
         ]);
 
         $fallbackProviderManifestJson = (string) file_get_contents(
-            "{$archiveDir}/unknown/mystery-worker-{$soloProcessId}/manifest.json",
+            "{$archiveDir}/unknown/mystery-worker-{$workerId}/manifest.json",
         );
         $fallbackArchiveManifestJson = (string) file_get_contents("{$archiveDir}/manifest.json");
 
@@ -2506,24 +2635,24 @@ it('R2 lane A reports unknown lane-close and fallback commands as unsupported', 
 });
 
 it('R2 lane A rejects required provider artifact symlinks without materializing external bytes', function (string $provider): void {
-    $soloProcessId = 979_925;
+    $workerId = 'w979925';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'required-symlink',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-required-symlink-{$provider}";
     $external = "{$fixture['temp']}/external-required-{$provider}";
 
     try {
-        file_put_contents($external, "external-secret-{$provider}\nSolo process ID: {$soloProcessId}\n");
+        file_put_contents($external, "external-secret-{$provider}\nOrbit worker: {$workerId}\n");
         $symlink = write_provider_required_artifact_symlink(
             fixture: $fixture,
             provider: $provider,
             source: $external,
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2544,11 +2673,11 @@ it('R2 lane A rejects required provider artifact symlinks without materializing 
 })->with(['claude', 'grok']);
 
 it('R2 review2 rejects symlinked provider ancestors below canonical home', function (string $provider): void {
-    $soloProcessId = 979_940;
+    $workerId = 'w979940';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'provider-ancestor-symlink',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review2-provider-ancestor-{$provider}";
     $externalHome = "{$fixture['temp']}/external-home";
@@ -2566,7 +2695,7 @@ it('R2 review2 rejects symlinked provider ancestors below canonical home', funct
             write_incarnation_floor_rollout(
                 fixture: $externalFixture,
                 rolloutId: 'external-provider-owner',
-                soloProcessId: $soloProcessId,
+                workerId: $workerId,
                 activityRows: [],
             );
         } else {
@@ -2576,8 +2705,8 @@ it('R2 review2 rejects symlinked provider ancestors below canonical home', funct
                 candidate: 'external-provider-owner',
                 candidateCwd: $fixture['cwd'],
                 candidateConfig: [
-                    'marker_solo_process_id' => $soloProcessId,
-                    'primary_solo_process_id' => $soloProcessId,
+                    'marker_worker_id' => $workerId,
+                    'primary_worker_id' => $workerId,
                 ],
             );
         }
@@ -2587,7 +2716,7 @@ it('R2 review2 rejects symlinked provider ancestors below canonical home', funct
         expect($remove->getExitCode())->toBe(0, $remove->getErrorOutput());
         symlink($externalProviderAncestor, $providerAncestor);
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2608,11 +2737,11 @@ it('R2 review2 rejects symlinked provider ancestors below canonical home', funct
 })->with(['codex', 'claude', 'grok']);
 
 it('R2 lane A omits optional Grok artifact symlinks and names them in manifest diagnostics', function (): void {
-    $soloProcessId = 979_926;
+    $workerId = 'w979926';
     $fixture = make_provider_capture_fixture(
         provider: 'grok',
         suffix: 'optional-symlink',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = 'r2-optional-symlink-grok';
 
@@ -2623,15 +2752,15 @@ it('R2 lane A omits optional Grok artifact symlinks and names them in manifest d
             candidate: 'full-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
             ],
         );
         $external = "{$fixture['temp']}/external-terminal.log";
         file_put_contents($external, "external-terminal-secret\n");
         symlink($external, "{$sessionDir}/terminal.log");
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
         );
@@ -2647,26 +2776,29 @@ it('R2 lane A omits optional Grok artifact symlinks and names them in manifest d
     }
 });
 
-it('R2 review keeps a nonempty unresolvable Solo row cwd authoritative', function (string $provider): void {
-    $soloProcessId = 979_930;
+it('R2 review keeps a nonempty unresolvable worker cwd authoritative', function (string $provider): void {
+    $workerId = 'w979930';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'row-cwd-authority',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review-row-cwd-{$provider}";
     $rowCwd = "{$fixture['temp']}/nonexistent-row-worktree";
 
     try {
-        $db = new PDO('sqlite:'.$fixture['solo_db']);
-        $statement = $db->prepare('UPDATE processes SET working_dir = ? WHERE id = ?');
-        $statement->execute([$rowCwd, $soloProcessId]);
+        write_worker_registry_entry(
+            worktree: $fixture['cwd'],
+            workerId: $workerId,
+            command: $provider,
+            options: ['workingDir' => $rowCwd],
+        );
 
         if ($provider === 'codex') {
             write_incarnation_floor_rollout(
                 fixture: $fixture,
                 rolloutId: 'row-cwd-authority',
-                soloProcessId: $soloProcessId,
+                workerId: $workerId,
                 activityRows: [],
             );
         } else {
@@ -2676,13 +2808,13 @@ it('R2 review keeps a nonempty unresolvable Solo row cwd authoritative', functio
                 candidate: 'caller-cwd-owner',
                 candidateCwd: $fixture['cwd'],
                 candidateConfig: [
-                    'marker_solo_process_id' => $soloProcessId,
-                    'primary_solo_process_id' => $soloProcessId,
+                    'marker_worker_id' => $workerId,
+                    'primary_worker_id' => $workerId,
                 ],
             );
         }
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2701,23 +2833,26 @@ it('R2 review keeps a nonempty unresolvable Solo row cwd authoritative', functio
     }
 })->with(['codex', 'claude', 'grok']);
 
-it('R2 review uses caller cwd only when the Solo row cwd is empty', function (): void {
-    $soloProcessId = 979_931;
-    $fixture = make_provider_capture_fixture(provider: 'codex', suffix: 'empty-row-cwd', soloProcessId: $soloProcessId);
+it('R2 review uses caller cwd only when the worker cwd is empty', function (): void {
+    $workerId = 'w979931';
+    $fixture = make_provider_capture_fixture(provider: 'codex', suffix: 'empty-row-cwd', workerId: $workerId);
     $slug = 'r2-review-empty-row-cwd';
 
     try {
-        $db = new PDO('sqlite:'.$fixture['solo_db']);
-        $statement = $db->prepare('UPDATE processes SET working_dir = ? WHERE id = ?');
-        $statement->execute(['', $soloProcessId]);
+        write_worker_registry_entry(
+            worktree: $fixture['cwd'],
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => ''],
+        );
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'empty-row-cwd',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
         );
@@ -2732,11 +2867,11 @@ it('R2 review uses caller cwd only when the Solo row cwd is empty', function ():
 });
 
 it('R2 review accepts agreeing real provider cwd shapes', function (string $provider): void {
-    $soloProcessId = 979_932;
+    $workerId = 'w979932';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'cwd-agreement',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review-cwd-agreement-{$provider}";
 
@@ -2747,12 +2882,12 @@ it('R2 review accepts agreeing real provider cwd shapes', function (string $prov
             candidate: 'agreeing-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2767,11 +2902,11 @@ it('R2 review accepts agreeing real provider cwd shapes', function (string $prov
 })->with(['claude', 'grok']);
 
 it('R2 review accepts an exact provider root when the provider cwd field is absent', function (string $provider): void {
-    $soloProcessId = 979_933;
+    $workerId = 'w979933';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'root-only-cwd',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review-root-only-cwd-{$provider}";
 
@@ -2782,13 +2917,13 @@ it('R2 review accepts an exact provider root when the provider cwd field is abse
             candidate: 'root-only-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
                 'context_cwd' => null,
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2806,11 +2941,11 @@ it('R2 review rejects disagreement between provider root and provider cwd contex
     string $provider,
     string $direction,
 ): void {
-    $soloProcessId = 979_934;
+    $workerId = 'w979934';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'cwd-disagreement',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review-cwd-disagreement-{$provider}";
     $foreignCwd = "{$fixture['temp']}/foreign-provider-root";
@@ -2822,14 +2957,14 @@ it('R2 review rejects disagreement between provider root and provider cwd contex
             candidate: 'disagreeing-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
                 'structural_cwd' => $direction === 'foreign-structural' ? $foreignCwd : $fixture['cwd'],
                 'context_cwd' => $direction === 'foreign-context' ? $foreignCwd : $fixture['cwd'],
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2852,8 +2987,8 @@ it('R2 review rejects disagreement between provider root and provider cwd contex
 ]);
 
 it('R2 review accepts the legacy Grok cwd prompt-context key when it agrees with the root', function (): void {
-    $soloProcessId = 979_937;
-    $fixture = make_provider_capture_fixture(provider: 'grok', suffix: 'legacy-cwd-key', soloProcessId: $soloProcessId);
+    $workerId = 'w979937';
+    $fixture = make_provider_capture_fixture(provider: 'grok', suffix: 'legacy-cwd-key', workerId: $workerId);
     $slug = 'r2-review-grok-legacy-cwd-key';
 
     try {
@@ -2863,13 +2998,13 @@ it('R2 review accepts the legacy Grok cwd prompt-context key when it agrees with
             candidate: 'legacy-cwd-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
                 'context_key' => 'cwd',
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
         );
@@ -2884,18 +3019,18 @@ it('R2 review accepts the legacy Grok cwd prompt-context key when it agrees with
 });
 
 it('R2 review ignores foreign-root provider symlinks when an exact regular full owner exists', function (string $provider): void {
-    $soloProcessId = 979_935;
+    $workerId = 'w979935';
     $fixture = make_provider_capture_fixture(
         provider: $provider,
         suffix: 'foreign-symlink',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "r2-review-foreign-symlink-{$provider}";
     $foreignCwd = "{$fixture['temp']}/foreign-provider-root";
     $external = "{$fixture['temp']}/external-foreign-symlink-{$provider}";
 
     try {
-        file_put_contents($external, "external-secret-{$provider}\nSolo process ID: {$soloProcessId}\n");
+        file_put_contents($external, "external-secret-{$provider}\nOrbit worker: {$workerId}\n");
         write_provider_required_artifact_symlink(
             fixture: $fixture,
             provider: $provider,
@@ -2908,12 +3043,12 @@ it('R2 review ignores foreign-root provider symlinks when an exact regular full 
             candidate: 'exact-regular-owner',
             candidateCwd: $fixture['cwd'],
             candidateConfig: [
-                'marker_solo_process_id' => $soloProcessId,
-                'primary_solo_process_id' => $soloProcessId,
+                'marker_worker_id' => $workerId,
+                'primary_worker_id' => $workerId,
             ],
         );
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
         );
@@ -2930,11 +3065,11 @@ it('R2 review ignores foreign-root provider symlinks when an exact regular full 
 })->with(['claude', 'grok']);
 
 it('R2 review keeps Codex required-artifact symlinks globally fail-closed', function (): void {
-    $soloProcessId = 979_936;
+    $workerId = 'w979936';
     $fixture = make_provider_capture_fixture(
         provider: 'codex',
         suffix: 'global-symlink',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = 'r2-review-codex-global-symlink';
     $external = "{$fixture['temp']}/external-codex-symlink";
@@ -2943,13 +3078,13 @@ it('R2 review keeps Codex required-artifact symlinks globally fail-closed', func
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'valid-regular-owner',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [],
         );
-        file_put_contents($external, "external-secret-codex\nSolo process ID: {$soloProcessId}\n");
+        file_put_contents($external, "external-secret-codex\nOrbit worker: {$workerId}\n");
         symlink($external, "{$fixture['codex_dir']}/foreign-history.jsonl");
 
-        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
         );
@@ -2972,7 +3107,7 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
         $home = "{$temp}/home";
         $cwd = "{$temp}/worktree";
         $orbitDir = "{$temp}/.orbit";
-        $soloProcessId = 777777; // child id
+        $workerId = 'w777777'; // child id
 
         mkdir($home, recursive: true);
         mkdir($cwd, recursive: true);
@@ -2982,13 +3117,13 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
         mkdir($codexDir, recursive: true);
 
         // Child's actual session rollout with marker in base_instructions
-        write_jsonl("{$codexDir}/rollout-child-{$soloProcessId}.jsonl", [[
+        write_jsonl("{$codexDir}/rollout-child-{$workerId}.jsonl", [[
             'type' => 'session_meta',
             'payload' => [
                 'id' => 'child-session',
                 'cwd' => $cwd,
                 'timestamp' => '2026-07-07T12:00:00Z',
-                'base_instructions' => ['text' => "Child prompt\nSolo process ID: {$soloProcessId}"],
+                'base_instructions' => ['text' => "Child prompt\nOrbit worker: {$workerId}"],
             ],
         ]]);
 
@@ -2998,28 +3133,24 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
             'payload' => [
                 'type' => 'message',
                 'role' => 'assistant',
-                'content' => [['type' => 'output_text', 'text' => "spawned child Solo process ID: {$soloProcessId}"]],
+                'content' => [['type' => 'output_text', 'text' => "spawned child Orbit worker: {$workerId}"]],
             ],
         ]]);
 
-        $soloDb = "{$temp}/solo.db";
-        $db = new PDO('sqlite:'.$soloDb);
-        $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
         );
-        $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
-        );
-        $stmt->execute([$soloProcessId, 'child-worker', 'codex', $cwd, 'agent']);
 
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            (string) $soloProcessId,
+            (string) $workerId,
             "--home={$home}",
             "--cwd={$cwd}",
-            "--solo-db={$soloDb}",
             "--orbit-dir={$orbitDir}",
-            "--slug=child-exact-{$soloProcessId}",
+            "--slug=child-exact-{$workerId}",
         ], repo_path());
 
         $process->run();
@@ -3030,9 +3161,9 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
             ->and($process->getOutput())
             ->not->toContain('ambiguous');
 
-        $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$soloProcessId}/manifest.json";
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$workerId}/manifest.json";
         $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
-        expect($manifest['status'])->toBe('ok')->and($manifest['solo_process_id'])->toBe($soloProcessId);
+        expect($manifest['status'])->toBe('ok')->and($manifest['worker_id'])->toBe($workerId);
     } finally {
         remove_agent_session_archive_temp_dir(path: $temp);
     }
@@ -3047,7 +3178,7 @@ it(
             $home = "{$temp}/home";
             $cwd = "{$temp}/worktree";
             $orbitDir = "{$temp}/.orbit";
-            $soloProcessId = 888888;
+            $workerId = 'w888888';
 
             mkdir($home, recursive: true);
             mkdir($cwd, recursive: true);
@@ -3063,7 +3194,7 @@ it(
                     'id' => 'stale',
                     'cwd' => '/wrong/old/cwd',
                     'timestamp' => '2020-01-01T00:00:00Z',
-                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
                 ],
             ]]);
 
@@ -3074,42 +3205,31 @@ it(
                     'id' => 'resumed',
                     'cwd' => $cwd,
                     'timestamp' => '2026-07-07T13:00:00Z',
-                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
                 ],
             ]]);
 
-            $soloDb = "{$temp}/solo.db";
-            $db = new PDO('sqlite:'.$soloDb);
-            $db->exec(
-                'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+            write_worker_registry_entry(
+                worktree: $cwd,
+                workerId: $workerId,
+                command: 'codex',
+                options: ['workingDir' => $cwd],
             );
-            $stmt = $db->prepare(
-                'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
-            );
-            $stmt->execute([
-                $soloProcessId,
-                'edge-worker',
-                'codex',
-                $cwd,
-                'agent',
-                '2026-07-07T12:59:55Z',
-            ]);
 
             $process = new Process([
                 repo_path('bin/orbit-agent-session-capture'),
-                (string) $soloProcessId,
+                (string) $workerId,
                 "--home={$home}",
                 "--cwd={$cwd}",
-                "--solo-db={$soloDb}",
                 "--orbit-dir={$orbitDir}",
-                "--slug=edge-{$soloProcessId}",
+                "--slug=edge-{$workerId}",
             ], repo_path());
 
             $process->run();
 
             expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
 
-            $manifestPath = "{$orbitDir}/agent-sessions/codex/edge-{$soloProcessId}/manifest.json";
+            $manifestPath = "{$orbitDir}/agent-sessions/codex/edge-{$workerId}/manifest.json";
             $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
 
             expect($manifest['status'])
@@ -3131,10 +3251,9 @@ it('rejects malformed caller-attested incarnation floors before capture staging'
     try {
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            '979797',
+            'w979797',
             "--home={$temp}/home",
             "--cwd={$temp}/worktree",
-            "--solo-db={$temp}/missing-solo.db",
             "--orbit-dir={$orbitDir}",
             '--incarnation-started-at=2026-07-09 10:00:00',
         ], repo_path());
@@ -3154,10 +3273,10 @@ it('rejects malformed caller-attested incarnation floors before capture staging'
 });
 
 it('rejects caller-attested incarnation floors for Grok before staging mutation', function (): void {
-    $soloProcessId = 979_799;
+    $workerId = 'w979799';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'grok',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         command: 'grok',
     );
     $slug = 'incarnation-floor-grok';
@@ -3167,14 +3286,14 @@ it('rejects caller-attested incarnation floors for Grok before staging mutation'
         write_grok_fixture(
             home: $fixture['home'],
             cwd: $fixture['cwd'],
-            marker: "Solo process ID: {$soloProcessId}",
+            marker: "Orbit worker: {$workerId}",
         );
         mkdir($stagingDir, recursive: true);
         file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
             incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
@@ -3195,10 +3314,10 @@ it('rejects caller-attested incarnation floors for Grok before staging mutation'
 });
 
 it('rejects caller-attested incarnation floors for Claude before staging mutation', function (): void {
-    $soloProcessId = 979_804;
+    $workerId = 'w979804';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'claude',
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
         command: 'claude',
     );
     $slug = 'incarnation-floor-claude';
@@ -3208,14 +3327,14 @@ it('rejects caller-attested incarnation floors for Claude before staging mutatio
         write_claude_project_dir_fixture(
             home: $fixture['home'],
             cwd: $fixture['cwd'],
-            marker: "Solo process ID: {$soloProcessId}",
+            marker: "Orbit worker: {$workerId}",
         );
         mkdir($stagingDir, recursive: true);
         file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
             incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
@@ -3238,8 +3357,8 @@ it('rejects caller-attested incarnation floors for Claude before staging mutatio
 it(
     'rejects Codex sessions without caller-attested incarnation activity at the floor',
     function (array $activityRows, ?string $expectedLastActivityAt, string $suffix): void {
-        $soloProcessId = 979_800;
-        $fixture = make_incarnation_floor_capture_fixture(suffix: $suffix, soloProcessId: $soloProcessId);
+        $workerId = 'w979800';
+        $fixture = make_incarnation_floor_capture_fixture(suffix: $suffix, workerId: $workerId);
         $slug = "incarnation-floor-stale-{$suffix}";
         $floor = '2026-07-09T10:10:00Z';
         $rolloutId = "stale-{$suffix}";
@@ -3248,14 +3367,14 @@ it(
             write_incarnation_floor_rollout(
                 fixture: $fixture,
                 rolloutId: $rolloutId,
-                soloProcessId: $soloProcessId,
+                workerId: $workerId,
                 activityRows: $activityRows,
                 sessionMetaTimestamp: '2026-07-09T10:30:00Z',
             );
 
             $process = run_incarnation_floor_capture(
                 fixture: $fixture,
-                soloProcessId: $soloProcessId,
+                workerId: $workerId,
                 slug: $slug,
                 incarnationStartedAt: $floor,
             );
@@ -3326,8 +3445,8 @@ it(
 ]);
 
 it('accepts a unique Codex session with caller-attested incarnation activity at or after the floor', function (): void {
-    $soloProcessId = 979_801;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'fresh', soloProcessId: $soloProcessId);
+    $workerId = 'w979801';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'fresh', workerId: $workerId);
     $slug = 'incarnation-floor-fresh';
     $floor = '2026-07-09T10:10:00Z';
     $rolloutId = 'fresh-rollout';
@@ -3336,7 +3455,7 @@ it('accepts a unique Codex session with caller-attested incarnation activity at 
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: $rolloutId,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [
                 [
                     'timestamp' => '2026-07-09T10:09:00Z',
@@ -3353,7 +3472,7 @@ it('accepts a unique Codex session with caller-attested incarnation activity at 
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
             incarnationStartedAt: $floor,
         );
@@ -3378,21 +3497,21 @@ it('accepts a unique Codex session with caller-attested incarnation activity at 
 });
 
 it('preserves lane-close capture output and manifest shape when no incarnation floor is supplied', function (): void {
-    $soloProcessId = 979_802;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy', soloProcessId: $soloProcessId);
+    $workerId = 'w979802';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy', workerId: $workerId);
     $slug = 'incarnation-floor-legacy';
 
     try {
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'legacy-rollout',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [],
         );
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -3400,7 +3519,7 @@ it('preserves lane-close capture output and manifest shape when no incarnation f
             json_encode([
                 'status' => 'ok',
                 'provider' => 'codex',
-                'solo_process_id' => $soloProcessId,
+                'worker_id' => $workerId,
                 'slug' => $slug,
                 'started_at' => '2026-07-09T09:00:00Z',
                 'staging_dir' => "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}",
@@ -3426,8 +3545,8 @@ it('preserves lane-close capture output and manifest shape when no incarnation f
 });
 
 it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is supplied', function (): void {
-    $soloProcessId = 979_803;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'duplicate', soloProcessId: $soloProcessId);
+    $workerId = 'w979803';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'duplicate', workerId: $workerId);
     $slug = 'incarnation-floor-duplicate';
 
     try {
@@ -3438,7 +3557,7 @@ it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is 
             write_incarnation_floor_rollout(
                 fixture: $fixture,
                 rolloutId: $rolloutId,
-                soloProcessId: $soloProcessId,
+                workerId: $workerId,
                 activityRows: [[
                     'timestamp' => $timestamp,
                     'type' => 'event_msg',
@@ -3449,7 +3568,7 @@ it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is 
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
             incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
@@ -3481,10 +3600,9 @@ it('stage 3 staging replacement rejects invalid explicit slugs before DB access 
     try {
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            '979901',
+            'w979901',
             "--home={$temp}/home",
             "--cwd={$temp}/worktree",
-            "--solo-db={$temp}/missing-solo.db",
             "--orbit-dir={$orbitDir}",
             "--slug={$slugArgument}",
         ], repo_path());
@@ -3512,8 +3630,8 @@ it('stage 3 staging replacement rejects invalid explicit slugs before DB access 
 ]);
 
 it('stage 3 staging replacement replaces same-slug success with only new coherent artifacts', function (): void {
-    $soloProcessId = 979_902;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-success', soloProcessId: $soloProcessId);
+    $workerId = 'w979902';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-success', workerId: $workerId);
     $slug = 'stage-3-success-success';
     $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
     $finalDir = "{$providerRoot}/{$slug}";
@@ -3522,7 +3640,7 @@ it('stage 3 staging replacement replaces same-slug success with only new coheren
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'first-success',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [[
                 'type' => 'response_item',
                 'payload' => [
@@ -3535,7 +3653,7 @@ it('stage 3 staging replacement replaces same-slug success with only new coheren
 
         $first = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -3545,7 +3663,7 @@ it('stage 3 staging replacement replaces same-slug success with only new coheren
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'second-success',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [[
                 'type' => 'response_item',
                 'payload' => [
@@ -3558,7 +3676,7 @@ it('stage 3 staging replacement replaces same-slug success with only new coheren
 
         $second = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -3586,8 +3704,8 @@ it('stage 3 staging replacement replaces same-slug success with only new coheren
 });
 
 it('stage 3 staging replacement replaces same-slug success with one coherent failure capture', function (): void {
-    $soloProcessId = 979_903;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-failure', soloProcessId: $soloProcessId);
+    $workerId = 'w979903';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-failure', workerId: $workerId);
     $slug = 'stage-3-success-failure';
     $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
     $finalDir = "{$providerRoot}/{$slug}";
@@ -3596,7 +3714,7 @@ it('stage 3 staging replacement replaces same-slug success with one coherent fai
         write_incarnation_floor_rollout(
             fixture: $fixture,
             rolloutId: 'success-before-failure',
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             activityRows: [[
                 'type' => 'response_item',
                 'payload' => [
@@ -3609,7 +3727,7 @@ it('stage 3 staging replacement replaces same-slug success with one coherent fai
 
         $success = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -3619,7 +3737,7 @@ it('stage 3 staging replacement replaces same-slug success with one coherent fai
 
         $failure = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
 
@@ -3650,12 +3768,12 @@ it('stage 3 staging replacement replaces same-slug success with one coherent fai
                 'provider' => 'codex',
                 'status' => 'missing',
                 'slug' => $slug,
-                'solo_process_id' => $soloProcessId,
+                'worker_id' => $workerId,
                 'kind' => 'agent',
                 'started_at' => '2026-07-09T09:00:00Z',
                 'reason' => 'exact_marker_not_found',
                 'checked' => [],
-                'marker' => "Solo process ID: {$soloProcessId}",
+                'marker' => "Orbit worker: {$workerId}",
             ]);
     } finally {
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
@@ -3825,10 +3943,9 @@ it('review corrections reject invalid explicit providers before DB access or sta
     try {
         $process = new Process([
             repo_path('bin/orbit-agent-session-capture'),
-            '979911',
+            'w979911',
             "--home={$temp}/home",
             "--cwd={$temp}/worktree",
-            "--solo-db={$temp}/missing-solo.db",
             "--orbit-dir={$orbitDir}",
             "--provider={$provider}",
         ], repo_path());
@@ -3850,8 +3967,8 @@ it('review corrections reject invalid explicit providers before DB access or sta
 ]);
 
 it('review corrections reject a symlinked provider directory without touching its target', function (): void {
-    $soloProcessId = 979_912;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-provider-symlink', soloProcessId: $soloProcessId);
+    $workerId = 'w979912';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-provider-symlink', workerId: $workerId);
     $agentSessionsRoot = "{$fixture['orbit_dir']}/agent-sessions";
     $external = "{$fixture['temp']}/external-provider";
     $sentinel = "{$external}/sentinel.txt";
@@ -3864,7 +3981,7 @@ it('review corrections reject a symlinked provider directory without touching it
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: 'review-provider-symlink',
         );
 
@@ -3882,8 +3999,8 @@ it('review corrections reject a symlinked provider directory without touching it
 });
 
 it('review corrections reject a symlinked agent sessions root without touching its target', function (): void {
-    $soloProcessId = 979_913;
-    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-root-symlink', soloProcessId: $soloProcessId);
+    $workerId = 'w979913';
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-root-symlink', workerId: $workerId);
     $external = "{$fixture['temp']}/external-agent-sessions";
     $sentinel = "{$external}/sentinel.txt";
 
@@ -3894,7 +4011,7 @@ it('review corrections reject a symlinked agent sessions root without touching i
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: 'review-root-symlink',
         );
 
@@ -4187,10 +4304,10 @@ it('root review rejects and unlinks a temp symlink without touching its target',
 });
 
 it('review corrections expose bounded actual Codex ownership diagnostics while retaining checked', function (string $scenario): void {
-    $soloProcessId = 979_914;
+    $workerId = 'w979914';
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: "review-diagnostics-{$scenario}",
-        soloProcessId: $soloProcessId,
+        workerId: $workerId,
     );
     $slug = "review-diagnostics-{$scenario}";
 
@@ -4217,14 +4334,14 @@ it('review corrections expose bounded actual Codex ownership diagnostics while r
                 'payload' => [
                     'id' => $rolloutId,
                     'cwd' => $candidateCwd,
-                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                    'base_instructions' => ['text' => "Orbit worker: {$workerId}"],
                 ],
             ]]);
         }
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
-            soloProcessId: $soloProcessId,
+            workerId: $workerId,
             slug: $slug,
         );
         $manifest = read_agent_session_archive_json(
@@ -4248,7 +4365,7 @@ it('review corrections expose bounded actual Codex ownership diagnostics while r
 
         foreach ($manifest['matched_candidates'] as $candidate) {
             expect($candidate)
-                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_solo_process_id'])
+                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_worker_id'])
                 ->and($candidate['path'])
                 ->toBeIn($candidatePaths);
         }

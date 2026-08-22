@@ -56,8 +56,8 @@ Load only what the task needs:
 
 7. Write artifacts.
    - Produce an `eval-suite` plus one or more `eval-case` artifacts using `../_orbit-eval-references/eval-artifact-schema.md`.
-   - Store in Solo scratchpads during iteration. Move validated eval fixtures into the repo only when the user asks for durable fixtures or regression coverage.
-   - Record scratchpad name and id in the conversation when creating or updating eval artifacts.
+   - Store in files under `~/shared-knowledge/projects/orbit/evals/` during iteration. Move validated eval fixtures into the repo only when the user asks for durable fixtures or regression coverage.
+   - Record the file path in the conversation when creating or updating eval artifacts.
 
 ## Output Contract
 

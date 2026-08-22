@@ -7,10 +7,8 @@ description: Use when implementing an Orbit feature, bug fix, command behavior c
 
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
 `HARNESS.md` is the canonical loop contract; this skill is the compact route.
-Open only the section for current state.
-Desktop Codex is the sole feature owner.
-Use the existing main Orbit Solo project.
-Never create or register a Solo project for a feature worktree.
+The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
+Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.
 
 ## Non-Negotiable Boundaries
 
@@ -42,16 +40,11 @@ Never create or register a Solo project for a feature worktree.
 ## BUILD
 
 Start with failing coverage in the owning framework; capture red, make the
-smallest change, rerun. Load owning skills: commands `command-designer` +
-`orbit-cli-development`; Laravel/PHP Spatie + Pest; shared contracts
-`orbit-core-development` / `orbit-sdk-development`; docs `librarian` +
-`orbit-docs-development`;
-macOS Agent: `tauri-agent-development`.
+smallest change, rerun. Load owning skills. macOS Agent: `tauri-agent-development`.
 
-Dispatch substantive repository edits to Grok through Solo with no model
-override and `['--cwd', '<exact-feature-worktree>']`. Give exact owned paths
-and checks. Do not substitute a Codex subagent or direct Codex implementation.
-Missing Solo or Grok is a blocker.
+Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
+Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
+Missing tmux, grok, or claude on the machine is a blocker.
 
 ## PROVE
 
@@ -72,13 +65,10 @@ resets them.
 
 After focused checks pass, commit the candidate and confirm the worktree is
 clean.
-Spawn one fresh read-only Claude general reviewer in the main project with
-`claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
-First prompt: change active cwd to exact worktree before persona identity
-commands; require proof. The same general reviewer owns blast radius, ESCALATE,
-and terminal PASS or FIX. FIX resets Review, reviewed tip, and Blast radius;
-return to Grok BUILD, prove, commit, then spawn fresh Claude Opus.
-Missing Solo or Claude is a blocker.
+Spawn one fresh read-only Claude general reviewer per reviewed tip with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
+The same general reviewer owns blast radius, ESCALATE, and terminal PASS or FIX.
+FIX resets Review, reviewed tip, and Blast radius; return to Grok BUILD, prove,
+commit, then spawn fresh Claude Opus.
 On PASS record the exact reviewed HEAD and
 `human-judgment=required|not-required`.
 
@@ -92,13 +82,12 @@ repository tooling under `bin/`) still require the diff-routed
 
 Run every deterministic acceptance command yourself. Do not hand the user a
 mechanical command checklist; human acceptance covers only remaining judgment.
-For retained Incus, use one agent-owned Solo terminal at
-`/home/orbit/orbit-run`. Keep it open for the user only when
-`HUMAN_JUDGMENT: required`. On `actor=automated`, run
+CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
+On `actor=automated`, run
 `bin/orbit-feature-acceptance accept --loop=.orbit/loop.md --actor=automated`.
 Do not send an acceptance handoff when the actor is automated. On
 `actor=user`, prepare the experience, send one handoff, and record the
-verbatim acceptance with `--actor=user --source-ref=<codex-or-solo-ref>`.
+verbatim acceptance with `--actor=user --source-ref=<codex-or-claude-ref>`.
 
 On feedback, use `bin/orbit-feature-feedback record`, invalidate acceptance,
 return to BUILD, and repeat affected proof and review. Main movement requires
@@ -107,15 +96,10 @@ Never solicit a waiver; record only a user-volunteered one.
 
 ## LAND
 
-Prefer the resumable coordinator from primary `main`:
-`bin/orbit-feature-land --branch=<feature> --worktree=<exact-feature-worktree>
---solo-project-id=<main-orbit-project-id>` (`--status`/`--plan`/`--one-step`
-inspect or resume). Manual LAND follows `HARNESS.md` LAND exactly: lint the
-packet with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`,
-validate every destructive mutation via the same check on `<exact command>`;
-execute only after `FINALIZATION: PASS`, then run the now-landed compact
-`bin/orbit-session-archive` from the feature worktree (never cwd main;
-`--full` only for failure/escalation/security/release scope) and commit the
-archive/index, remove the worktree and branch, and preserve the main Solo
-project and unrelated processes. Report outcome, proof, review, accepted tips,
-archive, and blockers.
+Prefer `bin/orbit-feature-land --branch=<feature> --worktree=<exact-feature-worktree>`
+(`--status`/`--plan`/`--one-step` inspect or resume). Manual LAND follows
+`HARNESS.md` LAND: lint with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`,
+validate each destructive mutation on `<exact command>`, execute after
+`FINALIZATION: PASS`, then compact `bin/orbit-session-archive` from the feature
+worktree (never cwd main; `--full` only for failure/escalation/security/release
+scope). Commit archive/index, kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch. Preserve unrelated tmux sessions and files. Report outcome, proof, review, accepted tips, archive, and blockers.

@@ -3,7 +3,7 @@
 This persona is retired historical evidence from the signal-ledger era. Do not
 spawn it during ordinary feature delivery and do not treat it as an active
 review lane; clean loops create no analyzer lane. Its claims — including the
-"Solo Role Matrix" and the `harness-signals/` inputs it requires — describe
+then-named role matrix and the `harness-signals/` inputs it requires — describe
 the harness at the time they were written; current workflow authority is
 `HARNESS.md`.
 
@@ -37,7 +37,7 @@ already gathered.
 Use this analyzer after an Orbit feature implementation has produced evidence.
 It replaces the outer loop-improver watcher for normal feature work: the
 feature implementer runs the feature loop, then this analyzer reviews the
-completed loop from the orchestrator/Solo session messages and worktree artifacts.
+completed loop from the orchestrator session messages and worktree artifacts.
 
 This is a read-only analyzer persona. It must not steer live work, implement
 fixes, edit harness files, create `harness-signals/` records, approve merge,
@@ -46,7 +46,7 @@ or human uses the report to decide the next action.
 
 ## Default Agent
 
-Spawn per the Solo Role Matrix in HARNESS.md. The agent selection does not
+Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. The agent selection does not
 relax the read-only boundary above: the analyzer analyzes and reports; it does
 not implement, approve merge, or run cleanup.
 
@@ -56,7 +56,7 @@ The prompt should provide as many of these pointers as exist:
 
 - Feature objective, acceptance criteria, and explicit deferrals.
 - Orchestrator thread id or transcript path.
-- Solo worker, reviewer, retained terminal, and scratchpad links.
+- Worker, reviewer, retained terminal, and handoff links.
 - Feature worktree path, branch, final diff, commit, or merge commit.
 - `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and persisted
   `.orbit/sessions/` archive pointers when present.
@@ -84,7 +84,7 @@ Read only the materials needed to analyze the completed feature loop:
 - Orchestrator session messages for the orchestrator thread, limited to the feature
   implementation turns needed to reconstruct decisions, corrections, claimed
   evidence, and final status
-- Solo scratchpads, worker reports, reviewer reports, retained terminal
+- Worker reports, reviewer reports, retained terminal
   summaries, PTY summaries, quality-gate reports, and human corrections named
   by the packet or session
 - Existing `harness-signals/` records matching concrete terms from mistakes,

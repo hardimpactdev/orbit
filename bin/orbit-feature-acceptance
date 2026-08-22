@@ -215,7 +215,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         $raw = rtrim((string) stream_get_contents(STDIN), "\r\n");
 
         if (! orbitFeedbackSourceRefIsValid($sourceRef)) {
-            throw new RuntimeException('user acceptance requires a safe Codex or Solo source reference');
+            throw new RuntimeException('user acceptance requires a safe Codex or Claude source reference');
         }
 
         if ($raw === '') {

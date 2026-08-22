@@ -1,0 +1,156 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_WATCH_USAGE = 'Usage: bin/orbit-worker-watch [--interval=30] [--stale=900] [--timeout=<seconds>] [--ignore=<id,id>]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+
+    if ($parsed['positional'] !== []) {
+        throw new RuntimeException(ORBIT_WORKER_WATCH_USAGE);
+    }
+
+    $intervalRaw = orbit_worker_option_string($parsed['options'], 'interval', '30') ?? '30';
+    $staleRaw = orbit_worker_option_string($parsed['options'], 'stale', '900') ?? '900';
+    $timeoutRaw = orbit_worker_option_string($parsed['options'], 'timeout');
+    $ignoreRaw = orbit_worker_option_string($parsed['options'], 'ignore', '') ?? '';
+
+    if (! preg_match('/^[1-9]\d*$/', $intervalRaw) || ! preg_match('/^[1-9]\d*$/', $staleRaw)) {
+        throw new RuntimeException('--interval and --stale must be positive integers');
+    }
+
+    if ($timeoutRaw !== null && ! preg_match('/^[1-9]\d*$/', $timeoutRaw)) {
+        throw new RuntimeException('--timeout must be a positive integer');
+    }
+
+    $interval = (int) $intervalRaw;
+    $stale = (int) $staleRaw;
+    $timeout = $timeoutRaw === null ? null : (int) $timeoutRaw;
+    $ignored = [];
+
+    foreach (explode(',', $ignoreRaw) as $id) {
+        $id = trim($id);
+
+        if ($id !== '') {
+            $ignored[$id] = true;
+        }
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+    $startedAt = time();
+
+    while (true) {
+        $entries = [];
+
+        foreach (orbit_worker_list($worktree) as $entry) {
+            if (isset($ignored[(string) $entry['id']])) {
+                continue;
+            }
+
+            $entries[] = $entry;
+        }
+
+        if ($entries === []) {
+            fwrite(STDOUT, '{"event":"none"}'.PHP_EOL);
+            exit(2);
+        }
+
+        $event = orbit_worker_watch_event($worktree, $entries, $stale);
+
+        if ($event !== null) {
+            fwrite(STDOUT, json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
+            exit(0);
+        }
+
+        if ($timeout !== null) {
+            $remaining = $timeout - (time() - $startedAt);
+
+            if ($remaining <= 0) {
+                fwrite(
+                    STDOUT,
+                    json_encode(
+                        [
+                            'event' => 'timeout',
+                            'id' => '',
+                            'status' => '',
+                            'note' => '',
+                            'handoff' => null,
+                            'log' => '',
+                            'seen_at' => orbit_worker_now(),
+                        ],
+                        JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+                    )
+                        .PHP_EOL,
+                );
+                exit(3);
+            }
+
+            sleep(min($interval, $remaining));
+
+            continue;
+        }
+
+        sleep($interval);
+    }
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
+
+/**
+ * @param  list<array<string, mixed>>  $entries
+ * @return array<string, mixed>|null
+ */
+function orbit_worker_watch_event(string $worktree, array $entries, int $stale): ?array
+{
+    foreach ($entries as $entry) {
+        $id = (string) $entry['id'];
+        $status = (string) $entry['status'];
+        $alive = orbit_worker_window_alive($entry);
+
+        if ($status === 'handoff' || $status === 'exited') {
+            return orbit_worker_watch_payload($worktree, $entry, $status);
+        }
+
+        if (! $alive) {
+            $entry = orbit_worker_mark_exited($worktree, $entry);
+
+            return orbit_worker_watch_payload($worktree, $entry, 'exited');
+        }
+
+        if ($status === 'blocked') {
+            return orbit_worker_watch_payload($worktree, $entry, 'blocked');
+        }
+
+        $freshness = orbit_worker_freshness($entry, $worktree);
+
+        if ($freshness > 0 && (time() - $freshness) > $stale) {
+            return orbit_worker_watch_payload($worktree, $entry, 'stale');
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param  array<string, mixed>  $entry
+ * @return array<string, mixed>
+ */
+function orbit_worker_watch_payload(string $worktree, array $entry, string $event): array
+{
+    $handoff = $entry['handoff'] ?? null;
+
+    return [
+        'event' => $event,
+        'id' => (string) $entry['id'],
+        'status' => (string) $entry['status'],
+        'note' => (string) ($entry['note'] ?? ''),
+        'handoff' => is_string($handoff) && $handoff !== '' ? $handoff : null,
+        'log' => orbit_worker_log_path($worktree, (string) $entry['id']),
+        'seen_at' => orbit_worker_now(),
+    ];
+}

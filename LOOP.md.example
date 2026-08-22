@@ -4,7 +4,7 @@ Copying this template is handled by `bin/orbit-prepare-worktree`. Keep it as the
 single anchor for the active feature. Raw feedback belongs in the immutable
 `.orbit/feedback.jsonl` stream, never in this file.
 
-- Scratchpad:
+- Session:
 - Worktree:
 - Branch:
 

@@ -71,7 +71,7 @@ function find_command_value(array $value): ?string
 }
 
 /**
- * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'solo-process-stop', process_id: int, solo_cli: string, app_data_dir: ?string}|array{type: 'solo-project-delete', project_id: int, solo_cli: string, confirm_stop_running: bool, app_data_dir: ?string}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'tmux-session-kill', session: string}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_command(string $command): ?array
 {
@@ -82,12 +82,12 @@ function classify_command(string $command): ?array
             ! isset($arguments[0]) || ! in_array($arguments[0], ['--abort', '--continue', '--quit', '--skip'], true)
         ),
     ));
-    $soloActions = solo_boundary_actions($command);
+    $tmuxActions = tmux_boundary_actions($command);
     $destructiveActionCount =
         count($actionableMergeCommands)
         + worktree_remove_command_count($command)
         + branch_delete_command_count($command)
-        + count($soloActions);
+        + count($tmuxActions);
 
     if ($destructiveActionCount > 1) {
         return [
@@ -160,8 +160,8 @@ function classify_command(string $command): ?array
         return ['type' => 'branch-delete', 'branch' => $targets[0]];
     }
 
-    if (count($soloActions) === 1) {
-        return $soloActions[0];
+    if (count($tmuxActions) === 1) {
+        return $tmuxActions[0];
     }
 
     return null;
