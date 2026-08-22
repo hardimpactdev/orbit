@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 404,
-    "unique_candidate_commit_count": 300,
+    "record_count": 405,
+    "unique_candidate_commit_count": 301,
     "orphan_count": 4,
     "records": [
         {
@@ -10383,6 +10383,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-23-012003-codex-fix-firewall-versioned-ubuntu",
+            "slug": "codex-fix-firewall-versioned-ubuntu",
+            "timestamp": "2026-08-23-012003",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "0499352501b627146956cffc528a093a51876f44",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

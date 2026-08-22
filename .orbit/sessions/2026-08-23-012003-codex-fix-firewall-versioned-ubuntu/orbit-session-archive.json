@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T23:20:04+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-firewall-versioned-ubuntu/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-012003-codex-fix-firewall-versioned-ubuntu",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/firewall-versioned-ubuntu-retained-incus.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-22T230647Z-6fe68a0b51e8.json"
+    ],
+    "entry_digests": {
+        "evidence/firewall-versioned-ubuntu-retained-incus.md": "126b866994a2f1cad7d8d5f5ea961ef560c7adbbea45af48ff4654358a52b118",
+        "loop.md": "c4947dd9eabdc08848247b16835e07b789fc1bd745a38c0e286efbd0aacf2f8f",
+        "quality-gates/quality-check-2026-08-22T230647Z-6fe68a0b51e8.json": "0496c2a9da52ff93b28d7b6e49d88beeae8f6765c69b632774e998e989bb442d"
+    },
+    "slug": "codex-fix-firewall-versioned-ubuntu",
+    "requested_slug": "codex-fix-firewall-versioned-ubuntu",
+    "compatible_slugs": [
+        "codex-fix-firewall-versioned-ubuntu"
+    ],
+    "branch": "codex-fix-firewall-versioned-ubuntu",
+    "candidate_commit": "0499352501b627146956cffc528a093a51876f44",
+    "accepted_feature_tip": "0499352501b627146956cffc528a093a51876f44",
+    "accepted_main_tip": "bd4b2285fbbf59623b38514c43582b863707b842",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
