@@ -47,7 +47,7 @@ coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
 for other stacks. Prefer a small working vertical slice and existing project
 abstractions.
 
-Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
+Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>` (`grok --yolo --reasoning-effort medium` in the worktree). Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
@@ -97,7 +97,7 @@ and reviewer consume the exact-SHA receipt without rerunning it.
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
+Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).
 Use `.agents/review-personas/general.md`. Require checkout proof. Missing tmux, grok, or claude on the machine is a blocker.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
