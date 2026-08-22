@@ -45,6 +45,8 @@ it('derives the minimum acceptance venue from changed files', function (array $f
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
     'repository tooling' => [['bin/orbit-example'], 'automated'],
     'github workflow' => [['.github/workflows/orbit-release.yml'], 'automated'],
+    'codex hooks' => [['.codex/hooks.json'], 'automated'],
+    'claude settings' => [['.claude/settings.json'], 'automated'],
     'generated session index' => [['.orbit/sessions/index.json'], 'automated'],
     'docs librarian rule' => [['apps/docs/app/Librarian/Rules/SignatureLiveSurfaceRule.php'], 'automated'],
     'docs librarian command-docs config' => [

@@ -956,6 +956,8 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, 'tests/')
         || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
+        || str_starts_with($path, '.claude/')
+        || str_starts_with($path, '.codex/')
         || str_starts_with($path, '.github/')
         // Repository-root static documentation HTML only (docs/**.html). Does not
         // reclassify apps/docs runtime, resources, or other product frontend paths.
