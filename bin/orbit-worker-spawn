@@ -74,7 +74,7 @@ try {
     }
 
     $briefPath = realpath($brief) ?: $brief;
-    $defaults = orbit_worker_default_commands()[$cli];
+    $defaults = orbit_worker_default_commands($role)[$cli];
     $command = array_merge(
         [
             'env',
@@ -108,7 +108,8 @@ try {
     }
 
     $logPath = orbit_worker_log_path($worktree, $id);
-    $bootstrap = "Orbit worker: {$id}. Read {$briefPath} and execute it.";
+    $loopPath = $worktree.'/.orbit/loop.md';
+    $bootstrap = "Orbit worker: {$id}. Read {$loopPath} as the goal authority and {$briefPath} as the assignment only.";
 
     if (! is_file($logPath) && file_put_contents($logPath, '') === false) {
         throw new RuntimeException("unable to create worker log: {$logPath}");

@@ -41,6 +41,8 @@ it('spawns a worker window, pipes the log, and delivers the bootstrap line', fun
                 'ORBIT_WORKER_ROLE=impl',
                 'grok',
                 '--yolo',
+                '--reasoning-effort',
+                'medium',
             ]);
 
         $entry = json_decode(
@@ -694,8 +696,7 @@ it('writes one contiguous bootstrap marker for a silent fake CLI', function (): 
             ->toBe(0, $process->getErrorOutput().$process->getOutput());
 
         $logPath = $fixture['worktree'].'/.orbit/workers/logs/impl-1.log';
-        $briefPath = realpath($brief) ?: $brief;
-        $marker = "Orbit worker: impl-1. Read {$briefPath} and execute it.";
+        $marker = worker_tools_bootstrap_marker($fixture['worktree'], 'impl-1', $brief);
         $seen = worker_tools_wait_for(function () use ($logPath, $marker): bool {
             if (! is_file($logPath)) {
                 return false;
@@ -801,8 +802,7 @@ it('retries bootstrap submit for a delayed interactive CLI', function (string $c
             ->toBe(0, $process->getErrorOutput().$process->getOutput());
 
         $logPath = $fixture['worktree'].'/.orbit/workers/logs/review-1.log';
-        $briefPath = realpath($brief) ?: $brief;
-        $marker = "Orbit worker: review-1. Read {$briefPath} and execute it.";
+        $marker = worker_tools_bootstrap_marker($fixture['worktree'], 'review-1', $brief);
         $seen = worker_tools_wait_for(function () use ($logPath): bool {
             return is_file($logPath) && str_contains((string) file_get_contents($logPath), 'accepted-bootstrap:');
         }, 12);
@@ -898,8 +898,7 @@ it('resolves a first-use trust prompt before submitting bootstrap once', functio
             true,
         );
         $logPath = $fixture['worktree'].'/.orbit/workers/logs/review-1.log';
-        $briefPath = realpath($brief) ?: $brief;
-        $marker = "Orbit worker: review-1. Read {$briefPath} and execute it.";
+        $marker = worker_tools_bootstrap_marker($fixture['worktree'], 'review-1', $brief);
         $seen = worker_tools_wait_for(function () use ($logPath): bool {
             return is_file($logPath) && str_contains((string) file_get_contents($logPath), 'accepted-bootstrap:');
         }, 12);
@@ -923,6 +922,73 @@ it('resolves a first-use trust prompt before submitting bootstrap once', functio
 })->with([
     'grok' => ['grok'],
     'claude' => ['claude'],
+]);
+
+it('records exact launcher command vectors and assignment-only bootstrap', function (
+    string $role,
+    string $cli,
+    string $name,
+    array $argvTail,
+): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin) use (
+        $role,
+        $cli,
+        $name,
+        $argvTail,
+    ): void {
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                "--role={$role}",
+                "--cli={$cli}",
+                "--brief={$brief}",
+                "--name={$name}",
+                '--ready-delay=1',
+                '--json',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $payload = json_decode($process->getOutput(), true);
+        $marker = worker_tools_bootstrap_marker($fixture['worktree'], $name, $brief);
+        $logPath = $fixture['worktree'].'/.orbit/workers/logs/'.$name.'.log';
+        $seen = worker_tools_wait_for(function () use ($logPath, $marker): bool {
+            return is_file($logPath) && str_contains((string) file_get_contents($logPath), $marker);
+        });
+
+        expect($payload)
+            ->toBeArray()
+            ->and($payload['command'])
+            ->toBe([
+                'env',
+                'ORBIT_WORKER_ID='.$name,
+                'ORBIT_WORKER_ROLE='.$role,
+                ...$argvTail,
+            ])
+            ->and($seen)
+            ->toBeTrue()
+            ->and($marker)
+            ->toContain($fixture['worktree'].'/.orbit/loop.md')
+            ->toContain('goal authority')
+            ->toContain('assignment only')
+            ->not->toContain('and execute it.');
+    });
+})->with([
+    'impl grok' => ['impl', 'grok', 'impl-1', ['grok', '--yolo', '--reasoning-effort', 'medium']],
+    'review claude' => [
+        'review',
+        'claude',
+        'review-1',
+        ['claude', '--dangerously-skip-permissions', '--model', 'opus', '--effort', 'high'],
+    ],
+    'impl claude' => ['impl', 'claude', 'impl-1', ['claude', '--dangerously-skip-permissions']],
+    'impl codex' => ['impl', 'codex', 'impl-1', ['codex', '--yolo']],
 ]);
 
 it('watch can acknowledge a consumed handoff and wait for a later snapshot on the same worker', function (): void {
@@ -1471,6 +1537,8 @@ function worker_tools_make_fake_cli(string $root, bool $echoing): string
     chmod($bin.'/grok', permissions: 0o755);
     file_put_contents($bin.'/claude', data: $script);
     chmod($bin.'/claude', permissions: 0o755);
+    file_put_contents($bin.'/codex', data: $script);
+    chmod($bin.'/codex', permissions: 0o755);
 
     return $bin;
 }
@@ -1537,6 +1605,14 @@ function worker_tools_impl_handoff_source(array $fixture, string $body = "done\n
     file_put_contents($path, data: "candidate={$sha}\n{$body}");
 
     return $path;
+}
+
+function worker_tools_bootstrap_marker(string $worktree, string $id, string $brief): string
+{
+    $briefPath = realpath($brief) ?: $brief;
+    $loopPath = $worktree.'/.orbit/loop.md';
+
+    return "Orbit worker: {$id}. Read {$loopPath} as the goal authority and {$briefPath} as the assignment only.";
 }
 
 function worker_tools_write_brief(string $worktree): string

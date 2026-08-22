@@ -13,12 +13,28 @@ const ORBIT_WORKER_CLIS = ['grok', 'claude', 'codex', 'opencode'];
 /**
  * @return array<string, list<string>>
  */
-function orbit_worker_default_commands(): array
+function orbit_worker_default_commands(string $role = ''): array
 {
+    $grok = ['grok', '--yolo'];
+
+    if ($role === 'impl') {
+        $grok[] = '--reasoning-effort';
+        $grok[] = 'medium';
+    }
+
+    $claude = ['claude', '--dangerously-skip-permissions'];
+
+    if ($role === 'review') {
+        $claude[] = '--model';
+        $claude[] = 'opus';
+        $claude[] = '--effort';
+        $claude[] = 'high';
+    }
+
     return [
-        'grok' => ['grok', '--yolo'],
-        'claude' => ['claude', '--dangerously-skip-permissions', '--model', 'opus'],
-        'codex' => ['codex'],
+        'grok' => $grok,
+        'claude' => $claude,
+        'codex' => ['codex', '--yolo'],
         'opencode' => ['opencode'],
     ];
 }
