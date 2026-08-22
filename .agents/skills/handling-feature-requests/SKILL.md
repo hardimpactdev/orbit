@@ -24,9 +24,8 @@ Capture only what changes the result:
    outcome.
 
 Do not edit repository files, create a worktree, or dispatch implementation
-from this intake skill. Once the request is clear enough, hand the outcome to
-the current feature owner using `implementing-features`; that owner decides
-whether any bounded worker is useful.
+from this intake skill. When clear, hand the outcome to Desktop Codex using
+implementing-features.
 
 ## Clarification Standard
 

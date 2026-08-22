@@ -202,6 +202,10 @@ function landRefuseSelfProject(int $projectId, string $primary, string $soloCli)
         throw new RuntimeException('solo project lookup failed: '.$lookup['reason']);
     }
 
+    if ($lookup['status'] === 'not_found') {
+        return;
+    }
+
     $path = $lookup['status'] === 'ok' ? ($lookup['data']['path'] ?? null) : null;
 
     if (! is_string($path) || $path === '') {

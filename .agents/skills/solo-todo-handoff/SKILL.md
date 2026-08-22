@@ -73,7 +73,7 @@ Solo todo id or URL.
 
 Required workflow:
 - Read and follow AGENTS.md, HARNESS.md, and .agents/skills/implementing-features/SKILL.md.
-- Act as the Orbit feature owner: prepare the implementation worktree with bin/orbit-prepare-worktree, fill the seeded .orbit/loop.md Goal and Scope, implement directly or use bounded workers only when useful, then PROVE, ACCEPT, and LAND with exact evidence.
+- Act as Desktop Codex, the Orbit feature owner: prepare the implementation worktree with bin/orbit-prepare-worktree, fill the seeded .orbit/loop.md Goal and Scope, dispatch substantive edits to Grok in the main Orbit Solo project with --cwd at the exact worktree, then PROVE, ACCEPT, and LAND with exact evidence.
 
 Goal:
 - <one concrete objective from the todo>

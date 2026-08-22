@@ -91,7 +91,9 @@ baseline exists.
 Spawn one fresh read-only Claude general reviewer in the main project with
 `.agents/review-personas/general.md` and
 `claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>`.
-Require checkout proof; missing Solo or Claude blocks PROVE.
+The first review prompt must change active cwd to the exact feature worktree
+before bare persona identity commands; require checkout proof. Missing Solo or
+Claude blocks PROVE.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
 lane. Use `not-required - <reason>` for a local change. A product decision,
@@ -151,12 +153,10 @@ reviewer PASS and venue proof; it never changes the venue. `retained-incus`,
 per candidate; mixed diffs fail closed and must be split. Automation-only
 paths may coexist.
 
-Agents run every deterministic check and inspect its output before acceptance.
-Never ask the user to execute a check the agent can execute. The user receives
-only a prepared surface that requires human judgment about intent, UX, or
-real-world behavior; when no judgment surface remains, the general reviewer
-records `HUMAN_JUDGMENT: not-required` and the automated actor accepts at the
-already proven venue.
+Agents run and inspect every deterministic check. Never ask the user to execute
+a check the agent can execute. Give the user only a prepared surface that
+requires human judgment about intent, UX, or real-world behavior. Otherwise
+record `HUMAN_JUDGMENT: not-required` and accept at the proven venue.
 
 ### Retained Incus Acceptance
 
@@ -259,8 +259,8 @@ bin/orbit-feature-land \
 
 Use `--status`/`--plan` for a read-only next phase, and `--one-step` to execute
 only the next incomplete boundary. Resume is idempotent from Git and the committed
-session archive/index. The project path must equal the primary
-Orbit checkout. LAND preserves that project and all its processes.
+session archive/index. The main Orbit project path is canonical. Historical
+worktree-owned projects remain accepted with old stop/delete cleanup.
 
 LAND gets minimum venue from the exact accepted candidate contract in an
 isolated subprocess; all other finalization checks stay main-owned.
@@ -288,9 +288,9 @@ Manual LAND remains validate-then-execute for each destructive mutation:
 7. Update the session index and commit the archive/index. Cleanup requires
    those archive and index bytes to be tracked and committed, not merely present.
 8. After the archive/index commit:
-   - Stop only feature-owned Grok or Claude processes. Never delete the main
-     Orbit Solo project or stop unrelated processes. Remove the exact clean
-     merged worktree, then delete the exact merged feature branch.
+   - LAND never deletes or stops the main Solo project. Before LAND, the
+     orchestrator stops only its completed agents. Remove the clean
+     worktree, then delete the exact feature branch.
    - Validate each cleanup mutation with
      `bin/orbit-feature-finalization-check <exact git or solo command>`.
      After `FINALIZATION: PASS`, execute that exact cleanup command separately.

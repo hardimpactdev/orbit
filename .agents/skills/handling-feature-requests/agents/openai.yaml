@@ -1,4 +1,4 @@
 interface:
   display_name: "Handling Feature Requests"
   short_description: "Frame an Orbit outcome and acceptance."
-  default_prompt: "Use this skill to clarify the requested outcome, affected surface, constraints, authority, unresolved product ambiguity, and what human judgment remains after agents run deterministic checks. Keep intake read-only and leave implementation ownership and optional delegation to implementing-features."
+  default_prompt: "Use this skill to clarify the requested outcome, affected surface, constraints, authority, unresolved product ambiguity, and what human judgment remains after agents run deterministic checks. Keep intake read-only and hand implementation ownership to Desktop Codex using implementing-features."

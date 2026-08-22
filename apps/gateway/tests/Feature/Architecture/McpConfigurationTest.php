@@ -311,6 +311,9 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
     $prompt = file_get_contents(repo_path('.agents/skills/implementing-features/agents/openai.yaml')) ?: '';
+    $todoHandoff = file_get_contents(repo_path('.agents/skills/solo-todo-handoff/SKILL.md')) ?: '';
+    $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
+    $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
 
     expect($harness)
         ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
@@ -319,6 +322,7 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
         ->toContain('Never create or register a Solo project for a feature worktree')
         ->toContain("['--cwd', '<exact-feature-worktree>']")
         ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
+        ->toContain('change active cwd to the exact feature worktree')
         ->and($skill)
         ->toContain('Desktop Codex is the sole feature owner')
         ->toContain('existing main Orbit Solo project')
@@ -326,10 +330,20 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
         ->toContain("['--cwd', '<exact-feature-worktree>']")
         ->toContain('claude --dangerously-skip-permissions --model opus --add-dir <exact-feature-worktree>')
         ->toContain('Do not substitute a Codex subagent')
+        ->toContain('First prompt: change active cwd to exact worktree before persona identity')
         ->and($prompt)
         ->toContain('use the existing main Orbit Solo project')
         ->toContain('point Grok at the exact feature worktree without a model override')
-        ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus');
+        ->toContain('point one fresh read-only Claude general reviewer at that worktree with --model opus')
+        ->and($todoHandoff)
+        ->toContain('dispatch substantive edits to Grok in the main Orbit Solo project with --cwd at the exact worktree')
+        ->not->toContain('implement directly or use bounded workers only when useful')
+        ->and($intake)
+        ->toContain('hand the outcome to Desktop Codex using')
+        ->not->toContain('whether any bounded worker is useful')
+        ->and($intakePrompt)
+        ->toContain('hand implementation ownership to Desktop Codex using implementing-features')
+        ->not->toContain('optional delegation');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {
@@ -343,7 +357,7 @@ it('keeps intake compact and e2e prompts execution-safe', function (): void {
         ->toContain('Constraints')
         ->toContain('Ambiguity')
         ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
-            'leave implementation ownership and optional delegation to implementing-features',
+            'hand implementation ownership to Desktop Codex using implementing-features',
         )
         ->not->toContain('delegate documentation and implementation through Solo')->and($e2ePrompt)->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',

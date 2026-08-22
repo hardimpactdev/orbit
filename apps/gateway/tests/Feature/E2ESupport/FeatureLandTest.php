@@ -317,6 +317,17 @@ it('refuses self-cwd cleanup and distinguishes missing project from stale owners
             ->and($missing->getOutput())
             ->toContain('phase=archive');
 
+        $missingSelfProject = land_run_land(
+            $repo,
+            land_args($worktree, $solo, ['--status']),
+            ['SOLO_PROJECT_ID' => '73'],
+        );
+
+        expect($missingSelfProject->getExitCode())
+            ->toBe(0, $missingSelfProject->getErrorOutput().$missingSelfProject->getOutput())
+            ->and($missingSelfProject->getOutput())
+            ->toContain('phase=archive');
+
         land_fake_solo_state($solo, [
             'projects' => [
                 73 => ['id' => 73, 'path' => $worktree, 'name' => 'feature'],
