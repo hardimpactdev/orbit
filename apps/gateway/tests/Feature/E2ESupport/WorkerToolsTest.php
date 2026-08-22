@@ -1468,6 +1468,8 @@ function worker_tools_make_fixture(): array
 {
     $root = sys_get_temp_dir().'/orbit-worker-tools-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);
+    $resolved = realpath($root);
+    $root = $resolved === false ? $root : $resolved;
     worker_tools_seed_home($root);
 
     new Process(['git', 'init', '-b', 'main'], $root)->mustRun();
@@ -1610,7 +1612,8 @@ function worker_tools_impl_handoff_source(array $fixture, string $body = "done\n
 function worker_tools_bootstrap_marker(string $worktree, string $id, string $brief): string
 {
     $briefPath = realpath($brief) ?: $brief;
-    $loopPath = $worktree.'/.orbit/loop.md';
+    $resolvedWorktree = realpath($worktree);
+    $loopPath = ($resolvedWorktree === false ? $worktree : $resolvedWorktree).'/.orbit/loop.md';
 
     return "Orbit worker: {$id}. Read {$loopPath} as the goal authority and {$briefPath} as the assignment only.";
 }

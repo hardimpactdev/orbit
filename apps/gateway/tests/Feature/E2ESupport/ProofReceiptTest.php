@@ -464,6 +464,12 @@ function proof_receipt_tree_fingerprint(string $workspace): string
             continue;
         }
 
+        $relative = $iterator->getSubPathname();
+
+        if ($relative === '.git' || str_starts_with($relative, '.git/')) {
+            continue;
+        }
+
         $paths[] = $file->getPathname().':'.$file->getMTime().':'.$file->getSize();
     }
 
