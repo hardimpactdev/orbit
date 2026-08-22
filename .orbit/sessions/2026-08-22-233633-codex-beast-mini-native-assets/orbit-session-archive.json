@@ -1,0 +1,26 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T21:36:34+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-beast-mini-native-assets/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-22-233633-codex-beast-mini-native-assets",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "3278257f17c2aced67e1782c1a4824a98b74878f2111b6d01277cc9ec5c13735"
+    },
+    "slug": "codex-beast-mini-native-assets",
+    "requested_slug": "codex-beast-mini-native-assets",
+    "compatible_slugs": [
+        "codex-beast-mini-native-assets"
+    ],
+    "branch": "codex/beast-mini-native-assets",
+    "candidate_commit": "d85dde660b96fb11f50356cce984c9674f94225a",
+    "accepted_feature_tip": "d85dde660b96fb11f50356cce984c9674f94225a",
+    "accepted_main_tip": "9f81735744acff98ef4b5819973c60fdb4d31185",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
