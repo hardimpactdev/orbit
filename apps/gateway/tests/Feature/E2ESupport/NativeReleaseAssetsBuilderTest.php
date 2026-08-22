@@ -66,8 +66,7 @@ it('rejects a dirty native release checkout before building', function (): void 
             ->and($process->getErrorOutput())
             ->toContain('native release source checkout must be clean')
             ->and((string) file_get_contents($fixture['stub_log']))
-            ->not->toContain('orbit-build-agent-binary')
-            ->and($fixture['output'])
+            ->not->toContain('orbit-build-agent-binary')->and($fixture['output'])
             ->not->toBeDirectory();
     } finally {
         native_release_assets_remove_fixture($fixture['root']);
@@ -87,7 +86,8 @@ it('rejects a non-Mach-O arm64 Agent build result', function (): void {
             ->and($process->getErrorOutput())
             ->toContain('native Agent artifact is not a Mach-O arm64 executable')
             ->and($fixture['output'])
-            ->not->toBeDirectory()
+            ->not
+            ->toBeDirectory()
             ->and(glob("{$fixture['output']}.staging.*") ?: [])
             ->toBeEmpty();
     } finally {
@@ -197,9 +197,15 @@ function native_release_assets_write_stub(string $binDir, string $name, string $
 function native_release_assets_process(array $fixture, array $arguments = [], array $env = []): Process
 {
     $process = new Process(
-        [repo_path('bin/orbit-build-native-release-assets'), ...($arguments === [] ? [
-            "--output={$fixture['output']}",
-        ] : $arguments)],
+        [
+            repo_path('bin/orbit-build-native-release-assets'),
+            ...(
+                $arguments === []
+                    ? [
+                        "--output={$fixture['output']}",
+                    ] : $arguments
+            ),
+        ],
         repo_path(),
         array_merge([
             'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),

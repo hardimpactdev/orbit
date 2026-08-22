@@ -56,8 +56,9 @@ it('rejects a fetched branch whose tip differs from the requested commit', funct
             ->and($process->getErrorOutput())
             ->toContain('fetched branch does not match requested commit')
             ->and($fixture['mini'].'/.worktrees/release-native-'.substr($wrongCommit, 0, 12))
-            ->not->toBeDirectory()
-            ->and($fixture['mini'].'/.worktrees/release-native-'.substr($fixture['commit'], 0, 12))
+            ->not->toBeDirectory()->and(
+                $fixture['mini'].'/.worktrees/release-native-'.substr($fixture['commit'], 0, 12),
+            )
             ->not->toBeDirectory();
     } finally {
         release_build_worktree_remove_fixture($fixture['root']);
@@ -171,7 +172,8 @@ it('removes only the clean exact build worktree', function (): void {
             ->and($remove->getOutput())
             ->toContain('RELEASE_BUILD_WORKTREE_REMOVED')
             ->and($worktree)
-            ->not->toBeDirectory()
+            ->not
+            ->toBeDirectory()
             ->and($fixture['mini'])
             ->toBeDirectory()
             ->and(trim((string) file_get_contents($fixture['mini'].'/.codex-config-user-change')))

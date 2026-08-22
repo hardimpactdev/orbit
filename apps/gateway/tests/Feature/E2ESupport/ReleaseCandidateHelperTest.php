@@ -220,7 +220,11 @@ it('imports a verified Darwin Agent bundle instead of building it locally', func
     }
 });
 
-it('rejects an imported native bundle that fails verification', function (string $key, string $value, string $needle): void {
+it('rejects an imported native bundle that fails verification', function (
+    string $key,
+    string $value,
+    string $needle,
+): void {
     $temp = release_candidate_make_temp_dir(suffix: 'native-fail-'.$key);
 
     try {
@@ -258,7 +262,10 @@ it('rejects an imported native bundle that fails verification', function (string
     'wrong hash' => ['sha256_agent_darwin_arm64', str_repeat('0', 64), 'sha256_agent_darwin_arm64'],
 ]);
 
-it('rejects imported native bundles with inventory or architecture problems', function (string $case, string $needle): void {
+it('rejects imported native bundles with inventory or architecture problems', function (
+    string $case,
+    string $needle,
+): void {
     $temp = release_candidate_make_temp_dir(suffix: 'native-inventory-'.preg_replace('/[^a-z]+/', '-', $case));
 
     try {
