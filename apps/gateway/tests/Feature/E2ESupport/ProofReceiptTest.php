@@ -181,6 +181,24 @@ it('requires quality-check evidence for a non-docs candidate', function (): void
     }
 });
 
+it('fails closed when a non-automated venue has no readable loop packet', function (): void {
+    $fixture = proof_receipt_fixture('apps/cli/app/Commands/FooCommand.php', "<?php\n");
+
+    try {
+        proof_receipt_write_quality_check_artifact($fixture);
+        $process = proof_receipt_run($fixture);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('non-automated venue requires a readable `.orbit/loop.md` runtime receipt')
+            ->and(json_decode($process->getOutput(), true)['ok'] ?? true)
+            ->toBeFalse();
+    } finally {
+        proof_receipt_remove($fixture);
+    }
+});
+
 it('requires a structured runtime receipt for a non-automated venue when a loop packet is present', function (): void {
     $fixture = proof_receipt_fixture('apps/cli/app/Commands/FooCommand.php', "<?php\n");
 

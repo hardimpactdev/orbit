@@ -42,7 +42,7 @@ smallest change, rerun. Load owning skills: commands `command-designer` +
 macOS Agent: `tauri-agent-development`.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
-Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time or no diff is not a stall.
+Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
@@ -66,7 +66,8 @@ same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX
 resets them.
 
 After focused checks pass, commit the candidate and confirm the worktree is
-clean.
+clean. The implementer owns focused checks and the one terminal gate; owner
+and reviewer consume the exact-SHA receipt without rerunning it.
 Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus` in the worktree).
 The same general reviewer owns blast radius, ESCALATE, and terminal PASS or FIX.
 FIX resets Review, reviewed tip, and Blast radius; return to Grok BUILD, prove,

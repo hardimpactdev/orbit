@@ -112,6 +112,12 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
         ? (string) file_get_contents($loopPath)
         : null;
 
+    if ($venue !== 'automated' && ! is_string($loopContents)) {
+        $receipt['problem'] = 'non-automated venue requires a readable `.orbit/loop.md` runtime receipt';
+
+        return $receipt;
+    }
+
     if (is_string($loopContents) && $venue !== 'automated') {
         $runtimeProblem = orbitLoopRuntimeProofProblem($loopContents, $venue, $candidate, $worktree);
 

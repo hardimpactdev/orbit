@@ -434,6 +434,36 @@ it('requires reviewer-confirmed no human judgment before automatically accepting
     }
 });
 
+it('refuses ready and accept when the shared proof receipt is missing or stale', function (): void {
+    $fixture = acceptance_test_workspace('acceptance-receipt-required', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+        foreach (glob("{$fixture}/.orbit/quality-gates/quality-check-*.json") ?: [] as $artifact) {
+            unlink($artifact);
+        }
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and($ready->getErrorOutput())
+            ->toContain('non-docs diff requires exact `composer quality-check` evidence')
+            ->and($accepted->getExitCode())
+            ->toBe(2)
+            ->and($accepted->getErrorOutput())
+            ->toContain('non-docs diff requires exact `composer quality-check` evidence');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('does not require retained runtime proof for repository tooling', function (): void {
     $fixture = acceptance_test_workspace('automated-tooling', 'bin/orbit-example');
 

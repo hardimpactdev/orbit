@@ -895,6 +895,82 @@ it('watch can acknowledge a consumed handoff and wait for a later snapshot on th
     });
 });
 
+it('watch ack of one worker still reports a later worker handoff', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $spawnReview = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=review',
+                '--cli=claude',
+                "--brief={$brief}",
+                '--name=review-1',
+                '--ready-delay=1',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($spawnReview->getExitCode())->toBe(0, $spawnReview->getErrorOutput().$spawnReview->getOutput());
+
+        $implSource = worker_tools_impl_handoff_source($fixture, "impl done\n");
+        $implHandoff = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $implSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($implHandoff->getExitCode())->toBe(0, $implHandoff->getErrorOutput().$implHandoff->getOutput());
+
+        $reviewSource = $fixture['worktree'].'/.orbit/workers/inbox/review.md';
+        if (! is_dir(dirname($reviewSource))) {
+            mkdir(dirname($reviewSource), recursive: true);
+        }
+        file_put_contents($reviewSource, data: "VERDICT: PASS\n");
+        $reviewHandoff = worker_tools_run(
+            'orbit-worker-handoff',
+            ['review-1', $reviewSource],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($reviewHandoff->getExitCode())->toBe(0, $reviewHandoff->getErrorOutput().$reviewHandoff->getOutput());
+
+        $first = worker_tools_run(
+            'orbit-worker-watch',
+            ['--interval=1', '--timeout=3'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+        $firstEvent = json_decode(trim($first->getOutput()), true);
+        expect($firstEvent['id'])->toBe('impl-1')->and($firstEvent['snapshot'])->toBeString();
+
+        $next = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--timeout=3',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($next->getExitCode())->toBe(0, $next->getErrorOutput().$next->getOutput());
+        $secondEvent = json_decode(trim($next->getOutput()), true);
+        expect($secondEvent['event'])
+            ->toBe('handoff')
+            ->and($secondEvent['id'])
+            ->toBe('review-1');
+    });
+});
+
 it('watch still accepts --ignore as cheap compatibility', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');

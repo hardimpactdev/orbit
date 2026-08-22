@@ -67,11 +67,7 @@ try {
             exit(2);
         }
 
-        $event = orbit_worker_watch_event($worktree, $entries, $stale);
-
-        if ($event !== null && $ack !== '' && ($event['snapshot'] ?? null) === $ack) {
-            $event = null;
-        }
+        $event = orbit_worker_watch_event($worktree, $entries, $stale, $ack);
 
         if ($event !== null) {
             fwrite(STDOUT, json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
@@ -117,7 +113,7 @@ try {
  * @param  list<array<string, mixed>>  $entries
  * @return array<string, mixed>|null
  */
-function orbit_worker_watch_event(string $worktree, array $entries, int $stale): ?array
+function orbit_worker_watch_event(string $worktree, array $entries, int $stale, string $ack = ''): ?array
 {
     foreach ($entries as $entry) {
         $id = (string) $entry['id'];
@@ -125,7 +121,13 @@ function orbit_worker_watch_event(string $worktree, array $entries, int $stale):
         $alive = orbit_worker_window_alive($entry);
 
         if ($status === 'handoff' || $status === 'exited') {
-            return orbit_worker_watch_payload($worktree, $entry, $status);
+            $payload = orbit_worker_watch_payload($worktree, $entry, $status);
+
+            if ($ack !== '' && ($payload['snapshot'] ?? null) === $ack) {
+                continue;
+            }
+
+            return $payload;
         }
 
         if ($alive === 'unknown') {
@@ -139,18 +141,35 @@ function orbit_worker_watch_event(string $worktree, array $entries, int $stale):
 
         if ($alive === 'gone') {
             $entry = orbit_worker_mark_exited($worktree, $entry);
+            $payload = orbit_worker_watch_payload($worktree, $entry, 'exited');
 
-            return orbit_worker_watch_payload($worktree, $entry, 'exited');
+            if ($ack !== '' && ($payload['snapshot'] ?? null) === $ack) {
+                continue;
+            }
+
+            return $payload;
         }
 
         if ($status === 'blocked') {
-            return orbit_worker_watch_payload($worktree, $entry, 'blocked');
+            $payload = orbit_worker_watch_payload($worktree, $entry, 'blocked');
+
+            if ($ack !== '' && ($payload['snapshot'] ?? null) === $ack) {
+                continue;
+            }
+
+            return $payload;
         }
 
         $freshness = orbit_worker_freshness($entry, $worktree);
 
         if ($freshness > 0 && (time() - $freshness) > $stale) {
-            return orbit_worker_watch_payload($worktree, $entry, 'stale');
+            $payload = orbit_worker_watch_payload($worktree, $entry, 'stale');
+
+            if ($ack !== '' && ($payload['snapshot'] ?? null) === $ack) {
+                continue;
+            }
+
+            return $payload;
         }
     }
 
