@@ -885,7 +885,7 @@ function workerIdsFromText(string $text): array
 /** @return list<string> */
 function standaloneWorkerIdsFromIdentityText(string $text): array
 {
-    if (preg_match_all('/(?:^|\R)\h*Orbit worker:\h*([a-z][a-z0-9-]*)\h*(?=\R|$)/', $text, $matches) === false) {
+    if (preg_match_all('/(?:^|\R)\h*Orbit worker:\h*([a-z][a-z0-9-]*)\b/', $text, $matches) === false) {
         return [];
     }
 
@@ -1510,6 +1510,11 @@ function grokCandidateContext(string $sessionDir, string $expectedSessionRoot, s
         }
 
         $identities = standaloneWorkerIdsFromIdentityText(extractText($row['content'] ?? ''));
+
+        if ($identities === []) {
+            continue;
+        }
+
         $firstUserIdentity = count($identities) === 1 ? $identities[0] : null;
 
         break;

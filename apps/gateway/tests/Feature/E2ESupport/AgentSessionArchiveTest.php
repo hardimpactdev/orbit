@@ -426,7 +426,7 @@ it('archives active orbit state and provider sessions into one session directory
         mkdir("{$sourceOrbitDir}/evidence", recursive: true);
         mkdir("{$sourceOrbitDir}/quality-gates", recursive: true);
         mkdir("{$sourceOrbitDir}/sessions/old-session", recursive: true);
-        file_put_contents("{$sourceOrbitDir}/loop.md", "- Solo worker: Grok process `103`\n");
+        file_put_contents("{$sourceOrbitDir}/loop.md", "- Worker: grok worker `impl-1`\n");
         file_put_contents("{$sourceOrbitDir}/evidence/proof.txt", "proof\n");
         file_put_contents("{$sourceOrbitDir}/quality-gates/result.json", "{\"result\":\"passed\"}\n");
         file_put_contents("{$sourceOrbitDir}/sessions/old-session/loop.md", "old\n");
@@ -1507,7 +1507,7 @@ it('lane-close capture stages exactly one session via exact "Orbit worker: <id>"
                 'payload' => [
                     'type' => 'message',
                     'role' => 'user',
-                    'content' => [['type' => 'input_text', 'text' => 'Environment context without the Solo marker.']],
+                    'content' => [['type' => 'input_text', 'text' => 'Environment context without the worker marker.']],
                 ],
             ],
             [
@@ -1586,7 +1586,7 @@ it('lane-close capture stages exactly one session via exact "Orbit worker: <id>"
     }
 });
 
-it('lane-close capture joins Codex sessions when Solo marker is in the first user prompt', function (): void {
+it('lane-close capture joins Codex sessions when worker marker is in the first user prompt', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-codex-first-user');
 
     try {
@@ -1609,7 +1609,7 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
                     'id' => 'child-first-user',
                     'cwd' => $cwd,
                     'timestamp' => '2026-07-07T10:10:05Z',
-                    'base_instructions' => ['text' => 'Codex system prompt without the Solo marker.'],
+                    'base_instructions' => ['text' => 'Codex system prompt without the worker marker.'],
                 ],
             ],
             [
@@ -1671,7 +1671,203 @@ it('lane-close capture joins Codex sessions when Solo marker is in the first use
     }
 });
 
-it('lane-close capture fails loudly with diagnostics on duplicate markers for same solo process id', function (): void {
+it('lane-close capture grades the spawn bootstrap line as full primary worker identity', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-spawn-bootstrap');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $workerId = 'impl-1';
+        $bootstrap = "Orbit worker: {$workerId}. Read /tmp/x/.orbit/workers/briefs/{$workerId}.md and execute it.";
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+        write_jsonl("{$codexDir}/rollout-spawn-bootstrap-{$workerId}.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'spawn-bootstrap',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T10:10:05Z',
+                    'base_instructions' => ['text' => 'Codex system prompt without the worker marker.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => $bootstrap,
+                    ]],
+                ],
+            ],
+        ]);
+
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
+        );
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            $workerId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--orbit-dir={$orbitDir}",
+            "--slug=spawn-bootstrap-{$workerId}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = json_decode(
+            (string) file_get_contents("{$orbitDir}/agent-sessions/codex/spawn-bootstrap-{$workerId}/manifest.json"),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($manifest['status'])
+            ->toBe('ok')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toContain('ownership=full')
+            ->toContain('primary_worker_id=impl-1');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('lane-close capture does not grade a mid-line worker mention as primary identity', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-midline-mention');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $workerId = 'impl-1';
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+        write_jsonl("{$codexDir}/rollout-midline-{$workerId}.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'midline-mention',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T10:10:05Z',
+                    'base_instructions' => ['text' => 'Codex system prompt without the worker marker.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "spawn_agent logged Orbit worker: {$workerId}",
+                    ]],
+                ],
+            ],
+        ]);
+
+        write_worker_registry_entry(
+            worktree: $cwd,
+            workerId: $workerId,
+            command: 'codex',
+            options: ['workingDir' => $cwd],
+        );
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            $workerId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--orbit-dir={$orbitDir}",
+            "--slug=midline-{$workerId}",
+        ], repo_path());
+        $process->run();
+
+        $manifest = json_decode(
+            (string) file_get_contents("{$orbitDir}/agent-sessions/codex/midline-{$workerId}/manifest.json"),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray([
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ])
+            ->and($manifest['disambiguation_basis'] ?? '')
+            ->toContain('ownership=partial(no_primary_identity)')
+            ->toContain('primary_worker_id=none')
+            ->not->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('lane-close capture grades a grok spawn bootstrap wrapped in user_query after context rows as full identity', function (): void {
+    $workerId = 'docs-1';
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'grok-user-query-bootstrap',
+        workerId: $workerId,
+        command: 'grok',
+    );
+    $slug = 'grok-user-query-bootstrap';
+    $bootstrap = "Orbit worker: {$workerId}. Read /tmp/x/.orbit/workers/briefs/{$workerId}.md and execute it.";
+
+    try {
+        $sessionRoot = provider_fixture_grok_session_root($fixture['home'], $fixture['cwd']);
+        $sessionDir = "{$sessionRoot}/docs-1-session";
+        mkdir($sessionDir, recursive: true);
+        write_jsonl("{$sessionDir}/chat_history.jsonl", [
+            ['type' => 'user', 'content' => "<user_info>\nOS Version: macos\n</user_info>"],
+            ['type' => 'user', 'content' => "<user_query>\n{$bootstrap}\n</user_query>"],
+            ['type' => 'assistant', 'content' => 'Working.'],
+        ]);
+        file_put_contents("{$sessionDir}/prompt_context.json", json_encode(
+            ['working_directory' => $fixture['cwd']],
+            JSON_THROW_ON_ERROR,
+        ));
+        file_put_contents("{$sessionDir}/signals.json", json_encode(
+            ['primaryModelId' => 'grok-4'],
+            JSON_THROW_ON_ERROR,
+        ));
+
+        $process = run_provider_capture(fixture: $fixture, workerId: $workerId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest['status'])
+            ->toBe('ok')
+            ->and($manifest['disambiguation_basis'] ?? '')
+            ->toContain('ownership=full')
+            ->toContain('primary_worker_id=docs-1');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('lane-close capture fails loudly with diagnostics on duplicate markers for same worker id', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-dupe');
 
     try {
@@ -1729,7 +1925,7 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
     }
 });
 
-it('lane-close capture disambiguates an inherited marker by primary Solo identity', function (): void {
+it('lane-close capture disambiguates an inherited marker by primary worker identity', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-inherited-marker');
 
     try {
@@ -3170,7 +3366,7 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
 });
 
 it(
-    'exact marker join disambiguates wrong cwd and stale starts with Solo metadata',
+    'exact marker join disambiguates wrong cwd and stale starts with registry metadata',
     function (): void {
         $temp = make_agent_session_archive_temp_dir(suffix: 'capture-edge');
 

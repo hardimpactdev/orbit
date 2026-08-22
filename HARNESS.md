@@ -52,7 +52,7 @@ Wait for workers with `bin/orbit-worker-watch` in the background; read handoff f
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
 Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
-From a repository shell, raw `tmux kill*` commands are always blocked; clean up unrelated scratch tmux servers from a shell outside the repository.
+From a repository shell, every `tmux kill*` form is blocked except the validated LAND `kill-session -t '=feat-<slug>'` boundary; clean up unrelated scratch tmux servers from a shell outside the repository.
 Missing tmux, grok, or claude on the machine is a blocker.
 
 ### PROVE

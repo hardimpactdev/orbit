@@ -723,7 +723,6 @@ function findClaudeProjectFileForWorker(string $home, string $workerId, ?string 
     $matches = [];
     $needles = [
         "Orbit worker: {$workerId}",
-        "ORBIT_WORKER_ID={$workerId}",
     ];
 
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
