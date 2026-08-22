@@ -278,6 +278,10 @@ it('rejects imported native bundles with inventory or architecture problems', fu
             $realDir = "{$nativeDir}.real";
             rename($nativeDir, $realDir);
             symlink($realDir, $nativeDir);
+        } elseif ($case === 'blank line') {
+            file_put_contents("{$nativeDir}/native-assets.env", "\n", FILE_APPEND);
+        } elseif ($case === 'malformed line') {
+            file_put_contents("{$nativeDir}/native-assets.env", "not-a-key-value\n", FILE_APPEND);
         } else {
             $env['ORBIT_TEST_FILE_RESULT'] = 'ELF 64-bit LSB executable, x86-64';
         }
@@ -305,7 +309,110 @@ it('rejects imported native bundles with inventory or architecture problems', fu
     'extra file' => ['extra file', 'native assets directory contains missing or undeclared files'],
     'symlink' => ['symlink', 'native assets path must be a directory, not a symlink'],
     'wrong file type' => ['wrong file type', 'native Agent artifact is not a Mach-O arm64 executable'],
+    'blank line' => ['blank line', 'native manifest contains blank, malformed, or extra lines'],
+    'malformed line' => ['malformed line', 'native manifest contains blank, malformed, or extra lines'],
 ]);
+
+it('rejects verify-native when the expected commit or version is not a valid identity', function (
+    string $commit,
+    string $version,
+    array $arguments,
+    array $env,
+    string $needle,
+): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'verify-native-identity-'.preg_replace('/[^a-z]+/', '-', $needle));
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: $commit,
+            version: $version,
+        );
+
+        $process = release_candidate_process(
+            arguments: ['verify-native', "--native-assets={$nativeDir}", ...$arguments],
+            env: release_candidate_process_env(root: $root, overrides: $env),
+        );
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain($needle);
+
+        expect((string) file_get_contents("{$root}/stub.log"))
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+})->with([
+    'supplied commit' => [
+        'not-a-sha',
+        '0.1.200',
+        ['--commit=not-a-sha'],
+        [],
+        'native expected commit is invalid',
+    ],
+    'supplied version' => [
+        str_repeat('a', 40),
+        'latest',
+        ['--version=latest'],
+        [],
+        'native expected version is invalid',
+    ],
+    'derived commit' => [
+        'not-a-derived-sha',
+        '0.1.200',
+        [],
+        ['ORBIT_TEST_HEAD_COMMIT' => 'not-a-derived-sha'],
+        'native expected commit is invalid',
+    ],
+]);
+
+it('fails the candidate build when the imported Agent bytes change after copy', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'native-copy-tamper');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $nativeDir = release_candidate_write_native_bundle(
+            root: $root,
+            commit: str_repeat('a', 40),
+            version: '0.1.200',
+        );
+
+        release_candidate_write_stub(binDir: "{$root}/bin", name: 'cp', body: <<<'BASH'
+            printf 'cp %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+            src="$1"
+            dest="$2"
+            if [ "${src##*/}" = 'orbit-agent-macos-arm64' ] && [ "${dest##*/}" = 'orbit-agent-macos-arm64' ]; then
+                printf 'tampered-imported-agent\n' > "$dest"
+                chmod 0755 "$dest"
+                exit 0
+            fi
+            /bin/cp "$src" "$dest"
+            BASH);
+
+        $process = release_candidate_process(
+            arguments: ['build', "--native-assets={$nativeDir}"],
+            env: release_candidate_process_env(root: $root),
+        );
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('imported Agent artifact changed after copy');
+
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+        expect($stubLog)
+            ->not->toContain('docker buildx build')
+            ->not->toContain('docker push')
+            ->not->toContain('putObject');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
 
 it('verifies a native bundle without building or publishing a candidate', function (): void {
     $temp = release_candidate_make_temp_dir(suffix: 'verify-native');
@@ -920,9 +1027,6 @@ function release_candidate_write_state(
     return $stateDir;
 }
 
-/**
- * @return array<string, string>
- */
 /**
  * @param  array<string, string>  $manifestOverrides
  */

@@ -109,8 +109,27 @@ verify_native_assets() {
     [ "$inventory" = $'native-assets.env\norbit-agent-macos-arm64' ] \
         || fail 'native assets directory contains missing or undeclared files.'
 
+    [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || fail 'native expected commit is invalid.'
+    [[ "$expected_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'native expected version is invalid.'
+
     local manifest_keys
-    manifest_keys="$(awk -F= 'NF >= 2 { print $1 }' "$manifest" | LC_ALL=C sort)"
+    if ! manifest_keys="$(awk '
+        {
+            eq = index($0, "=")
+            if (eq <= 1) {
+                status = 1
+                exit
+            }
+            print substr($0, 1, eq - 1)
+        }
+        END {
+            if (status || NR != 6) {
+                exit 1
+            }
+        }
+    ' "$manifest" | LC_ALL=C sort)"; then
+        fail 'native manifest contains blank, malformed, or extra lines.'
+    fi
     [ "$manifest_keys" = $'builder_arch\nbuilder_os\ncommit\nschema\nsha256_agent_darwin_arm64\nversion' ] \
         || fail 'native manifest contains missing, duplicate, or undeclared keys.'
 
@@ -271,10 +290,12 @@ cmd_build() {
     cp apps/cli/builds/dist/mac/mac-arm "${work_dir}/orbit-macos-arm64"
     cp apps/agent/builds/dist/linux/linux-x64 "${work_dir}/orbit-agent-linux-x64"
 
-    local imported_agent_sha='' native_builder_os='' native_builder_arch='' native_source_commit=''
+    local imported_agent_sha='' copied_agent_sha='' native_builder_os='' native_builder_arch='' native_source_commit=''
     if [ -n "$native_assets_dir" ]; then
         imported_agent_sha="$(verify_native_assets "$native_assets_dir" "$source_commit" "$version")"
         cp "${native_assets_dir}/orbit-agent-macos-arm64" "${work_dir}/orbit-agent-macos-arm64"
+        copied_agent_sha="$(compute_sha256 "${work_dir}/orbit-agent-macos-arm64")"
+        [ "$copied_agent_sha" = "$imported_agent_sha" ] || fail 'imported Agent artifact changed after copy.'
         native_builder_os="$(native_value builder_os "${native_assets_dir}/native-assets.env")"
         native_builder_arch="$(native_value builder_arch "${native_assets_dir}/native-assets.env")"
         native_source_commit="$(native_value commit "${native_assets_dir}/native-assets.env")"
