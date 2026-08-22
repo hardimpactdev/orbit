@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-22T09:52:02+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-solo-grok-claude-feature-loop/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-22-115202-codex-solo-grok-claude-feature-loop",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "6c7b82eb40f59b609d18fa33370b3ed5fddfa16c264514ecb96da0626558c8cb",
+        "loop.md": "b621459979a06912a194389e5fda3477422908724fcf383c2e867a09afc6ac0d"
+    },
+    "slug": "codex-solo-grok-claude-feature-loop",
+    "requested_slug": "codex-solo-grok-claude-feature-loop",
+    "compatible_slugs": [
+        "codex-solo-grok-claude-feature-loop"
+    ],
+    "branch": "codex/solo-grok-claude-feature-loop",
+    "candidate_commit": "9c62f874e54f423c834ac68e1ec436113b3385ca",
+    "accepted_feature_tip": "9c62f874e54f423c834ac68e1ec436113b3385ca",
+    "accepted_main_tip": "bea1cc28fcefb3b97241339267a18e8d3db55f64",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

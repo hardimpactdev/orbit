@@ -1,9 +1,9 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 399,
-    "unique_candidate_commit_count": 295,
-    "orphan_count": 0,
+    "record_count": 400,
+    "unique_candidate_commit_count": 296,
+    "orphan_count": 4,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -10278,7 +10278,47 @@
                 "protection_failures": 0
             },
             "legacy": null
+        },
+        {
+            "archive": "2026-08-22-115202-codex-solo-grok-claude-feature-loop",
+            "slug": "codex-solo-grok-claude-feature-loop",
+            "timestamp": "2026-08-22-115202",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "9c62f874e54f423c834ac68e1ec436113b3385ca",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 2,
+            "feedback": {
+                "status": "valid",
+                "event_count": 2,
+                "raw_count": 1,
+                "promoted_count": 1,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
         }
     ],
-    "orphans": []
+    "orphans": [
+        {
+            "archive": "2026-07-13-004810-agent-push-transports",
+            "reason": "empty"
+        },
+        {
+            "archive": "2026-07-15-133249-docs-drift-alignment",
+            "reason": "empty"
+        },
+        {
+            "archive": "2026-07-16-011102-codex-loop-prevention-closure",
+            "reason": "missing_loop_md"
+        },
+        {
+            "archive": "2026-07-19-112810-postgres-multi-process",
+            "reason": "missing_loop_md"
+        }
+    ]
 }
