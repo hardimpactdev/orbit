@@ -294,7 +294,12 @@ it('keeps SHA-keyed impl handoffs inspectable across correction rounds', functio
             ->toBeFile()
             ->and((string) file_get_contents($fixture['worktree'].'/.orbit/workers/handoff/impl-1-'.$firstSha.'.md'))
             ->toContain("first\n")
-            ->and(json_decode((string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'), true)['handoff'])
+            ->and(
+                json_decode(
+                    (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
+                    true,
+                )['handoff'],
+            )
             ->toEndWith('/.orbit/workers/handoff/impl-1-'.$secondSha.'.md');
     });
 });
@@ -828,8 +833,7 @@ it('watch can acknowledge a consumed handoff and wait for a later snapshot on th
         expect($secondEvent['event'])
             ->toBe('handoff')
             ->and($secondEvent['snapshot'])
-            ->not->toBe($firstEvent['snapshot'])
-            ->and($secondEvent['handoff'])
+            ->not->toBe($firstEvent['snapshot'])->and($secondEvent['handoff'])
             ->not->toBe($firstEvent['handoff']);
     });
 });

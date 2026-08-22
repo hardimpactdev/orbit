@@ -457,7 +457,8 @@ it('skips an invalid historical archive source reference and keeps valid relevan
                 'surface' => 'cli.progress',
                 'context' => [],
                 'evidence' => [],
-            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
+                .PHP_EOL,
             FILE_APPEND,
         );
 

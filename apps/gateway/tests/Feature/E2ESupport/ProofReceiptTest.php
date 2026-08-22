@@ -23,7 +23,9 @@ it('rejects a missing terminal artifact for the current clean HEAD', function ()
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('docs-only diff requires exact `composer docs-lint` or broader `composer quality-check` evidence');
+            ->toContain(
+                'docs-only diff requires exact `composer docs-lint` or broader `composer quality-check` evidence',
+            );
     } finally {
         proof_receipt_remove($fixture);
     }
@@ -199,10 +201,11 @@ it('requires a structured runtime receipt for a non-automated venue when a loop 
         proof_receipt_write_loop(
             $fixture,
             $candidate,
-            runtime: 'passed - candidate='.$candidate
-                .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture'
-                .'; expected=exit 0; observed=exit 0; result=passed'
-                .'; evidence=`.orbit/evidence/runtime-proof.txt`',
+            runtime: 'passed - candidate='
+            .$candidate
+            .'; venue=retained-incus; environment=dev-fixture; target=orbit fixture'
+            .'; expected=exit 0; observed=exit 0; result=passed'
+            .'; evidence=`.orbit/evidence/runtime-proof.txt`',
         );
 
         $ok = proof_receipt_run($fixture);
@@ -248,7 +251,13 @@ function proof_receipt_fixture(string $changedPath, string $contents): string
     file_put_contents("{$workspace}/README.md", "# Fixture\n");
     file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
     proof_receipt_write_quality_label_files($workspace);
-    proof_receipt_git($workspace, ['add', 'README.md', '.gitignore', 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
+    proof_receipt_git($workspace, [
+        'add',
+        'README.md',
+        '.gitignore',
+        'bin/orbit-quality-subgates.php',
+        'bin/quality-check.sh',
+    ]);
     proof_receipt_git($workspace, ['commit', '-m', 'Initial']);
     proof_receipt_git($workspace, ['checkout', '-b', 'feature']);
     $absolute = "{$workspace}/{$changedPath}";

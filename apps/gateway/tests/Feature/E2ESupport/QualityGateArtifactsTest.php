@@ -1261,7 +1261,9 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         ->not->toContain('bin/quality-gate-run')
         ->not->toContain('.env.e2e')->and((string) file_get_contents(repo_path('.claude/settings.json')))->toContain(
             'orbit-codex-pre-tool-use-hook',
-        )->toContain('orbit-review-pre-tool-use-hook')->and((string) file_get_contents(repo_path('.codex/hooks.json')))->toContain(
+        )->toContain('orbit-review-pre-tool-use-hook')->and((string) file_get_contents(repo_path(
+            '.codex/hooks.json',
+        )))->toContain(
             'orbit-codex-pre-tool-use-hook',
         )->toContain('orbit-review-pre-tool-use-hook');
 });

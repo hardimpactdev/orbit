@@ -1874,7 +1874,13 @@ function acceptance_test_workspace(string $suffix, string $changedPath): string
     file_put_contents("{$workspace}/README.md", "# Fixture\n");
     file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
     acceptance_test_write_quality_label_files($workspace);
-    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
+    acceptance_test_git($workspace, [
+        'add',
+        'README.md',
+        '.gitignore',
+        'bin/orbit-quality-subgates.php',
+        'bin/quality-check.sh',
+    ]);
     acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
     acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
     $absolute = "{$workspace}/{$changedPath}";
@@ -1903,7 +1909,14 @@ function acceptance_test_rename_workspace(string $suffix, string $sourcePath, st
     file_put_contents("{$workspace}/.gitignore", ".orbit/\n");
     file_put_contents("{$workspace}/{$sourcePath}", "authority\n");
     acceptance_test_write_quality_label_files($workspace);
-    acceptance_test_git($workspace, ['add', 'README.md', '.gitignore', $sourcePath, 'bin/orbit-quality-subgates.php', 'bin/quality-check.sh']);
+    acceptance_test_git($workspace, [
+        'add',
+        'README.md',
+        '.gitignore',
+        $sourcePath,
+        'bin/orbit-quality-subgates.php',
+        'bin/quality-check.sh',
+    ]);
     acceptance_test_git($workspace, ['commit', '-m', 'Initial']);
     acceptance_test_git($workspace, ['checkout', '-b', 'feature']);
     $destinationDirectory = dirname("{$workspace}/{$destinationPath}");
@@ -2023,6 +2036,10 @@ function acceptance_test_write_gate_artifact(string $fixture): void
 
     if (! is_dir($directory)) {
         mkdir($directory, recursive: true);
+    }
+
+    foreach (glob("{$directory}/quality-check-*.json") ?: [] as $existing) {
+        unlink($existing);
     }
 
     $commit = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
