@@ -163,10 +163,72 @@ manifests.
    status. Do not infer Mini state from another machine.
 
 7. Build and publish the release candidate artifacts once from the pushed
-   source commit with the release-candidate helper:
+   source commit. Beast is the coordinator: it builds both CLI binaries, the
+   Linux Agent, images, and archives. Mini builds only the Darwin ARM64 Agent
+   in an isolated exact-commit worktree. Do not modify Mini's primary checkout.
+   Branch names are transport context; the full 40-character SHA is identity.
+
+   Before any SSH, confirm strict host-key verification is already in place and
+   that `ssh -G` resolves the two LAN hosts. If either host resolves to another
+   address, stop. Do not add `StrictHostKeyChecking=no` and do not fall back to
+   WireGuard:
 
    ```bash
-   bin/orbit-release-candidate build
+   mini_hostname="$(ssh -G nckrtl@192.168.6.10 | awk '$1 == "hostname" { print $2; exit }')"
+   beast_hostname="$(ssh -G nckrtl@192.168.6.20 | awk '$1 == "hostname" { print $2; exit }')"
+   if [ "$mini_hostname" != '192.168.6.10' ] || [ "$beast_hostname" != '192.168.6.20' ]; then
+     echo "Native candidate build hosts must resolve to the LAN addresses." >&2
+     exit 1
+   fi
+   ```
+
+   From Beast, record the exact source identity and Mini/Beast paths, then
+   prepare Mini, build the native bundle, import it over the LAN, verify it,
+   and only then assemble the candidate:
+
+   ```bash
+   source_branch="$(git branch --show-current)"
+   source_commit="$(git rev-parse HEAD)"
+   source_version="$(bin/orbit-version)"
+   short_commit="${source_commit:0:12}"
+   mini_worktree="/Users/nckrtl/orbit/.worktrees/release-native-${short_commit}"
+   mini_transfer="${mini_worktree}/.orbit/release-native-transfer"
+   beast_native_assets="${PWD}/.orbit/release-native-imports/${source_commit}"
+   beast_native_staging="${beast_native_assets}.staging"
+
+   printf -v mini_prepare_command \
+     'cd %q && bin/orbit-release-build-worktree prepare --source=%q --branch=%q --commit=%q --path=%q' \
+     '/Users/nckrtl/orbit' \
+     'ssh://nckrtl@192.168.6.20/home/nckrtl/orbit' \
+     "$source_branch" \
+     "$source_commit" \
+     "$mini_worktree"
+   ssh -o BatchMode=yes nckrtl@192.168.6.10 "$mini_prepare_command"
+
+   printf -v mini_build_command \
+     'cd %q && bin/orbit-build-native-release-assets --output=%q' \
+     "$mini_worktree" \
+     "$mini_transfer"
+   ssh -o BatchMode=yes nckrtl@192.168.6.10 "$mini_build_command"
+
+   test ! -e "$beast_native_assets"
+   test ! -e "$beast_native_staging"
+   mkdir -p "$beast_native_staging"
+
+   printf -v mini_sync_command \
+     'rsync -a %q/ %q:%q/' \
+     "$mini_transfer" \
+     'nckrtl@192.168.6.20' \
+     "$beast_native_staging"
+   ssh -o BatchMode=yes nckrtl@192.168.6.10 "$mini_sync_command"
+
+   mv "$beast_native_staging" "$beast_native_assets"
+   bin/orbit-release-candidate verify-native \
+     --native-assets="$beast_native_assets" \
+     --commit="$source_commit" \
+     --version="$source_version"
+
+   bin/orbit-release-candidate build --native-assets="$beast_native_assets"
    ```
 
    The helper sources the release env before Laravel reads `apps/gateway`
@@ -180,24 +242,45 @@ manifests.
 
    `build` re-runs the origin/main preflight (it exits 1 with "Candidate
    artifacts must be built from the pushed origin/main commit." when HEAD
-   differs from `origin/main`), builds both CLI binaries, builds and pushes
-   the candidate gateway image to GHCR, captures the pushed digest, generates
-   the `topology-candidate` manifest, uploads the immutable candidate assets
-   under `candidates/<build_id>/`, and publishes the stable channel manifest.
-   It stops at candidate channel publication — it never creates GitHub
-   releases, pushes tags, or promotes images — and finishes by printing
+   differs from `origin/main`), builds both CLI binaries on Beast, imports the
+   verified Darwin ARM64 Agent instead of building it locally, builds and
+   pushes the candidate gateway image to GHCR, captures the pushed digest,
+   generates the `topology-candidate` manifest, uploads the immutable candidate
+   assets under `candidates/<build_id>/`, and publishes the stable channel
+   manifest. It stops at candidate channel publication — it never creates
+   GitHub releases, pushes tags, or promotes images — and finishes by printing
    `Candidate channel manifest: <url>` and `Release candidate state: <dir>`.
    Do not use S3 image tarballs as the normal gateway image path; Docker Swarm
    must consume the OCI registry reference recorded in the manifest.
 
    Durable candidate state lands in `.orbit/release-candidates/<build_id>/`:
   `candidate.env` (version, build id, commit, candidate image, gateway
-  digest, channel manifest URL, and the sha256 of each CLI and Orbit Agent
-  binary), the image push log, CLI binaries, Orbit Agent binaries, and the
-  candidate manifest. No secrets are written to state or logs.
+  digest, channel manifest URL, the sha256 of each CLI and Orbit Agent
+  binary, and native builder identity when assets were imported), the image
+  push log, CLI binaries, Orbit Agent binaries, and the candidate manifest.
+  No secrets are written to state or logs.
   `.orbit/release-candidates/latest` holds the newest build id; `env` and
   `verify` read it when `--build-id` is absent, and an explicit
   `--build-id=<id>` always wins over the pointer.
+
+   After that durable candidate state exists, remove only this run's Mini
+   build worktree and Beast import directory. Do not touch Mini's primary
+   checkout, Beast's primary checkout, or other worktrees:
+
+   ```bash
+   printf -v mini_remove_command \
+     'cd %q && bin/orbit-release-build-worktree remove --commit=%q --path=%q' \
+     '/Users/nckrtl/orbit' \
+     "$source_commit" \
+     "$mini_worktree"
+   ssh -o BatchMode=yes nckrtl@192.168.6.10 "$mini_remove_command"
+
+   expected_import_root="${PWD}/.orbit/release-native-imports"
+   case "$beast_native_assets" in
+     "${expected_import_root}/"*) rm -rf -- "$beast_native_assets" ;;
+     *) printf 'refusing unsafe native import cleanup: %s\n' "$beast_native_assets" >&2; exit 1 ;;
+   esac
+   ```
 
    Load the candidate state into the shell and point the target gateway at
    the stable channel URL:

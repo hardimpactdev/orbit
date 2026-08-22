@@ -173,7 +173,18 @@ with `orbit update:all` before a `v<VERSION>` GitHub release exists. Candidate
 assets remain immutable under `candidates/<BUILD_ID>/`; activation only updates
 the channel manifest so a live-test gateway can keep one custom manifest URL
 selected through `orbit manifest:update`. `orbit manifest:remove` clears that
-override after candidate acceptance or rejection. After live acceptance, the
+override after candidate acceptance or rejection.
+
+Beast is the candidate coordinator. It builds all portable and Linux assets,
+including both PHPacker CLI targets. When a candidate artifact requires a
+native Darwin ARM64 host, Beast binds one exact source commit, asks Mini to
+fetch that commit into an isolated build-only worktree, and imports Mini's
+checksummed artifact bundle over the local network. Mini is `192.168.6.10` and
+Beast is `192.168.6.20`; this build lane does not fall back to WireGuard.
+Beast verifies the returned source commit, Orbit version, declared file set,
+SHA-256, and Mach-O architecture before candidate assembly or channel
+publication. GitHub publication continues to promote those accepted bytes
+without rebuilding them. After live acceptance, the
 exact tested CLI binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
 `github-release` manifest are attached to a draft `hardimpactdev/orbit`
