@@ -54,15 +54,21 @@ it('refuses unaccepted zero-delta LAND --plan and does not claim archive', funct
     }
 });
 
-it('refuses zero-delta LAND --plan when accepted words hide stale feature tips', function (): void {
+it('refuses zero-delta LAND --plan when accepted words hide stale feature tips', function (
+    string $staleLabel,
+    string $messageNeedle,
+): void {
     $fixture = land_prepare(accepted: false, merged: false);
 
     try {
         land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
         $staleTip = str_repeat('a', 40);
         $loop = (string) file_get_contents("{$fixture['worktree']}/.orbit/loop.md");
-        $loop = (string) preg_replace('/^- Reviewed feature tip: .+$/m', "- Reviewed feature tip: {$staleTip}", $loop);
-        $loop = (string) preg_replace('/^- Accepted feature tip: .+$/m', "- Accepted feature tip: {$staleTip}", $loop);
+        $loop = (string) preg_replace(
+            '/^- '.preg_quote($staleLabel, '/').': .+$/m',
+            "- {$staleLabel}: {$staleTip}",
+            $loop,
+        );
         file_put_contents("{$fixture['worktree']}/.orbit/loop.md", $loop);
 
         $headBefore = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['repo'])->mustRun()->getOutput());
@@ -75,13 +81,16 @@ it('refuses zero-delta LAND --plan when accepted words hide stale feature tips',
             ->not
             ->toContain('phase=archive')
             ->and(strtolower($plan->getErrorOutput().$plan->getOutput()))
-            ->toMatch('/reviewed feature tip|accepted feature tip|does not equal/')
+            ->toMatch($messageNeedle)
             ->and($headAfter)
             ->toBe($headBefore);
     } finally {
         land_remove_fixture($fixture);
     }
-});
+})->with([
+    'stale reviewed feature tip' => ['Reviewed feature tip', '/reviewed feature tip does not equal/'],
+    'stale accepted feature tip' => ['Accepted feature tip', '/accepted feature tip does not equal/'],
+]);
 
 it('exposes one-step resume after merge and keeps archive-commit as the next ordered phase', function (): void {
     $fixture = land_prepare(accepted: true, merged: true);
@@ -426,6 +435,69 @@ it('blocks an absent owned session until the landed archive gate is proved', fun
             ->toBe(0, $again->getErrorOutput().$again->getOutput())
             ->and($again->getOutput())
             ->toContain('FINALIZATION: PASS');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('blocks an absent uniquely bound session whose loop declares another session', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+
+    try {
+        new Process([
+            'tmux',
+            '-L',
+            $fixture['socket'],
+            'kill-session',
+            '-t',
+            '='.$fixture['session'],
+        ])->mustRun();
+        land_tmux_new_session($fixture['socket'], name: 'feat-keep-server', cwd: $fixture['repo']);
+        land_write_session_header($fixture['worktree'], 'feat-other');
+
+        $blocked = land_run_finalization($fixture, 'tmux kill-session -t =feat-feature');
+
+        expect($blocked->getExitCode())
+            ->toBe(2, $blocked->getErrorOutput().$blocked->getOutput())
+            ->and($blocked->getOutput())
+            ->not
+            ->toContain('FINALIZATION: PASS')
+            ->and(strtolower($blocked->getErrorOutput().$blocked->getOutput()))
+            ->toMatch('/does not declare the exact session/');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('blocks an absent session that is ambiguous across linked feature worktrees', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        $twin = $fixture['root'].'/twin/feature';
+        land_mkdir($fixture['root'].'/twin');
+        land_run($fixture['repo'], ['git', 'branch', 'feature-twin']);
+        land_run($fixture['repo'], ['git', 'worktree', 'add', $twin, 'feature-twin']);
+        land_write_session_header($twin, 'feat-feature');
+
+        new Process([
+            'tmux',
+            '-L',
+            $fixture['socket'],
+            'kill-session',
+            '-t',
+            '='.$fixture['session'],
+        ])->mustRun();
+        land_tmux_new_session($fixture['socket'], name: 'feat-keep-server', cwd: $fixture['repo']);
+
+        $blocked = land_run_finalization($fixture, 'tmux kill-session -t =feat-feature');
+
+        expect($blocked->getExitCode())
+            ->toBe(2, $blocked->getErrorOutput().$blocked->getOutput())
+            ->and($blocked->getOutput())
+            ->not
+            ->toContain('FINALIZATION: PASS')
+            ->and(strtolower($blocked->getErrorOutput().$blocked->getOutput()))
+            ->toMatch('/absent session is ambiguous across 2 linked feature worktrees/');
     } finally {
         land_remove_fixture($fixture);
     }

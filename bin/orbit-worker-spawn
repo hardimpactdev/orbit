@@ -190,6 +190,23 @@ try {
         $socket,
     );
 
+    usleep(400_000);
+
+    $retryEnter = orbit_tmux_run(
+        ['send-keys', '-t', '='.$session.':'.$id, 'Enter'],
+        $socket,
+    );
+
+    if ($retryEnter['exit'] !== 0) {
+        $reason = trim($retryEnter['stderr']);
+
+        throw new RuntimeException(
+            $reason === ''
+                ? "tmux send-keys Enter failed for {$session}:{$id}"
+                : $reason,
+        );
+    }
+
     if ($json) {
         fwrite(
             STDOUT,

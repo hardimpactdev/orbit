@@ -535,6 +535,77 @@ it('sends the spawn bootstrap after the fake CLI is running', function (): void 
     });
 });
 
+it('retries bootstrap submit for a delayed interactive CLI', function (string $cli): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin) use ($cli): void {
+        file_put_contents(
+            $fakeBin.'/'.$cli,
+            data: <<<'PHP'
+                #!/usr/bin/env php
+                <?php
+                fwrite(STDOUT, "cli-fake-ready\n");
+                fflush(STDOUT);
+                $buffer = '';
+                $enters = 0;
+                $stdin = fopen('php://stdin', 'r');
+                if ($stdin === false) {
+                    exit(1);
+                }
+                while (($char = fgetc($stdin)) !== false) {
+                    if ($char === "\n" || $char === "\r") {
+                        $enters++;
+                        if ($enters >= 2) {
+                            fwrite(STDOUT, 'accepted-bootstrap:'.$buffer."\n");
+                            fflush(STDOUT);
+                            break;
+                        }
+                        continue;
+                    }
+                    $buffer .= $char;
+                }
+                while (fgets($stdin) !== false) {
+                }
+                PHP,
+        );
+        chmod($fakeBin.'/'.$cli, permissions: 0o755);
+
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=review',
+                "--cli={$cli}",
+                "--brief={$brief}",
+                '--name=review-1',
+                '--ready-delay=8',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            20,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $logPath = $fixture['worktree'].'/.orbit/workers/logs/review-1.log';
+        $briefPath = realpath($brief) ?: $brief;
+        $marker = "Orbit worker: review-1. Read {$briefPath} and execute it.";
+        $seen = worker_tools_wait_for(function () use ($logPath): bool {
+            return is_file($logPath) && str_contains((string) file_get_contents($logPath), 'accepted-bootstrap:');
+        }, 12);
+
+        $log = is_file($logPath) ? (string) file_get_contents($logPath) : '';
+
+        expect($seen)
+            ->toBeTrue($log)
+            ->and(str_replace("\r", '', $log))
+            ->toMatch('/^accepted-bootstrap:'.preg_quote($marker, '/').'$/m');
+    });
+})->with([
+    'grok' => ['grok'],
+    'claude' => ['claude'],
+]);
+
 it('watch returns none when no workers are registered', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         $process = worker_tools_run(
