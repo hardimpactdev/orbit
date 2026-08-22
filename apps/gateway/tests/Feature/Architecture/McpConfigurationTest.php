@@ -314,6 +314,7 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
     $todoHandoff = file_get_contents(repo_path('.agents/skills/solo-todo-handoff/SKILL.md')) ?: '';
     $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
     $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
+    $featureGraph = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
 
     expect($harness)
         ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
@@ -345,7 +346,18 @@ it('keeps Codex in charge while Solo dispatches Grok implementation and Claude O
         ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
             'hand implementation ownership to Desktop Codex using implementing-features',
         )
-        ->not->toContain('optional delegation');
+        ->not->toContain('optional delegation')->and($featureGraph)->toContain('"version": "3.2.0"')->toContain(
+            'HARNESS-defined role policy',
+        )->toContain('Grok via main Orbit Solo with --cwd at the exact worktree')->toContain(
+            'Claude Opus general reviewer',
+        )->toContain('Preserve main Solo project and processes; remove worktree, then branch')->toContain(
+            'Codex/Grok/Claude role split',
+        )
+        ->not->toContain('Optional bounded workers')
+        ->not->toContain('"id": "optional-worker"')
+        ->not->toContain('out-of-repo operator instruction')
+        ->not->toContain('implement directly')
+        ->not->toContain('Ordered Solo/project/worktree/branch cleanup');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {
