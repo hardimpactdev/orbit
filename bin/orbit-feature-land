@@ -32,14 +32,15 @@ try {
     $branch = $options['branch'];
     $worktree = landAbs($options['worktree'], $primary);
     $session = landSessionName($worktree);
+    $tmuxSocket = landTmuxSocketFromEnv();
     $mode = $options['status'] || $options['plan'] ? 'status' : ($options['one-step'] ? 'one-step' : 'execute');
 
     landRefuseSelfCwd($worktree);
     landRefuseSelfSession($session);
     landRequireMain($primary);
-    landRequireIdentity($primary, $branch, $worktree, $session);
+    landRequireIdentity($primary, $branch, $worktree, $session, $tmuxSocket);
 
-    $state = landObserve($primary, $branch, $worktree, $session);
+    $state = landObserve($primary, $branch, $worktree, $session, $tmuxSocket);
 
     if ($mode === 'status' || $state['phase'] === 'done') {
         landEmit($state);
@@ -52,17 +53,17 @@ try {
         landRefuseSelfCwd($worktree);
         landRefuseSelfSession($session);
         landRequireMain($primary);
-        landRequireIdentity($primary, $branch, $worktree, $session);
+        landRequireIdentity($primary, $branch, $worktree, $session, $tmuxSocket);
 
-        $before = landObserve($primary, $branch, $worktree, $session);
+        $before = landObserve($primary, $branch, $worktree, $session, $tmuxSocket);
 
         if ($before['phase'] === 'done') {
             landEmit($before);
             exit(0);
         }
 
-        landExecute($primary, $binRoot, $branch, $worktree, $session, $before);
-        $state = landObserve($primary, $branch, $worktree, $session);
+        landExecute($primary, $binRoot, $branch, $worktree, $session, $tmuxSocket, $before);
+        $state = landObserve($primary, $branch, $worktree, $session, $tmuxSocket);
         landEmit($state);
 
         if (
@@ -231,11 +232,15 @@ function landSessionName(string $worktree): string
     return $session;
 }
 
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $tmuxSocket
+ */
 function landRequireIdentity(
     string $primary,
     string $branch,
     string $worktree,
     string $session,
+    ?array $tmuxSocket,
 ): void {
     if (in_array($branch, ['main', 'master'], true)) {
         throw new RuntimeException('refuses to land main/master as a feature branch');
@@ -262,7 +267,7 @@ function landRequireIdentity(
         );
     }
 
-    $has = orbit_tmux_has_session($session);
+    $has = orbit_tmux_has_session($session, $tmuxSocket);
 
     if ($has['status'] === 'error') {
         throw new RuntimeException('tmux lookup failed: '.($has['reason'] ?? 'unknown'));
@@ -272,7 +277,7 @@ function landRequireIdentity(
         return;
     }
 
-    $pathLookup = orbit_tmux_session_path($session);
+    $pathLookup = orbit_tmux_session_path($session, $tmuxSocket);
 
     if ($pathLookup['status'] === 'error') {
         throw new RuntimeException('tmux lookup failed: '.($pathLookup['reason'] ?? 'unknown'));
@@ -304,6 +309,7 @@ function landRequireIdentity(
 }
 
 /**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $tmuxSocket
  * @return array{phase: string, next_action: string, detail: string}
  */
 function landObserve(
@@ -311,6 +317,7 @@ function landObserve(
     string $branch,
     string $worktree,
     string $session,
+    ?array $tmuxSocket,
 ): array {
     if (! landFeatureLanded($primary, $branch)) {
         return landState('merge', "git merge {$branch}", 'feature tip is not an ancestor of main');
@@ -328,7 +335,7 @@ function landObserve(
         );
     }
 
-    $has = orbit_tmux_has_session($session);
+    $has = orbit_tmux_has_session($session, $tmuxSocket);
 
     if ($has['status'] === 'error') {
         throw new RuntimeException('tmux lookup failed: '.($has['reason'] ?? 'unknown'));
@@ -381,13 +388,17 @@ function landEmit(array $state): void
     fwrite(STDOUT, "phase={$state['phase']}\nnext_action={$state['next_action']}\ndetail={$state['detail']}\n");
 }
 
-/** @param  array{phase: string, next_action: string, detail: string}  $state */
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $tmuxSocket
+ * @param  array{phase: string, next_action: string, detail: string}  $state
+ */
 function landExecute(
     string $primary,
     string $binRoot,
     string $branch,
     string $worktree,
     string $session,
+    ?array $tmuxSocket,
     array $state,
 ): void {
     match ($state['phase']) {
@@ -399,7 +410,7 @@ function landExecute(
         ),
         'archive' => landArchive($primary, $binRoot, $worktree, $branch),
         'archive-commit' => landCommitArchive($primary, $binRoot, $branch),
-        'kill-session' => landKillSession($primary, $binRoot, $session),
+        'kill-session' => landKillSession($primary, $binRoot, $session, $tmuxSocket),
         'remove-worktree' => landValidated(
             $primary,
             $binRoot,
@@ -416,22 +427,38 @@ function landExecute(
     };
 }
 
-function landKillSession(string $primary, string $binRoot, string $session): void
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $tmuxSocket
+ */
+function landKillSession(string $primary, string $binRoot, string $session, ?array $tmuxSocket): void
 {
-    $socket = getenv('ORBIT_TMUX_SOCKET');
     $check = 'tmux';
     $command = ['tmux'];
 
-    if (is_string($socket) && $socket !== '') {
-        $check .= ' -L '.$socket;
-        $command[] = '-L';
-        $command[] = $socket;
+    if ($tmuxSocket !== null) {
+        $check .= ' '.$tmuxSocket['flag'].' '.$tmuxSocket['value'];
+        $command[] = $tmuxSocket['flag'];
+        $command[] = $tmuxSocket['value'];
     }
 
     $check .= ' kill-session -t ='.$session;
     array_push($command, 'kill-session', '-t', '='.$session);
 
     landValidated($primary, $binRoot, $check, $command);
+}
+
+/**
+ * @return array{flag: '-L'|'-S', value: string}|null
+ */
+function landTmuxSocketFromEnv(): ?array
+{
+    $socket = getenv('ORBIT_TMUX_SOCKET');
+
+    if (! is_string($socket) || $socket === '') {
+        return null;
+    }
+
+    return ['flag' => '-L', 'value' => $socket];
 }
 
 /** @param  list<string>  $command */

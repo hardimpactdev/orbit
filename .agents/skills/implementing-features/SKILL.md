@@ -15,14 +15,9 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 - Work in an isolated worktree created by `bin/orbit-prepare-worktree`. It seeds
   `.orbit/loop.md` when it is missing. If preparation fails, report the
   blocker; do not recreate the setup flow manually.
-- Preserve unrelated user state.
 - Never run, delegate, background, schedule, hook, script, or trigger a
   `composer test:e2e*` command; canonical rule: `HARNESS.md`.
-- Keep product docs, executable coverage, and implementation aligned.
-- Reject nonignored untracked files at review, acceptance, finalization, and
-  sync boundaries.
 - `human-judgment=required` work needs explicit user acceptance before merge.
-  Do not rebase or amend an accepted feature tip.
 
 ## FRAME
 
@@ -30,20 +25,21 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 2. Resolve outcome, owned paths, constraints, and exclusions against
    `PRODUCT_DECISIONS.md` and the owning `apps/docs/content/` authority.
 3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback
-   belongs in `.orbit/feedback.jsonl`. Stateful, lifecycle, or concrete UX
-   work may append the `primitive=`/`transitions=` Scope clause per
-   `HARNESS.md` FRAME.
+   belongs in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per
+   `HARNESS.md` FRAME when needed.
 4. With a stable scope, pull prior feedback:
    `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
 5. Derive the venue early: `bin/orbit-feature-acceptance route`.
 
 ## BUILD
 
-Start with failing coverage in the owning framework; capture red, make the
-smallest change, rerun. Load owning skills. macOS Agent: `tauri-agent-development`.
+Start with failing coverage. macOS Agent: `tauri-agent-development`.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
+Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
+Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.
+Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
 Missing tmux, grok, or claude on the machine is a blocker.
 
 ## PROVE
@@ -90,16 +86,15 @@ Do not send an acceptance handoff when the actor is automated. On
 verbatim acceptance with `--actor=user --source-ref=<codex-or-claude-ref>`.
 
 On feedback, use `bin/orbit-feature-feedback record`, invalidate acceptance,
-return to BUILD, and repeat affected proof and review. Main movement requires
-merge and PROVE. Close feedback through `HARNESS.md` Feedback And Protections;
-Never solicit a waiver; record only a user-volunteered one.
+return to BUILD, and re-prove. Close feedback through `HARNESS.md` Feedback
+And Protections; Never solicit a waiver.
 
 ## LAND
 
-Prefer `bin/orbit-feature-land --branch=<feature> --worktree=<exact-feature-worktree>`
-(`--status`/`--plan`/`--one-step` inspect or resume). Manual LAND follows
+Prefer `bin/orbit-feature-land --branch=<feature> --worktree=<exact-feature-worktree>`.
+Manual LAND follows
 `HARNESS.md` LAND: lint with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`,
 validate each destructive mutation on `<exact command>`, execute after
 `FINALIZATION: PASS`, then compact `bin/orbit-session-archive` from the feature
 worktree (never cwd main; `--full` only for failure/escalation/security/release
-scope). Commit archive/index, kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch. Preserve unrelated tmux sessions and files. Report outcome, proof, review, accepted tips, archive, and blockers.
+scope). Commit archive/index, kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch. Preserve unrelated tmux sessions and files.

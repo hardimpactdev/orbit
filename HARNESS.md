@@ -18,12 +18,9 @@ pointer to `.orbit/feedback.jsonl`. Raw feedback, transcripts, and retrospective
 taxonomies do not belong in the anchor.
 
 Owner prepares the worktree (session created), fills `.orbit/loop.md`, and
-writes briefs under `.orbit/workers/briefs/`. Owner spawns workers and starts
-`bin/orbit-worker-watch` in the background; idle costs nothing. On wake the
-owner reads the event JSON and the small handoff or status files, acts, and
-re-arms the watcher. Stale or dead workers are the only time it inspects a
-log or a `capture-pane`. Landing serializes per branch: merge main,
-`composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land`.
+writes briefs under `.orbit/workers/briefs/`. Idle wait costs nothing; on wake
+read the event JSON and handoff files. Landing serializes per branch: merge
+main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land`.
 
 ### FRAME
 
@@ -46,13 +43,14 @@ log or a `capture-pane`. Landing serializes per branch: merge main,
 
 ### BUILD
 
-Keep docs, executable coverage, and implementation aligned. Start with failing
-coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
-for other stacks. Prefer a small working vertical slice and existing project
-abstractions.
+Keep docs, tests, and code aligned. Start with failing coverage. Prefer a
+small working vertical slice.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`; Grok runs with no model override and cwd at the exact feature worktree. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch` in the background; read handoff files, never worker output; inspect a log only to diagnose a stalled or dead worker.
+Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at milestones and at least every 10 minutes, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
+Re-arm `bin/orbit-worker-watch --ignore=<finished ids>` after handling an event; it returns immediately for entries already at handoff or exited.
+Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
 Missing tmux, grok, or claude on the machine is a blocker.
 
 ### PROVE
@@ -179,8 +177,9 @@ build as the default acceptance path:
    make. Do not hand off a command or check an agent can run.
 
 CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
-Otherwise it is agent-owned proof and may close after completion. On feedback, keep the topology, invalidate
-acceptance, fix, resync only what changed, and repeat the affected proof.
+Otherwise it is agent-owned proof and may close after completion. On feedback,
+keep the topology, invalidate acceptance, fix, resync only what changed, and
+repeat the affected proof.
 
 The `composer test:e2e*` commands are human-only: they run only when the
 user explicitly invokes the Composer command from a shell, and skills, hooks,
@@ -309,9 +308,10 @@ metrics table, or signal record. Process improvement starts only after one of:
 - a reviewer-confirmed recurring process failure; or
 - explicit user process feedback.
 
-There may be one active loop experiment at a time. Keep it in `~/shared-knowledge/projects/orbit/loop-analysis/` tagged loop-experiment
-with the trigger, smallest change, one target metric
-derived from existing compact receipts, a fixed window, and a revert command.
+There may be one active loop experiment at a time. Keep it in
+`~/shared-knowledge/projects/orbit/loop-analysis/` tagged loop-experiment with
+the trigger, smallest change, one target metric derived from existing compact
+receipts, a fixed window, and a revert command.
 Revert by default when the target does not improve, a hard protection fails, or
 ordinary delivery slows materially. Do not create generic evaluator tooling for
 a one-off calculation.

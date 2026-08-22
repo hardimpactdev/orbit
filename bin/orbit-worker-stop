@@ -1,0 +1,100 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-worker-registry.php';
+
+const ORBIT_WORKER_STOP_USAGE = 'Usage: bin/orbit-worker-stop <id> [--all-finished]';
+
+try {
+    $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+    $allFinished = ($parsed['options']['all-finished'] ?? false) === true;
+    $id = $parsed['positional'][0] ?? null;
+
+    if ($allFinished && $parsed['positional'] !== []) {
+        throw new RuntimeException(ORBIT_WORKER_STOP_USAGE);
+    }
+
+    if (! $allFinished && (! is_string($id) || $id === '' || count($parsed['positional']) !== 1)) {
+        throw new RuntimeException(ORBIT_WORKER_STOP_USAGE);
+    }
+
+    $worktree = orbit_worker_worktree((string) getcwd());
+
+    if ($allFinished) {
+        $targets = [];
+
+        foreach (orbit_worker_list($worktree) as $entry) {
+            if (! in_array((string) $entry['status'], ['handoff', 'blocked'], true)) {
+                continue;
+            }
+
+            $targets[] = $entry;
+        }
+
+        foreach ($targets as $entry) {
+            if (orbit_worker_is_self_pane($entry)) {
+                $session = (string) $entry['tmux']['session'];
+                $window = (string) $entry['tmux']['window'];
+
+                throw new RuntimeException(
+                    "refuses to stop the caller's own pane: {$entry['id']} ({$session}:{$window})",
+                );
+            }
+        }
+
+        foreach ($targets as $entry) {
+            fwrite(STDOUT, orbit_worker_stop_one($worktree, $entry).PHP_EOL);
+        }
+
+        exit(0);
+    }
+
+    $entry = orbit_worker_require_entry($worktree, $id);
+    fwrite(STDOUT, orbit_worker_stop_one($worktree, $entry).PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
+
+/**
+ * @param  array<string, mixed>  $entry
+ */
+function orbit_worker_stop_one(string $worktree, array $entry): string
+{
+    $id = (string) $entry['id'];
+    $session = (string) $entry['tmux']['session'];
+    $window = (string) $entry['tmux']['window'];
+    $socket = orbit_worker_tmux_socket($entry) ?? orbit_worker_ambient_socket();
+
+    if (orbit_worker_is_self_pane($entry)) {
+        throw new RuntimeException(
+            "refuses to stop the caller's own pane: {$id} ({$session}:{$window})",
+        );
+    }
+
+    $alive = orbit_worker_window_alive($entry);
+
+    if ($alive === 'unknown') {
+        throw new RuntimeException("tmux lookup failed for worker {$id} ({$session}:{$window})");
+    }
+
+    if ($alive === 'alive') {
+        $killed = orbit_tmux_run(['kill-window', '-t', '='.$session.':'.$id], $socket);
+
+        if ($killed['exit'] !== 0) {
+            $reason = trim($killed['stderr']);
+
+            throw new RuntimeException(
+                $reason === '' ? "tmux kill-window failed for {$id}" : $reason,
+            );
+        }
+    } else {
+        fwrite(STDERR, "worker window is already gone: {$id} ({$session}:{$window})".PHP_EOL);
+    }
+
+    orbit_worker_mark_exited($worktree, $entry);
+
+    return $id;
+}

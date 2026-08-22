@@ -71,7 +71,7 @@ function find_command_value(array $value): ?string
 }
 
 /**
- * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'tmux-session-kill', session: string}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'merge', targets: list<string>}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|array{type: 'tmux-session-kill', session: string, socket: null|array{flag: '-L'|'-S', value: string}}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_command(string $command): ?array
 {

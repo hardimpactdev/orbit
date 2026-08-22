@@ -17,12 +17,17 @@ try {
     $json = ($parsed['options']['json'] ?? false) === true;
     $worktree = orbit_worker_worktree((string) getcwd());
     $entries = [];
+    $aliveById = [];
 
     foreach (orbit_worker_list($worktree) as $entry) {
-        if (! orbit_worker_window_alive($entry) && $entry['status'] !== 'exited') {
+        $alive = orbit_worker_window_alive($entry);
+
+        if ($alive === 'gone' && $entry['status'] !== 'exited') {
             $entry = orbit_worker_mark_exited($worktree, $entry);
+            $alive = 'gone';
         }
 
+        $aliveById[(string) $entry['id']] = $alive;
         $entries[] = $entry;
     }
 
@@ -37,6 +42,7 @@ try {
     printf("%-12s %-8s %-8s %-10s %-6s %-6s %s\n", 'ID', 'ROLE', 'CLI', 'STATUS', 'AGE', 'ALIVE', 'NOTE');
 
     foreach ($entries as $entry) {
+        $alive = $aliveById[(string) $entry['id']] ?? 'unknown';
         printf(
             "%-12s %-8s %-8s %-10s %-6s %-6s %s\n",
             (string) $entry['id'],
@@ -44,7 +50,7 @@ try {
             (string) $entry['cli'],
             (string) $entry['status'],
             orbit_worker_heartbeat_age((string) $entry['heartbeat_at']),
-            orbit_worker_window_alive($entry) ? 'yes' : 'no',
+            $alive === 'alive' ? 'yes' : ($alive === 'unknown' ? '?' : 'no'),
             (string) $entry['note'],
         );
     }

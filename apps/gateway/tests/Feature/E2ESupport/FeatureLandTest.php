@@ -426,6 +426,13 @@ it('strictly classifies tmux kill-session commands', function (string $command, 
         'tmux -L foo\\bar kill-session -t =feat-feature',
         '/quoted|shell-fragment|invalid|blocked/',
     ],
+    'kill-server' => ['tmux kill-server', '/kill-server|not an allowed|invalid|blocked/'],
+    'kill-server with -L' => ['tmux -L sock kill-server', '/kill-server|not an allowed|invalid|blocked/'],
+    'kill-window' => [
+        'tmux kill-window -t =feat-x:impl-1',
+        '/kill-window|not an allowed|invalid|blocked/',
+    ],
+    'kill-pane' => ['tmux kill-pane', '/kill-pane|not an allowed|invalid|blocked/'],
 ]);
 
 it('accepts -L and -S socket forms for an owned kill-session', function (string $flagTemplate): void {
@@ -437,12 +444,15 @@ it('accepts -L and -S socket forms for an owned kill-session', function (string 
         land_commit_sessions($fixture['repo'], $archive);
 
         $socketPath = land_tmux_socket_path($fixture);
+        $ambientSocket = 'orbit-land-ambient-'.bin2hex(random_bytes(4));
         $command = str_replace(
             ['{socket}', '{socket_path}'],
             [$fixture['socket'], $socketPath],
             $flagTemplate,
         );
-        $process = land_run_finalization($fixture, $command);
+        $process = land_run_finalization($fixture, $command, [
+            'ORBIT_TMUX_SOCKET' => $ambientSocket,
+        ]);
 
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput().$process->getOutput())
@@ -460,6 +470,59 @@ it('accepts -L and -S socket forms for an owned kill-session', function (string 
     'glued -S' => ['tmux -S{socket_path} kill-session -t =feat-feature'],
     'quoted target' => ["tmux -L {socket} kill-session -t '=feat-feature'"],
 ]);
+
+it('blocks kill-session when the command socket is a foreign unlinked path', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+    $foreignRoot = sys_get_temp_dir().'/orbit-land-foreign-'.bin2hex(random_bytes(6));
+    $foreignSocket = 'orbit-land-foreign-'.bin2hex(random_bytes(6));
+
+    try {
+        land_mkdir($foreignRoot);
+        land_tmux_new_session($foreignSocket, name: 'feat-x', cwd: $foreignRoot);
+
+        $process = land_run_finalization(
+            $fixture,
+            "tmux -L {$foreignSocket} kill-session -t =feat-x",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2, $process->getErrorOutput().$process->getOutput())
+            ->and(strtolower($process->getErrorOutput().$process->getOutput()))
+            ->toMatch('/linked feature worktree|canonical project path|ownership|blocked/')
+            ->and($process->getOutput())
+            ->not->toContain('FINALIZATION: PASS');
+    } finally {
+        new Process(['tmux', '-L', $foreignSocket, 'kill-server'])->run();
+        new Process(['rm', '-rf', $foreignRoot])->run();
+        land_remove_fixture($fixture);
+    }
+});
+
+it('looks up an owned session through the command -L even when ORBIT_TMUX_SOCKET differs', function (): void {
+    $fixture = land_prepare(accepted: true, merged: true);
+
+    try {
+        $archive = land_write_compact_archive($fixture['repo'], $fixture['worktree']);
+        land_write_session_index($fixture['repo'], basename($archive));
+        land_commit_sessions($fixture['repo'], $archive);
+
+        $ambientSocket = 'orbit-land-ambient-'.bin2hex(random_bytes(4));
+        $process = land_run_finalization(
+            $fixture,
+            "tmux -L {$fixture['socket']} kill-session -t =feat-feature",
+            ['ORBIT_TMUX_SOCKET' => $ambientSocket],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS')
+            ->and($process->getOutput())
+            ->toContain('tmux kill-session feat-feature');
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
 
 it('silent-passes quoted tmux mentions and non-destructive tmux subcommands in hook mode', function (
     string $command,

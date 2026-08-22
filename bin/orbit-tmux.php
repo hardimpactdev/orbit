@@ -11,16 +11,17 @@ declare(strict_types=1);
 
 /**
  * @param  list<string>  $args
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
  * @return list<string>
  */
-function orbit_tmux_args(array $args): array
+function orbit_tmux_args(array $args, ?array $socket = null): array
 {
     $command = [orbit_tmux_binary()];
-    $socket = getenv('ORBIT_TMUX_SOCKET');
+    $resolved = orbit_tmux_resolve_socket($socket);
 
-    if (is_string($socket) && $socket !== '') {
-        $command[] = '-L';
-        $command[] = $socket;
+    if ($resolved !== null) {
+        $command[] = $resolved['flag'];
+        $command[] = $resolved['value'];
     }
 
     return array_merge($command, $args);
@@ -28,17 +29,19 @@ function orbit_tmux_args(array $args): array
 
 /**
  * @param  list<string>  $args
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
  * @return array{exit: int, stdout: string, stderr: string}
  */
-function orbit_tmux_run(array $args): array
+function orbit_tmux_run(array $args, ?array $socket = null): array
 {
-    return orbit_tmux_run_command(orbit_tmux_args($args));
+    return orbit_tmux_run_command(orbit_tmux_args($args, $socket));
 }
 
 /**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
  * @return array{status: 'ok'|'not_found'|'error', reason: ?string}
  */
-function orbit_tmux_has_session(string $name): array
+function orbit_tmux_has_session(string $name, ?array $socket = null): array
 {
     if (! orbit_tmux_session_name_is_valid($name)) {
         return [
@@ -47,7 +50,7 @@ function orbit_tmux_has_session(string $name): array
         ];
     }
 
-    $result = orbit_tmux_run(['has-session', '-t', '='.$name]);
+    $result = orbit_tmux_run(['has-session', '-t', '='.$name], $socket);
 
     if ($result['exit'] === 0) {
         return ['status' => 'ok', 'reason' => null];
@@ -71,11 +74,12 @@ function orbit_tmux_has_session(string $name): array
 }
 
 /**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
  * @return array{status: 'ok'|'not_found'|'error', path: ?string, reason: ?string}
  */
-function orbit_tmux_session_path(string $name): array
+function orbit_tmux_session_path(string $name, ?array $socket = null): array
 {
-    $hasSession = orbit_tmux_has_session($name);
+    $hasSession = orbit_tmux_has_session($name, $socket);
 
     if ($hasSession['status'] !== 'ok') {
         return [
@@ -85,7 +89,7 @@ function orbit_tmux_session_path(string $name): array
         ];
     }
 
-    $display = orbit_tmux_run(['display-message', '-p', '-t', $name.':', '#{session_path}']);
+    $display = orbit_tmux_run(['display-message', '-p', '-t', $name.':', '#{session_path}'], $socket);
     $path = trim($display['stdout']);
 
     if ($path === '') {
@@ -96,7 +100,7 @@ function orbit_tmux_session_path(string $name): array
                 '#{session_path}',
                 '-f',
                 '#{==:#{session_name},'.$name.'}',
-            ]);
+            ], $socket);
 
             if ($listed['exit'] !== 0) {
                 if (orbit_tmux_stderr_is_not_found($listed['stderr'])) {
@@ -172,9 +176,18 @@ function orbit_tmux_current_session(): ?string
     return $name === '' ? null : $name;
 }
 
-function orbit_tmux_window_exists(string $session, string $window): bool
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_tmux_window_exists(string $session, string $window, ?array $socket = null): bool
 {
-    foreach (orbit_tmux_list_windows($session) as $entry) {
+    $listed = orbit_tmux_list_windows($session, $socket);
+
+    if ($listed['status'] !== 'ok') {
+        return false;
+    }
+
+    foreach ($listed['windows'] as $entry) {
         if ($entry['name'] === $window) {
             return true;
         }
@@ -184,9 +197,14 @@ function orbit_tmux_window_exists(string $session, string $window): bool
 }
 
 /**
- * @return list<array{name: string, pane_id: string, pane_pid: int, current_command: string}>
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ * @return array{
+ *     status: 'ok'|'not_found'|'error',
+ *     windows: list<array{name: string, pane_id: string, pane_pid: int, current_command: string}>,
+ *     reason: ?string
+ * }
  */
-function orbit_tmux_list_windows(string $session): array
+function orbit_tmux_list_windows(string $session, ?array $socket = null): array
 {
     $result = orbit_tmux_run([
         'list-windows',
@@ -194,10 +212,24 @@ function orbit_tmux_list_windows(string $session): array
         '='.$session,
         '-F',
         "#{window_name}\t#{pane_id}\t#{pane_pid}\t#{pane_current_command}",
-    ]);
+    ], $socket);
 
     if ($result['exit'] !== 0) {
-        return [];
+        $reason = trim($result['stderr']);
+
+        if (orbit_tmux_stderr_is_not_found($result['stderr'])) {
+            return [
+                'status' => 'not_found',
+                'windows' => [],
+                'reason' => $reason === '' ? 'session not found' : $reason,
+            ];
+        }
+
+        return [
+            'status' => 'error',
+            'windows' => [],
+            'reason' => $reason === '' ? "tmux list-windows exited {$result['exit']}" : $reason,
+        ];
     }
 
     $windows = [];
@@ -221,7 +253,35 @@ function orbit_tmux_list_windows(string $session): array
         ];
     }
 
-    return $windows;
+    return ['status' => 'ok', 'windows' => $windows, 'reason' => null];
+}
+
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ * @return array{flag: '-L'|'-S', value: string}|null
+ */
+function orbit_tmux_resolve_socket(?array $socket): ?array
+{
+    if ($socket !== null) {
+        $flag = $socket['flag'] ?? null;
+        $value = $socket['value'] ?? null;
+
+        if ($flag !== '-L' && $flag !== '-S' || ! is_string($value) || $value === '') {
+            throw new RuntimeException(
+                'tmux socket override must be {flag: -L|-S, value: <name-or-path>}',
+            );
+        }
+
+        return ['flag' => $flag, 'value' => $value];
+    }
+
+    $ambient = getenv('ORBIT_TMUX_SOCKET');
+
+    if (is_string($ambient) && $ambient !== '') {
+        return ['flag' => '-L', 'value' => $ambient];
+    }
+
+    return null;
 }
 
 function orbit_tmux_session_name_is_valid(string $name): bool

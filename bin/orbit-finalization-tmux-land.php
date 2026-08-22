@@ -31,7 +31,7 @@ function orbit_land_archive_slug(string $value): string
  * Classify tmux LAND boundary actions by command position in each chain segment.
  * Quoted strings containing "tmux kill-session" are not command positions.
  *
- * @return list<array{type: 'tmux-session-kill', session: string}|array{type: 'invalid', subject: string, reason: string}>
+ * @return list<array{type: 'tmux-session-kill', session: string, socket: null|array{flag: '-L'|'-S', value: string}}|array{type: 'invalid', subject: string, reason: string}>
  */
 function tmux_boundary_actions(string $command): array
 {
@@ -70,7 +70,7 @@ function tmux_boundary_actions(string $command): array
 
 /**
  * @param  list<string>  $words
- * @return array{type: 'tmux-session-kill', session: string}|array{type: 'invalid', subject: string, reason: string}|null
+ * @return array{type: 'tmux-session-kill', session: string, socket: null|array{flag: '-L'|'-S', value: string}}|array{type: 'invalid', subject: string, reason: string}|null
  */
 function classify_tmux_land_command(array $words): ?array
 {
@@ -84,6 +84,8 @@ function classify_tmux_land_command(array $words): ?array
     $extraOperands = false;
     $unknownOption = null;
     $socketProblem = null;
+    /** @var null|array{flag: '-L'|'-S', value: string} $socket */
+    $socket = null;
 
     for ($i = 1; $i < count($words); $i++) {
         $word = $words[$i];
@@ -96,6 +98,10 @@ function classify_tmux_land_command(array $words): ?array
 
             if (tmux_socket_value_rejected($words[$i + 1])) {
                 $socketProblem ??= 'tmux -L/-S rejects quoted or shell-fragment values';
+            } elseif ($socket !== null) {
+                $extraOperands = true;
+            } else {
+                $socket = ['flag' => $word, 'value' => $words[$i + 1]];
             }
 
             $i++;
@@ -104,6 +110,7 @@ function classify_tmux_land_command(array $words): ?array
         }
 
         if (str_starts_with($word, '-L') || str_starts_with($word, '-S')) {
+            $flag = str_starts_with($word, '-L') ? '-L' : '-S';
             $value = substr($word, 2);
 
             if (str_starts_with($value, '=')) {
@@ -112,6 +119,10 @@ function classify_tmux_land_command(array $words): ?array
 
             if (tmux_socket_value_rejected($value)) {
                 $socketProblem ??= 'tmux -L/-S rejects quoted or shell-fragment values';
+            } elseif ($socket !== null) {
+                $extraOperands = true;
+            } else {
+                $socket = ['flag' => $flag, 'value' => $value];
             }
 
             continue;
@@ -168,6 +179,12 @@ function classify_tmux_land_command(array $words): ?array
     }
 
     if ($subcommand !== 'kill-session') {
+        if (is_string($subcommand) && preg_match('/^kill-/', $subcommand) === 1) {
+            return tmux_kill_invalid(
+                "tmux {$subcommand} is not an allowed LAND boundary; only kill-session -t =feat-<slug> is accepted",
+            );
+        }
+
         return null;
     }
 
@@ -192,11 +209,12 @@ function classify_tmux_land_command(array $words): ?array
     return [
         'type' => 'tmux-session-kill',
         'session' => substr($target, 1),
+        'socket' => $socket,
     ];
 }
 
 /**
- * @param  array{type: 'tmux-session-kill', session: string}  $action
+ * @param  array{type: 'tmux-session-kill', session: string, socket?: null|array{flag: '-L'|'-S', value: string}}  $action
  * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_tmux_session_kill(array $action, string $root, string $cwd): array
@@ -205,8 +223,9 @@ function check_tmux_session_kill(array $action, string $root, string $cwd): arra
 
     $session = $action['session'];
     $subject = "tmux kill-session {$session}";
+    $socket = $action['socket'] ?? null;
 
-    $has = orbit_tmux_has_session($session);
+    $has = orbit_tmux_has_session($session, $socket);
 
     if ($has['status'] === 'not_found') {
         return ok();
@@ -216,7 +235,7 @@ function check_tmux_session_kill(array $action, string $root, string $cwd): arra
         return block_result($subject, 'tmux lookup failed: '.($has['reason'] ?? 'unknown'));
     }
 
-    $pathLookup = orbit_tmux_session_path($session);
+    $pathLookup = orbit_tmux_session_path($session, $socket);
 
     if ($pathLookup['status'] === 'not_found') {
         return ok();

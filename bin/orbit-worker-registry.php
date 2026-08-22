@@ -244,30 +244,112 @@ function orbit_worker_mark_exited(string $worktree, array $entry): array
     return orbit_worker_read($worktree, (string) $entry['id']) ?? $entry;
 }
 
-function orbit_worker_window_alive(array $entry): bool
+/**
+ * @return 'alive'|'gone'|'unknown'
+ */
+function orbit_worker_window_alive(array $entry): string
 {
     $tmux = is_array($entry['tmux'] ?? null) ? $entry['tmux'] : [];
     $session = (string) ($tmux['session'] ?? '');
     $window = (string) ($tmux['window'] ?? '');
 
     if ($session === '' || $window === '') {
+        return 'gone';
+    }
+
+    $listed = orbit_tmux_list_windows($session, orbit_worker_tmux_socket($entry));
+
+    if ($listed['status'] === 'error') {
+        return 'unknown';
+    }
+
+    if ($listed['status'] === 'not_found') {
+        return 'gone';
+    }
+
+    foreach ($listed['windows'] as $listedWindow) {
+        if ($listedWindow['name'] === $window) {
+            return 'alive';
+        }
+    }
+
+    return 'gone';
+}
+
+function orbit_worker_is_self_pane(array $entry): bool
+{
+    $tmuxPane = getenv('TMUX_PANE');
+    $paneId = (string) ($entry['tmux']['pane_id'] ?? '');
+
+    if (! is_string($tmuxPane) || $tmuxPane === '' || $paneId === '' || $tmuxPane !== $paneId) {
         return false;
     }
 
-    return orbit_tmux_window_exists($session, $window);
+    $currentSession = orbit_tmux_current_session();
+    $session = (string) ($entry['tmux']['session'] ?? '');
+
+    if ($currentSession !== null && $session !== '' && $currentSession !== $session) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
- * @param  list<string>  $text
+ * @param  array<string, mixed>  $entry
+ * @return array{flag: '-L'|'-S', value: string}|null
  */
-function orbit_worker_send_keys(string $session, string $window, string $text): void
+function orbit_worker_tmux_socket(array $entry): ?array
+{
+    $tmux = is_array($entry['tmux'] ?? null) ? $entry['tmux'] : [];
+
+    return orbit_worker_normalize_socket($tmux['socket'] ?? null);
+}
+
+/**
+ * @return array{flag: '-L'|'-S', value: string}|null
+ */
+function orbit_worker_ambient_socket(): ?array
+{
+    $ambient = getenv('ORBIT_TMUX_SOCKET');
+
+    if (! is_string($ambient) || $ambient === '') {
+        return null;
+    }
+
+    return ['flag' => '-L', 'value' => $ambient];
+}
+
+/**
+ * @return array{flag: '-L'|'-S', value: string}|null
+ */
+function orbit_worker_normalize_socket(mixed $socket): ?array
+{
+    if (! is_array($socket)) {
+        return null;
+    }
+
+    $flag = $socket['flag'] ?? null;
+    $value = $socket['value'] ?? null;
+
+    if ($flag !== '-L' && $flag !== '-S' || ! is_string($value) || $value === '') {
+        return null;
+    }
+
+    return ['flag' => $flag, 'value' => $value];
+}
+
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_worker_send_keys(string $session, string $window, string $text, ?array $socket = null): void
 {
     if ($text === '' || str_contains($text, "\n") || str_contains($text, "\r")) {
         throw new RuntimeException('send-keys text must be a single line without newlines');
     }
 
     $target = '='.$session.':'.$window;
-    $literal = orbit_tmux_run(['send-keys', '-t', $target, '-l', $text]);
+    $literal = orbit_tmux_run(['send-keys', '-t', $target, '-l', $text], $socket);
 
     if ($literal['exit'] !== 0) {
         $reason = trim($literal['stderr']);
@@ -277,7 +359,7 @@ function orbit_worker_send_keys(string $session, string $window, string $text): 
         );
     }
 
-    $enter = orbit_tmux_run(['send-keys', '-t', $target, 'Enter']);
+    $enter = orbit_tmux_run(['send-keys', '-t', $target, 'Enter'], $socket);
 
     if ($enter['exit'] !== 0) {
         $reason = trim($enter['stderr']);
@@ -295,7 +377,7 @@ function orbit_worker_send_keys(string $session, string $window, string $text): 
  *     role: string,
  *     cli: string,
  *     command: list<string>,
- *     tmux: array{session: string, window: string, pane_id: string, pane_pid: int},
+ *     tmux: array{session: string, window: string, pane_id: string, pane_pid: int, socket: array{flag: '-L'|'-S', value: string}|null},
  *     cwd: string,
  *     brief: string,
  *     status: string,
@@ -352,6 +434,7 @@ function orbit_worker_normalize_entry(array $raw): array
             'window' => (string) ($tmux['window'] ?? ''),
             'pane_id' => (string) ($tmux['pane_id'] ?? ''),
             'pane_pid' => (int) ($tmux['pane_pid'] ?? 0),
+            'socket' => orbit_worker_normalize_socket($tmux['socket'] ?? null),
         ],
         'cwd' => (string) ($raw['cwd'] ?? ''),
         'brief' => (string) ($raw['brief'] ?? ''),

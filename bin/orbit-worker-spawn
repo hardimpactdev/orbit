@@ -61,9 +61,16 @@ try {
     }
 
     $id = orbit_worker_allocate_id($worktree, $role, $name);
+    $existingWindows = orbit_tmux_list_windows($session);
 
-    if (orbit_tmux_window_exists($session, $id)) {
-        throw new RuntimeException("tmux window already exists: {$session}:{$id}");
+    if ($existingWindows['status'] === 'error') {
+        throw new RuntimeException('tmux lookup failed: '.($existingWindows['reason'] ?? 'unknown error'));
+    }
+
+    foreach ($existingWindows['windows'] as $existingWindow) {
+        if ($existingWindow['name'] === $id) {
+            throw new RuntimeException("tmux window already exists: {$session}:{$id}");
+        }
     }
 
     $briefPath = realpath($brief) ?: $brief;
@@ -111,9 +118,17 @@ try {
         );
     }
 
+    $listed = orbit_tmux_list_windows($session);
+
+    if ($listed['status'] !== 'ok') {
+        throw new RuntimeException(
+            'tmux lookup failed: '.($listed['reason'] ?? "window {$id} could not be listed"),
+        );
+    }
+
     $pane = null;
 
-    foreach (orbit_tmux_list_windows($session) as $window) {
+    foreach ($listed['windows'] as $window) {
         if ($window['name'] === $id) {
             $pane = $window;
 
@@ -136,6 +151,7 @@ try {
             'window' => $id,
             'pane_id' => $pane['pane_id'],
             'pane_pid' => $pane['pane_pid'],
+            'socket' => orbit_worker_ambient_socket(),
         ],
         'cwd' => $worktree,
         'brief' => $briefPath,
@@ -148,16 +164,25 @@ try {
         'handoff' => null,
     ];
     orbit_worker_write($worktree, $entry);
-    orbit_worker_send_keys($session, $id, $commandString);
+    $socket = orbit_worker_tmux_socket($entry);
+    orbit_worker_send_keys($session, $id, $commandString, $socket);
 
-    if ($readyDelay > 0) {
-        sleep($readyDelay);
+    $ready = orbit_worker_wait_for_cli($session, $id, $readyDelay, $socket);
+
+    if (! $ready) {
+        fwrite(
+            STDERR,
+            "WARNING: worker {$id}: CLI did not start within {$readyDelay}s; bootstrap sent anyway".PHP_EOL,
+        );
     }
+
+    sleep(1);
 
     orbit_worker_send_keys(
         $session,
         $id,
         "Orbit worker: {$id}. Read {$briefPath} and execute it.",
+        $socket,
     );
 
     if ($json) {
@@ -176,4 +201,37 @@ try {
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);
     exit(2);
+}
+
+/**
+ * @param  array{flag: '-L'|'-S', value: string}|null  $socket
+ */
+function orbit_worker_wait_for_cli(string $session, string $id, int $readyDelay, ?array $socket): bool
+{
+    $shells = ['zsh', 'bash', 'sh', 'fish', '-zsh', '-bash', 'login'];
+    $deadline = microtime(true) + $readyDelay;
+
+    while (true) {
+        $listed = orbit_tmux_list_windows($session, $socket);
+
+        if ($listed['status'] === 'ok') {
+            foreach ($listed['windows'] as $window) {
+                if ($window['name'] !== $id) {
+                    continue;
+                }
+
+                $command = $window['current_command'];
+
+                if ($command !== '' && ! in_array($command, $shells, true)) {
+                    return true;
+                }
+            }
+        }
+
+        if (microtime(true) >= $deadline) {
+            return false;
+        }
+
+        usleep(250_000);
+    }
 }

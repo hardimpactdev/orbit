@@ -619,7 +619,7 @@ function archive_slug(string $value): string
 }
 
 /**
- * @param  array{type: 'tmux-session-kill', session: string}  $action
+ * @param  array{type: 'tmux-session-kill', session: string, socket?: null|array{flag: '-L'|'-S', value: string}}  $action
  */
 function tmux_session_kill_subject(array $action): string
 {

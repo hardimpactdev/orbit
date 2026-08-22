@@ -116,7 +116,16 @@ function orbit_worker_watch_event(string $worktree, array $entries, int $stale):
             return orbit_worker_watch_payload($worktree, $entry, $status);
         }
 
-        if (! $alive) {
+        if ($alive === 'unknown') {
+            fwrite(
+                STDERR,
+                "WARNING: tmux lookup failed for worker {$id}; not marking exited".PHP_EOL,
+            );
+
+            continue;
+        }
+
+        if ($alive === 'gone') {
             $entry = orbit_worker_mark_exited($worktree, $entry);
 
             return orbit_worker_watch_payload($worktree, $entry, 'exited');

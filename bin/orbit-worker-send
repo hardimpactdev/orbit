@@ -22,14 +22,21 @@ try {
     $entry = orbit_worker_require_entry($worktree, $id);
     $session = (string) $entry['tmux']['session'];
     $window = (string) $entry['tmux']['window'];
+    $alive = orbit_worker_window_alive($entry);
 
-    if (! orbit_tmux_window_exists($session, $window)) {
+    if ($alive === 'unknown') {
+        throw new RuntimeException(
+            "tmux lookup failed for worker {$id} ({$session}:{$window})",
+        );
+    }
+
+    if ($alive === 'gone') {
         throw new RuntimeException(
             "worker window is gone: {$id} ({$session}:{$window})",
         );
     }
 
-    orbit_worker_send_keys($session, $window, $text);
+    orbit_worker_send_keys($session, $window, $text, orbit_worker_tmux_socket($entry));
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);
     exit(2);
