@@ -224,9 +224,7 @@ class FirewallRuleIntent
             ->where('name', $nodeName)
             ->where('status', NodeStatus::Active->value)
             ->where(function (Builder $query): void {
-                $query
-                    ->where('platform', 'ubuntu')
-                    ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']);
+                FirewallTargetPlatform::constrainUbuntu($query);
             })
             ->whereIn('id', app(NodeRoleAssignments::class)->activeNodeIdsForRoles($this->eligibleTargetRoles()))
             ->first();

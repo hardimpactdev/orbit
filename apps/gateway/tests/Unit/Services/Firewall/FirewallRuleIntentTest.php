@@ -452,6 +452,7 @@ describe('FirewallRuleIntent', function (): void {
         'inactive versioned ubuntu' => [['status' => 'inactive'], true],
         'roleless versioned ubuntu' => [[], false],
         'non-ubuntu' => [['platform' => 'macos'], true],
+        'hyphenated ubuntu' => [['platform' => 'ubuntu-24-04'], true],
     ])->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
 });
 
