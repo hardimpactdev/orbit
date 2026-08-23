@@ -370,8 +370,7 @@ it('keeps intake compact and e2e prompts execution-safe', function (): void {
         ->toContain('Ambiguity')
         ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
             'hand the outcome to the orchestrating feature owner using implementing-features',
-        )
-        ->and($e2ePrompt)->toContain(
+        )->and($e2ePrompt)->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
         )
         ->not->toContain('select Docker or Incus E2E verification commands');
