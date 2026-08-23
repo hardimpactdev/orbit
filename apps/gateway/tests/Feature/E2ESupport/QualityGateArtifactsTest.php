@@ -1236,7 +1236,7 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         ->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
         )
-        ->not->toContain('split provider work across Solo agents')->and($releaseSkill)
+        ->and($releaseSkill)
         ->not->toContain('composer test:e2e')
         ->not->toContain('composer e2e:ensure-artifacts');
 

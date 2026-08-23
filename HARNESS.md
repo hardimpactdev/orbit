@@ -10,7 +10,7 @@ Every feature uses one state machine:
 `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
 
 The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.
+Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
 
 The local anchor is the compact `.orbit/loop.md` seeded by
 `bin/orbit-prepare-worktree`. It records only Goal, Scope, Proof, Status, and a

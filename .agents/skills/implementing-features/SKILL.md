@@ -8,7 +8,7 @@ description: Implement an Orbit feature, bug fix, command change, or docs correc
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
 `HARNESS.md` is the canonical loop contract; this skill is the compact route.
 The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.
+Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
 
 ## Non-Negotiable Boundaries
 

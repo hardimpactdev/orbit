@@ -169,12 +169,6 @@ it('keeps the app-owned orbit skill in the agents skill catalog', function (): v
         ->toBe(realpath(repo_path('.agents/skills')));
 });
 
-it('does not keep a Solo todo handoff skill', function (): void {
-    expect(repo_path('.agents/skills/solo-todo-handoff/SKILL.md'))
-        ->not->toBeFile()->and(repo_path('.agents/skills/solo-todo-handoff'))
-        ->not->toBeDirectory();
-});
-
 it('keeps worktree preparation responsible for seeding the active loop packet', function (): void {
     $prepareWorktree = file_get_contents(repo_path('bin/orbit-prepare-worktree')) ?: '';
     $fastPath = file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '';
@@ -291,7 +285,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
     $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
     $featureGraph = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
     $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
-    $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`; never create or use a Solo project.';
+    $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.';
     $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>` (`grok --yolo --reasoning-effort medium` in the worktree). Do not substitute an owner subagent or direct owner implementation.';
     $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).';
     $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
@@ -361,24 +355,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->not->toContain('Optional bounded workers')
         ->not->toContain('"id": "optional-worker"')
         ->not->toContain('out-of-repo operator instruction')
-        ->not->toContain('implement directly')
-        ->not->toContain('Ordered Solo/project/worktree/branch cleanup');
-
-    expect(str_replace(
-        search: 'never create or use a Solo project',
-        replace: '',
-        subject: $harness,
-    ))
-        ->not->toContain('Solo')->and(str_replace(
-            search: 'never create or use a Solo project',
-            replace: '',
-            subject: $skill,
-        ))
-        ->not->toContain('Solo')->and($prompt)
-        ->not->toContain('Solo')->and($intake)
-        ->not->toContain('Solo')->and($intakePrompt)
-        ->not->toContain('Solo')->and($featureGraph)
-        ->not->toContain('Solo');
+        ->not->toContain('implement directly');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {
@@ -394,11 +371,10 @@ it('keeps intake compact and e2e prompts execution-safe', function (): void {
         ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
             'hand the outcome to the orchestrating feature owner using implementing-features',
         )
-        ->not->toContain('delegate documentation and implementation through Solo')->and($e2ePrompt)->toContain(
+        ->and($e2ePrompt)->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
         )
-        ->not->toContain('select Docker or Incus E2E verification commands')
-        ->not->toContain('split provider work across Solo agents');
+        ->not->toContain('select Docker or Incus E2E verification commands');
 });
 
 it('keeps the native Orbit Agent development skill without a standing reviewer lane', function (): void {
@@ -779,7 +755,6 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->toContain('focused Mago')
         ->toContain('predicate, identity, vocabulary, or schema')
         ->toContain('HARNESS.md')
-        ->not->toContain('Solo project deletion must complete before worktree removal')
         ->not->toContain('primitive=<exact requested primitive>')
         ->not->toContain('repository-wide search, inventory, or lintable check');
 });
