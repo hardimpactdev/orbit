@@ -4,6 +4,8 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-prepare-worktree-test.XXXXXX")"
+TMP="$(cd "$TMP" && pwd)"
+REAL_GIT="$(command -v git)"
 
 cleanup() {
     rm -rf "$TMP"
@@ -24,6 +26,20 @@ assert_file_equals() {
     [ "$(cat "$path")" = "$expected" ] || fail "unexpected contents for: $path"
 }
 
+write_composer_stub() {
+    cat >"$STUB_BIN/composer" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${COMPOSER_LOG:-/tmp/orbit-prepare-worktree-composer.log}"
+if [ "$*" = "install" ]; then
+    printf '%s\n' "$(pwd -P)" >>"${COMPOSER_INSTALL_LOG:-/dev/null}"
+    mkdir -p vendor
+    printf '<?php\n' >vendor/autoload.php
+fi
+exit 0
+STUB
+    chmod +x "$STUB_BIN/composer"
+}
+
 run_prepare_worktree() {
     local branch="$1"
 
@@ -33,10 +49,76 @@ run_prepare_worktree() {
     fi
 }
 
+assert_composer_installs_tracked_projects() {
+    local worktree_path="$1"
+    local install_log="$2"
+    local expected_path
+    local last_package_line=0
+    local first_app_line=0
+    local line_number=0
+    local install_path
+    local found_gateway=0
+    local expected_paths=()
+
+    [ -f "$install_log" ] || fail "missing composer install log: $install_log"
+
+    expected_paths=("$worktree_path")
+    for composer_manifest in "$worktree_path"/packages/*/composer.json "$worktree_path"/apps/*/composer.json; do
+        if [ -f "$composer_manifest" ]; then
+            expected_paths+=("$(dirname "$composer_manifest")")
+        fi
+    done
+
+    worktree_path="$(cd "$worktree_path" && pwd -P)"
+
+    for expected_path in "${expected_paths[@]}"; do
+        expected_path="$(cd "$expected_path" && pwd -P)"
+        if [ "$expected_path" = "${worktree_path}/apps/gateway" ]; then
+            found_gateway=1
+        fi
+
+        grep -qx "$expected_path" "$install_log" \
+            || fail "composer install was not run in tracked project: $expected_path"
+        [ -f "${expected_path}/vendor/autoload.php" ] \
+            || fail "missing vendor/autoload.php in tracked project: $expected_path"
+    done
+
+    [ "$found_gateway" -eq 1 ] || fail "fixture must track apps/gateway/composer.json"
+
+    while IFS= read -r install_path; do
+        line_number=$((line_number + 1))
+        case "$install_path" in
+            "$worktree_path"/packages/*)
+                last_package_line="$line_number"
+                ;;
+            "$worktree_path"/apps/*)
+                if [ "$first_app_line" -eq 0 ]; then
+                    first_app_line="$line_number"
+                fi
+                ;;
+        esac
+    done <"$install_log"
+
+    [ "$last_package_line" -gt 0 ] || fail "composer install log is missing package projects"
+    [ "$first_app_line" -gt 0 ] || fail "composer install log is missing app projects"
+    [ "$last_package_line" -lt "$first_app_line" ] \
+        || fail "package composer installs must run before app composer installs"
+}
+
 REPO="$TMP/repo"
 STUB_BIN="$TMP/bin"
 
-mkdir -p "$REPO/bin" "$REPO/packages/sdk-typescript" "$STUB_BIN"
+mkdir -p \
+    "$REPO/bin" \
+    "$REPO/packages/core" \
+    "$REPO/packages/sdk" \
+    "$REPO/packages/sdk-typescript" \
+    "$REPO/apps/cli" \
+    "$REPO/apps/docs" \
+    "$REPO/apps/e2e" \
+    "$REPO/apps/gateway" \
+    "$REPO/apps/reverb" \
+    "$STUB_BIN"
 cp "$ROOT/bin/orbit-prepare-worktree" "$REPO/bin/orbit-prepare-worktree"
 
 cat >"$REPO/bin/quality-gate-seed-baselines" <<'STUB'
@@ -45,20 +127,42 @@ exit 0
 STUB
 chmod +x "$REPO/bin/orbit-prepare-worktree" "$REPO/bin/quality-gate-seed-baselines"
 
-cat >"$STUB_BIN/composer" <<'STUB'
+write_composer_stub
+
+cat >"$STUB_BIN/npm" <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
-cp "$STUB_BIN/composer" "$STUB_BIN/npm"
 
 cat >"$STUB_BIN/tmux" <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
 
-chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm" "$STUB_BIN/tmux"
+cat >"$STUB_BIN/git" <<STUB
+#!/usr/bin/env bash
+if [ "\${1-}" = worktree ] && [ "\${2-}" = add ]; then
+    printf '%s\n' "\$*" >>"\${GIT_WORKTREE_ADD_LOG:-/dev/null}"
+fi
+case "\${1-}" in
+    fetch|pull|reset)
+        printf '%s\n' "\$*" >>"\${GIT_MUTATION_LOG:-/dev/null}"
+        ;;
+esac
+exec "$REAL_GIT" "\$@"
+STUB
 
+chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm" "$STUB_BIN/tmux" "$STUB_BIN/git"
+
+printf '{}\n' >"$REPO/composer.json"
+printf '{}\n' >"$REPO/packages/core/composer.json"
+printf '{}\n' >"$REPO/packages/sdk/composer.json"
 printf '{}\n' >"$REPO/packages/sdk-typescript/package.json"
+printf '{}\n' >"$REPO/apps/cli/composer.json"
+printf '{}\n' >"$REPO/apps/docs/composer.json"
+printf '{}\n' >"$REPO/apps/e2e/composer.json"
+printf '{}\n' >"$REPO/apps/gateway/composer.json"
+printf '{}\n' >"$REPO/apps/reverb/composer.json"
 
 cat >"$REPO/LOOP.md.example" <<'EOF'
 # Loop Template
@@ -74,7 +178,7 @@ EOF
     git config user.email 'orbit-prepare-worktree-test@example.invalid'
 
     printf '.worktrees\n/.worktrees/\n' >.gitignore
-    git add .gitignore LOOP.md.example bin/orbit-prepare-worktree bin/quality-gate-seed-baselines packages/sdk-typescript/package.json
+    git add .gitignore LOOP.md.example bin/orbit-prepare-worktree bin/quality-gate-seed-baselines composer.json packages apps
     git commit -m 'Initial fixture' >/dev/null
 )
 
@@ -101,16 +205,13 @@ if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" My_Feature --dry-ru
 fi
 grep -q 'My_Feature' /tmp/orbit-prepare-worktree-test.err || fail "dry-run invalid-slug error must name My_Feature"
 
-cat >"$STUB_BIN/composer" <<'STUB'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"${COMPOSER_LOG:-/tmp/orbit-prepare-worktree-composer.log}"
-exit 0
-STUB
-chmod +x "$STUB_BIN/composer"
+write_composer_stub
 
 COMPOSER_LOG="$TMP/composer-default.log"
+COMPOSER_INSTALL_LOG="$TMP/composer-default-installs.log"
 : >"$COMPOSER_LOG"
-if ! PATH="$STUB_BIN:$PATH" COMPOSER_LOG="$COMPOSER_LOG" "$REPO/bin/orbit-prepare-worktree" feature-default-skip >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+: >"$COMPOSER_INSTALL_LOG"
+if ! PATH="$STUB_BIN:$PATH" COMPOSER_LOG="$COMPOSER_LOG" COMPOSER_INSTALL_LOG="$COMPOSER_INSTALL_LOG" "$REPO/bin/orbit-prepare-worktree" feature-default-skip >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     cat /tmp/orbit-prepare-worktree-test.err >&2
     fail "prepare-worktree default should skip baseline tests"
 fi
@@ -119,6 +220,7 @@ grep -q 'skip composer test: baseline tests are opt-in' /tmp/orbit-prepare-workt
 if grep -qx 'test' "$COMPOSER_LOG"; then
     fail "default prepare-worktree must not invoke composer test"
 fi
+assert_composer_installs_tracked_projects "$REPO/.worktrees/feature-default-skip" "$COMPOSER_INSTALL_LOG"
 
 COMPOSER_LOG="$TMP/composer-with-tests.log"
 : >"$COMPOSER_LOG"
@@ -128,5 +230,79 @@ if ! PATH="$STUB_BIN:$PATH" COMPOSER_LOG="$COMPOSER_LOG" "$REPO/bin/orbit-prepar
 fi
 grep -qx 'test' "$COMPOSER_LOG" \
     || fail "prepare-worktree --with-tests must invoke composer test"
+
+cat >"$STUB_BIN/composer" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${COMPOSER_LOG:-/tmp/orbit-prepare-worktree-composer.log}"
+exit 0
+STUB
+chmod +x "$STUB_BIN/composer"
+
+MISSING_AUTOLOAD_BRANCH='feature-missing-autoload'
+if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$MISSING_AUTOLOAD_BRANCH" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree must fail when Composer install does not produce vendor/autoload.php"
+fi
+grep -F "$REPO/.worktrees/${MISSING_AUTOLOAD_BRANCH}" /tmp/orbit-prepare-worktree-test.err \
+    || fail "missing autoload error must print the exact project path"
+grep -q 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
+    || fail "missing autoload error must name vendor/autoload.php"
+
+write_composer_stub
+
+(
+    cd "$REPO"
+    LOCAL_MAIN="$(git rev-parse --verify main)"
+    git commit --allow-empty -m 'origin/main ahead' >/dev/null
+    ORIGIN_MAIN="$(git rev-parse --verify main)"
+    git reset --hard "$LOCAL_MAIN" >/dev/null
+    git update-ref refs/remotes/origin/main "$ORIGIN_MAIN"
+    printf '%s\n' "$LOCAL_MAIN" >"$TMP/local-main.sha"
+    printf '%s\n' "$ORIGIN_MAIN" >"$TMP/origin-main.sha"
+)
+
+LOCAL_MAIN="$(cat "$TMP/local-main.sha")"
+ORIGIN_MAIN="$(cat "$TMP/origin-main.sha")"
+GIT_WORKTREE_ADD_LOG="$TMP/git-worktree-add.log"
+GIT_MUTATION_LOG="$TMP/git-mutation.log"
+: >"$GIT_WORKTREE_ADD_LOG"
+: >"$GIT_MUTATION_LOG"
+MAIN_BEFORE="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
+
+if PATH="$STUB_BIN:$PATH" GIT_WORKTREE_ADD_LOG="$GIT_WORKTREE_ADD_LOG" GIT_MUTATION_LOG="$GIT_MUTATION_LOG" "$REPO/bin/orbit-prepare-worktree" feature-stale-main --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree must fail when local main differs from origin/main"
+fi
+grep -F "$LOCAL_MAIN" /tmp/orbit-prepare-worktree-test.err \
+    || fail "stale-main error must print the local main SHA"
+grep -F "$ORIGIN_MAIN" /tmp/orbit-prepare-worktree-test.err \
+    || fail "stale-main error must print the origin/main SHA"
+grep -q 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
+    || fail "stale-main error must say that local main must be updated"
+[ ! -s "$GIT_WORKTREE_ADD_LOG" ] \
+    || fail "stale-main must fail before git worktree add"
+[ ! -e "$REPO/.worktrees/feature-stale-main" ] \
+    || fail "stale-main must not create the worktree path"
+[ ! -s "$GIT_MUTATION_LOG" ] \
+    || fail "stale-main must not fetch, pull, or reset"
+MAIN_AFTER="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
+[ "$MAIN_BEFORE" = "$MAIN_AFTER" ] || fail "stale-main must not mutate local main"
+[ "$MAIN_AFTER" = "$LOCAL_MAIN" ] || fail "local main SHA changed during stale-main rejection"
+
+run_prepare_worktree feature-loop
+assert_file_equals "$LOOP_PATH" 'custom active packet'
+
+if ! PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" feature-explicit-base --base=feature-loop --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    cat /tmp/orbit-prepare-worktree-test.err >&2
+    fail "explicit non-main --base must remain allowed when local main is stale"
+fi
+
+(
+    cd "$REPO"
+    git update-ref refs/remotes/origin/main "$(git rev-parse --verify main)"
+)
+
+if ! PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" feature-synced-main --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    cat /tmp/orbit-prepare-worktree-test.err >&2
+    fail "prepare-worktree should succeed when local main matches origin/main"
+fi
 
 printf 'orbit-prepare-worktree tests passed\n'

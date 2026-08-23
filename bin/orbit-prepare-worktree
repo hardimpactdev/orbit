@@ -53,6 +53,29 @@ run_in() {
     (cd "$directory" && "$@")
 }
 
+ensure_composer_autoload() {
+    local project_path="$1"
+
+    [ -f "${project_path}/vendor/autoload.php" ] || fail "Composer install did not produce vendor/autoload.php in ${project_path}"
+}
+
+reject_stale_local_main() {
+    local local_main_sha
+    local origin_main_sha
+
+    [ "$base_ref" = "main" ] || return 0
+    git rev-parse --verify --quiet 'origin/main^{commit}' >/dev/null || return 0
+
+    local_main_sha="$(git rev-parse --verify 'main^{commit}')"
+    origin_main_sha="$(git rev-parse --verify 'origin/main^{commit}')"
+
+    if [ "$local_main_sha" = "$origin_main_sha" ]; then
+        return 0
+    fi
+
+    fail "local main (${local_main_sha}) differs from origin/main (${origin_main_sha}); local main must be updated before preparing a worktree from --base=main"
+}
+
 seed_loop_packet() {
     local loop_template="${ROOT}/LOOP.md.example"
     local loop_path="${worktree_path}/.orbit/loop.md"
@@ -267,6 +290,7 @@ fi
 if [ "$reuse" -eq 1 ]; then
     step "Reusing worktree"
 else
+    reject_stale_local_main
     step "Creating worktree"
     run git worktree add -b "$branch" "$worktree_path" "$base_ref"
 fi
@@ -295,11 +319,13 @@ run "${ROOT}/bin/quality-gate-seed-baselines" "$main_checkout" "$worktree_path"
 
 step "Installing Composer dependencies"
 run_in "$worktree_path" composer install
+ensure_composer_autoload "$worktree_path"
 
 # Packages install before apps so app installs can resolve path repositories.
 for composer_manifest in "${worktree_path}"/packages/*/composer.json "${worktree_path}"/apps/*/composer.json; do
     if [ -f "$composer_manifest" ]; then
         run_in "$(dirname "$composer_manifest")" composer install
+        ensure_composer_autoload "$(dirname "$composer_manifest")"
     fi
 done
 
