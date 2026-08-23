@@ -56,6 +56,73 @@ it('session archive stores a compact receipt by default', function (): void {
     }
 });
 
+it('retains structured worker handoffs and failed gate summaries in compact archives when present', function (): void {
+    $workspace = session_archive_workspace('compact-diagnostics');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        $handoffDir = "{$paths['sourceOrbitDir']}/workers/handoff";
+        mkdir($handoffDir, recursive: true);
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/workers/impl-1.json",
+            json_encode([
+                'id' => 'impl-1',
+                'status' => 'handoff',
+                'note' => 'candidate ready',
+                'started_at' => '2026-07-10T17:00:00Z',
+                'heartbeat_at' => '2026-07-10T17:30:00Z',
+            ], JSON_THROW_ON_ERROR)."\n",
+        );
+        file_put_contents(
+            "{$handoffDir}/impl-1-".str_repeat('a', 40).".md",
+            "candidate=".str_repeat('a', 40)."\nVERDICT: PASS\n",
+        );
+        file_put_contents(
+            "{$handoffDir}/review-1.md",
+            "VERDICT: PASS\nDEFECT: none\nPOLISH: none\n",
+        );
+        mkdir("{$paths['sourceOrbitDir']}/workers/logs", recursive: true);
+        file_put_contents("{$paths['sourceOrbitDir']}/workers/logs/impl-1.log", "raw transcript\n");
+        mkdir("{$paths['sourceOrbitDir']}/quality-gates", recursive: true);
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/quality-gates/quality-check-failed.json",
+            json_encode([
+                'gate' => 'quality-check',
+                'exit_code' => 1,
+                'duration_ms' => 42,
+                'command' => 'composer quality-check',
+            ], JSON_THROW_ON_ERROR)."\n",
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180012',
+            '--slug=compact-diagnostics',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+        $archive = (string) $summary['archive_dir'];
+
+        expect($summary['copied_entries'])
+            ->toContain('loop.md')
+            ->toContain('workers/impl-1.json')
+            ->toContain('workers/handoff/review-1.md')
+            ->toContain('diagnostics/failed-gates/quality-check-failed.json')
+            ->not->toContain('workers/logs/impl-1.log')
+            ->and("{$archive}/workers/logs")
+            ->not->toBeDirectory()
+            ->and("{$archive}/agent-sessions")
+            ->not->toBeDirectory();
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
 it('retains only regular proof files explicitly cited by the compact loop', function (): void {
     $workspace = session_archive_workspace('compact-cited-proof');
 

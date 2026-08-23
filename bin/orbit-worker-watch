@@ -192,14 +192,14 @@ function orbit_worker_watch_payload(string $worktree, array $entry, string $even
         'handoff' => is_string($handoff) && $handoff !== '' ? $handoff : null,
         'log' => orbit_worker_log_path($worktree, (string) $entry['id']),
         'seen_at' => orbit_worker_now(),
-        'snapshot' => orbit_worker_watch_snapshot($entry, $event),
+        'snapshot' => orbit_worker_watch_snapshot($worktree, $entry, $event),
     ];
 }
 
 /**
  * @param  array<string, mixed>  $entry
  */
-function orbit_worker_watch_snapshot(array $entry, string $event): string
+function orbit_worker_watch_snapshot(string $worktree, array $entry, string $event): string
 {
     $id = (string) $entry['id'];
 
@@ -212,6 +212,14 @@ function orbit_worker_watch_snapshot(array $entry, string $event): string
 
     if ($event === 'exited') {
         return $id.':exited:'.((string) ($entry['exited_at'] ?? ''));
+    }
+
+    if ($event === 'blocked' || $event === 'stale') {
+        $logPath = orbit_worker_log_path($worktree, $id);
+        $logMtime = is_file($logPath) ? (string) filemtime($logPath) : '0';
+
+        return $id.':'.$event.':'.((string) ($entry['note'] ?? '')).':'
+            .((string) ($entry['heartbeat_at'] ?? '')).':'.$logMtime;
     }
 
     return $id.':'.$event;

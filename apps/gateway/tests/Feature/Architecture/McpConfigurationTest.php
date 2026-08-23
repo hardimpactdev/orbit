@@ -296,7 +296,8 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
     $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).';
     $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
     $watchSentence = 'Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.';
-    $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.';
+    $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.';
+    $implHandoffSentence = 'Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.';
     $rearmSentence = 'Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.';
     $stopSentence = 'Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.';
     $proofWindowSentence = 'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.';
@@ -317,6 +318,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->toContain($watchSentence)
         ->toContain($receiptOwnershipSentence)
         ->toContain($heartbeatSentence)
+        ->toContain($implHandoffSentence)
         ->toContain($rearmSentence)
         ->toContain($stopSentence)
         ->toContain($proofWindowSentence)
@@ -333,6 +335,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->toContain($watchSentence)
         ->toContain($receiptOwnershipSentence)
         ->toContain($heartbeatSentence)
+        ->toContain($implHandoffSentence)
         ->toContain($rearmSentence)
         ->toContain($stopSentence)
         ->toContain($proofWindowSentence)
@@ -771,10 +774,34 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->toContain('bin/orbit-session-archive')
         ->toContain('bin/orbit-feature-feedback')
         ->toContain('The implementer owns focused checks and the one terminal gate; owner')
+        ->toContain('candidate=<40-character sha>')
+        ->toContain('bin/orbit-feature-proof-receipt')
+        ->toContain('focused Mago')
+        ->toContain('predicate, identity, vocabulary, or schema')
         ->toContain('HARNESS.md')
         ->not->toContain('Solo project deletion must complete before worktree removal')
         ->not->toContain('primitive=<exact requested primitive>')
         ->not->toContain('repository-wide search, inventory, or lintable check');
+});
+
+it('keeps FRAME inventory and focused Mago conditional on the change kind', function (): void {
+    $harness = preg_replace('/\s+/', ' ', file_get_contents(repo_path('HARNESS.md')) ?: '') ?: '';
+    $skill = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '',
+    ) ?: '';
+
+    expect($harness)
+        ->toContain('predicate, identity, vocabulary, or schema')
+        ->toContain('bounded producers, consumers, and dangerous invariants')
+        ->toContain('ordinary local changes')
+        ->toContain('focused Mago')
+        ->and($skill)
+        ->toContain('predicate, identity, vocabulary, or schema')
+        ->toContain('ordinary local changes')
+        ->toContain('focused Mago')
+        ->toContain('accept --loop=.orbit/loop.md --actor=automated');
 });
 
 it('tombstones the post-feature analyzer persona as historical evidence', function (): void {

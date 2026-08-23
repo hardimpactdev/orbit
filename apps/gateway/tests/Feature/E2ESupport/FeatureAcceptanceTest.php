@@ -674,6 +674,72 @@ it('blocks readiness and acceptance while blast-radius closure is unresolved', f
     'gaps' => 'gaps - gateway-owned workload SSH remains unclassified',
 ]);
 
+it('validates and records an automated candidate in one accept command', function (): void {
+    $fixture = acceptance_test_workspace(
+        'automated-one-command',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and($accepted->getOutput())
+            ->toContain('ACCEPTED feature=')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: accepted')
+            ->toContain('- Acceptance venue: retained-incus')
+            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment')
+            ->toContain('- Accepted feature tip: '.acceptance_test_git($fixture, ['rev-parse', 'HEAD']));
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('keeps delayed human acceptance as a ready arm then later accept', function (): void {
+    $fixture = acceptance_test_workspace(
+        'human-delayed-arm',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=required',
+            venue: 'retained-incus',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        expect($ready->getExitCode())->toBe(0, $ready->getErrorOutput());
+        expect((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: accept')
+            ->toContain('- Acceptance: pending');
+
+        $accepted = acceptance_test_run(
+            $fixture,
+            ['accept', '--actor=user', '--source-ref=codex://threads/example#delayed-accept'],
+            "Looks correct after the delay.\n",
+        );
+
+        expect($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- State: accepted')
+            ->toContain('- Acceptance: accepted - user @ codex://threads/example#delayed-accept');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('keeps diff-derived proof separate from the automated acceptance actor', function (): void {
     $fixture = acceptance_test_workspace(
         'automated-retained-proof',

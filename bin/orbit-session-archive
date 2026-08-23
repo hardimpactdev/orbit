@@ -61,7 +61,8 @@ if (array_key_exists('help', $options)) {
           --full                       Preserve the complete active .orbit state and provider captures.
                                        The default archive is compact: loop.md, feedback.jsonl when present,
                                        evidence/quality-gate/release-evidence files cited as exact
-                                       inline-code paths, and a versioned archive receipt.
+                                       inline-code paths, structured worker handoffs and failed-gate
+                                       summaries when present, and a versioned archive receipt.
 
         In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --worker-id, --home, --marker, --max-start-distance, --only-ok.
@@ -1143,8 +1144,82 @@ function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): ar
         $copiedEntries[] = $relative;
     }
 
+    $copiedEntries = array_values(array_unique(array_merge(
+        $copiedEntries,
+        copyCompactDiagnosticEntries($sourceOrbitDir, $archiveDir, $sourceIdentity),
+    )));
+
     sort($copiedEntries, SORT_STRING);
     assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
+    return $copiedEntries;
+}
+
+/**
+ * @param  array{dev: int, ino: int, mode: int}  $sourceIdentity
+ * @return list<string>
+ */
+function copyCompactDiagnosticEntries(string $sourceOrbitDir, string $archiveDir, array $sourceIdentity): array
+{
+    $copiedEntries = [];
+    $workersDir = "{$sourceOrbitDir}/workers";
+
+    if (is_dir($workersDir) && ! is_link($workersDir)) {
+        foreach (glob($workersDir.'/*.json') ?: [] as $source) {
+            assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
+            if (is_link($source) || ! is_file($source)) {
+                continue;
+            }
+
+            $relative = 'workers/'.basename($source);
+            orbitSessionArchiveCopyFile($source, "{$archiveDir}/{$relative}");
+            $copiedEntries[] = $relative;
+        }
+
+        $handoffDir = "{$workersDir}/handoff";
+
+        if (is_dir($handoffDir) && ! is_link($handoffDir)) {
+            foreach (glob($handoffDir.'/*') ?: [] as $source) {
+                assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
+                if (is_link($source) || ! is_file($source)) {
+                    continue;
+                }
+
+                $relative = 'workers/handoff/'.basename($source);
+                orbitSessionArchiveCopyFile($source, "{$archiveDir}/{$relative}");
+                $copiedEntries[] = $relative;
+            }
+        }
+    }
+
+    $qualityGatesDir = "{$sourceOrbitDir}/quality-gates";
+
+    if (is_dir($qualityGatesDir) && ! is_link($qualityGatesDir)) {
+        foreach (glob($qualityGatesDir.'/*') ?: [] as $source) {
+            assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
+            if (is_link($source) || ! is_file($source)) {
+                continue;
+            }
+
+            $decoded = json_decode((string) file_get_contents($source), true);
+            $exitCode = is_array($decoded) ? ($decoded['exit_code'] ?? null) : null;
+
+            if (! is_int($exitCode) && is_array($decoded) && is_array($decoded['payload'] ?? null)) {
+                $exitCode = $decoded['payload']['exit_code'] ?? null;
+            }
+
+            if (! is_int($exitCode) || $exitCode === 0) {
+                continue;
+            }
+
+            $relative = 'diagnostics/failed-gates/'.basename($source);
+            orbitSessionArchiveCopyFile($source, "{$archiveDir}/{$relative}");
+            $copiedEntries[] = $relative;
+        }
+    }
 
     return $copiedEntries;
 }

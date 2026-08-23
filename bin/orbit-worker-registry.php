@@ -6,7 +6,7 @@ require_once __DIR__.'/orbit-tmux.php';
 
 const ORBIT_WORKER_STATUSES = ['spawned', 'working', 'blocked', 'handoff', 'exited'];
 
-const ORBIT_WORKER_HEARTBEAT_STATUSES = ['working', 'blocked', 'handoff'];
+const ORBIT_WORKER_HEARTBEAT_STATUSES = ['working', 'blocked'];
 
 const ORBIT_WORKER_CLIS = ['grok', 'claude', 'codex', 'opencode'];
 

@@ -202,7 +202,11 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
     }
 
     $minimum = $route['venue'];
-    $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
+    $venue = acceptanceResolvedVenue($options, $loop, $minimum);
+
+    if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+        throw new RuntimeException("invalid acceptance venue: {$venue}");
+    }
 
     if (! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
@@ -252,6 +256,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         $acceptanceValue = "accepted - user @ {$sourceRef}";
     }
 
+    $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', $acceptanceValue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', $featureTip);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted main tip', $mainTip);
@@ -342,6 +347,27 @@ function acceptanceLoop(string $path): string
     }
 
     return $loop;
+}
+
+/** @param array<string, string|bool> $options */
+function acceptanceResolvedVenue(array $options, string $loop, string $minimum): string
+{
+    $requested = is_string($options['venue'] ?? null) ? trim((string) $options['venue']) : '';
+
+    if ($requested !== '') {
+        return $requested;
+    }
+
+    $recorded = (string) (orbitLoopLabel($loop, 'Proof', 'Acceptance venue') ?? '');
+
+    if (
+        in_array($recorded, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
+        && orbitLoopVenueSatisfies($recorded, $minimum)
+    ) {
+        return $recorded;
+    }
+
+    return $minimum;
 }
 
 /**

@@ -210,6 +210,15 @@ function compact_archive_entry_path_is_allowed(string $entry, int $schemaVersion
         return true;
     }
 
+    if (
+        preg_match('~^workers/[a-z0-9-]+\.json$~', $entry) === 1
+        || preg_match('~^workers/handoff/[A-Za-z0-9._-]+$~', $entry) === 1
+        || preg_match('~^diagnostics/failed-gates/[A-Za-z0-9._-]+$~', $entry) === 1
+    ) {
+        return ! in_array('.', explode('/', $entry), true)
+            && ! in_array('..', explode('/', $entry), true);
+    }
+
     $roots = implode('|', array_map(
         static fn (string $root): string => preg_quote($root, '~'),
         compact_archive_proof_root_prefixes($schemaVersion),
@@ -237,7 +246,11 @@ function compact_archive_actual_entries(string $archiveDir, int $schemaVersion):
     );
     $roots = implode('|', array_map(
         static fn (string $root): string => preg_quote($root, '~'),
-        compact_archive_proof_root_prefixes($schemaVersion),
+        [
+            ...compact_archive_proof_root_prefixes($schemaVersion),
+            'workers',
+            'diagnostics',
+        ],
     ));
 
     if ($roots === '') {

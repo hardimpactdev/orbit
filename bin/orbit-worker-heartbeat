@@ -5,7 +5,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
 
-const ORBIT_WORKER_HEARTBEAT_USAGE = 'Usage: bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> [--note=<text>] [--provider-ref=<ref>]';
+const ORBIT_WORKER_HEARTBEAT_USAGE = 'Usage: bin/orbit-worker-heartbeat <id> --status=<working|blocked> [--note=<text>] [--provider-ref=<ref>]. Use bin/orbit-worker-handoff <id> <file> [--note=<text>] for the atomic terminal operation.';
 
 try {
     $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
@@ -24,18 +24,6 @@ try {
     $worktree = orbit_worker_worktree((string) getcwd());
     $entry = orbit_worker_require_entry($worktree, $id);
 
-    $handoffPath = is_string($entry['handoff'] ?? null) && $entry['handoff'] !== ''
-        ? (string) $entry['handoff']
-        : orbit_worker_handoff_path($worktree, $id);
-
-    if ($status === 'handoff' && ! is_file($handoffPath)) {
-        throw new RuntimeException(
-            'handoff file is missing: '
-            .$handoffPath
-            .'. Write the handoff with bin/orbit-worker-handoff before --status=handoff.',
-        );
-    }
-
     $entry['status'] = $status;
     $entry['heartbeat_at'] = orbit_worker_now();
 
@@ -51,10 +39,6 @@ try {
     if ($providerRef !== null) {
         orbit_worker_reject_newline('provider-ref', $providerRef);
         $entry['provider_ref'] = $providerRef === '' ? null : $providerRef;
-    }
-
-    if ($status === 'handoff' && $entry['handoff'] === null) {
-        $entry['handoff'] = $handoffPath;
     }
 
     orbit_worker_write($worktree, $entry);

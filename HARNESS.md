@@ -17,10 +17,8 @@ The local anchor is the compact `.orbit/loop.md` seeded by
 pointer to `.orbit/feedback.jsonl`. Raw feedback, transcripts, and retrospective
 taxonomies do not belong in the anchor.
 
-Owner prepares the worktree (session created), fills `.orbit/loop.md`, and
-writes briefs under `.orbit/workers/briefs/`. Idle wait costs nothing; on wake
-read the event JSON and handoff files. Landing serializes per branch: merge
-main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land`.
+Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
+`.orbit/workers/briefs/`.
 
 ### FRAME
 
@@ -32,7 +30,10 @@ main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land
    Session before editing. For stateful, lifecycle, or concrete UX features,
    append one optional compact clause on the existing Scope `Owned` row:
    `primitive=<exact requested primitive>; transitions=success:<terminal success>|failure:<terminal failure>|retry:<retry>|stop-restart:<stop or restart>|stale:<stale-state or n/a>`.
-   Omit the clause for ordinary/local changes. Deterministic lint checks only
+   Omit the clause for ordinary/local changes. When the Goal changes a
+   predicate, identity, vocabulary, or schema, FRAME must list the bounded
+   producers, consumers, and dangerous invariants before dispatch. Omit that
+   inventory for ordinary local changes. Deterministic lint checks only
    marker syntax, not statefulness or prose; `bin/orbit-loop-contract.php`
    teaching errors are authoritative. Do not add a new Scope row, lane, or
    semantic grader for this framing.
@@ -42,29 +43,24 @@ main, `composer quality-check`, venue proof, acceptance, `bin/orbit-feature-land
 
 ### BUILD
 
-Keep docs, executable coverage, and implementation aligned. Start with failing
-coverage in the owning framework; Pest is the PHP/Laravel framework, not a rule
-for other stacks. Prefer a small working vertical slice and existing project
-abstractions.
+Keep docs, tests, and implementation aligned. Start with failing coverage in
+the owning framework. Prefer a small vertical slice and existing abstractions.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>` (`grok --yolo --reasoning-effort medium` in the worktree). Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
-Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked|handoff> --note=<text>` at meaningful state changes such as blocked and handoff, and `bin/orbit-worker-handoff <id> <file>` when done; workers never merge.
+Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
-Impl handoff names `candidate=<40-character sha>` and `bin/orbit-feature-proof-receipt`.
-From a repository shell, every `tmux kill*` form is blocked except the validated LAND `kill-session -t '=feat-<slug>'` boundary; clean up unrelated scratch tmux servers from a shell outside the repository.
+Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
+Every `tmux kill*` form from a repository shell is blocked except the validated LAND `kill-session -t '=feat-<slug>'` boundary.
 Missing tmux, grok, or claude on the machine is a blocker.
 
 ### PROVE
 
 Run the smallest relevant checks first, then the diff-routed broader gate:
-
-- docs-only: focused docs checks and `composer docs-lint`;
-- non-docs repository changes: focused owning tests and `composer quality-check`;
-- integrated runtime behavior: the real proof venue below;
-- rendering/progress/streaming/TTY/cadence/repaint/liveness risk: capture PTY
-  evidence; ordinary commands pay no PTY tax.
+docs-only focused docs checks and `composer docs-lint`; non-docs focused owning
+tests and `composer quality-check`; integrated runtime at the real proof venue;
+PTY evidence only for TTY/stream/liveness risk.
 
 When the Goal claims runtime reachability or convergence, proof must directly
 exercise the claimed final outcome. Configuration validation, artifact
@@ -90,7 +86,9 @@ not invent a post-LAND closure proof. Historical archives stay readable; the
 strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
-before the diff-routed broader gate, general review, and acceptance. The implementer owns focused checks and the one terminal gate; owner
+before the diff-routed broader gate, general review, and acceptance. When
+production PHP files changed, run focused Mago on those files before the first
+implementation handoff; skip focused Mago when none changed. The implementer owns focused checks and the one terminal gate; owner
 and reviewer consume the exact-SHA receipt without rerunning it.
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,
@@ -98,7 +96,7 @@ quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
 Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).
-Use `.agents/review-personas/general.md`. Require checkout proof. Missing tmux, grok, or claude on the machine is a blocker.
+Use `.agents/review-personas/general.md`. Require checkout proof.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
 lane. Use `not-required - <reason>` for a local change. A product decision,
@@ -204,6 +202,9 @@ the implementing Mac; Incus is not a substitute for native macOS proof.
 
 Record acceptance with `bin/orbit-feature-acceptance`:
 
+- automated acceptance validates and records the exact candidate in one
+  `accept --actor=automated` command; delayed human acceptance still arms with
+  `ready` and later records with `accept`;
 - user acceptance reads the verbatim message from STDIN and requires its `codex://` or `claude://` source reference;
 - automated acceptance always requires `human-judgment=not-required`;
 - `Reviewed feature tip` is the exact HEAD that received reviewer PASS;
@@ -221,8 +222,7 @@ tip without integrating main and repeating those states is never re-proof.
 All non-secret user feedback is stored verbatim as immutable events in
 `.orbit/feedback.jsonl`. Secret-shaped values are redacted in memory before the
 event is appended; only the redacted context, original SHA-256, and rule ids are
-durable. The complete secret-bearing input is never written to a private side
-store.
+durable. Secret-bearing input is never written aside.
 
 Feedback closes by a product protection or a user-volunteered waiver. A waiver
 requires a safe Codex or Claude source reference and the verbatim user message; a
@@ -280,7 +280,8 @@ Manual LAND remains validate-then-execute for each destructive mutation:
    `bin/orbit-session-archive` with the feature worktree as cwd, never from
    main. Archives are compact by default: `loop.md`, optional
    `feedback.jsonl`, loop-cited proof files as exact inline-code paths under
-   the evidence, quality-gates, or release-evidence trees, and a versioned
+   the evidence, quality-gates, or release-evidence trees, structured worker
+   handoffs and failed-gate summaries when present, and a versioned
    receipt binding the landed branch and every archived byte. Cite files,
    never proof directories; the archive tool rejects invalid citations.
    Runtime acceptance receipts still require `.orbit/evidence/` or
@@ -305,26 +306,19 @@ through their legacy manifests and receipt schemas.
 ## Trigger-Only Loop Improvement
 
 Clean loops create no experiment, retrospective, analyzer lane, capture lane,
-metrics table, or signal record. Process improvement starts only after one of:
-
-- a failed promoted protection;
-- a severe preventable safety incident;
-- a reviewer-confirmed recurring process failure; or
-- explicit user process feedback.
-
-There may be one active loop experiment at a time. Keep it in
+metrics table, or signal record. Process improvement starts only after a failed
+promoted protection, a severe preventable safety incident, a
+reviewer-confirmed recurring process failure, or explicit user process
+feedback. There may be one active loop experiment at a time. Keep it in
 `~/shared-knowledge/projects/orbit/loop-analysis/` tagged loop-experiment with
 the trigger, smallest change, one target metric derived from existing compact
-receipts, a fixed window, and a revert command.
-Revert by default when the target does not improve, a hard protection fails, or
-ordinary delivery slows materially. Do not create generic evaluator tooling for
-a one-off calculation.
-
+receipts, a fixed window, and a revert command. Revert by default when the
+target does not improve, a hard protection fails, or ordinary delivery slows
+materially. Do not create generic evaluator tooling for a one-off calculation.
 The prevention metric counts escaped same-surface defects after terminal PASS,
-not internal commit count or autonomous pre-land rework.
-
-Hard security, correctness, acceptance, and evidence-integrity protections are
-never experiments. Historical session and signal tools serve explicit
+not internal commit count or autonomous pre-land rework. Hard security,
+correctness, acceptance, and evidence-integrity protections are never
+experiments. Historical session and signal tools serve explicit
 human-requested diagnostics only, not ordinary delivery gates.
 
 ## Stop Conditions

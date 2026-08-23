@@ -12,7 +12,7 @@ require_once __DIR__.'/orbit-feature-proof-requirements.php';
 require_once __DIR__.'/orbit-cleanup-checks.php';
 require_once __DIR__.'/orbit-proof-receipt.php';
 
-const ORBIT_WORKER_HANDOFF_USAGE = 'Usage: bin/orbit-worker-handoff <id> <file> [--force]';
+const ORBIT_WORKER_HANDOFF_USAGE = 'Usage: bin/orbit-worker-handoff <id> <file> [--note=<text>] [--force]';
 
 try {
     $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
@@ -73,6 +73,13 @@ try {
 
     if (file_put_contents($destination, $contents) === false) {
         throw new RuntimeException("unable to write handoff file: {$destination}");
+    }
+
+    $note = orbit_worker_option_string($parsed['options'], 'note');
+
+    if ($note !== null) {
+        orbit_worker_reject_newline('note', $note);
+        $entry['note'] = $note;
     }
 
     $entry['status'] = 'handoff';

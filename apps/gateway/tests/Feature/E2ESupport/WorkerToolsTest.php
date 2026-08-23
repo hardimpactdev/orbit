@@ -191,7 +191,7 @@ it('updates heartbeat status and provider_ref', function (): void {
     });
 });
 
-it('refuses heartbeat handoff when the handoff file is missing', function (): void {
+it('heartbeat rejects terminal --status=handoff and points at orbit-worker-handoff', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
         $process = worker_tools_run(
@@ -205,7 +205,9 @@ it('refuses heartbeat handoff when the handoff file is missing', function (): vo
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('handoff file is missing');
+            ->toContain('Usage: bin/orbit-worker-heartbeat <id> --status=<working|blocked>')
+            ->toContain('orbit-worker-handoff')
+            ->not->toContain('--status=<working|blocked|handoff>');
     });
 });
 
@@ -249,7 +251,44 @@ it('copies a handoff file and sets status=handoff', function (): void {
         expect($entry['status'])
             ->toBe('handoff')
             ->and($entry['handoff'])
-            ->toEndWith('/.orbit/workers/handoff/impl-1-'.$sha.'.md');
+            ->toEndWith('/.orbit/workers/handoff/impl-1-'.$sha.'.md')
+            ->and($entry['heartbeat_at'])
+            ->not->toBe('');
+    });
+});
+
+it('stores the final note atomically with handoff status, path, and heartbeat', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $source = worker_tools_impl_handoff_source($fixture, "done\n");
+        $before = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
+            true,
+        );
+
+        $process = worker_tools_run(
+            'orbit-worker-handoff',
+            ['impl-1', $source, '--note=terminal summary'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $entry = json_decode(
+            (string) file_get_contents($fixture['worktree'].'/.orbit/workers/impl-1.json'),
+            true,
+        );
+        expect($entry['status'])
+            ->toBe('handoff')
+            ->and($entry['note'])
+            ->toBe('terminal summary')
+            ->and($entry['handoff'])
+            ->toBeString()
+            ->and($entry['heartbeat_at'])
+            ->not->toBe($before['heartbeat_at'] ?? '');
     });
 });
 
@@ -1171,13 +1210,138 @@ it('watch still accepts --ignore as cheap compatibility', function (): void {
     });
 });
 
+it('watch acknowledgements of blocked and stale events are revision-sensitive', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');
+        $blocked = worker_tools_run(
+            'orbit-worker-heartbeat',
+            ['impl-1', '--status=blocked', '--note=waiting on review'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($blocked->getExitCode())->toBe(0, $blocked->getErrorOutput().$blocked->getOutput());
+
+        $first = worker_tools_run(
+            'orbit-worker-watch',
+            ['--interval=1', '--timeout=3', '--target=impl-1'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+        $firstEvent = json_decode(trim($first->getOutput()), true);
+        expect($firstEvent['event'])->toBe('blocked')->and($firstEvent['snapshot'])->toBeString();
+
+        $unchanged = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--timeout=2',
+                '--target=impl-1',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($unchanged->getExitCode())->toBe(3);
+        $timeout = json_decode(trim($unchanged->getOutput()), true);
+        expect($timeout['event'])->toBe('timeout');
+
+        $revised = worker_tools_run(
+            'orbit-worker-heartbeat',
+            ['impl-1', '--status=blocked', '--note=waiting on secrets'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($revised->getExitCode())->toBe(0, $revised->getErrorOutput().$revised->getOutput());
+
+        $changed = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--timeout=3',
+                '--target=impl-1',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            8,
+        );
+        expect($changed->getExitCode())->toBe(0, $changed->getErrorOutput().$changed->getOutput());
+        $secondEvent = json_decode(trim($changed->getOutput()), true);
+        expect($secondEvent['event'])
+            ->toBe('blocked')
+            ->and($secondEvent['note'])
+            ->toBe('waiting on secrets')
+            ->and($secondEvent['snapshot'])
+            ->not->toBe($firstEvent['snapshot']);
+    });
+});
+
+it('watch acknowledgements of stale events resurface after a later heartbeat', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1', readyDelay: 0);
+
+        $first = worker_tools_run(
+            'orbit-worker-watch',
+            ['--interval=1', '--stale=1', '--timeout=8', '--target=impl-1'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            12,
+        );
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+        $firstEvent = json_decode(trim($first->getOutput()), true);
+        expect($firstEvent['event'])->toBe('stale')->and($firstEvent['snapshot'])->toBeString();
+
+        $heartbeat = worker_tools_run(
+            'orbit-worker-heartbeat',
+            ['impl-1', '--status=working', '--note=still thinking'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($heartbeat->getExitCode())->toBe(0, $heartbeat->getErrorOutput().$heartbeat->getOutput());
+
+        $changed = worker_tools_run(
+            'orbit-worker-watch',
+            [
+                '--interval=1',
+                '--stale=1',
+                '--timeout=8',
+                '--target=impl-1',
+                '--ack='.$firstEvent['snapshot'],
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            12,
+        );
+        expect($changed->getExitCode())->toBe(0, $changed->getErrorOutput().$changed->getOutput());
+        $secondEvent = json_decode(trim($changed->getOutput()), true);
+        expect($secondEvent['event'])
+            ->toBe('stale')
+            ->and($secondEvent['snapshot'])
+            ->not->toBe($firstEvent['snapshot']);
+    }, echoing: false);
+});
+
 it('documents the default watch interval and ack targeting', function (): void {
     $source = (string) file_get_contents(repo_path('bin/orbit-worker-watch'));
+    $handoff = (string) file_get_contents(repo_path('bin/orbit-worker-handoff'));
 
     expect($source)
         ->toContain('[--interval=30]')
         ->toContain('[--target=<id>]')
-        ->toContain('[--ack=<snapshot>]');
+        ->toContain('[--ack=<snapshot>]')
+        ->and($handoff)
+        ->toContain('[--note=<text>]');
 });
 
 it('watch returns none when no workers are registered', function (): void {
