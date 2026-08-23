@@ -13171,6 +13171,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php",
+                "apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php",
                 "apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php",
                 "apps/cli/tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php",
                 "apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php",
@@ -13190,6 +13191,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Operation/UpdateAllCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php",

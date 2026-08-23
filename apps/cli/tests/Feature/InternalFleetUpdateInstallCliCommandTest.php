@@ -212,8 +212,8 @@ describe('internal fleet update install cli command', function (): void {
             ->not->toContain('restart_agent_launchd')
             ->not->toContain('restart_agent_unmanaged')
             ->not->toContain('agent_service_missing_bootstrap_required')->and($runtimeCalls)
-            ->not->toContain('systemctl restart')
-            ->not->toContain('launchctl kickstart')->and(is_file(
+            ->not->toContain('systemctl ')
+            ->not->toContain('launchctl ')->and(is_file(
                 $stagedPath,
             ))->toBeTrue()->and(fleet_update_install_cli_sha256($stagedPath))->toBe($desktopSha256)->and(is_file(
                 $handoffPath,
@@ -1317,7 +1317,7 @@ describe('macos Orbit Agent launchd restart during fleet update install', functi
             ->and($data['stdout'] ?? '')
             ->toContain('defer_agent_restart_to_desktop')
             ->not->toContain('restart_agent_launchd')->and($calls)
-            ->not->toContain('launchctl kickstart');
+            ->not->toContain('launchctl ');
     });
 });
 

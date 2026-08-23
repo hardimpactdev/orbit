@@ -511,10 +511,12 @@ managed Mac whose Agent is unreachable before mutation as a skip with
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, no native platform installer packaging, signing, notarization,
 or separate approval UI. Orbit still installs and updates the owner-user Agent
-artifact and restarts an existing managed service; bootstrap owns first service
-creation and updates do not create a missing service. Agent execution is
-limited to explicitly supported binary argv envelopes with node-local binary
-allowlisting. `app-dev` convergence uses direct command envelopes that the
+artifact. When a fleet update includes a Desktop artifact and pending Desktop
+handoff, the CLI defers Agent restart to Orbit Desktop and does not restart an
+existing managed service. Otherwise it restarts an existing managed service;
+bootstrap owns first service creation and updates do not create a missing
+service. Agent execution is limited to explicitly supported binary argv
+envelopes with node-local binary allowlisting. `app-dev` convergence uses direct command envelopes that the
 gateway constructs, authorizes, and sends through Agent push.
 
 ## Access Policy

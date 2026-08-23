@@ -159,8 +159,11 @@ later errors stay `failed` and cannot be relabeled `skipped`. Non-managed
 role-bearing targets keep required failure behavior when Agent push is
 unavailable. Desktop staging and the automatic pending-desktop-update
 handoff apply only to reachable `managed=true` macOS targets that have a
-same-platform Agent artifact. An unmanaged Mac with a workload role still
-receives CLI and Agent updates, but not desktop identity.
+same-platform Agent artifact. On those targets the CLI installs and verifies
+CLI and Agent bytes, then defers Agent restart to Orbit Desktop through the
+owner-only handoff and makes no systemd, launchd, or unmanaged restart call.
+An unmanaged Mac with a workload role still receives CLI and Agent updates,
+but not desktop identity.
 
 The expected target shape per calling context:
 
@@ -332,17 +335,23 @@ The expected target shape per calling context:
   progress noise, or any guessed fallback. Fleet verify of the CLI check
   likewise requires structured JSON version output.
 - When an Orbit Agent artifact is selected, the remote update verifies the
-  installed owner-user local `orbit-agent` hash and restarts a managed
-  `orbit-agent` service when one is present, but only after required role image
-  archives and registry fallbacks have finished so the self-restart cannot
-  interrupt those side effects. If no systemd or launchd service is present but
-  an unmanaged listener is running from the installed binary path, the update
-  replaces that listener with the new binary and preserves the configured Agent
-  endpoint. Writing or replacing managed Agent config and CA trust files during
-  that install uses portable shell decoding of gateway-supplied base64 payloads
-  and atomic staged install. It must not invoke host `php`. The local install
-  action prepares role-image lists and aliases as base64 line records so the
-  target shell can iterate them without host PHP JSON helpers.
+  installed owner-user local `orbit-agent` hash, but only after required role
+  image archives and registry fallbacks have finished so a later Agent restart
+  cannot interrupt those side effects. When the install payload carries both a
+  Desktop artifact and a pending Desktop handoff, the CLI installs and verifies
+  the Agent bytes and then defers the Agent restart to Orbit Desktop through
+  the owner-only handoff. That path makes no systemd, launchd, or unmanaged
+  restart call, even if a systemd or launchd service is still loaded.
+- When no Desktop handoff is present, the update restarts a managed
+  `orbit-agent` service when one is present. If no systemd or launchd service is
+  present but an unmanaged listener is running from the installed binary path,
+  the update replaces that listener with the new binary and preserves the
+  configured Agent endpoint. Writing or replacing managed Agent config and CA
+  trust files during that install uses portable shell decoding of
+  gateway-supplied base64 payloads and atomic staged install. It must not invoke
+  host `php`. The local install action prepares role-image lists and aliases as
+  base64 line records so the target shell can iterate them without host PHP JSON
+  helpers.
 - Agent-role nodes may expose an `agent` Unix user for tools. That user is a
   consumer user, not a second Orbit owner. Provisioning converges a shim such as
   `/home/agent/.local/bin/orbit` that executes the owner user's CLI with
@@ -485,5 +494,6 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, managed Mac pre-mutation skip, and post-mutation failure. |
 | `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target union of role-bearing Agent-eligible nodes and `managed=true` clients, with caller exclusion. |
 | `apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php` | Owner-only pending desktop update handoff path safety, atomic write, stale identity, and partial artifact rejection. |
+| `apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php` | Local fleet-update CLI install: Desktop handoff defers Agent restart with no systemd or launchd calls, and standalone systemd, launchd, and unmanaged restart paths stay unchanged. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |
 | `apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php` | Integrated durable fleet update from an operator through gateway event replay. |

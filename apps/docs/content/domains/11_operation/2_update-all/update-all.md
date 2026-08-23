@@ -84,10 +84,13 @@ orbit update:all --stream-json
    two-stage install. First the currently running CLI receives a CLI-only
    payload. Then the newly installed CLI receives the full payload so PHP-free
    Agent config and role-image steps run under the candidate binary.
-   The signed internal installer replaces the node-local `orbit-agent` binary,
-   restarts an existing managed service when present, falls back to replacing an
-   unmanaged listener when one is running, and records installed artifact
-   identity for future drift checks.
+   The signed internal installer replaces the node-local `orbit-agent` binary
+   and records installed artifact identity for future drift checks. When the
+   payload carries both a Desktop artifact and a pending Desktop handoff, the
+   installer defers Agent restart to Orbit Desktop and does not restart a
+   standalone service. When no Desktop handoff is present, it restarts an
+   existing managed service when present and falls back to replacing an
+   unmanaged listener when one is running.
 5. Each persisted operation event carries a monotonic operation-local
    `event_sequence`. This is the replay cursor. The global journal row
    `event_id` is durable identity only. This command still follows an
@@ -125,8 +128,10 @@ role-bearing targets keep the current required failure behavior.
 
 The same immutable update plan stages desktop, Agent, and CLI artifacts for a
 reachable managed Mac. Linux targets still receive CLI and Agent artifacts
-only. Native Orbit Desktop restart is consumed from an owner-only pending
-desktop update handoff and lands in a separate native slice.
+only. On that managed Mac the CLI defers Agent restart to Orbit Desktop
+through the pending desktop update handoff, which is owner-only, and does not
+restart a standalone Agent service. Native Orbit Desktop restart is consumed
+from that handoff and lands in a separate native slice.
 
 The command does not create nodes, deploy apps, or repair unrelated family drift.
 It may change app runtime artifacts only when role image updates are required by
