@@ -96,25 +96,27 @@ is_sha256_digest() {
     [[ "${1:-}" =~ ^sha256:[0-9a-f]{64}$ ]]
 }
 
+system_git() {
+    PATH="/usr/bin:/bin:/usr/local/bin" command git "$@"
+}
+
 fingerprint_owned_inputs() {
-    local listing rel digest
+    local listing digest
     listing="$(mktemp)"
 
-    {
-        PATH="/usr/bin:/bin:/usr/local/bin" git -C "$source_root" ls-tree -r HEAD -- "$@" \
-            || fail "fingerprint git ls-tree failed for: $*"
-        PATH="/usr/bin:/bin:/usr/local/bin" git -C "$source_root" ls-files -- "$@" \
-            | LC_ALL=C sort \
-            | while IFS= read -r rel; do
-                case "$rel" in
-                    Dockerfile|*/Dockerfile)
-                        grep -E '^(FROM|ARG) ' "${source_root}/${rel}" | LC_ALL=C sort | sed "s|^|external:${rel}:|"
-                        ;;
-                esac
-            done
-    } > "$listing"
+    # Write ls-tree directly to a file. Do not pipe git into sort or a
+    # while-read consumer: that pipeline deadlocks when the consumer
+    # stops draining and sort's stdout pipe fills.
+    if ! system_git -C "$source_root" ls-tree -r HEAD -- "$@" > "$listing"; then
+        rm -f "$listing"
+        fail "fingerprint git ls-tree failed for: $*"
+    fi
 
-    [ -s "$listing" ] || fail "fingerprint inputs produced an empty file list: $*"
+    [ -s "$listing" ] || {
+        rm -f "$listing"
+        fail "fingerprint inputs produced an empty file list: $*"
+    }
+
     digest="$(compute_sha256 "$listing")"
     rm -f "$listing"
     printf 'sha256:%s\n' "$digest"
