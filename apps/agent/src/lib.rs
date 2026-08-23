@@ -10,8 +10,13 @@ use std::time::Duration;
 use url::Url;
 
 mod http;
+mod lifetime;
 
 pub use http::{run_agent_service, run_agent_service_blocking};
+pub use lifetime::{
+    desktop_lifetime_enabled, desktop_lifetime_enabled_from, watch_reader_until_eof,
+    DESKTOP_LIFETIME_ENV,
+};
 
 const GATEWAY_TIMEOUT: Duration = Duration::from_secs(5);
 

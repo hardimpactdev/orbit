@@ -460,12 +460,14 @@ authenticated Agent listener plus minimal loopback `/health` and `/status`
 endpoints, receives binary argv envelopes, executes only node-local
 allowlisted binaries through no-shell process APIs, and reports collected
 stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri Orbit
-Desktop app that owns Agent lifetime on Darwin. Native supervisor and menu
-behavior lands in a separate slice. The release manifest may include an
-optional Darwin ARM64 desktop updater archive with URL, SHA-256, Tauri updater
-signature, version, platform, and architecture. `update:all` stages that
-archive with matching Agent and CLI artifacts for reachable managed Macs and
-writes an owner-only pending desktop update handoff for the native installer.
+Desktop app that owns Agent lifetime on Darwin. It supervises one owner-local
+Agent child, registers launch-at-login, and installs a verified
+desktop/Agent/CLI update from the owner-only pending handoff or a gateway-selected
+manifest. The release manifest includes a Darwin ARM64 desktop updater archive
+with URL, SHA-256, Tauri updater signature, version, platform, and architecture.
+`update:all` stages that archive with matching Agent and CLI artifacts for
+reachable managed Macs and writes an owner-only pending desktop update handoff
+for Orbit Desktop.
 
 V1 is scoped narrowly:
 
@@ -481,8 +483,9 @@ V1 is scoped narrowly:
 - owner-user local Agent installation and updates replace the configured
   artifact and restart an existing managed service; first service creation
   remains bootstrap-owned and updates do not create a missing service;
-- native platform installer packaging, signing, and notarization remain
-  deferred.
+- native Darwin updater archives and DMGs are Mini-built exact-candidate
+  assets; Apple Developer ID signing and notarization fail closed when
+  publication requests them without credentials.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
 sessions. Orbit Agent is a node-local execution lane for Orbit operations.

@@ -476,8 +476,9 @@ wildcard or non-WireGuard command binds fail closed.
 Orbit installs and updates the Agent artifact in the configured owner user's
 local installation and restarts its managed service when that service already
 exists. Bootstrap owns first service creation; `update` and `update:all` replace
-and restart an existing service but do not create a missing one. Native platform
-installer packaging, signing, and notarization remain separate deferred work.
+and restart an existing service but do not create a missing one. Native Darwin desktop packaging, updater signing, and DMG assembly are Mini-built
+exact-candidate assets. Apple Developer ID signing and notarization fail closed
+when publication requests them and credentials are absent.
 Agent-push requests are structured Orbit CLI invocations submitted by the
 gateway. `app-dev` convergence is sent as a direct gateway-pushed command
 envelope; `node role:add` does not create an Agent work item because
@@ -486,9 +487,11 @@ workload-role convergence sends the envelope directly.
 The macOS menu-bar surface lives in `apps/macos`. Orbit Desktop is the macOS
 lifecycle owner of Orbit Agent: it starts at login, supervises one Agent child,
 and quitting the desktop app stops that Agent. Closing only the dashboard
-window does not quit the menu-bar app or stop the Agent. Native supervisor,
-login-item, and menu implementation lands in a separate `apps/macos` slice;
-this contract is already binding for gateway and CLI update behavior. The CLI
+window does not quit the menu-bar app or stop the Agent. Orbit Desktop launches the owner-local Agent as a direct child with a private
+stdin lifetime channel, intercepts dashboard close to hide the window, and
+stops the child on explicit Quit. Canonical `dev.orbit.agent` LaunchAgent state
+is migrated on first ownership launch; an unproven listener fails closed as
+Agent Conflict. Launch at login uses Tauri's LaunchAgent autostart. The CLI
 remains usable while Orbit Desktop is stopped. Agent-dependent commands then
 fail with `orbit_agent_unavailable` and tell the operator to open Orbit
 Desktop. Execution history belongs in gateway operation/activity history.

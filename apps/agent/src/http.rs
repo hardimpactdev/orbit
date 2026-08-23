@@ -1,4 +1,7 @@
-use crate::{build_service_status_snapshot, AgentConfig, HttpAgentGateway, ServiceStatusSnapshot};
+use crate::{
+    build_service_status_snapshot, desktop_lifetime_enabled, watch_reader_until_eof, AgentConfig,
+    HttpAgentGateway, ServiceStatusSnapshot,
+};
 use axum::{
     body::Body,
     extract::State,
@@ -59,11 +62,32 @@ pub async fn run_agent_service() {
     eprintln!("Orbit Agent command listener on http://{command_bind_addr}");
     eprintln!("Orbit Agent local status listener on http://{local_status_bind_addr}");
 
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    if desktop_lifetime_enabled() {
+        let shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
+                watch_reader_until_eof(std::io::stdin());
+            })
+            .await;
+            shutdown.notify_waiters();
+        });
+    }
+
+    let command_shutdown = shutdown.clone();
+    let status_shutdown = shutdown;
     let command_service = axum::serve(
         command_listener,
         command_app_with_authorizer(Arc::new(GatewayCommandAuthorizer::new(config))),
-    );
-    let local_status_service = axum::serve(local_status_listener, local_status_app());
+    )
+    .with_graceful_shutdown(async move {
+        command_shutdown.notified().await;
+    });
+    let local_status_service = axum::serve(local_status_listener, local_status_app())
+        .with_graceful_shutdown(async move {
+            status_shutdown.notified().await;
+        });
 
     tokio::try_join!(command_service, local_status_service)
         .expect("failed to run Orbit Agent HTTP listeners");
@@ -2683,6 +2707,19 @@ mod tests {
             Some(&"1".to_string())
         );
         assert_eq!(captured.input.as_deref(), Some("stdin-payload"));
+    }
+
+    #[test]
+    fn desktop_lifetime_eof_shuts_down_http_listeners() {
+        let source = include_str!("http.rs");
+
+        assert!(source.contains("desktop_lifetime_enabled"));
+        assert!(source.contains("watch_reader_until_eof"));
+        assert!(source.contains("with_graceful_shutdown"));
+        assert!(
+            source.contains("ORBIT_DESKTOP_LIFETIME")
+                || source.contains("desktop_lifetime_enabled()")
+        );
     }
 
     #[tokio::test]

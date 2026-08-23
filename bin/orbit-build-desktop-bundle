@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+    printf 'orbit-build-desktop-bundle: %s\n' "$*" >&2
+    exit 1
+}
+
+repo_root="${ORBIT_NATIVE_RELEASE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)}"
+output=''
+for argument in "$@"; do
+    case "$argument" in
+        --output=*) output="${argument#*=}" ;;
+        *) fail "unknown option: ${argument}" ;;
+    esac
+done
+
+[ -n "$output" ] || fail '--output is required.'
+case "$output" in
+    /*) ;;
+    *) output="${repo_root}/${output}" ;;
+esac
+
+[ -d "$output" ] || fail 'desktop bundle output directory is missing.'
+
+[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || fail 'TAURI_SIGNING_PRIVATE_KEY is required to sign the desktop updater archive.'
+[ -n "${ORBIT_TAURI_UPDATER_PUBKEY:-}" ] || fail 'ORBIT_TAURI_UPDATER_PUBKEY is required to embed the updater public key.'
+
+if [ "${ORBIT_NATIVE_REQUIRE_NOTARIZATION:-}" = '1' ]; then
+    [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || fail 'APPLE_SIGNING_IDENTITY is required when notarization is requested.'
+    [ -n "${APPLE_ID:-}" ] || fail 'APPLE_ID is required when notarization is requested.'
+    [ -n "${APPLE_PASSWORD:-}" ] || fail 'APPLE_PASSWORD is required when notarization is requested.'
+    [ -n "${APPLE_TEAM_ID:-}" ] || fail 'APPLE_TEAM_ID is required when notarization is requested.'
+fi
+
+version="$("${repo_root}/bin/orbit-version")"
+macos_dir="${repo_root}/apps/macos"
+export ORBIT_NATIVE_RELEASE_BUILD=1
+export TAURI_CONFIG
+TAURI_CONFIG="$(printf '{"version":"%s","plugins":{"updater":{"pubkey":"%s"}}}' "$version" "$ORBIT_TAURI_UPDATER_PUBKEY")"
+
+(
+    cd "$macos_dir"
+    npm ci
+    npm run tauri -- build --bundles app
+)
+
+app_bundle="$(find "${macos_dir}/target/release/bundle/macos" -maxdepth 1 -name '*.app' -print | head -n 1)"
+[ -n "$app_bundle" ] || fail 'Tauri macOS app bundle was not produced.'
+
+archive="${output}/Orbit.app.tar.gz"
+tar -C "$(dirname "$app_bundle")" -czf "$archive" "$(basename "$app_bundle")"
+[ -s "$archive" ] || fail 'desktop updater archive is empty.'
+
+npx --yes --prefix "$macos_dir" @tauri-apps/cli signer sign "$archive" \
+    || fail 'desktop updater archive could not be signed.'
+[ -s "${archive}.sig" ] || fail 'desktop updater signature is missing.'
+
+if [ "${ORBIT_NATIVE_REQUIRE_NOTARIZATION:-}" = '1' ]; then
+    fail 'Apple Developer ID signing and notarization were requested; wire the credentialed notarization path before publication.'
+fi
+
+dmg="${output}/Orbit.dmg"
+hdiutil create -volname "Orbit Desktop" -srcfolder "$app_bundle" -ov -format UDZO "$dmg" >/dev/null
+[ -s "$dmg" ] || fail 'desktop DMG is empty.'
+
+printf 'DESKTOP_BUNDLE archive=%s signature=%s dmg=%s\n' "$archive" "${archive}.sig" "$dmg"

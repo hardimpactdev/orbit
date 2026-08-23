@@ -326,15 +326,15 @@
         "apps-macos": {
             "id": "apps-macos",
             "type": "tauri-macos-agent-ui",
-            "purpose": "macOS-only Tauri tray app for Orbit Agent UI. It owns native tray/menu status behavior and queries the independent headless Orbit Agent service instead of owning the long-running background service loop.",
+            "purpose": "macOS-only Tauri Orbit Desktop app. It owns the local Orbit Agent lifetime, login-item registration, tray/menu status, and verified desktop/Agent/CLI self-update on Darwin.",
             "start_when": [
-                "Changing the macOS Orbit Agent menu-bar runtime, tray/menu status behavior, Tauri config, native assets, or service-status UI.",
+                "Changing the macOS Orbit Agent menu-bar runtime, tray/menu status behavior, Tauri config, native assets, Agent supervisor, login items, or desktop updater.",
                 "Verifying Orbit Agent macOS Rust/Tauri build, formatting, linting, or focused unit tests."
             ],
             "do_not_start_when": [
                 "Changing the headless service Agent listener, pushed command execution, or Axum health/status service; use apps/agent.",
                 "Changing gateway-side Agent command dispatch or operation-token verification endpoint implementation instead of the local Agent listener boundary.",
-                "Adding launchd packaging, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior."
+                "Adding arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior."
             ],
             "owning_paths": [
                 "apps/macos",
