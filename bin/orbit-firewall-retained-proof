@@ -147,15 +147,26 @@ function acquire_firewall_proof_topology(string $root, RetainedFirewallProofIden
         return $state;
     }
 
-    $payload = decode_json_object(run_e2e_incus($root, [
-        '--start',
-        '--topology=operator_gateway_app-dev',
-        '--json',
-    ]));
-    $topology = $payload['success']['dev_topology'] ?? null;
+    $existing = retained_incus_manifest($root);
+    $output = '';
+
+    if (is_array($existing) && is_string($existing['id'] ?? null) && $existing['id'] !== '') {
+        run_e2e_incus($root, ['--sync', '--id='.$existing['id']]);
+        $topology = $existing;
+    } else {
+        $output = run_e2e_incus($root, [
+            '--start',
+            '--topology=operator_gateway_app-dev',
+            '--json',
+        ]);
+        $payload = decode_json_object($output, required: false);
+        $topology = is_array($payload['success']['dev_topology'] ?? null)
+            ? $payload['success']['dev_topology']
+            : retained_incus_manifest($root);
+    }
 
     if (! is_array($topology)) {
-        throw new RuntimeException('retained Incus acquisition did not return a topology manifest');
+        throw new RuntimeException('retained Incus acquisition did not return a topology manifest: '.$output);
     }
 
     $host = strtolower((string) ($topology['host'] ?? ''));
@@ -319,6 +330,7 @@ function beast_incus_exec(string $instance, string $command, bool $asOrbit = fal
 function run_command(array $command, string $cwd, int $timeout): array
 {
     $descriptor = [
+        0 => ['pipe', 'r'],
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
     ];
@@ -328,6 +340,7 @@ function run_command(array $command, string $cwd, int $timeout): array
         throw new RuntimeException('unable to start process');
     }
 
+    fclose($pipes[0]);
     stream_set_timeout($pipes[1], $timeout);
     stream_set_timeout($pipes[2], $timeout);
     $stdout = stream_get_contents($pipes[1]) ?: '';
@@ -337,7 +350,7 @@ function run_command(array $command, string $cwd, int $timeout): array
 
     return [
         'exit' => proc_close($process),
-        'stdout' => $stdout,
+        'stdout' => $stdout.$stderr,
         'stderr' => $stderr,
     ];
 }
@@ -398,22 +411,54 @@ function write_json_file(string $path, array $payload): void
 /**
  * @return array<string, mixed>
  */
-function decode_json_object(string $output): array
+/**
+ * @return array<string, mixed>
+ */
+function decode_json_object(string $output, bool $required = true): array
 {
     $trimmed = trim($output);
-    $start = strrpos($trimmed, '{');
+    $start = strpos($trimmed, '{');
+    $end = strrpos($trimmed, '}');
 
-    if ($start === false) {
-        throw new RuntimeException('expected JSON object in command output');
+    if ($start === false || $end === false || $end < $start) {
+        if ($required) {
+            throw new RuntimeException('expected JSON object in command output: '.$trimmed);
+        }
+
+        return [];
     }
 
-    $decoded = json_decode(substr($trimmed, $start), true);
+    $decoded = json_decode(substr($trimmed, $start, $end - $start + 1), true);
 
     if (! is_array($decoded)) {
-        throw new RuntimeException('expected JSON object in command output');
+        if ($required) {
+            throw new RuntimeException('expected JSON object in command output: '.$trimmed);
+        }
+
+        return [];
     }
 
     return $decoded;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function retained_incus_manifest(string $root): ?array
+{
+    $files = glob($root.'/apps/e2e/var/dev-topology/*.json') ?: [];
+    rsort($files);
+
+    foreach ($files as $file) {
+        $payload = decode_json_object((string) file_get_contents($file), required: false);
+
+        if (($payload['provider'] ?? null) === 'incus'
+            && strtolower((string) ($payload['host'] ?? '')) === RetainedFirewallProofIdentity::Host) {
+            return $payload;
+        }
+    }
+
+    return null;
 }
 
 function restore_firewall_rule(string $gateway, string $checkout, string $node): void
