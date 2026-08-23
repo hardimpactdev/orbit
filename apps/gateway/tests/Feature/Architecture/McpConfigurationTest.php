@@ -187,7 +187,8 @@ it('keeps worktree preparation responsible for seeding the active loop packet', 
 
     expect($harness)
         ->toContain('`bin/orbit-prepare-worktree`')
-        ->toContain('It records only Goal, Scope, Proof, Status');
+        ->toContain('It records only Goal, Scope, Proof, Status')
+        ->toContain('Default `--base=main` requires local `main` to equal `origin/main`');
 
     expect($implementingFeatures)
         ->toContain('It seeds')

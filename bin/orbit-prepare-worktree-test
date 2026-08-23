@@ -77,7 +77,7 @@ assert_composer_installs_tracked_projects() {
             found_gateway=1
         fi
 
-        grep -qx "$expected_path" "$install_log" \
+        grep -qxF "$expected_path" "$install_log" \
             || fail "composer install was not run in tracked project: $expected_path"
         [ -f "${expected_path}/vendor/autoload.php" ] \
             || fail "missing vendor/autoload.php in tracked project: $expected_path"
@@ -242,12 +242,59 @@ MISSING_AUTOLOAD_BRANCH='feature-missing-autoload'
 if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$MISSING_AUTOLOAD_BRANCH" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     fail "prepare-worktree must fail when Composer install does not produce vendor/autoload.php"
 fi
-grep -F "$REPO/.worktrees/${MISSING_AUTOLOAD_BRANCH}" /tmp/orbit-prepare-worktree-test.err \
+grep -qF "$REPO/.worktrees/${MISSING_AUTOLOAD_BRANCH}" /tmp/orbit-prepare-worktree-test.err \
     || fail "missing autoload error must print the exact project path"
-grep -q 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
+grep -qF 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
     || fail "missing autoload error must name vendor/autoload.php"
+grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out \
+    && fail "missing autoload must not print WORKTREE_PREPARED"
+
+cat >"$STUB_BIN/composer" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${COMPOSER_LOG:-/tmp/orbit-prepare-worktree-composer.log}"
+if [ "$*" = "install" ]; then
+    printf '%s\n' "$(pwd -P)" >>"${COMPOSER_INSTALL_LOG:-/dev/null}"
+    case "$(pwd -P)" in
+        */apps/gateway)
+            exit 0
+            ;;
+    esac
+    mkdir -p vendor
+    printf '<?php\n' >vendor/autoload.php
+fi
+exit 0
+STUB
+chmod +x "$STUB_BIN/composer"
+
+MISSING_GATEWAY_AUTOLOAD_BRANCH='feature-missing-gateway-autoload'
+GATEWAY_APP_PATH="$REPO/.worktrees/${MISSING_GATEWAY_AUTOLOAD_BRANCH}/apps/gateway"
+(
+    cd "$REPO"
+    printf '<?php\n' >apps/gateway/artisan
+    printf 'APP_NAME=Orbit\n' >apps/gateway/.env.example
+    git add apps/gateway/artisan apps/gateway/.env.example
+    git commit -m 'Add gateway app markers' >/dev/null
+)
+if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$MISSING_GATEWAY_AUTOLOAD_BRANCH" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree must fail when a tracked app Composer install does not produce vendor/autoload.php"
+fi
+grep -qF "$GATEWAY_APP_PATH" /tmp/orbit-prepare-worktree-test.err \
+    || fail "missing gateway autoload error must print the exact project path"
+grep -qF 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
+    || fail "missing gateway autoload error must name vendor/autoload.php"
+grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out \
+    && fail "missing gateway autoload must not print WORKTREE_PREPARED"
+grep -qF 'Preparing gateway app state' /tmp/orbit-prepare-worktree-test.out \
+    && fail "missing gateway autoload must not run gateway app setup"
+[ ! -e "${GATEWAY_APP_PATH}/storage/framework/testing/worktree-orbit" ] \
+    || fail "missing gateway autoload must not create gateway app state"
 
 write_composer_stub
+(
+    cd "$REPO"
+    git rm -f apps/gateway/artisan apps/gateway/.env.example >/dev/null
+    git commit -m 'Remove gateway app markers' >/dev/null
+)
 
 (
     cd "$REPO"
@@ -271,12 +318,14 @@ MAIN_BEFORE="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
 if PATH="$STUB_BIN:$PATH" GIT_WORKTREE_ADD_LOG="$GIT_WORKTREE_ADD_LOG" GIT_MUTATION_LOG="$GIT_MUTATION_LOG" "$REPO/bin/orbit-prepare-worktree" feature-stale-main --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     fail "prepare-worktree must fail when local main differs from origin/main"
 fi
-grep -F "$LOCAL_MAIN" /tmp/orbit-prepare-worktree-test.err \
+grep -qF "$LOCAL_MAIN" /tmp/orbit-prepare-worktree-test.err \
     || fail "stale-main error must print the local main SHA"
-grep -F "$ORIGIN_MAIN" /tmp/orbit-prepare-worktree-test.err \
+grep -qF "$ORIGIN_MAIN" /tmp/orbit-prepare-worktree-test.err \
     || fail "stale-main error must print the origin/main SHA"
-grep -q 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
+grep -qF 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
     || fail "stale-main error must say that local main must be updated"
+grep -qF 'must be pushed' /tmp/orbit-prepare-worktree-test.err \
+    && fail "stale-main error must not say that local main must be pushed"
 [ ! -s "$GIT_WORKTREE_ADD_LOG" ] \
     || fail "stale-main must fail before git worktree add"
 [ ! -e "$REPO/.worktrees/feature-stale-main" ] \
@@ -286,6 +335,46 @@ grep -q 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
 MAIN_AFTER="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
 [ "$MAIN_BEFORE" = "$MAIN_AFTER" ] || fail "stale-main must not mutate local main"
 [ "$MAIN_AFTER" = "$LOCAL_MAIN" ] || fail "local main SHA changed during stale-main rejection"
+
+(
+    cd "$REPO"
+    git reset --hard origin/main >/dev/null
+    ORIGIN_MAIN="$(git rev-parse --verify main)"
+    git commit --allow-empty -m 'local main ahead' >/dev/null
+    LOCAL_MAIN="$(git rev-parse --verify main)"
+    git update-ref refs/remotes/origin/main "$ORIGIN_MAIN"
+    printf '%s\n' "$LOCAL_MAIN" >"$TMP/ahead-local-main.sha"
+    printf '%s\n' "$ORIGIN_MAIN" >"$TMP/ahead-origin-main.sha"
+)
+
+LOCAL_MAIN="$(cat "$TMP/ahead-local-main.sha")"
+ORIGIN_MAIN="$(cat "$TMP/ahead-origin-main.sha")"
+: >"$GIT_WORKTREE_ADD_LOG"
+: >"$GIT_MUTATION_LOG"
+MAIN_BEFORE="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
+
+if PATH="$STUB_BIN:$PATH" GIT_WORKTREE_ADD_LOG="$GIT_WORKTREE_ADD_LOG" GIT_MUTATION_LOG="$GIT_MUTATION_LOG" "$REPO/bin/orbit-prepare-worktree" feature-ahead-main --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+    fail "prepare-worktree must fail when local main is ahead of origin/main"
+fi
+grep -qF "$LOCAL_MAIN" /tmp/orbit-prepare-worktree-test.err \
+    || fail "ahead-main error must print the local main SHA"
+grep -qF "$ORIGIN_MAIN" /tmp/orbit-prepare-worktree-test.err \
+    || fail "ahead-main error must print the origin/main SHA"
+grep -qF 'is ahead of origin/main' /tmp/orbit-prepare-worktree-test.err \
+    || fail "ahead-main error must say that local main is ahead"
+grep -qF 'must be pushed' /tmp/orbit-prepare-worktree-test.err \
+    || fail "ahead-main error must say that local main must be pushed"
+grep -qF 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
+    && fail "ahead-main error must not say that local main must be updated"
+[ ! -s "$GIT_WORKTREE_ADD_LOG" ] \
+    || fail "ahead-main must fail before git worktree add"
+[ ! -e "$REPO/.worktrees/feature-ahead-main" ] \
+    || fail "ahead-main must not create the worktree path"
+[ ! -s "$GIT_MUTATION_LOG" ] \
+    || fail "ahead-main must not fetch, pull, or reset"
+MAIN_AFTER="$(PATH="$STUB_BIN:$PATH" git -C "$REPO" rev-parse --verify main)"
+[ "$MAIN_BEFORE" = "$MAIN_AFTER" ] || fail "ahead-main must not mutate local main"
+[ "$MAIN_AFTER" = "$LOCAL_MAIN" ] || fail "local main SHA changed during ahead-main rejection"
 
 run_prepare_worktree feature-loop
 assert_file_equals "$LOOP_PATH" 'custom active packet'

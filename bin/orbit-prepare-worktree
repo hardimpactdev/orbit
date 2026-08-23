@@ -73,6 +73,10 @@ reject_stale_local_main() {
         return 0
     fi
 
+    if git merge-base --is-ancestor 'origin/main^{commit}' 'main^{commit}'; then
+        fail "local main (${local_main_sha}) is ahead of origin/main (${origin_main_sha}); local main must be pushed before preparing a worktree from --base=main"
+    fi
+
     fail "local main (${local_main_sha}) differs from origin/main (${origin_main_sha}); local main must be updated before preparing a worktree from --base=main"
 }
 
