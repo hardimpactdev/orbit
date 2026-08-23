@@ -42,17 +42,16 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
-5. Map planned owned paths; split mixed non-automated venues before dispatch.
 
 ### BUILD
 
 Keep docs, tests, and implementation aligned. Start with failing coverage in
 the owning framework. Prefer a small vertical slice and existing abstractions.
-Status/blocked sub-scopes are not terminal. Continue until LAND, a required human-judgment handoff, or a whole-goal blocker.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
+Keep nonterminal work active through status questions and partial blockers; stop only at LAND, required human judgment, or a whole-goal blocker.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
 Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
@@ -91,8 +90,8 @@ strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Run
-focused Mago formatting and linting for every changed PHP file, including
-tests, before each candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
+focused Mago format/lint on changed PHP, including tests, before each
+candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
 and reviewer consume the exact-SHA receipt without rerunning it.
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,

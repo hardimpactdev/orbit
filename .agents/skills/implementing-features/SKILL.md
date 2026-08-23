@@ -8,7 +8,6 @@ description: Implement an Orbit feature, bug fix, command change, or docs correc
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
 `HARNESS.md` is the canonical loop contract.
 The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-Status questions or blocked sub-scopes do not end the loop. Continue until LAND, a required human-judgment handoff, or a whole-goal blocker.
 Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
 
 ## Non-Negotiable Boundaries
@@ -23,7 +22,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
 3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
-5. Map owned paths to the venue table; split mixed non-automated venues before dispatch. Derive the venue: `bin/orbit-feature-acceptance route`.
+5. Before dispatch, split planned paths by non-automated venue; then run `bin/orbit-feature-acceptance route`.
 
 ## BUILD
 
@@ -33,6 +32,7 @@ macOS Agent: `tauri-agent-development`.
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
+Keep nonterminal work active through status questions and partial blockers; stop only at LAND, required human judgment, or a whole-goal blocker.
 Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
@@ -53,8 +53,11 @@ The same general reviewer owns blast radius, ESCALATE, and terminal PASS or FIX.
 
 Venue table: `HARNESS.md` Acceptance Venues; `automated` surfaces (docs, tests, repository tooling under `bin/`) still need the diff-routed `composer quality-check`. Run every deterministic acceptance command yourself. Do not hand the user a mechanical command checklist.
 CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
-On `actor=automated`, run `bin/orbit-feature-acceptance accept --loop=.orbit/loop.md --actor=automated` to validate and record the candidate in one command. Do not send an acceptance handoff when the actor is automated.
+On `actor=automated`, run
+`bin/orbit-feature-acceptance accept --loop=.orbit/loop.md --actor=automated`
+to validate and record the candidate in one command. Do not send an acceptance handoff when the actor is automated.
 On `actor=user`, arm with `bin/orbit-feature-acceptance ready --loop=.orbit/loop.md`, then record delayed verbatim acceptance with `--actor=user --source-ref=<codex-or-claude-ref>`.
+
 On feedback, use `bin/orbit-feature-feedback record`, invalidate acceptance, return to BUILD, and re-prove. Close feedback through `HARNESS.md` Feedback And Protections; Never solicit a waiver.
 
 ## LAND

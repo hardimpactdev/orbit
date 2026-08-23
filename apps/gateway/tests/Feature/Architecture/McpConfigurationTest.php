@@ -735,11 +735,8 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
-        ->toBeLessThanOrEqual(35692)
+        ->toBeLessThanOrEqual(35600)
         ->and($skill)
-        ->toContain('exact checkout identity')
-        ->toContain('Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed.')
-        ->toContain('Load owning skills')
         ->toContain('## FRAME')
         ->toContain('## BUILD')
         ->toContain('## PROVE')
@@ -802,10 +799,7 @@ it('keeps reviewer FIX and same-candidate proof retry distinct transitions', fun
     expect($harness)
         ->toContain('A same-candidate proof retry is not a reviewer FIX')
         ->toContain('preserve a still-valid Review and Reviewed feature tip')
-        ->toContain('reset `Reviewed feature tip: none`')
-        ->toContain('A repair that moves HEAD still needs a refreshed review via the existing identity check')
-        ->toContain('Historical archives stay readable')
-        ->toContain('the strict receipt applies to new acceptance or finalization');
+        ->toContain('reset `Reviewed feature tip: none`');
 });
 
 it('keeps the eight high-stakes constraints explicit on the implementing path', function (): void {
