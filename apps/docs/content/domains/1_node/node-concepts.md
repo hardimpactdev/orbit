@@ -516,8 +516,9 @@ handoff, the CLI defers Agent restart to Orbit Desktop and does not restart an
 existing managed service. Otherwise it restarts an existing managed service;
 bootstrap owns first service creation and updates do not create a missing
 service. Agent execution is limited to explicitly supported binary argv
-envelopes with node-local binary allowlisting. `app-dev` convergence uses direct command envelopes that the
-gateway constructs, authorizes, and sends through Agent push.
+envelopes with node-local binary allowlisting. `app-dev` convergence uses
+direct command envelopes that the gateway constructs, authorizes, and sends
+through Agent push.
 
 ## Access Policy
 

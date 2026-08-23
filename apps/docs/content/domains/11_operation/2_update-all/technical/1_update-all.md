@@ -335,11 +335,12 @@ The expected target shape per calling context:
   progress noise, or any guessed fallback. Fleet verify of the CLI check
   likewise requires structured JSON version output.
 - When an Orbit Agent artifact is selected, the remote update verifies the
-  installed owner-user local `orbit-agent` hash, but only after required role
-  image archives and registry fallbacks have finished so a later Agent restart
-  cannot interrupt those side effects. When the install payload carries both a
-  Desktop artifact and a pending Desktop handoff, the CLI installs and verifies
-  the Agent bytes and then defers the Agent restart to Orbit Desktop through
+  installed owner-user local `orbit-agent` hash immediately after installing the
+  new binary. Any Agent restart runs only after required role image archives
+  and registry fallbacks have finished, so the restart cannot interrupt those
+  side effects. When the install payload carries both a Desktop artifact and a
+  pending Desktop handoff, the CLI installs and verifies the Agent bytes and
+  then defers the Agent restart to Orbit Desktop through
   the owner-only handoff. That path makes no systemd, launchd, or unmanaged
   restart call, even if a systemd or launchd service is still loaded.
 - When no Desktop handoff is present, the update restarts a managed
