@@ -8,6 +8,7 @@ use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Firewall\FirewallTargetPlatform;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteProbe;
 
@@ -52,16 +53,15 @@ final readonly class DoctorAdoptPolicy
 
     public function canAdoptFirewallRules(Node $node): bool
     {
-        return $node->isActive() && $this->isUbuntuPlatform($node) && $this->canServeGatewayOrAppHost($node);
+        return (
+            $node->isActive()
+            && FirewallTargetPlatform::isUbuntu($node->platform)
+            && $this->canServeGatewayOrAppHost($node)
+        );
     }
 
     private function canServeGatewayOrAppHost(Node $node): bool
     {
         return $this->nodeRoleAssignments->nodeCanServeGatewayOrAppHostWorkloads($node);
-    }
-
-    private function isUbuntuPlatform(Node $node): bool
-    {
-        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 }

@@ -115,6 +115,9 @@ Required test files:
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for firewall family scope and firewall drift reporting. |
 | `apps/gateway/tests/Unit/Services/Firewall/FirewallRuleProbeTest.php` | In-memory firewall probe diff behavior (see breakdown below). |
+| `apps/gateway/tests/Unit/Services/Firewall/FirewallTargetPlatformTest.php` | SQL and PHP Ubuntu firewall-target eligibility parity for exact `ubuntu`, `ubuntu_` versions, hyphenated values, and non-Ubuntu platforms. |
+| `packages/core/tests/Firewall/RetainedFirewallProofIdentityTest.php` | Candidate-bound Beast retained-Incus proof identity, fail-closed mismatch, and receipt line. |
+| `packages/core/tests/Firewall/RetainedFirewallProofInspectionTest.php` | Managed comment uniqueness, unrelated same-port preservation, and managed-allow-before-deny order. |
 | `apps/e2e/tests/Feature/Commands/FirewallDoctorAdoptTest.php` | Real `doctor --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
 
 No current E2E test is mapped for firewall-family read-only or restore coverage.

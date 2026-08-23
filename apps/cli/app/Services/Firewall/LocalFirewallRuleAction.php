@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
+use Orbit\Core\Firewall\ManagedUfwComment;
 use Symfony\Component\Process\Process;
 
 /**
@@ -176,7 +177,7 @@ final readonly class LocalFirewallRuleAction
      */
     private function commentArguments(LocalFirewallRuleShape $shape): array
     {
-        $comment = $shape->reason ?? ($shape->name === null ? null : "orbit:{$shape->name}");
+        $comment = ManagedUfwComment::from($shape->reason, $shape->name);
 
         if ($comment === null) {
             return [];

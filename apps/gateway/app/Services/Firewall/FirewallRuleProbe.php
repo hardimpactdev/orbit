@@ -274,7 +274,7 @@ final readonly class FirewallRuleProbe
 
         if (
             ! $rule->node->isActive()
-            || ! $this->isUbuntuPlatform($rule->node)
+            || ! FirewallTargetPlatform::isUbuntu($rule->node->platform)
             || ! $this->canOwnFirewallRules($rule->node)
         ) {
             return [
@@ -294,11 +294,6 @@ final readonly class FirewallRuleProbe
         }
 
         return [];
-    }
-
-    private function isUbuntuPlatform(Node $node): bool
-    {
-        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 
     private function canOwnFirewallRules(Node $node): bool

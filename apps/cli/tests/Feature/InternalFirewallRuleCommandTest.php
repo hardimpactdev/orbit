@@ -138,6 +138,23 @@ describe('internal firewall rule command', function (): void {
         expect(array_slice($command, -2))
             ->toBe(['comment', 'orbit:beast-main-lan-ssh']);
     });
+
+    it('omits a UFW comment when reason and name are both absent', function (): void {
+        $shape = LocalFirewallRuleShape::from([
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => '192.168.1.0/24',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'address_family' => 'v4',
+            'interface' => null,
+        ]);
+        $method = new ReflectionMethod(LocalFirewallRuleAction::class, 'applyCommand');
+        $command = $method->invoke(new LocalFirewallRuleAction, $shape);
+
+        expect($command)->not->toContain('comment');
+    });
 });
 
 function firewall_rule_signed_operation_token(

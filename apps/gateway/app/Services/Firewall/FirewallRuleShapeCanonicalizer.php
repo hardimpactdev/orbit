@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
+use Orbit\Core\Firewall\ManagedUfwComment;
+
 /**
  * Shared endpoint and address-family canonicalization for firewall detection
  * and UFW convergence so both paths agree when a rule is equivalent.
@@ -18,15 +20,17 @@ final class FirewallRuleShapeCanonicalizer
      */
     public static function managedCommentIdentifiesObservedRule(
         ?string $reason,
-        string $name,
+        ?string $name,
         array $observed,
     ): bool {
-        return ($observed['comment'] ?? null) === self::managedComment($reason, $name);
+        $comment = self::managedComment($reason, $name);
+
+        return $comment !== null && ($observed['comment'] ?? null) === $comment;
     }
 
-    public static function managedComment(?string $reason, string $name): string
+    public static function managedComment(?string $reason, ?string $name): ?string
     {
-        return is_string($reason) && $reason !== '' ? $reason : "orbit:{$name}";
+        return ManagedUfwComment::from($reason, $name);
     }
 
     /**

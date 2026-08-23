@@ -92,7 +92,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php` | CLI `firewall:allow` POST payload forwarding, required input and node-target validation, gateway error passthrough, and JSON success envelope. |
 | `apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php` | Interactive `firewall:allow` name, node, and port prompts before contacting the gateway. |
-| `apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php` | UFW prepend placement for IPv4 and IPv6 allow rules, unchanged deny placement, and the stable `orbit:<name>` comment fallback. |
+| `apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php` | UFW prepend placement for IPv4 and IPv6 allow rules, unchanged deny placement, the stable `orbit:<name>` comment fallback, and omitted comments when reason and name are both absent. |
+| `packages/core/tests/Firewall/ManagedUfwCommentTest.php` | Shared managed UFW comment identity for a stored reason, empty reason plus name, and absent reason/name. |
+| `apps/gateway/tests/Unit/Services/Firewall/FirewallRuleShapeCanonicalizerTest.php` | Gateway consumer parity with the shared managed comment producer, including empty reason and absent name. |
 | `apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php` | Gateway firewall allow mutation authorization, node target resolution, POST request handling, and mutation envelopes. |
 
 Coverage for the in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and mapping from rules to entities is not currently linked; keep it as a gap until focused tests land.

@@ -1,0 +1,475 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Orbit\Core\Firewall\RetainedFirewallProofIdentity;
+use Orbit\Core\Firewall\RetainedFirewallProofInspection;
+use Orbit\Core\Firewall\RetainedFirewallProofReceipt;
+use Orbit\Core\Firewall\RetainedFirewallProofScenario;
+
+$root = dirname(__DIR__);
+require $root.'/packages/core/vendor/autoload.php';
+
+$options = [];
+
+foreach (array_slice($argv, 1) as $argument) {
+    if ($argument === '--dry-run') {
+        $options['dry-run'] = true;
+        continue;
+    }
+
+    if ($argument === '--cleanup') {
+        $options['cleanup'] = true;
+        continue;
+    }
+
+    if (str_starts_with($argument, '--candidate=')) {
+        $options['candidate'] = substr($argument, 12);
+        continue;
+    }
+
+    if (str_starts_with($argument, '--receipt=')) {
+        $options['receipt'] = substr($argument, 10);
+        continue;
+    }
+
+    fwrite(STDERR, "unknown argument: {$argument}\n");
+    exit(2);
+}
+
+load_e2e_environment($root);
+
+try {
+    $identity = bind_firewall_proof_identity($root, $options['candidate'] ?? null);
+    $statePath = $root.'/.orbit/evidence/firewall-retained-proof/'.$identity->candidate.'.json';
+    $receiptPath = $options['receipt'] ?? $statePath;
+
+    if (($options['dry-run'] ?? false) === true) {
+        fwrite(STDOUT, json_encode([
+            'identity' => $identity->toArray(),
+            'steps' => RetainedFirewallProofScenario::operatorSteps(),
+            'seed' => RetainedFirewallProofScenario::seedUfwCommands(),
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        exit(0);
+    }
+
+    if (($options['cleanup'] ?? false) === true) {
+        $state = read_firewall_proof_state($statePath);
+        $identity->assertOwnedTarget($state['target'] ?? '');
+        RetainedFirewallProofIdentity::assertSame($identity->toArray(), [
+            'candidate' => $state['candidate'] ?? '',
+            'cli_digest' => $state['cli_digest'] ?? '',
+            'target' => $state['target'] ?? '',
+            'host' => $state['host'] ?? '',
+        ]);
+        run_e2e_incus($root, ['--stop', '--id='.$state['topology_id']]);
+        exit(0);
+    }
+
+    $state = acquire_firewall_proof_topology($root, $identity, $statePath);
+    $observed = run_firewall_proof_scenario($state);
+    $receipt = RetainedFirewallProofReceipt::line(
+        candidate: $identity->candidate,
+        target: $identity->target,
+        expected: 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
+        observed: $observed,
+        result: 'passed',
+        evidence: relative_repo_path($root, $receiptPath),
+    );
+    $payload = [
+        ...$state,
+        'receipt' => $receipt,
+        'observed' => $observed,
+        'result' => 'passed',
+    ];
+    write_json_file($receiptPath, $payload);
+    fwrite(STDOUT, $receipt."\n");
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage()."\n");
+
+    if (isset($identity, $statePath, $receiptPath, $state) && is_array($state)) {
+        $receipt = RetainedFirewallProofReceipt::line(
+            candidate: $identity->candidate,
+            target: $identity->target,
+            expected: 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
+            observed: $exception->getMessage(),
+            result: 'failed',
+            evidence: relative_repo_path($root, $receiptPath),
+        );
+        write_json_file($receiptPath, [
+            ...$state,
+            'receipt' => $receipt,
+            'observed' => $exception->getMessage(),
+            'result' => 'failed',
+        ]);
+        fwrite(STDOUT, $receipt."\n");
+    }
+
+    exit(1);
+}
+
+function bind_firewall_proof_identity(string $root, ?string $requestedCandidate): RetainedFirewallProofIdentity
+{
+    $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
+    $candidate = $requestedCandidate ?? $head;
+    $digest = RetainedFirewallProofIdentity::digestFile($root.'/apps/cli/orbit');
+    $identity = RetainedFirewallProofIdentity::from($candidate, $digest);
+
+    if ($candidate !== $head) {
+        throw new InvalidArgumentException('candidate SHA mismatch');
+    }
+
+    $dirty = trim((string) shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=all'));
+
+    if ($dirty !== '') {
+        throw new InvalidArgumentException('candidate SHA mismatch');
+    }
+
+    return $identity;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function acquire_firewall_proof_topology(string $root, RetainedFirewallProofIdentity $identity, string $statePath): array
+{
+    if (is_file($statePath)) {
+        $state = read_firewall_proof_state($statePath);
+        RetainedFirewallProofIdentity::assertSame($identity->toArray(), [
+            'candidate' => $state['candidate'] ?? '',
+            'cli_digest' => $state['cli_digest'] ?? '',
+            'target' => $state['target'] ?? '',
+            'host' => $state['host'] ?? '',
+        ]);
+        run_e2e_incus($root, ['--sync', '--id='.$state['topology_id']]);
+
+        return $state;
+    }
+
+    $payload = decode_json_object(run_e2e_incus($root, [
+        '--start',
+        '--topology=operator_gateway_app-dev',
+        '--json',
+    ]));
+    $topology = $payload['success']['dev_topology'] ?? null;
+
+    if (! is_array($topology)) {
+        throw new RuntimeException('retained Incus acquisition did not return a topology manifest');
+    }
+
+    $host = strtolower((string) ($topology['host'] ?? ''));
+
+    if ($host !== RetainedFirewallProofIdentity::Host) {
+        throw new InvalidArgumentException('target identity mismatch');
+    }
+
+    $state = [
+        ...$identity->toArray(),
+        'topology_id' => $topology['id'] ?? $topology['run_id'] ?? '',
+        'instances' => $topology['instances'] ?? [],
+        'checkouts' => $topology['checkouts'] ?? [],
+    ];
+
+    if (! is_string($state['topology_id']) || $state['topology_id'] === '') {
+        throw new InvalidArgumentException('target identity mismatch');
+    }
+
+    write_json_file($statePath, $state);
+
+    return $state;
+}
+
+/**
+ * @param  array<string, mixed>  $state
+ */
+function run_firewall_proof_scenario(array $state): string
+{
+    $dev = proof_instance($state, 'dev');
+    $gateway = proof_instance($state, 'gateway');
+    $checkout = proof_checkout($state, 'gateway');
+    $node = RetainedFirewallProofScenario::Node;
+    $name = RetainedFirewallProofScenario::RuleName;
+
+    foreach (RetainedFirewallProofScenario::seedUfwCommands() as $command) {
+        beast_incus_exec($dev, $command);
+    }
+
+    $allowPayload = decode_json_object(beast_incus_exec(
+        $gateway,
+        "cd {$checkout} && orbit firewall:allow {$name} --node={$node} --port=".RetainedFirewallProofScenario::Port
+            .' --from='.RetainedFirewallProofScenario::Source
+            .' --protocol='.RetainedFirewallProofScenario::Protocol
+            .' --json',
+        asOrbit: true,
+    ));
+
+    if (! isset($allowPayload['success'])) {
+        if (($allowPayload['error']['code'] ?? '') !== 'firewall_rule.enactment_failed') {
+            throw new RuntimeException('allow failed: '.json_encode($allowPayload, JSON_THROW_ON_ERROR));
+        }
+
+        restore_firewall_rule($gateway, $checkout, $node);
+    }
+
+    $list = beast_incus_exec($gateway, "cd {$checkout} && orbit firewall:list --node={$node} --json", asOrbit: true);
+    $listPayload = decode_json_object($list);
+    $names = array_column($listPayload['success']['data']['rules'] ?? [], 'name');
+
+    if (! in_array($name, $names, true)) {
+        throw new RuntimeException('firewall:list did not include the managed rule');
+    }
+
+    $doctorReport = doctor_report(beast_incus_exec(
+        $gateway,
+        "cd {$checkout} && orbit doctor --node={$node} --family=firewall_rule --json",
+        asOrbit: true,
+    ));
+
+    if (($doctorReport['healthy'] ?? false) !== true) {
+        restore_firewall_rule($gateway, $checkout, $node);
+        $doctorReport = doctor_report(beast_incus_exec(
+            $gateway,
+            "cd {$checkout} && orbit doctor --node={$node} --family=firewall_rule --json",
+            asOrbit: true,
+        ));
+    }
+
+    if (($doctorReport['healthy'] ?? false) !== true) {
+        throw new RuntimeException('doctor did not report a healthy firewall family');
+    }
+
+    $ufwAfterAllow = beast_incus_exec($dev, 'sudo ufw status numbered');
+    $inspection = RetainedFirewallProofInspection::fromUfwStatus($ufwAfterAllow);
+
+    if ($inspection->managedComments(RetainedFirewallProofScenario::Port) !== [RetainedFirewallProofScenario::ManagedIdentity]) {
+        throw new RuntimeException('managed comment identity was not unique after allow');
+    }
+
+    if (! $inspection->hasComment(RetainedFirewallProofScenario::ProtectedComment)) {
+        throw new RuntimeException('unrelated same-port rule was not preserved');
+    }
+
+    if (! $inspection->managedAllowPrecedesBroadDeny()) {
+        throw new RuntimeException('managed allow did not precede the broad deny');
+    }
+
+    beast_incus_exec(
+        $gateway,
+        "cd {$checkout} && orbit firewall:remove {$name} --node={$node} --force --json",
+        asOrbit: true,
+    );
+
+    $ufwAfterRemove = RetainedFirewallProofInspection::fromUfwStatus(
+        beast_incus_exec($dev, 'sudo ufw status numbered'),
+    );
+
+    if ($ufwAfterRemove->hasComment(RetainedFirewallProofScenario::ManagedIdentity)) {
+        throw new RuntimeException('remove left a managed comment identity behind');
+    }
+
+    if (! $ufwAfterRemove->hasComment(RetainedFirewallProofScenario::ProtectedComment)) {
+        throw new RuntimeException('remove deleted the unrelated same-port rule');
+    }
+
+    return 'allow-list-doctor-remove passed; managed allow preceded deny; protected same-port survived';
+}
+
+/**
+ * @param  list<string>  $arguments
+ */
+function run_e2e_incus(string $root, array $arguments): string
+{
+    $command = array_merge(['php', $root.'/apps/e2e/bin/e2e-incus'], $arguments);
+    $result = run_command($command, $root, 1800);
+
+    if ($result['exit'] !== 0) {
+        throw new RuntimeException('Beast Incus command failed: '.$result['stderr'].$result['stdout']);
+    }
+
+    return $result['stdout'];
+}
+
+function beast_incus_exec(string $instance, string $command, bool $asOrbit = false): string
+{
+    $guest = $asOrbit
+        ? 'sudo -u orbit bash -lc '.escapeshellarg($command)
+        : 'bash -lc '.escapeshellarg($command);
+    $result = run_command([
+        'ssh',
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=10',
+        RetainedFirewallProofIdentity::Host,
+        'incus exec '.escapeshellarg($instance).' -- '.$guest,
+    ], getcwd() ?: '/', 180);
+
+    if ($result['exit'] !== 0) {
+        throw new RuntimeException("incus exec {$instance} failed: ".$result['stderr'].$result['stdout']);
+    }
+
+    return $result['stdout'];
+}
+
+/**
+ * @param  list<string>  $command
+ * @return array{exit: int, stdout: string, stderr: string}
+ */
+function run_command(array $command, string $cwd, int $timeout): array
+{
+    $descriptor = [
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $process = proc_open($command, $descriptor, $pipes, $cwd);
+
+    if (! is_resource($process)) {
+        throw new RuntimeException('unable to start process');
+    }
+
+    stream_set_timeout($pipes[1], $timeout);
+    stream_set_timeout($pipes[2], $timeout);
+    $stdout = stream_get_contents($pipes[1]) ?: '';
+    $stderr = stream_get_contents($pipes[2]) ?: '';
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return [
+        'exit' => proc_close($process),
+        'stdout' => $stdout,
+        'stderr' => $stderr,
+    ];
+}
+
+/**
+ * @param  array<string, mixed>  $state
+ */
+function proof_instance(array $state, string $role): string
+{
+    $instance = $state['instances'][$role] ?? null;
+
+    if (! is_string($instance) || $instance === '') {
+        throw new InvalidArgumentException('target identity mismatch');
+    }
+
+    return $instance;
+}
+
+/**
+ * @param  array<string, mixed>  $state
+ */
+function proof_checkout(array $state, string $role): string
+{
+    $checkout = $state['checkouts'][$role] ?? '/home/orbit/orbit-run';
+
+    return is_string($checkout) && $checkout !== '' ? $checkout : '/home/orbit/orbit-run';
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function read_firewall_proof_state(string $path): array
+{
+    if (! is_file($path)) {
+        throw new InvalidArgumentException('cleanup identity mismatch');
+    }
+
+    return decode_json_object((string) file_get_contents($path));
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function write_json_file(string $path, array $payload): void
+{
+    $directory = dirname($path);
+
+    if (! is_dir($directory) && ! mkdir($directory, 0777, true) && ! is_dir($directory)) {
+        throw new RuntimeException("unable to write proof receipt: {$path}");
+    }
+
+    file_put_contents(
+        $path,
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+    );
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function decode_json_object(string $output): array
+{
+    $trimmed = trim($output);
+    $start = strrpos($trimmed, '{');
+
+    if ($start === false) {
+        throw new RuntimeException('expected JSON object in command output');
+    }
+
+    $decoded = json_decode(substr($trimmed, $start), true);
+
+    if (! is_array($decoded)) {
+        throw new RuntimeException('expected JSON object in command output');
+    }
+
+    return $decoded;
+}
+
+function restore_firewall_rule(string $gateway, string $checkout, string $node): void
+{
+    beast_incus_exec(
+        $gateway,
+        "cd {$checkout} && orbit doctor --node={$node} --family=firewall_rule --restore --json",
+        asOrbit: true,
+    );
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function doctor_report(string $output): array
+{
+    $payload = decode_json_object($output);
+    $report = $payload['data']['data']['doctor']
+        ?? $payload['data']['doctor']
+        ?? $payload['success']['data']['doctor']
+        ?? null;
+
+    if (! is_array($report)) {
+        throw new RuntimeException('doctor output did not include a report');
+    }
+
+    return $report;
+}
+
+function relative_repo_path(string $root, string $path): string
+{
+    return str_starts_with($path, $root.'/') ? substr($path, strlen($root) + 1) : $path;
+}
+
+function load_e2e_environment(string $root): void
+{
+    $path = $root.'/.env.e2e';
+
+    if (! is_file($path)) {
+        return;
+    }
+
+    foreach (file($path) ?: [] as $line) {
+        $line = trim($line);
+
+        if ($line === '' || str_starts_with($line, '#') || ! str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $key = trim($key);
+        $value = trim($value, " \t\"'");
+
+        if ($key !== '') {
+            putenv("{$key}={$value}");
+            $_ENV[$key] = $value;
+        }
+    }
+}

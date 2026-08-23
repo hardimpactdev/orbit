@@ -7,6 +7,7 @@ namespace App\Services\Doctor;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Services\Firewall\FirewallTargetPlatform;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Support\Collection;
 
@@ -133,7 +134,7 @@ final readonly class DoctorNodeFamilyResolver
                         || NodeTool::query()->where('node_id', $node->id)->exists(),
                 'firewall_rule' =>
                     $node->isActive()
-                        && $this->isUbuntuPlatform($node)
+                        && FirewallTargetPlatform::isUbuntu($node->platform)
                         && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node),
                 'schedule' =>
                     in_array('schedule', $categories, strict: true)
@@ -205,10 +206,5 @@ final readonly class DoctorNodeFamilyResolver
                 NodeRoleName::cases(),
             ),
         );
-    }
-
-    private function isUbuntuPlatform(Node $node): bool
-    {
-        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 }

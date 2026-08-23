@@ -84,15 +84,15 @@ final class PublicSshDenyInstaller implements SecurityInstaller
         $wireGuardComment = escapeshellarg(FirewallRuleShapeCanonicalizer::managedComment(
             self::WireGuardAllowReason,
             self::WireGuardAllowName,
-        ));
+        ) ?? self::WireGuardAllowReason);
         $publicDenyV4Comment = escapeshellarg(FirewallRuleShapeCanonicalizer::managedComment(
             self::PublicDenyReason,
             'orbit-public-ssh-deny-v4',
-        ));
+        ) ?? self::PublicDenyReason);
         $publicDenyV6Comment = escapeshellarg(FirewallRuleShapeCanonicalizer::managedComment(
             self::PublicDenyReason,
             'orbit-public-ssh-deny-v6',
-        ));
+        ) ?? self::PublicDenyReason);
 
         return <<<SH_WRAP
             set -euo pipefail
