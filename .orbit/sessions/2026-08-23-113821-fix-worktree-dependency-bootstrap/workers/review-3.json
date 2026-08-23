@@ -1,0 +1,34 @@
+{
+    "id": "review-3",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-3",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high",
+        "--resume",
+        "373cc122-fd7c-41d2-991a-60ee3013999c"
+    ],
+    "tmux": {
+        "session": "feat-fix-worktree-dependency-bootstrap",
+        "window": "review-3",
+        "pane_id": "%12",
+        "pane_pid": 29163,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap",
+    "brief": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/briefs/review-3.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T09:37:19Z",
+    "note": "PASS",
+    "started_at": "2026-08-23T09:34:41Z",
+    "exited_at": "2026-08-23T09:38:11Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/handoff/review-3-c7de10543b76816d94db84682207e6142c823a99.md"
+}

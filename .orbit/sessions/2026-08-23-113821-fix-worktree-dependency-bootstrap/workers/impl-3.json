@@ -1,0 +1,30 @@
+{
+    "id": "impl-3",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-3",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-fix-worktree-dependency-bootstrap",
+        "window": "impl-3",
+        "pane_id": "%9",
+        "pane_pid": 14294,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap",
+    "brief": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/briefs/impl-3.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T09:18:35Z",
+    "note": "Corrected autoload proof and ahead-main diagnosis on bd83f5731",
+    "started_at": "2026-08-23T09:06:31Z",
+    "exited_at": "2026-08-23T09:19:31Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/handoff/impl-3-bd83f57319891a274c6da3d5b2892a7a725c2b0a.md"
+}

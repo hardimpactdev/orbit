@@ -1,0 +1,30 @@
+{
+    "id": "impl-4",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-4",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-fix-worktree-dependency-bootstrap",
+        "window": "impl-4",
+        "pane_id": "%11",
+        "pane_pid": 30249,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap",
+    "brief": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/briefs/impl-4.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T09:34:00Z",
+    "note": "DEFECT 3 closed: pwd -P plus exact root/gateway autoload identity; mutant fails; quality-check and proof receipt on c7de10543b76816d94db84682207e6142c823a99.",
+    "started_at": "2026-08-23T09:27:14Z",
+    "exited_at": "2026-08-23T09:34:22Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/fix-worktree-dependency-bootstrap/.orbit/workers/handoff/impl-4-c7de10543b76816d94db84682207e6142c823a99.md"
+}
