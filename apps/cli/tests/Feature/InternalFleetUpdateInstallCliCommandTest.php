@@ -135,6 +135,7 @@ describe('internal fleet update install cli command', function (): void {
 
     it('stages a Darwin desktop archive and writes an owner-only pending update handoff', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
+        $absentAgentBin = make_fleet_update_install_cli_fake_missing_agent_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentPath = "{$workspace}/artifact/orbit-agent";
         $desktopPath = "{$workspace}/artifact/Orbit.app.tar.gz";
@@ -145,6 +146,11 @@ describe('internal fleet update install cli command', function (): void {
         $desktopSha256 = fleet_update_install_cli_sha256($desktopPath);
         $handoffPath = "{$workspace}/.config/orbit/pending-desktop-update.json";
         $stagedPath = "{$workspace}/.local/share/orbit/updates/desktop-{$desktopSha256}.tar.gz";
+        $path = $absentAgentBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [
@@ -182,25 +188,43 @@ describe('internal fleet update install cli command', function (): void {
             ], JSON_THROW_ON_ERROR),
         );
         $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+        $runtimeCalls = file_get_contents("{$workspace}/missing-systemd-calls.log");
+
+        if (! is_string($runtimeCalls)) {
+            $runtimeCalls = '';
+        }
 
         expect($exitCode)
             ->toBe(0, $output)
             ->and($data['desktop_staged'] ?? false)
             ->toBeTrue()
-            ->and(is_file($stagedPath))
+            ->and($data['agent_installed'] ?? false)
             ->toBeTrue()
-            ->and(fleet_update_install_cli_sha256($stagedPath))
-            ->toBe($desktopSha256)
-            ->and(is_file($handoffPath))
-            ->toBeTrue()
-            ->and(decoct(fileperms($handoffPath) & 0777))
-            ->toBe('600')
-            ->and(json_decode((string) file_get_contents($handoffPath), true)['install_mode'])
-            ->toBe('automatic');
+            ->and(fleet_update_install_cli_sha256("{$workspace}/bin/orbit-agent"))
+            ->toBe($agentSha256)
+            ->and($stdout)
+            ->toContain('install_agent')
+            ->toContain('verify_agent')
+            ->toContain('defer_agent_restart_to_desktop')
+            ->and($stdout)
+            ->not->toContain('schedule_agent_restart')
+            ->not->toContain('restart_agent_launchd')
+            ->not->toContain('restart_agent_unmanaged')
+            ->not->toContain('agent_service_missing_bootstrap_required')->and($runtimeCalls)
+            ->not->toContain('systemctl restart')
+            ->not->toContain('launchctl kickstart')->and(is_file(
+                $stagedPath,
+            ))->toBeTrue()->and(fleet_update_install_cli_sha256($stagedPath))->toBe($desktopSha256)->and(is_file(
+                $handoffPath,
+            ))->toBeTrue()->and(decoct(fileperms($handoffPath) & 0777))->toBe('600')->and(
+                json_decode((string) file_get_contents($handoffPath), true)['install_mode'],
+            )->toBe('automatic');
     });
 
     it('rejects an unsafe desktop staged path before writing the archive', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
+        $absentAgentBin = make_fleet_update_install_cli_fake_missing_agent_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentPath = "{$workspace}/artifact/orbit-agent";
         $desktopPath = "{$workspace}/artifact/Orbit.app.tar.gz";
@@ -211,6 +235,11 @@ describe('internal fleet update install cli command', function (): void {
         $desktopSha256 = fleet_update_install_cli_sha256($desktopPath);
         $handoffPath = "{$workspace}/.config/orbit/pending-desktop-update.json";
         $unsafeStagedPath = "{$workspace}/evil-desktop.tar.gz";
+        $path = $absentAgentBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [
@@ -1219,6 +1248,76 @@ describe('macos Orbit Agent launchd restart during fleet update install', functi
             ->toContain('launchctl print gui/')
             ->toContain('/dev.orbit.agent')
             ->toContain('launchctl kickstart -k gui/');
+    });
+
+    it('does not restart a loaded launchd service when a Desktop handoff is present', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $launchctlBin = make_fleet_update_install_cli_fake_launchctl_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentPath = "{$workspace}/artifact/orbit-agent";
+        $desktopPath = "{$workspace}/artifact/Orbit.app.tar.gz";
+        file_put_contents(filename: $agentPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentPath, permissions: 0o755);
+        file_put_contents($desktopPath, 'desktop-archive');
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $agentSha256 = fleet_update_install_cli_sha256($agentPath);
+        $desktopSha256 = fleet_update_install_cli_sha256($desktopPath);
+        $handoffPath = "{$workspace}/.config/orbit/pending-desktop-update.json";
+        $stagedPath = "{$workspace}/.local/share/orbit/updates/desktop-{$desktopSha256}.tar.gz";
+        $path = $launchctlBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        putenv("ORBIT_AGENT_LAUNCHCTL_BIN={$launchctlBin}/launchctl");
+        $_ENV['PATH'] = $path;
+        $_ENV['ORBIT_AGENT_LAUNCHCTL_BIN'] = "{$launchctlBin}/launchctl";
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'desktop_artifact' => [
+                    'artifact_url' => "file://{$desktopPath}",
+                    'sha256' => $desktopSha256,
+                    'signature' => 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==',
+                    'version' => '9.9.9',
+                    'platform' => 'darwin',
+                    'architecture' => 'arm64',
+                    'staged_path' => $stagedPath,
+                ],
+                'pending_desktop_update' => [
+                    'path' => $handoffPath,
+                    'operation_id' => '018f3f8b-5d7a-7f5e-a45b-93067a93d47e',
+                    'version' => '9.9.9',
+                    'build_id' => 'candidate-build',
+                    'install_mode' => 'automatic',
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+        $calls = file_get_contents("{$workspace}/launchctl-calls.log");
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($data['desktop_staged'] ?? false)
+            ->toBeTrue()
+            ->and($data['stdout'] ?? '')
+            ->toContain('defer_agent_restart_to_desktop')
+            ->not->toContain('restart_agent_launchd')->and($calls)
+            ->not->toContain('launchctl kickstart');
     });
 });
 

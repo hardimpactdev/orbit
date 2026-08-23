@@ -726,7 +726,11 @@ final readonly class LocalFleetUpdateInstallCliAction
             fi
 
             if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
-                restart_agent_service_if_present
+                if [ -n "${ORBIT_DEFER_AGENT_RESTART_TO_DESKTOP:-}" ]; then
+                    echo defer_agent_restart_to_desktop
+                else
+                    restart_agent_service_if_present
+                fi
             fi
 
             echo verify

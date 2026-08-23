@@ -40,6 +40,7 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
             'ORBIT_AGENT_ARTIFACT_URL' => $agentArtifact->artifactUrl ?? '',
             'ORBIT_AGENT_SHA256' => strtolower($agentArtifact->sha256 ?? ''),
             'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
+            'ORBIT_DEFER_AGENT_RESTART_TO_DESKTOP' => $this->deferAgentRestartToDesktop($payload),
             'ORBIT_AGENT_LAUNCHD_LABEL' => $this->environmentString('ORBIT_AGENT_LAUNCHD_LABEL'),
             'ORBIT_AGENT_LAUNCHCTL_BIN' => $this->environmentString('ORBIT_AGENT_LAUNCHCTL_BIN'),
             'ORBIT_AGENT_SERVICE_UNIT_NAME' => $agentService->unitName ?? '',
@@ -96,5 +97,18 @@ final readonly class LocalFleetUpdateInstallCliEnvironment
         $value = getenv($key);
 
         return is_string($value) ? $value : '';
+    }
+
+    private function deferAgentRestartToDesktop(LocalFleetUpdateInstallCliPayload $payload): string
+    {
+        if (! $payload->desktopArtifact instanceof LocalFleetUpdateInstallDesktopPayload) {
+            return '';
+        }
+
+        if (! $payload->pendingDesktopUpdate instanceof LocalFleetUpdateInstallPendingDesktopUpdatePayload) {
+            return '';
+        }
+
+        return '1';
     }
 }
