@@ -1,0 +1,30 @@
+{
+    "id": "source-mount-permissions-2",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=source-mount-permissions-2",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "source-mount-permissions-2",
+        "pane_id": "%5",
+        "pane_pid": 1501318,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/source-mount-permissions.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T14:47:19Z",
+    "note": "Fix committed 27543b4e2; quality-check passed. Handoff blocked on retained-incus runtime pending. Owner rerun: ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16 composer e2e:incus -- --start --topology=operator_gateway_agent",
+    "started_at": "2026-08-23T14:28:15Z",
+    "exited_at": "2026-08-23T15:15:29Z",
+    "provider_ref": null,
+    "handoff": null
+}

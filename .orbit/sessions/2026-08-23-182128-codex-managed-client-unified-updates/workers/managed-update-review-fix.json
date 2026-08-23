@@ -1,0 +1,30 @@
+{
+    "id": "managed-update-review-fix",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=managed-update-review-fix",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "managed-update-review-fix",
+        "pane_id": "%8",
+        "pane_pid": 2915983,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/managed-client-unified-updates-fix-review.md",
+    "status": "handoff",
+    "heartbeat_at": "2026-08-23T16:17:09Z",
+    "note": "FIX D1-D5 on 1a83f161ea28; QC 160355 dirty=false; proof receipt ok=true runtime passed on dev-669dc2",
+    "started_at": "2026-08-23T15:26:15Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/handoff/managed-update-review-fix-1a83f161ea28bf0c50df88622a8b813d5799089a.md"
+}

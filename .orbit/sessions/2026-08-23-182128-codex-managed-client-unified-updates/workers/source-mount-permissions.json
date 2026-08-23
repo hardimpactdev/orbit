@@ -1,0 +1,33 @@
+{
+    "id": "source-mount-permissions",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=source-mount-permissions",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "source-mount-permissions",
+        "pane_id": "%4",
+        "pane_pid": 1493016,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/source-mount-permissions.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T14:27:52Z",
+    "note": "",
+    "started_at": "2026-08-23T14:27:52Z",
+    "exited_at": "2026-08-23T14:28:15Z",
+    "provider_ref": null,
+    "handoff": null
+}

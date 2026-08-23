@@ -1,0 +1,33 @@
+{
+    "id": "retained-valkey-fix",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=retained-valkey-fix",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "retained-valkey-fix",
+        "pane_id": "%2",
+        "pane_pid": 3910286,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/retained-valkey-fix.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T13:20:02Z",
+    "note": "",
+    "started_at": "2026-08-23T13:20:02Z",
+    "exited_at": "2026-08-23T13:21:25Z",
+    "provider_ref": null,
+    "handoff": null
+}

@@ -1,0 +1,66 @@
+candidate=1a83f161ea28bf0c50df88622a8b813d5799089a
+venue=retained-incus
+topology=operator_gateway_agent
+topology_id=dev-669dc2
+host=beast
+environment=dev-fixture
+
+PREPARATION
+- `composer e2e:prepare-topology -- --force operator_gateway_agent` passed.
+- Prepared Valkey preload and seed passed.
+- Agent, development, production, and websocket fixture snapshots were created.
+
+ACQUISITION
+- `ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:16 composer e2e:incus -- --start --topology=operator_gateway_agent` passed.
+- Retarget, Agent runtime readiness, network readiness, candidate overlay,
+  gateway restart, and gateway readiness passed.
+- Topology instances: `orbit-e2e-dev-669dc2-operator`,
+  `orbit-e2e-dev-669dc2-gateway`, and `orbit-e2e-dev-669dc2-agent`.
+- `/home/orbit/.local/bin/orbit` is the active operator launcher.
+- The runtime checkout contains `AgentAvailabilityError::Unavailable` and the
+  candidate desktop-artifact update-plan paths.
+
+MANAGED ROLELESS TARGET SELECTION
+- Fixture nodes:
+  - `proof-managed-mac`: active, managed=true, darwin/arm64, no roles.
+  - `proof-unmanaged-mac`: active, managed=false, darwin/arm64, no roles.
+- Actual `FleetUpdateTargetSelector::workloadNodesExcluding(null)` output
+  included `agent-1`, `proof-managed-mac`, and the role-bearing CLI proof node.
+- Observed:
+  `managed_eligible=true`, `managed_selected=true`,
+  `unmanaged_eligible=false`, `unmanaged_selected=false`.
+
+PRE-MUTATION DESKTOP-OFFLINE SKIP
+- Actual `WorkloadNodeUpdater::updateNode` used the real readiness probe against
+  unavailable managed Mac `proof-managed-mac` at `10.6.0.250`.
+- Result: `status=skipped`, `reason=orbit_desktop_not_running`, roles empty.
+- Skip registry recorded `proof-managed-mac=orbit_desktop_not_running`.
+- Installed CLI identity after the call remained null.
+- Events ended with:
+  `Workload node proof-managed-mac skipped: Orbit Desktop is not running`.
+
+AGENT-UNAVAILABLE CLI DETECTION
+- Fixture `proof-unavailable-agent`: darwin/arm64 Agent-role node with no Agent
+  listener at `10.6.0.248:9477`.
+- Actual `orbit tool:install composer --node=proof-unavailable-agent --json`
+  returned `orbit_agent_unavailable`, platform `darwin`, and remediation
+  `Open Orbit Desktop to start Orbit Agent.`
+- Actual `--stream-json` returned the same public code/remediation at the
+  terminal frame and did not expose `node.agent_unreachable` there.
+- Actual human output ended with:
+  `Orbit Agent is unavailable on node proof-unavailable-agent. Open Orbit Desktop to start it.`
+
+IMMUTABLE PENDING DESKTOP HANDOFF
+- Actual `PendingDesktopUpdateHandoff` wrote
+  `/home/orbit/.config/orbit/evidence/pending-desktop-update.json` mode 0600.
+- Identity bound operation `proof-operation-669dc2`, version `0.1.197`, build
+  `proof-build-669dc2`, install mode `automatic`, desktop signature/staged path,
+  and distinct desktop/Agent/CLI SHA-256 values.
+- Reading with the matching identity passed.
+- Reading with `build_id=stale-build` was rejected.
+
+QUALITY
+- `composer quality-check` passed on clean candidate
+  `1a83f161ea28bf0c50df88622a8b813d5799089a` in 133s.
+- Artifact:
+  `.orbit/quality-gates/quality-check-2026-08-23T160355Z-5f3bd1ec2f36.json`.

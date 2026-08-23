@@ -1,0 +1,32 @@
+{
+    "id": "managed-update-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=managed-update-review",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "managed-update-review",
+        "pane_id": "%7",
+        "pane_pid": 2664095,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/managed-client-unified-updates-review.md",
+    "status": "handoff",
+    "heartbeat_at": "2026-08-23T16:20:22Z",
+    "note": "PASS on 1a83f161; D1-D5 closed; blast-radius complete",
+    "started_at": "2026-08-23T15:14:39Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/handoff/managed-update-review-1a83f161ea28bf0c50df88622a8b813d5799089a.md"
+}

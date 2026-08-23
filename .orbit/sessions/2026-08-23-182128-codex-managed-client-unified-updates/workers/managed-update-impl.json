@@ -1,0 +1,30 @@
+{
+    "id": "managed-update-impl",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=managed-update-impl",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-managed-client-unified-updates",
+        "window": "managed-update-impl",
+        "pane_id": "%1",
+        "pane_pid": 2714093,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/briefs/managed-client-unified-updates.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T15:15:08Z",
+    "note": "impl candidate d8f1c21b streamed remap plus retained-incus runtime proof",
+    "started_at": "2026-08-23T12:32:55Z",
+    "exited_at": "2026-08-23T15:15:29Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-managed-client-unified-updates/.orbit/workers/handoff/managed-update-impl-d8f1c21b374da89c1784278895b61da0d5419d71.md"
+}
