@@ -1,0 +1,38 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T17:40:18+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-agent-desktop-lifetime-channel/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-23-194018-codex-agent-desktop-lifetime-channel",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/agent-desktop-lifetime-incus.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T172331Z-7e5f1f130f74.json",
+        "workers/agent-lifetime-impl.json",
+        "workers/agent-lifetime-review.json",
+        "workers/handoff/agent-lifetime-impl-42c1708d262051a0ee03a8169928440ab6fb1818.md",
+        "workers/handoff/agent-lifetime-review-42c1708d262051a0ee03a8169928440ab6fb1818.md"
+    ],
+    "entry_digests": {
+        "evidence/agent-desktop-lifetime-incus.txt": "9e9eff9897941a5e0585996151c59ab5bdccce5f7465d1a75b9c9f2ee4499095",
+        "loop.md": "dc52af4ed71337f34bd5a202ed167a5aba579833614d0a79009d6ee25305e7be",
+        "quality-gates/quality-check-2026-08-23T172331Z-7e5f1f130f74.json": "9f06d4a81d87900a6b5e50a0ad7d50b0d9acb58a0e458638e8d06595560dd873",
+        "workers/agent-lifetime-impl.json": "1b847a430dd5b1f3025824d8543373799d9f957bc604b64e102a770bf701fd76",
+        "workers/agent-lifetime-review.json": "76f3d6db06eeba81afb06f92864ea02d276ccdaad3012538255bd3bb8893d68b",
+        "workers/handoff/agent-lifetime-impl-42c1708d262051a0ee03a8169928440ab6fb1818.md": "942a5011a3331311b4c13780e7939bfdfe1b035976d93642cae9e92d14090c7d",
+        "workers/handoff/agent-lifetime-review-42c1708d262051a0ee03a8169928440ab6fb1818.md": "c30044c2fd841f341782b3381bbd845dfa54663bfe3ecd1f9bbf1db3df89f522"
+    },
+    "slug": "codex-agent-desktop-lifetime-channel",
+    "requested_slug": "codex-agent-desktop-lifetime-channel",
+    "compatible_slugs": [
+        "codex-agent-desktop-lifetime-channel"
+    ],
+    "branch": "codex/agent-desktop-lifetime-channel",
+    "candidate_commit": "42c1708d262051a0ee03a8169928440ab6fb1818",
+    "accepted_feature_tip": "42c1708d262051a0ee03a8169928440ab6fb1818",
+    "accepted_main_tip": "b4d1d37d5452e5f25ec92d249b7e5310b1f1ec6d",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
