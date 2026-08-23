@@ -54,7 +54,10 @@ try {
             );
         }
 
-        $receiptProblem = orbit_proof_receipt_problem($worktree);
+        $receiptProblem = orbit_proof_receipt_problem($worktree, [
+            'changed_files' => orbitLoopExactProofRoute($worktree)['changed_files'],
+            'venue' => 'automated',
+        ]);
 
         if ($receiptProblem !== null) {
             throw new RuntimeException($receiptProblem);

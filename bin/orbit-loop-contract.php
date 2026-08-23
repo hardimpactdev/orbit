@@ -999,8 +999,25 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
  *     venue: string
  * }
  */
-function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $head = 'HEAD'): array
+function orbitLoopDefaultProofBase(string $cwd): string
 {
+    $upstream = orbitLoopGitValue($cwd, [
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        '@{upstream}',
+    ]);
+
+    if (is_string($upstream) && $upstream !== '' && $upstream !== 'HEAD') {
+        return $upstream;
+    }
+
+    return 'main';
+}
+
+function orbitLoopExactProofRoute(string $cwd, ?string $base = null, string $head = 'HEAD'): array
+{
+    $base ??= orbitLoopDefaultProofBase($cwd);
     $candidate = orbitLoopGitValue($cwd, ['rev-parse', $head]);
     $baseTip = orbitLoopGitValue($cwd, ['rev-parse', $base]);
     $mergeBase = orbitLoopGitValue($cwd, ['merge-base', $base, $head]);
@@ -1073,7 +1090,7 @@ function orbitLoopParseNameStatusDiff(string $output): array
  *
  * @return list<string>
  */
-function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', ?string $base = null): array
 {
     try {
         return orbitLoopExactProofRoute($cwd, $base, $head)['changed_files'];
