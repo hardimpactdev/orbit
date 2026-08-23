@@ -111,6 +111,44 @@ pub fn transition(state: UpdateState, event: UpdateEvent, version: &str) -> Upda
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallAttemptResult {
+    Succeeded,
+    FailedBeforeReplacement,
+    Interrupted,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HandoffDisposition {
+    pub remove_handoff: bool,
+    pub restart_app: bool,
+    pub next_state: UpdateState,
+}
+
+pub fn disposition_after_install(
+    state: UpdateState,
+    result: InstallAttemptResult,
+    version: &str,
+) -> HandoffDisposition {
+    match result {
+        InstallAttemptResult::Succeeded => HandoffDisposition {
+            remove_handoff: true,
+            restart_app: true,
+            next_state: transition(state, UpdateEvent::Installed, version),
+        },
+        InstallAttemptResult::FailedBeforeReplacement => HandoffDisposition {
+            remove_handoff: false,
+            restart_app: false,
+            next_state: transition(state, UpdateEvent::InstallFailedBeforeReplacement, version),
+        },
+        InstallAttemptResult::Interrupted => HandoffDisposition {
+            remove_handoff: false,
+            restart_app: false,
+            next_state: transition(state, UpdateEvent::InterruptedInstall, version),
+        },
+    }
+}
+
 pub fn ready_state_for_handoff(update: &PendingDesktopUpdate) -> UpdateState {
     if UpdateState::consumes_handoff_automatically(update) {
         UpdateState::Installing {
@@ -201,6 +239,55 @@ mod tests {
         assert!(matches!(
             ready_state_for_handoff(&handoff("restart-ready")),
             UpdateState::RestartReady { .. }
+        ));
+    }
+
+    #[test]
+    fn keeps_handoff_and_returns_restart_ready_when_apply_fails_before_replacement() {
+        let installing = UpdateState::Installing {
+            version: "1.2.3".to_string(),
+        };
+        let disposition = disposition_after_install(
+            installing,
+            InstallAttemptResult::FailedBeforeReplacement,
+            "1.2.3",
+        );
+
+        assert!(!disposition.remove_handoff);
+        assert!(!disposition.restart_app);
+        assert_eq!(
+            disposition.next_state,
+            UpdateState::RestartReady {
+                version: "1.2.3".to_string()
+            }
+        );
+        assert_eq!(
+            disposition.next_state.label(),
+            "Restart to Update Orbit 1.2.3"
+        );
+    }
+
+    #[test]
+    fn removes_handoff_only_after_complete_success() {
+        let installing = UpdateState::Installing {
+            version: "1.2.3".to_string(),
+        };
+        let success =
+            disposition_after_install(installing.clone(), InstallAttemptResult::Succeeded, "1.2.3");
+        assert!(success.remove_handoff);
+        assert!(success.restart_app);
+        assert!(matches!(
+            success.next_state,
+            UpdateState::Relaunching { .. }
+        ));
+
+        let interrupted =
+            disposition_after_install(installing, InstallAttemptResult::Interrupted, "1.2.3");
+        assert!(!interrupted.remove_handoff);
+        assert!(!interrupted.restart_app);
+        assert!(matches!(
+            interrupted.next_state,
+            UpdateState::Verified { .. }
         ));
     }
 }

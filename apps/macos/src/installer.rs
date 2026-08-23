@@ -1,5 +1,8 @@
 use crate::paths::is_protected_system_launcher;
 use crate::pending_update::{file_sha256, sha256_hex, PendingDesktopUpdate, PendingUpdateError};
+use crate::update_machine::{
+    disposition_after_install, HandoffDisposition, InstallAttemptResult, UpdateState,
+};
 use base64::Engine;
 use minisign_verify::{PublicKey, Signature};
 use std::fs;
@@ -254,6 +257,107 @@ pub fn install_desktop_bundle_with_pubkey(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplyFailure {
+    pub attempt: InstallAttemptResult,
+    pub error: InstallError,
+}
+
+pub fn apply_bound_update(
+    update: &PendingDesktopUpdate,
+    staged_agent: &Path,
+    staged_cli: &Path,
+    agent_destination: &Path,
+    cli_destination: &Path,
+    desktop_destination: Option<&Path>,
+    pubkey: Option<&str>,
+) -> Result<(), ApplyFailure> {
+    let archive_ready = match pubkey {
+        Some(key) => desktop_archive_ready_with_pubkey(update, key),
+        None => desktop_archive_ready(update),
+    };
+
+    if let Err(error) = archive_ready {
+        return Err(ApplyFailure {
+            attempt: InstallAttemptResult::FailedBeforeReplacement,
+            error,
+        });
+    }
+
+    let bins_already_bound = installed_hashes_match(agent_destination, &update.agent.sha256)
+        .unwrap_or(false)
+        && installed_hashes_match(cli_destination, &update.cli.sha256).unwrap_or(false);
+    let mut replaced = false;
+
+    if !bins_already_bound {
+        if staged_agent.is_file() && staged_cli.is_file() {
+            install_owner_binaries(
+                update,
+                staged_agent,
+                staged_cli,
+                agent_destination,
+                cli_destination,
+            )
+            .map_err(|error| ApplyFailure {
+                attempt: if error == InstallError::HashMismatch {
+                    InstallAttemptResult::FailedBeforeReplacement
+                } else {
+                    InstallAttemptResult::Interrupted
+                },
+                error,
+            })?;
+            replaced = true;
+        } else {
+            return Err(ApplyFailure {
+                attempt: InstallAttemptResult::FailedBeforeReplacement,
+                error: InstallError::Io("staged Agent or CLI artifacts are incomplete".to_string()),
+            });
+        }
+    }
+
+    let Some(desktop_dest) = desktop_destination else {
+        return Err(ApplyFailure {
+            attempt: if replaced || bins_already_bound {
+                InstallAttemptResult::Interrupted
+            } else {
+                InstallAttemptResult::FailedBeforeReplacement
+            },
+            error: InstallError::Io("desktop destination missing".to_string()),
+        });
+    };
+
+    let desktop_install = match pubkey {
+        Some(key) => install_desktop_bundle_with_pubkey(update, desktop_dest, key),
+        None => install_desktop_bundle(update, desktop_dest),
+    };
+
+    desktop_install.map_err(|error| ApplyFailure {
+        attempt: if replaced || bins_already_bound {
+            InstallAttemptResult::Interrupted
+        } else {
+            InstallAttemptResult::FailedBeforeReplacement
+        },
+        error,
+    })?;
+
+    Ok(())
+}
+
+pub fn commit_install_attempt(
+    handoff_path: &Path,
+    state: UpdateState,
+    attempt: InstallAttemptResult,
+    version: &str,
+) -> HandoffDisposition {
+    let disposition = disposition_after_install(state, attempt, version);
+
+    if disposition.remove_handoff {
+        let _ = fs::remove_file(handoff_path);
+    }
+
+    disposition
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +582,185 @@ mod tests {
             verify_updater_signature(b"desktop-archive", &signature, &pubkey),
             Err(InstallError::InvalidSignature)
         );
+    }
+
+    #[test]
+    fn keeps_handoff_and_returns_restart_ready_when_apply_fails_before_replacement() {
+        let root = temp_dir();
+        let staged_agent = root.join("agent-new");
+        let staged_cli = root.join("cli-new");
+        let agent_dest = root.join("bin/orbit-agent");
+        let cli_dest = root.join("bin/orbit");
+        let desktop_dest = root.join("installed/Orbit Desktop.app");
+        let handoff_path = root.join("pending-desktop-update.json");
+        fs::create_dir_all(agent_dest.parent().expect("parent")).expect("dir");
+        fs::write(&agent_dest, b"agent-v1").expect("old agent");
+        fs::write(&cli_dest, b"cli-v1").expect("old cli");
+        fs::write(&staged_agent, b"agent-v2").expect("staged agent");
+        fs::write(&staged_cli, b"cli-v2").expect("staged cli");
+        fs::write(&handoff_path, b"handoff").expect("handoff");
+
+        let archive = root.join("desktop.tar.gz");
+        fs::write(&archive, b"truncated").expect("partial archive");
+        let mut update = update_for("agent-v2", "cli-v2", "desktop");
+        update.desktop.sha256 = sha256_hex(b"complete-archive");
+        update.desktop.staged_path = archive.to_string_lossy().into_owned();
+        update.desktop.signature =
+            "dW50cnVzdGVkIGNvbW1lbnQ6IG5vdC1hLXZhbGlkLXNpZ25hdHVyZQ==".into();
+
+        let error = apply_bound_update(
+            &update,
+            &staged_agent,
+            &staged_cli,
+            &agent_dest,
+            &cli_dest,
+            Some(&desktop_dest),
+            Some("dW50cnVzdGVk"),
+        )
+        .expect_err("before replacement");
+        assert_eq!(
+            error.attempt,
+            crate::update_machine::InstallAttemptResult::FailedBeforeReplacement
+        );
+        assert_eq!(
+            fs::read_to_string(&agent_dest).expect("kept agent"),
+            "agent-v1"
+        );
+        assert_eq!(fs::read_to_string(&cli_dest).expect("kept cli"), "cli-v1");
+        assert!(!desktop_dest.exists());
+
+        let disposition = commit_install_attempt(
+            &handoff_path,
+            UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            },
+            error.attempt,
+            "1.2.3",
+        );
+        assert!(!disposition.remove_handoff);
+        assert!(handoff_path.is_file());
+        assert!(matches!(
+            disposition.next_state,
+            UpdateState::RestartReady { .. }
+        ));
+        assert_eq!(
+            disposition.next_state.label(),
+            "Restart to Update Orbit 1.2.3"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resumes_from_preserved_handoff_after_partial_owner_bin_replacement() {
+        let root = temp_dir();
+        let staged_agent = root.join("agent-new");
+        let staged_cli = root.join("cli-new");
+        let agent_dest = root.join("bin/orbit-agent");
+        let cli_dest = root.join("bin/orbit");
+        let locked = root.join("locked");
+        let desktop_dest = locked.join("Orbit Desktop.app");
+        let handoff_path = root.join("pending-desktop-update.json");
+        fs::create_dir_all(agent_dest.parent().expect("parent")).expect("dir");
+        fs::create_dir_all(&locked).expect("locked");
+        fs::write(&agent_dest, b"agent-v1").expect("old agent");
+        fs::write(&cli_dest, b"cli-v1").expect("old cli");
+        fs::write(&staged_agent, b"agent-v2").expect("staged agent");
+        fs::write(&staged_cli, b"cli-v2").expect("staged cli");
+        fs::write(&handoff_path, b"handoff").expect("handoff");
+
+        let source_app = root.join("Orbit Desktop.app");
+        fs::create_dir_all(source_app.join("Contents/MacOS")).expect("app");
+        fs::write(source_app.join("Contents/MacOS/orbit-macos"), b"desktop-v2").expect("bin");
+        let archive = root.join("desktop.tar.gz");
+        let status = std::process::Command::new("tar")
+            .args([
+                "-czf",
+                &archive.to_string_lossy(),
+                "-C",
+                &root.to_string_lossy(),
+                "Orbit Desktop.app",
+            ])
+            .status()
+            .expect("tar");
+        assert!(status.success());
+        fs::remove_dir_all(&source_app).expect("remove source");
+
+        let bytes = fs::read(&archive).expect("read archive");
+        let (pubkey, signature) = sign_archive(&bytes);
+        let mut update = update_for("agent-v2", "cli-v2", "desktop");
+        update.desktop.sha256 = sha256_hex(&bytes);
+        update.desktop.staged_path = archive.to_string_lossy().into_owned();
+        update.desktop.signature = signature;
+
+        let mut permissions = fs::metadata(&locked).expect("meta").permissions();
+        permissions.set_mode(0o555);
+        fs::set_permissions(&locked, permissions).expect("lock");
+
+        let interrupted = apply_bound_update(
+            &update,
+            &staged_agent,
+            &staged_cli,
+            &agent_dest,
+            &cli_dest,
+            Some(&desktop_dest),
+            Some(&pubkey),
+        )
+        .expect_err("desktop blocked");
+        assert_eq!(
+            interrupted.attempt,
+            crate::update_machine::InstallAttemptResult::Interrupted
+        );
+        assert_eq!(fs::read_to_string(&agent_dest).expect("agent"), "agent-v2");
+        assert_eq!(fs::read_to_string(&cli_dest).expect("cli"), "cli-v2");
+        assert!(!desktop_dest.exists());
+
+        let disposition = commit_install_attempt(
+            &handoff_path,
+            UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            },
+            interrupted.attempt,
+            "1.2.3",
+        );
+        assert!(!disposition.remove_handoff);
+        assert!(handoff_path.is_file());
+
+        let mut permissions = fs::metadata(&locked).expect("meta").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&locked, permissions).expect("unlock");
+
+        apply_bound_update(
+            &update,
+            &staged_agent,
+            &staged_cli,
+            &agent_dest,
+            &cli_dest,
+            Some(&desktop_dest),
+            Some(&pubkey),
+        )
+        .expect("resume");
+        assert_eq!(
+            fs::read_to_string(desktop_dest.join("Contents/MacOS/orbit-macos")).expect("desktop"),
+            "desktop-v2"
+        );
+        assert!(
+            reconcile_installed_identity(&agent_dest, &update.agent.sha256, &staged_agent)
+                .expect("agent bound")
+        );
+
+        let success = commit_install_attempt(
+            &handoff_path,
+            UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            },
+            crate::update_machine::InstallAttemptResult::Succeeded,
+            "1.2.3",
+        );
+        assert!(success.remove_handoff);
+        assert!(!handoff_path.exists());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn sign_archive(bytes: &[u8]) -> (String, String) {

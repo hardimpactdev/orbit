@@ -2,6 +2,7 @@ use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
     GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
+use orbit_macos::installer::{apply_bound_update, commit_install_attempt, ApplyFailure};
 use orbit_macos::legacy::{
     conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
     parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
@@ -20,7 +21,9 @@ use orbit_macos::tray_labels::{
     launch_at_login_checked, launch_at_login_label, quit_orbit_label, restart_orbit_label,
     LaunchAtLoginState,
 };
-use orbit_macos::update_machine::{ready_state_for_handoff, UpdateState};
+use orbit_macos::update_machine::{
+    ready_state_for_handoff, transition, InstallAttemptResult, UpdateEvent, UpdateState,
+};
 use orbit_macos::version::orbit_version;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -441,56 +444,70 @@ fn restart_to_update_if_ready(app: &AppHandle) {
 
 fn install_ready_update(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
+    let version = runtime
+        .update_state
+        .lock()
+        .ok()
+        .and_then(|state| match &*state {
+            UpdateState::RestartReady { version }
+            | UpdateState::Installing { version }
+            | UpdateState::Verified { version } => Some(version.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    if let Ok(mut state) = runtime.update_state.lock() {
+        *state = transition(state.clone(), UpdateEvent::BeginInstall, &version);
+    }
+
     stop_owned_child(&runtime);
 
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let path = pending_update_path(&home);
-    if let Ok(update) =
-        read_pending_update(&path.to_string_lossy(), &ExpectedUpdateIdentity::default())
-    {
-        let _ = apply_verified_update(&update);
-        let _ = std::fs::remove_file(path);
+    let attempt =
+        match read_pending_update(&path.to_string_lossy(), &ExpectedUpdateIdentity::default()) {
+            Ok(update) => match apply_verified_update(&update) {
+                Ok(()) => InstallAttemptResult::Succeeded,
+                Err(failure) => failure.attempt,
+            },
+            Err(_) => InstallAttemptResult::FailedBeforeReplacement,
+        };
+
+    let current = runtime
+        .update_state
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or(UpdateState::Idle);
+    let disposition = commit_install_attempt(&path, current, attempt, &version);
+
+    if let Ok(mut state) = runtime.update_state.lock() {
+        *state = disposition.next_state;
     }
 
-    app.restart();
+    if disposition.restart_app {
+        app.restart();
+    } else {
+        spawn_or_mark_missing(app, &runtime, &home);
+    }
 }
 
-fn apply_verified_update(update: &PendingDesktopUpdate) -> Result<(), String> {
-    use orbit_macos::installer::{
-        desktop_archive_ready, install_desktop_bundle, install_owner_binaries,
-        installed_hashes_match,
-    };
+fn apply_verified_update(update: &PendingDesktopUpdate) -> Result<(), ApplyFailure> {
     use orbit_macos::paths::{owner_agent_bin, owner_cli_bin, owner_updates_dir};
-
-    desktop_archive_ready(update).map_err(|error| format!("{error:?}"))?;
 
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let updates = owner_updates_dir(&home);
     let staged_agent = updates.join(format!("agent-{}", &update.agent.sha256[..12]));
     let staged_cli = updates.join(format!("cli-{}", &update.cli.sha256[..12]));
-    let agent_destination = owner_agent_bin(&home);
-    let cli_destination = owner_cli_bin(&home);
 
-    if staged_agent.exists() && staged_cli.exists() {
-        install_owner_binaries(
-            update,
-            &staged_agent,
-            &staged_cli,
-            &agent_destination,
-            &cli_destination,
-        )
-        .map_err(|error| format!("{error:?}"))?;
-    } else if !(installed_hashes_match(&agent_destination, &update.agent.sha256).unwrap_or(false)
-        && installed_hashes_match(&cli_destination, &update.cli.sha256).unwrap_or(false))
-    {
-        return Err("staged Agent or CLI artifacts are incomplete".to_string());
-    }
-
-    if let Some(destination) = desktop_app_destination() {
-        install_desktop_bundle(update, &destination).map_err(|error| format!("{error:?}"))?;
-    }
-
-    Ok(())
+    apply_bound_update(
+        update,
+        &staged_agent,
+        &staged_cli,
+        &owner_agent_bin(&home),
+        &owner_cli_bin(&home),
+        desktop_app_destination().as_deref(),
+        None,
+    )
 }
 
 fn desktop_app_destination() -> Option<PathBuf> {
