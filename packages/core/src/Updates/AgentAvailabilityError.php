@@ -106,6 +106,9 @@ final class AgentAvailabilityError
         return $enriched;
     }
 
+    /**
+     * @param  array<string, mixed>  $meta
+     */
     public static function publicMessage(string $message, array $meta): string
     {
         $node = is_string($meta['node'] ?? null) ? $meta['node'] : null;

@@ -164,6 +164,7 @@ it('reports direct log transport failures as an unreachable Agent', function ():
         ->assertJsonPath('error.code', 'node.agent_unreachable')
         ->assertJsonPath('error.meta.reason', 'agent_push_unavailable')
         ->assertJsonPath('error.meta.node', 'app-caddy-1')
+        ->assertJsonPath('error.meta.platform', 'ubuntu_24-04')
         ->assertJsonPath('error.meta.tool', 'caddy')
         ->assertJsonPath('error.meta.action', 'logs');
 });

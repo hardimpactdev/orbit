@@ -52,6 +52,7 @@ final readonly class ProcessToolLifecycleRunner
                 meta: [
                     'reason' => 'agent_push_unavailable',
                     'node' => $target->node->name,
+                    'platform' => (string) $target->node->platform,
                     'tool' => $target->tool->name,
                     'action' => $action,
                     'error' => $exception->getMessage(),

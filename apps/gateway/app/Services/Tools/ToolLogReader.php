@@ -40,6 +40,16 @@ final readonly class ToolLogReader
             return $target;
         }
 
+        return $this->readTarget($target, $lines);
+    }
+
+    /**
+     * @return array<string, mixed>|ToolRegistryFailure
+     */
+    private function readTarget(ToolRuntimeTarget $target, int $lines): array|ToolRegistryFailure
+    {
+        $tool = $target->tool->name;
+
         if ($target->process instanceof ProcessModel) {
             try {
                 $result = $this->processLogs->handle(
@@ -53,6 +63,7 @@ final readonly class ToolLogReader
                     meta: [
                         'reason' => 'agent_push_unavailable',
                         'node' => $target->node->name,
+                        'platform' => (string) $target->node->platform,
                         'tool' => $tool,
                         'action' => 'logs',
                         'error' => $exception->getMessage(),

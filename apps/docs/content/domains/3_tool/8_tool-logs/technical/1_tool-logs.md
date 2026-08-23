@@ -64,7 +64,7 @@ drift, or fall back to a similarly named process.
 | Unsupported target | The selected tool does not support the resolved node constraints. | `error.code=tool.unsupported_on_node` |
 | Runtime missing | No direct runtime or matching process row exists. | `error.code=tool.runtime_missing` |
 | Runtime ambiguous | More than one direct/process runtime target resolves. | `error.code=tool.runtime_ambiguous` |
-| Agent unreachable | A direct remote runtime cannot be reached through Agent push. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
+| Agent unreachable | A direct remote runtime cannot be reached through Agent push. | `error.code=orbit_agent_unavailable`, `error.meta.reason=agent_push_unavailable` |
 | Log read failed | The resolved runtime backend cannot read logs. | `error.code=tool.remote_action_failed` |
 
 ## Doctor Relationship

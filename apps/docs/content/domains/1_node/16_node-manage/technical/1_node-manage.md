@@ -91,7 +91,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Not an operator node | The authenticated node is inactive or has an active role assignment. | `error.code=node.not_operator` |
 | Missing WireGuard address | The node has no `wireguard_address` for Agent push. | `error.code=node.wireguard_address_missing` |
-| Agent reachability failed | The gateway could not complete the typed Agent runtime probe. | `error.code=node.agent_unreachable`; management intent remains stored so node doctor can report repairable drift. |
+| Agent reachability failed | The gateway could not complete the typed Agent runtime probe. | `error.code=orbit_agent_unavailable`; management intent remains stored so node doctor can report repairable drift. |
 
 ## Doctor Relationship
 

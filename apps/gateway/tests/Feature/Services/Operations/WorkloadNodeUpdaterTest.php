@@ -758,6 +758,156 @@ it('skips a managed macOS client whose Agent is unavailable before mutation', fu
         ->toBe(0);
 });
 
+it('does not stage a desktop archive for an unmanaged role-bearing Mac', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'mac-app-dev',
+            'managed' => false,
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.81',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
+            agentArtifacts: workloadUpdaterDarwinAgentArtifacts(),
+            desktopArtifacts: [
+                'darwin-arm64' => workloadUpdaterDesktopArtifact(),
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.81:9477/*' => Http::response('', 405),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payload = workloadUpdaterInstallPayload($shell, 'mac-app-dev');
+
+    expect($results[0]['status'] ?? null)
+        ->toBe('completed')
+        ->and($payload['desktop_artifact'])
+        ->toBeNull()
+        ->and($payload['pending_desktop_update'])
+        ->toBeNull();
+});
+
+it('omits an incomplete desktop identity when the same-platform Agent artifact is absent', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->operator()
+        ->managed()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.82',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
+            desktopArtifacts: [
+                'darwin-arm64' => workloadUpdaterDesktopArtifact(),
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.82:9477/*' => Http::response('', 405),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payload = workloadUpdaterInstallPayload($shell, 'mini');
+
+    expect($results[0]['status'] ?? null)
+        ->toBe('completed')
+        ->and($payload['agent_artifact'])
+        ->toBeNull()
+        ->and($payload['desktop_artifact'])
+        ->toBeNull()
+        ->and($payload['pending_desktop_update'])
+        ->toBeNull();
+});
+
+it('stages a desktop archive and pending automatic handoff for a reachable managed Mac', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->operator()
+        ->managed()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.80',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $desktop = workloadUpdaterDesktopArtifact();
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
+            agentArtifacts: workloadUpdaterDarwinAgentArtifacts(),
+            desktopArtifacts: [
+                'darwin-arm64' => $desktop,
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.80:9477/*' => Http::response('', 405),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payload = workloadUpdaterInstallPayload($shell, 'mini');
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'mini',
+                'node' => 'mini',
+                'roles' => [],
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($payload['desktop_artifact'])
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/desktop/darwin-arm64?token=fake",
+            'sha256' => $desktop['sha256'],
+            'signature' => $desktop['signature'],
+            'version' => '1.2.3',
+            'platform' => 'darwin',
+            'architecture' => 'arm64',
+            'staged_path' => '/Users/nckrtl/.local/share/orbit/updates/desktop-'.substr($desktop['sha256'], 0, 12).'.tar.gz',
+        ])
+        ->and($payload['pending_desktop_update'])
+        ->toMatchArray([
+            'path' => '/Users/nckrtl/.config/orbit/pending-desktop-update.json',
+            'operation_id' => $run->id,
+            'version' => '1.2.3',
+            'build_id' => null,
+            'install_mode' => 'automatic',
+        ]);
+});
+
 it('fails a non-managed role-bearing target when the Agent is unavailable', function (): void {
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'app-dev-1' => new RemoteLocalExecutorTransportFailed('Connection refused'),
@@ -1736,12 +1886,95 @@ final class WorkloadUpdaterFailIfCalledFleetVerifier extends FleetUpdateVerifier
  * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
  * @param  array<string, string>  $roleImages
  */
+/**
+ * @return array<string, array{url: string, sha256: string}>
+ */
+/**
+ * @return array<string, mixed>
+ */
+function workloadUpdaterInstallPayload(WorkloadUpdaterFakeShell $shell, string $node): array
+{
+    $found = null;
+
+    foreach ($shell->calls as $call) {
+        if ($call['node'] !== $node) {
+            continue;
+        }
+
+        $input = $call['options']['input'] ?? null;
+
+        if (! is_string($input) || $input === '') {
+            continue;
+        }
+
+        $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($payload) && isset($payload['sha256'])) {
+            $found = $payload;
+        }
+    }
+
+    if (! is_array($found)) {
+        throw new RuntimeException("No install payload recorded for [{$node}].");
+    }
+
+    return $found;
+}
+
+/**
+ * @return array<string, array{url: string, sha256: string}>
+ */
+function workloadUpdaterDarwinCliArtifacts(): array
+{
+    return [
+        'darwin-arm64' => [
+            'url' => 'https://artifacts.test/orbit-macos-arm64',
+            'sha256' => str_repeat('b', times: 64),
+        ],
+    ];
+}
+
+/**
+ * @return array<string, array{url: string, sha256: string}>
+ */
+function workloadUpdaterDarwinAgentArtifacts(): array
+{
+    return [
+        'darwin-arm64' => [
+            'url' => 'https://artifacts.test/orbit-agent-macos-arm64',
+            'sha256' => str_repeat('e', times: 64),
+        ],
+    ];
+}
+
+/**
+ * @return array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}
+ */
+function workloadUpdaterDesktopArtifact(): array
+{
+    return [
+        'url' => 'https://artifacts.test/Orbit.app.tar.gz',
+        'sha256' => str_repeat('c', times: 64),
+        'signature' => 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==',
+        'version' => '1.2.3',
+        'platform' => 'darwin',
+        'architecture' => 'arm64',
+    ];
+}
+
+/**
+ * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
+ * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
+ * @param  array<string, string>  $roleImages
+ * @param  array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>  $desktopArtifacts
+ */
 function workloadUpdaterSnapshot(
     string $targetVersion = '1.2.3',
     string $manifestSource = 'github-release',
     array $cliArtifacts = [],
     array $agentArtifacts = [],
     array $roleImages = [],
+    array $desktopArtifacts = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifacts = $cliArtifacts === []
@@ -1771,10 +2004,12 @@ function workloadUpdaterSnapshot(
             ],
             'cli_artifacts' => $cliArtifacts,
             'agent_artifacts' => $agentArtifacts,
+            'desktop_artifacts' => $desktopArtifacts,
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
         agentArtifacts: $agentArtifacts,
+        desktopArtifacts: $desktopArtifacts,
         roleImages: $roleImages,
     );
 }

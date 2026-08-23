@@ -329,6 +329,7 @@ final readonly class UpdateRunner
 
         $this->operationRuns->appendComplete($operationRun->id, 0, $result);
         $this->operationRuns->succeeded($operationRun->id, result: $result);
+        app(FleetUpdatePreMutationSkipRegistry::class)->forget($operationRun->id);
 
         $this->logOutcomeActivity($operationRun, $plan, 'completed');
     }
@@ -356,6 +357,7 @@ final readonly class UpdateRunner
             'message' => $failure['message'],
             ...($failure['data'] === [] ? [] : ['data' => $failure['data']]),
         ]);
+        app(FleetUpdatePreMutationSkipRegistry::class)->forget($operationRun->id);
 
         $plan = $this->updatePlans->forOperationRun($operationRun->id);
 

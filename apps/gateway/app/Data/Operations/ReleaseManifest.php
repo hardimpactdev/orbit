@@ -78,7 +78,7 @@ final readonly class ReleaseManifest
             ? self::artifacts(self::arrayValue($manifest, 'agent_artifacts', 'Agent artifacts'), 'Agent artifacts')
             : [];
         $desktopArtifacts = array_key_exists('desktop_artifacts', $manifest)
-            ? self::desktopArtifacts(self::arrayValue($manifest, 'desktop_artifacts', 'desktop artifacts'))
+            ? self::desktopArtifacts(self::arrayValue($manifest, 'desktop_artifacts', 'desktop artifacts'), $version)
             : [];
         $roleImages = self::roleImages(self::arrayValue($manifest, 'role_images', 'role images'));
 
@@ -222,7 +222,7 @@ final readonly class ReleaseManifest
      * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>
      *
      */
-    private static function desktopArtifacts(array $artifacts): array
+    private static function desktopArtifacts(array $artifacts, string $manifestVersion): array
     {
         $validated = [];
 
@@ -236,6 +236,12 @@ final readonly class ReleaseManifest
             $sha256 = self::stringValue($artifact, 'sha256', "desktop artifacts [{$platform}] sha256");
             $signature = self::stringValue($artifact, 'signature', "desktop artifacts [{$platform}] signature");
             $version = self::stringValue($artifact, 'version', "desktop artifacts [{$platform}] version");
+
+            if ($version !== $manifestVersion) {
+                throw new RuntimeException(
+                    "Release manifest desktop artifacts [{$platform}] version must match the manifest version.",
+                );
+            }
             $artifactPlatform = self::stringValue($artifact, 'platform', "desktop artifacts [{$platform}] platform");
             $architecture = self::stringValue(
                 $artifact,

@@ -107,7 +107,11 @@ These terms describe the runtime objects that Orbit derives from process definit
   Linux-only and valid only for node-owned managed service processes.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
-  agent, app, and workspace runtime units.
+  agent, app, and workspace runtime units. Optional process
+  `runtime_config.prepare_prerequisites` defaults to true and prepares
+  node-owned Docker prerequisites (images and networks) before applying the
+  container. Set it to false to skip that preparation when a fixture already
+  preloaded those artifacts.
 - **Docker Swarm process runtime:** Runtime backend that runs a node-owned
   managed service process as an Orbit-managed Swarm service. It is currently
   admitted for managed-service MySQL, PostgreSQL, Valkey, ClickHouse,

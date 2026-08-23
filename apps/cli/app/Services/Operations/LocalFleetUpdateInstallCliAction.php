@@ -116,6 +116,16 @@ final readonly class LocalFleetUpdateInstallCliAction
 
     private function stageDesktopArchive(LocalFleetUpdateInstallDesktopPayload $desktop): void
     {
+        try {
+            PendingDesktopUpdateHandoff::assertSafeStagedPath($desktop->stagedPath);
+        } catch (PendingDesktopUpdateHandoffFailure $exception) {
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'fleet_update.desktop_stage_failed',
+                message: $exception->getMessage(),
+                meta: [],
+            );
+        }
+
         $directory = dirname($desktop->stagedPath);
 
         if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {

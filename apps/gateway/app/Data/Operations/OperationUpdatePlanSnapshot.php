@@ -165,7 +165,15 @@ final readonly class OperationUpdatePlanSnapshot
      */
     private function assertDesktopArtifacts(array $artifacts): void
     {
-        self::desktopArtifactMap($artifacts);
+        $validated = self::desktopArtifactMap($artifacts);
+
+        foreach ($validated as $platform => $artifact) {
+            if ($artifact['version'] !== $this->targetVersion) {
+                throw new RuntimeException(
+                    "Update plan desktop artifacts [{$platform}] version must match the target version.",
+                );
+            }
+        }
     }
 
     /**

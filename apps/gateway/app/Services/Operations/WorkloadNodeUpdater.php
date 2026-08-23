@@ -16,6 +16,7 @@ use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\ProvisioningAgentReadinessProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
+use Orbit\Core\Updates\AgentAvailabilityError;
 use RuntimeException;
 use Throwable;
 
@@ -64,7 +65,7 @@ final readonly class WorkloadNodeUpdater
             "Updating workload node {$node->name}",
         );
 
-        $preMutationSkip = $this->preMutationSkip($operationRun, $node);
+        $preMutationSkip = $this->preMutationSkip($node);
 
         if ($preMutationSkip !== null) {
             $this->recordSkippedResult($operationRun, $node, $preMutationSkip);
@@ -214,7 +215,7 @@ final readonly class WorkloadNodeUpdater
     /**
      * @return array<string, mixed>|null
      */
-    private function preMutationSkip(OperationRun $operationRun, Node $node): ?array
+    private function preMutationSkip(Node $node): ?array
     {
         if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
             return null;
@@ -227,7 +228,7 @@ final readonly class WorkloadNodeUpdater
         return [
             ...$this->targetPayload($node),
             'status' => 'skipped',
-            'reason' => 'orbit_desktop_not_running',
+            'reason' => AgentAvailabilityError::DesktopNotRunning,
         ];
     }
 
@@ -238,11 +239,11 @@ final readonly class WorkloadNodeUpdater
     {
         $reason = is_string($result['reason'] ?? null) ? $result['reason'] : null;
 
-        if ($reason === 'orbit_desktop_not_running') {
+        if ($reason === AgentAvailabilityError::DesktopNotRunning) {
             $this->preMutationSkips->record($operationRun->id, $node->name, $reason);
         }
 
-        $message = $reason === 'orbit_desktop_not_running'
+        $message = $reason === AgentAvailabilityError::DesktopNotRunning
             ? "Workload node {$node->name} skipped: Orbit Desktop is not running"
             : "Workload node {$node->name} skipped: already up to date";
 
@@ -300,6 +301,7 @@ final readonly class WorkloadNodeUpdater
         array $artifact,
     ): array {
         $installRoot = rtrim($node->orbit_path, '/') ?: '/home/orbit/orbit';
+        $desktopArtifact = $this->desktopArtifactPayload($operationRun, $plan, $node);
 
         return [
             'artifact_url' => $artifact['url'],
@@ -309,8 +311,13 @@ final readonly class WorkloadNodeUpdater
             'shared_binary_path' => null,
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'agent_service' => $this->agentServicePayload($node),
-            'desktop_artifact' => $this->desktopArtifactPayload($operationRun, $plan, $node),
-            'pending_desktop_update' => $this->pendingDesktopUpdatePayload($operationRun, $plan, $node),
+            'desktop_artifact' => $desktopArtifact,
+            'pending_desktop_update' => $this->pendingDesktopUpdatePayload(
+                $operationRun,
+                $plan,
+                $node,
+                $desktopArtifact,
+            ),
             'role_images' => $this->requiredRoleImages($plan, $node),
             'role_image_artifacts' => $this->requiredRoleImageArtifacts($plan, $node),
             'role_image_aliases' => $this->requiredRoleImageAliases($plan, $node),
@@ -456,7 +463,11 @@ final readonly class WorkloadNodeUpdater
      */
     private function desktopArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
     {
-        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
+            return null;
+        }
+
+        if ($this->agentArtifactPayload($operationRun, $plan, $node) === null) {
             return null;
         }
 
@@ -486,14 +497,16 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
+     * @param  array{artifact_url: string, sha256: string, signature: string, version: string, platform: string, architecture: string, staged_path: string}|null  $desktopArtifact
      * @return array{path: string, operation_id: string, version: string, build_id: string|null, install_mode: string}|null
      */
     private function pendingDesktopUpdatePayload(
         OperationRun $operationRun,
         OperationUpdatePlan $plan,
         Node $node,
+        ?array $desktopArtifact,
     ): ?array {
-        if ($this->desktopArtifactPayload($operationRun, $plan, $node) === null) {
+        if ($desktopArtifact === null) {
             return null;
         }
 

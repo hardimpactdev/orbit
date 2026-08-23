@@ -588,7 +588,12 @@ it('renders a managed Mac skip as Orbit Desktop is not running', function (): vo
     ]);
     $renderer->finishSuccess($output, '1.2.3');
 
-    expect($output->fetch())->toContain('Skipped: Orbit Desktop is not running');
+    $text = $output->fetch();
+
+    expect($text)
+        ->toContain('●')
+        ->and($text)
+        ->toMatch('/●\s+mini\s+Skipped: Orbit Desktop is not running/');
 });
 
 function stopUpdateAllHumanProgressTicker(UpdateAllHumanProgressRenderer $renderer): void

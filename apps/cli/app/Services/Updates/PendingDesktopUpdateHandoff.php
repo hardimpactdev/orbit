@@ -202,7 +202,7 @@ final class PendingDesktopUpdateHandoff
         }
     }
 
-    private static function assertSafeStagedPath(string $path): void
+    public static function assertSafeStagedPath(string $path): void
     {
         self::assertSafeAbsolutePath($path, 'staged artifact');
 

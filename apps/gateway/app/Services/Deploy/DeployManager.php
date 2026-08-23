@@ -472,6 +472,7 @@ final readonly class DeployManager
                 errorMeta: [
                     'reason' => 'agent_push_unavailable',
                     'node' => $node->name,
+                    'platform' => (string) $node->platform,
                     'error' => $exception->getMessage(),
                 ],
             );

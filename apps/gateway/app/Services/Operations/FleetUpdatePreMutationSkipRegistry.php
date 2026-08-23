@@ -31,4 +31,9 @@ final class FleetUpdatePreMutationSkipRegistry
     {
         return $this->reasons[$operationRunId] ?? [];
     }
+
+    public function forget(string $operationRunId): void
+    {
+        unset($this->reasons[$operationRunId]);
+    }
 }

@@ -847,7 +847,9 @@ it('reports Agent reachability when remote deploy execution cannot start', funct
                 ->and($exception->errorMeta()['reason'])
                 ->toBe('agent_push_unavailable')
                 ->and($exception->errorMeta()['node'])
-                ->toBe('app-prod-1');
+                ->toBe('app-prod-1')
+                ->and($exception->errorMeta()['platform'] ?? null)
+                ->toBe('ubuntu_24-04');
         });
 
     $run = DeploymentRun::query()->sole();

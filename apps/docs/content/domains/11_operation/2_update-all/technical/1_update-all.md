@@ -151,11 +151,16 @@ execution details live in the renderer contracts.
 
 A managed macOS/Darwin target whose Agent is unreachable during the
 pre-mutation readiness check is skipped with
-`reason=orbit_desktop_not_running` before any install mutation. Skipped Macs
-do not fail `update:all` and do not receive a remote pending restart. After
-the first side effect, later errors stay `failed` and cannot be relabeled
-`skipped`. Non-managed role-bearing targets keep required failure behavior
-when Agent push is unavailable.
+`reason=orbit_desktop_not_running` before any install mutation. The complete
+event carries those skips as `success.data.skipped_targets`, a map of node
+name to `orbit_desktop_not_running`. Skipped Macs do not fail `update:all`
+and do not receive a remote pending restart. After the first side effect,
+later errors stay `failed` and cannot be relabeled `skipped`. Non-managed
+role-bearing targets keep required failure behavior when Agent push is
+unavailable. Desktop staging and the automatic pending-desktop-update
+handoff apply only to reachable `managed=true` macOS targets that have a
+same-platform Agent artifact. An unmanaged Mac with a workload role still
+receives CLI and Agent updates, but not desktop identity.
 
 The expected target shape per calling context:
 

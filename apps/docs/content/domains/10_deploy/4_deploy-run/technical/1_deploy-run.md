@@ -149,7 +149,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Instance required | A bare app has more than one instance. | `error.code=validation_failed`, `error.meta.reason=instance_required` |
 | Instance driver unsupported | The selected instance does not have an Orbit node and source path for Agent execution. | `error.code=deploy.instance_driver_unsupported` |
 | Pipeline empty | The production instance has no configured deployment steps. | `error.code=deploy.pipeline_empty` |
-| Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=node.agent_unreachable`, `error.meta.reason=agent_push_unavailable` |
+| Agent unreachable | The owning node is ineligible or the Agent-push transport cannot be reached. | `error.code=orbit_agent_unavailable`, `error.meta.reason=agent_push_unavailable` |
 | Execution failed | The gateway cannot execute a step on the owning node. | `error.code=deploy.execution_failed` |
 | Active release missing | A release-aware pipeline did not leave a resolvable `live_path`. | `error.code=deploy.active_release_missing` |
 | Active release unsafe | The resolved `live_path` escapes the app source boundary. | `error.code=deploy.active_release_unsafe` |
