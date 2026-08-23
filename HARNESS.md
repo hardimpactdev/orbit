@@ -42,13 +42,13 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
+5. Before dispatch, map planned owned paths to the Acceptance Venues table; split different non-automated venues into separate feature branches.
 
 ### BUILD
 
-Keep docs, tests, and implementation aligned. Start with failing coverage in
-the owning framework. Prefer a small vertical slice and existing abstractions.
+An incidental/status question does not terminate a nonterminal loop, and a blocked sub-scope does not end other unblocked work. Continue until LAND, a required human-judgment handoff, or a genuine whole-goal blocker.
 
-Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>` (`grok --yolo --reasoning-effort medium` in the worktree). Do not substitute an owner subagent or direct owner implementation.
+Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
@@ -65,9 +65,7 @@ tests and `composer quality-check`; integrated runtime at the real proof venue;
 PTY evidence only for TTY/stream/liveness risk.
 
 When the Goal claims runtime reachability or convergence, proof must directly
-exercise the claimed final outcome. Configuration validation, artifact
-presence, and successful intermediate hops are supporting evidence, not
-substitutes. A failed, excluded, still-required, or deferred final hop means
+exercise the claimed final outcome. A failed, excluded, still-required, or deferred final hop means
 `Verification.runtime` cannot be recorded as `passed`. Acceptance and
 finalization share that contract for every non-`automated` venue: the existing
 `Verification.runtime` row must carry a candidate-bound structured receipt
@@ -88,16 +86,16 @@ not invent a post-LAND closure proof. Historical archives stay readable; the
 strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
-before the diff-routed broader gate, general review, and acceptance. When
-production PHP files changed, run focused Mago on those files before the first
-implementation handoff; skip focused Mago when none changed. The implementer owns focused checks and the one terminal gate; owner
+before the diff-routed broader gate, general review, and acceptance. Run
+focused Mago formatting and linting for every changed PHP file, including
+tests, before each candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
 and reviewer consume the exact-SHA receipt without rerunning it.
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).
+Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.
 Use `.agents/review-personas/general.md`. Require checkout proof.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new

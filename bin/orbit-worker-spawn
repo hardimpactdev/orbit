@@ -5,10 +5,14 @@ declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
 
-const ORBIT_WORKER_SPAWN_USAGE = 'Usage: bin/orbit-worker-spawn --role=<role> --cli=<grok|claude|codex|opencode> --brief=<path> [--name=<id>] [--extra-args=<string>] [--ready-delay=<seconds>] [--json]';
+const ORBIT_WORKER_SPAWN_USAGE = 'Usage: bin/orbit-worker-spawn --role=<role> --cli=<grok|claude|codex|opencode> --brief=<path> [--name=<id>] [--ready-delay=<seconds>] [--json]';
 
 try {
     $parsed = orbit_worker_parse_argv(array_slice($argv, 1));
+
+    if (array_key_exists('extra-args', $parsed['options'])) {
+        throw new RuntimeException('--extra-args is not supported');
+    }
 
     if ($parsed['positional'] !== []) {
         throw new RuntimeException(ORBIT_WORKER_SPAWN_USAGE);
@@ -18,7 +22,6 @@ try {
     $cli = orbit_worker_option_string($parsed['options'], 'cli');
     $brief = orbit_worker_option_string($parsed['options'], 'brief');
     $name = orbit_worker_option_string($parsed['options'], 'name');
-    $extraArgs = orbit_worker_option_string($parsed['options'], 'extra-args', '') ?? '';
     $readyDelayRaw = orbit_worker_option_string($parsed['options'], 'ready-delay', '8') ?? '8';
     $json = ($parsed['options']['json'] ?? false) === true;
 
@@ -40,7 +43,6 @@ try {
 
     $readyDelay = (int) $readyDelayRaw;
     orbit_worker_reject_newline('brief path', $brief);
-    orbit_worker_reject_newline('extra-args', $extraArgs);
 
     if (! is_file($brief)) {
         throw new RuntimeException("brief file does not exist: {$brief}");
@@ -81,9 +83,9 @@ try {
             'ORBIT_WORKER_ID='.$id,
             'ORBIT_WORKER_ROLE='.$role,
         ],
-        orbit_worker_command_argv($defaults, $extraArgs),
+        $defaults,
     );
-    $commandString = orbit_worker_command_string($command, '');
+    $commandString = orbit_worker_command_string($command);
     $created = orbit_tmux_run([
         'new-window',
         '-d',
@@ -289,7 +291,7 @@ function orbit_worker_resolve_setup_prompt(string $session, string $id, ?array $
                 return;
             }
 
-            if ($now - $confirmedAt >= 2.0) {
+            if (($now - $confirmedAt) >= 2.0) {
                 return;
             }
 
@@ -359,8 +361,7 @@ function orbit_worker_pane_looks_like_editor(string $raw): bool
 
     $text = orbit_worker_pane_plain_text($raw);
 
-    return str_contains($text, 'claude code')
-        || str_contains($text, 'bypass permissions');
+    return str_contains($text, 'claude code') || str_contains($text, 'bypass permissions');
 }
 
 /**

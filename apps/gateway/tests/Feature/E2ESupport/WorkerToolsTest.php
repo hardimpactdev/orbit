@@ -76,6 +76,41 @@ it('spawns a worker window, pipes the log, and delivers the bootstrap line', fun
     });
 });
 
+it('rejects any explicit --extra-args value before creating a worker', function (string $extraArgs): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin) use ($extraArgs): void {
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=impl',
+                '--cli=grok',
+                "--brief={$brief}",
+                '--name=impl-1',
+                '--ready-delay=1',
+                "--extra-args={$extraArgs}",
+                '--json',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('--extra-args is not supported')
+            ->and($fixture['worktree'].'/.orbit/workers/impl-1.json')
+            ->not
+            ->toBeFile()
+            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-1'))
+            ->toBeFalse();
+    });
+})->with([
+    'duplicated grok default' => ['--yolo'],
+    'empty string' => [''],
+    'reviewer flags' => ['--model opus --effort high'],
+]);
+
 it('captures a bounded rendered tmux snapshot for an exact worker without changing status', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         worker_tools_spawn($fixture, $socket, $fakeBin, 'impl-1');

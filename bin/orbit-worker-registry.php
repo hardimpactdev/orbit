@@ -602,30 +602,9 @@ function orbit_worker_run_command(array $command, ?string $cwd = null): array
 }
 
 /**
- * @param  list<string>  $default
- * @return list<string>
+ * @param  list<string>  $argv
  */
-function orbit_worker_command_argv(array $default, string $extraArgs): array
+function orbit_worker_command_string(array $argv): string
 {
-    if ($extraArgs === '') {
-        return array_values($default);
-    }
-
-    $tokens = preg_split('/\s+/', trim($extraArgs)) ?: [];
-
-    return array_values(array_merge(
-        $default,
-        array_values(array_filter($tokens, static fn (string $token): bool => $token !== '')),
-    ));
-}
-
-function orbit_worker_command_string(array $argv, string $extraArgs): string
-{
-    $base = implode(' ', $argv);
-
-    if ($extraArgs === '') {
-        return $base;
-    }
-
-    return $base.' '.$extraArgs;
+    return implode(' ', $argv);
 }

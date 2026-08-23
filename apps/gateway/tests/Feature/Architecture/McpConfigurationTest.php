@@ -287,8 +287,8 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
     $featureGraph = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
     $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
     $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.';
-    $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>` (`grok --yolo --reasoning-effort medium` in the worktree). Do not substitute an owner subagent or direct owner implementation.';
-    $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>` (`claude --dangerously-skip-permissions --model opus --effort high` in the worktree).';
+    $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.';
+    $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.';
     $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
     $watchSentence = 'Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.';
     $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.';
