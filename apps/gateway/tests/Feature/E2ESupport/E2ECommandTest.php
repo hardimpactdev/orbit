@@ -25,6 +25,18 @@ function e2eCommandProcessResult(bool $successful, string $output = '', string $
     return $result;
 }
 
+function artifactModeGatewayArtisanDockerRun(string $command): string
+{
+    expect($command)->toContain('; else ')->toContain('; fi || status=');
+
+    $else = explode('; else ', $command, 2)[1] ?? '';
+    $artifactRun = explode('; fi || status=', $else, 2)[0] ?? '';
+
+    expect($artifactRun)->not->toBe('');
+
+    return $artifactRun;
+}
+
 it('throws a runtime exception when an ssh command fails outside the pest assertion context', function (): void {
     $instance = m::mock(E2EInstance::class);
     $instance
@@ -71,6 +83,20 @@ it('runs gateway artisan through the prepared gateway image by default', functio
             ->not
             ->toContain('orbit-gateway:current')
             ->toContain('artisan route:list');
+    });
+});
+
+it('uses host networking for artifact-mode gateway artisan so Agent push can reach WireGuard nodes', function (): void {
+    withE2ETopologyEnvironment([], function (): void {
+        $command = E2ECommand::gatewayArtisanCommand('tinker --execute=1');
+        $artifactRun = artifactModeGatewayArtisanDockerRun($command);
+
+        expect($artifactRun)
+            ->toContain("'orbit-gateway:prepared-current'")
+            ->toContain('--network host')
+            ->toContain('artisan tinker --execute=1')
+            ->and(substr_count($command, 'docker run --rm --pull never --network host'))
+            ->toBe(2);
     });
 });
 
