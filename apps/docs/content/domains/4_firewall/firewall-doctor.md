@@ -115,10 +115,19 @@ Required test files:
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for firewall family scope and firewall drift reporting. |
 | `apps/gateway/tests/Unit/Services/Firewall/FirewallRuleProbeTest.php` | In-memory firewall probe diff behavior (see breakdown below). |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallTargetPlatformTest.php` | SQL and PHP Ubuntu firewall-target eligibility parity for exact `ubuntu`, `ubuntu_` versions, hyphenated values, and non-Ubuntu platforms. |
-| `packages/core/tests/Firewall/RetainedFirewallProofIdentityTest.php` | Candidate-bound Beast retained-Incus proof identity, fail-closed mismatch, and receipt line. |
-| `packages/core/tests/Firewall/RetainedFirewallProofInspectionTest.php` | Managed comment uniqueness, unrelated same-port preservation, and managed-allow-before-deny order. |
+| `apps/gateway/tests/Unit/Services/Firewall/FirewallTargetPlatformTest.php` | SQL and PHP Ubuntu firewall-target eligibility parity for exact lowercase `ubuntu`, `ubuntu_` versions, hyphenated values, uppercase values, and non-Ubuntu platforms. |
+| `apps/gateway/tests/Feature/E2ESupport/FirewallRetainedProofHelperTest.php` | Candidate-bound Beast retained-Incus proof identity, fail-closed checkout digest, owned topology, and UFW source/order assertions. |
 | `apps/e2e/tests/Feature/Commands/FirewallDoctorAdoptTest.php` | Real `doctor --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
+
+Future firewall candidates run the reusable Beast retained-Incus proof with
+`bin/orbit-firewall-retained-proof --candidate=<40-character-sha>` from the
+feature worktree after a clean commit. The rig syncs the exact candidate onto
+the shared Beast retained topology, verifies a fail-closed checkout digest of
+the firewall/Doctor/public-SSH/proof surface on the remote runtime overlay,
+then exercises allow, list, Doctor, and remove. It retains the topology and
+receipt on success or failure. `--cleanup` removes only this rig's seeded UFW
+rules and local proof state after identity checks; it does not stop the shared
+retained topology. Do not use `composer test:e2e*` for this venue.
 
 No current E2E test is mapped for firewall-family read-only or restore coverage.
 

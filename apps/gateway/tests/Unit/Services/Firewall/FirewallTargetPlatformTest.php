@@ -31,4 +31,8 @@ it('keeps SQL and PHP Ubuntu firewall eligibility in parity', function (mixed $p
     'debian_12' => ['debian_12', false],
     'empty' => ['', false],
     'null' => [null, false],
+    'Ubuntu_24-04' => ['Ubuntu_24-04', false],
+    'UBUNTU_24-04' => ['UBUNTU_24-04', false],
+    'Ubuntu' => ['Ubuntu', false],
+    'UBUNTU' => ['UBUNTU', false],
 ]);

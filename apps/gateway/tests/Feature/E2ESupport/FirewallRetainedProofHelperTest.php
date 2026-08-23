@@ -1,0 +1,154 @@
+<?php
+
+declare(strict_types=1);
+
+beforeEach(function (): void {
+    require_once repo_path('bin/orbit-firewall-retained-proof.php');
+});
+
+it('rejects uppercase-ineligible topology names and synthetic proof prefixes', function (): void {
+    expect(fn () => firewall_proof_bind([
+        'candidate' => str_repeat('a', times: 40),
+        'local_checkout_digest' => str_repeat('b', times: 64),
+        'remote_checkout_digest' => str_repeat('b', times: 64),
+        'target' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa',
+        'host' => 'beast',
+        'instances' => [
+            'operator' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa-operator',
+            'gateway' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa-gateway',
+            'dev' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa-dev',
+        ],
+    ]))->toThrow(InvalidArgumentException::class, 'target identity mismatch');
+});
+
+it('does not skip candidate equality when remote git metadata is absent', function (): void {
+    $bound = firewall_proof_bind([
+        'candidate' => str_repeat('a', times: 40),
+        'local_checkout_digest' => str_repeat('b', times: 64),
+        'remote_checkout_digest' => str_repeat('b', times: 64),
+        'target' => 'dev-501dc2',
+        'host' => 'beast',
+        'instances' => [
+            'operator' => 'orbit-e2e-dev-501dc2-operator',
+            'gateway' => 'orbit-e2e-dev-501dc2-gateway',
+            'dev' => 'orbit-e2e-dev-501dc2-dev',
+        ],
+    ]);
+
+    expect($bound['checkout_digest'])
+        ->toBe(str_repeat('b', times: 64))
+        ->and($bound)
+        ->not->toHaveKey('cli_digest');
+
+    expect(fn () => firewall_proof_bind([
+        'candidate' => str_repeat('a', times: 40),
+        'local_checkout_digest' => str_repeat('b', times: 64),
+        'remote_checkout_digest' => str_repeat('d', times: 64),
+        'target' => 'dev-501dc2',
+        'host' => 'beast',
+        'instances' => [
+            'operator' => 'orbit-e2e-dev-501dc2-operator',
+            'gateway' => 'orbit-e2e-dev-501dc2-gateway',
+            'dev' => 'orbit-e2e-dev-501dc2-dev',
+        ],
+    ]))->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+});
+
+it('rejects a remote HEAD that does not equal the candidate', function (): void {
+    expect(fn () => firewall_proof_bind([
+        'candidate' => str_repeat('a', times: 40),
+        'local_checkout_digest' => str_repeat('b', times: 64),
+        'remote_checkout_digest' => str_repeat('b', times: 64),
+        'target' => 'dev-501dc2',
+        'host' => 'beast',
+        'instances' => [
+            'operator' => 'orbit-e2e-dev-501dc2-operator',
+            'gateway' => 'orbit-e2e-dev-501dc2-gateway',
+            'dev' => 'orbit-e2e-dev-501dc2-dev',
+        ],
+        'remote_head' => str_repeat('c', times: 40),
+    ]))->toThrow(InvalidArgumentException::class, 'candidate SHA mismatch');
+});
+
+it('validates retained state identity before a sync would run', function (): void {
+    $state = [
+        'candidate' => str_repeat('a', times: 40),
+        'checkout_digest' => str_repeat('b', times: 64),
+        'target' => 'dev-501dc2',
+        'host' => 'beast',
+        'instances' => [
+            'operator' => 'orbit-e2e-dev-501dc2-operator',
+            'gateway' => 'orbit-e2e-dev-501dc2-gateway',
+            'dev' => 'orbit-e2e-dev-501dc2-dev',
+        ],
+    ];
+
+    expect(firewall_proof_validate_state($state, str_repeat('a', times: 40))['target'])
+        ->toBe('dev-501dc2');
+
+    expect(fn () => firewall_proof_validate_state($state, str_repeat('c', times: 40)))
+        ->toThrow(InvalidArgumentException::class, 'candidate SHA mismatch');
+});
+
+it('refuses to stop the shared retained topology', function (): void {
+    expect(fn () => firewall_proof_refuse_shared_topology_stop())
+        ->toThrow(RuntimeException::class, 'shared topology stop refused');
+});
+
+it('keeps duplicate managed comments distinct and requires the exact allow source', function (): void {
+    $rules = firewall_proof_parse_ufw(<<<'UFW'
+        Status: active
+
+             To                         Action      From
+             --                         ------      ----
+        [ 1] 8080/tcp                   ALLOW IN    10.9.9.9/32                 # orbit:private-api
+        [ 2] 8080/tcp                   ALLOW IN    192.168.1.0/24              # orbit:private-api
+        [ 3] 8080/tcp                   ALLOW IN    10.6.0.0/24                 # protected unrelated rule
+        [ 4] 8080/tcp                   DENY IN     Anywhere
+        UFW);
+
+    expect(firewall_proof_managed_port_rules($rules))
+        ->toHaveCount(2)
+        ->and(fn () => firewall_proof_assert_single_managed_source($rules, FIREWALL_PROOF_SOURCE))
+        ->toThrow(RuntimeException::class, 'failed-step=allow managed source mismatch');
+});
+
+it('accepts a single replaced managed allow that precedes deny', function (): void {
+    $rules = firewall_proof_parse_ufw(<<<'UFW'
+        Status: active
+
+             To                         Action      From
+             --                         ------      ----
+        [ 1] 8080/tcp                   ALLOW IN    192.168.1.0/24              # orbit:private-api
+        [ 2] 8080/tcp                   ALLOW IN    10.6.0.0/24                 # protected unrelated rule
+        [ 3] 8080/tcp                   DENY IN     Anywhere
+        UFW);
+
+    firewall_proof_assert_single_managed_source($rules, FIREWALL_PROOF_SOURCE);
+
+    expect(firewall_proof_managed_allow_precedes_deny($rules))->toBeTrue()
+        ->and(firewall_proof_seed_cleanup_indexes($rules))
+        ->toBe([3, 2, 1]);
+});
+
+it('names allow and doctor failures as failed steps', function (): void {
+    expect(fn () => firewall_proof_assert_allow_succeeded(['error' => ['code' => 'firewall_rule.enactment_failed']]))
+        ->toThrow(RuntimeException::class, 'failed-step=allow')
+        ->and(fn () => firewall_proof_assert_doctor_healthy(['healthy' => false]))
+        ->toThrow(RuntimeException::class, 'failed-step=doctor');
+});
+
+it('keeps process stdout and stderr separate under a timeout', function (): void {
+    $result = firewall_proof_run_command(
+        [PHP_BINARY, '-r', 'fwrite(STDOUT, "out"); fwrite(STDERR, "err");'],
+        repo_path(),
+        10,
+    );
+
+    expect($result['exit'])
+        ->toBe(0)
+        ->and($result['stdout'])
+        ->toBe('out')
+        ->and($result['stderr'])
+        ->toBe('err');
+});

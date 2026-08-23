@@ -7,9 +7,10 @@ namespace App\Services\Firewall;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Ubuntu firewall-target eligibility. Exact `ubuntu` or a literal
- * `ubuntu_` prefix. The LIKE escape keeps hyphenated values such as
- * `ubuntu-24-04` ineligible.
+ * Ubuntu firewall-target eligibility. Exact lowercase `ubuntu` or a
+ * literal lowercase `ubuntu_` prefix. SQL lower(platform) = platform
+ * keeps case-insensitive LIKE from admitting `Ubuntu_24-04`. The LIKE
+ * escape keeps hyphenated values such as `ubuntu-24-04` ineligible.
  */
 final class FirewallTargetPlatform
 {
@@ -21,7 +22,11 @@ final class FirewallTargetPlatform
     public static function constrainUbuntu(Builder $query): void
     {
         $query
-            ->where('platform', 'ubuntu')
-            ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']);
+            ->whereRaw('lower(platform) = platform')
+            ->where(function (Builder $ubuntuQuery): void {
+                $ubuntuQuery
+                    ->where('platform', 'ubuntu')
+                    ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']);
+            });
     }
 }

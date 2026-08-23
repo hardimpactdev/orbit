@@ -105,6 +105,10 @@ composer e2e:incus -- --live --manual \
 # Refresh the current checkout source mount for a running retained Incus topology.
 composer e2e:incus -- --sync --id=dev-1a2b3c
 
+# Firewall candidates: reusable Beast retained-Incus proof against a clean SHA.
+# Retains the shared topology. Cleanup removes only proof-owned UFW seed rules.
+bin/orbit-firewall-retained-proof --candidate=<40-character-sha>
+
 # Preview the acquisition plan without provisioning anything.
 composer e2e:incus -- --start --dry-run \
   --topology=operator_gateway_app-dev_app-prod_agent_websocket
