@@ -213,6 +213,7 @@ function run_firewall_proof_scenario(array $state): string
             .' --protocol='.RetainedFirewallProofScenario::Protocol
             .' --json',
         asOrbit: true,
+        allowFailure: true,
     ));
 
     if (! isset($allowPayload['success'])) {
@@ -305,7 +306,7 @@ function run_e2e_incus(string $root, array $arguments): string
     return $result['stdout'];
 }
 
-function beast_incus_exec(string $instance, string $command, bool $asOrbit = false): string
+function beast_incus_exec(string $instance, string $command, bool $asOrbit = false, bool $allowFailure = false): string
 {
     $guest = $asOrbit
         ? 'sudo -u orbit bash -lc '.escapeshellarg($command)
@@ -320,7 +321,7 @@ function beast_incus_exec(string $instance, string $command, bool $asOrbit = fal
         'incus exec '.escapeshellarg($instance).' -- '.$guest,
     ], getcwd() ?: '/', 180);
 
-    if ($result['exit'] !== 0) {
+    if ($result['exit'] !== 0 && $allowFailure === false) {
         throw new RuntimeException("incus exec {$instance} failed: ".$result['stderr'].$result['stdout']);
     }
 

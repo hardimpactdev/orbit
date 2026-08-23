@@ -33,8 +33,9 @@ final class RetainedFirewallProofScenario
         $managed = self::ManagedIdentity;
 
         return [
+            "sudo ufw allow in on wg-orbit comment 'Orbit node security baseline permits SSH only through WireGuard.'",
             'sudo ufw --force enable',
-            "sudo ufw allow {$port}/{$protocol} comment '{$protected}'",
+            "sudo ufw allow from 10.6.0.0/24 to any port {$port} proto {$protocol} comment '{$protected}'",
             "sudo ufw allow from any to any port {$port} proto {$protocol} comment '{$managed}'",
             "sudo ufw deny {$port}/{$protocol}",
         ];
