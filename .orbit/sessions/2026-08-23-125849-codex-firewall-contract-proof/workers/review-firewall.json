@@ -1,0 +1,32 @@
+{
+    "id": "review-firewall",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-firewall",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-firewall-contract-proof",
+        "window": "review-firewall",
+        "pane_id": "%13",
+        "pane_pid": 61917,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/briefs/review-firewall-contract-proof.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T09:50:03Z",
+    "note": "FIX: D1 SQL/PHP ubuntu case parity break; D2 allow-failure repaired then reported passed; D3 seeded managed rule makes allow assertions unfalsifiable; D4 gateway code not candidate-bound; D5 proof-only classes in packages/core force retained-incus on rig edits. HUMAN_JUDGMENT: required.",
+    "started_at": "2026-08-23T09:41:17Z",
+    "exited_at": "2026-08-23T09:52:31Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/handoff/review-firewall-eac1f39212a60ebcefb62caa08686305b0ee5d53.md"
+}

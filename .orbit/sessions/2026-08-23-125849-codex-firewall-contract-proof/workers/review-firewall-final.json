@@ -1,0 +1,37 @@
+{
+    "id": "review-firewall-final",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-firewall-final",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-firewall-contract-proof",
+        "window": "review-firewall-final",
+        "pane_id": "%14",
+        "pane_pid": 13788,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/briefs/review-firewall-contract-proof-final.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T10:56:25Z",
+    "note": "verdict=PASS; HUMAN_JUDGMENT=not-required; docs paragraph confirmed accurate (binding token, /home/orbit/orbit, backs-fresh-overlay all match code; 'complete tracked tree on the synced transport checkout' verified numerically: 5111 digested, 5433 dropped, 0 of the dropped would be shipped by archiveExcludePatterns); empty/failed git ls-files now fails closed via exit-code guard plus post-filter empty guard, regression exercises both branches for real (tmpdir git exit=128 confirmed); digest fc90653487925a02 reproduced independently and moved correctly from 034a408b; 2 POLISH (bare shell_exec left in local_firewall_proof_candidate dirty check; 'complete tracked tree' precise only with its qualifier); candidate=7323a43886b9c08e4799ab1eb5968b44903847f1",
+    "started_at": "2026-08-23T10:05:54Z",
+    "exited_at": "2026-08-23T10:58:02Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/handoff/review-firewall-final-7323a43886b9c08e4799ab1eb5968b44903847f1.md"
+}

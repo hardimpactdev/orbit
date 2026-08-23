@@ -1,0 +1,30 @@
+{
+    "id": "impl-firewall",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-firewall",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-firewall-contract-proof",
+        "window": "impl-firewall",
+        "pane_id": "%8",
+        "pane_pid": 10488,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/briefs/impl-firewall-contract-proof.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T10:52:11Z",
+    "note": "Docs accuracy and empty-tree fail-closed closed for candidate=7323a43886b9c08e4799ab1eb5968b44903847f1. Other POLISH not implemented. Shared topology retained.",
+    "started_at": "2026-08-23T09:05:32Z",
+    "exited_at": "2026-08-23T10:58:02Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-firewall-contract-proof/.orbit/workers/handoff/impl-firewall-7323a43886b9c08e4799ab1eb5968b44903847f1.md"
+}

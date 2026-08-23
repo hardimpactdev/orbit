@@ -1,0 +1,21 @@
+{
+    "candidate": "7323a43886b9c08e4799ab1eb5968b44903847f1",
+    "binding": "synced-tracked-tree",
+    "checkout_digest": "fc90653487925a022b5d646cdf2ab82b8c0669e23cee8b7f0b5021ceb46087c7",
+    "target": "dev-501dc2",
+    "host": "beast",
+    "instances": {
+        "operator": "orbit-e2e-dev-501dc2-operator",
+        "gateway": "orbit-e2e-dev-501dc2-gateway",
+        "dev": "orbit-e2e-dev-501dc2-dev"
+    },
+    "topology_id": "dev-501dc2",
+    "checkouts": {
+        "gateway": "/home/orbit/orbit-run",
+        "operator": "/home/orbit/orbit-run",
+        "dev": "/home/orbit/orbit-run"
+    },
+    "receipt": "passed - candidate=7323a43886b9c08e4799ab1eb5968b44903847f1; venue=retained-incus; environment=dev-fixture; target=dev-501dc2; binding=synced-tracked-tree; checkout_digest=fc90653487925a022b5d646cdf2ab82b8c0669e23cee8b7f0b5021ceb46087c7; expected=allow-list-doctor-remove pass with owned comment and unrelated same-port preserved; observed=allow-list-doctor-remove passed, managed allow preceded deny, protected same-port survived; result=passed; evidence=`.orbit/evidence/firewall-retained-proof/7323a43886b9c08e4799ab1eb5968b44903847f1.json`",
+    "observed": "allow-list-doctor-remove passed, managed allow preceded deny, protected same-port survived",
+    "result": "passed"
+}
