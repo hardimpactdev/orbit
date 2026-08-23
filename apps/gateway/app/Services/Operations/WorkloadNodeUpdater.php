@@ -217,7 +217,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function preMutationSkip(Node $node): ?array
     {
-        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
             return null;
         }
 
@@ -463,7 +463,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function desktopArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
     {
-        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
             return null;
         }
 

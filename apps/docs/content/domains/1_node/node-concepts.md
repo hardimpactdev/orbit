@@ -506,7 +506,7 @@ the Agent, and stops that child on Quit. The CLI
 stays installed and usable when Orbit Desktop is not running. Agent-dependent
 commands then fail with `orbit_agent_unavailable`, naming the node and, on
 macOS, instructing the operator to open Orbit Desktop. `update:all` treats a
-managed Mac whose Agent is unreachable before mutation as a skip with
+selected Mac whose Agent is unreachable before mutation as a skip with
 `orbit_desktop_not_running` rather than that failure.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no

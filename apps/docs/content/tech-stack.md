@@ -466,7 +466,7 @@ desktop/Agent/CLI update from the owner-only pending handoff or a gateway-select
 manifest. The release manifest includes a Darwin ARM64 desktop updater archive
 with URL, SHA-256, Tauri updater signature, version, platform, and architecture.
 `update:all` stages that archive with matching Agent and CLI artifacts for
-reachable managed Macs and writes an owner-only pending desktop update handoff
+reachable selected Macs and writes an owner-only pending desktop update handoff
 for Orbit Desktop.
 
 V1 is scoped narrowly:

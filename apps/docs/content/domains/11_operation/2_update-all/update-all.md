@@ -119,16 +119,16 @@ fan-out. Unmanaged roleless clients stay excluded. When the gateway is the
 calling peer, the command therefore updates the gateway installation and
 selected nodes only.
 
-A managed macOS/Darwin target whose Agent is unavailable during an explicit
+A selected macOS/Darwin target whose Agent is unavailable during an explicit
 pre-mutation readiness check is reported as skipped with stable reason
 `orbit_desktop_not_running`. That skip is visible in human, JSON, and stream
 output and does not fail the operation. After any update side effect starts,
-later errors stay failures and cannot be relabeled skipped. Non-managed
-role-bearing targets keep the current required failure behavior.
+later errors stay failures and cannot be relabeled skipped. Linux and other
+non-macOS role-bearing targets keep the current required failure behavior.
 
 The same immutable update plan stages desktop, Agent, and CLI artifacts for a
-reachable managed Mac. Linux targets still receive CLI and Agent artifacts
-only. On that managed Mac the CLI defers Agent restart to Orbit Desktop
+reachable selected Mac. Linux targets still receive CLI and Agent artifacts
+only. On that selected Mac the CLI defers Agent restart to Orbit Desktop
 through the pending desktop update handoff, which is owner-only, and does not
 restart a standalone Agent service. Native Orbit Desktop restart is consumed
 from that handoff and lands in a separate native slice.

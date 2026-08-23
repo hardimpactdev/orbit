@@ -487,6 +487,10 @@ it('installs macos agent artifacts into the user local agent binary path', funct
         ),
     );
 
+    Http::fake([
+        "http://{$node->wireguard_address}:9477/*" => Http::response('', 405),
+    ]);
+
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
     expect($results[0]['status'])
@@ -536,6 +540,10 @@ it('retries Agent artifact installs through the canonical macos launcher', funct
             ],
         ),
     );
+
+    Http::fake([
+        "http://{$node->wireguard_address}:9477/*" => Http::response('', 405),
+    ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
     $payloads = workload_updater_install_payloads($shell, node: 'mini');
@@ -609,6 +617,10 @@ it('records agent artifact installs when the full-stage disconnects during agent
             ],
         ),
     );
+
+    Http::fake([
+        "http://{$node->wireguard_address}:9477/*" => Http::response('', 405),
+    ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
@@ -702,6 +714,62 @@ it('skips a workload node already on the target version and runs no remote updat
         ->toBe(0);
 });
 
+it('skips a selected role-bearing macOS node whose Agent is unavailable before mutation', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $mac = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'mini',
+            'managed' => false,
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.80',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.test/orbit-macos-arm64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.80:9477/*' => fn () => throw new ConnectionException('Connection refused'),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'mini',
+                'node' => 'mini',
+                'roles' => ['app-dev'],
+                'status' => 'skipped',
+                'reason' => 'orbit_desktop_not_running',
+            ],
+        ])
+        ->and($shell->calls)
+        ->toBeEmpty()
+        ->and($mac->fresh()->installed_cli)
+        ->toBeNull()
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(
+            ['workload.mini', 'done', 'Workload node mini skipped: Orbit Desktop is not running'],
+        )
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
+});
+
 it('skips a managed macOS client whose Agent is unavailable before mutation', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -758,7 +826,7 @@ it('skips a managed macOS client whose Agent is unavailable before mutation', fu
         ->toBe(0);
 });
 
-it('does not stage a desktop archive for an unmanaged role-bearing Mac', function (): void {
+it('stages a desktop archive and pending automatic handoff for a reachable selected role-bearing Mac', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -774,6 +842,7 @@ it('does not stage a desktop archive for an unmanaged role-bearing Mac', functio
             'user' => 'nckrtl',
             'orbit_path' => '/Users/nckrtl/orbit',
         ]);
+    $desktop = workload_updater_desktop_artifact();
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
         workload_updater_darwin_snapshot(),
@@ -789,9 +858,26 @@ it('does not stage a desktop archive for an unmanaged role-bearing Mac', functio
     expect($results[0]['status'] ?? null)
         ->toBe('completed')
         ->and($payload['desktop_artifact'])
-        ->toBeNull()
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/desktop/darwin-arm64?token=fake",
+            'sha256' => $desktop['sha256'],
+            'signature' => $desktop['signature'],
+            'version' => '1.2.3',
+            'platform' => 'darwin',
+            'architecture' => 'arm64',
+            'staged_path' =>
+                '/Users/nckrtl/.local/share/orbit/updates/desktop-'
+                    .substr($desktop['sha256'], offset: 0, length: 12)
+                    .'.tar.gz',
+        ])
         ->and($payload['pending_desktop_update'])
-        ->toBeNull();
+        ->toMatchArray([
+            'path' => '/Users/nckrtl/.config/orbit/pending-desktop-update.json',
+            'operation_id' => $run->id,
+            'version' => '1.2.3',
+            'build_id' => null,
+            'install_mode' => 'automatic',
+        ]);
 });
 
 it('omits an incomplete desktop identity when the same-platform Agent artifact is absent', function (): void {
@@ -1163,7 +1249,7 @@ it('does not send role images to macos workload cli installers', function (): vo
     app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()
+    $node = Node::factory()
         ->appDev()
         ->create([
             'name' => 'mini',
@@ -1187,6 +1273,10 @@ it('does not send role images to macos workload cli installers', function (): vo
             ],
         ),
     );
+
+    Http::fake([
+        "http://{$node->wireguard_address}:9477/*" => Http::response('', 405),
+    ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
@@ -1362,6 +1452,10 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
             ],
         ),
     );
+
+    Http::fake([
+        "http://{$node->wireguard_address}:9477/*" => Http::response('', 405),
+    ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 

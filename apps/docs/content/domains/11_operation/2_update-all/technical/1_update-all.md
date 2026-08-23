@@ -149,21 +149,22 @@ execution details live in the renderer contracts.
   through the local target.
 - Apply gateway-owned authorization before updating any installation.
 
-A managed macOS/Darwin target whose Agent is unreachable during the
+A selected macOS/Darwin target whose Agent is unreachable during the
 pre-mutation readiness check is skipped with
 `reason=orbit_desktop_not_running` before any install mutation. The complete
 event carries those skips as `success.data.skipped_targets`, a map of node
 name to `orbit_desktop_not_running`. Skipped Macs do not fail `update:all`
 and do not receive a remote pending restart. After the first side effect,
-later errors stay `failed` and cannot be relabeled `skipped`. Non-managed
-role-bearing targets keep required failure behavior when Agent push is
+later errors stay `failed` and cannot be relabeled `skipped`. Linux and other
+non-macOS role-bearing targets keep required failure behavior when Agent push is
 unavailable. Desktop staging and the automatic pending-desktop-update
-handoff apply only to reachable `managed=true` macOS targets that have a
-same-platform Agent artifact. On those targets the CLI installs and verifies
+handoff apply to every reachable selected macOS/Darwin target that has a
+same-platform Agent artifact, including role-bearing Macs whose stored
+`managed` flag is false. On those targets the CLI installs and verifies
 CLI and Agent bytes, then defers Agent restart to Orbit Desktop through the
 owner-only handoff and makes no systemd, launchd, or unmanaged restart call.
-An unmanaged Mac with a workload role still receives CLI and Agent updates,
-but not desktop identity.
+Stored `managed=true` remains the roleless fleet-selection opt-in and is not
+required for Desktop ownership after selection.
 
 The expected target shape per calling context:
 
@@ -492,7 +493,7 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php` | Direct `POST /api/update/all` is absent while `POST /api/update/all/start` remains. |
 | `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
-| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, managed Mac pre-mutation skip, and post-mutation failure. |
+| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, selected macOS Desktop pre-mutation skip, Desktop staging for role-bearing Macs, and post-mutation failure. |
 | `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target union of role-bearing Agent-eligible nodes and `managed=true` clients, with caller exclusion. |
 | `apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php` | Owner-only pending desktop update handoff path safety, atomic write, stale identity, and partial artifact rejection. |
 | `apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php` | Local fleet-update CLI install: Desktop handoff defers Agent restart with no systemd or launchd calls, and standalone systemd, launchd, and unmanaged restart paths stay unchanged. |
