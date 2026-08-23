@@ -71,11 +71,13 @@ function agent_unreachable_platform_process_target(): array
         'node_id' => $node->id,
         'name' => 'mysql',
     ]);
-    $process = Process::factory()->forOwner($node)->create([
-        'name' => 'mysql',
-        'tool' => 'mysql',
-        'runtime' => ProcessRuntime::Docker,
-    ]);
+    $process = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'mysql',
+            'tool' => 'mysql',
+            'runtime' => ProcessRuntime::Docker,
+        ]);
 
     return [$node, new ToolRuntimeTarget($tool, $node, $process)];
 }
