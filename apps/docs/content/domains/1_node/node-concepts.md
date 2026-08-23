@@ -500,8 +500,9 @@ history, and exposes the command push endpoint on the Agent listener. The
 gateway verifies that endpoint with operation tokens. The service also exposes
 minimal loopback health and status endpoints for local UI/readiness checks.
 
-Orbit Desktop is the macOS lifecycle owner of Orbit Agent. Native supervisor,
-login-item, and menu implementation lands separately in `apps/macos`. The CLI
+Orbit Desktop is the macOS lifecycle owner of Orbit Agent. It starts at login,
+supervises one owner-local Agent child, hides the dashboard without stopping
+the Agent, and stops that child on Quit. The CLI
 stays installed and usable when Orbit Desktop is not running. Agent-dependent
 commands then fail with `orbit_agent_unavailable`, naming the node and, on
 macOS, instructing the operator to open Orbit Desktop. `update:all` treats a
@@ -509,16 +510,17 @@ managed Mac whose Agent is unreachable before mutation as a skip with
 `orbit_desktop_not_running` rather than that failure.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
-menu job history, no native platform installer packaging, signing, notarization,
-or separate approval UI. Orbit still installs and updates the owner-user Agent
-artifact. When a fleet update includes a Desktop artifact and pending Desktop
-handoff, the CLI defers Agent restart to Orbit Desktop and does not restart an
-existing managed service. Otherwise it restarts an existing managed service;
-bootstrap owns first service creation and updates do not create a missing
-service. Agent execution is limited to explicitly supported binary argv
-envelopes with node-local binary allowlisting. `app-dev` convergence uses
-direct command envelopes that the gateway constructs, authorizes, and sends
-through Agent push.
+menu job history, and no separate approval UI. Native Darwin updater archives
+and DMGs are part of the exact-candidate release; Apple Developer ID signing
+and notarization fail closed when publication requests them without credentials.
+Orbit still installs and updates the owner-user Agent artifact. When a fleet
+update includes a Desktop artifact and pending Desktop handoff, the CLI defers
+Agent restart to Orbit Desktop and does not restart an existing managed service.
+Otherwise it restarts an existing managed service; bootstrap owns first service
+creation and updates do not create a missing service. Agent execution is
+limited to explicitly supported binary argv envelopes with node-local binary
+allowlisting. `app-dev` convergence uses direct command envelopes that the
+gateway constructs, authorizes, and sends through Agent push.
 
 ## Access Policy
 

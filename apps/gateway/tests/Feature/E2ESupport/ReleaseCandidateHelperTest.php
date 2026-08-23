@@ -1649,14 +1649,20 @@ function release_candidate_write_native_bundle(
     mkdir($dir, recursive: true);
     file_put_contents("{$dir}/orbit-agent-macos-arm64", "imported-agent-{$commit}\n");
     chmod("{$dir}/orbit-agent-macos-arm64", 0o755);
+    file_put_contents("{$dir}/Orbit.app.tar.gz", "imported-desktop-{$commit}\n");
+    file_put_contents("{$dir}/Orbit.app.tar.gz.sig", "dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl\n");
+    file_put_contents("{$dir}/Orbit.dmg", "imported-dmg-{$commit}\n");
 
     $values = array_merge([
-        'schema' => '1',
+        'schema' => '2',
         'commit' => $commit,
         'version' => $version,
         'builder_os' => 'Darwin',
         'builder_arch' => 'arm64',
         'sha256_agent_darwin_arm64' => (string) hash_file('sha256', "{$dir}/orbit-agent-macos-arm64"),
+        'sha256_desktop_darwin_arm64' => (string) hash_file('sha256', "{$dir}/Orbit.app.tar.gz"),
+        'sha256_dmg_darwin_arm64' => (string) hash_file('sha256', "{$dir}/Orbit.dmg"),
+        'desktop_signature_darwin_arm64' => 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl',
     ], $manifestOverrides);
 
     $lines = '';

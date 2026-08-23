@@ -91,12 +91,18 @@ jobs:
             --pattern orbit-macos-arm64 \
             --pattern orbit-reverb-linux-amd64.tar \
             --pattern orbit-release-manifest.json \
+            --pattern Orbit.app.tar.gz \
+            --pattern Orbit.app.tar.gz.sig \
+            --pattern Orbit.dmg \
             --dir "$asset_dir"
 
           test -s "$asset_dir/orbit-linux-x64"
           test -s "$asset_dir/orbit-macos-arm64"
           test -s "$asset_dir/orbit-reverb-linux-amd64.tar"
           test -s "$asset_dir/orbit-release-manifest.json"
+          test -s "$asset_dir/Orbit.app.tar.gz"
+          test -s "$asset_dir/Orbit.app.tar.gz.sig"
+          test -s "$asset_dir/Orbit.dmg"
 
           echo "dir=${asset_dir}" >> "$GITHUB_OUTPUT"
 
@@ -149,6 +155,37 @@ jobs:
               'linux-amd64' => 'orbit-linux-x64',
               'darwin-arm64' => 'orbit-macos-arm64',
           ];
+
+          $desktop = $manifest['desktop_artifacts']['darwin-arm64'] ?? null;
+          $desktopArchive = 'Orbit.app.tar.gz';
+          $expectedDesktopUrl = "https://github.com/{$repository}/releases/download/v{$version}/{$desktopArchive}";
+
+          if (! is_array($desktop)) {
+              fail('Release manifest missing Darwin ARM64 desktop artifact.');
+          }
+
+          if (($desktop['url'] ?? null) !== $expectedDesktopUrl) {
+              fail("Release manifest desktop URL must point at {$expectedDesktopUrl}.");
+          }
+
+          if (($desktop['platform'] ?? null) !== 'darwin' || ($desktop['architecture'] ?? null) !== 'arm64') {
+              fail('Release manifest desktop artifact must be darwin/arm64.');
+          }
+
+          if (($desktop['version'] ?? null) !== $version) {
+              fail('Release manifest desktop version must match the release version.');
+          }
+
+          $desktopHash = hash_file('sha256', "{$assetDir}/{$desktopArchive}");
+          $signature = trim((string) file_get_contents("{$assetDir}/Orbit.app.tar.gz.sig"));
+
+          if (! is_string($desktopHash) || ($desktop['sha256'] ?? null) !== $desktopHash) {
+              fail('Release manifest desktop sha256 does not match the promoted archive.');
+          }
+
+          if (! is_string($desktop['signature'] ?? null) || $desktop['signature'] !== $signature) {
+              fail('Release manifest desktop signature does not match the promoted .sig asset.');
+          }
 
           foreach ($expectedArtifacts as $platform => $asset) {
               $artifact = $manifest['cli_artifacts'][$platform] ?? null;

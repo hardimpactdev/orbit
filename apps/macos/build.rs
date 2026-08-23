@@ -1,6 +1,32 @@
 fn main() {
+    emit_orbit_version();
     ensure_tauri_context_icon();
     tauri_build::build();
+}
+
+fn emit_orbit_version() {
+    let version_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../VERSION");
+    println!("cargo:rerun-if-changed={}", version_path.display());
+
+    let version = std::fs::read_to_string(&version_path)
+        .expect("root VERSION must be readable")
+        .trim()
+        .to_string();
+
+    if version.is_empty() {
+        panic!("root VERSION is empty");
+    }
+
+    println!("cargo:rustc-env=ORBIT_VERSION={version}");
+
+    if std::env::var("ORBIT_NATIVE_RELEASE_BUILD").ok().as_deref() == Some("1")
+        && version != env!("CARGO_PKG_VERSION")
+    {
+        panic!(
+            "native release build requires Cargo.toml version {version}, found {}",
+            env!("CARGO_PKG_VERSION")
+        );
+    }
 }
 
 fn ensure_tauri_context_icon() {

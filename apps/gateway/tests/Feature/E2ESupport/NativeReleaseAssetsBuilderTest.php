@@ -40,14 +40,24 @@ it('writes an atomic Darwin arm64 Agent bundle with a rigid checksum manifest', 
             ->toBeEmpty();
 
         $manifest = native_release_assets_parse_manifest("{$fixture['output']}/native-assets.env");
-        expect($manifest)->toMatchArray([
-            'schema' => '1',
-            'commit' => str_repeat('a', 40),
-            'version' => '0.1.200',
-            'builder_os' => 'Darwin',
-            'builder_arch' => 'arm64',
-            'sha256_agent_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/orbit-agent-macos-arm64"),
-        ]);
+        expect($manifest)
+            ->toMatchArray([
+                'schema' => '2',
+                'commit' => str_repeat('a', 40),
+                'version' => '0.1.200',
+                'builder_os' => 'Darwin',
+                'builder_arch' => 'arm64',
+                'sha256_agent_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/orbit-agent-macos-arm64"),
+                'sha256_desktop_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.app.tar.gz"),
+                'sha256_dmg_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.dmg"),
+                'desktop_signature_darwin_arm64' => 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl',
+            ])
+            ->and("{$fixture['output']}/Orbit.app.tar.gz")
+            ->toBeFile()
+            ->and("{$fixture['output']}/Orbit.app.tar.gz.sig")
+            ->toBeFile()
+            ->and("{$fixture['output']}/Orbit.dmg")
+            ->toBeFile();
     } finally {
         native_release_assets_remove_fixture($fixture['root']);
     }
@@ -92,6 +102,30 @@ it('rejects a non-Mach-O arm64 Agent build result', function (): void {
             ->toBeEmpty();
     } finally {
         native_release_assets_remove_fixture($fixture['root']);
+    }
+});
+
+it('fails closed when the desktop signing key is missing', function (): void {
+    $root = sys_get_temp_dir().'/orbit-desktop-bundle-'.bin2hex(random_bytes(6));
+    mkdir($root, recursive: true);
+
+    try {
+        $process = new Process(
+            [repo_path('bin/orbit-build-desktop-bundle'), "--output={$root}"],
+            repo_path(),
+            [
+                'TAURI_SIGNING_PRIVATE_KEY' => false,
+                'ORBIT_TAURI_UPDATER_PUBKEY' => false,
+            ],
+        );
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('TAURI_SIGNING_PRIVATE_KEY');
+    } finally {
+        native_release_assets_remove_fixture($root);
     }
 });
 
@@ -164,6 +198,20 @@ function native_release_assets_fixture(string $os = 'Darwin', string $arch = 'ar
         chmod 0755 "${root}/apps/agent/builds/dist/mac/mac-arm"
         BASH);
 
+    native_release_assets_write_stub($binDir, 'orbit-build-desktop-bundle', <<<'BASH'
+        printf 'orbit-build-desktop-bundle %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        output=""
+        for argument in "$@"; do
+            case "$argument" in
+                --output=*) output="${argument#*=}" ;;
+            esac
+        done
+        mkdir -p "$output"
+        printf 'stub-desktop-archive\n' > "${output}/Orbit.app.tar.gz"
+        printf 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl\n' > "${output}/Orbit.app.tar.gz.sig"
+        printf 'stub-desktop-dmg\n' > "${output}/Orbit.dmg"
+        BASH);
+
     return [
         'root' => $root,
         'output' => $root.'/native-assets',
@@ -175,7 +223,11 @@ function native_release_assets_fixture(string $os = 'Darwin', string $arch = 'ar
 
 function native_release_assets_remove_fixture(string $root): void
 {
-    if ($root === '' || ! str_contains($root, '/orbit-native-release-assets-')) {
+    if (
+        $root === ''
+        || ! str_contains($root, '/orbit-native-release-assets-')
+        && ! str_contains($root, '/orbit-desktop-bundle-')
+    ) {
         return;
     }
 

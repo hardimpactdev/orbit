@@ -2,21 +2,49 @@ use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
     GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
+use orbit_macos::legacy::{
+    conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
+    parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
+};
+use orbit_macos::lifecycle::dashboard_close_action;
+use orbit_macos::paths::{legacy_launch_agent_plist, pending_update_path};
+use orbit_macos::pending_update::{
+    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate,
+};
+use orbit_macos::supervisor::{
+    agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
+    spawn_supervised_agent, stop_supervised_agent, AgentRunState, CrashAction,
+    DEFAULT_CHILD_CRASH_WINDOW, DEFAULT_MAX_CHILD_CRASH_RESTARTS,
+};
+use orbit_macos::tray_labels::{
+    launch_at_login_checked, launch_at_login_label, quit_orbit_label, restart_orbit_label,
+    LaunchAtLoginState,
+};
+use orbit_macos::update_machine::{ready_state_for_handoff, UpdateState};
+use orbit_macos::version::orbit_version;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
+use tauri::menu::{
+    CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItem, MenuItemBuilder,
+};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow, Wry};
+use tauri::{AppHandle, Manager, PhysicalPosition, RunEvent, WebviewWindow, Wry};
+use tauri_plugin_autostart::MacosLauncher;
 
 const TRAY_ID: &str = "orbit-macos-tray";
+const AGENT_STATUS_MENU_ID: &str = "agent_status";
 const STATUS_MENU_ID: &str = "connection_status";
 const NODE_IP_MENU_ID: &str = "node_peer_ip";
 const GATEWAY_MENU_ID: &str = "gateway_ip";
+const LAUNCH_AT_LOGIN_MENU_ID: &str = "launch_at_login";
+const UPDATE_MENU_ID: &str = "update_status";
 const REFRESH_MENU_ID: &str = "refresh_connection";
 const RESTART_MENU_ID: &str = "restart_app";
 const QUIT_MENU_ID: &str = "quit_app";
@@ -34,22 +62,63 @@ enum RefreshSource {
     MenuCommand,
 }
 
+struct DesktopRuntime {
+    child: Mutex<Option<Child>>,
+    agent_state: Mutex<AgentRunState>,
+    crash_times: Mutex<Vec<Instant>>,
+    update_state: Mutex<UpdateState>,
+    launch_at_login: Mutex<LaunchAtLoginState>,
+    conflict_reason: Mutex<Option<String>>,
+    quitting: Mutex<bool>,
+}
+
+impl DesktopRuntime {
+    fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            agent_state: Mutex::new(AgentRunState::Stopped),
+            crash_times: Mutex::new(Vec::new()),
+            update_state: Mutex::new(UpdateState::Idle),
+            launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
+            conflict_reason: Mutex::new(None),
+            quitting: Mutex::new(false),
+        }
+    }
+}
+
 fn main() {
     bootstrap_process_environment();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(DesktopRuntime::new())
         .invoke_handler(tauri::generate_handler![dashboard_config])
         .setup(|app| {
-            start_embedded_agent_service();
+            let runtime = app.state::<DesktopRuntime>();
+            start_owned_agent(app.handle(), &runtime);
+            enable_launch_at_login_after_setup(app.handle(), &runtime);
+            consume_pending_update_handoff(&runtime);
+            let auto_install = runtime
+                .update_state
+                .lock()
+                .ok()
+                .is_some_and(|state| matches!(*state, UpdateState::Installing { .. }));
+            if auto_install {
+                install_ready_update(app.handle());
+            }
 
-            let tray_menu = build_tray_menu(app.handle(), &load_menu_state())?;
+            let tray_menu = build_tray_menu(app.handle(), &load_menu_state(), &runtime)?;
             let menu_items = Arc::new(Mutex::new(tray_menu.items));
             let menu_command_items = Arc::clone(&menu_items);
             let tray_click_items = Arc::clone(&menu_items);
 
             TrayIconBuilder::with_id(TRAY_ID)
-                .tooltip("Orbit macOS")
-                .icon(tray_icon())
+                .tooltip("Orbit Desktop")
+                .icon(tray_icon_for_update(&runtime))
                 .icon_as_template(true)
                 .menu(&tray_menu.menu)
                 .show_menu_on_left_click(true)
@@ -57,8 +126,10 @@ fn main() {
                     REFRESH_MENU_ID => {
                         refresh_menu(app, &menu_command_items, RefreshSource::MenuCommand)
                     }
-                    RESTART_MENU_ID => app.restart(),
-                    QUIT_MENU_ID => app.exit(0),
+                    LAUNCH_AT_LOGIN_MENU_ID => toggle_launch_at_login(app),
+                    UPDATE_MENU_ID => restart_to_update_if_ready(app),
+                    RESTART_MENU_ID => restart_orbit(app),
+                    QUIT_MENU_ID => quit_orbit(app),
                     _ => {}
                 })
                 .on_tray_icon_event(move |tray, event| {
@@ -76,8 +147,25 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("failed to run Orbit macOS");
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = dashboard_close_action();
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("failed to build Orbit Desktop")
+        .run(|app, event| {
+            if let RunEvent::ExitRequested { api, .. } = event {
+                let runtime = app.state::<DesktopRuntime>();
+                let quitting = runtime.quitting.lock().map(|flag| *flag).unwrap_or(false);
+
+                if !quitting {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
 #[tauri::command]
@@ -130,12 +218,426 @@ fn bootstrap_process_environment() {
     orbit_agent::install_launchd_safe_path();
 }
 
-fn start_embedded_agent_service() {
-    if load_menu_state_from_agent_service().is_some() {
-        return;
+fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let launchd = observed_legacy_launchd(&home);
+    let listener = observed_listener_owner();
+    match inspect_legacy_agent(&home, launchd, listener) {
+        LegacyDecision::Migrate(state) => {
+            migrate_legacy_launchd(&state);
+        }
+        LegacyDecision::Conflict { reason } => {
+            if let Ok(mut agent_state) = runtime.agent_state.lock() {
+                *agent_state = AgentRunState::Conflict;
+            }
+            if let Ok(mut conflict) = runtime.conflict_reason.lock() {
+                *conflict = Some(conflict_remediation(&reason));
+            }
+            return;
+        }
+        LegacyDecision::Absent => {}
     }
 
-    thread::spawn(orbit_agent::run_agent_service_blocking);
+    spawn_or_mark_missing(app, runtime, &home);
+}
+
+fn spawn_or_mark_missing(app: &AppHandle, runtime: &DesktopRuntime, home: &Path) {
+    let override_bin = std::env::var_os("ORBIT_AGENT_BIN").map(PathBuf::from);
+    let Some(binary) = resolve_agent_binary(home, override_bin.as_deref()) else {
+        if let Ok(mut agent_state) = runtime.agent_state.lock() {
+            *agent_state = AgentRunState::Stopped;
+        }
+        return;
+    };
+
+    if let Ok(mut agent_state) = runtime.agent_state.lock() {
+        *agent_state = AgentRunState::Starting;
+    }
+
+    let plan = agent_launch_plan(binary);
+    match spawn_supervised_agent(&plan) {
+        Ok(child) => {
+            if let Ok(mut slot) = runtime.child.lock() {
+                *slot = Some(child);
+            }
+            if let Ok(mut agent_state) = runtime.agent_state.lock() {
+                *agent_state = AgentRunState::Running;
+            }
+            watch_child_crashes(app.clone());
+        }
+        Err(_) => {
+            if let Ok(mut agent_state) = runtime.agent_state.lock() {
+                *agent_state = AgentRunState::Stopped;
+            }
+        }
+    }
+}
+
+fn watch_child_crashes(app: AppHandle) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(250));
+        let runtime = app.state::<DesktopRuntime>();
+        if runtime.quitting.lock().map(|flag| *flag).unwrap_or(false) {
+            return;
+        }
+
+        let exited = runtime.child.lock().ok().and_then(|mut child| {
+            child
+                .as_mut()
+                .and_then(|process| process.try_wait().ok().flatten())
+        });
+
+        if exited.is_none() {
+            continue;
+        }
+
+        if let Ok(mut slot) = runtime.child.lock() {
+            *slot = None;
+        }
+
+        let now = Instant::now();
+        let action = {
+            let mut history = runtime.crash_times.lock().expect("crash times");
+            history.push(now);
+            crash_action(
+                &history,
+                now,
+                DEFAULT_MAX_CHILD_CRASH_RESTARTS,
+                DEFAULT_CHILD_CRASH_WINDOW,
+            )
+        };
+
+        match action {
+            CrashAction::Restart => {
+                let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+                spawn_or_mark_missing(&app, &runtime, &home);
+            }
+            CrashAction::StayStopped => {
+                if let Ok(mut agent_state) = runtime.agent_state.lock() {
+                    *agent_state = AgentRunState::Stopped;
+                }
+                return;
+            }
+        }
+    });
+}
+
+fn observed_legacy_launchd(home: &Path) -> Option<LegacyLaunchdState> {
+    let plist_path = legacy_launch_agent_plist(home);
+    let program =
+        fs_read_to_string(&plist_path).and_then(|contents| parse_plist_program(&contents));
+    let uid = users_uid();
+    let printed = launchctl_output(&["print", &format!("gui/{uid}/{LEGACY_LAUNCHD_LABEL}")]);
+    let loaded = printed.is_some();
+    let pid = printed.as_deref().and_then(parse_launchctl_pid);
+
+    if !plist_path.exists() && !loaded {
+        return None;
+    }
+
+    Some(LegacyLaunchdState {
+        label: LEGACY_LAUNCHD_LABEL.to_string(),
+        plist_path,
+        program,
+        loaded,
+        pid,
+    })
+}
+
+fn observed_listener_owner() -> Option<ListenerOwner> {
+    let output = lsof_output(&["-nP", "-iTCP:9477", "-sTCP:LISTEN"])?;
+    let pid = parse_lsof_listener_pid(&output)?;
+    let executable = process_command(pid)?;
+
+    Some(ListenerOwner { pid, executable })
+}
+
+fn migrate_legacy_launchd(state: &LegacyLaunchdState) {
+    let uid = users_uid();
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &format!("gui/{uid}/{}", state.label)])
+        .status();
+
+    if state.plist_path.exists()
+        && !orbit_macos::paths::is_protected_system_launcher(&state.plist_path.to_string_lossy())
+    {
+        let _ = std::fs::remove_file(&state.plist_path);
+    }
+}
+
+fn enable_launch_at_login_after_setup(app: &AppHandle, runtime: &DesktopRuntime) {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let manager = app.autolaunch();
+    let enabled = match manager.is_enabled() {
+        Ok(true) => true,
+        Ok(false) => manager.enable().is_ok(),
+        Err(_) => {
+            if let Ok(mut state) = runtime.launch_at_login.lock() {
+                *state = LaunchAtLoginState::Error;
+            };
+            return;
+        }
+    };
+
+    if let Ok(mut state) = runtime.launch_at_login.lock() {
+        *state = if enabled {
+            LaunchAtLoginState::Enabled
+        } else {
+            LaunchAtLoginState::Error
+        };
+    };
+}
+
+fn toggle_launch_at_login(app: &AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let runtime = app.state::<DesktopRuntime>();
+    let manager = app.autolaunch();
+    let currently_enabled = runtime
+        .launch_at_login
+        .lock()
+        .map(|state| matches!(*state, LaunchAtLoginState::Enabled))
+        .unwrap_or(false);
+
+    let result = if currently_enabled {
+        manager.disable().map(|_| LaunchAtLoginState::Disabled)
+    } else {
+        manager.enable().map(|_| LaunchAtLoginState::Enabled)
+    };
+
+    if let Ok(mut state) = runtime.launch_at_login.lock() {
+        *state = result.unwrap_or(LaunchAtLoginState::Error);
+    };
+}
+
+fn consume_pending_update_handoff(runtime: &DesktopRuntime) {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let path = pending_update_path(&home);
+    let Ok(update) =
+        read_pending_update(&path.to_string_lossy(), &ExpectedUpdateIdentity::default())
+    else {
+        return;
+    };
+
+    if let Ok(mut state) = runtime.update_state.lock() {
+        *state = ready_state_for_handoff(&update);
+    }
+}
+
+fn restart_to_update_if_ready(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    let ready = runtime.update_state.lock().ok().is_some_and(|state| {
+        matches!(
+            *state,
+            UpdateState::RestartReady { .. } | UpdateState::Installing { .. }
+        )
+    });
+
+    if ready {
+        install_ready_update(app);
+    }
+}
+
+fn install_ready_update(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    stop_owned_child(&runtime);
+
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let path = pending_update_path(&home);
+    if let Ok(update) =
+        read_pending_update(&path.to_string_lossy(), &ExpectedUpdateIdentity::default())
+    {
+        let _ = apply_verified_update(&update);
+        let _ = std::fs::remove_file(path);
+    }
+
+    app.restart();
+}
+
+fn apply_verified_update(update: &PendingDesktopUpdate) -> Result<(), String> {
+    use orbit_macos::installer::{
+        desktop_archive_ready, install_desktop_bundle, install_owner_binaries,
+        installed_hashes_match,
+    };
+    use orbit_macos::paths::{owner_agent_bin, owner_cli_bin, owner_updates_dir};
+
+    desktop_archive_ready(update).map_err(|error| format!("{error:?}"))?;
+
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let updates = owner_updates_dir(&home);
+    let staged_agent = updates.join(format!("agent-{}", &update.agent.sha256[..12]));
+    let staged_cli = updates.join(format!("cli-{}", &update.cli.sha256[..12]));
+    let agent_destination = owner_agent_bin(&home);
+    let cli_destination = owner_cli_bin(&home);
+
+    if staged_agent.exists() && staged_cli.exists() {
+        install_owner_binaries(
+            update,
+            &staged_agent,
+            &staged_cli,
+            &agent_destination,
+            &cli_destination,
+        )
+        .map_err(|error| format!("{error:?}"))?;
+    } else if !(installed_hashes_match(&agent_destination, &update.agent.sha256).unwrap_or(false)
+        && installed_hashes_match(&cli_destination, &update.cli.sha256).unwrap_or(false))
+    {
+        return Err("staged Agent or CLI artifacts are incomplete".to_string());
+    }
+
+    if let Some(destination) = desktop_app_destination() {
+        install_desktop_bundle(update, &destination).map_err(|error| format!("{error:?}"))?;
+    }
+
+    Ok(())
+}
+
+fn desktop_app_destination() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("ORBIT_DESKTOP_APP_DIR") {
+        return Some(PathBuf::from(path));
+    }
+
+    let executable = std::env::current_exe().ok()?;
+    let bundle = executable.parent()?.parent()?.parent()?.to_path_buf();
+
+    if bundle.extension().and_then(|ext| ext.to_str()) == Some("app") {
+        Some(bundle)
+    } else {
+        None
+    }
+}
+
+fn restart_orbit(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    stop_owned_child(&runtime);
+    app.restart();
+}
+
+fn quit_orbit(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    if let Ok(mut quitting) = runtime.quitting.lock() {
+        *quitting = true;
+    };
+    stop_owned_child(&runtime);
+    app.exit(0);
+}
+
+fn stop_owned_child(runtime: &DesktopRuntime) {
+    if let Ok(mut slot) = runtime.child.lock() {
+        if let Some(child) = slot.as_mut() {
+            let _ = stop_supervised_agent(child, Duration::from_secs(5));
+        }
+        *slot = None;
+    }
+    if let Ok(mut agent_state) = runtime.agent_state.lock() {
+        if *agent_state != AgentRunState::Conflict {
+            *agent_state = AgentRunState::Stopped;
+        }
+    }
+}
+
+fn tray_icon_for_update(runtime: &DesktopRuntime) -> Image<'static> {
+    let ready = runtime
+        .update_state
+        .lock()
+        .ok()
+        .is_some_and(|state| state.shows_tray_dot());
+
+    if ready {
+        update_ready_tray_icon()
+    } else {
+        tray_icon()
+    }
+}
+
+fn update_ready_tray_icon() -> Image<'static> {
+    const SIZE: u32 = 18;
+    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+    let center = (SIZE as f32 - 1.0) / 2.0;
+
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let distance = (dx * dx + dy * dy).sqrt();
+            let in_ring = distance <= 5.0 || (6.5..=8.0).contains(&distance);
+            let in_dot = (x as i32 - 13).pow(2) + (y as i32 - 4).pow(2) <= 6;
+
+            if in_dot || in_ring {
+                rgba.extend_from_slice(&[0, 0, 0, 255]);
+            } else {
+                rgba.extend_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+
+    Image::new_owned(rgba, SIZE, SIZE)
+}
+
+fn fs_read_to_string(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok()
+}
+
+fn users_uid() -> u32 {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(501)
+}
+
+fn launchctl_output(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("launchctl")
+        .args(args)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        None
+    }
+}
+
+fn lsof_output(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("lsof")
+        .args(args)
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn process_command(pid: u32) -> Option<PathBuf> {
+    let output = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    command.split_whitespace().next().map(PathBuf::from)
+}
+
+fn desktop_menu_snapshot(
+    runtime: &DesktopRuntime,
+) -> (AgentRunState, LaunchAtLoginState, UpdateState) {
+    let agent = runtime
+        .agent_state
+        .lock()
+        .map(|state| *state)
+        .unwrap_or(AgentRunState::Stopped);
+    let launch_at_login = runtime
+        .launch_at_login
+        .lock()
+        .map(|state| *state)
+        .unwrap_or(LaunchAtLoginState::Disabled);
+    let update = runtime
+        .update_state
+        .lock()
+        .map(|state| state.clone())
+        .unwrap_or(UpdateState::Idle);
+
+    (agent, launch_at_login, update)
 }
 
 struct TrayMenu {
@@ -144,16 +646,20 @@ struct TrayMenu {
 }
 
 struct TrayMenuItems {
+    agent_status: MenuItem<Wry>,
     status: MenuItem<Wry>,
     node_ip: MenuItem<Wry>,
     gateway: MenuItem<Wry>,
     granted_nodes: Vec<MenuItem<Wry>>,
+    launch_at_login: CheckMenuItem<Wry>,
+    update: MenuItem<Wry>,
 }
 
 impl TrayMenuItems {
-    fn new(app: &AppHandle, state: &MenuState) -> tauri::Result<Self> {
+    fn new(app: &AppHandle, state: &MenuState, runtime: &DesktopRuntime) -> tauri::Result<Self> {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
         let ip_row_layout = state.ip_row_layout();
+        let (agent, launch_at_login, update) = desktop_menu_snapshot(runtime);
 
         for (index, node) in state.granted_nodes.iter().enumerate() {
             granted_nodes.push(disabled_menu_item(
@@ -164,6 +670,7 @@ impl TrayMenuItems {
         }
 
         Ok(Self {
+            agent_status: disabled_menu_item(app, AGENT_STATUS_MENU_ID, agent_status_label(agent))?,
             status: disabled_menu_item(app, STATUS_MENU_ID, state.status.label())?,
             node_ip: disabled_menu_item(
                 app,
@@ -176,12 +683,30 @@ impl TrayMenuItems {
                 aligned_ip_label("Gateway", &state.gateway_ip, ip_row_layout),
             )?,
             granted_nodes,
+            launch_at_login: CheckMenuItemBuilder::with_id(
+                LAUNCH_AT_LOGIN_MENU_ID,
+                launch_at_login_label(launch_at_login),
+            )
+            .checked(launch_at_login_checked(launch_at_login))
+            .enabled(!matches!(launch_at_login, LaunchAtLoginState::Error))
+            .build(app)?,
+            update: disabled_menu_item(
+                app,
+                UPDATE_MENU_ID,
+                if update.label().is_empty() {
+                    format!("Orbit {}", orbit_version())
+                } else {
+                    update.label()
+                },
+            )?,
         })
     }
 
-    fn update(&self, state: &MenuState) {
+    fn update(&self, state: &MenuState, runtime: &DesktopRuntime) {
         let ip_row_layout = state.ip_row_layout();
+        let (agent, launch_at_login, update) = desktop_menu_snapshot(runtime);
 
+        let _ = self.agent_status.set_text(agent_status_label(agent));
         let _ = self.status.set_text(state.status.label());
         let _ = self
             .node_ip
@@ -191,6 +716,17 @@ impl TrayMenuItems {
             &state.gateway_ip,
             ip_row_layout,
         ));
+        let _ = self
+            .launch_at_login
+            .set_text(launch_at_login_label(launch_at_login));
+        let _ = self
+            .launch_at_login
+            .set_checked(launch_at_login_checked(launch_at_login));
+        let _ = self.update.set_text(if update.label().is_empty() {
+            format!("Orbit {}", orbit_version())
+        } else {
+            update.label()
+        });
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
             let _ = item.set_text(granted_node_label(node, ip_row_layout));
@@ -208,6 +744,7 @@ fn refresh_menu(
     refresh_source: RefreshSource,
 ) {
     let menu_state = load_menu_state();
+    let runtime = app.state::<DesktopRuntime>();
     let current_grant_rows = menu_items
         .lock()
         .map(|items| items.grant_row_count())
@@ -219,7 +756,7 @@ fn refresh_menu(
         menu_state.granted_nodes.len(),
     ) {
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
-            if let Ok(tray_menu) = build_tray_menu(app, &menu_state) {
+            if let Ok(tray_menu) = build_tray_menu(app, &menu_state, &runtime) {
                 if tray.set_menu(Some(tray_menu.menu)).is_ok() {
                     if let Ok(mut items) = menu_items.lock() {
                         *items = tray_menu.items;
@@ -228,7 +765,11 @@ fn refresh_menu(
             }
         }
     } else if let Ok(items) = menu_items.lock() {
-        items.update(&menu_state);
+        items.update(&menu_state, &runtime);
+    }
+
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_icon(Some(tray_icon_for_update(&runtime)));
     }
 }
 
@@ -289,10 +830,20 @@ fn should_replace_menu_for_refresh(
     matches!(refresh_source, RefreshSource::MenuCommand) && current_grant_rows != next_grant_rows
 }
 
-fn build_tray_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<TrayMenu> {
-    let items = TrayMenuItems::new(app, state)?;
+fn build_tray_menu(
+    app: &AppHandle,
+    state: &MenuState,
+    runtime: &DesktopRuntime,
+) -> tauri::Result<TrayMenu> {
+    let items = TrayMenuItems::new(app, state, runtime)?;
+    let update_enabled = runtime
+        .update_state
+        .lock()
+        .ok()
+        .is_some_and(|state| matches!(*state, UpdateState::RestartReady { .. }));
 
     let mut menu = MenuBuilder::new(app)
+        .item(&items.agent_status)
         .item(&items.status)
         .item(&items.node_ip)
         .item(&items.gateway)
@@ -304,10 +855,15 @@ fn build_tray_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<TrayMenu
 
     let menu = menu
         .separator()
+        .item(&items.launch_at_login)
+        .item(&items.update)
+        .separator()
         .text(REFRESH_MENU_ID, "Refresh")
-        .text(RESTART_MENU_ID, "Restart")
-        .text(QUIT_MENU_ID, "Quit")
+        .text(RESTART_MENU_ID, restart_orbit_label())
+        .text(QUIT_MENU_ID, quit_orbit_label())
         .build()?;
+
+    let _ = items.update.set_enabled(update_enabled);
 
     Ok(TrayMenu { menu, items })
 }
@@ -881,6 +1437,19 @@ mod tests {
         let wildcard_bind = ["0.0.0.0", ":9477"].concat();
 
         assert!(!source.contains(&wildcard_bind));
+    }
+
+    #[test]
+    fn dashboard_close_is_intercepted_and_quit_stops_the_child() {
+        let source = include_str!("main.rs");
+
+        assert!(source.contains("CloseRequested"));
+        assert!(source.contains("prevent_close"));
+        assert!(source.contains("window.hide()"));
+        assert!(source.contains("stop_owned_child"));
+        assert!(source.contains("quit_orbit_label"));
+        assert!(source.contains("MacosLauncher::LaunchAgent"));
+        assert!(!source.contains("Command::new(\"pgrep\")"));
     }
 
     #[test]

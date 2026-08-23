@@ -34,11 +34,18 @@ it('spawns a worker window, pipes the log, and delivers the bootstrap line', fun
             ->toBe('spawned')
             ->and($payload['cli'])
             ->toBe('grok')
-            ->and($payload['command'])
+            ->and($payload['command'][0])
+            ->toBe('env')
+            ->and($payload['command'][1])
+            ->toBe('ORBIT_WORKER_ID=impl-1')
+            ->and($payload['command'][2])
+            ->toBe('ORBIT_WORKER_ROLE=impl')
+            ->and($payload['command'][3])
+            ->toStartWith('PATH=')
+            ->and($payload['command'][3])
+            ->toContain($fakeBin)
+            ->and(array_slice($payload['command'], 4))
             ->toBe([
-                'env',
-                'ORBIT_WORKER_ID=impl-1',
-                'ORBIT_WORKER_ROLE=impl',
                 'grok',
                 '--yolo',
                 '--reasoning-effort',
@@ -1038,13 +1045,18 @@ it('records exact launcher command vectors and assignment-only bootstrap', funct
 
         expect($payload)
             ->toBeArray()
-            ->and($payload['command'])
-            ->toBe([
-                'env',
-                'ORBIT_WORKER_ID='.$name,
-                'ORBIT_WORKER_ROLE='.$role,
-                ...$argvTail,
-            ])
+            ->and($payload['command'][0])
+            ->toBe('env')
+            ->and($payload['command'][1])
+            ->toBe('ORBIT_WORKER_ID='.$name)
+            ->and($payload['command'][2])
+            ->toBe('ORBIT_WORKER_ROLE='.$role)
+            ->and($payload['command'][3])
+            ->toStartWith('PATH=')
+            ->and($payload['command'][3])
+            ->toContain($fakeBin)
+            ->and(array_slice($payload['command'], 4))
+            ->toBe($argvTail)
             ->and($seen)
             ->toBeTrue()
             ->and($marker)

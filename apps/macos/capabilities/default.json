@@ -1,0 +1,12 @@
+{
+  "identifier": "default",
+  "description": "Orbit Desktop tray, dashboard, autostart, and updater permissions.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "updater:default"
+  ]
+}

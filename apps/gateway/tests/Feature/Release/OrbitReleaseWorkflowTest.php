@@ -63,6 +63,9 @@ function releaseWorkflowAssetDir(string $version = '1.2.3'): string
     file_put_contents("{$root}/orbit-linux-x64", 'linux-binary-'.bin2hex(random_bytes(4)));
     file_put_contents("{$root}/orbit-macos-arm64", 'mac-binary-'.bin2hex(random_bytes(4)));
     file_put_contents("{$root}/orbit-reverb-linux-amd64.tar", 'reverb-image-'.bin2hex(random_bytes(4)));
+    file_put_contents("{$root}/Orbit.app.tar.gz", 'desktop-archive-'.bin2hex(random_bytes(4)));
+    file_put_contents("{$root}/Orbit.app.tar.gz.sig", 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl');
+    file_put_contents("{$root}/Orbit.dmg", 'desktop-dmg-'.bin2hex(random_bytes(4)));
 
     $process = new Process([
         PHP_BINARY,
@@ -73,6 +76,8 @@ function releaseWorkflowAssetDir(string $version = '1.2.3'): string
         '--repository=hardimpactdev/orbit',
         "--cli-artifact=linux-amd64=orbit-linux-x64={$root}/orbit-linux-x64",
         "--cli-artifact=darwin-arm64=orbit-macos-arm64={$root}/orbit-macos-arm64",
+        "--desktop-artifact=darwin-arm64=Orbit.app.tar.gz={$root}/Orbit.app.tar.gz",
+        '--desktop-signature=darwin-arm64=dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl',
         '--role-image=orbit-caddy=caddy:2-alpine',
         '--role-image=orbit-frankenphp=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:'
             .str_repeat('e', times: 64),
@@ -182,6 +187,10 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('orbit-release-manifest.json')
         ->toContain('orbit-linux-x64')
         ->toContain('orbit-macos-arm64')
+        ->toContain('Orbit.app.tar.gz')
+        ->toContain('Orbit.app.tar.gz.sig')
+        ->toContain('Orbit.dmg')
+        ->toContain('desktop_artifacts')
         // TypeScript SDK is independently versioned and published from its
         // package repository OIDC workflow, not monorepo orbit-release.yml.
         ->not->toContain('prepare_and_verify_sdk_typescript')

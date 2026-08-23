@@ -126,7 +126,7 @@ it('maps the Orbit Agent service and macOS UI to separate Cargo verification', f
         ->toHaveKey('facts.tooling.cargo_toml', 'apps/macos/Cargo.toml')
         ->toHaveKey('facts.tooling.tauri_config', 'apps/macos/tauri.conf.json')
         ->and($macos['purpose'])
-        ->toContain('queries the independent headless Orbit Agent service')
+        ->toContain('owns the local Orbit Agent lifetime')
         ->and($macos['verification']['preferred_commands'])
         ->toContain('cd apps/macos && cargo test')
         ->toContain('cd apps/macos && cargo fmt -- --check')
@@ -134,8 +134,9 @@ it('maps the Orbit Agent service and macOS UI to separate Cargo verification', f
         ->toContain('cd apps/macos && cargo clippy --all-targets -- -D warnings')
         ->and($macos['agent_skills'])
         ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->and($macos['start_when'][0])
+        ->toContain('desktop updater')
         ->and($macos['do_not_start_when'][2])
-        ->toContain('self-update')
         ->toContain('arbitrary privileged shell execution')
         ->toContain('SSH/RemoteShell replacement');
 });

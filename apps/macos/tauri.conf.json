@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Orbit macOS",
+  "productName": "Orbit Desktop",
   "version": "0.1.0",
   "identifier": "dev.hardimpact.orbit.macos",
   "build": {
@@ -10,14 +10,26 @@
     "frontendDist": "frontend/dist"
   },
   "app": {
+    "security": {
+      "capabilities": ["default"]
+    },
     "windows": [
       {
         "label": "main",
         "minHeight": 620,
         "minWidth": 880,
-        "title": "Orbit macOS",
+        "title": "Orbit Desktop",
         "visible": true
       }
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4RkQ5QzgwQTJBNTE0QUYKUldTdkZLV2lnSno5U0VoRVdUZmpDWGtCN0trOVF0ZWZDY0VXWmlhZ21NakNkZCswMDFqTGprR0EK",
+      "endpoints": [
+        "https://github.com/hardimpactdev/orbit/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
+

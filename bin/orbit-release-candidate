@@ -169,14 +169,20 @@ verify_native_assets() {
     local expected_version="$3"
     local manifest="${dir}/native-assets.env"
     local artifact="${dir}/orbit-agent-macos-arm64"
+    local desktop_archive="${dir}/Orbit.app.tar.gz"
+    local desktop_signature="${dir}/Orbit.app.tar.gz.sig"
+    local desktop_dmg="${dir}/Orbit.dmg"
 
     [ -d "$dir" ] && [ ! -L "$dir" ] || fail 'native assets path must be a directory, not a symlink.'
     [ -f "$manifest" ] && [ ! -L "$manifest" ] || fail 'native-assets.env is missing or unsafe.'
     [ -f "$artifact" ] && [ ! -L "$artifact" ] || fail 'orbit-agent-macos-arm64 is missing or unsafe.'
+    [ -f "$desktop_archive" ] && [ ! -L "$desktop_archive" ] || fail 'Orbit.app.tar.gz is missing or unsafe.'
+    [ -f "$desktop_signature" ] && [ ! -L "$desktop_signature" ] || fail 'Orbit.app.tar.gz.sig is missing or unsafe.'
+    [ -f "$desktop_dmg" ] && [ ! -L "$desktop_dmg" ] || fail 'Orbit.dmg is missing or unsafe.'
 
     local inventory
     inventory="$(find "$dir" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort)"
-    [ "$inventory" = $'native-assets.env\norbit-agent-macos-arm64' ] \
+    [ "$inventory" = $'Orbit.app.tar.gz\nOrbit.app.tar.gz.sig\nOrbit.dmg\nnative-assets.env\norbit-agent-macos-arm64' ] \
         || fail 'native assets directory contains missing or undeclared files.'
 
     [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || fail 'native expected commit is invalid.'
@@ -193,17 +199,17 @@ verify_native_assets() {
             print substr($0, 1, eq - 1)
         }
         END {
-            if (status || NR != 6) {
+            if (status || NR != 9) {
                 exit 1
             }
         }
     ' "$manifest" | LC_ALL=C sort)"; then
         fail 'native manifest contains blank, malformed, or extra lines.'
     fi
-    [ "$manifest_keys" = $'builder_arch\nbuilder_os\ncommit\nschema\nsha256_agent_darwin_arm64\nversion' ] \
+    [ "$manifest_keys" = $'builder_arch\nbuilder_os\ncommit\ndesktop_signature_darwin_arm64\nschema\nsha256_agent_darwin_arm64\nsha256_desktop_darwin_arm64\nsha256_dmg_darwin_arm64\nversion' ] \
         || fail 'native manifest contains missing, duplicate, or undeclared keys.'
 
-    [ "$(native_value schema "$manifest")" = '1' ] || fail 'native manifest schema is invalid.'
+    [ "$(native_value schema "$manifest")" = '2' ] || fail 'native manifest schema is invalid.'
     [ "$(native_value commit "$manifest")" = "$expected_commit" ] || fail 'native source commit does not match.'
     [ "$(native_value version "$manifest")" = "$expected_version" ] || fail 'native source version does not match.'
     [ "$(native_value builder_os "$manifest")" = 'Darwin' ] || fail 'native builder_os must be Darwin.'
@@ -216,6 +222,21 @@ verify_native_assets() {
     [ "$actual_sha" = "$expected_sha" ] || fail 'sha256_agent_darwin_arm64 does not match.'
     file "$artifact" | grep -Eq 'Mach-O 64-bit (executable arm64|arm64 executable)\b' \
         || fail 'native Agent artifact is not a Mach-O arm64 executable.'
+
+    local expected_desktop_sha actual_desktop_sha expected_dmg_sha actual_dmg_sha signature_value
+    expected_desktop_sha="$(native_value sha256_desktop_darwin_arm64 "$manifest")"
+    [[ "$expected_desktop_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'native desktop SHA-256 is invalid.'
+    actual_desktop_sha="$(compute_sha256 "$desktop_archive")"
+    [ "$actual_desktop_sha" = "$expected_desktop_sha" ] || fail 'sha256_desktop_darwin_arm64 does not match.'
+
+    expected_dmg_sha="$(native_value sha256_dmg_darwin_arm64 "$manifest")"
+    [[ "$expected_dmg_sha" =~ ^[0-9a-f]{64}$ ]] || fail 'native DMG SHA-256 is invalid.'
+    actual_dmg_sha="$(compute_sha256 "$desktop_dmg")"
+    [ "$actual_dmg_sha" = "$expected_dmg_sha" ] || fail 'sha256_dmg_darwin_arm64 does not match.'
+
+    signature_value="$(native_value desktop_signature_darwin_arm64 "$manifest")"
+    [ -n "$signature_value" ] || fail 'native desktop updater signature is empty.'
+    [ "$(tr -d '\n' < "$desktop_signature")" = "$signature_value" ] || fail 'native desktop updater signature does not match.'
 
     printf '%s\n' "$actual_sha"
 }
@@ -389,15 +410,19 @@ cmd_build() {
     cp apps/cli/builds/dist/mac/mac-arm "${work_dir}/orbit-macos-arm64"
     cp apps/agent/builds/dist/linux/linux-x64 "${work_dir}/orbit-agent-linux-x64"
 
-    local imported_agent_sha='' copied_agent_sha='' native_builder_os='' native_builder_arch='' native_source_commit=''
+    local imported_agent_sha='' copied_agent_sha='' native_builder_os='' native_builder_arch='' native_source_commit='' native_desktop_signature=''
     if [ -n "$native_assets_dir" ]; then
         imported_agent_sha="$(verify_native_assets "$native_assets_dir" "$source_commit" "$version")"
         cp "${native_assets_dir}/orbit-agent-macos-arm64" "${work_dir}/orbit-agent-macos-arm64"
         copied_agent_sha="$(compute_sha256 "${work_dir}/orbit-agent-macos-arm64")"
         [ "$copied_agent_sha" = "$imported_agent_sha" ] || fail 'imported Agent artifact changed after copy.'
+        cp "${native_assets_dir}/Orbit.app.tar.gz" "${work_dir}/Orbit.app.tar.gz"
+        cp "${native_assets_dir}/Orbit.app.tar.gz.sig" "${work_dir}/Orbit.app.tar.gz.sig"
+        cp "${native_assets_dir}/Orbit.dmg" "${work_dir}/Orbit.dmg"
         native_builder_os="$(native_value builder_os "${native_assets_dir}/native-assets.env")"
         native_builder_arch="$(native_value builder_arch "${native_assets_dir}/native-assets.env")"
         native_source_commit="$(native_value commit "${native_assets_dir}/native-assets.env")"
+        native_desktop_signature="$(native_value desktop_signature_darwin_arm64 "${native_assets_dir}/native-assets.env")"
     else
         "${repo_root}/bin/orbit-build-agent-binary" mac arm
         cp apps/agent/builds/dist/mac/mac-arm "${work_dir}/orbit-agent-macos-arm64"
@@ -624,6 +649,8 @@ cmd_build() {
         --cli-artifact="darwin-arm64=orbit-macos-arm64=${work_dir}/orbit-macos-arm64" \
         --agent-artifact="linux-amd64=orbit-agent-linux-x64=${work_dir}/orbit-agent-linux-x64" \
         --agent-artifact="darwin-arm64=orbit-agent-macos-arm64=${work_dir}/orbit-agent-macos-arm64" \
+        ${native_desktop_signature:+--desktop-artifact=darwin-arm64=Orbit.app.tar.gz=${work_dir}/Orbit.app.tar.gz} \
+        ${native_desktop_signature:+--desktop-signature=darwin-arm64=${native_desktop_signature}} \
         --role-image="orbit-caddy=caddy:2-alpine" \
         --role-image="orbit-frankenphp=${candidate_frankenphp_image}@${frankenphp_digest}" \
         --role-image="orbit-websocket=${versioned_reverb_image}@${reverb_digest}" \
@@ -698,7 +725,15 @@ cmd_build() {
                 throw $lastThrowable;
             };
 
-            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json", "orbit-frankenphp-linux-amd64.tar", "orbit-reverb-linux-amd64.tar"] as $asset) {
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json", "orbit-frankenphp-linux-amd64.tar", "orbit-reverb-linux-amd64.tar", "Orbit.app.tar.gz", "Orbit.app.tar.gz.sig", "Orbit.dmg"] as $asset) {
+                if (! is_file("{$dir}/{$asset}")) {
+                    if (in_array($asset, ["Orbit.app.tar.gz", "Orbit.app.tar.gz.sig", "Orbit.dmg"], true)) {
+                        continue;
+                    }
+
+                    throw new RuntimeException("Candidate artifact [{$asset}] is missing.");
+                }
+
                 $retryingUpload("{$prefix}/{$asset}", "{$dir}/{$asset}");
             }
 
@@ -721,6 +756,11 @@ cmd_build() {
     cp "${work_dir}/orbit-macos-arm64" "${state_dir}/orbit-macos-arm64"
     cp "${work_dir}/orbit-agent-linux-x64" "${state_dir}/orbit-agent-linux-x64"
     cp "${work_dir}/orbit-agent-macos-arm64" "${state_dir}/orbit-agent-macos-arm64"
+    if [ -f "${work_dir}/Orbit.app.tar.gz" ]; then
+        cp "${work_dir}/Orbit.app.tar.gz" "${state_dir}/Orbit.app.tar.gz"
+        cp "${work_dir}/Orbit.app.tar.gz.sig" "${state_dir}/Orbit.app.tar.gz.sig"
+        cp "${work_dir}/Orbit.dmg" "${state_dir}/Orbit.dmg"
+    fi
     cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
     cp "${work_dir}/orbit-frankenphp-linux-amd64.tar" "${state_dir}/orbit-frankenphp-linux-amd64.tar"
     cp "${work_dir}/orbit-reverb-linux-amd64.tar" "${state_dir}/orbit-reverb-linux-amd64.tar"
@@ -754,6 +794,11 @@ cmd_build() {
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
         printf 'sha256_agent_linux_amd64=%s\n' "$sha256_agent_linux_amd64"
         printf 'sha256_agent_darwin_arm64=%s\n' "$sha256_agent_darwin_arm64"
+        if [ -f "${work_dir}/Orbit.app.tar.gz" ]; then
+            printf 'sha256_desktop_darwin_arm64=%s\n' "$(compute_sha256 "${work_dir}/Orbit.app.tar.gz")"
+            printf 'sha256_dmg_darwin_arm64=%s\n' "$(compute_sha256 "${work_dir}/Orbit.dmg")"
+            printf 'desktop_signature_darwin_arm64=%s\n' "$native_desktop_signature"
+        fi
         printf 'sha256_frankenphp_linux_amd64=%s\n' "$sha256_frankenphp_linux_amd64"
         printf 'sha256_reverb_linux_amd64=%s\n' "$sha256_reverb_linux_amd64"
         printf 'gateway_fingerprint=%s\n' "$gateway_fingerprint"
@@ -983,12 +1028,20 @@ cmd_verify() {
         'sha256_darwin_arm64:orbit-macos-arm64' \
         'sha256_agent_linux_amd64:orbit-agent-linux-x64' \
         'sha256_agent_darwin_arm64:orbit-agent-macos-arm64' \
+        'sha256_desktop_darwin_arm64:Orbit.app.tar.gz' \
+        'sha256_dmg_darwin_arm64:Orbit.dmg' \
         'sha256_frankenphp_linux_amd64:orbit-frankenphp-linux-amd64.tar' \
         'sha256_reverb_linux_amd64:orbit-reverb-linux-amd64.tar'
     do
         key="${pair%%:*}"
         artifact="${state_dir}/${pair#*:}"
         expected="$(state_value "$key" "$state_file")"
+
+        if [ "$key" = 'sha256_desktop_darwin_arm64' ] || [ "$key" = 'sha256_dmg_darwin_arm64' ]; then
+            if [ -z "$expected" ] && [ ! -f "$artifact" ]; then
+                continue
+            fi
+        fi
 
         if [ -z "$expected" ]; then
             printf 'FAIL %s: key missing from %s\n' "$key" "$state_file"

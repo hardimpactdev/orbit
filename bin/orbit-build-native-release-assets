@@ -48,13 +48,29 @@ file "$source_artifact" | grep -Eq 'Mach-O 64-bit executable arm64' \
 install -m 0755 "$source_artifact" "${staging}/orbit-agent-macos-arm64"
 artifact_sha256="$(shasum -a 256 "${staging}/orbit-agent-macos-arm64" | awk '{ print $1 }')"
 
+"${repo_root}/bin/orbit-build-desktop-bundle" --output="$staging"
+desktop_archive="${staging}/Orbit.app.tar.gz"
+desktop_signature_file="${staging}/Orbit.app.tar.gz.sig"
+desktop_dmg="${staging}/Orbit.dmg"
+[ -s "$desktop_archive" ] || fail 'desktop updater archive is missing.'
+[ -s "$desktop_signature_file" ] || fail 'desktop updater signature is missing.'
+[ -s "$desktop_dmg" ] || fail 'desktop DMG is missing.'
+
+desktop_sha256="$(shasum -a 256 "$desktop_archive" | awk '{ print $1 }')"
+dmg_sha256="$(shasum -a 256 "$desktop_dmg" | awk '{ print $1 }')"
+desktop_signature="$(tr -d '\n' < "$desktop_signature_file")"
+[ -n "$desktop_signature" ] || fail 'desktop updater signature is empty.'
+
 {
-    printf 'schema=1\n'
+    printf 'schema=2\n'
     printf 'commit=%s\n' "$commit"
     printf 'version=%s\n' "$version"
     printf 'builder_os=Darwin\n'
     printf 'builder_arch=arm64\n'
     printf 'sha256_agent_darwin_arm64=%s\n' "$artifact_sha256"
+    printf 'sha256_desktop_darwin_arm64=%s\n' "$desktop_sha256"
+    printf 'sha256_dmg_darwin_arm64=%s\n' "$dmg_sha256"
+    printf 'desktop_signature_darwin_arm64=%s\n' "$desktop_signature"
 } > "${staging}/native-assets.env"
 
 mv "$staging" "$output"
