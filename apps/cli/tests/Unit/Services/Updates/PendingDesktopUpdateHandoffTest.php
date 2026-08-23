@@ -38,16 +38,21 @@ it('writes an owner-only pending desktop update handoff atomically', function ()
 
     PendingDesktopUpdateHandoff::fromArray(pendingDesktopUpdatePayload())->write($path);
 
-    expect(is_file($path))->toBeTrue()
-        ->and(decoct(fileperms($path) & 0777))->toBe('600')
+    expect(is_file($path))
+        ->toBeTrue()
+        ->and(decoct(fileperms($path) & 0777))
+        ->toBe('600')
         ->and(json_decode((string) file_get_contents($path), true)['install_mode'])
         ->toBe('automatic');
 });
 
 it('rejects an unsafe handoff path', function (): void {
-    expect(fn () => PendingDesktopUpdateHandoff::fromArray(pendingDesktopUpdatePayload())->write(
-        '/tmp/pending-desktop-update.json',
-    ))->toThrow(PendingDesktopUpdateHandoffFailure::class, 'unsafe');
+    expect(
+        fn () => PendingDesktopUpdateHandoff::fromArray(pendingDesktopUpdatePayload())->write(
+            '/tmp/pending-desktop-update.json',
+        ),
+    )
+        ->toThrow(PendingDesktopUpdateHandoffFailure::class, 'unsafe');
 });
 
 it('rejects a stale handoff identity', function (): void {
@@ -59,7 +64,8 @@ it('rejects a stale handoff identity', function (): void {
         'operation_id' => 'other-operation',
         'version' => '1.2.3',
         'build_id' => '2026-08-23T120000Z-abc123',
-    ]))->toThrow(PendingDesktopUpdateHandoffFailure::class, 'stale');
+    ]))
+        ->toThrow(PendingDesktopUpdateHandoffFailure::class, 'stale');
 });
 
 it('rejects a partial desktop identity', function (): void {
