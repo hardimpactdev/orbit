@@ -776,13 +776,7 @@ it('does not stage a desktop archive for an unmanaged role-bearing Mac', functio
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
-        workloadUpdaterSnapshot(
-            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
-            agentArtifacts: workloadUpdaterDarwinAgentArtifacts(),
-            desktopArtifacts: [
-                'darwin-arm64' => workloadUpdaterDesktopArtifact(),
-            ],
-        ),
+        workload_updater_darwin_snapshot(),
     );
 
     Http::fake([
@@ -790,7 +784,7 @@ it('does not stage a desktop archive for an unmanaged role-bearing Mac', functio
     ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
-    $payload = workloadUpdaterInstallPayload($shell, 'mac-app-dev');
+    $payload = workload_updater_full_install_payload($shell, node: 'mac-app-dev');
 
     expect($results[0]['status'] ?? null)
         ->toBe('completed')
@@ -818,12 +812,7 @@ it('omits an incomplete desktop identity when the same-platform Agent artifact i
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
-        workloadUpdaterSnapshot(
-            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
-            desktopArtifacts: [
-                'darwin-arm64' => workloadUpdaterDesktopArtifact(),
-            ],
-        ),
+        workload_updater_darwin_snapshot_without_agent(),
     );
 
     Http::fake([
@@ -831,7 +820,7 @@ it('omits an incomplete desktop identity when the same-platform Agent artifact i
     ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
-    $payload = workloadUpdaterInstallPayload($shell, 'mini');
+    $payload = workload_updater_full_install_payload($shell, node: 'mini');
 
     expect($results[0]['status'] ?? null)
         ->toBe('completed')
@@ -859,16 +848,10 @@ it('stages a desktop archive and pending automatic handoff for a reachable manag
             'user' => 'nckrtl',
             'orbit_path' => '/Users/nckrtl/orbit',
         ]);
-    $desktop = workloadUpdaterDesktopArtifact();
+    $desktop = workload_updater_desktop_artifact();
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
-        workloadUpdaterSnapshot(
-            cliArtifacts: workloadUpdaterDarwinCliArtifacts(),
-            agentArtifacts: workloadUpdaterDarwinAgentArtifacts(),
-            desktopArtifacts: [
-                'darwin-arm64' => $desktop,
-            ],
-        ),
+        workload_updater_darwin_snapshot(),
     );
 
     Http::fake([
@@ -876,7 +859,7 @@ it('stages a desktop archive and pending automatic handoff for a reachable manag
     ]);
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
-    $payload = workloadUpdaterInstallPayload($shell, 'mini');
+    $payload = workload_updater_full_install_payload($shell, node: 'mini');
 
     expect($results)
         ->toMatchArray([
@@ -896,7 +879,10 @@ it('stages a desktop archive and pending automatic handoff for a reachable manag
             'version' => '1.2.3',
             'platform' => 'darwin',
             'architecture' => 'arm64',
-            'staged_path' => '/Users/nckrtl/.local/share/orbit/updates/desktop-'.substr($desktop['sha256'], 0, 12).'.tar.gz',
+            'staged_path' =>
+                '/Users/nckrtl/.local/share/orbit/updates/desktop-'
+                    .substr($desktop['sha256'], offset: 0, length: 12)
+                    .'.tar.gz',
         ])
         ->and($payload['pending_desktop_update'])
         ->toMatchArray([
@@ -1882,75 +1868,9 @@ final class WorkloadUpdaterFailIfCalledFleetVerifier extends FleetUpdateVerifier
 }
 
 /**
- * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
- * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
- * @param  array<string, string>  $roleImages
- */
-/**
- * @return array<string, array{url: string, sha256: string}>
- */
-/**
- * @return array<string, mixed>
- */
-function workloadUpdaterInstallPayload(WorkloadUpdaterFakeShell $shell, string $node): array
-{
-    $found = null;
-
-    foreach ($shell->calls as $call) {
-        if ($call['node'] !== $node) {
-            continue;
-        }
-
-        $input = $call['options']['input'] ?? null;
-
-        if (! is_string($input) || $input === '') {
-            continue;
-        }
-
-        $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        if (is_array($payload) && isset($payload['sha256'])) {
-            $found = $payload;
-        }
-    }
-
-    if (! is_array($found)) {
-        throw new RuntimeException("No install payload recorded for [{$node}].");
-    }
-
-    return $found;
-}
-
-/**
- * @return array<string, array{url: string, sha256: string}>
- */
-function workloadUpdaterDarwinCliArtifacts(): array
-{
-    return [
-        'darwin-arm64' => [
-            'url' => 'https://artifacts.test/orbit-macos-arm64',
-            'sha256' => str_repeat('b', times: 64),
-        ],
-    ];
-}
-
-/**
- * @return array<string, array{url: string, sha256: string}>
- */
-function workloadUpdaterDarwinAgentArtifacts(): array
-{
-    return [
-        'darwin-arm64' => [
-            'url' => 'https://artifacts.test/orbit-agent-macos-arm64',
-            'sha256' => str_repeat('e', times: 64),
-        ],
-    ];
-}
-
-/**
  * @return array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}
  */
-function workloadUpdaterDesktopArtifact(): array
+function workload_updater_desktop_artifact(): array
 {
     return [
         'url' => 'https://artifacts.test/Orbit.app.tar.gz',
@@ -1962,19 +1882,64 @@ function workloadUpdaterDesktopArtifact(): array
     ];
 }
 
+function workload_updater_darwin_snapshot(): OperationUpdatePlanSnapshot
+{
+    return workload_updater_darwin_plan([
+        'darwin-arm64' => [
+            'url' => 'https://artifacts.test/orbit-agent-macos-arm64',
+            'sha256' => str_repeat('e', times: 64),
+        ],
+    ]);
+}
+
+function workload_updater_darwin_snapshot_without_agent(): OperationUpdatePlanSnapshot
+{
+    return workload_updater_darwin_plan([]);
+}
+
 /**
- * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
  * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
- * @param  array<string, string>  $roleImages
- * @param  array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>  $desktopArtifacts
  */
+function workload_updater_darwin_plan(array $agentArtifacts): OperationUpdatePlanSnapshot
+{
+    $cliArtifacts = [
+        'darwin-arm64' => [
+            'url' => 'https://artifacts.test/orbit-macos-arm64',
+            'sha256' => str_repeat('b', times: 64),
+        ],
+    ];
+    $desktop = workload_updater_desktop_artifact();
+    $base = workloadUpdaterSnapshot(
+        cliArtifacts: $cliArtifacts,
+        agentArtifacts: $agentArtifacts,
+    );
+
+    return new OperationUpdatePlanSnapshot(
+        targetVersion: $base->targetVersion,
+        gatewayImage: $base->gatewayImage,
+        manifestSource: $base->manifestSource,
+        manifestVersion: $base->manifestVersion,
+        manifestSnapshot: [
+            ...$base->manifestSnapshot,
+            'desktop_artifacts' => [
+                'darwin-arm64' => $desktop,
+            ],
+        ],
+        cliArtifacts: $base->cliArtifacts,
+        agentArtifacts: $base->agentArtifacts,
+        desktopArtifacts: [
+            'darwin-arm64' => $desktop,
+        ],
+        roleImages: $base->roleImages,
+    );
+}
+
 function workloadUpdaterSnapshot(
     string $targetVersion = '1.2.3',
     string $manifestSource = 'github-release',
     array $cliArtifacts = [],
     array $agentArtifacts = [],
     array $roleImages = [],
-    array $desktopArtifacts = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifacts = $cliArtifacts === []
@@ -2004,12 +1969,10 @@ function workloadUpdaterSnapshot(
             ],
             'cli_artifacts' => $cliArtifacts,
             'agent_artifacts' => $agentArtifacts,
-            'desktop_artifacts' => $desktopArtifacts,
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
         agentArtifacts: $agentArtifacts,
-        desktopArtifacts: $desktopArtifacts,
         roleImages: $roleImages,
     );
 }
