@@ -114,12 +114,19 @@ function firewall_proof_path_excluded(string $path): bool
  */
 function firewall_proof_list_synced_paths(string $root): array
 {
-    $output = (string) shell_exec(
-        'git -C '.escapeshellarg($root).' ls-files -z --full-name --cached 2>/dev/null',
+    $listed = firewall_proof_run_command(
+        ['git', '-C', $root, 'ls-files', '-z', '--full-name', '--cached'],
+        $root,
+        30,
     );
+
+    if ($listed['exit'] !== 0) {
+        throw new InvalidArgumentException('checkout digest mismatch');
+    }
+
     $paths = [];
 
-    foreach (explode("\0", $output) as $path) {
+    foreach (explode("\0", $listed['stdout']) as $path) {
         $path = firewall_proof_normalize_path($path);
 
         if ($path === '' || firewall_proof_path_excluded($path) || ! is_file($root.'/'.$path)) {
@@ -131,6 +138,10 @@ function firewall_proof_list_synced_paths(string $root): array
 
     $paths = array_values(array_unique($paths));
     sort($paths, SORT_STRING);
+
+    if ($paths === []) {
+        throw new InvalidArgumentException('checkout digest mismatch');
+    }
 
     return $paths;
 }

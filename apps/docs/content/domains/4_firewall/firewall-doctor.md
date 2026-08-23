@@ -122,12 +122,13 @@ Required test files:
 Future firewall candidates run the reusable Beast retained-Incus proof with
 `bin/orbit-firewall-retained-proof --candidate=<40-character-sha>` from the
 feature worktree after a clean commit. The rig syncs the exact candidate onto
-the shared Beast retained topology, verifies a fail-closed checkout digest of
-the firewall/Doctor/public-SSH/proof surface on the remote runtime overlay,
-then exercises allow, list, Doctor, and remove. It retains the topology and
-receipt on success or failure. `--cleanup` removes only this rig's seeded UFW
-rules and local proof state after identity checks; it does not stop the shared
-retained topology. Do not use `composer test:e2e*` for this venue.
+the shared Beast retained topology, then binds identity as `synced-tracked-tree`:
+a fail-closed digest of the complete tracked tree on the synced transport
+checkout `/home/orbit/orbit` that backs the fresh runtime overlay. It then
+exercises allow, list, Doctor, and remove. It retains the topology and receipt
+on success or failure. `--cleanup` removes only this rig's seeded UFW rules and
+local proof state after identity checks; it does not stop the shared retained
+topology. Do not use `composer test:e2e*` for this venue.
 
 No current E2E test is mapped for firewall-family read-only or restore coverage.
 

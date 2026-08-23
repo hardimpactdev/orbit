@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\File;
+
 beforeEach(function (): void {
     require_once repo_path('bin/orbit-firewall-retained-proof.php');
 });
@@ -68,6 +70,27 @@ it('includes synced paths outside the former firewall whitelist', function (): v
         ->toContain('packages/sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php')
         ->and($paths)
         ->toContain('apps/gateway/app/Http/Controllers/Api/FirewallRuleStoreController.php');
+});
+
+it('fails closed when git ls-files fails or returns an empty tracked set', function (): void {
+    $missingGit = sys_get_temp_dir().'/firewall-proof-no-git-'.bin2hex(random_bytes(4));
+    $emptyGit = sys_get_temp_dir().'/firewall-proof-empty-git-'.bin2hex(random_bytes(4));
+    mkdir($missingGit);
+    mkdir($emptyGit);
+
+    try {
+        $init = firewall_proof_run_command(['git', 'init'], $emptyGit, timeout: 10);
+
+        expect($init['exit'])
+            ->toBe(0)
+            ->and(fn () => firewall_proof_list_synced_paths($missingGit))
+            ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch')
+            ->and(fn () => firewall_proof_list_synced_paths($emptyGit))
+            ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+    } finally {
+        File::deleteDirectory($missingGit);
+        File::deleteDirectory($emptyGit);
+    }
 });
 
 it('fails closed on a missing extra or mismatched synced path', function (): void {
