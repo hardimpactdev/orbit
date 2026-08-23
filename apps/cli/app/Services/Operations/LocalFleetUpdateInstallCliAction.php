@@ -11,6 +11,7 @@ use App\Services\Version\VersionOutputParser;
 use JsonException;
 use Symfony\Component\Process\Process;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class LocalFleetUpdateInstallCliAction
 {
     public function __construct(
@@ -171,9 +172,9 @@ final readonly class LocalFleetUpdateInstallCliAction
             return;
         }
 
-        $contents = @file_get_contents($url);
+        $contents = file_get_contents($url);
 
-        if (! is_string($contents) || file_put_contents($target, $contents) === false) {
+        if ($contents === false || file_put_contents($target, $contents) === false) {
             throw new LocalFleetUpdateInstallCliFailure(
                 errorCode: 'fleet_update.desktop_stage_failed',
                 message: 'Desktop update archive could not be downloaded.',

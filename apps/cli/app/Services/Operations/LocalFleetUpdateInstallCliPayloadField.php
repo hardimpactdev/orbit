@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class LocalFleetUpdateInstallCliPayloadField
 {
     private const string SHA_256_PATTERN = '/\A[a-f0-9]{64}\z/i';

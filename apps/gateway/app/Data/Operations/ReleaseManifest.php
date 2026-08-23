@@ -7,6 +7,7 @@ namespace App\Data\Operations;
 use App\Services\Gateway\GatewayImageReference;
 use RuntimeException;
 
+/** @mago-expect lint:too-many-methods */
 final readonly class ReleaseManifest
 {
     private const int SupportedSchemaVersion = 1;

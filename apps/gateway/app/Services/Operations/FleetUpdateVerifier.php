@@ -13,6 +13,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\RemoteShell\RunsInternalCommands;
 
+/** @mago-expect lint:cyclomatic-complexity */
 class FleetUpdateVerifier
 {
     public function __construct(

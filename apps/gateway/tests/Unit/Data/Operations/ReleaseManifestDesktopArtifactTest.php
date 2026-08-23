@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Data\Operations\ReleaseManifest;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
+use App\Data\Operations\ReleaseManifest;
 
-function releaseManifestDesktopFixture(array $overrides = []): array
+function release_manifest_desktop_fixture(array $overrides = []): array
 {
     return array_replace_recursive([
         'schema_version' => 1,
@@ -28,9 +28,9 @@ function releaseManifestDesktopFixture(array $overrides = []): array
 }
 
 it('accepts a legacy release manifest without desktop artifacts', function (): void {
-    $manifest = ReleaseManifest::fromArray(releaseManifestDesktopFixture());
+    $manifest = ReleaseManifest::fromArray(release_manifest_desktop_fixture());
 
-    expect($manifest->desktopArtifacts)->toBe([]);
+    expect($manifest->desktopArtifacts)->toBeEmpty();
 });
 
 it('parses optional Darwin desktop artifacts without weakening CLI validation', function (): void {
@@ -43,7 +43,7 @@ it('parses optional Darwin desktop artifacts without weakening CLI validation', 
         'architecture' => 'arm64',
     ];
 
-    $manifest = ReleaseManifest::fromArray(releaseManifestDesktopFixture([
+    $manifest = ReleaseManifest::fromArray(release_manifest_desktop_fixture([
         'desktop_artifacts' => [
             'darwin-arm64' => $desktop,
         ],
@@ -53,7 +53,7 @@ it('parses optional Darwin desktop artifacts without weakening CLI validation', 
 });
 
 it('rejects desktop artifacts that omit a Tauri updater signature', function (): void {
-    expect(fn () => ReleaseManifest::fromArray(releaseManifestDesktopFixture([
+    expect(fn () => ReleaseManifest::fromArray(release_manifest_desktop_fixture([
         'desktop_artifacts' => [
             'darwin-arm64' => [
                 'url' => 'https://example.test/Orbit.app.tar.gz',
@@ -63,7 +63,8 @@ it('rejects desktop artifacts that omit a Tauri updater signature', function ():
                 'architecture' => 'arm64',
             ],
         ],
-    ])))->toThrow(RuntimeException::class, 'signature');
+    ])))
+        ->toThrow(RuntimeException::class, 'signature');
 });
 
 it('persists optional desktop artifacts on an immutable update plan snapshot', function (): void {
@@ -80,7 +81,7 @@ it('persists optional desktop artifacts on an immutable update plan snapshot', f
         'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', times: 64),
         'manifest_source' => 'github-release',
         'manifest_version' => '1.2.3',
-        'manifest_snapshot' => releaseManifestDesktopFixture([
+        'manifest_snapshot' => release_manifest_desktop_fixture([
             'desktop_artifacts' => ['darwin-arm64' => $desktop],
         ]),
         'cli_artifacts' => [
@@ -98,6 +99,8 @@ it('persists optional desktop artifacts on an immutable update plan snapshot', f
         ],
     ]);
 
-    expect($snapshot->desktopArtifacts['darwin-arm64'])->toBe($desktop)
-        ->and($snapshot->toArray()['desktop_artifacts']['darwin-arm64'])->toBe($desktop);
+    expect($snapshot->desktopArtifacts['darwin-arm64'])
+        ->toBe($desktop)
+        ->and($snapshot->toArray()['desktop_artifacts']['darwin-arm64'])
+        ->toBe($desktop);
 });

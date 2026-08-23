@@ -793,7 +793,12 @@ it('fails a non-managed role-bearing target when the Agent is unavailable', func
 
 it('cannot relabel a managed macOS client as skipped after mutation starts', function (): void {
     $shell = new WorkloadUpdaterFakeShell(failures: [
-        'mini' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'install failed after download', durationMs: 10),
+        'mini' => new RemoteShellResult(
+            exitCode: 12,
+            stdout: '',
+            stderr: 'install failed after download',
+            durationMs: 10,
+        ),
     ]);
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -839,7 +844,8 @@ it('cannot relabel a managed macOS client as skipped after mutation starts', fun
             ],
         ])
         ->and($results[0]['status'] ?? null)
-        ->not->toBe('skipped')
+        ->not
+        ->toBe('skipped')
         ->and($shell->updatedNodes())
         ->toBe(['mini']);
 });
@@ -2067,6 +2073,7 @@ function workload_updater_install_payloads(WorkloadUpdaterFakeShell $shell, stri
     )));
 }
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommands
 {
     /**

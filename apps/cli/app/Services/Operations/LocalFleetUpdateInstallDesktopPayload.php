@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+/** @mago-expect lint:excessive-parameter-list */
 final readonly class LocalFleetUpdateInstallDesktopPayload
 {
     public function __construct(

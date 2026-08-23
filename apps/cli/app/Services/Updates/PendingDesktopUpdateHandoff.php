@@ -6,7 +6,12 @@ namespace App\Services\Updates;
 
 use JsonException;
 
-/** @mago-expect lint:mixed-assignment */
+/**
+ * @mago-expect lint:mixed-assignment
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
+ */
 final class PendingDesktopUpdateHandoff
 {
     public const string InstallModeRestartReady = 'restart-ready';
@@ -32,7 +37,7 @@ final class PendingDesktopUpdateHandoff
 
     public function write(string $path): void
     {
-        $this->assertSafeHandoffPath($path);
+        self::assertSafeHandoffPath($path);
         $this->assertPayload($this->payload);
 
         $directory = dirname($path);

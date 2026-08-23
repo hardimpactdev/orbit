@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-properties
+ */
 final class LocalFleetUpdateInstallCliPayload
 {
     public string $artifactUrl;

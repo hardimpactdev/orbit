@@ -13173,13 +13173,15 @@
                 "apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php",
                 "apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php",
                 "apps/cli/tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php",
+                "apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php",
                 "apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php",
                 "apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php",
                 "apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php",
                 "apps/gateway/tests/Feature/Services/Operations/FleetVersionProbeTest.php",
                 "apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php",
                 "apps/gateway/tests/Feature/Services/Operations/UpdateRunnerCheckStepsTest.php",
-                "apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
+                "apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php",
+                "apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php"
             ],
             "verification_hints": [
                 {
@@ -13202,6 +13204,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php",
@@ -13244,6 +13253,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php"
                 }
             ],
             "p4_mapping": {

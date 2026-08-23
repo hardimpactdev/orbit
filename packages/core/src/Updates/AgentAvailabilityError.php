@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Core\Updates;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final class AgentAvailabilityError
 {
     public const string Unavailable = 'orbit_agent_unavailable';
