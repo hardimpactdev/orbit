@@ -3,10 +3,10 @@
 set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-source_root="$(cd "${script_dir}/.." >/dev/null 2>&1 && pwd)"
-repo_root="${ORBIT_RELEASE_CANDIDATE_ROOT:-$source_root}"
+repo_root="${ORBIT_RELEASE_CANDIDATE_ROOT:-$(cd "${script_dir}/.." >/dev/null 2>&1 && pwd)}"
 state_root="${repo_root}/.orbit/release-candidates"
 latest_pointer="${state_root}/latest"
+accepted_pointer="${state_root}/accepted"
 
 work_dir=""
 ghcr_docker_config=""
@@ -25,7 +25,7 @@ trap cleanup EXIT
 usage() {
     cat <<'EOF'
 Usage:
-  bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]
+  bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb[,frankenphp]]
   bin/orbit-release-candidate verify-native --native-assets=<dir> [--commit=<sha>] [--version=<version>]
   bin/orbit-release-candidate env [--build-id=<id>]
   bin/orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted
@@ -43,11 +43,14 @@ Formalizes the release-candidate publication flow from step 7 of
           sha256_agent_linux_amd64/sha256_agent_darwin_arm64, per-image
           fingerprints, and built/reused dispositions) and update the
           .orbit/release-candidates/latest pointer file. Unchanged Reverb and
-          FrankenPHP images are aliased from the previous candidate digest
-          onto the current candidate tag. Gateway always rebuilds because it
-          embeds VERSION. --force-rebuild=reverb,frankenphp rebuilds selected
-          reusable images. With --native-assets, import a verified Darwin
-          ARM64 Agent bundle instead of building it.
+          FrankenPHP images are aliased from the previously accepted candidate
+          digest onto the current candidate tag. Gateway always rebuilds because
+          it embeds VERSION. --force-rebuild=reverb,frankenphp rebuilds selected
+          reusable images. Floating external inputs such as unpinned base tags
+          and getcomposer.org/latest-stable are outside the owned-input
+          fingerprint; --force-rebuild is the refresh path for those. With
+          --native-assets, import a verified Darwin ARM64 Agent bundle instead
+          of building it.
   verify-native
           Verify a transferred native Agent bundle without building, pushing,
           uploading, or mutating candidate state.
@@ -55,11 +58,13 @@ Formalizes the release-candidate publication flow from step 7 of
           candidate.env of the latest (or --build-id) candidate.
   promote-runtime
           After live candidate acceptance, promote the recorded FrankenPHP
-          digest to its stable runtime-family tag and verify exact digest
-          equality. This does not create a GitHub release.
+          digest to its stable runtime-family tag, verify exact digest
+          equality, and record the build id as the durable accepted reuse
+          source. This does not create a GitHub release.
   verify  Recompute sha256 hashes of the stored CLI and Agent artifacts against
           candidate.env, and with --release-image compare the image digest
           from `docker buildx imagetools inspect` against gateway_digest.
+          Reused Reverb and FrankenPHP digests are inspected for resolvability.
 
 This helper never creates GitHub releases or pushes Git tags. `build` ends at
 candidate channel publication. Runtime-family promotion is a separate,
@@ -96,26 +101,29 @@ is_sha256_digest() {
     [[ "${1:-}" =~ ^sha256:[0-9a-f]{64}$ ]]
 }
 
-system_git() {
-    PATH="/usr/bin:/bin:/usr/local/bin" command git "$@"
-}
-
 fingerprint_owned_inputs() {
-    local listing digest
+    local listing digest path tmp
     listing="$(mktemp)"
+    : > "$listing"
 
-    # Write ls-tree directly to a file. Do not pipe git into sort or a
-    # while-read consumer: that pipeline deadlocks when the consumer
-    # stops draining and sort's stdout pipe fills.
-    if ! system_git -C "$source_root" ls-tree -r HEAD -- "$@" > "$listing"; then
-        rm -f "$listing"
-        fail "fingerprint git ls-tree failed for: $*"
-    fi
+    # Write each pathspec's ls-tree directly to a file. Do not pipe git
+    # into sort or a while-read consumer: that pipeline deadlocks when
+    # the consumer stops draining and sort's stdout pipe fills.
+    for path in "$@"; do
+        tmp="$(mktemp)"
+        if ! git -C "$repo_root" ls-tree -r HEAD -- "$path" > "$tmp"; then
+            rm -f "$listing" "$tmp"
+            fail "fingerprint git ls-tree failed for: ${path}"
+        fi
 
-    [ -s "$listing" ] || {
-        rm -f "$listing"
-        fail "fingerprint inputs produced an empty file list: $*"
-    }
+        if [ ! -s "$tmp" ]; then
+            rm -f "$listing" "$tmp"
+            fail "fingerprint pathspec matched nothing: ${path}"
+        fi
+
+        cat "$tmp" >> "$listing"
+        rm -f "$tmp"
+    done
 
     digest="$(compute_sha256 "$listing")"
     rm -f "$listing"
@@ -127,14 +135,19 @@ previous_image_reusable() {
     local current_fingerprint="$2"
     local force="$3"
     local previous_file="$4"
-    local previous_fingerprint previous_digest
+    local previous_fingerprint previous_digest accepted_at
 
     if [ "$force" -eq 1 ] || [ -z "$previous_file" ] || [ ! -f "$previous_file" ]; then
         return 1
     fi
 
+    accepted_at="$(state_value accepted_at "$previous_file")"
     previous_fingerprint="$(state_value "${name}_fingerprint" "$previous_file")"
     previous_digest="$(state_value "${name}_digest" "$previous_file")"
+
+    if [ -z "$accepted_at" ]; then
+        return 1
+    fi
 
     if ! is_sha256_digest "$previous_fingerprint" || ! is_sha256_digest "$previous_digest"; then
         return 1
@@ -242,6 +255,7 @@ cmd_build() {
     local force_rebuild_reverb=0
     local force_rebuild_frankenphp=0
     local argument force_rebuild_value force_rebuild_image
+    local -a force_rebuild_images=()
 
     for argument in "$@"; do
         case "$argument" in
@@ -257,13 +271,13 @@ cmd_build() {
                         reverb) force_rebuild_reverb=1 ;;
                         frankenphp) force_rebuild_frankenphp=1 ;;
                         *)
-                            fail "unknown force-rebuild image [${force_rebuild_image}]. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]"
+                            fail "unknown force-rebuild image [${force_rebuild_image}]. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb[,frankenphp]]"
                             ;;
                     esac
                 done
                 ;;
             *)
-                fail "unknown build option: ${argument}. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]"
+                fail "unknown build option: ${argument}. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb[,frankenphp]]"
                 ;;
         esac
     done
@@ -298,8 +312,8 @@ cmd_build() {
     fi
 
     local previous_state_file='' previous_build_id=''
-    if [ -f "$latest_pointer" ]; then
-        previous_build_id="$(tr -d '[:space:]' < "$latest_pointer")"
+    if [ -f "$accepted_pointer" ]; then
+        previous_build_id="$(tr -d '[:space:]' < "$accepted_pointer")"
         if [ -n "$previous_build_id" ] && [ -f "${state_root}/${previous_build_id}/candidate.env" ]; then
             previous_state_file="${state_root}/${previous_build_id}/candidate.env"
         fi
@@ -498,7 +512,7 @@ cmd_build() {
         actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
 
         if [ "$actual_digest" != "$digest" ]; then
-            fail "aliased ${dest_tag} digest mismatch: expected ${digest}, got ${actual_digest:-missing}."
+            fail "aliased ${dest_tag} digest mismatch: expected ${digest}, got ${actual_digest:-missing}. Rebuild with --force-rebuild=reverb or --force-rebuild=frankenphp."
         fi
 
         docker_cmd pull "$dest_tag" || fail "failed to pull aliased ${dest_tag}."
@@ -594,7 +608,9 @@ cmd_build() {
         frankenphp_source_digest="$frankenphp_digest"
     fi
 
-    docker save "$candidate_reverb_image" -o "${work_dir}/orbit-reverb-linux-amd64.tar"
+    local versioned_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${version}"
+    docker tag "$candidate_reverb_image" "$versioned_reverb_image"
+    docker save "$versioned_reverb_image" -o "${work_dir}/orbit-reverb-linux-amd64.tar"
     docker save "$candidate_frankenphp_image" -o "${work_dir}/orbit-frankenphp-linux-amd64.tar"
 
     "${repo_root}/bin/orbit-release-manifest" \
@@ -610,7 +626,7 @@ cmd_build() {
         --agent-artifact="darwin-arm64=orbit-agent-macos-arm64=${work_dir}/orbit-agent-macos-arm64" \
         --role-image="orbit-caddy=caddy:2-alpine" \
         --role-image="orbit-frankenphp=${candidate_frankenphp_image}@${frankenphp_digest}" \
-        --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
+        --role-image="orbit-websocket=${versioned_reverb_image}@${reverb_digest}" \
         --role-image-artifact="orbit-frankenphp=orbit-frankenphp-linux-amd64.tar=${work_dir}/orbit-frankenphp-linux-amd64.tar" \
         --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=${work_dir}/orbit-reverb-linux-amd64.tar" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
@@ -728,6 +744,7 @@ cmd_build() {
         printf 'candidate_asset_base_url=%s\n' "$candidate_asset_base_url"
         printf 'gateway_digest=%s\n' "$gateway_digest"
         printf 'candidate_reverb_image=%s\n' "$candidate_reverb_image"
+        printf 'versioned_reverb_image=%s\n' "$versioned_reverb_image"
         printf 'reverb_digest=%s\n' "$reverb_digest"
         printf 'candidate_frankenphp_image=%s\n' "$candidate_frankenphp_image"
         printf 'stable_frankenphp_image=%s\n' "$stable_frankenphp_image"
@@ -845,6 +862,14 @@ cmd_promote_runtime() {
         printf 'digest=%s\n' "$actual_digest"
         printf 'promoted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     } > "${state_dir}/frankenphp-promotion.log"
+
+    local accepted_at rewritten_state
+    accepted_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    rewritten_state="${state_file}.accepted"
+    grep -v '^accepted_at=' "$state_file" > "$rewritten_state" || true
+    printf 'accepted_at=%s\n' "$accepted_at" >> "$rewritten_state"
+    mv "$rewritten_state" "$state_file"
+    printf '%s\n' "$recorded_build_id" > "$accepted_pointer"
 
     printf 'PASS frankenphp_digest %s\n' "$actual_digest"
     printf 'Runtime promotion evidence: %s\n' "${state_dir}/frankenphp-promotion.log"
@@ -986,6 +1011,39 @@ cmd_verify() {
             failures=$((failures + 1))
         fi
     done
+
+    verify_reused_digest() {
+        local name="$1"
+        local repository="$2"
+        local disposition expected_digest inspect_output actual_digest
+
+        disposition="$(state_value "${name}_disposition" "$state_file")"
+        [ "$disposition" = 'reused' ] || return 0
+
+        expected_digest="$(state_value "${name}_digest" "$state_file")"
+        if ! is_sha256_digest "$expected_digest"; then
+            printf 'FAIL %s_digest: reused digest missing or invalid in %s\n' "$name" "$state_file"
+            failures=$((failures + 1))
+            return 0
+        fi
+
+        if ! inspect_output="$(docker buildx imagetools inspect "${repository}@${expected_digest}")"; then
+            printf 'FAIL %s_digest: imagetools inspect failed for %s@%s\n' "$name" "$repository" "$expected_digest"
+            failures=$((failures + 1))
+            return 0
+        fi
+
+        actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+        if [ "$actual_digest" = "$expected_digest" ]; then
+            printf 'PASS %s_digest %s\n' "$name" "$actual_digest"
+        else
+            printf 'FAIL %s_digest: expected %s got %s for %s@%s\n' "$name" "$expected_digest" "$actual_digest" "$repository" "$expected_digest"
+            failures=$((failures + 1))
+        fi
+    }
+
+    verify_reused_digest reverb 'ghcr.io/hardimpactdev/orbit-reverb'
+    verify_reused_digest frankenphp 'ghcr.io/hardimpactdev/orbit-frankenphp'
 
     if [ -n "$release_image" ]; then
         local expected_digest actual_digest inspect_output

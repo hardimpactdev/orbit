@@ -208,20 +208,16 @@ jobs:
           }
 
           $frankenphpImage = $manifest['role_images']['orbit-frankenphp'] ?? null;
-          $frankenphpDigest = '';
+          $frankenphpPrefix = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:';
+          $frankenphpDigest = is_string($frankenphpImage) ? substr($frankenphpImage, strlen($frankenphpPrefix)) : '';
 
           if (
               ! is_string($frankenphpImage)
-              || preg_match(
-                  '/^ghcr.io\/hardimpactdev\/orbit-frankenphp:[^@[:space:]]+@sha256:([0-9a-f]{64})$/D',
-                  $frankenphpImage,
-                  $frankenphpMatch,
-              ) !== 1
+              || ! str_starts_with($frankenphpImage, $frankenphpPrefix)
+              || preg_match('/^[0-9a-f]{64}$/D', $frankenphpDigest) !== 1
           ) {
-              fail('Release manifest FrankenPHP image must be a digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp image.');
+              fail('Release manifest FrankenPHP image must be the digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm image.');
           }
-
-          $frankenphpDigest = $frankenphpMatch[1];
 
           file_put_contents(
               getenv('GITHUB_OUTPUT'),

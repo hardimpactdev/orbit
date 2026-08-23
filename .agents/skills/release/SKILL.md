@@ -50,8 +50,12 @@ manifests.
 - GitHub publication promotes those exact tested assets; it does not rebuild
   CLI binaries or Orbit-owned images. Unchanged Reverb and FrankenPHP images
   keep their previously accepted digest and receive the current release version
-  by verified digest aliasing. The gateway image always rebuilds because it
-  embeds root `VERSION`. The release workflow promotes the accepted gateway
+  by verified digest aliasing. Reuse metadata comes from the candidate recorded
+  by `promote-runtime --accepted`, not from `.orbit/release-candidates/latest`.
+  The gateway image always rebuilds because it embeds root `VERSION`. Floating
+  external inputs (unpinned `FROM` tags, `getcomposer.org/latest-stable`, apt)
+  sit outside the owned-input fingerprint; `--force-rebuild=reverb,frankenphp`
+  is the explicit refresh path for those. The release workflow promotes the accepted gateway
   image digest to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`
   package tag only after the draft assets and the digest-pinned image verify
   and the split package repositories publish, immediately before it publishes
@@ -257,7 +261,10 @@ manifests.
    unresolvable previous image metadata selects a build. `--force-rebuild=reverb`
    and `--force-rebuild=frankenphp` rebuild those images even when fingerprints
    match. Destination tags are inspected against the accepted digest before
-   archives are exported. It then generates the `topology-candidate` manifest,
+   archives are exported. The websocket archive is produced from a local
+   `docker tag` of `ghcr.io/hardimpactdev/orbit-reverb:<VERSION>` so its
+   `RepoTags` match the digest-pinned manifest ref; candidate build does not
+   push that public version tag. It then generates the `topology-candidate` manifest,
    uploads the immutable candidate assets under `candidates/<build_id>/`, and
    publishes the stable channel manifest. It stops at candidate channel
    publication — it never creates GitHub releases, pushes git tags, or moves
@@ -277,6 +284,8 @@ manifests.
   `.orbit/release-candidates/latest` holds the newest build id; `env` and
   `verify` read it when `--build-id` is absent, and an explicit
   `--build-id=<id>` always wins over the pointer.
+  `.orbit/release-candidates/accepted` holds the build id recorded by
+  `promote-runtime --accepted` and is the only reuse source.
 
    After that durable candidate state exists, remove only this run's Mini
    build worktree and Beast import directory. Do not touch Mini's primary
@@ -360,8 +369,10 @@ manifests.
 
    This promotion does not create a GitHub release, move a gateway version tag,
    or publish CLI assets. It records the promoted source, target, and verified
-   digest in the candidate state. Before acceptance, do not run it: leaving a
-   candidate unpromoted keeps the stable runtime tag unchanged.
+   digest in the candidate state and writes `.orbit/release-candidates/accepted`
+   so later candidate builds reuse this identity rather than `latest`. Before
+   acceptance, do not run it: leaving a candidate unpromoted keeps the stable
+   runtime tag unchanged and prevents digest reuse.
 
    If the user requested no GitHub release, stop here after recording the live
    acceptance and runtime-promotion evidence. Otherwise, stop and ask for

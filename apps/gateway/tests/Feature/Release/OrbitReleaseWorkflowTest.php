@@ -429,8 +429,9 @@ it('promotes accepted Reverb and FrankenPHP version tags from digest-pinned mani
             'Release manifest websocket image must be the promoted digest-pinned ghcr.io/hardimpactdev/orbit-reverb image.',
         )
         ->toContain(
-            'Release manifest FrankenPHP image must be a digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp image.',
-        );
+            'Release manifest FrankenPHP image must be the digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm image.',
+        )
+        ->toContain("\$frankenphpPrefix = 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:';");
 });
 
 it('accepts a promotion manifest whose websocket archive url and checksum match', function (): void {
@@ -508,6 +509,32 @@ it('fails promotion verification when the websocket artifact url is wrong', func
         new Process(['rm', '-rf', $assetDir])->run();
     }
 });
+
+it('rejects a FrankenPHP github-release image that is not the stable runtime-family tag', function (string $image): void {
+    $assetDir = releaseWorkflowAssetDir();
+
+    try {
+        mutateReleaseWorkflowManifest($assetDir, function (array $manifest) use ($image): array {
+            $manifest['role_images']['orbit-frankenphp'] = $image;
+
+            return $manifest;
+        });
+
+        ['process' => $process] = runReleaseWorkflowVerification($assetDir);
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm');
+    } finally {
+        new Process(['rm', '-rf', $assetDir])->run();
+    }
+})->with([
+    'candidate tag' =>
+        'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-20260823T000000Z-abcd@sha256:'
+            .str_repeat('e', times: 64),
+    'version tag' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1.2.3@sha256:'.str_repeat('e', times: 64),
+]);
 
 it('fails promotion verification when the websocket archive checksum mismatches', function (): void {
     $assetDir = releaseWorkflowAssetDir();

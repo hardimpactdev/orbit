@@ -201,8 +201,10 @@ tested binaries or image, promotes the verified gateway digest to the
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` package tag, aliases the
 accepted Reverb and FrankenPHP digests onto matching `<version>` tags, and
 publishes the GitHub release only after those checks succeed. Unchanged Reverb
-and FrankenPHP content keeps its previously accepted digest; only the gateway
-image always rebuilds, because it embeds root `VERSION`. The operator never
+and FrankenPHP content keeps the digest recorded by
+`orbit-release-candidate promote-runtime --accepted`; only the gateway
+image always rebuilds, because it embeds root `VERSION`. An unaccepted newer
+candidate does not become the reuse source. The operator never
 moves those version tags. A failed verification leaves the draft unpublished
 and the GHCR version tag unmoved, and converts a premature published release
 back to a draft. Source-dev Docker and Incus

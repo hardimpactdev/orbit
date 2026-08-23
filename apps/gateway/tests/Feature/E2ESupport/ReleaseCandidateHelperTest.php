@@ -161,7 +161,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('-f docker/orbit-frankenphp/Dockerfile')
             ->toContain('--tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'.$buildId)
             ->toContain(
-                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.'@sha256:'
+                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200@sha256:'
                     .str_repeat('cd', times: 32),
             )
             ->toContain('--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=')
@@ -172,7 +172,12 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                     .'@sha256:'
                     .str_repeat('ef', times: 32),
             )
-            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
+            ->toContain(
+                'docker tag ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'
+                .$buildId
+                .' ghcr.io/hardimpactdev/orbit-reverb:0.1.200',
+            )
+            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200 -o ')
             ->toContain(
                 'docker save ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'.$buildId.' -o ',
             )
@@ -210,6 +215,7 @@ it('reuses unchanged Reverb and FrankenPHP digests without docker buildx build',
         $previous = release_candidate_parse_state(
             path: "{$root}/.orbit/release-candidates/{$previousBuildId}/candidate.env",
         );
+        release_candidate_accept(root: $root, env: $env, buildId: $previousBuildId);
 
         file_put_contents("{$root}/stub.log", '');
 
@@ -261,7 +267,12 @@ it('reuses unchanged Reverb and FrankenPHP digests without docker buildx build',
                 'docker buildx imagetools inspect ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'
                 .$buildId,
             )
-            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
+            ->toContain(
+                'docker tag ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'
+                .$buildId
+                .' ghcr.io/hardimpactdev/orbit-reverb:0.1.200',
+            )
+            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200 -o ')
             ->toContain(
                 'docker save ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'.$buildId.' -o ',
             )
@@ -283,6 +294,7 @@ it('rebuilds Reverb when owned-input fingerprints change', function (): void {
         expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
 
         $previousBuildId = release_candidate_latest_build_id(root: $root);
+        release_candidate_accept(root: $root, env: $env, buildId: $previousBuildId);
         $previousPath = "{$root}/.orbit/release-candidates/{$previousBuildId}/candidate.env";
         $previous = (string) file_get_contents($previousPath);
         file_put_contents(
@@ -338,6 +350,7 @@ it('rebuilds reusable images when previous metadata is missing malformed or forc
         ]);
 
         $malformedId = release_candidate_latest_build_id(root: $root);
+        release_candidate_accept(root: $root, env: $env, buildId: $malformedId);
         $malformedPath = "{$root}/.orbit/release-candidates/{$malformedId}/candidate.env";
         $malformed = (string) file_get_contents($malformedPath);
         file_put_contents(
@@ -388,6 +401,11 @@ it('still builds the gateway image when a previous gateway fingerprint matches',
 
         $first = release_candidate_process(arguments: ['build'], env: $env);
         expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+        release_candidate_accept(
+            root: $root,
+            env: $env,
+            buildId: release_candidate_latest_build_id(root: $root),
+        );
 
         file_put_contents("{$root}/stub.log", '');
 
@@ -419,6 +437,11 @@ it('fails the candidate when a reused destination digest does not match', functi
 
         $first = release_candidate_process(arguments: ['build'], env: $env);
         expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+        release_candidate_accept(
+            root: $root,
+            env: $env,
+            buildId: release_candidate_latest_build_id(root: $root),
+        );
 
         $second = release_candidate_process(
             arguments: ['build'],
@@ -430,7 +453,146 @@ it('fails the candidate when a reused destination digest does not match', functi
         expect($second->getExitCode())
             ->toBe(1, $second->getOutput().$second->getErrorOutput())
             ->and($second->getErrorOutput())
-            ->toContain('digest mismatch');
+            ->toContain('digest mismatch')
+            ->toContain('--force-rebuild=');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('does not reuse an unaccepted newer latest candidate when an older accepted candidate exists', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'reuse-accepted-not-latest');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+        $acceptedId = release_candidate_latest_build_id(root: $root);
+        $accepted = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$acceptedId}/candidate.env",
+        );
+        release_candidate_accept(root: $root, env: $env, buildId: $acceptedId);
+
+        $second = release_candidate_process(arguments: ['build'], env: $env);
+        expect($second->getExitCode())->toBe(0, $second->getOutput().$second->getErrorOutput());
+        $unacceptedId = release_candidate_latest_build_id(root: $root);
+        expect($unacceptedId)->not->toBe($acceptedId);
+
+        $unacceptedPath = "{$root}/.orbit/release-candidates/{$unacceptedId}/candidate.env";
+        $unaccepted = (string) file_get_contents($unacceptedPath);
+        file_put_contents(
+            $unacceptedPath,
+            (string) preg_replace(
+                '/^reverb_digest=.*$/m',
+                'reverb_digest=sha256:'.str_repeat('22', times: 32),
+                $unaccepted,
+            ),
+        );
+
+        $third = release_candidate_process(arguments: ['build'], env: $env);
+        expect($third->getExitCode())->toBe(0, $third->getOutput().$third->getErrorOutput());
+
+        $thirdId = release_candidate_latest_build_id(root: $root);
+        $thirdState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$thirdId}/candidate.env",
+        );
+
+        expect($thirdState)
+            ->toMatchArray([
+                'reverb_disposition' => 'reused',
+                'reverb_digest' => $accepted['reverb_digest'],
+                'reverb_source_build_id' => $acceptedId,
+            ])
+            ->and($thirdState['reverb_source_build_id'])
+            ->not->toBe($unacceptedId);
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('exports a websocket archive whose RepoTags match the versioned manifest image', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'archive-repotags');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $process = release_candidate_process(
+            arguments: ['build'],
+            env: release_candidate_process_env(root: $root),
+        );
+        expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+
+        $buildId = release_candidate_latest_build_id(root: $root);
+        $stateDir = "{$root}/.orbit/release-candidates/{$buildId}";
+        $archive = "{$stateDir}/orbit-reverb-linux-amd64.tar";
+        $expectedTag = 'ghcr.io/hardimpactdev/orbit-reverb:0.1.200';
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($stubLog)
+            ->toContain("docker tag ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId} {$expectedTag}")
+            ->toContain("docker save {$expectedTag} -o ")
+            ->toContain('--role-image=orbit-websocket='.$expectedTag.'@sha256:'.str_repeat('cd', times: 32))
+            ->not->toMatch('/docker push ghcr\.io\/hardimpactdev\/orbit-reverb:0\.1\.200(?:\s|$)/');
+
+        expect(release_candidate_archive_repo_tags(path: $archive))->toBe([$expectedTag]);
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('rebuilds Reverb when a fixture owned input changes and reuses when an unrelated file changes', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'fingerprint-fixture');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+        $firstId = release_candidate_latest_build_id(root: $root);
+        $firstState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$firstId}/candidate.env",
+        );
+        release_candidate_accept(root: $root, env: $env, buildId: $firstId);
+
+        file_put_contents("{$root}/README.md", "unrelated\n");
+        $unrelated = release_candidate_process(arguments: ['build'], env: $env);
+        expect($unrelated->getExitCode())->toBe(0, $unrelated->getOutput().$unrelated->getErrorOutput());
+        $unrelatedId = release_candidate_latest_build_id(root: $root);
+        $unrelatedState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$unrelatedId}/candidate.env",
+        );
+
+        expect($unrelatedState)->toMatchArray([
+            'reverb_disposition' => 'reused',
+            'frankenphp_disposition' => 'reused',
+            'reverb_fingerprint' => $firstState['reverb_fingerprint'],
+            'frankenphp_fingerprint' => $firstState['frankenphp_fingerprint'],
+        ]);
+
+        release_candidate_accept(root: $root, env: $env, buildId: $unrelatedId);
+        file_put_contents("{$root}/apps/reverb/composer.lock", "{\"changed\":true}\n");
+
+        $changed = release_candidate_process(arguments: ['build'], env: $env);
+        expect($changed->getExitCode())->toBe(0, $changed->getOutput().$changed->getErrorOutput());
+        $changedId = release_candidate_latest_build_id(root: $root);
+        $changedState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$changedId}/candidate.env",
+        );
+        $changedLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($changedState['reverb_disposition'])
+            ->toBe('built')
+            ->and($changedState['frankenphp_disposition'])
+            ->toBe('reused')
+            ->and($changedState['reverb_fingerprint'])
+            ->not
+            ->toBe($firstState['reverb_fingerprint'])
+            ->and($changedState['frankenphp_fingerprint'])
+            ->toBe($firstState['frankenphp_fingerprint'])
+            ->and($changedLog)
+            ->toContain('-f docker/orbit-reverb/Dockerfile');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
     }
@@ -1041,11 +1203,54 @@ function release_candidate_prepare_root(string $temp): string
     );
     chmod(filename: "{$root}/home/.docker/cli-plugins/docker-buildx", permissions: 0o755);
 
+    release_candidate_write_owned_inputs(root: $root);
+
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'git', body: <<<'BASH'
         printf 'git %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        git_dir="${ORBIT_RELEASE_CANDIDATE_ROOT:-.}"
         while [ "${1:-}" = '-C' ]; do
+            git_dir="$2"
             shift 2
         done
+        if [ "${1:-}" = 'ls-tree' ]; then
+            path=''
+            while [ "$#" -gt 0 ]; do
+                if [ "$1" = '--' ]; then
+                    shift
+                    path="${1:-}"
+                    break
+                fi
+                shift
+            done
+            [ -n "$path" ] || exit 1
+            target="${git_dir}/${path}"
+            emit_tree() {
+                local file="$1"
+                local rel="$2"
+                local hash
+                if command -v sha256sum >/dev/null 2>&1; then
+                    hash="$(sha256sum "$file" | awk '{ print $1 }')"
+                else
+                    hash="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+                fi
+                printf '100644 blob %s\t%s\n' "$hash" "$rel"
+            }
+            if [ -f "$target" ]; then
+                emit_tree "$target" "$path"
+                exit 0
+            fi
+            if [ -d "$target" ]; then
+                found=0
+                while IFS= read -r file; do
+                    rel="${file#"${git_dir}"/}"
+                    emit_tree "$file" "$rel"
+                    found=1
+                done < <(find "$target" -type f | LC_ALL=C sort)
+                [ "$found" -eq 1 ] || exit 1
+                exit 0
+            fi
+            exit 1
+        fi
         case "$*" in
             'rev-parse HEAD') printf '%s\n' "${ORBIT_TEST_HEAD_COMMIT}" ;;
             'rev-parse --short HEAD') printf '%s\n' "${ORBIT_TEST_HEAD_COMMIT:0:8}" ;;
@@ -1099,6 +1304,9 @@ function release_candidate_prepare_root(string $temp): string
         if [ "$1" = 'pull' ]; then
             exit 0
         fi
+        if [ "$1" = 'tag' ]; then
+            exit 0
+        fi
         if [ "$1" = 'push' ]; then
             printf 'docker-push-host=%s\n' "${DOCKER_HOST:-}" >> "${STUB_LOG:-/dev/null}"
             case "$2" in
@@ -1119,17 +1327,25 @@ function release_candidate_prepare_root(string $temp): string
         fi
         if [ "$1" = 'save' ]; then
             output=''
+            image=''
+            shift
             while [ "$#" -gt 0 ]; do
                 case "$1" in
                     -o)
                         shift
                         output="$1"
                         ;;
+                    *)
+                        image="$1"
+                        ;;
                 esac
                 shift || true
             done
-            [ -n "$output" ] || exit 1
-            printf 'stub-reverb-image-tar\n' > "$output"
+            [ -n "$output" ] && [ -n "$image" ] || exit 1
+            tmp="$(mktemp -d)"
+            printf '[{"Config":"config.json","RepoTags":["%s"],"Layers":[]}]\n' "$image" > "${tmp}/manifest.json"
+            tar -C "$tmp" -cf "$output" manifest.json
+            rm -rf "$tmp"
             exit 0
         fi
         exit 1
@@ -1212,6 +1428,49 @@ function release_candidate_prepare_root(string $temp): string
         BASH);
 
     return $root;
+}
+
+function release_candidate_write_owned_inputs(string $root): void
+{
+    $files = [
+        'VERSION' => "0.1.200\n",
+        'docker/orbit-gateway/Dockerfile' => "FROM scratch\n",
+        'docker/orbit-reverb/Dockerfile' => "FROM ubuntu:26.04\n",
+        'docker/orbit-frankenphp/Dockerfile' => "FROM dunglas/frankenphp:1-php8.5-bookworm\n",
+        'apps/gateway/artisan' => "<?php\n",
+        'apps/gateway/composer.json' => "{}\n",
+        'apps/gateway/composer.lock' => "{}\n",
+        'apps/gateway/.env.example' => "APP_KEY=\n",
+        'apps/gateway/app/.keep' => "keep\n",
+        'apps/gateway/bootstrap/.keep' => "keep\n",
+        'apps/gateway/config/.keep' => "keep\n",
+        'apps/gateway/database/.keep' => "keep\n",
+        'apps/gateway/public/.keep' => "keep\n",
+        'apps/gateway/resources/css/.keep' => "keep\n",
+        'apps/gateway/resources/js/.keep' => "keep\n",
+        'apps/gateway/resources/views/.keep' => "keep\n",
+        'apps/gateway/routes/.keep' => "keep\n",
+        'apps/reverb/composer.lock' => "{}\n",
+        'bin/install-orbit' => "#!/bin/sh\n",
+        'packages/core/composer.json' => "{}\n",
+        'packages/core/composer.lock' => "{}\n",
+        'packages/core/src/.keep' => "keep\n",
+        'packages/core/resources/php-cli/artifact-catalog.json' => "{}\n",
+        'packages/sdk/composer.json' => "{}\n",
+        'packages/sdk/composer.lock' => "{}\n",
+        'packages/sdk/src/.keep' => "keep\n",
+    ];
+
+    foreach ($files as $relative => $content) {
+        $path = "{$root}/{$relative}";
+        $directory = dirname($path);
+
+        if (! is_dir($directory)) {
+            mkdir($directory, recursive: true);
+        }
+
+        file_put_contents($path, $content);
+    }
 }
 
 function release_candidate_write_stub(string $binDir, string $name, string $body): void
@@ -1340,6 +1599,40 @@ function release_candidate_latest_build_id(string $root): string
     expect($buildId)->toMatch('/^\d{8}T\d{6}Z-[0-9a-f]+$/');
 
     return $buildId;
+}
+
+/**
+ * @param  array<string, string|false>  $env
+ */
+function release_candidate_accept(string $root, array $env, string $buildId): void
+{
+    $process = release_candidate_process(
+        arguments: ['promote-runtime', "--build-id={$buildId}", '--accepted'],
+        env: [
+            ...$env,
+            'DOCKER_CONFIG' => 'home/.docker',
+            'ORBIT_TEST_REQUIRE_BUILDX_PLUGIN' => '1',
+        ],
+        cwd: $root,
+    );
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
+}
+
+/**
+ * @return list<string>
+ */
+function release_candidate_archive_repo_tags(string $path): array
+{
+    $process = new Process(['tar', '-xOf', $path, 'manifest.json']);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+    /** @var list<array{RepoTags?: list<string>}> $manifest */
+    $manifest = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+    return $manifest[0]['RepoTags'] ?? [];
 }
 
 /**

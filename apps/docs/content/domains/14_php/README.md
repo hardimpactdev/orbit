@@ -52,10 +52,13 @@ These rules define what PHP runtime commands own and how they operate.
   rebuild. After live acceptance,
   `orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted`
   moves that accepted build's recorded digest to the stable runtime-family tag
-  and verifies the resulting digest; it does not create a GitHub release. GitHub
+  and verifies the resulting digest; it does not create a GitHub release. That
+  accepted identity is the only reuse source for later candidates. GitHub
   publication also aliases the same digest onto
   `ghcr.io/hardimpactdev/orbit-frankenphp:<VERSION>` before the release becomes
-  public.
+  public. The github-release manifest keeps the stable
+  `ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm` family tag because
+  PHP runtime selection matches that string exactly.
 - Node CLI PHP selection is only supported for PHP 8.5. This matches the
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted
