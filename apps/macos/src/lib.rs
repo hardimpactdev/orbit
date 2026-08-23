@@ -7,4 +7,5 @@ pub mod stage_update;
 pub mod supervisor;
 pub mod tray_labels;
 pub mod update_machine;
+pub mod updater_pubkey;
 pub mod version;

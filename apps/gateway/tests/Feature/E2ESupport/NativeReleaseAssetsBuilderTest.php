@@ -105,6 +105,15 @@ it('rejects a non-Mach-O arm64 Agent build result', function (): void {
     }
 });
 
+it('passes the release updater pubkey through TAURI_CONFIG', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+
+    expect($source)
+        ->toContain('ORBIT_TAURI_UPDATER_PUBKEY')
+        ->toContain('TAURI_CONFIG')
+        ->toContain('plugins":{"updater":{"pubkey":"%s"}}');
+});
+
 it('fails closed when the desktop signing key is missing', function (): void {
     $root = sys_get_temp_dir().'/orbit-desktop-bundle-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);

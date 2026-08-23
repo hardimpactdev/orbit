@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 base64 = "0.22"
+json-patch = "3"
 minisign-verify = "0.2"
 orbit-agent = { path = "../agent" }
 serde = { version = "1", features = ["derive"] }
@@ -29,4 +30,6 @@ url = "2"
 minisign = "0.7"
 
 [build-dependencies]
+json-patch = "3"
+serde_json = "1"
 tauri-build = { version = "2", features = [] }

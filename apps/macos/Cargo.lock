@@ -2344,6 +2344,7 @@ name = "orbit-macos"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "json-patch",
  "minisign",
  "minisign-verify",
  "orbit-agent",

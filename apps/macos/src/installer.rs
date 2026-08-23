@@ -105,17 +105,7 @@ pub fn reconcile_installed_identity(
 }
 
 pub fn trusted_updater_pubkey() -> Result<String, InstallError> {
-    let config: serde_json::Value = serde_json::from_str(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tauri.conf.json"
-    )))
-    .map_err(|error| InstallError::Io(error.to_string()))?;
-
-    config
-        .get("plugins")
-        .and_then(|plugins| plugins.get("updater"))
-        .and_then(|updater| updater.get("pubkey"))
-        .and_then(serde_json::Value::as_str)
+    option_env!("ORBIT_UPDATER_PUBKEY")
         .map(str::trim)
         .filter(|key| !key.is_empty())
         .map(ToString::to_string)
@@ -467,6 +457,11 @@ mod tests {
     #[test]
     fn verifies_signatures_against_the_embedded_trusted_pubkey() {
         let pubkey = trusted_updater_pubkey().expect("embedded pubkey");
+        assert_eq!(pubkey, env!("ORBIT_UPDATER_PUBKEY"));
+        assert!(include_str!("installer.rs").contains("ORBIT_UPDATER_PUBKEY"));
+        assert!(
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/build.rs")).contains("TAURI_CONFIG")
+        );
         assert!(pubkey.starts_with("dW50cnVzdGVk"));
         assert_eq!(
             verify_updater_signature(b"desktop-archive", "not-base64", &pubkey),
