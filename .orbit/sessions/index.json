@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 417,
-    "unique_candidate_commit_count": 313,
+    "record_count": 418,
+    "unique_candidate_commit_count": 314,
     "orphan_count": 0,
     "records": [
         {
@@ -10682,6 +10682,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "host-macos",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-23-225619-codex-native-release-sdk-bootstrap",
+            "slug": "codex-native-release-sdk-bootstrap",
+            "timestamp": "2026-08-23-225619",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

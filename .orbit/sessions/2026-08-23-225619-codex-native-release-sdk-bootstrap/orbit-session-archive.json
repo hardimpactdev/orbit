@@ -1,0 +1,34 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T20:56:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-225619-codex-native-release-sdk-bootstrap",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "workers/handoff/impl-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md",
+        "workers/handoff/review-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md",
+        "workers/impl-1.json",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "loop.md": "48929340aa8071ef2537291d7bbee59f10ea46c6a3474c1940c1ffb64b78fa77",
+        "workers/handoff/impl-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md": "48dc9d81d49bffece884f1b4a06236cba93cfc6705239f4c9bcecc4433b23bab",
+        "workers/handoff/review-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md": "a1317a79566e59d9eb2ed03d090fd6ee996b2c468ef717b50ce7b5ed2ebc4417",
+        "workers/impl-1.json": "58b38611f433e571e57f4dcd615b615eac9820506a2828ee733499795d18f48a",
+        "workers/review-1.json": "7b514137866027a9246b339999994cabb84a1da7b7e801cc68583f15734061de"
+    },
+    "slug": "codex-native-release-sdk-bootstrap",
+    "requested_slug": "codex-native-release-sdk-bootstrap",
+    "compatible_slugs": [
+        "codex-native-release-sdk-bootstrap"
+    ],
+    "branch": "codex/native-release-sdk-bootstrap",
+    "candidate_commit": "eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce",
+    "accepted_feature_tip": "eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce",
+    "accepted_main_tip": "8ca5becb9cd96e5ea6812ba23816455f14301e67",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

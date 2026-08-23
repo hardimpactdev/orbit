@@ -1,0 +1,33 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-native-release-sdk-bootstrap",
+        "window": "review-1",
+        "pane_id": "%14",
+        "pane_pid": 42770,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap/.orbit/workers/briefs/native-release-sdk-bootstrap-review.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:54:55Z",
+    "note": "PASS candidate=eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce human-judgment=not-required",
+    "started_at": "2026-08-23T20:51:13Z",
+    "exited_at": "2026-08-23T20:56:02Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap/.orbit/workers/handoff/review-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md"
+}

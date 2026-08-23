@@ -1,0 +1,31 @@
+{
+    "id": "impl-1",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-1",
+        "ORBIT_WORKER_ROLE=impl",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-native-release-sdk-bootstrap",
+        "window": "impl-1",
+        "pane_id": "%13",
+        "pane_pid": 16152,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap/.orbit/workers/briefs/native-release-sdk-bootstrap-impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:54:22Z",
+    "note": "candidate=eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce quality-check passed loop updated",
+    "started_at": "2026-08-23T20:42:15Z",
+    "exited_at": "2026-08-23T20:56:02Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-native-release-sdk-bootstrap/.orbit/workers/handoff/impl-1-eea6763d9a2b6df1a92ca2edfcf8871a86dad4ce.md"
+}
