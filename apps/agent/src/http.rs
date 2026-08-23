@@ -1,4 +1,7 @@
-use crate::{build_service_status_snapshot, AgentConfig, HttpAgentGateway, ServiceStatusSnapshot};
+use crate::{
+    build_service_status_snapshot, desktop_lifetime_enabled, spawn_reader_lifetime_watch,
+    AgentConfig, HttpAgentGateway, LifetimeShutdown, ServiceStatusSnapshot,
+};
 use axum::{
     body::Body,
     extract::State,
@@ -59,11 +62,25 @@ pub async fn run_agent_service() {
     eprintln!("Orbit Agent command listener on http://{command_bind_addr}");
     eprintln!("Orbit Agent local status listener on http://{local_status_bind_addr}");
 
+    let shutdown = Arc::new(LifetimeShutdown::new());
+
+    if desktop_lifetime_enabled() {
+        spawn_reader_lifetime_watch(std::io::stdin(), shutdown.clone());
+    }
+
+    let command_shutdown = shutdown.clone();
+    let status_shutdown = shutdown;
     let command_service = axum::serve(
         command_listener,
         command_app_with_authorizer(Arc::new(GatewayCommandAuthorizer::new(config))),
-    );
-    let local_status_service = axum::serve(local_status_listener, local_status_app());
+    )
+    .with_graceful_shutdown(async move {
+        command_shutdown.cancelled().await;
+    });
+    let local_status_service = axum::serve(local_status_listener, local_status_app())
+        .with_graceful_shutdown(async move {
+            status_shutdown.cancelled().await;
+        });
 
     tokio::try_join!(command_service, local_status_service)
         .expect("failed to run Orbit Agent HTTP listeners");
@@ -2683,6 +2700,53 @@ mod tests {
             Some(&"1".to_string())
         );
         assert_eq!(captured.input.as_deref(), Some("stdin-payload"));
+    }
+
+    #[tokio::test]
+    async fn desktop_lifetime_eof_shuts_down_http_listeners() {
+        let shutdown = Arc::new(LifetimeShutdown::new());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("status listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should have an address");
+        let server_shutdown = shutdown.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, local_status_app())
+                .with_graceful_shutdown(async move {
+                    server_shutdown.cancelled().await;
+                })
+                .await
+        });
+
+        let health_url = format!("http://{addr}/health");
+        let body = tokio::task::spawn_blocking(move || {
+            ureq::get(&health_url)
+                .call()
+                .expect("health should respond while the lifetime channel is open")
+                .into_string()
+                .expect("health body should be readable")
+        })
+        .await
+        .expect("health request should join");
+
+        assert!(body.contains("ok"));
+
+        shutdown.request();
+        server
+            .await
+            .expect("server task should join")
+            .expect("graceful shutdown should stop the listener");
+
+        let closed_url = format!("http://{addr}/health");
+        let closed = tokio::task::spawn_blocking(move || ureq::get(&closed_url).call().is_err())
+            .await
+            .expect("closed health request should join");
+        assert!(
+            closed,
+            "listener should refuse connections after EOF shutdown"
+        );
     }
 
     #[tokio::test]
