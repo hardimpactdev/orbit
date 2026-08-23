@@ -75,11 +75,13 @@ try {
 
     $briefPath = realpath($brief) ?: $brief;
     $defaults = orbit_worker_default_commands($role)[$cli];
+    $path = getenv('PATH');
     $command = array_merge(
         [
             'env',
             'ORBIT_WORKER_ID='.$id,
             'ORBIT_WORKER_ROLE='.$role,
+            ...(is_string($path) && $path !== '' ? ['PATH='.$path] : []),
         ],
         orbit_worker_command_argv($defaults, $extraArgs),
     );
