@@ -198,11 +198,14 @@ The workflow verifies those promoted assets, publishes the
 `hardimpactdev/orbit-core`, `hardimpactdev/orbit-cli`, and
 `hardimpactdev/orbit-gateway` split package repositories without rebuilding the
 tested binaries or image, promotes the verified gateway digest to the
-`ghcr.io/hardimpactdev/orbit-gateway:<version>` package tag, and publishes the
-GitHub release only after those checks succeed. The operator never moves that
-version tag. A failed verification leaves the draft unpublished and the GHCR
-version tag unmoved, and converts a premature published release back to a
-draft. Source-dev Docker and Incus
+`ghcr.io/hardimpactdev/orbit-gateway:<version>` package tag, aliases the
+accepted Reverb and FrankenPHP digests onto matching `<version>` tags, and
+publishes the GitHub release only after those checks succeed. Unchanged Reverb
+and FrankenPHP content keeps its previously accepted digest; only the gateway
+image always rebuilds, because it embeds root `VERSION`. The operator never
+moves those version tags. A failed verification leaves the draft unpublished
+and the GHCR version tag unmoved, and converts a premature published release
+back to a draft. Source-dev Docker and Incus
 topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
@@ -668,7 +671,10 @@ and does not use the gateway or FrankenPHP runtime images. The Reverb runtime
 application lives at `apps/reverb/` and is packaged as the
 `hardimpact/orbit-reverb` image, where Composer dependencies are installed at
 image build time. During role convergence, Orbit resolves the selected release
-manifest's `orbit-websocket` image. The current immutable manifest must provide
+manifest's `orbit-websocket` image. Release publication keeps that image on the
+current semantic version even when its owned inputs did not change: the
+accepted digest is aliased onto `ghcr.io/hardimpactdev/orbit-reverb:<version>`
+and the manifest stays digest-pinned. The current immutable manifest must provide
 either an HTTPS image archive with its SHA-256 or a digest-pinned image. The
 target verifies and loads the archive without registry credentials or pulls the
 digest-pinned image, verifies the self-contained label, and only then updates

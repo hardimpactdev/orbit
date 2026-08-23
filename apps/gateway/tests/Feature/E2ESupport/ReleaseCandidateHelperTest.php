@@ -120,7 +120,26 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                 "{$stateDir}/orbit-frankenphp-linux-amd64.tar",
             ),
             'sha256_reverb_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-reverb-linux-amd64.tar"),
+            'gateway_disposition' => 'built',
+            'reverb_disposition' => 'built',
+            'frankenphp_disposition' => 'built',
+            'gateway_source_version' => '0.1.200',
+            'reverb_source_version' => '0.1.200',
+            'frankenphp_source_version' => '0.1.200',
+            'gateway_source_build_id' => $buildId,
+            'reverb_source_build_id' => $buildId,
+            'frankenphp_source_build_id' => $buildId,
+            'gateway_source_digest' => 'sha256:'.str_repeat('ab', times: 32),
+            'reverb_source_digest' => 'sha256:'.str_repeat('cd', times: 32),
+            'frankenphp_source_digest' => 'sha256:'.str_repeat('ef', times: 32),
         ]);
+
+        expect($state['gateway_fingerprint'])
+            ->toMatch('/^sha256:[0-9a-f]{64}$/')
+            ->and($state['reverb_fingerprint'])
+            ->toMatch('/^sha256:[0-9a-f]{64}$/')
+            ->and($state['frankenphp_fingerprint'])
+            ->toMatch('/^sha256:[0-9a-f]{64}$/');
 
         expect($process->getOutput())
             ->toContain(
@@ -172,6 +191,246 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                 "{$stateDir}/frankenphp-image-push.log",
             ))
             ->not->toContain('stub-ghcr-token');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('reuses unchanged Reverb and FrankenPHP digests without docker buildx build', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'reuse-unchanged');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+
+        $previousBuildId = release_candidate_latest_build_id(root: $root);
+        $previous = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$previousBuildId}/candidate.env",
+        );
+
+        file_put_contents("{$root}/stub.log", '');
+
+        $second = release_candidate_process(arguments: ['build'], env: $env);
+        expect($second->getExitCode())->toBe(0, $second->getOutput().$second->getErrorOutput());
+
+        $buildId = release_candidate_latest_build_id(root: $root);
+        expect($buildId)->not->toBe($previousBuildId);
+
+        $stateDir = "{$root}/.orbit/release-candidates/{$buildId}";
+        $state = release_candidate_parse_state(path: "{$stateDir}/candidate.env");
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($state)->toMatchArray([
+            'version' => '0.1.200',
+            'reverb_disposition' => 'reused',
+            'frankenphp_disposition' => 'reused',
+            'gateway_disposition' => 'built',
+            'reverb_digest' => $previous['reverb_digest'],
+            'frankenphp_digest' => $previous['frankenphp_digest'],
+            'reverb_fingerprint' => $previous['reverb_fingerprint'],
+            'frankenphp_fingerprint' => $previous['frankenphp_fingerprint'],
+            'reverb_source_build_id' => $previousBuildId,
+            'frankenphp_source_build_id' => $previousBuildId,
+            'reverb_source_digest' => $previous['reverb_digest'],
+            'frankenphp_source_digest' => $previous['frankenphp_digest'],
+            'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId}",
+            'candidate_frankenphp_image' => "ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-{$buildId}",
+        ]);
+
+        expect($stubLog)
+            ->toContain('-f docker/orbit-gateway/Dockerfile')
+            ->toContain(
+                'docker buildx imagetools create --prefer-index=false --tag ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'
+                .$buildId
+                .' ghcr.io/hardimpactdev/orbit-reverb@'
+                .$previous['reverb_digest'],
+            )
+            ->toContain(
+                'docker buildx imagetools inspect ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId,
+            )
+            ->toContain(
+                'docker buildx imagetools create --prefer-index=false --tag ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'
+                .$buildId
+                .' ghcr.io/hardimpactdev/orbit-frankenphp@'
+                .$previous['frankenphp_digest'],
+            )
+            ->toContain(
+                'docker buildx imagetools inspect ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'
+                .$buildId,
+            )
+            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
+            ->toContain(
+                'docker save ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm-candidate-'.$buildId.' -o ',
+            )
+            ->not->toContain('-f docker/orbit-reverb/Dockerfile')
+            ->not->toContain('-f docker/orbit-frankenphp/Dockerfile');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('rebuilds Reverb when owned-input fingerprints change', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'reuse-changed');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+
+        $previousBuildId = release_candidate_latest_build_id(root: $root);
+        $previousPath = "{$root}/.orbit/release-candidates/{$previousBuildId}/candidate.env";
+        $previous = (string) file_get_contents($previousPath);
+        file_put_contents(
+            $previousPath,
+            (string) preg_replace(
+                '/^reverb_fingerprint=.*$/m',
+                'reverb_fingerprint=sha256:'.str_repeat('11', times: 32),
+                $previous,
+            ),
+        );
+
+        file_put_contents("{$root}/stub.log", '');
+
+        $second = release_candidate_process(arguments: ['build'], env: $env);
+        expect($second->getExitCode())->toBe(0, $second->getOutput().$second->getErrorOutput());
+
+        $buildId = release_candidate_latest_build_id(root: $root);
+        $state = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$buildId}/candidate.env",
+        );
+        $stubLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($state)
+            ->toMatchArray([
+                'reverb_disposition' => 'built',
+                'frankenphp_disposition' => 'reused',
+                'reverb_source_build_id' => $buildId,
+            ])
+            ->and($stubLog)
+            ->toContain('-f docker/orbit-reverb/Dockerfile')
+            ->not->toContain('-f docker/orbit-frankenphp/Dockerfile');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('rebuilds reusable images when previous metadata is missing malformed or force-rebuild is set', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'reuse-fallback');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $missing = release_candidate_process(arguments: ['build'], env: $env);
+        expect($missing->getExitCode())->toBe(0, $missing->getOutput().$missing->getErrorOutput());
+        $missingState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/".release_candidate_latest_build_id(root: $root).'/candidate.env',
+        );
+        expect($missingState)->toMatchArray([
+            'reverb_disposition' => 'built',
+            'frankenphp_disposition' => 'built',
+            'gateway_disposition' => 'built',
+        ]);
+
+        $malformedId = release_candidate_latest_build_id(root: $root);
+        $malformedPath = "{$root}/.orbit/release-candidates/{$malformedId}/candidate.env";
+        $malformed = (string) file_get_contents($malformedPath);
+        file_put_contents(
+            $malformedPath,
+            (string) preg_replace('/^reverb_digest=.*$/m', 'reverb_digest=not-a-digest', $malformed),
+        );
+
+        file_put_contents("{$root}/stub.log", '');
+
+        $malformedBuild = release_candidate_process(arguments: ['build'], env: $env);
+        expect($malformedBuild->getExitCode())
+            ->toBe(
+                0,
+                $malformedBuild->getOutput().$malformedBuild->getErrorOutput(),
+            );
+        expect((string) file_get_contents("{$root}/stub.log"))->toContain('-f docker/orbit-reverb/Dockerfile');
+
+        $forcePrevious = release_candidate_latest_build_id(root: $root);
+        file_put_contents("{$root}/stub.log", '');
+
+        $forced = release_candidate_process(arguments: ['build', '--force-rebuild=reverb'], env: $env);
+        expect($forced->getExitCode())->toBe(0, $forced->getOutput().$forced->getErrorOutput());
+
+        $forceBuildId = release_candidate_latest_build_id(root: $root);
+        $forceState = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$forceBuildId}/candidate.env",
+        );
+        $forceLog = (string) file_get_contents("{$root}/stub.log");
+
+        expect($forceBuildId)
+            ->not->toBe($forcePrevious)->and($forceState)->toMatchArray([
+                'reverb_disposition' => 'built',
+                'frankenphp_disposition' => 'reused',
+                'reverb_source_build_id' => $forceBuildId,
+            ])->and($forceLog)->toContain('-f docker/orbit-reverb/Dockerfile')
+            ->not->toContain('-f docker/orbit-frankenphp/Dockerfile');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('still builds the gateway image when a previous gateway fingerprint matches', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'gateway-always-build');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+
+        file_put_contents("{$root}/stub.log", '');
+
+        $second = release_candidate_process(arguments: ['build'], env: $env);
+        expect($second->getExitCode())->toBe(0, $second->getOutput().$second->getErrorOutput());
+
+        $buildId = release_candidate_latest_build_id(root: $root);
+        $state = release_candidate_parse_state(
+            path: "{$root}/.orbit/release-candidates/{$buildId}/candidate.env",
+        );
+
+        expect($state['gateway_disposition'])
+            ->toBe('built')
+            ->and($state['gateway_source_build_id'])
+            ->toBe($buildId)
+            ->and((string) file_get_contents("{$root}/stub.log"))
+            ->toContain('-f docker/orbit-gateway/Dockerfile');
+    } finally {
+        release_candidate_remove_temp_dir(path: $temp);
+    }
+});
+
+it('fails the candidate when a reused destination digest does not match', function (): void {
+    $temp = release_candidate_make_temp_dir(suffix: 'reuse-digest-mismatch');
+
+    try {
+        $root = release_candidate_prepare_root(temp: $temp);
+        $env = release_candidate_process_env(root: $root);
+
+        $first = release_candidate_process(arguments: ['build'], env: $env);
+        expect($first->getExitCode())->toBe(0, $first->getOutput().$first->getErrorOutput());
+
+        $second = release_candidate_process(
+            arguments: ['build'],
+            env: release_candidate_process_env(root: $root, overrides: [
+                'ORBIT_TEST_REVERB_DIGEST' => 'sha256:'.str_repeat('99', times: 32),
+            ]),
+        );
+
+        expect($second->getExitCode())
+            ->toBe(1, $second->getOutput().$second->getErrorOutput())
+            ->and($second->getErrorOutput())
+            ->toContain('digest mismatch');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
     }
@@ -824,6 +1083,7 @@ function release_candidate_prepare_root(string $temp): string
             printf 'Name:      %s\n' "$4"
             printf 'MediaType: application/vnd.oci.image.index.v1+json\n'
             case "$4" in
+                *orbit-reverb*) digest="${ORBIT_TEST_REVERB_DIGEST}" ;;
                 *orbit-frankenphp*) digest="${ORBIT_TEST_FRANKENPHP_DIGEST}" ;;
                 *) digest="${ORBIT_TEST_GATEWAY_DIGEST}" ;;
             esac
@@ -834,6 +1094,9 @@ function release_candidate_prepare_root(string $temp): string
             exit 0
         fi
         if [ "$1" = 'buildx' ] && [ "$2" = 'build' ]; then
+            exit 0
+        fi
+        if [ "$1" = 'pull' ]; then
             exit 0
         fi
         if [ "$1" = 'push' ]; then
@@ -1064,6 +1327,19 @@ function release_candidate_write_state(
     }
 
     return $stateDir;
+}
+
+function release_candidate_latest_build_id(string $root): string
+{
+    $pointer = "{$root}/.orbit/release-candidates/latest";
+
+    expect($pointer)->toBeFile();
+
+    $buildId = trim((string) file_get_contents($pointer));
+
+    expect($buildId)->toMatch('/^\d{8}T\d{6}Z-[0-9a-f]+$/');
+
+    return $buildId;
 }
 
 /**

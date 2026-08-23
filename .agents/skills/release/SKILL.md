@@ -48,12 +48,17 @@ manifests.
   `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>-candidate-<BUILD_ID>` and are
   always digest-pinned in the manifest.
 - GitHub publication promotes those exact tested assets; it does not rebuild
-  CLI binaries or gateway images. The release workflow promotes the accepted
-  gateway image digest to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`
+  CLI binaries or Orbit-owned images. Unchanged Reverb and FrankenPHP images
+  keep their previously accepted digest and receive the current release version
+  by verified digest aliasing. The gateway image always rebuilds because it
+  embeds root `VERSION`. The release workflow promotes the accepted gateway
+  image digest to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`
   package tag only after the draft assets and the digest-pinned image verify
   and the split package repositories publish, immediately before it publishes
-  the GitHub release. The operator never moves the version tag, so a failed
-  verification leaves the GHCR version tag unmoved.
+  the GitHub release. The same fail-closed step aliases the accepted Reverb and
+  FrankenPHP digests onto `ghcr.io/hardimpactdev/orbit-reverb:<VERSION>` and
+  `ghcr.io/hardimpactdev/orbit-frankenphp:<VERSION>`. The operator never moves
+  the version tag, so a failed verification leaves the GHCR version tag unmoved.
 - GitHub release tags and release assets are created only after live candidate
   acceptance and explicit human approval to publish. A successful candidate
   `update:all` is not by itself approval to create a GitHub release.
@@ -70,9 +75,9 @@ manifests.
   `orbit-release-manifest.json`, and digest-pinned
   `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>@sha256:<digest>` image
   against the draft release by digest, then publish the split package repos
-  and matching tags, promote that digest to the
-  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` package tag, and publish the
-  GitHub release. It must not run CLI binary builds, gateway image builds, or
+  and matching tags, promote the accepted gateway, Reverb, and FrankenPHP
+  digests to their `<VERSION>` package tags, and publish the GitHub release.
+  It must not run CLI binary builds, image builds, or
   `gh release upload --clobber`. Promotion fails closed when the reverb role
   image archive is missing, when the manifest
   `role_image_artifacts.orbit-websocket` URL is not the public release download
@@ -245,12 +250,18 @@ manifests.
    `build` re-runs the origin/main preflight (it exits 1 with "Candidate
    artifacts must be built from the pushed origin/main commit." when HEAD
    differs from `origin/main`), builds both CLI binaries on Beast, imports the
-   verified Darwin ARM64 Agent instead of building it locally, builds and
-   pushes the candidate gateway image to GHCR, captures the pushed digest,
-   generates the `topology-candidate` manifest, uploads the immutable candidate
-   assets under `candidates/<build_id>/`, and publishes the stable channel
-   manifest. It stops at candidate channel publication — it never creates
-   GitHub releases, pushes tags, or promotes images — and finishes by printing
+   verified Darwin ARM64 Agent instead of building it locally, always builds
+   and pushes the candidate gateway image, and either rebuilds Reverb and
+   FrankenPHP or aliases the previous accepted digest onto the current
+   candidate tags when owned-input fingerprints match. Missing, malformed, or
+   unresolvable previous image metadata selects a build. `--force-rebuild=reverb`
+   and `--force-rebuild=frankenphp` rebuild those images even when fingerprints
+   match. Destination tags are inspected against the accepted digest before
+   archives are exported. It then generates the `topology-candidate` manifest,
+   uploads the immutable candidate assets under `candidates/<build_id>/`, and
+   publishes the stable channel manifest. It stops at candidate channel
+   publication — it never creates GitHub releases, pushes git tags, or moves
+   public version tags — and finishes by printing
    `Candidate channel manifest: <url>` and `Release candidate state: <dir>`.
    Do not use S3 image tarballs as the normal gateway image path; Docker Swarm
    must consume the OCI registry reference recorded in the manifest.
@@ -258,7 +269,9 @@ manifests.
    Durable candidate state lands in `.orbit/release-candidates/<build_id>/`:
   `candidate.env` (version, build id, commit, candidate image, gateway
   digest, channel manifest URL, the sha256 of each CLI and Orbit Agent
-  binary, and native builder identity when assets were imported), the image
+  binary, native builder identity when assets were imported, and per-image
+  fingerprint, `built`/`reused` disposition, source version/build identity,
+  current candidate reference, and immutable digest), the image
   push log, CLI binaries, Orbit Agent binaries, and the candidate manifest.
   No secrets are written to state or logs.
   `.orbit/release-candidates/latest` holds the newest build id; `env` and
@@ -402,7 +415,7 @@ manifests.
      --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
      --role-image="orbit-caddy=caddy:2-alpine" \
      --role-image="orbit-frankenphp=${stable_frankenphp_image}@${frankenphp_digest}" \
-     --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
+     --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:${version}@${reverb_digest}" \
      --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=orbit-reverb-linux-amd64.tar" \
      --output="orbit-release-manifest.json"
    ```
@@ -411,10 +424,12 @@ manifests.
    candidate state so the promoted manifest carries
    `role_image_artifacts.orbit-websocket` with the public release download URL
    and the archive SHA-256. The `orbit-websocket` role image stays
-   digest-pinned to the accepted candidate reverb image
-   (`${candidate_reverb_image}@${reverb_digest}` from `candidate.env`);
+   digest-pinned to the current release version tag
+   (`ghcr.io/hardimpactdev/orbit-reverb:${version}@${reverb_digest}`);
    credential-free retained nodes load the pinned image from the published
-   archive instead of pulling the private GHCR digest.
+   archive instead of pulling the private GHCR digest. FrankenPHP keeps its
+   stable runtime-family tag in the manifest and also receives the current
+   release version tag from the workflow.
 
 14. Push the `v<VERSION>` git tag, create a draft release against that
     existing tag, attach the tested files, and dispatch the release workflow.
@@ -459,11 +474,11 @@ manifests.
 
 15. Watch the dispatched `Orbit Release` workflow until it succeeds. It
     verifies the draft assets and the accepted gateway digest, publishes the
-    split package repositories, promotes that digest to
-    `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`, then publishes the GitHub
-    release. A run that fails before promotion leaves the draft unpublished
-    and the version tag unmoved; a failure after promotion leaves the tag at
-    the verified digest with the draft still unpublished. Fix the cause and
+    split package repositories, promotes the accepted gateway, Reverb, and
+    FrankenPHP digests to their `<VERSION>` package tags, then publishes the
+    GitHub release. A run that fails before promotion leaves the draft unpublished
+    and the version tags unmoved; a failure after promotion leaves the tags at
+    the verified digests with the draft still unpublished. Fix the cause and
     dispatch again (re-promotion is an idempotent carbon copy of the same
     digest).
 

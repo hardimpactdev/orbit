@@ -195,7 +195,39 @@ jobs:
               fail('Release manifest role_image_artifacts.orbit-websocket sha256 does not match the promoted archive.');
           }
 
-          file_put_contents(getenv('GITHUB_OUTPUT'), "gateway_digest=sha256:{$gatewayDigest}\n", FILE_APPEND);
+          $websocketImage = $manifest['role_images']['orbit-websocket'] ?? null;
+          $reverbPrefix = "ghcr.io/hardimpactdev/orbit-reverb:{$version}@sha256:";
+          $reverbDigest = is_string($websocketImage) ? substr($websocketImage, strlen($reverbPrefix)) : '';
+
+          if (
+              ! is_string($websocketImage)
+              || ! str_starts_with($websocketImage, $reverbPrefix)
+              || preg_match('/^[0-9a-f]{64}$/D', $reverbDigest) !== 1
+          ) {
+              fail('Release manifest websocket image must be the promoted digest-pinned ghcr.io/hardimpactdev/orbit-reverb image.');
+          }
+
+          $frankenphpImage = $manifest['role_images']['orbit-frankenphp'] ?? null;
+          $frankenphpDigest = '';
+
+          if (
+              ! is_string($frankenphpImage)
+              || preg_match(
+                  '/^ghcr.io\/hardimpactdev\/orbit-frankenphp:[^@[:space:]]+@sha256:([0-9a-f]{64})$/D',
+                  $frankenphpImage,
+                  $frankenphpMatch,
+              ) !== 1
+          ) {
+              fail('Release manifest FrankenPHP image must be a digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp image.');
+          }
+
+          $frankenphpDigest = $frankenphpMatch[1];
+
+          file_put_contents(
+              getenv('GITHUB_OUTPUT'),
+              "gateway_digest=sha256:{$gatewayDigest}\nreverb_digest=sha256:{$reverbDigest}\nfrankenphp_digest=sha256:{$frankenphpDigest}\n",
+              FILE_APPEND,
+          );
 
           function fail(string $message): never
           {
@@ -324,6 +356,56 @@ jobs:
           fi
 
           echo "Promoted gateway digest ${GATEWAY_DIGEST} to ${promoted_ref}."
+
+      - name: Promote canonical reverb image version tag
+        env:
+          REVERB_DIGEST: ${{ steps.manifest.outputs.reverb_digest }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          accepted_ref="ghcr.io/hardimpactdev/orbit-reverb@${REVERB_DIGEST}"
+          promoted_ref="ghcr.io/hardimpactdev/orbit-reverb:${VERSION}"
+
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "$promoted_ref" \
+            "$accepted_ref"
+
+          inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"
+          actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+          if [ "$actual_digest" != "$REVERB_DIGEST" ]; then
+            echo "Promoted reverb digest is [${actual_digest:-missing}], expected [$REVERB_DIGEST]." >&2
+            exit 1
+          fi
+
+          echo "Promoted reverb digest ${REVERB_DIGEST} to ${promoted_ref}."
+
+      - name: Promote canonical FrankenPHP image version tag
+        env:
+          FRANKENPHP_DIGEST: ${{ steps.manifest.outputs.frankenphp_digest }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          accepted_ref="ghcr.io/hardimpactdev/orbit-frankenphp@${FRANKENPHP_DIGEST}"
+          promoted_ref="ghcr.io/hardimpactdev/orbit-frankenphp:${VERSION}"
+
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "$promoted_ref" \
+            "$accepted_ref"
+
+          inspect_output="$(docker buildx imagetools inspect "$promoted_ref")"
+          actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+          if [ "$actual_digest" != "$FRANKENPHP_DIGEST" ]; then
+            echo "Promoted FrankenPHP digest is [${actual_digest:-missing}], expected [$FRANKENPHP_DIGEST]." >&2
+            exit 1
+          fi
+
+          echo "Promoted FrankenPHP digest ${FRANKENPHP_DIGEST} to ${promoted_ref}."
 
       - name: Publish verified GitHub release
         env:

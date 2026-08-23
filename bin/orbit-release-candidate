@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-repo_root="${ORBIT_RELEASE_CANDIDATE_ROOT:-$(cd "${script_dir}/.." >/dev/null 2>&1 && pwd)}"
+source_root="$(cd "${script_dir}/.." >/dev/null 2>&1 && pwd)"
+repo_root="${ORBIT_RELEASE_CANDIDATE_ROOT:-$source_root}"
 state_root="${repo_root}/.orbit/release-candidates"
 latest_pointer="${state_root}/latest"
 
@@ -24,7 +25,7 @@ trap cleanup EXIT
 usage() {
     cat <<'EOF'
 Usage:
-  bin/orbit-release-candidate build [--native-assets=<dir>]
+  bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]
   bin/orbit-release-candidate verify-native --native-assets=<dir> [--commit=<sha>] [--version=<version>]
   bin/orbit-release-candidate env [--build-id=<id>]
   bin/orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted
@@ -38,10 +39,15 @@ Formalizes the release-candidate publication flow from step 7 of
           manifest, upload artifacts plus the channel manifest through the
           gateway orbit-artifacts disk, then record durable state under
           .orbit/release-candidates/<build_id>/ (candidate.env includes
-          sha256_linux_amd64, sha256_darwin_arm64, and
-          sha256_agent_linux_amd64/sha256_agent_darwin_arm64) and update the
-          .orbit/release-candidates/latest pointer file. With --native-assets,
-          import a verified Darwin ARM64 Agent bundle instead of building it.
+          sha256_linux_amd64, sha256_darwin_arm64,
+          sha256_agent_linux_amd64/sha256_agent_darwin_arm64, per-image
+          fingerprints, and built/reused dispositions) and update the
+          .orbit/release-candidates/latest pointer file. Unchanged Reverb and
+          FrankenPHP images are aliased from the previous candidate digest
+          onto the current candidate tag. Gateway always rebuilds because it
+          embeds VERSION. --force-rebuild=reverb,frankenphp rebuilds selected
+          reusable images. With --native-assets, import a verified Darwin
+          ARM64 Agent bundle instead of building it.
   verify-native
           Verify a transferred native Agent bundle without building, pushing,
           uploading, or mutating candidate state.
@@ -84,6 +90,55 @@ state_value() {
     local file="$2"
 
     awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
+}
+
+is_sha256_digest() {
+    [[ "${1:-}" =~ ^sha256:[0-9a-f]{64}$ ]]
+}
+
+fingerprint_owned_inputs() {
+    local listing rel digest
+    listing="$(mktemp)"
+
+    {
+        PATH="/usr/bin:/bin:/usr/local/bin" git -C "$source_root" ls-tree -r HEAD -- "$@" \
+            || fail "fingerprint git ls-tree failed for: $*"
+        PATH="/usr/bin:/bin:/usr/local/bin" git -C "$source_root" ls-files -- "$@" \
+            | LC_ALL=C sort \
+            | while IFS= read -r rel; do
+                case "$rel" in
+                    Dockerfile|*/Dockerfile)
+                        grep -E '^(FROM|ARG) ' "${source_root}/${rel}" | LC_ALL=C sort | sed "s|^|external:${rel}:|"
+                        ;;
+                esac
+            done
+    } > "$listing"
+
+    [ -s "$listing" ] || fail "fingerprint inputs produced an empty file list: $*"
+    digest="$(compute_sha256 "$listing")"
+    rm -f "$listing"
+    printf 'sha256:%s\n' "$digest"
+}
+
+previous_image_reusable() {
+    local name="$1"
+    local current_fingerprint="$2"
+    local force="$3"
+    local previous_file="$4"
+    local previous_fingerprint previous_digest
+
+    if [ "$force" -eq 1 ] || [ -z "$previous_file" ] || [ ! -f "$previous_file" ]; then
+        return 1
+    fi
+
+    previous_fingerprint="$(state_value "${name}_fingerprint" "$previous_file")"
+    previous_digest="$(state_value "${name}_digest" "$previous_file")"
+
+    if ! is_sha256_digest "$previous_fingerprint" || ! is_sha256_digest "$previous_digest"; then
+        return 1
+    fi
+
+    [ "$previous_fingerprint" = "$current_fingerprint" ]
 }
 
 native_value() {
@@ -182,15 +237,31 @@ resolve_state_dir() {
 
 cmd_build() {
     local native_assets_dir=''
-    local argument
+    local force_rebuild_reverb=0
+    local force_rebuild_frankenphp=0
+    local argument force_rebuild_value force_rebuild_image
 
     for argument in "$@"; do
         case "$argument" in
             --native-assets=*)
                 native_assets_dir="${argument#--native-assets=}"
                 ;;
+            --force-rebuild=*)
+                force_rebuild_value="${argument#--force-rebuild=}"
+                [ -n "$force_rebuild_value" ] || fail 'force-rebuild requires reverb and/or frankenphp.'
+                IFS=',' read -r -a force_rebuild_images <<< "$force_rebuild_value"
+                for force_rebuild_image in "${force_rebuild_images[@]}"; do
+                    case "$force_rebuild_image" in
+                        reverb) force_rebuild_reverb=1 ;;
+                        frankenphp) force_rebuild_frankenphp=1 ;;
+                        *)
+                            fail "unknown force-rebuild image [${force_rebuild_image}]. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]"
+                            ;;
+                    esac
+                done
+                ;;
             *)
-                fail "unknown build option: ${argument}. Usage: bin/orbit-release-candidate build [--native-assets=<dir>]"
+                fail "unknown build option: ${argument}. Usage: bin/orbit-release-candidate build [--native-assets=<dir>] [--force-rebuild=reverb|frankenphp]"
                 ;;
         esac
     done
@@ -224,8 +295,20 @@ cmd_build() {
         exit 1
     fi
 
+    local previous_state_file='' previous_build_id=''
+    if [ -f "$latest_pointer" ]; then
+        previous_build_id="$(tr -d '[:space:]' < "$latest_pointer")"
+        if [ -n "$previous_build_id" ] && [ -f "${state_root}/${previous_build_id}/candidate.env" ]; then
+            previous_state_file="${state_root}/${previous_build_id}/candidate.env"
+        fi
+    fi
+
     local build_id candidate_tag candidate_image candidate_reverb_image candidate_frankenphp_image stable_frankenphp_image candidate_prefix candidate_channel
     build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+    while [ -e "${state_root}/${build_id}" ]; do
+        sleep 1
+        build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+    done
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
     candidate_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${candidate_tag}"
@@ -305,26 +388,55 @@ cmd_build() {
         imported_agent_sha=''
     fi
 
-    docker buildx build \
-        --platform linux/amd64 \
-        -f docker/orbit-gateway/Dockerfile \
-        --tag "$candidate_image" \
-        --load \
-        .
+    local gateway_fingerprint reverb_fingerprint frankenphp_fingerprint
+    gateway_fingerprint="$(fingerprint_owned_inputs \
+        VERSION \
+        docker/orbit-gateway \
+        apps/gateway/artisan \
+        apps/gateway/composer.json \
+        apps/gateway/composer.lock \
+        apps/gateway/.env.example \
+        apps/gateway/app \
+        apps/gateway/bootstrap \
+        apps/gateway/config \
+        apps/gateway/database \
+        apps/gateway/public \
+        apps/gateway/resources/css \
+        apps/gateway/resources/js \
+        apps/gateway/resources/views \
+        apps/gateway/routes \
+        bin/install-orbit \
+        packages/core/composer.json \
+        packages/core/composer.lock \
+        packages/core/src \
+        packages/core/resources/php-cli/artifact-catalog.json \
+        packages/sdk/composer.json \
+        packages/sdk/composer.lock \
+        packages/sdk/src)"
+    reverb_fingerprint="$(fingerprint_owned_inputs apps/reverb docker/orbit-reverb)"
+    frankenphp_fingerprint="$(fingerprint_owned_inputs docker/orbit-frankenphp)"
 
-    docker buildx build \
-        --platform linux/amd64 \
-        -f docker/orbit-reverb/Dockerfile \
-        --tag "$candidate_reverb_image" \
-        --load \
-        .
+    local gateway_disposition='built' reverb_disposition='built' frankenphp_disposition='built'
+    local gateway_source_version="$version" reverb_source_version="$version" frankenphp_source_version="$version"
+    local gateway_source_build_id="$build_id" reverb_source_build_id="$build_id" frankenphp_source_build_id="$build_id"
+    local gateway_source_digest='' reverb_source_digest='' frankenphp_source_digest=''
+    local previous_reverb_digest='' previous_frankenphp_digest=''
 
-    docker buildx build \
-        --platform linux/amd64 \
-        -f docker/orbit-frankenphp/Dockerfile \
-        --tag "$candidate_frankenphp_image" \
-        --load \
-        .
+    if previous_image_reusable reverb "$reverb_fingerprint" "$force_rebuild_reverb" "$previous_state_file"; then
+        previous_reverb_digest="$(state_value reverb_digest "$previous_state_file")"
+        reverb_disposition='reused'
+        reverb_source_version="$(state_value version "$previous_state_file")"
+        reverb_source_build_id="$(state_value build_id "$previous_state_file")"
+        reverb_source_digest="$previous_reverb_digest"
+    fi
+
+    if previous_image_reusable frankenphp "$frankenphp_fingerprint" "$force_rebuild_frankenphp" "$previous_state_file"; then
+        previous_frankenphp_digest="$(state_value frankenphp_digest "$previous_state_file")"
+        frankenphp_disposition='reused'
+        frankenphp_source_version="$(state_value version "$previous_state_file")"
+        frankenphp_source_build_id="$(state_value build_id "$previous_state_file")"
+        frankenphp_source_digest="$previous_frankenphp_digest"
+    fi
 
     gh auth status -h github.com
 
@@ -332,11 +444,22 @@ cmd_build() {
     # Docker config so no credential helper runs. The token is never echoed,
     # teed, or written outside the throwaway config directory.
     ghcr_docker_config="$(mktemp -d)"
-    local ghcr_user ghcr_auth active_docker_host
+    local ghcr_user ghcr_auth active_docker_host source_docker_config source_buildx_plugin
     ghcr_user="$(gh api user -q .login)"
     ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
     (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json")
     unset ghcr_auth
+
+    source_docker_config="${DOCKER_CONFIG:-${HOME}/.docker}"
+    source_buildx_plugin="${source_docker_config}/cli-plugins/docker-buildx"
+    if [ -x "$source_buildx_plugin" ]; then
+        source_buildx_plugin="$(
+            cd "$(dirname "$source_buildx_plugin")"
+            printf '%s/%s\n' "$PWD" "$(basename "$source_buildx_plugin")"
+        )"
+        mkdir -p "${ghcr_docker_config}/cli-plugins"
+        ln -s "$source_buildx_plugin" "${ghcr_docker_config}/cli-plugins/docker-buildx"
+    fi
 
     active_docker_host="${DOCKER_HOST:-}"
 
@@ -344,14 +467,90 @@ cmd_build() {
         active_docker_host="$(docker context inspect "$(docker context show)" --format '{{ (index .Endpoints "docker").Host }}' 2>/dev/null || true)"
     fi
 
-    if [ -n "$active_docker_host" ]; then
-        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
-        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
-        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_frankenphp_image" > "${work_dir}/frankenphp-image-push.log" 2>&1
+    docker_cmd() {
+        if [ -n "$active_docker_host" ]; then
+            DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker "$@"
+        else
+            DOCKER_CONFIG="$ghcr_docker_config" docker "$@"
+        fi
+    }
+
+    alias_candidate_image() {
+        local repository="$1"
+        local dest_tag="$2"
+        local digest="$3"
+        local inspect_output actual_digest
+
+        if ! inspect_output="$(docker_cmd buildx imagetools inspect "${repository}@${digest}")"; then
+            return 1
+        fi
+
+        docker_cmd buildx imagetools create \
+            --prefer-index=false \
+            --tag "$dest_tag" \
+            "${repository}@${digest}" \
+            || fail "failed to alias ${dest_tag} from ${digest}."
+
+        inspect_output="$(docker_cmd buildx imagetools inspect "$dest_tag")" \
+            || fail "failed to inspect aliased ${dest_tag}."
+        actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+        if [ "$actual_digest" != "$digest" ]; then
+            fail "aliased ${dest_tag} digest mismatch: expected ${digest}, got ${actual_digest:-missing}."
+        fi
+
+        docker_cmd pull "$dest_tag" || fail "failed to pull aliased ${dest_tag}."
+    }
+
+    docker buildx build \
+        --platform linux/amd64 \
+        -f docker/orbit-gateway/Dockerfile \
+        --tag "$candidate_image" \
+        --load \
+        .
+
+    docker_cmd push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
+
+    if [ "$reverb_disposition" = 'reused' ]; then
+        if ! alias_candidate_image 'ghcr.io/hardimpactdev/orbit-reverb' "$candidate_reverb_image" "$previous_reverb_digest"; then
+            reverb_disposition='built'
+            reverb_source_version="$version"
+            reverb_source_build_id="$build_id"
+            reverb_source_digest=''
+        fi
+    fi
+
+    if [ "$reverb_disposition" = 'built' ]; then
+        docker buildx build \
+            --platform linux/amd64 \
+            -f docker/orbit-reverb/Dockerfile \
+            --tag "$candidate_reverb_image" \
+            --load \
+            .
+        docker_cmd push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
     else
-        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
-        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
-        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_frankenphp_image" > "${work_dir}/frankenphp-image-push.log" 2>&1
+        printf 'aliased: digest: %s size: 0\n' "$previous_reverb_digest" > "${work_dir}/reverb-image-push.log"
+    fi
+
+    if [ "$frankenphp_disposition" = 'reused' ]; then
+        if ! alias_candidate_image 'ghcr.io/hardimpactdev/orbit-frankenphp' "$candidate_frankenphp_image" "$previous_frankenphp_digest"; then
+            frankenphp_disposition='built'
+            frankenphp_source_version="$version"
+            frankenphp_source_build_id="$build_id"
+            frankenphp_source_digest=''
+        fi
+    fi
+
+    if [ "$frankenphp_disposition" = 'built' ]; then
+        docker buildx build \
+            --platform linux/amd64 \
+            -f docker/orbit-frankenphp/Dockerfile \
+            --tag "$candidate_frankenphp_image" \
+            --load \
+            .
+        docker_cmd push "$candidate_frankenphp_image" > "${work_dir}/frankenphp-image-push.log" 2>&1
+    else
+        printf 'aliased: digest: %s size: 0\n' "$previous_frankenphp_digest" > "${work_dir}/frankenphp-image-push.log"
     fi
 
     rm -rf "$ghcr_docker_config"
@@ -359,8 +558,16 @@ cmd_build() {
 
     local gateway_digest reverb_digest frankenphp_digest
     gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
-    reverb_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/reverb-image-push.log" | tail -1)"
-    frankenphp_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/frankenphp-image-push.log" | tail -1)"
+    if [ "$reverb_disposition" = 'reused' ]; then
+        reverb_digest="$previous_reverb_digest"
+    else
+        reverb_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/reverb-image-push.log" | tail -1)"
+    fi
+    if [ "$frankenphp_disposition" = 'reused' ]; then
+        frankenphp_digest="$previous_frankenphp_digest"
+    else
+        frankenphp_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/frankenphp-image-push.log" | tail -1)"
+    fi
 
     if [ -z "$gateway_digest" ]; then
         echo "Failed to capture the pushed gateway image digest." >&2
@@ -375,6 +582,14 @@ cmd_build() {
     if [ -z "$frankenphp_digest" ]; then
         echo "Failed to capture the pushed FrankenPHP image digest." >&2
         exit 1
+    fi
+
+    gateway_source_digest="$gateway_digest"
+    if [ "$reverb_disposition" = 'built' ]; then
+        reverb_source_digest="$reverb_digest"
+    fi
+    if [ "$frankenphp_disposition" = 'built' ]; then
+        frankenphp_source_digest="$frankenphp_digest"
     fi
 
     docker save "$candidate_reverb_image" -o "${work_dir}/orbit-reverb-linux-amd64.tar"
@@ -522,6 +737,21 @@ cmd_build() {
         printf 'sha256_agent_darwin_arm64=%s\n' "$sha256_agent_darwin_arm64"
         printf 'sha256_frankenphp_linux_amd64=%s\n' "$sha256_frankenphp_linux_amd64"
         printf 'sha256_reverb_linux_amd64=%s\n' "$sha256_reverb_linux_amd64"
+        printf 'gateway_fingerprint=%s\n' "$gateway_fingerprint"
+        printf 'gateway_disposition=%s\n' "$gateway_disposition"
+        printf 'gateway_source_version=%s\n' "$gateway_source_version"
+        printf 'gateway_source_build_id=%s\n' "$gateway_source_build_id"
+        printf 'gateway_source_digest=%s\n' "$gateway_source_digest"
+        printf 'reverb_fingerprint=%s\n' "$reverb_fingerprint"
+        printf 'reverb_disposition=%s\n' "$reverb_disposition"
+        printf 'reverb_source_version=%s\n' "$reverb_source_version"
+        printf 'reverb_source_build_id=%s\n' "$reverb_source_build_id"
+        printf 'reverb_source_digest=%s\n' "$reverb_source_digest"
+        printf 'frankenphp_fingerprint=%s\n' "$frankenphp_fingerprint"
+        printf 'frankenphp_disposition=%s\n' "$frankenphp_disposition"
+        printf 'frankenphp_source_version=%s\n' "$frankenphp_source_version"
+        printf 'frankenphp_source_build_id=%s\n' "$frankenphp_source_build_id"
+        printf 'frankenphp_source_digest=%s\n' "$frankenphp_source_digest"
         if [ -n "$native_assets_dir" ]; then
             printf 'native_builder_os=%s\n' "$native_builder_os"
             printf 'native_builder_arch=%s\n' "$native_builder_arch"

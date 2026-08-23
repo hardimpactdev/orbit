@@ -74,6 +74,8 @@ function releaseWorkflowAssetDir(string $version = '1.2.3'): string
         "--cli-artifact=linux-amd64=orbit-linux-x64={$root}/orbit-linux-x64",
         "--cli-artifact=darwin-arm64=orbit-macos-arm64={$root}/orbit-macos-arm64",
         '--role-image=orbit-caddy=caddy:2-alpine',
+        '--role-image=orbit-frankenphp=ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm@sha256:'
+            .str_repeat('e', times: 64),
         "--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:{$version}@sha256:".str_repeat('d', times: 64),
         "--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar={$root}/orbit-reverb-linux-amd64.tar",
         "--output={$root}/orbit-release-manifest.json",
@@ -148,6 +150,8 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('docker/setup-buildx-action@v3')
         ->toContain('Log in to GHCR')
         ->toContain('Promote canonical gateway image version tag')
+        ->toContain('Promote canonical reverb image version tag')
+        ->toContain('Promote canonical FrankenPHP image version tag')
         ->toContain('docker buildx imagetools create')
         ->toContain('--prefer-index=false')
         ->toContain('--tag "$promoted_ref"')
@@ -209,7 +213,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->not->toContain('orbit'.'-runtime');
 
     expect($workflow)->toMatch(
-        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Promote canonical gateway image version tag/',
+        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Promote canonical gateway image version tag[\s\S]*Promote canonical reverb image version tag[\s\S]*Promote canonical FrankenPHP image version tag/',
     );
 
     expect($workflow)->toMatch(
@@ -284,7 +288,7 @@ it('keeps the GitHub release unpublished until draft asset verification succeeds
     // promotion must finish before the GitHub release becomes public. The
     // failure path converts a premature published release back to a draft.
     expect($workflow)->toMatch(
-        '/Verify promoted release manifest[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
+        '/Verify promoted release manifest[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Promote canonical reverb image version tag[\s\S]*Promote canonical FrankenPHP image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
     );
 });
 
@@ -307,15 +311,15 @@ it('promotes the GHCR version tag only after the accepted image verifies and spl
     // Both image checks and split publishing precede the only tag mutation,
     // which is the last step before the GitHub release goes public.
     expect($workflow)->toMatch(
-        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
+        '/Verify promoted release manifest[\s\S]*Verify accepted gateway image is pullable[\s\S]*Verify accepted gateway image bakes the release version[\s\S]*Publish split package repositories[\s\S]*Promote canonical gateway image version tag[\s\S]*Promote canonical reverb image version tag[\s\S]*Promote canonical FrankenPHP image version tag[\s\S]*Publish verified GitHub release[\s\S]*Keep failed release unpublished/',
     );
 
     // Promotion carbon-copies the accepted digest onto the version tag; the
     // tag need not exist yet, so the source is the bare digest reference.
     expect($workflow)->toContain("--tag \"\$promoted_ref\" \\\n            \"\$accepted_ref\"");
 
-    // The workflow is the only place that moves the version tag.
-    expect(substr_count($workflow, needle: 'docker buildx imagetools create'))->toBe(1);
+    // The workflow is the only place that moves the public version tags.
+    expect(substr_count($workflow, needle: 'docker buildx imagetools create'))->toBe(3);
 });
 
 it('keeps the operator release recipe from moving the GHCR version tag before the workflow verifies', function (): void {
@@ -405,8 +409,28 @@ it('requires publishes and hash-verifies the websocket role image archive during
 
     // The archive download precedes manifest verification which precedes gateway promotion.
     expect($workflow)->toMatch(
-        '/--pattern orbit-reverb-linux-amd64\.tar[\s\S]*Verify promoted release manifest[\s\S]*role_image_artifacts.*orbit-websocket[\s\S]*Promote canonical gateway image version tag/',
+        '/--pattern orbit-reverb-linux-amd64\.tar[\s\S]*Verify promoted release manifest[\s\S]*role_image_artifacts.*orbit-websocket[\s\S]*Promote canonical gateway image version tag[\s\S]*Promote canonical reverb image version tag[\s\S]*Promote canonical FrankenPHP image version tag/',
     );
+});
+
+it('promotes accepted Reverb and FrankenPHP version tags from digest-pinned manifest refs', function (): void {
+    $workflow = (string) file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+
+    expect($workflow)
+        ->toContain('REVERB_DIGEST: ${{ steps.manifest.outputs.reverb_digest }}')
+        ->toContain('FRANKENPHP_DIGEST: ${{ steps.manifest.outputs.frankenphp_digest }}')
+        ->toContain('reverb_digest=sha256:{$reverbDigest}')
+        ->toContain('frankenphp_digest=sha256:{$frankenphpDigest}')
+        ->toContain('ghcr.io/hardimpactdev/orbit-reverb')
+        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp')
+        ->toContain('Promoted reverb digest')
+        ->toContain('Promoted FrankenPHP digest')
+        ->toContain(
+            'Release manifest websocket image must be the promoted digest-pinned ghcr.io/hardimpactdev/orbit-reverb image.',
+        )
+        ->toContain(
+            'Release manifest FrankenPHP image must be a digest-pinned ghcr.io/hardimpactdev/orbit-frankenphp image.',
+        );
 });
 
 it('accepts a promotion manifest whose websocket archive url and checksum match', function (): void {
@@ -418,7 +442,9 @@ it('accepts a promotion manifest whose websocket archive url and checksum match'
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and((string) file_get_contents($output))
-            ->toContain('gateway_digest=sha256:'.str_repeat('a', times: 64));
+            ->toContain('gateway_digest=sha256:'.str_repeat('a', times: 64))
+            ->toContain('reverb_digest=sha256:'.str_repeat('d', times: 64))
+            ->toContain('frankenphp_digest=sha256:'.str_repeat('e', times: 64));
     } finally {
         new Process(['rm', '-rf', $assetDir])->run();
     }

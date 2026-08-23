@@ -47,10 +47,15 @@ These rules define what PHP runtime commands own and how they operate.
   app nodes, the update installer verifies and loads that artifact, then aliases
   the exact local image ID to the catalog's stable PHP 8.5 reference. This
   exercises the candidate without moving the stable registry tag before
-  acceptance. After live acceptance,
+  acceptance. If the FrankenPHP owned-input fingerprint is unchanged, the
+  candidate tag is an alias of the previously accepted digest rather than a
+  rebuild. After live acceptance,
   `orbit-release-candidate promote-runtime --build-id=<accepted-id> --accepted`
   moves that accepted build's recorded digest to the stable runtime-family tag
-  and verifies the resulting digest; it does not create a GitHub release.
+  and verifies the resulting digest; it does not create a GitHub release. GitHub
+  publication also aliases the same digest onto
+  `ghcr.io/hardimpactdev/orbit-frankenphp:<VERSION>` before the release becomes
+  public.
 - Node CLI PHP selection is only supported for PHP 8.5. This matches the
   production native Orbit CLI binary artifact's embedded PHP version and does
   not limit app or workspace FrankenPHP runtime versions. Source-mounted
