@@ -21,7 +21,10 @@ final readonly class FleetUpdateAgentVerifier
         $skips = app(FleetUpdatePreMutationSkipRegistry::class);
 
         foreach ($this->nodes($operationRun) as $node) {
-            if (! $node->isAgentEligible() || $skips->skipped($operationRun->id, $node->name)) {
+            if (
+                $skips->skipped($operationRun->id, $node->name)
+                || $node->hasActiveRole('gateway')
+            ) {
                 continue;
             }
 

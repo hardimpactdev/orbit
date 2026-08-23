@@ -54,9 +54,10 @@ it('compares gateway image and workload CLI artifact identity from node DTOs', f
         ->toBe([
             'agent-1' => '2.0.0',
             'app-dev-1' => '2.0.0',
+            'operator-1' => null,
         ])
         ->and($report->outdatedCount)
-        ->toBe(1)
+        ->toBe(2)
         ->and($report->allCurrent())
         ->toBeFalse();
 });

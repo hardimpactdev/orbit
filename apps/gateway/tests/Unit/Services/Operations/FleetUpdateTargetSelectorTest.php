@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('selects only active Agent-eligible workload nodes', function (): void {
+it('selects every active Agent-platform-eligible non-gateway node', function (): void {
     $eligible = Node::factory()->create([
         'name' => 'eligible-app',
         'platform' => 'ubuntu_24-04',
@@ -121,7 +121,7 @@ it('selects only active Agent-eligible workload nodes', function (): void {
             'vpn-node',
         ])
         ->and($selector->workloadNodes($run)->pluck('name')->all())
-        ->toBe(['eligible-app', 'managed-operator']);
+        ->toBe(['eligible-app', 'managed-operator', 'unmanaged-operator', 'vpn-node']);
 });
 
 it('excludes the caller from remote fan-out even when the caller is a managed client', function (): void {

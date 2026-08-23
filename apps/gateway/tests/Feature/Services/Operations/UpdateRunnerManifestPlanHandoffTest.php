@@ -69,6 +69,7 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
 
     Http::fake([
         'github.com/*' => Http::response($manifest, 200),
+        '*' => Http::response('', 405),
     ]);
     app()->instance(GatewayServiceUpdater::class, $gatewayUpdater);
     app()->instance(RunsInternalCommands::class, $remoteShell);
@@ -142,7 +143,7 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
         ->and(json_encode($installPayload, JSON_THROW_ON_ERROR))
         ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64');
 
-    Http::assertSentCount(1);
+    Http::assertSent(fn (Illuminate\Http\Client\Request $request): bool => str_contains($request->url(), 'github.com'));
 });
 
 function updateRunnerManifestPlanRun(): OperationRun

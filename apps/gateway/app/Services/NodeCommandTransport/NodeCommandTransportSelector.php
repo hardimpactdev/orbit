@@ -30,6 +30,27 @@ final readonly class NodeCommandTransportSelector
 
     private function canUseAgentPush(Node $node, NodeCommandEnvelope $envelope): bool
     {
-        return $node->isAgentEligible() && $envelope->supportsAgentPushTransport;
+        if (! $envelope->supportsAgentPushTransport) {
+            return false;
+        }
+
+        if ($node->isAgentEligible()) {
+            return true;
+        }
+
+        return $node->isFleetUpdateEligible() && $this->isFleetUpdateCommand($envelope);
+    }
+
+    private function isFleetUpdateCommand(NodeCommandEnvelope $envelope): bool
+    {
+        if (str_starts_with($envelope->commandId, 'internal:fleet-update:')) {
+            return true;
+        }
+
+        $command = $envelope->agentPushCommand;
+        $argv = $command instanceof NodeAgentPushCommand ? $command->argv : [];
+        $commandName = $argv[0] ?? null;
+
+        return is_string($commandName) && str_starts_with($commandName, 'internal:fleet-update:');
     }
 }

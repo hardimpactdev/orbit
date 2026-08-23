@@ -14,6 +14,8 @@ final class AgentAvailabilityError
 
     public const string DesktopNotRunning = 'orbit_desktop_not_running';
 
+    public const string AgentNotRunning = 'orbit_agent_not_running';
+
     public const string GatewayUnreachable = 'node.agent_unreachable';
 
     public static function publicCode(string $code): string

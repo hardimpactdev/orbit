@@ -10,7 +10,9 @@
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
-- The gateway can reach each selected non-local installation through its node execution path.
+- The gateway can reach each selected non-local installation through its node
+  execution path, or skip that target before mutation when the Agent listener
+  is unreachable.
 - The gateway can write operation rows, event journal rows, immutable update
   plans, and expiring update leases.
 
@@ -44,7 +46,7 @@ envelope (`meta.fields = ["json", "stream-json"]`,
 
 1. Select the output renderer.
 2. Call the gateway to authorize gateway-admin authority and resolve active
-   non-gateway role-bearing nodes that are Agent-eligible.
+   non-gateway Agent-platform-eligible nodes.
 3. Submit a start request to the gateway. The gateway persists an operation row,
    atomically reserves the `fleet:update-all` lease, returns the durable event
    stream URL promptly, and launches a one-shot runner. A concurrent start is
@@ -138,40 +140,39 @@ execution details live in the renderer contracts.
 ## Fleet Selection Rules
 
 - Include the caller's local Orbit installation.
-- Include active non-gateway nodes with at least one active role assignment
-  only when they are Agent-eligible.
-- Include active non-gateway Agent-eligible nodes with `managed=true`, even
-  when they have no workload role.
-- Exclude unmanaged roleless operator identities. Those workstations update
-  locally through [`orbit update`](../../1_update/update.md).
-- Exclude inactive, removed, unknown, or caller-local node records from the
-  gateway-selected installation list. The local installation is updated once
-  through the local target.
+- Include every active non-gateway node with a supported Agent platform and a
+  valid WireGuard identity, including roleless unmanaged operators.
+- Do not use workload roles or stored `managed` to include or exclude a node.
+- Exclude inactive, removed, unsupported-platform, gateway, unknown, or
+  caller-local node records from the gateway-selected installation list. The
+  local installation is updated once through the local target.
 - Apply gateway-owned authorization before updating any installation.
 
-A selected macOS/Darwin target whose Agent is unreachable during the
-pre-mutation readiness check is skipped with
-`reason=orbit_desktop_not_running` before any install mutation. The complete
-event carries those skips as `success.data.skipped_targets`, a map of node
-name to `orbit_desktop_not_running`. Skipped Macs do not fail `update:all`
-and do not receive a remote pending restart. After the first side effect,
-later errors stay `failed` and cannot be relabeled `skipped`. Linux and other
-non-macOS role-bearing targets keep required failure behavior when Agent push is
-unavailable. Desktop staging and the automatic pending-desktop-update
-handoff apply to every reachable selected macOS/Darwin target that has a
-same-platform Agent artifact, including role-bearing Macs whose stored
-`managed` flag is false. On those targets the CLI installs and verifies
-CLI and Agent bytes, then defers Agent restart to Orbit Desktop through the
-owner-only handoff and makes no systemd, launchd, or unmanaged restart call.
-Stored `managed=true` remains the roleless fleet-selection opt-in and is not
-required for Desktop ownership after selection.
+A selected remote target whose Agent listener is unreachable during the
+pre-mutation readiness check is skipped before any install mutation. macOS/
+Darwin uses `reason=orbit_desktop_not_running`. Other platforms use
+`reason=orbit_agent_not_running`. The complete event carries those skips as
+`success.data.skipped_targets`, a map of node name to the stable skip reason.
+Skipped nodes do not fail `update:all` and do not receive a remote pending
+restart. After the first side effect, later errors stay `failed` and cannot be
+relabeled `skipped`.
+
+Desktop staging and the automatic pending-desktop-update handoff apply to every
+reachable selected macOS/Darwin target that has matching Desktop, Agent, and CLI
+assets in the immutable plan. That includes roleless unmanaged Macs and
+role-bearing Macs whose stored `managed` flag is false. On those targets the CLI
+installs and verifies CLI and Agent bytes, then defers Agent restart to Orbit
+Desktop through the owner-only handoff and makes no systemd, launchd, or
+unmanaged restart call. Stored `managed` still means Agent intent for ordinary
+command transport and is not required for fleet-update inclusion or Desktop
+ownership after selection.
 
 The expected target shape per calling context:
 
-| Calling context | Local target | Gateway target | Role-bearing workload targets | Managed client targets |
-| --- | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and remote targets. | Yes, every active Agent-eligible role-bearing node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Yes, every other active Agent-eligible `managed=true` node. The caller is never duplicated into this set. |
-| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-eligible role-bearing node selected by the rules above. | Yes, every active Agent-eligible `managed=true` node. |
+| Calling context | Local target | Gateway target | Selected remote nodes |
+| --- | --- | --- | --- |
+| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and remote targets. | Yes, every other selected remote node. Updated in parallel with the local target after the gateway phase. The caller is never duplicated. |
+| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-platform-eligible non-gateway node selected by the rules above. |
 
 ## Durable Operation Rules
 
@@ -442,7 +443,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Runtime hibernator recovery failed | The runtime hibernator could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | Agent service missing | An Agent artifact is selected, but the target has neither an existing managed Agent service nor an unmanaged Agent listener to replace. | The target fails closed and requires bootstrap to create the first Agent service; `update:all` does not create it. |
 | CLI version unstructured | After a successful CLI install shell, `orbit --version --local --json` is missing or not parseable structured version JSON. | Target install fails closed with `fleet_update.cli_version_unstructured`; no install metadata is written under a guessed version. |
-| Workload update failed | One or more selected role-bearing workload installations fail to update. | Failure with partial target results |
+| Workload update failed | One or more selected remote installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, runtime hibernator, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |
 
 The shared [Exit Status](../../../README.md#exit-status) policy applies. Partial
@@ -493,8 +494,8 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php` | Direct `POST /api/update/all` is absent while `POST /api/update/all/start` remains. |
 | `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
-| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, selected macOS Desktop pre-mutation skip, Desktop staging for role-bearing Macs, and post-mutation failure. |
-| `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target union of role-bearing Agent-eligible nodes and `managed=true` clients, with caller exclusion. |
+| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, roleless unmanaged selection, macOS Desktop and Linux Agent pre-mutation skips, Desktop staging regardless of roles or `managed`, and post-mutation failure. |
+| `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target set of every active Agent-platform-eligible non-gateway node, with caller exclusion. |
 | `apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php` | Owner-only pending desktop update handoff path safety, atomic write, stale identity, and partial artifact rejection. |
 | `apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php` | Local fleet-update CLI install: Desktop handoff defers Agent restart with no systemd or launchd calls, and standalone systemd, launchd, and unmanaged restart paths stay unchanged. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |

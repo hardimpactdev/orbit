@@ -27,38 +27,19 @@ final readonly class FleetUpdateTargetSelector
 
     /**
      * @return Collection<int, Node>
+     *
+     * @mago-expect analysis:redundant-condition
      */
     public function workloadNodesExcluding(?int $callerNodeId): Collection
     {
-        /** @var Collection<int, Node> $nodes */
-        $nodes = $this
-            ->activeNonGatewayRoleNodes()
-            ->filter(static fn (Node $node): bool => $node->isAgentEligible())
-            ->concat($this->activeManagedNonGatewayAgentEligibleNodes())
-            ->unique('id')
-            ->keyBy('id')
-            ->except($callerNodeId === null ? [] : [$callerNodeId])
-            ->sortBy('name')
-            ->values();
-
-        return $nodes;
-    }
-
-    /**
-     * @return Collection<int, Node>
-     *
-     * @mago-expect analysis:docblock-type-mismatch
-     * @mago-expect analysis:less-specific-nested-return-statement
-     */
-    private function activeManagedNonGatewayAgentEligibleNodes(): Collection
-    {
         $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
+        $query = Node::query()->where('status', NodeStatus::Active->value);
 
-        /** @var Collection<int, Node> $nodes */
-        $nodes = Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->where('managed', true)
-            ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
+        if ($gatewayIds !== []) {
+            $query->whereNotIn('id', $gatewayIds);
+        }
+
+        $nodes = $query
             ->with('roleAssignments')
             ->orderBy('name')
             ->get();
@@ -66,12 +47,24 @@ final readonly class FleetUpdateTargetSelector
         $eligible = [];
 
         foreach ($nodes as $node) {
-            if ($node->isAgentEligible()) {
+            if (! $node instanceof Node) {
+                continue;
+            }
+
+            if ($node->isFleetUpdateEligible()) {
                 $eligible[] = $node;
             }
         }
 
-        return new Collection($eligible);
+        /** @var Collection<int, Node> $selected */
+        $selected = new Collection($eligible)
+            ->unique('id')
+            ->keyBy('id')
+            ->except($callerNodeId === null ? [] : [$callerNodeId])
+            ->sortBy('name')
+            ->values();
+
+        return $selected;
     }
 
     /**
