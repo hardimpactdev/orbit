@@ -257,6 +257,89 @@ it('counts a workload as outdated when matching artifacts came from a failed upd
     expect($report->outdatedCount)->toBe(1)->and($report->allCurrent())->toBeFalse();
 });
 
+it('counts a roleless unmanaged node as outdated when CLI matches and Agent is absent', function (array $case): void {
+    $run = fleetVersionProbeRun();
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => $case['name'],
+            'managed' => false,
+            'platform' => $case['platform'],
+            'wireguard_address' => '10.6.0.80',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(
+                platform: $case['artifact_platform'],
+                sha256: $case['sha256'],
+            ),
+        ]);
+
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            cliArtifacts: $case['cli_artifacts'],
+            agentArtifacts: $case['agent_artifacts'],
+        ),
+    );
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($node->fresh()->isAgentEligible())
+        ->toBeFalse()
+        ->and($report->outdatedCount)
+        ->toBe(1)
+        ->and($report->allCurrent())
+        ->toBeFalse();
+})->with([
+    'linux' => [[
+        'name' => 'operator-linux',
+        'platform' => 'ubuntu_24-04',
+        'artifact_platform' => 'linux-amd64',
+        'sha256' => str_repeat('b', times: 64),
+        'cli_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+                'sha256' => str_repeat('b', times: 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-x64',
+                'sha256' => str_repeat('c', times: 64),
+            ],
+        ],
+    ]],
+    'macos' => [[
+        'name' => 'operator-mac',
+        'platform' => 'macos_15-5',
+        'artifact_platform' => 'darwin-arm64',
+        'sha256' => str_repeat('f', times: 64),
+        'cli_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+                'sha256' => str_repeat('b', times: 64),
+            ],
+            'darwin-arm64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-macos-arm64',
+                'sha256' => str_repeat('f', times: 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'darwin-arm64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-macos-arm64',
+                'sha256' => str_repeat('c', times: 64),
+            ],
+        ],
+    ]],
+]);
+
 it('compares macos workload nodes against darwin arm64 CLI artifacts', function (): void {
     $run = fleetVersionProbeRun();
     Node::factory()

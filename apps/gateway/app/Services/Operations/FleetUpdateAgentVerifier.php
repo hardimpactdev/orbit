@@ -21,10 +21,7 @@ final readonly class FleetUpdateAgentVerifier
         $skips = app(FleetUpdatePreMutationSkipRegistry::class);
 
         foreach ($this->nodes($operationRun) as $node) {
-            if (
-                $skips->skipped($operationRun->id, $node->name)
-                || $node->hasActiveRole('gateway')
-            ) {
+            if ($skips->skipped($operationRun->id, $node->name)) {
                 continue;
             }
 
@@ -65,11 +62,6 @@ final readonly class FleetUpdateAgentVerifier
     private function nodes(OperationRun $operationRun): array
     {
         $nodes = [];
-        $gatewayNode = $this->targets->gatewayNode();
-
-        if ($gatewayNode !== null) {
-            $nodes[$gatewayNode->name] = $gatewayNode;
-        }
 
         foreach ($this->targets->workloadNodes($operationRun) as $node) {
             $nodes[$node->name] = $node;

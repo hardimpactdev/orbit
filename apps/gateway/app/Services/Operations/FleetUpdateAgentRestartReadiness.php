@@ -36,7 +36,7 @@ final readonly class FleetUpdateAgentRestartReadiness
         $skips = app(FleetUpdatePreMutationSkipRegistry::class);
 
         foreach ($this->targets->workloadNodes($operationRun) as $node) {
-            if (! $node->isAgentEligible() || $skips->skipped($operationRun->id, $node->name)) {
+            if (! $node->isFleetUpdateEligible() || $skips->skipped($operationRun->id, $node->name)) {
                 continue;
             }
 

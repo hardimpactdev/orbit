@@ -6,6 +6,7 @@ namespace App\Services\NodeCommandTransport;
 
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
+use Orbit\Core\Enums\InternalCommand;
 use RuntimeException;
 
 final readonly class NodeCommandTransportSelector
@@ -43,7 +44,12 @@ final readonly class NodeCommandTransportSelector
 
     private function isFleetUpdateCommand(NodeCommandEnvelope $envelope): bool
     {
-        if (str_starts_with($envelope->commandId, 'internal:fleet-update:')) {
+        $authorized = [
+            InternalCommand::FleetUpdateInstallCli->value,
+            InternalCommand::FleetUpdateVerify->value,
+        ];
+
+        if (in_array($envelope->commandId, $authorized, strict: true)) {
             return true;
         }
 
@@ -51,6 +57,6 @@ final readonly class NodeCommandTransportSelector
         $argv = $command instanceof NodeAgentPushCommand ? $command->argv : [];
         $commandName = $argv[0] ?? null;
 
-        return is_string($commandName) && str_starts_with($commandName, 'internal:fleet-update:');
+        return is_string($commandName) && in_array($commandName, $authorized, strict: true);
     }
 }

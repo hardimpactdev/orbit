@@ -452,7 +452,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function agentServicePayload(Node $node): ?array
     {
-        if (! $node->isAgentEligible()) {
+        if (! $this->shouldInstallAgentArtifact($node)) {
             return null;
         }
 
@@ -462,7 +462,7 @@ final readonly class WorkloadNodeUpdater
             throw new RuntimeException('An active gateway identity is required to configure Orbit Agent.');
         }
 
-        return $this->agentServices->forNode($node, $gateway);
+        return $this->agentServices->forFleetUpdateNode($node, $gateway);
     }
 
     private function shouldInstallAgentArtifact(Node $node): bool

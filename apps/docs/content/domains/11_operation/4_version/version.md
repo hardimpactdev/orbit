@@ -97,7 +97,7 @@ Use these commands before or after checking the installed version.
 
 - [`update`](../1_update/update.md) - update the local Orbit installation
 - [`update:all`](../2_update-all/update-all.md) - update the local installation and
-  every managed Orbit installation
+  every active supported Orbit installation
 
 ## Technical Contract
 

@@ -37,3 +37,29 @@ it('renders the complete managed Agent listener identity contract', function ():
         ->toContain('managed = true')
         ->toContain('wireguard_address = "10.6.0.44"');
 });
+
+it('keeps ordinary Agent config rendering on Agent-intent eligibility', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'operator-linux',
+            'managed' => false,
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.96',
+        ]);
+    $renderer = app(NodeAgentConfigRenderer::class);
+
+    expect($node->isAgentEligible())->toBeFalse();
+    expect($node->isFleetUpdateEligible())->toBeTrue();
+    expect(fn () => $renderer->render($node, $gateway))
+        ->toThrow(RuntimeException::class, 'Node [operator-linux] is not eligible for managed Agent execution.');
+    expect($renderer->renderForFleetUpdate($node, $gateway))
+        ->toContain('node_name = "operator-linux"')
+        ->toContain('gateway_url = "https://10.6.0.2"');
+});

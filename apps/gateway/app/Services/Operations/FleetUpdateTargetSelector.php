@@ -28,7 +28,7 @@ final readonly class FleetUpdateTargetSelector
     /**
      * @return Collection<int, Node>
      *
-     * @mago-expect analysis:redundant-condition
+     * @mago-expect analysis:invalid-argument
      */
     public function workloadNodesExcluding(?int $callerNodeId): Collection
     {
@@ -39,25 +39,12 @@ final readonly class FleetUpdateTargetSelector
             $query->whereNotIn('id', $gatewayIds);
         }
 
-        $nodes = $query
+        /** @var Collection<int, Node> $selected */
+        $selected = $query
             ->with('roleAssignments')
             ->orderBy('name')
-            ->get();
-
-        $eligible = [];
-
-        foreach ($nodes as $node) {
-            if (! $node instanceof Node) {
-                continue;
-            }
-
-            if ($node->isFleetUpdateEligible()) {
-                $eligible[] = $node;
-            }
-        }
-
-        /** @var Collection<int, Node> $selected */
-        $selected = new Collection($eligible)
+            ->get()
+            ->filter(static fn (Node $node): bool => $node->isFleetUpdateEligible())
             ->unique('id')
             ->keyBy('id')
             ->except($callerNodeId === null ? [] : [$callerNodeId])
