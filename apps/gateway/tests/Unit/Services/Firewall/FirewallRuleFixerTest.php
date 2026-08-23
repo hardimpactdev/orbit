@@ -108,7 +108,7 @@ describe('FirewallRuleFixer', function (): void {
 
                          To                         Action      From
                          --                         ------      ----
-                    [ 1] 5173/tcp                   ALLOW IN    Anywhere
+                    [ 1] 5173/tcp                   ALLOW IN    Anywhere                   # test firewall rule
 
                     UFW))
                 ->push(firewall_rule_agent_payload('delete'))

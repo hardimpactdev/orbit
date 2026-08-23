@@ -137,7 +137,8 @@ it('deletes a partial match before re-applying gateway intent', function (): voi
 
                      To                         Action      From
                      --                         ------      ----
-                [ 1] 5173/tcp                   ALLOW IN    Anywhere
+                [ 1] 5173/tcp                   ALLOW IN    Anywhere                   # test firewall rule
+                __orbit_ufw_file:user:-A ufw-user-input -p tcp --dport 5173 -j ACCEPT
 
                 OUT))
             ->push(ufw_firewall_rule_agent_payload('delete'))
@@ -182,6 +183,44 @@ it('deletes a partial match before re-applying gateway intent', function (): voi
         ])
         ->and($requests[1]['shape']['source'])
         ->toBe('10.6.0.0/24');
+});
+
+it('does not replace an unrelated same-port rule', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.100:9477/v1/commands' => Http::sequence()
+            ->push(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+                Status: active
+
+                     To                         Action      From
+                     --                         ------      ----
+                [ 1] 22/tcp on wg-orbit         ALLOW IN    10.6.0.0/24                # Orbit node security baseline permits SSH only through WireGuard.
+
+                OUT))
+            ->push(ufw_firewall_rule_agent_payload('apply')),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.100');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'beast-main-lan-ssh',
+        'source' => '192.168.1.0/24',
+        'port' => '22',
+        'reason' => 'SSH from Main LAN',
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+
+    $probe = $convergence->probe($node);
+    $plan = $convergence->plan($probe);
+    $result = $convergence->apply($node, $plan);
+
+    expect($probe->present)
+        ->toBeFalse()
+        ->and($probe->partialMatch)
+        ->toBeNull()
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and(array_column(ufw_firewall_rule_agent_requests(), 'action'))
+        ->toBe(['apply']);
 });
 
 it('canonicalizes host CIDR and both family in expected shape for convergence', function (): void {

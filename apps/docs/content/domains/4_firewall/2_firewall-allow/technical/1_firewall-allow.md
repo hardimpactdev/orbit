@@ -46,6 +46,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Treats an existing same-node, same-name rule with the same policy shape as idempotent. Reusing the name for a different policy fails before mutation.
 - Writes gateway firewall-rule configuration with action `allow`.
 - Applies the backend firewall rule through the gateway.
+- Inserts the scoped UFW allow before existing broad policy so an earlier deny
+  does not make the requested allow ineffective.
 - Reports configuration and backend apply as one command outcome.
 - If the backend apply fails after configuration is written, Orbit keeps the rule as expected gateway configuration and reports doctor recovery.
 

@@ -194,7 +194,8 @@ describe('firewall backend UFW reality', function (): void {
 
                  To                         Action      From
                  --                         ------      ----
-            [ 1] 5173/tcp                   ALLOW IN    Anywhere
+            [ 1] 5173/tcp                   ALLOW IN    Anywhere                   # test firewall rule
+            __orbit_ufw_file:user:-A ufw-user-input -p tcp --dport 5173 -j ACCEPT
             UFW);
 
         $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
@@ -206,6 +207,31 @@ describe('firewall backend UFW reality', function (): void {
             ->toBe('10.6.0.0/24')
             ->and($issue?->detail['observed']['source'] ?? null)
             ->toBe('any');
+    });
+
+    it('does not identify an unrelated same-port rule as managed drift', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'beast-main-lan-ssh',
+            'source' => '192.168.1.0/24',
+            'port' => '22',
+            'reason' => 'SSH from Main LAN',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 22/tcp on wg-orbit         ALLOW IN    10.6.0.0/24                # Orbit node security baseline permits SSH only through WireGuard.
+            UFW);
+
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
+
+        expect(firewallProbeIssue($drift, 'firewall_rule.rule_mismatch'))
+            ->toBeNull()
+            ->and(firewallProbeIssue($drift, 'firewall_rule.rule_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('passes when backend rule shape matches gateway intent', function (): void {
@@ -345,7 +371,7 @@ describe('firewall backend UFW reality', function (): void {
 
                  To                         Action      From
                  --                         ------      ----
-            [ 1] 8443/tcp                   ALLOW IN    10.6.0.0/24
+            [ 1] 8443/tcp                   ALLOW IN    10.6.0.0/24                # test firewall rule
             UFW);
 
         $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
@@ -392,7 +418,7 @@ describe('firewall backend UFW reality', function (): void {
 
                  To                         Action      From
                  --                         ------      ----
-            [ 1] 6379/tcp                   ALLOW IN    10.6.0.14
+            [ 1] 6379/tcp                   ALLOW IN    10.6.0.14                   # test firewall rule
             UFW);
 
         $drift = new FirewallRuleProbe()->diff($rule, $snapshot);

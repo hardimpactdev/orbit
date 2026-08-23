@@ -54,6 +54,7 @@ final readonly class LocalFirewallRuleAction
         return [
             'sudo',
             'ufw',
+            ...$this->placementArguments($shape),
             $shape->action,
             $shape->direction === 'outgoing' ? 'out' : 'in',
             ...$this->interfaceArguments($shape),
@@ -69,6 +70,14 @@ final readonly class LocalFirewallRuleAction
             $shape->protocol,
             ...$this->commentArguments($shape),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function placementArguments(LocalFirewallRuleShape $shape): array
+    {
+        return $shape->action === 'allow' ? ['insert', '1'] : [];
     }
 
     /**

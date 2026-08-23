@@ -84,6 +84,10 @@ This table shows what `doctor --restore` does for each fixable issue code.
 | `firewall_rule.rule_missing` | Recreate the backend firewall rule from gateway configuration when the node is reachable and eligible. |
 | `firewall_rule.rule_mismatch` | Replace the backend firewall rule with the gateway-configured rule when the rule can be identified safely. |
 
+Orbit identifies a mismatched UFW rule for replacement only when its comment
+matches the stored non-empty rule reason. A same-port rule with a different or
+missing comment is unmanaged node reality. Restore does not delete it.
+
 `doctor --restore` does not handle `firewall_rule.record_incomplete`, `firewall_rule.node_invalid`, `firewall_rule.baseline_conflict`, or `firewall_rule.rule_extra`.
 
 `doctor --restore` re-applies or replaces only gateway-configured managed rules. It does not delete unmanaged backend rules, role bootstrap policy, WireGuard interface policy, or ingress policy owned by the node/proxy/app domains.

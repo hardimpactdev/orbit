@@ -241,6 +241,10 @@ final readonly class UfwFirewallRule
                 continue;
             }
 
+            if (! FirewallRuleShapeCanonicalizer::reasonIdentifiesObservedRule($this->reason, $observed)) {
+                continue;
+            }
+
             if (
                 ($observed['direction'] ?? null) === $expected['direction']
                 && ($observed['action'] ?? null) === $expected['action']

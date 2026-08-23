@@ -91,7 +91,18 @@ final readonly class FirewallRuleProbe
                 continue;
             }
 
-            $items[$this->identityKey($parsed)] = $parsed;
+            $identity = $this->identityKey($parsed);
+            $existing = $items[$identity] ?? null;
+
+            if (
+                is_array($existing)
+                && ($existing['comment'] ?? '') !== ''
+                && ($parsed['comment'] ?? '') === ''
+            ) {
+                continue;
+            }
+
+            $items[$identity] = $parsed;
         }
 
         return new ProbeSnapshot($items);
@@ -339,7 +350,7 @@ final readonly class FirewallRuleProbe
                 continue;
             }
 
-            $partial = $this->findPartialShapeMatch($snapshot, $expected);
+            $partial = $this->findPartialShapeMatch($snapshot, $expected, $rule->reason);
 
             if ($partial !== null) {
                 return [
@@ -402,10 +413,14 @@ final readonly class FirewallRuleProbe
      * @param  array{direction: string, action: string, source: string, destination: ?string, port: string, protocol: string, address_family?: string, interface?: ?string}  $expected
      * @return array<string, mixed>|null
      */
-    private function findPartialShapeMatch(ProbeSnapshot $snapshot, array $expected): ?array
+    private function findPartialShapeMatch(ProbeSnapshot $snapshot, array $expected, ?string $reason): ?array
     {
         foreach ($snapshot->items as $observed) {
             if (($observed['inspected'] ?? false) === true) {
+                continue;
+            }
+
+            if (! FirewallRuleShapeCanonicalizer::reasonIdentifiesObservedRule($reason, $observed)) {
                 continue;
             }
 

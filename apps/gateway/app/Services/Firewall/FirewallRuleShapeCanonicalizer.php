@@ -11,6 +11,17 @@ namespace App\Services\Firewall;
 final class FirewallRuleShapeCanonicalizer
 {
     /**
+     * A UFW comment is the only backend identity available for a shape that
+     * no longer matches. Do not infer ownership from a shared port alone.
+     *
+     * @param  array<string, mixed>  $observed
+     */
+    public static function reasonIdentifiesObservedRule(?string $reason, array $observed): bool
+    {
+        return is_string($reason) && $reason !== '' && ($observed['comment'] ?? null) === $reason;
+    }
+
+    /**
      * Collapse host-only CIDR forms to the bare address so intent and UFW
      * observations compare as the same rule (`10.6.0.13/32` === `10.6.0.13`).
      */

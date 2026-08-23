@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Services\Firewall\LocalFirewallRuleAction;
+use App\Services\Firewall\LocalFirewallRuleShape;
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
+use ReflectionMethod;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -72,6 +75,24 @@ describe('internal firewall rule command', function (): void {
             ->toBe('validation_failed')
             ->and($payload['error']['message'] ?? null)
             ->toBe('Firewall rule shape is invalid.');
+    });
+
+    it('inserts applied rules before existing broad policy', function (): void {
+        $shape = LocalFirewallRuleShape::from([
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => '192.168.1.0/24',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'address_family' => 'v4',
+            'interface' => null,
+            'reason' => 'SSH from Main LAN',
+        ]);
+        $method = new ReflectionMethod(LocalFirewallRuleAction::class, 'applyCommand');
+
+        expect(array_slice($method->invoke(new LocalFirewallRuleAction, $shape), 0, 4))
+            ->toBe(['sudo', 'ufw', 'insert', '1']);
     });
 });
 
