@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Core\Firewall;
 
-final class RetainedFirewallProofInspection
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
+final readonly class RetainedFirewallProofInspection
 {
     /**
      * @param  list<array{index: int, action: string, port: string, comment: string}>  $rules
@@ -17,26 +20,14 @@ final class RetainedFirewallProofInspection
     {
         $rules = [];
 
-        foreach (preg_split('/\R/', $output) ?: [] as $line) {
-            $line = trim($line);
-            $matches = [];
+        $lines = preg_split('/\R/', $output);
 
-            if (
-                preg_match(
-                    '/^\[\s*(\d+)\]\s+(\d{1,5}(?::\d{1,5})?)\/(tcp|udp)\b.*\b(ALLOW|DENY)\b.*?(?:#\s*(.*))?$/',
-                    $line,
-                    $matches,
-                ) !== 1
-            ) {
-                continue;
+        foreach (is_array($lines) ? $lines : [] as $line) {
+            $parsed = self::parseLine(trim($line));
+
+            if ($parsed !== null) {
+                $rules[] = $parsed;
             }
-
-            $rules[] = [
-                'index' => (int) $matches[1],
-                'action' => strtolower($matches[4]),
-                'port' => $matches[2],
-                'comment' => trim($matches[5] ?? ''),
-            ];
         }
 
         return new self($rules);
@@ -64,13 +55,7 @@ final class RetainedFirewallProofInspection
 
     public function hasComment(string $comment): bool
     {
-        foreach ($this->rules as $rule) {
-            if ($rule['comment'] === $comment) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($this->rules, static fn (array $rule): bool => $rule['comment'] === $comment);
     }
 
     public function managedAllowPrecedesBroadDeny(): bool
@@ -80,15 +65,15 @@ final class RetainedFirewallProofInspection
 
         foreach ($this->rules as $rule) {
             if (
-                $rule['port'] === RetainedFirewallProofScenario::Port
+                $rule['port'] === RetainedFirewallProofScenario::PORT
                 && $rule['action'] === 'allow'
-                && $rule['comment'] === RetainedFirewallProofScenario::ManagedIdentity
+                && $rule['comment'] === RetainedFirewallProofScenario::MANAGED_IDENTITY
             ) {
                 $managedIndex = $rule['index'];
             }
 
             if (
-                $rule['port'] === RetainedFirewallProofScenario::Port
+                $rule['port'] === RetainedFirewallProofScenario::PORT
                 && $rule['action'] === 'deny'
                 && $rule['comment'] === ''
             ) {
@@ -97,5 +82,30 @@ final class RetainedFirewallProofInspection
         }
 
         return $managedIndex !== null && $denyIndex !== null && $managedIndex < $denyIndex;
+    }
+
+    /**
+     * @return array{index: int, action: string, port: string, comment: string}|null
+     */
+    private static function parseLine(string $line): ?array
+    {
+        $matches = [];
+
+        if (
+            preg_match(
+                '/^\[\s*(\d+)\]\s+(\d{1,5}(?::\d{1,5})?)\/(tcp|udp)\b.*\b(ALLOW|DENY)\b.*?(?:#\s*(.*))?$/',
+                $line,
+                $matches,
+            ) !== 1
+        ) {
+            return null;
+        }
+
+        return [
+            'index' => (int) $matches[1],
+            'action' => strtolower($matches[4]),
+            'port' => $matches[2],
+            'comment' => trim($matches[5] ?? ''),
+        ];
     }
 }

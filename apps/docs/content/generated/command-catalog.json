@@ -3153,7 +3153,9 @@
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
                 "apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallRuleShapeCanonicalizerTest.php",
+                "packages/core/tests/Firewall/ManagedUfwCommentTest.php"
             ],
             "verification_hints": [
                 {
@@ -3183,6 +3185,20 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Firewall/FirewallRuleShapeCanonicalizerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Firewall/FirewallRuleShapeCanonicalizerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Firewall/FirewallRuleShapeCanonicalizerTest.php"
+                },
+                {
+                    "repo_test_path": "packages/core/tests/Firewall/ManagedUfwCommentTest.php",
+                    "working_directory": "packages/core",
+                    "runner": "vendor/bin/pest",
+                    "runner_test_path": "tests/Firewall/ManagedUfwCommentTest.php",
+                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/Firewall/ManagedUfwCommentTest.php"
                 }
             ],
             "p4_mapping": {

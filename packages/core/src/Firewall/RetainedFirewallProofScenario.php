@@ -6,19 +6,19 @@ namespace Orbit\Core\Firewall;
 
 final class RetainedFirewallProofScenario
 {
-    public const string RuleName = 'private-api';
+    public const string RULE_NAME = 'private-api';
 
-    public const string Node = 'app-dev-1';
+    public const string NODE = 'app-dev-1';
 
-    public const string Port = '8080';
+    public const string PORT = '8080';
 
-    public const string Protocol = 'tcp';
+    public const string PROTOCOL = 'tcp';
 
-    public const string Source = '192.168.1.0/24';
+    public const string SOURCE = '192.168.1.0/24';
 
-    public const string ProtectedComment = 'protected unrelated rule';
+    public const string PROTECTED_COMMENT = 'protected unrelated rule';
 
-    public const string ManagedIdentity = 'orbit:private-api';
+    public const string MANAGED_IDENTITY = 'orbit:private-api';
 
     /**
      * Seed an unrelated same-port allow, an old managed identity, and a broad deny.
@@ -27,10 +27,10 @@ final class RetainedFirewallProofScenario
      */
     public static function seedUfwCommands(): array
     {
-        $port = self::Port;
-        $protocol = self::Protocol;
-        $protected = self::ProtectedComment;
-        $managed = self::ManagedIdentity;
+        $port = self::PORT;
+        $protocol = self::PROTOCOL;
+        $protected = self::PROTECTED_COMMENT;
+        $managed = self::MANAGED_IDENTITY;
 
         return [
             "sudo ufw allow in on wg-orbit comment 'Orbit node security baseline permits SSH only through WireGuard.'",

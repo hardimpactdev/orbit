@@ -6,23 +6,20 @@ namespace Orbit\Core\Firewall;
 
 final class RetainedFirewallProofReceipt
 {
-    public static function line(
-        string $candidate,
-        string $target,
-        string $expected,
-        string $observed,
-        string $result,
-        string $evidence,
-    ): string {
+    /**
+     * @param  array{candidate: string, target: string, expected: string, observed: string, result: string, evidence: string}  $fields
+     */
+    public static function line(array $fields): string
+    {
         return sprintf(
             '%s - candidate=%s; venue=retained-incus; environment=dev-fixture; target=%s; expected=%s; observed=%s; result=%s; evidence=`%s`',
-            $result,
-            $candidate,
-            $target,
-            $expected,
-            $observed,
-            $result,
-            $evidence,
+            $fields['result'],
+            $fields['candidate'],
+            $fields['target'],
+            $fields['expected'],
+            $fields['observed'],
+            $fields['result'],
+            $fields['evidence'],
         );
     }
 }

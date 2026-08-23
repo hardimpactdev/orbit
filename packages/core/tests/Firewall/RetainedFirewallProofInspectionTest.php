@@ -16,9 +16,9 @@ it('selects only the managed comment and preserves an unrelated same-port allow'
         [ 3] 8080/tcp                   DENY IN     Anywhere
         UFW);
 
-    expect($inspection->managedComments(RetainedFirewallProofScenario::Port))
-        ->toBe([RetainedFirewallProofScenario::ManagedIdentity])
-        ->and($inspection->hasComment(RetainedFirewallProofScenario::ProtectedComment))
+    expect($inspection->managedComments(RetainedFirewallProofScenario::PORT))
+        ->toBe([RetainedFirewallProofScenario::MANAGED_IDENTITY])
+        ->and($inspection->hasComment(RetainedFirewallProofScenario::PROTECTED_COMMENT))
         ->toBeTrue()
         ->and($inspection->managedAllowPrecedesBroadDeny())
         ->toBeTrue();
@@ -34,10 +34,10 @@ it('fails when a managed allow is missing or follows the broad deny', function (
         [ 2] 8080/tcp                   ALLOW IN    Anywhere                   # protected unrelated rule
         UFW);
 
-    expect($inspection->hasComment(RetainedFirewallProofScenario::ManagedIdentity))
+    expect($inspection->hasComment(RetainedFirewallProofScenario::MANAGED_IDENTITY))
         ->toBeFalse()
         ->and($inspection->managedAllowPrecedesBroadDeny())
         ->toBeFalse()
-        ->and($inspection->hasComment(RetainedFirewallProofScenario::ProtectedComment))
+        ->and($inspection->hasComment(RetainedFirewallProofScenario::PROTECTED_COMMENT))
         ->toBeTrue();
 });

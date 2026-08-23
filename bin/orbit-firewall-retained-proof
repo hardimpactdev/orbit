@@ -41,13 +41,13 @@ foreach (array_slice($argv, 1) as $argument) {
 load_e2e_environment($root);
 
 try {
-    $identity = bind_firewall_proof_identity($root, $options['candidate'] ?? null);
-    $statePath = $root.'/.orbit/evidence/firewall-retained-proof/'.$identity->candidate.'.json';
+    $candidate = local_firewall_proof_candidate($root, $options['candidate'] ?? null);
+    $statePath = $root.'/.orbit/evidence/firewall-retained-proof/'.$candidate.'.json';
     $receiptPath = $options['receipt'] ?? $statePath;
 
     if (($options['dry-run'] ?? false) === true) {
         fwrite(STDOUT, json_encode([
-            'identity' => $identity->toArray(),
+            'candidate' => $candidate,
             'steps' => RetainedFirewallProofScenario::operatorSteps(),
             'seed' => RetainedFirewallProofScenario::seedUfwCommands(),
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
@@ -56,27 +56,29 @@ try {
 
     if (($options['cleanup'] ?? false) === true) {
         $state = read_firewall_proof_state($statePath);
-        $identity->assertOwnedTarget($state['target'] ?? '');
-        RetainedFirewallProofIdentity::assertSame($identity->toArray(), [
-            'candidate' => $state['candidate'] ?? '',
-            'cli_digest' => $state['cli_digest'] ?? '',
-            'target' => $state['target'] ?? '',
-            'host' => $state['host'] ?? '',
-        ]);
-        run_e2e_incus($root, ['--stop', '--id='.$state['topology_id']]);
+        $identity = identity_from_state($candidate, $state);
+        $identity->assertOwnedTarget(is_string($state['target'] ?? null) ? $state['target'] : '');
+        run_e2e_incus($root, ['--stop', '--id='.$identity->target]);
         exit(0);
     }
 
-    $state = acquire_firewall_proof_topology($root, $identity, $statePath);
+    $topology = acquire_firewall_proof_topology($root, $statePath);
+    $identity = bind_remote_firewall_proof_identity($root, $candidate, $topology);
+    $state = [
+        ...$identity->toArray(),
+        'topology_id' => $identity->target,
+        'checkouts' => $topology['checkouts'] ?? [],
+    ];
+    write_json_file($statePath, $state);
     $observed = run_firewall_proof_scenario($state);
-    $receipt = RetainedFirewallProofReceipt::line(
-        candidate: $identity->candidate,
-        target: $identity->target,
-        expected: 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
-        observed: $observed,
-        result: 'passed',
-        evidence: relative_repo_path($root, $receiptPath),
-    );
+    $receipt = RetainedFirewallProofReceipt::line([
+        'candidate' => $identity->candidate,
+        'target' => $identity->target,
+        'expected' => 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
+        'observed' => $observed,
+        'result' => 'passed',
+        'evidence' => relative_repo_path($root, $receiptPath),
+    ]);
     $payload = [
         ...$state,
         'receipt' => $receipt,
@@ -88,17 +90,18 @@ try {
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage()."\n");
 
-    if (isset($identity, $statePath, $receiptPath, $state) && is_array($state)) {
-        $receipt = RetainedFirewallProofReceipt::line(
-            candidate: $identity->candidate,
-            target: $identity->target,
-            expected: 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
-            observed: $exception->getMessage(),
-            result: 'failed',
-            evidence: relative_repo_path($root, $receiptPath),
-        );
+    if (isset($candidate, $statePath, $receiptPath, $identity) && $identity instanceof RetainedFirewallProofIdentity) {
+        $receipt = RetainedFirewallProofReceipt::line([
+            'candidate' => $identity->candidate,
+            'target' => $identity->target,
+            'expected' => 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
+            'observed' => $exception->getMessage(),
+            'result' => 'failed',
+            'evidence' => relative_repo_path($root, $receiptPath),
+        ]);
         write_json_file($receiptPath, [
-            ...$state,
+            ...$identity->toArray(),
+            'topology_id' => $identity->target,
             'receipt' => $receipt,
             'observed' => $exception->getMessage(),
             'result' => 'failed',
@@ -109,12 +112,10 @@ try {
     exit(1);
 }
 
-function bind_firewall_proof_identity(string $root, ?string $requestedCandidate): RetainedFirewallProofIdentity
+function local_firewall_proof_candidate(string $root, ?string $requestedCandidate): string
 {
     $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
     $candidate = $requestedCandidate ?? $head;
-    $digest = RetainedFirewallProofIdentity::digestFile($root.'/apps/cli/orbit');
-    $identity = RetainedFirewallProofIdentity::from($candidate, $digest);
 
     if ($candidate !== $head) {
         throw new InvalidArgumentException('candidate SHA mismatch');
@@ -122,29 +123,29 @@ function bind_firewall_proof_identity(string $root, ?string $requestedCandidate)
 
     $dirty = trim((string) shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=all'));
 
-    if ($dirty !== '') {
+    if ($dirty !== '' || preg_match('/^[a-f0-9]{40}$/', $candidate) !== 1) {
         throw new InvalidArgumentException('candidate SHA mismatch');
     }
 
-    return $identity;
+    return $candidate;
 }
 
 /**
  * @return array<string, mixed>
  */
-function acquire_firewall_proof_topology(string $root, RetainedFirewallProofIdentity $identity, string $statePath): array
+function acquire_firewall_proof_topology(string $root, string $statePath): array
 {
     if (is_file($statePath)) {
         $state = read_firewall_proof_state($statePath);
-        RetainedFirewallProofIdentity::assertSame($identity->toArray(), [
-            'candidate' => $state['candidate'] ?? '',
-            'cli_digest' => $state['cli_digest'] ?? '',
-            'target' => $state['target'] ?? '',
-            'host' => $state['host'] ?? '',
-        ]);
-        run_e2e_incus($root, ['--sync', '--id='.$state['topology_id']]);
+        $target = is_string($state['target'] ?? null) ? $state['target'] : '';
+        run_e2e_incus($root, ['--sync', '--id='.$target]);
 
-        return $state;
+        return [
+            'id' => $target,
+            'host' => $state['host'] ?? RetainedFirewallProofIdentity::HOST,
+            'instances' => $state['instances'] ?? [],
+            'checkouts' => $state['checkouts'] ?? [],
+        ];
     }
 
     $existing = retained_incus_manifest($root);
@@ -170,25 +171,98 @@ function acquire_firewall_proof_topology(string $root, RetainedFirewallProofIden
     }
 
     $host = strtolower((string) ($topology['host'] ?? ''));
+    $topologyId = is_string($topology['id'] ?? null) ? $topology['id'] : (string) ($topology['run_id'] ?? '');
 
-    if ($host !== RetainedFirewallProofIdentity::Host) {
+    if ($host !== RetainedFirewallProofIdentity::HOST || $topologyId === '') {
         throw new InvalidArgumentException('target identity mismatch');
     }
 
-    $state = [
-        ...$identity->toArray(),
-        'topology_id' => $topology['id'] ?? $topology['run_id'] ?? '',
+    return [
+        'id' => $topologyId,
+        'host' => $host,
         'instances' => $topology['instances'] ?? [],
         'checkouts' => $topology['checkouts'] ?? [],
     ];
+}
 
-    if (! is_string($state['topology_id']) || $state['topology_id'] === '') {
-        throw new InvalidArgumentException('target identity mismatch');
+/**
+ * @param  array<string, mixed>  $topology
+ */
+function bind_remote_firewall_proof_identity(string $root, string $candidate, array $topology): RetainedFirewallProofIdentity
+{
+    $instances = is_array($topology['instances'] ?? null) ? $topology['instances'] : [];
+    $target = is_string($topology['id'] ?? null) ? $topology['id'] : '';
+    $gateway = proof_instance(['instances' => $instances], 'gateway');
+    $checkout = proof_checkout($topology, 'gateway');
+    $localDigest = RetainedFirewallProofIdentity::digestCheckout($root);
+    $remoteDigest = observe_remote_checkout_digest($gateway, $checkout);
+    $remoteHead = observe_remote_head($gateway, $checkout);
+
+    return RetainedFirewallProofIdentity::bindRemote([
+        'candidate' => $candidate,
+        'local_checkout_digest' => $localDigest,
+        'remote_checkout_digest' => $remoteDigest,
+        'target' => $target,
+        'instances' => $instances,
+        'host' => is_string($topology['host'] ?? null) ? strtolower($topology['host']) : RetainedFirewallProofIdentity::HOST,
+        'remote_head' => $remoteHead,
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $state
+ */
+function identity_from_state(string $candidate, array $state): RetainedFirewallProofIdentity
+{
+    $instances = is_array($state['instances'] ?? null) ? $state['instances'] : [];
+
+    return RetainedFirewallProofIdentity::from(
+        candidate: $candidate,
+        cliDigest: is_string($state['cli_digest'] ?? null) ? $state['cli_digest'] : '',
+        target: is_string($state['target'] ?? null) ? $state['target'] : '',
+        instances: $instances,
+        host: is_string($state['host'] ?? null) ? $state['host'] : RetainedFirewallProofIdentity::HOST,
+    );
+}
+
+function observe_remote_head(string $instance, string $checkout): ?string
+{
+    foreach ([$checkout, '/home/orbit/orbit'] as $path) {
+        $output = trim(beast_incus_exec(
+            $instance,
+            'git -C '.escapeshellarg($path).' rev-parse HEAD',
+            asOrbit: true,
+            allowFailure: true,
+        ));
+
+        if (preg_match('/^[a-f0-9]{40}$/', $output) === 1) {
+            return $output;
+        }
     }
 
-    write_json_file($statePath, $state);
+    return null;
+}
 
-    return $state;
+function observe_remote_checkout_digest(string $instance, string $checkout): string
+{
+    $parts = [];
+
+    foreach (RetainedFirewallProofIdentity::CHECKOUT_PATHS as $relative) {
+        $path = $checkout.'/'.$relative;
+        $digest = trim(beast_incus_exec(
+            $instance,
+            'php -r '.escapeshellarg('echo hash_file("sha256", '.var_export($path, true).') ?: "";'),
+            asOrbit: true,
+        ));
+
+        if (preg_match('/^[a-f0-9]{64}$/', $digest) !== 1) {
+            throw new InvalidArgumentException('CLI binary digest mismatch');
+        }
+
+        $parts[] = $relative.':'.$digest;
+    }
+
+    return hash('sha256', implode("\n", $parts));
 }
 
 /**
@@ -199,8 +273,8 @@ function run_firewall_proof_scenario(array $state): string
     $dev = proof_instance($state, 'dev');
     $gateway = proof_instance($state, 'gateway');
     $checkout = proof_checkout($state, 'gateway');
-    $node = RetainedFirewallProofScenario::Node;
-    $name = RetainedFirewallProofScenario::RuleName;
+    $node = RetainedFirewallProofScenario::NODE;
+    $name = RetainedFirewallProofScenario::RULE_NAME;
 
     foreach (RetainedFirewallProofScenario::seedUfwCommands() as $command) {
         beast_incus_exec($dev, $command);
@@ -208,9 +282,9 @@ function run_firewall_proof_scenario(array $state): string
 
     $allowPayload = decode_json_object(beast_incus_exec(
         $gateway,
-        "cd {$checkout} && orbit firewall:allow {$name} --node={$node} --port=".RetainedFirewallProofScenario::Port
-            .' --from='.RetainedFirewallProofScenario::Source
-            .' --protocol='.RetainedFirewallProofScenario::Protocol
+        "cd {$checkout} && orbit firewall:allow {$name} --node={$node} --port=".RetainedFirewallProofScenario::PORT
+            .' --from='.RetainedFirewallProofScenario::SOURCE
+            .' --protocol='.RetainedFirewallProofScenario::PROTOCOL
             .' --json',
         asOrbit: true,
         allowFailure: true,
@@ -254,15 +328,15 @@ function run_firewall_proof_scenario(array $state): string
     $ufwAfterAllow = beast_incus_exec($dev, 'sudo ufw status numbered');
     $inspection = RetainedFirewallProofInspection::fromUfwStatus($ufwAfterAllow);
 
-    $managedComments = $inspection->managedComments(RetainedFirewallProofScenario::Port);
+    $managedComments = $inspection->managedComments(RetainedFirewallProofScenario::PORT);
 
-    if ($managedComments !== [RetainedFirewallProofScenario::ManagedIdentity]) {
+    if ($managedComments !== [RetainedFirewallProofScenario::MANAGED_IDENTITY]) {
         throw new RuntimeException(
             'managed comment identity was not unique after allow: '.implode(',', $managedComments),
         );
     }
 
-    if (! $inspection->hasComment(RetainedFirewallProofScenario::ProtectedComment)) {
+    if (! $inspection->hasComment(RetainedFirewallProofScenario::PROTECTED_COMMENT)) {
         throw new RuntimeException('unrelated same-port rule was not preserved');
     }
 
@@ -280,11 +354,11 @@ function run_firewall_proof_scenario(array $state): string
         beast_incus_exec($dev, 'sudo ufw status numbered'),
     );
 
-    if ($ufwAfterRemove->hasComment(RetainedFirewallProofScenario::ManagedIdentity)) {
+    if ($ufwAfterRemove->hasComment(RetainedFirewallProofScenario::MANAGED_IDENTITY)) {
         throw new RuntimeException('remove left a managed comment identity behind');
     }
 
-    if (! $ufwAfterRemove->hasComment(RetainedFirewallProofScenario::ProtectedComment)) {
+    if (! $ufwAfterRemove->hasComment(RetainedFirewallProofScenario::PROTECTED_COMMENT)) {
         throw new RuntimeException('remove deleted the unrelated same-port rule');
     }
 
@@ -317,7 +391,7 @@ function beast_incus_exec(string $instance, string $command, bool $asOrbit = fal
         'BatchMode=yes',
         '-o',
         'ConnectTimeout=10',
-        RetainedFirewallProofIdentity::Host,
+        RetainedFirewallProofIdentity::HOST,
         'incus exec '.escapeshellarg($instance).' -- '.$guest,
     ], getcwd() ?: '/', 180);
 
@@ -416,9 +490,6 @@ function write_json_file(string $path, array $payload): void
 /**
  * @return array<string, mixed>
  */
-/**
- * @return array<string, mixed>
- */
 function decode_json_object(string $output, bool $required = true): array
 {
     $trimmed = trim($output);
@@ -458,7 +529,7 @@ function retained_incus_manifest(string $root): ?array
         $payload = decode_json_object((string) file_get_contents($file), required: false);
 
         if (($payload['provider'] ?? null) === 'incus'
-            && strtolower((string) ($payload['host'] ?? '')) === RetainedFirewallProofIdentity::Host) {
+            && strtolower((string) ($payload['host'] ?? '')) === RetainedFirewallProofIdentity::HOST) {
             return $payload;
         }
     }
