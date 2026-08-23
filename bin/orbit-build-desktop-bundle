@@ -35,9 +35,15 @@ fi
 
 version="$("${repo_root}/bin/orbit-version")"
 macos_dir="${repo_root}/apps/macos"
+sdk_dir="${repo_root}/packages/sdk-typescript"
 export ORBIT_NATIVE_RELEASE_BUILD=1
 export TAURI_CONFIG
 TAURI_CONFIG="$(printf '{"version":"%s","plugins":{"updater":{"pubkey":"%s"}}}' "$version" "$ORBIT_TAURI_UPDATER_PUBKEY")"
+
+(
+    cd "$sdk_dir"
+    npm ci --ignore-scripts --include=dev
+)
 
 (
     cd "$macos_dir"

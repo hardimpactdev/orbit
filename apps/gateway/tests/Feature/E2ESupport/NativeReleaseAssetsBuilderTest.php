@@ -114,6 +114,18 @@ it('passes the release updater pubkey through TAURI_CONFIG', function (): void {
         ->toContain('plugins":{"updater":{"pubkey":"%s"}}');
 });
 
+it('installs locked TypeScript SDK dependencies before the Tauri desktop build', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+    $tauriBuild = 'npm run tauri -- build';
+    $parts = explode($tauriBuild, $source);
+
+    expect($parts)
+        ->toHaveCount(2)
+        ->and($parts[0])
+        ->toContain('packages/sdk-typescript')
+        ->toContain('npm ci --ignore-scripts --include=dev');
+});
+
 it('fails closed when the desktop signing key is missing', function (): void {
     $root = sys_get_temp_dir().'/orbit-desktop-bundle-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);
