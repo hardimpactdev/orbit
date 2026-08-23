@@ -1,0 +1,38 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T21:12:47+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-native-release-signer-invocation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-231247-codex-native-release-signer-invocation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/local-tauri-signer-probe.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T210739Z-5c9bd895525c.json",
+        "workers/handoff/impl-1-f4249db8bdcd525a2f26c5624dbe40fd5e89b892.md",
+        "workers/handoff/review-1-f4249db8bdcd525a2f26c5624dbe40fd5e89b892.md",
+        "workers/impl-1.json",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "evidence/local-tauri-signer-probe.md": "b89a63e25bbeb0ba940466933a16d009143ba733ab52d28521cd90c3bf1fc72b",
+        "loop.md": "00857baad506a9c672b422262f9abef311555fceed4a9a8928b14f31430298b0",
+        "quality-gates/quality-check-2026-08-23T210739Z-5c9bd895525c.json": "cca2d4598be769594f22bc391462011cc4d84064e30961c2549e1b417508a62e",
+        "workers/handoff/impl-1-f4249db8bdcd525a2f26c5624dbe40fd5e89b892.md": "5725b4e9e83a1c7c4976d48c27298e882381d8bc43d64bbccd4b9c4022a4ce2b",
+        "workers/handoff/review-1-f4249db8bdcd525a2f26c5624dbe40fd5e89b892.md": "c13327ba9073925f4099e1fee56cdf48b9c03d487f1cc1aaea9771db29d216a1",
+        "workers/impl-1.json": "d0e57ec724b340437ba5d00cec7bb57be57444ee957248066830b96ca61ab893",
+        "workers/review-1.json": "7d31be584eea9f56531a2a2001418c978ea45f07d275bc0cffe3c60b36ad0b68"
+    },
+    "slug": "codex-native-release-signer-invocation",
+    "requested_slug": "codex-native-release-signer-invocation",
+    "compatible_slugs": [
+        "codex-native-release-signer-invocation"
+    ],
+    "branch": "codex/native-release-signer-invocation",
+    "candidate_commit": "f4249db8bdcd525a2f26c5624dbe40fd5e89b892",
+    "accepted_feature_tip": "f4249db8bdcd525a2f26c5624dbe40fd5e89b892",
+    "accepted_main_tip": "17be5aa46911f7d33037433d401c9abf106ca4fb",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
