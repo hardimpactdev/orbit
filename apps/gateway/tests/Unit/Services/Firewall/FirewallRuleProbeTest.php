@@ -507,6 +507,37 @@ describe('firewall backend UFW reality', function (): void {
             ->toBe([]);
     });
 
+    it('identifies drifted node security baseline rules by their managed comment', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $wireguardAllow = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'orbit-wireguard-ssh-allow-v4',
+            'source' => '10.6.0.0/24',
+            'port' => '22',
+            'reason' => 'Orbit node security baseline permits SSH only through WireGuard.',
+            'address_family' => 'v4',
+            'interface' => 'wireguard',
+            'owner' => 'node-security',
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 22/tcp on wg-orbit         ALLOW IN    Anywhere                   # Orbit node security baseline permits SSH only through WireGuard.
+            UFW);
+
+        $issue = firewallProbeIssue(
+            new FirewallRuleProbe()->diff($wireguardAllow, $snapshot),
+            'firewall_rule.rule_mismatch',
+        );
+
+        expect($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['observed']['source'] ?? null)
+            ->toBe('any');
+    });
+
     it('matches inactive UFW staged node security rules from stored rule files', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $publicDeny = FirewallRule::factory()->create([

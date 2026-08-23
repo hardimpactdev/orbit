@@ -91,6 +91,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php` | CLI `firewall:deny` POST payload forwarding, local default node resolution, shared required-input validation, and JSON success envelope. |
 | `apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php` | Interactive `firewall:deny` name, node, and port prompts before contacting the gateway. |
+| `apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php` | UFW prepend placement for allow rules, unchanged deny placement, and stable backend comment identity. |
 | `apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php` | Gateway firewall deny mutation authorization, node target resolution, POST request handling, and mutation envelopes. |
 
 Coverage for the in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and mapping from rules to entities is not currently linked; keep it as a gap until focused tests land.
