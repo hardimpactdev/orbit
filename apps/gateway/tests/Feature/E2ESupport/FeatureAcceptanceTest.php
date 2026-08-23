@@ -4,6 +4,130 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('blocks route when the active slice graph is invalid before emitting JSON', function (): void {
+    $fixture = acceptance_test_workspace('slice-route-invalid', 'README.md');
+    if (! is_dir($fixture.'/.orbit/slices')) {
+        mkdir($fixture.'/.orbit/slices', recursive: true);
+    }
+    file_put_contents(
+        $fixture.'/.orbit/slices/01-one.md',
+        acceptance_slice_packet('01-one', 'none'),
+    );
+    file_put_contents(
+        $fixture.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | building | none |\n\n## Status\n\n- State: frame\n- Blocker: none\n",
+    );
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and($process->getErrorOutput())
+            ->toContain('building');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('keeps the valid sliced route JSON shape unchanged', function (): void {
+    $fixture = acceptance_test_workspace('slice-route-valid', 'README.md');
+    if (! is_dir($fixture.'/.orbit/slices')) {
+        mkdir($fixture.'/.orbit/slices', recursive: true);
+    }
+    file_put_contents(
+        $fixture.'/.orbit/slices/01-one.md',
+        acceptance_slice_packet('01-one', 'none'),
+    );
+    file_put_contents(
+        $fixture.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n\n## Status\n\n- State: frame\n- Blocker: none\n",
+    );
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        $payload = json_decode($process->getOutput(), true);
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and(array_keys($payload))
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->and($payload)
+            ->not->toHaveKey('slice');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('requires an active Slices index before deriving route JSON', function (): void {
+    $fixture = acceptance_test_workspace('slice-route-missing', 'README.md');
+    file_put_contents(
+        $fixture.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Status\n\n- State: frame\n- Blocker: none\n",
+    );
+
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        expect($process->getExitCode())->toBe(2)
+            ->and($process->getOutput())->toBe('')
+            ->and($process->getErrorOutput())->toContain('Slices');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('rejects sliced route packets with missing or unknown Status.State', function (string $status): void {
+    $fixture = acceptance_test_workspace('slice-route-status', 'README.md');
+    if (! is_dir($fixture.'/.orbit/slices')) {
+        mkdir($fixture.'/.orbit/slices', recursive: true);
+    }
+    file_put_contents(
+        $fixture.'/.orbit/slices/01-one.md',
+        acceptance_slice_packet('01-one', 'none'),
+    );
+    file_put_contents(
+        $fixture.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n\n## Status\n\n{$status}",
+    );
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and($process->getErrorOutput())
+            ->toContain('known Status.State');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'missing' => '- Blocker: none',
+    'unknown' => '- State: mystery\n- Blocker: none',
+]);
+
+it('validates building and all-complete sliced route phases before JSON', function (string $sliceState, string $phase): void {
+    $fixture = acceptance_test_workspace('slice-route-phase', 'README.md');
+    if (! is_dir($fixture.'/.orbit/slices')) {
+        mkdir($fixture.'/.orbit/slices', recursive: true);
+    }
+    file_put_contents($fixture.'/.orbit/slices/01-one.md', acceptance_slice_packet('01-one', 'none'));
+    file_put_contents(
+        $fixture.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | {$sliceState} | none |\n\n## Status\n\n- State: {$phase}\n- Blocker: none\n",
+    );
+
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        $payload = json_decode($process->getOutput(), true);
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(array_keys($payload))->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->and($payload)->not->toHaveKey('slice');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+})->with([
+    'building' => ['building', 'build'],
+    'all complete' => ['complete', 'build'],
+]);
+
 it('shows global help without requiring a loop packet', function (string $argument): void {
     $workspace = sys_get_temp_dir().'/orbit-acceptance-help-'.bin2hex(random_bytes(6));
     mkdir($workspace, recursive: true);
@@ -1992,6 +2116,15 @@ function acceptance_test_workspace(string $suffix, string $changedPath): string
     acceptance_test_git($workspace, ['add', $changedPath]);
     acceptance_test_git($workspace, ['commit', '-m', 'Candidate']);
     mkdir("{$workspace}/.orbit", recursive: true);
+    mkdir("{$workspace}/.orbit/slices", recursive: true);
+    file_put_contents(
+        "{$workspace}/.orbit/slices/01-one.md",
+        acceptance_slice_packet('01-one', 'none'),
+    );
+    file_put_contents(
+        "{$workspace}/.orbit/loop.md",
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n\n## Status\n\n- State: frame\n- Blocker: none\n",
+    );
 
     return $workspace;
 }
@@ -2046,6 +2179,8 @@ function acceptance_test_seed_loop(
     );
     acceptance_test_seed_runtime_evidence($fixture);
     acceptance_test_write_gate_artifact($fixture);
+    acceptance_test_unlink_if_present("{$fixture}/.orbit/slices/01-one.md");
+    acceptance_test_remove_empty_dir("{$fixture}/.orbit/slices");
 
     file_put_contents("{$fixture}/.orbit/loop.md", <<<MARKDOWN
         # Orbit Feature Loop
@@ -2232,6 +2367,7 @@ function acceptance_test_replace_orbit_root_with_symlink(string $fixture, string
     acceptance_test_unlink_if_present("{$fixture}/.orbit/loop.md");
     acceptance_test_remove_empty_dir("{$fixture}/.orbit/evidence");
     acceptance_test_remove_empty_dir("{$fixture}/.orbit/quality-gates");
+    acceptance_test_remove_empty_dir("{$fixture}/.orbit/slices");
     acceptance_test_remove_empty_dir("{$fixture}/.orbit");
     symlink($outside, "{$fixture}/.orbit");
 }
@@ -2275,6 +2411,17 @@ function acceptance_test_remove_empty_dir(string $directory): void
     if ($remaining === []) {
         rmdir($directory);
     }
+}
+
+function acceptance_slice_packet(string $id, string $depends): string
+{
+    return "# Orbit Feature Slice\n\n"
+        ."- Slice: {$id}\n"
+        ."- Depends on: {$depends}\n\n"
+        ."## Outcome\n\n"
+        ."## Scope\n- Included: route contract\n- Excluded: archive work\n\n"
+        ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
+        ."## Proof\n- Focused: acceptance route tests\n";
 }
 
 /** @param list<string> $arguments */

@@ -4,6 +4,140 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('scans indexed slice packets and fails closed on invalid packet trees', function (
+    string $case,
+    string $packet,
+    int $expected,
+    string $needle,
+): void {
+    $workspace = secret_scan_test_workspace('slice-'.$case);
+    mkdir($workspace.'/.orbit/slices', recursive: true);
+    file_put_contents(
+        $workspace.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n",
+    );
+    file_put_contents($workspace.'/.orbit/slices/01-one.md', str_replace('- Slice: one', '- Slice: 01-one', $packet));
+    if ($case === 'unindexed') {
+        file_put_contents(
+            $workspace.'/.orbit/slices/02-two.md',
+            str_replace('- Slice: 01-one', '- Slice: 02-two', $packet),
+        );
+    }
+    if ($case === 'symlink') {
+        unlink($workspace.'/.orbit/slices/01-one.md');
+        symlink($workspace.'/outside.md', $workspace.'/.orbit/slices/01-one.md');
+        file_put_contents($workspace.'/outside.md', $packet);
+    }
+    try {
+        $process = secret_scan_test_run($workspace);
+        expect($process->getExitCode())->toBe($expected);
+        if ($expected === 0) {
+            expect($process->getOutput())->toContain($needle);
+        } else {
+            expect($process->getErrorOutput())->toContain($needle);
+        }
+    } finally {
+        secret_scan_test_remove($workspace);
+    }
+})->with([
+    'secret' => [
+        'secret',
+        secret_scan_slice_packet('01-one')."password=\""
+            .str_repeat('x', 20)
+            ."\"\n",
+        2,
+        '.orbit/slices/01-one.md',
+    ],
+    'valid' => [
+        'valid',
+        secret_scan_slice_packet('01-one'),
+        0,
+        'PASS',
+    ],
+    'unindexed' => [
+        'unindexed',
+        secret_scan_slice_packet('01-one'),
+        2,
+        'invalid-slice-contract',
+    ],
+    'symlink' => [
+        'symlink',
+        secret_scan_slice_packet('01-one'),
+        2,
+        'unsafe',
+    ],
+    'invalid' => ['invalid', "# Wrong\n", 2, 'invalid-slice-contract'],
+]);
+
+it('rejects a slice packet tree without an indexed Slices table', function (): void {
+    $workspace = secret_scan_test_workspace('unindexed-without-table');
+    mkdir($workspace.'/.orbit/slices', recursive: true);
+    file_put_contents($workspace.'/.orbit/loop.md', "# Orbit Feature Loop\n");
+    file_put_contents($workspace.'/.orbit/slices/01-one.md', secret_scan_slice_packet('01-one'));
+
+    try {
+        $process = secret_scan_test_run($workspace);
+
+        expect($process->getExitCode())->toBe(2)
+            ->and($process->getErrorOutput())->toContain('invalid-slice-contract');
+    } finally {
+        secret_scan_test_remove($workspace);
+    }
+});
+
+it('fails closed when the indexed slice ancestry is a symlink', function (): void {
+    $workspace = secret_scan_test_workspace('slice-ancestry');
+    $outside = sys_get_temp_dir().'/orbit-secret-scan-outside-'.bin2hex(random_bytes(4));
+    mkdir($outside, recursive: true);
+    mkdir($workspace.'/.orbit/slices', recursive: true);
+    if (is_link($workspace.'/.orbit/slices')) {
+        unlink($workspace.'/.orbit/slices');
+    } else {
+        rmdir($workspace.'/.orbit/slices');
+    }
+    symlink($outside, $workspace.'/.orbit/slices');
+    file_put_contents(
+        $workspace.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n",
+    );
+
+    try {
+        $process = secret_scan_test_run($workspace);
+        expect($process->getExitCode())->toBe(2)
+            ->and($process->getErrorOutput())->toContain('unsafe');
+    } finally {
+        secret_scan_test_remove($workspace);
+        if (is_dir($outside) && ! is_link($outside)) {
+            rmdir($outside);
+        }
+    }
+});
+
+it('scans indexed packets from the provided orbit directory', function (): void {
+    $workspace = secret_scan_test_workspace('custom-orbit');
+    $orbitDir = "{$workspace}/custom-orbit";
+    mkdir("{$orbitDir}/slices", recursive: true);
+    file_put_contents(
+        "{$orbitDir}/loop.md",
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n",
+    );
+    file_put_contents(
+        "{$orbitDir}/slices/01-one.md",
+        secret_scan_slice_packet('01-one')."password=\"".str_repeat('x', 20)."\"\n",
+    );
+
+    try {
+        $process = secret_scan_test_run($workspace, orbitDir: $orbitDir);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('.orbit/slices/01-one.md');
+    } finally {
+        secret_scan_test_remove($workspace);
+    }
+});
+
 it('scans only added source lines and ignores an unchanged secret-shaped fixture', function (): void {
     $workspace = secret_scan_test_workspace('added-lines');
 
@@ -184,12 +318,23 @@ function secret_scan_test_workspace(string $suffix): string
     return $workspace;
 }
 
-function secret_scan_test_run(string $workspace, ?string $tree = null): Process
+function secret_scan_slice_packet(string $id): string
+{
+    return "# Orbit Feature Slice\n\n"
+        ."- Slice: {$id}\n"
+        ."- Depends on: none\n\n"
+        ."## Outcome\n\n"
+        ."## Scope\n- Included: secret scan\n- Excluded: archive work\n\n"
+        ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
+        ."## Proof\n- Focused: secret scan tests\n";
+}
+
+function secret_scan_test_run(string $workspace, ?string $tree = null, ?string $orbitDir = null): Process
 {
     $arguments = [
         repo_path('bin/orbit-secret-scan'),
         "--worktree={$workspace}",
-        "--orbit-dir={$workspace}/.orbit",
+        "--orbit-dir=".($orbitDir ?? "{$workspace}/.orbit"),
     ];
 
     if ($tree !== null) {

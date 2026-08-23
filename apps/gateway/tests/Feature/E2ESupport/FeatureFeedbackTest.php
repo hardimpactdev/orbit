@@ -4,6 +4,89 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('validates optional feedback slice context as a safe indexed path shape', function (): void {
+    require_once repo_path('bin/orbit-feedback-events.php');
+    $historical = feedback_test_recorded_event('historical-slice-shape');
+    orbitFeedbackValidate($historical);
+    $indexed = $historical;
+    $indexed['context'] = ['slice' => '.orbit/slices/01-one.md'];
+    expect(static function () use ($indexed): void {
+        orbitFeedbackValidate($indexed);
+    })->not->toThrow(RuntimeException::class);
+    foreach (['../unsafe', '01-one', '.orbit/slices/one.md', ['array']] as $slice) {
+        $event = $historical;
+        $event['context'] = ['slice' => $slice];
+        expect(static function () use ($event): void {
+            orbitFeedbackValidate($event);
+        })
+            ->toThrow(RuntimeException::class, 'feedback context.slice must be a safe indexed slice path');
+    }
+});
+
+it('records optional indexed slice context and rejects invalid slice values before append', function (
+    string $option,
+    int $exitCode,
+    string $needle,
+): void {
+    $workspace = feedback_test_workspace('slice-context');
+    mkdir($workspace.'/.orbit/slices', recursive: true);
+    file_put_contents(
+        $workspace.'/.orbit/slices/01-one.md',
+        feedback_slice_packet('01-one', 'none'),
+    );
+    file_put_contents(
+        $workspace.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n",
+    );
+    try {
+        $arguments = ['record', '--session-ref=codex://threads/example#1', '--surface=cli.progress', $option];
+        if ($option === '--slice=.orbit/slices/01-one.md') {
+            $arguments[] = '--command=orbit deploy app';
+        }
+        $process = feedback_test_run($workspace, $arguments, "Context test.\n");
+        expect($process->getExitCode())->toBe($exitCode)->and($process->getErrorOutput())->toContain($needle);
+        if ($exitCode === 0) {
+            $event = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            expect($event['context']['slice'])->toBe('.orbit/slices/01-one.md');
+            expect($event['context']['command'])->toBe('orbit deploy app');
+        } else {
+            expect(is_file($workspace.'/.orbit/feedback.jsonl'))->toBeFalse();
+        }
+    } finally {
+        feedback_test_remove($workspace);
+    }
+})->with([
+    'indexed' => ['--slice=.orbit/slices/01-one.md', 0, ''],
+    'empty' => ['--slice=', 2, 'slice'],
+    'bare numbered id' => ['--slice=01-one', 2, 'slice'],
+    'unsafe' => ['--slice=../slice', 2, 'slice'],
+    'unnumbered indexed path' => ['--slice=.orbit/slices/one.md', 2, 'slice'],
+    'unindexed' => ['--slice=.orbit/slices/02-two.md', 2, 'not indexed'],
+]);
+
+it('validates feedback slice context against the custom orbit directory', function (): void {
+    $workspace = feedback_test_workspace('custom-orbit');
+    $orbitDir = $workspace.'/custom-orbit';
+    mkdir($orbitDir.'/slices', recursive: true);
+    file_put_contents($orbitDir.'/loop.md', "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n");
+    file_put_contents($orbitDir.'/slices/01-one.md', feedback_slice_packet('01-one', 'none'));
+
+    try {
+        $process = feedback_test_run(
+            $workspace,
+            ['record', '--session-ref=codex://threads/custom#1', '--surface=cli.progress', '--slice=.orbit/slices/01-one.md'],
+            "Custom orbit context.\n",
+            $orbitDir,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and(is_file($orbitDir.'/feedback.jsonl'))->toBeTrue()
+            ->and(is_file($workspace.'/.orbit/feedback.jsonl'))->toBeFalse();
+    } finally {
+        feedback_test_remove($workspace);
+    }
+});
+
 it('shows global help without requiring feedback state', function (string $argument): void {
     $workspace = sys_get_temp_dir().'/orbit-feedback-help-'.bin2hex(random_bytes(6));
     mkdir($workspace, recursive: true);
@@ -681,6 +764,17 @@ function feedback_test_temp_path(): string
     return sys_get_temp_dir().'/orbit-feedback-'.bin2hex(random_bytes(6)).'.jsonl';
 }
 
+function feedback_slice_packet(string $id, string $depends): string
+{
+    return "# Orbit Feature Slice\n\n"
+        ."- Slice: {$id}\n"
+        ."- Depends on: {$depends}\n\n"
+        ."## Outcome\n\n"
+        ."## Scope\n- Included: feedback context\n- Excluded: archive work\n\n"
+        ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
+        ."## Proof\n- Focused: feedback context tests\n";
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -718,13 +812,13 @@ function feedback_test_workspace(string $suffix): string
 /**
  * @param list<string> $arguments
  */
-function feedback_test_run(string $workspace, array $arguments, string $input = ''): Process
+function feedback_test_run(string $workspace, array $arguments, string $input = '', ?string $orbitDir = null): Process
 {
     $process = new Process([
         repo_path('bin/orbit-feature-feedback'),
         ...$arguments,
         "--cwd={$workspace}",
-        "--orbit-dir={$workspace}/.orbit",
+        "--orbit-dir=".($orbitDir ?? "{$workspace}/.orbit"),
     ], $workspace);
     $process->setInput($input);
     $process->run();

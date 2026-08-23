@@ -72,6 +72,31 @@ function acceptanceOptions(array $arguments): array
 /** @param array<string, string|bool> $options */
 function acceptanceRoute(string $cwd, array $options): never
 {
+    $loopPath = "{$cwd}/.orbit/loop.md";
+    $loopStat = @lstat($loopPath);
+    if (
+        $loopStat === false
+        || is_link($loopPath)
+        || ($loopStat['mode'] & 0170000) !== 0100000
+    ) {
+        throw new RuntimeException('active loop packet is missing or unsafe');
+    }
+    $loop = (string) file_get_contents($loopPath);
+    orbitLoopSlices($loop);
+    $state = orbitLoopStatusHead(orbitLoopLabel($loop, 'Status', 'State'));
+    if (! in_array($state, ORBIT_LOOP_STATES, true)) {
+        throw new RuntimeException('slice graph requires a known Status.State');
+    }
+    $featureTip = orbitLoopGitValue($cwd, ['rev-parse', 'HEAD']);
+    if ($featureTip === null || preg_match('/^[0-9a-f]{40}$/', $featureTip) !== 1) {
+        throw new RuntimeException('slice graph requires the current feature tip');
+    }
+    $problems = $state === 'frame'
+        ? orbitLoopSliceFrameProblems($loop, $cwd.'/.orbit')
+        : orbitLoopSliceFinalizationProblems($loop, $cwd, $featureTip);
+    if ($problems !== []) {
+        throw new RuntimeException($problems[0]);
+    }
     $base = is_string($options['base'] ?? null) && trim((string) $options['base']) !== ''
         ? trim((string) $options['base'])
         : 'main';

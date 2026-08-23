@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-loop-contract.php';
+
 const LOOP_OUTCOME_ENUM = ['complete', 'blocked', 'complete + loop improvement'];
 
 const PLACEHOLDER_TOKENS = ['pending', 'tbd', 'todo', 'not yet'];
@@ -9,9 +11,56 @@ const PLACEHOLDER_TOKENS = ['pending', 'tbd', 'todo', 'not yet'];
 /**
  * @return list<string>
  */
-function compact_loop_problems(string $contents): array
+function compact_loop_problems(string $contents, ?string $path = null): array
 {
     $problems = [];
+
+    try {
+        orbitLoopSlices($contents);
+
+        if ($path !== null) {
+            $loopPath = $path;
+            $worktree = dirname(dirname($loopPath));
+        } else {
+            $worktreeMatches = [];
+            if (preg_match_all('/^- Worktree: (\/.+)$/m', $contents, $worktreeMatches) !== 1) {
+                throw new RuntimeException('active compact loop requires an absolute Worktree path for Slices validation');
+            }
+
+            $worktree = $worktreeMatches[1][0];
+            $worktreeStat = @lstat($worktree);
+            if (
+                $worktreeStat === false
+                || is_link($worktree)
+                || ($worktreeStat['mode'] & 0170000) !== 0040000
+            ) {
+                throw new RuntimeException('active compact loop Worktree path is unsafe');
+            }
+
+            $loopPath = $worktree.'/.orbit/loop.md';
+            $loopStat = @lstat($loopPath);
+            if (
+                $loopStat === false
+                || is_link($loopPath)
+                || ($loopStat['mode'] & 0170000) !== 0100000
+            ) {
+                throw new RuntimeException('active compact loop Worktree packet is unsafe');
+            }
+
+            $storedContents = orbitLoopReadSlicePacket($loopPath, '.orbit/loop.md');
+            if ($storedContents !== $contents) {
+                throw new RuntimeException('active compact loop Worktree packet does not match checked contents');
+            }
+        }
+
+        $featureTip = orbitLoopGitValue($worktree, ['rev-parse', 'HEAD']) ?? str_repeat('0', 40);
+        $sliceProblems = orbitLoopSliceFinalizationProblems($contents, $worktree, $featureTip);
+        foreach ($sliceProblems as $sliceProblem) {
+            $problems[] = 'Slices: '.$sliceProblem;
+        }
+    } catch (Throwable $exception) {
+        $problems[] = 'Slices: '.$exception->getMessage();
+    }
 
     foreach (['Goal', 'Scope', 'Proof', 'Status', 'Feedback'] as $section) {
         if (orbitLoopSection($contents, $section) === null) {
@@ -102,7 +151,7 @@ function compact_loop_problems(string $contents): array
 
 function run_compact_lint(string $path, string $contents): int
 {
-    $problems = compact_loop_problems($contents);
+    $problems = compact_loop_problems($contents, $path);
 
     if ($problems !== []) {
         foreach ($problems as $problem) {

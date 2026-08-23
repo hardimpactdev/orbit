@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 const ORBIT_LOOP_STATES = ['frame', 'build', 'prove', 'accept', 'accepted', 'land', 'blocked'];
 
+const ORBIT_LOOP_SLICE_STATES = ['pending', 'ready', 'building', 'complete', 'blocked'];
+
 const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
 
 const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
@@ -19,6 +21,419 @@ const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PATHS = [
 const ORBIT_LOOP_BLAST_RADIUS_AUTHORITY_PREFIXES = [
     'apps/docs/content/domains/',
 ];
+
+/**
+ * Parse the exact indexed Slices table without reading packet files.
+ *
+ * @return list<array{path:string,state:string,checkpoint:string}>
+ */
+function orbitLoopSlices(string $markdown): array
+{
+    $body = orbitLoopExactSlicesSection($markdown);
+
+    $lines = array_values(array_filter(
+        preg_split('/\R/', $body) ?: [],
+        static fn (string $line): bool => trim($line) !== '',
+    ));
+    if (($lines[0] ?? null) !== '| Slice | State | Checkpoint |') {
+        throw new RuntimeException('Slices table must have exact headers');
+    }
+    if (($lines[1] ?? null) !== '| --- | --- | --- |') {
+        throw new RuntimeException('Slices table must have exact separators');
+    }
+
+    $rows = [];
+    $paths = [];
+    foreach (array_slice($lines, 2) as $line) {
+        if (! str_starts_with($line, '|')) {
+            throw new RuntimeException('duplicate slice path or malformed row');
+        }
+        if (substr_count($line, '|') !== 4) {
+            throw new RuntimeException('Slices table row must have exactly 3 columns');
+        }
+        if (preg_match('/^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \|$/', $line, $match) !== 1) {
+            throw new RuntimeException('duplicate slice path or malformed row');
+        }
+        $path = $match[1];
+        if (preg_match('~^\.orbit/slices/[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$~', $path) !== 1) {
+            throw new RuntimeException("unsafe slice packet path: {$path}");
+        }
+        if (isset($paths[$path])) {
+            throw new RuntimeException("duplicate slice path: {$path}");
+        }
+        $paths[$path] = true;
+        $state = $match[2];
+        if (! in_array($state, ORBIT_LOOP_SLICE_STATES, true)) {
+            throw new RuntimeException("invalid slice state for {$path}: {$state}");
+        }
+        $checkpoint = $match[3];
+        if ($checkpoint !== 'none' && preg_match('/^[0-9a-f]{40}$/', $checkpoint) !== 1) {
+            throw new RuntimeException("invalid slice checkpoint for {$path}");
+        }
+        $rows[] = ['path' => $path, 'state' => $state, 'checkpoint' => $checkpoint];
+    }
+    if ($rows === []) {
+        throw new RuntimeException('Slices table is empty');
+    }
+
+    return $rows;
+}
+
+function orbitLoopExactSlicesSection(string $markdown): string
+{
+    $lines = preg_split('/\R/', $markdown) ?: [];
+    $headingIndexes = [];
+    foreach ($lines as $index => $line) {
+        if ($line === '## Slices') {
+            $headingIndexes[] = $index;
+
+            continue;
+        }
+        if (preg_match('/^##\s*(.+?)\s*$/', $line, $match) === 1 && strtolower($match[1]) === 'slices') {
+            throw new RuntimeException('Slices section heading must be exactly `## Slices`');
+        }
+    }
+    if ($headingIndexes === []) {
+        throw new RuntimeException('Slices section is missing');
+    }
+    if (count($headingIndexes) !== 1) {
+        throw new RuntimeException('duplicate Slices section');
+    }
+
+    $section = [];
+    foreach (array_slice($lines, $headingIndexes[0] + 1) as $line) {
+        if (preg_match('/^##\s+/', $line) === 1) {
+            break;
+        }
+        $section[] = $line;
+    }
+
+    return trim(implode("\n", $section));
+}
+
+function orbitLoopReadSlicePacket(string $path, string $relativePath): string
+{
+    $initial = @lstat($path);
+    if ($initial === false || is_link($path) || ($initial['mode'] & 0170000) !== 0100000) {
+        throw new RuntimeException("unsafe slice packet: {$relativePath}");
+    }
+    $handle = @fopen($path, 'rb');
+    if ($handle === false) {
+        throw new RuntimeException("unsafe slice packet: {$relativePath}");
+    }
+    try {
+        $opened = fstat($handle);
+        if (
+            $opened === false
+            || $opened['dev'] !== $initial['dev']
+            || $opened['ino'] !== $initial['ino']
+            || ($opened['mode'] & 0170000) !== 0100000
+        ) {
+            throw new RuntimeException("unsafe slice packet: {$relativePath}");
+        }
+        $contents = stream_get_contents($handle);
+        $current = @lstat($path);
+        if (
+            $contents === false
+            || $current === false
+            || $current['dev'] !== $initial['dev']
+            || $current['ino'] !== $initial['ino']
+            || ($current['mode'] & 0170000) !== 0100000
+        ) {
+            throw new RuntimeException("unsafe slice packet: {$relativePath}");
+        }
+        return $contents;
+    } finally {
+        fclose($handle);
+    }
+}
+
+/**
+ * @return array<string, array{path:string,state:string,checkpoint:string,depends:list<string>}>
+ */
+function orbitLoopSlicePacketRowsValidated(string $markdown, string $orbitDir): array
+{
+    $rows = orbitLoopSlices($markdown);
+    $orbitStat = @lstat($orbitDir);
+    $sliceDir = $orbitDir.'/slices';
+    $sliceStat = @lstat($sliceDir);
+    if (
+        $orbitStat === false
+        || is_link($orbitDir)
+        || ($orbitStat['mode'] & 0170000) !== 0040000
+        || $sliceStat === false
+        || is_link($sliceDir)
+        || ($sliceStat['mode'] & 0170000) !== 0040000
+    ) {
+        throw new RuntimeException('unsafe slice packet directory');
+    }
+
+    $indexed = [];
+    foreach ($rows as $row) {
+        $id = basename($row['path'], '.md');
+        $packet = orbitLoopReadSlicePacket($sliceDir.'/'.$id.'.md', $row['path']);
+        orbitLoopValidateSlicePacket($packet, $id);
+        $indexed[$id] = [...$row, 'depends' => orbitLoopSliceDependencies($packet, $id)];
+    }
+
+    foreach (scandir($sliceDir) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..' || ! str_ends_with($entry, '.md')) {
+            continue;
+        }
+        $entryPath = $sliceDir.'/'.$entry;
+        if (! is_file($entryPath) || is_link($entryPath)) {
+            throw new RuntimeException('slice packet directory contains unsafe entry');
+        }
+        $id = basename($entry, '.md');
+        if (! isset($indexed[$id])) {
+            throw new RuntimeException("unindexed slice packet: .orbit/slices/{$entry}");
+        }
+    }
+
+    foreach ($indexed as $id => $row) {
+        foreach ($row['depends'] as $dependency) {
+            if (! isset($indexed[$dependency])) {
+                throw new RuntimeException("slice {$id} depends on unknown slice: {$dependency}");
+            }
+            if ($dependency === $id) {
+                throw new RuntimeException("slice {$id} cannot depend on itself");
+            }
+        }
+    }
+
+    $visiting = [];
+    $visited = [];
+    $visit = static function (string $id) use (&$visit, &$visiting, &$visited, $indexed): void {
+        if (isset($visiting[$id])) {
+            throw new RuntimeException("cyclic slice dependency: {$id}");
+        }
+        if (isset($visited[$id])) {
+            return;
+        }
+        $visiting[$id] = true;
+        foreach ($indexed[$id]['depends'] as $dependency) {
+            $visit($dependency);
+        }
+        unset($visiting[$id]);
+        $visited[$id] = true;
+    };
+    foreach (array_keys($indexed) as $id) {
+        $visit($id);
+    }
+
+    return $indexed;
+}
+
+function orbitLoopValidateSlicePacket(string $packet, string $id): void
+{
+    $packet = str_replace(["\r\n", "\r"], "\n", $packet);
+    if (
+        preg_match_all('/^# [^\r\n]*$/m', $packet, $matches) !== 1
+        || preg_match_all('/^# Orbit Feature Slice$/m', $packet, $matches) !== 1
+    ) {
+        throw new RuntimeException("slice packet {$id} requires exactly one # Orbit Feature Slice");
+    }
+    if (preg_match_all('/^- Slice: ([^\r\n]*)$/m', $packet, $matches) !== 1) {
+        throw new RuntimeException("slice packet {$id} requires exactly one Slice label");
+    }
+    if ($matches[1][0] !== $id) {
+        throw new RuntimeException("slice packet {$id} Slice label does not match filename");
+    }
+    if (preg_match_all('/^- Depends on: ([^\r\n]*)$/m', $packet, $matches) !== 1) {
+        throw new RuntimeException("slice packet {$id} requires exactly one Depends on label");
+    }
+    if (preg_match('/<[^>\r\n]+>/', $packet) === 1) {
+        throw new RuntimeException("slice packet {$id} contains a placeholder");
+    }
+    $lines = explode("\n", $packet);
+    $lineIndex = 1;
+    while (($lines[$lineIndex] ?? null) === '') {
+        $lineIndex++;
+    }
+    if (
+        preg_match('/^- Slice: ([^\r\n]*)$/', $lines[$lineIndex] ?? '', $sliceMatch) !== 1
+        || $sliceMatch[1] !== $id
+    ) {
+        throw new RuntimeException("slice packet {$id} requires the exact metadata preamble");
+    }
+    $lineIndex++;
+    if (preg_match('/^- Depends on: ([^\r\n]*)$/', $lines[$lineIndex] ?? '') !== 1) {
+        throw new RuntimeException("slice packet {$id} requires the exact metadata preamble");
+    }
+    $lineIndex++;
+    while (($lines[$lineIndex] ?? null) === '') {
+        $lineIndex++;
+    }
+    preg_match_all('/^## ([^\r\n]+)$/m', $packet, $matches);
+    if ($matches[1] !== ['Outcome', 'Scope', 'Authority', 'Proof']) {
+        throw new RuntimeException("slice packet {$id} requires the required packet sections in order");
+    }
+    if (($lines[$lineIndex] ?? null) !== '## Outcome') {
+        throw new RuntimeException("slice packet {$id} requires the exact metadata preamble");
+    }
+    $labelsBySection = [
+        'Scope' => ['Included', 'Excluded'],
+        'Authority' => ['Decisions', 'Product docs'],
+        'Proof' => ['Focused'],
+    ];
+    $currentSection = null;
+    foreach (preg_split('/\R/', $packet) ?: [] as $line) {
+        if (preg_match('/^## ([^\r\n]+)$/', $line, $heading) === 1) {
+            $currentSection = $heading[1];
+
+            continue;
+        }
+        if (preg_match('/^- ([^:]+):(?: .*)?$/', $line, $label) !== 1) {
+            continue;
+        }
+        if ($currentSection === null && ! in_array($label[1], ['Slice', 'Depends on'], true)) {
+            throw new RuntimeException("slice packet {$id} has unknown packet label: {$label[1]}");
+        }
+        if ($currentSection !== null && ! in_array($label[1], $labelsBySection[$currentSection] ?? [], true)) {
+            throw new RuntimeException("slice packet {$id} has unknown packet label: {$label[1]}");
+        }
+    }
+    foreach ($labelsBySection as $section => $labels) {
+        $body = orbitLoopSection($packet, $section) ?? '';
+        $found = [];
+        foreach (preg_split('/\R/', $body) ?: [] as $line) {
+            if (preg_match('/^- ([^:]+):(?: .*)?$/', $line, $label) === 1) {
+                $found[] = $label[1];
+            }
+        }
+        if ($found !== $labels) {
+            throw new RuntimeException("slice packet {$id} requires {$section} labels: ".implode(', ', $labels));
+        }
+    }
+}
+
+/** @return list<string> */
+function orbitLoopSliceDependencies(string $packet, string $id): array
+{
+    preg_match('/^- Depends on: ([^\r\n]*)$/m', $packet, $match);
+    $value = $match[1] ?? '';
+    if ($value === 'none') {
+        return [];
+    }
+    $dependencies = [];
+    foreach (explode(',', $value) as $dependency) {
+        $dependency = trim($dependency);
+        if (preg_match('/^[0-9]{2}-[a-z0-9][a-z0-9-]*$/', $dependency) !== 1) {
+            throw new RuntimeException("slice {$id} has unsafe dependency: {$dependency}");
+        }
+        if (in_array($dependency, $dependencies, true)) {
+            throw new RuntimeException("slice {$id} has duplicate dependency: {$dependency}");
+        }
+        $dependencies[] = $dependency;
+    }
+
+    return $dependencies;
+}
+
+/** @return list<string> */
+function orbitLoopSliceFrameProblems(string $markdown, string $orbitDir): array
+{
+    try {
+        $slices = orbitLoopSlicePacketRowsValidated($markdown, $orbitDir);
+    } catch (Throwable $exception) {
+        return [$exception->getMessage()];
+    }
+    foreach ($slices as $slice) {
+        if ($slice['state'] === 'building') {
+            return ['initial slice graph cannot contain a building slice'];
+        }
+    }
+    foreach ($slices as $id => $slice) {
+        if (in_array($slice['state'], ['ready', 'building', 'complete'], true)) {
+            foreach ($slice['depends'] as $dependency) {
+                if ($slices[$dependency]['state'] !== 'complete') {
+                    return ["{$slice['state']} slice {$id} has incomplete dependency"];
+                }
+            }
+        }
+    }
+    $hasReadyWork = false;
+    foreach ($slices as $slice) {
+        if ($slice['state'] === 'ready' && $slice['depends'] === []) {
+            $hasReadyWork = true;
+
+            break;
+        }
+    }
+    if ($hasReadyWork) {
+        foreach ($slices as $id => $slice) {
+            if (
+                $slice['state'] === 'pending'
+                && array_reduce(
+                    $slice['depends'],
+                    static function (bool $complete, string $dependency) use ($slices): bool {
+                        return $complete && $slices[$dependency]['state'] === 'complete';
+                    },
+                    true,
+                )
+            ) {
+                return ["pending slice {$id} has complete dependencies"];
+            }
+        }
+
+        return [];
+    }
+
+    return ['initial graph requires ready dependency-free work'];
+}
+
+/** @return list<string> */
+function orbitLoopSliceFinalizationProblems(string $markdown, string $worktree, string $featureTip): array
+{
+    try {
+        $slices = orbitLoopSlicePacketRowsValidated($markdown, $worktree.'/.orbit');
+    } catch (Throwable $exception) {
+        return [$exception->getMessage()];
+    }
+    $building = array_filter($slices, static function (array $slice): bool {
+        return $slice['state'] === 'building';
+    });
+    if (count($building) > 1) {
+        return ['at most one building slice'];
+    }
+    foreach ($slices as $id => $slice) {
+        if (in_array($slice['state'], ['ready', 'building', 'complete'], true)) {
+            foreach ($slice['depends'] as $dependency) {
+                if ($slices[$dependency]['state'] !== 'complete') {
+                    return ["{$slice['state']} slice {$id} has incomplete dependency"];
+                }
+            }
+        }
+        if (
+            $slice['state'] === 'pending'
+            && array_reduce(
+                $slice['depends'],
+                static function (bool $complete, string $dependency) use ($slices): bool {
+                    return $complete && $slices[$dependency]['state'] === 'complete';
+                },
+                true,
+            )
+        ) {
+            return ["pending slice {$id} has complete dependencies"];
+        }
+    }
+    $allComplete = array_reduce(
+        $slices,
+        static fn (bool $complete, array $slice): bool => $complete && $slice['state'] === 'complete',
+        true,
+    );
+    if ($allComplete) {
+        return [];
+    }
+    $hasWork = array_filter($slices, static function (array $slice): bool {
+        return in_array($slice['state'], ['ready', 'building'], true);
+    });
+    if ($hasWork === []) {
+        return ['incomplete slice graph has no ready or building work'];
+    }
+
+    return [];
+}
 
 function orbitLoopIsCompact(string $markdown): bool
 {

@@ -73,6 +73,26 @@ function feedbackRecord(string $stream, string $cwd, array $options): never
 
     $redacted = orbitRedactSecrets($raw);
     $command = isset($options['command']) ? orbitRedactSecrets((string) $options['command']) : null;
+    $sliceProvided = array_key_exists('slice', $options);
+    $slice = $sliceProvided ? trim((string) $options['slice']) : null;
+    if ($sliceProvided) {
+        if ($slice === null || preg_match('~^\.orbit/slices/[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$~', $slice) !== 1) {
+            throw new RuntimeException('feedback context.slice must be a safe indexed slice path');
+        }
+        $loopPath = dirname($stream).'/loop.md';
+        $loopStat = @lstat($loopPath);
+        if (
+            $loopStat === false
+            || is_link($loopPath)
+            || ($loopStat['mode'] & 0170000) !== 0100000
+        ) {
+            throw new RuntimeException('feedback slice context requires a loop packet');
+        }
+        $slices = orbitLoopSlices((string) file_get_contents($loopPath));
+        if (! in_array($slice, array_column($slices, 'path'), true)) {
+            throw new RuntimeException("feedback context.slice is not indexed: {$slice}");
+        }
+    }
     $event = [
         'schema_version' => 1,
         'type' => 'feedback.recorded',
@@ -83,7 +103,13 @@ function feedbackRecord(string $stream, string $cwd, array $options): never
         'candidate_commit' => $candidate,
         'surface' => $surface,
         'actionable' => true,
-        'context' => $command !== null ? ['command' => $command['text']] : [],
+        'context' => array_filter(
+            [
+                'command' => $command['text'] ?? null,
+                'slice' => $slice,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        ),
         'evidence' => [],
     ];
 

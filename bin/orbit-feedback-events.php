@@ -306,6 +306,18 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
             throw new RuntimeException('feedback recorded context and evidence must be arrays');
         }
 
+        if (array_key_exists('slice', $event['context'])) {
+            if (
+                ! is_string($event['context']['slice'])
+                || preg_match(
+                    '~^\.orbit/slices/[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$~',
+                    $event['context']['slice'],
+                ) !== 1
+            ) {
+                throw new RuntimeException('feedback context.slice must be a safe indexed slice path');
+            }
+        }
+
         $isAcceptanceEvidence = ($event['context']['kind'] ?? null) === 'acceptance';
 
         if ($isAcceptanceEvidence) {

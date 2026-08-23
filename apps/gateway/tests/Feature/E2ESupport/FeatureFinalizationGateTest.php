@@ -118,6 +118,13 @@ it('lints a completed packet copied from the data-only loop template', function 
         $template,
     );
     $packetDir = make_finalization_lint_dir($packet);
+    if (! is_dir("{$packetDir}/.orbit/slices")) {
+        mkdir("{$packetDir}/.orbit/slices", recursive: true);
+    }
+    file_put_contents(
+        filename: "{$packetDir}/.orbit/slices/01-example.md",
+        data: finalization_slice_packet('01-example'),
+    );
 
     try {
         $process = run_finalization_check_wrapper($packetDir, ['--lint']);
@@ -347,6 +354,47 @@ it('allows only the exact reviewed and accepted feature and main tips to merge',
     }
 });
 
+it('blocks compact finalization on an invalid active slice graph', function (): void {
+    $packet =
+        compact_feature_loop_packet(includeSlices: false)
+        ."\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | building | none |\n| `.orbit/slices/02-two.md` | building | none |\n";
+    $packetDir = make_finalization_lint_dir($packet);
+    if (! is_dir($packetDir.'/.orbit/slices')) {
+        mkdir($packetDir.'/.orbit/slices', recursive: true);
+    }
+    file_put_contents(
+        $packetDir.'/.orbit/slices/01-one.md',
+        finalization_slice_packet('01-one'),
+    );
+    file_put_contents(
+        $packetDir.'/.orbit/slices/02-two.md',
+        finalization_slice_packet('02-two'),
+    );
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->toContain('Slices:');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('requires an active Slices section during compact lint', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet(), includeSlices: false);
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput().$process->getErrorOutput())
+            ->toContain('Slices');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('requires complete blast-radius evidence before finalizing a high-authority change', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -508,10 +556,13 @@ it('requires the reviewer PASS to name the exact feature HEAD', function (): voi
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                reviewedTip: $reviewedTip,
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    reviewedTip: $reviewedTip,
+                ),
+                $worktree,
             ),
         );
 
@@ -581,11 +632,14 @@ it('routes deleted production files through observable acceptance', function ():
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - observable',
-                acceptance: 'accepted - automated - automation-only diff',
-                featureTip: $featureTip,
-                mainTip: $mainTip,
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - observable',
+                    acceptance: 'accepted - automated - automation-only diff',
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                ),
+                $worktree,
             ),
         );
 
@@ -952,12 +1006,15 @@ it('requires runtime proof for retained automated acceptance before finalization
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - human-judgment=not-required',
-                acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                venue: 'retained-incus',
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - human-judgment=not-required',
+                    acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    venue: 'retained-incus',
+                ),
+                $worktree,
             ),
         );
 
@@ -989,13 +1046,16 @@ it('rejects deferred final-hop runtime claims and accepts structured completed p
         $runtime = str_replace('<TIP>', $featureTip, $runtimeDetail);
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - human-judgment=not-required',
-                acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                venue: 'retained-incus',
-                runtime: $runtime,
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - human-judgment=not-required',
+                    acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    venue: 'retained-incus',
+                    runtime: $runtime,
+                ),
+                $worktree,
             ),
         );
 
@@ -1069,11 +1129,14 @@ it('requires exact automated acceptance provenance', function (
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: $review,
-                acceptance: $acceptance,
-                featureTip: $featureTip,
-                mainTip: $mainTip,
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: $review,
+                    acceptance: $acceptance,
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                ),
+                $worktree,
             ),
         );
 
@@ -1213,11 +1276,14 @@ it('rejects automation-only acceptance even for a declarative diff', function ()
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - human-judgment=required',
-                acceptance: 'accepted - automated - automation-only diff',
-                featureTip: $featureTip,
-                mainTip: $mainTip,
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - human-judgment=required',
+                    acceptance: 'accepted - automated - automation-only diff',
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                ),
+                $worktree,
             ),
         );
 
@@ -1667,13 +1733,16 @@ it('requires a user acceptance event matching the accepted candidate source and 
         $sourceRef = 'codex://threads/019f4bd5-ba0e-7d33-af71-2e8ebc774627#accepted';
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - observable',
-                acceptance: "accepted - user @ {$sourceRef}",
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                venue: 'retained-incus',
-                runtime: finalization_structured_runtime($worktree, $featureTip),
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - observable',
+                    acceptance: "accepted - user @ {$sourceRef}",
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    venue: 'retained-incus',
+                    runtime: finalization_structured_runtime($worktree, $featureTip),
+                ),
+                $worktree,
             ),
         );
         write_finalization_acceptance_event(
@@ -1710,13 +1779,16 @@ it('allows exact user acceptance provenance', function (): void {
         $sourceRef = 'codex://threads/019f4bd5-ba0e-7d33-af71-2e8ebc774627#accepted';
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - observable',
-                acceptance: "accepted - user @ {$sourceRef}",
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                venue: 'retained-incus',
-                runtime: finalization_structured_runtime($worktree, $featureTip),
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - observable',
+                    acceptance: "accepted - user @ {$sourceRef}",
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    venue: 'retained-incus',
+                    runtime: finalization_structured_runtime($worktree, $featureTip),
+                ),
+                $worktree,
             ),
         );
         write_finalization_acceptance_event(
@@ -1748,13 +1820,16 @@ it('rejects unnecessary user acceptance at finalization', function (): void {
         $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
-            compact_feature_loop_packet(
-                review: 'passed - reviewer example - human-judgment=not-required',
-                acceptance: 'accepted - user @ codex://threads/example#unnecessary',
-                featureTip: $featureTip,
-                mainTip: $mainTip,
-                venue: 'retained-incus',
-                runtime: finalization_structured_runtime($worktree, $featureTip),
+            finalization_bind_compact_worktree(
+                compact_feature_loop_packet(
+                    review: 'passed - reviewer example - human-judgment=not-required',
+                    acceptance: 'accepted - user @ codex://threads/example#unnecessary',
+                    featureTip: $featureTip,
+                    mainTip: $mainTip,
+                    venue: 'retained-incus',
+                    runtime: finalization_structured_runtime($worktree, $featureTip),
+                ),
+                $worktree,
             ),
         );
 
@@ -3300,8 +3375,8 @@ it('allows cleanup when a compact receipt binds cited nested proof files', funct
     file_put_contents(
         $loopPath,
         str_replace(
-            '## Status',
-            "- Broader proof: `.orbit/{$proofEntry}`\n\n## Status",
+            '## Slices',
+            "- Broader proof: `.orbit/{$proofEntry}`\n\n## Slices",
             $loop,
         ),
     );
@@ -3348,12 +3423,12 @@ it('allows cleanup for historical schema-v2 compact receipts that cite release-e
     file_put_contents(
         $loopPath,
         str_replace(
-            '## Status',
+            '## Slices',
             <<<MARKDOWN
                 - Broader proof: `.orbit/{$proofEntry}`
                 - Release evidence: `.orbit/release-evidence/2026-08-04-live-candidate/proof.txt`
 
-                ## Status
+                ## Slices
                 MARKDOWN,
             $loop,
         ),
@@ -3403,8 +3478,8 @@ it('rejects schema-v3 compact receipts that cite release-evidence without bindin
     file_put_contents(
         $loopPath,
         str_replace(
-            '## Status',
-            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n\n## Status",
+            '## Slices',
+            "- Release evidence: `.orbit/release-evidence/2026-08-05-slice/proof.txt`\n\n## Slices",
             $loop,
         ),
     );
@@ -3445,8 +3520,8 @@ it('rejects a compact receipt that binds only a truncated proof citation', funct
     file_put_contents(
         $loopPath,
         str_replace(
-            '## Status',
-            "- Broader proof: `{$citation}`\n\n## Status",
+            '## Slices',
+            "- Broader proof: `{$citation}`\n\n## Slices",
             $loop,
         ),
     );
@@ -4428,7 +4503,12 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
     run_fixture_command(cwd: $repo, command: ['git', 'worktree', 'add', $worktree, 'feature']);
 
     mkdir("{$worktree}/.orbit", recursive: true);
+    if (str_contains($loopMarkdown, '# Orbit Feature Loop') && ! str_contains($loopMarkdown, '## Slices')) {
+        $loopMarkdown .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n";
+    }
+    $loopMarkdown = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $loopMarkdown);
     file_put_contents(filename: "{$worktree}/.orbit/loop.md", data: $loopMarkdown);
+    finalization_seed_slice_packets($worktree, $loopMarkdown);
 
     return [$repo, $worktree];
 }
@@ -4470,8 +4550,12 @@ function compact_feature_loop_packet(
     string $runtime = 'not applicable - no runtime proof venue',
     string $blastRadius = 'not-required - local change',
     string $owned = 'loop tooling',
+    bool $includeSlices = true,
 ): string {
     $reviewedTip ??= $featureTip;
+    $slices = $includeSlices
+        ? "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n"
+        : '';
 
     return <<<MARKDOWN
         # Orbit Feature Loop
@@ -4504,6 +4588,8 @@ function compact_feature_loop_packet(
         - Accepted feature tip: {$featureTip}
         - Accepted main tip: {$mainTip}
 
+        {$slices}
+
         ## Status
 
         - State: {$state}
@@ -4513,6 +4599,11 @@ function compact_feature_loop_packet(
 
         - Events: .orbit/feedback.jsonl
         MARKDOWN;
+}
+
+function finalization_bind_compact_worktree(string $packet, string $worktree): string
+{
+    return str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
 }
 
 function write_compact_feature_loop_for_fixture(
@@ -4529,16 +4620,33 @@ function write_compact_feature_loop_for_fixture(
         finalization_seed_runtime_evidence($worktree);
     }
 
-    file_put_contents(
-        "{$worktree}/.orbit/loop.md",
-        compact_feature_loop_packet(
-            featureTip: $featureTip,
-            mainTip: $mainTip,
-            venue: $venue,
-            runtime: $runtime,
-            blastRadius: $blastRadius,
-        ),
+    $packet = compact_feature_loop_packet(
+        featureTip: $featureTip,
+        mainTip: $mainTip,
+        venue: $venue,
+        runtime: $runtime,
+        blastRadius: $blastRadius,
     );
+    if (! str_contains($packet, '## Slices')) {
+        $packet .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n";
+    }
+    $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
+    file_put_contents("{$worktree}/.orbit/loop.md", $packet);
+    finalization_seed_slice_packets($worktree, $packet);
+}
+
+function finalization_seed_slice_packets(string $worktree, string $loopMarkdown): void
+{
+    preg_match_all('/^\| `\.orbit\/slices\/([^`]+)\.md` \|/m', $loopMarkdown, $matches);
+    foreach (array_unique($matches[1]) as $id) {
+        if (! is_dir("{$worktree}/.orbit/slices")) {
+            mkdir("{$worktree}/.orbit/slices", recursive: true);
+        }
+        file_put_contents(
+            filename: "{$worktree}/.orbit/slices/{$id}.md",
+            data: finalization_slice_packet($id),
+        );
+    }
 }
 
 function finalization_structured_runtime(
@@ -4784,14 +4892,33 @@ function run_finalization_check_wrapper(string $cwd, array $args): Process
     return $process;
 }
 
-function make_finalization_lint_dir(string $loopMarkdown): string
+function make_finalization_lint_dir(string $loopMarkdown, bool $includeSlices = true): string
 {
     $packetDir = sys_get_temp_dir().'/orbit-finalization-lint-'.bin2hex(random_bytes(6));
+
+    if ($includeSlices && str_contains($loopMarkdown, '# Orbit Feature Loop') && ! str_contains($loopMarkdown, '## Slices')) {
+        $loopMarkdown .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n";
+    }
 
     mkdir("{$packetDir}/.orbit", recursive: true);
     file_put_contents(filename: "{$packetDir}/.orbit/loop.md", data: $loopMarkdown);
 
+    if ($includeSlices) {
+        finalization_seed_slice_packets($packetDir, $loopMarkdown);
+    }
+
     return $packetDir;
+}
+
+function finalization_slice_packet(string $id): string
+{
+    return "# Orbit Feature Slice\n\n"
+        ."- Slice: {$id}\n"
+        ."- Depends on: none\n\n"
+        ."## Outcome\n\n"
+        ."## Scope\n- Included: finalization gate\n- Excluded: archive work\n\n"
+        ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
+        ."## Proof\n- Focused: finalization lint tests\n";
 }
 
 function capture_health_finalization_packet(): string

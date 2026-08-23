@@ -4,6 +4,106 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('blocks implementation worker spawn for an invalid FRAME slice graph before mutation', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        if (! is_dir($fixture['worktree'].'/.orbit/slices')) {
+            mkdir($fixture['worktree'].'/.orbit/slices', recursive: true);
+        }
+        $packet = "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: worker gate\n- Excluded: archive work\n\n## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n## Proof\n- Focused: worker gate tests\n";
+        file_put_contents($fixture['worktree'].'/.orbit/slices/01-one.md', $packet);
+        file_put_contents(
+            $fixture['worktree'].'/.orbit/loop.md',
+            str_replace(
+                '| `.orbit/slices/01-one.md` | ready | none |',
+                '| `.orbit/slices/01-one.md` | building | none |',
+                (string) file_get_contents($fixture['worktree'].'/.orbit/loop.md'),
+            ),
+        );
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            ['--role=impl', '--cli=grok', "--brief={$brief}", '--name=impl-invalid'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('slice')
+            ->and(is_file($fixture['worktree'].'/.orbit/workers/impl-invalid.json'))
+            ->toBeFalse()
+            ->and(is_file($fixture['worktree'].'/.orbit/workers/logs/impl-invalid.log'))
+            ->toBeFalse()
+            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-invalid'))
+            ->toBeFalse();
+    });
+});
+
+it('spawns an implementation worker for a valid sliced FRAME graph', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_seed_sliced_loop($fixture['worktree'], 'ready', 'frame');
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            ['--role=impl', '--cli=grok', "--brief={$brief}", '--name=impl-sliced'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(is_file($fixture['worktree'].'/.orbit/workers/impl-sliced.json'))
+            ->toBeTrue()
+            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-sliced'))
+            ->toBeTrue();
+    });
+});
+
+it('blocks implementation worker spawn for an invalid BUILD slice graph', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_seed_sliced_loop($fixture['worktree'], 'building', 'build', two: true);
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            ['--role=impl', '--cli=grok', "--brief={$brief}", '--name=impl-build-invalid'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('at most one building slice')
+            ->and(is_file($fixture['worktree'].'/.orbit/workers/impl-build-invalid.json'))
+            ->toBeFalse()
+            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-build-invalid'))
+            ->toBeFalse();
+    });
+});
+
+it('blocks implementation worker spawn for an unknown sliced Status.State', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        worker_tools_seed_sliced_loop($fixture['worktree'], 'ready', 'mystery');
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            ['--role=impl', '--cli=grok', "--brief={$brief}", '--name=impl-unknown'],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+        );
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('known Status.State')
+            ->and(is_file($fixture['worktree'].'/.orbit/workers/impl-unknown.json'))
+            ->toBeFalse()
+            ->and(worker_tools_window_exists($socket, 'feat-fixture', 'impl-unknown'))
+            ->toBeFalse();
+    });
+});
+
 it('spawns a worker window, pipes the log, and delivers the bootstrap line', function (): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
         $brief = worker_tools_write_brief($fixture['worktree']);
@@ -1634,7 +1734,7 @@ it('prepare-worktree fills Session Worktree Branch and creates the tmux session 
     }
 });
 
-it('loop lint accepts Session and still accepts a legacy Scratchpad packet', function (): void {
+it('loop lint requires Slices for compact packets', function (): void {
     require_once repo_path('bin/orbit-loop-contract.php');
     require_once repo_path('bin/orbit-loop-lint.php');
 
@@ -1643,9 +1743,11 @@ it('loop lint accepts Session and still accepts a legacy Scratchpad packet', fun
     $invalidPacket = worker_tools_compact_loop('- Session: Not Valid');
 
     expect(compact_loop_problems($sessionPacket))
-        ->toBeEmpty()
+        ->toContain('Slices: Slices section is missing')
         ->and(compact_loop_problems($legacyPacket))
-        ->toBeEmpty()
+        ->toContain('Slices: Slices section is missing')
+        ->and(compact_loop_problems($invalidPacket))
+        ->toContain('Slices: Slices section is missing')
         ->and(compact_loop_problems($invalidPacket))
         ->toContain('Session must match feat-<slug> (lowercase, digits, hyphens); current: Not Valid');
 });
@@ -1687,12 +1789,20 @@ function worker_tools_make_fixture(): array
     new Process(['git', 'config', 'user.email', 'orbit@example.test'], $root)->mustRun();
     new Process(['git', 'config', 'user.name', 'Orbit Test'], $root)->mustRun();
     mkdir($root.'/.orbit', recursive: true);
+    mkdir($root.'/.orbit/slices', recursive: true);
+    file_put_contents($root.'/.orbit/slices/01-one.md', "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: worker fixture\n- Excluded: archive work\n\n## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n## Proof\n- Focused: worker gate tests\n");
     file_put_contents($root.'/.orbit/loop.md', <<<MARKDOWN
         # Orbit Feature Loop
 
         - Session: feat-fixture
         - Worktree: {$root}
         - Branch: main
+
+        ## Slices
+
+        | Slice | State | Checkpoint |
+        | --- | --- | --- |
+        | `.orbit/slices/01-one.md` | ready | none |
 
         ## Goal
 
@@ -1737,6 +1847,26 @@ function worker_tools_make_fixture(): array
     new Process(['git', 'commit', '-m', 'feature'], $root)->mustRun();
 
     return ['root' => $root, 'worktree' => $root];
+}
+
+function worker_tools_seed_sliced_loop(string $worktree, string $state, string $phase, bool $two = false): void
+{
+    if (! is_dir($worktree.'/.orbit/slices')) {
+        mkdir($worktree.'/.orbit/slices', recursive: true);
+    }
+    $packet = static function (string $id): string {
+        return "# Orbit Feature Slice\n\n- Slice: {$id}\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: worker gate\n- Excluded: archive work\n\n## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n## Proof\n- Focused: worker gate tests\n";
+    };
+    file_put_contents($worktree.'/.orbit/slices/01-one.md', $packet('01-one'));
+    $rows = '| `.orbit/slices/01-one.md` | '.$state.' | none |';
+    if ($two) {
+        file_put_contents($worktree.'/.orbit/slices/02-two.md', $packet('02-two'));
+        $rows .= "\n| `.orbit/slices/02-two.md` | {$state} | none |";
+    }
+    file_put_contents(
+        $worktree.'/.orbit/loop.md',
+        "# Orbit Feature Loop\n\n- Session: feat-fixture\n- Worktree: {$worktree}\n- Branch: main\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n{$rows}\n\n## Status\n\n- State: {$phase}\n- Blocker: none\n",
+    );
 }
 
 function worker_tools_make_fake_cli(string $root, bool $echoing): string

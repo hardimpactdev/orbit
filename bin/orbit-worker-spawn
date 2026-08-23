@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/orbit-worker-registry.php';
+require_once __DIR__.'/orbit-loop-contract.php';
 
 const ORBIT_WORKER_SPAWN_USAGE = 'Usage: bin/orbit-worker-spawn --role=<role> --cli=<grok|claude|codex|opencode> --brief=<path> [--name=<id>] [--ready-delay=<seconds>] [--json]';
 
@@ -49,6 +50,33 @@ try {
     }
 
     $worktree = orbit_worker_worktree((string) getcwd());
+    if ($role === 'impl') {
+        $loopPath = $worktree.'/.orbit/loop.md';
+        $loopStat = @lstat($loopPath);
+        if (
+            $loopStat === false
+            || is_link($loopPath)
+            || ($loopStat['mode'] & 0170000) !== 0100000
+        ) {
+            throw new RuntimeException('active loop packet is missing or unsafe');
+        }
+        $loop = (string) file_get_contents($loopPath);
+        orbitLoopSlices($loop);
+        $state = orbitLoopStatusHead(orbitLoopLabel($loop, 'Status', 'State'));
+        if (! in_array($state, ORBIT_LOOP_STATES, true)) {
+            throw new RuntimeException('slice graph requires a known Status.State');
+        }
+        $featureTip = orbitLoopGitValue($worktree, ['rev-parse', 'HEAD']);
+        if ($featureTip === null || preg_match('/^[0-9a-f]{40}$/', $featureTip) !== 1) {
+            throw new RuntimeException('slice graph requires the current feature tip');
+        }
+        $problems = $state === 'frame'
+            ? orbitLoopSliceFrameProblems($loop, $worktree.'/.orbit')
+            : orbitLoopSliceFinalizationProblems($loop, $worktree, $featureTip);
+        if ($problems !== []) {
+            throw new RuntimeException($problems[0]);
+        }
+    }
     $session = orbit_worker_session_name($worktree);
     $hasSession = orbit_tmux_has_session($session);
 
