@@ -481,8 +481,10 @@ V1 is scoped narrowly:
 - no menu job history;
 - app-dev convergence uses direct gateway-pushed command envelopes;
 - owner-user local Agent installation and updates replace the configured
-  artifact and restart an existing managed service; first service creation
-  remains bootstrap-owned and updates do not create a missing service;
+  artifact; when a fleet update includes a Desktop artifact and pending Desktop
+  handoff, Agent restart is deferred to Orbit Desktop, otherwise an existing
+  managed service is restarted; first service creation remains bootstrap-owned
+  and updates do not create a missing service;
 - native Darwin updater archives and DMGs are Mini-built exact-candidate
   assets; Apple Developer ID signing and notarization fail closed when
   publication requests them without credentials.

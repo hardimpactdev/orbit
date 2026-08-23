@@ -474,9 +474,12 @@ separate loopback-only listener. A gateway is never an Agent-push target, and
 wildcard or non-WireGuard command binds fail closed.
 
 Orbit installs and updates the Agent artifact in the configured owner user's
-local installation and restarts its managed service when that service already
-exists. Bootstrap owns first service creation; `update` and `update:all` replace
-and restart an existing service but do not create a missing one. Native Darwin desktop packaging, updater signing, and DMG assembly are Mini-built
+local installation. When a fleet update includes a Desktop artifact and pending
+Desktop handoff, the CLI defers Agent restart to Orbit Desktop and does not
+restart an existing managed service. Otherwise it restarts an existing service
+when that service already exists. Bootstrap owns first service creation;
+`update` and `update:all` replace an existing service but do not create a
+missing one. Native Darwin desktop packaging, updater signing, and DMG assembly are Mini-built
 exact-candidate assets. Apple Developer ID signing and notarization fail closed
 when publication requests them and credentials are absent.
 Agent-push requests are structured Orbit CLI invocations submitted by the
