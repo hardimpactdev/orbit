@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T08:03:55+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-firewall-safe-match/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-100355-codex-firewall-safe-match",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/firewall-safe-match-retained-incus.txt",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "evidence/firewall-safe-match-retained-incus.txt": "5b1f731307de367465116d1826dd2b7b44685913bd9943791b6c6ec1edde1c4f",
+        "loop.md": "85d43b6b270331418d4dbf259e24c8a969f85d84129423cde2c16ab63675efe2"
+    },
+    "slug": "codex-firewall-safe-match",
+    "requested_slug": "codex-firewall-safe-match",
+    "compatible_slugs": [
+        "codex-firewall-safe-match"
+    ],
+    "branch": "codex/firewall-safe-match",
+    "candidate_commit": "3b135ec347c87687b00d50f23e3c20015e549e97",
+    "accepted_feature_tip": "3b135ec347c87687b00d50f23e3c20015e549e97",
+    "accepted_main_tip": "e950dbf73542278f2c7d1f6588d44bac0e05b249",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

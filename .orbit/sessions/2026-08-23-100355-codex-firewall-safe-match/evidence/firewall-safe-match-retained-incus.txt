@@ -1,0 +1,42 @@
+Orbit retained Incus firewall convergence proof
+
+Candidate: 3b135ec347c87687b00d50f23e3c20015e549e97
+Venue: retained-incus
+Environment: dev-fixture
+Target: orbit-proof-firewall-673bd45 on Beast
+
+The Linux CLI binary was built from the candidate worktree on Beast. The
+source binary and the container copy had this SHA-256:
+
+99cbc486d3525bd63baeca1ad65c21981bcc6a0a2772ea94a05bacdcf42bc559
+
+The fixture started with three IPv4 UFW rules on TCP port 65022:
+
+[ 1] ALLOW 10.6.0.0/24 on eth0 # protected unrelated rule
+[ 2] ALLOW Anywhere # orbit:private-api
+[ 3] DENY Anywhere on eth0 # broad public deny proof rule
+
+The candidate gateway production classes ran through
+`.orbit/evidence/run-firewall-convergence-proof.php`. A transport adapter sent
+their probe, delete, and apply operations through `ssh beast` to the exact
+candidate CLI binary inside the retained Incus target.
+
+The candidate `UfwFirewallRule::probe()` selected only the old managed rule:
+
+- present: false
+- partial comment: orbit:private-api
+- partial source: any
+- plan status: changed
+
+The candidate `UfwFirewallRule::apply()` deleted that partial match and applied
+the expected source 192.168.1.0/24. Its result status was changed. A second
+candidate probe reported present=true with no partial match.
+
+Final UFW order:
+
+[ 1] ALLOW 192.168.1.0/24 # orbit:private-api
+[ 2] ALLOW 10.6.0.0/24 on eth0 # protected unrelated rule
+[ 3] DENY Anywhere on eth0 # broad public deny proof rule
+
+Result: passed. The managed drift was replaced, the unrelated protected
+same-port rule survived, and the new allow precedes the broad deny.
