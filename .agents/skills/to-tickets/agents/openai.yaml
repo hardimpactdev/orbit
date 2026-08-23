@@ -1,0 +1,4 @@
+interface:
+  display_name: "To Tickets"
+  short_description: "Create dependency-aware slice packets."
+  default_prompt: "Use $to-tickets to write dependency-ordered packets under .orbit/slices and update the loop Slices table, then stop before implementation."

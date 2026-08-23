@@ -167,6 +167,10 @@ printf '{}\n' >"$REPO/apps/reverb/composer.json"
 cat >"$REPO/LOOP.md.example" <<'EOF'
 # Loop Template
 
+| Slice | State | Checkpoint |
+| --- | --- | --- |
+| `.orbit/slices/01-example.md` | ready | none |
+
 Seeded by the test fixture.
 EOF
 
@@ -187,11 +191,29 @@ run_prepare_worktree feature-loop
 LOOP_PATH="$REPO/.worktrees/feature-loop/.orbit/loop.md"
 assert_file_equals "$LOOP_PATH" "$(cat "$REPO/LOOP.md.example")"
 
+grep -Fq '| `.orbit/slices/01-example.md` | ready | none |' "$LOOP_PATH" \
+    || fail "seeded loop must include the exact example slice row"
+
 printf 'custom active packet\n' >"$LOOP_PATH"
 
 run_prepare_worktree feature-loop
 
 assert_file_equals "$LOOP_PATH" 'custom active packet'
+
+[ -d "${REPO}/.worktrees/feature-loop/.orbit/slices" ] \
+    || fail "prepare-worktree must create .orbit/slices"
+
+printf 'existing slice artifact\n' >"${REPO}/.worktrees/feature-loop/.orbit/slices/existing.md"
+run_prepare_worktree feature-loop
+assert_file_equals "${REPO}/.worktrees/feature-loop/.orbit/slices/existing.md" 'existing slice artifact'
+
+rm -rf "${REPO}/.worktrees/feature-loop/.orbit/slices"
+printf 'legacy slice artifact\n' >"${REPO}/.worktrees/feature-loop/.orbit/legacy-slice.md"
+run_prepare_worktree feature-loop
+[ -d "${REPO}/.worktrees/feature-loop/.orbit/slices" ] \
+    || fail "prepare-worktree must upgrade existing loops with .orbit/slices"
+assert_file_equals "$LOOP_PATH" 'custom active packet'
+assert_file_equals "${REPO}/.worktrees/feature-loop/.orbit/legacy-slice.md" 'legacy slice artifact'
 
 if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" My_Feature --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     fail "prepare-worktree accepted invalid slug My_Feature"

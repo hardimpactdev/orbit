@@ -197,6 +197,77 @@ it('keeps worktree preparation responsible for seeding the active loop packet', 
         ->toContain('do not recreate the setup flow manually');
 });
 
+it('defines slice framing artifacts and skills', function (): void {
+    $slice = file_get_contents(repo_path('SLICE.md.example')) ?: '';
+    $loop = file_get_contents(repo_path('LOOP.md.example')) ?: '';
+    $slicesBlock = "## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n\n## Proof";
+
+    expect(repo_path('SLICE.md.example'))
+        ->toBeFile()
+        ->and($slice)
+        ->toBe(
+            "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n<one observable vertical increment>\n\n## Scope\n\n- Included:\n- Excluded:\n\n## Authority\n\n- Decisions:\n- Product docs:\n\n## Proof\n\n- Focused:\n",
+        )
+        ->and($loop)
+        ->toContain($slicesBlock)
+        ->not->toContain('| Slice | Depends on | Status |');
+
+    foreach (['to-spec', 'to-tickets'] as $skill) {
+        expect(repo_path(".agents/skills/{$skill}/SKILL.md"))
+            ->toBeFile()
+            ->and(repo_path(".agents/skills/{$skill}/agents/openai.yaml"))
+            ->toBeFile();
+    }
+
+    $toSpec = file_get_contents(repo_path('.agents/skills/to-spec/SKILL.md')) ?: '';
+    $toTickets = file_get_contents(repo_path('.agents/skills/to-tickets/SKILL.md')) ?: '';
+    $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
+    expect($intake)
+        ->toContain('https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md')
+        ->toContain('under MIT')
+        ->toContain('https://github.com/mattpocock/skills/blob/main/LICENSE');
+    foreach ([$toSpec, $toTickets] as $skill) {
+        expect($skill)
+            ->toContain('under MIT')
+            ->toContain('https://github.com/mattpocock/skills/blob/main/LICENSE')
+            ->toContain('Do not use an external tracker')
+            ->toContain('Do not install an upstream bundle')
+            ->not->toContain('skills add')
+            ->not->toContain('skill-installer')
+            ->not->toContain('git clone')
+            ->not->toContain('npx');
+    }
+    expect($toSpec)
+        ->toContain('name: to-spec')
+        ->toContain('description: Use when a settled Orbit feature frame needs serialization into the active loop.')
+        ->toContain('.orbit/loop.md')
+        ->toContain('settled Goal, Scope, authority, constraints')
+        ->toContain('proof focus')
+        ->toContain('this skill owns only that artifact');
+    expect($toTickets)
+        ->toContain('name: to-tickets')
+        ->toContain('description: Use when a settled Orbit frame needs dependency-ordered vertical slice packets.')
+        ->toContain('.orbit/slices')
+        ->toContain('dependency-free slices')
+        ->toContain('`ready`; dependent slices')
+        ->toContain('`pending`')
+        ->toContain('only the loop Slices table')
+        ->toContain('owns slice packets and only that loop table');
+    expect($toSpec.$toTickets)
+        ->toContain('https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md')
+        ->toContain('https://github.com/mattpocock/skills/blob/main/skills/engineering/to-spec/SKILL.md')
+        ->toContain('https://github.com/mattpocock/skills/blob/main/skills/engineering/to-tickets/SKILL.md');
+});
+
+it('requires dependency-aware native worker framing in the current product decision', function (): void {
+    $decisions = file_get_contents(repo_path('PRODUCT_DECISIONS.md')) ?: '';
+    expect($decisions)
+        ->toContain('2026-08-23')
+        ->toContain('mandatory dependency-aware vertical slices')
+        ->toContain('fresh native `gpt-5.6-luna` low worker per slice')
+        ->toContain('(source: spec 2026-08-23-codex-native-luna-implementation-experiment.md)');
+});
+
 it('does not keep gateway-local generated agent artifacts', function (): void {
     $gatewayRoot = repo_path('apps/gateway');
 
@@ -344,7 +415,7 @@ it('keeps the orchestrating session in charge while tmux workers implement and C
         ->and($intake)
         ->toContain('hand the outcome to the orchestrating feature owner using')
         ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
-            'hand the outcome to the orchestrating feature owner using implementing-features',
+            'stop when material ambiguity is none',
         )
         ->not->toContain('optional delegation')->and($featureGraph)->toContain('"version": "4.0.0"')->toContain(
             'HARNESS-defined role policy',
@@ -370,7 +441,7 @@ it('keeps intake compact and e2e prompts execution-safe', function (): void {
         ->toContain('Constraints')
         ->toContain('Ambiguity')
         ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
-            'hand the outcome to the orchestrating feature owner using implementing-features',
+            'stop when material ambiguity is none',
         )->and($e2ePrompt)->toContain(
             'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
         )

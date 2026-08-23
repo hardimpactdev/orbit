@@ -6,6 +6,13 @@ description: Use when receiving, clarifying, or framing an Orbit feature request
 # Handling Orbit Feature Requests
 
 Turn an idea into a small, testable outcome without starting implementation.
+This read-only, docs-grounded interview adapts Matt Pocock's
+`grill-with-docs` method
+(https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md),
+under MIT (https://github.com/mattpocock/skills/blob/main/LICENSE): read current
+product authority, then ask only questions whose answers change outcome,
+acceptance, constraints, authority, or ambiguity. Stop when material
+ambiguity is `none`; do not create a worktree or enter implementation.
 
 ## Intake
 

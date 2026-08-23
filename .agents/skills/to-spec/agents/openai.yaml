@@ -1,0 +1,4 @@
+interface:
+  display_name: "To Spec"
+  short_description: "Serialize a settled feature frame."
+  default_prompt: "Use $to-spec to write the settled feature frame into .orbit/loop.md, then stop before implementation."

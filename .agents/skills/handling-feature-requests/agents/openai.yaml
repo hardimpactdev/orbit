@@ -1,4 +1,4 @@
 interface:
   display_name: "Handling Feature Requests"
   short_description: "Frame an Orbit outcome and acceptance."
-  default_prompt: "Use this skill to clarify the requested outcome, affected surface, constraints, authority, unresolved product ambiguity, and what human judgment remains after agents run deterministic checks. Keep intake read-only and hand the outcome to the orchestrating feature owner using implementing-features."
+  default_prompt: "Use $handling-feature-requests to ask only docs-grounded, decision-changing questions; keep intake read-only and pre-worktree, stop when material ambiguity is none, then hand the settled frame to implementing-features."

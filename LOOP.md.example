@@ -18,6 +18,12 @@ single anchor for the active feature. Raw feedback belongs in the immutable
 - Constraints:
 - Out of scope:
 
+## Slices
+
+| Slice | State | Checkpoint |
+| --- | --- | --- |
+| `.orbit/slices/01-example.md` | ready | none |
+
 ## Proof
 
 - Verification:

@@ -86,6 +86,8 @@ seed_loop_packet() {
 
     [ -f "$loop_template" ] || fail "loop template is missing: $loop_template"
 
+    run mkdir -p "${worktree_path}/.orbit/slices"
+
     if [ -e "$loop_path" ]; then
         [ -f "$loop_path" ] || fail ".orbit/loop.md exists but is not a file: $loop_path"
 
