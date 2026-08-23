@@ -1,0 +1,30 @@
+{
+    "id": "deferred-agent-restart-impl",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=deferred-agent-restart-impl",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-desktop-update-deferred-agent-restart",
+        "window": "deferred-agent-restart-impl",
+        "pane_id": "%9",
+        "pane_pid": 3059429,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart/.orbit/workers/briefs/deferred-agent-restart-impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T19:14:21Z",
+    "note": "Rebased candidate 9384291231ad867577a7ff9dddb5a7621544b612: production hashes and patch-id unchanged; quality-check and proof receipt passed; Review pending",
+    "started_at": "2026-08-23T18:16:14Z",
+    "exited_at": "2026-08-23T19:17:53Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart/.orbit/workers/handoff/deferred-agent-restart-impl-9384291231ad867577a7ff9dddb5a7621544b612.md"
+}

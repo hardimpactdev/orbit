@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 414,
-    "unique_candidate_commit_count": 310,
+    "record_count": 415,
+    "unique_candidate_commit_count": 311,
     "orphan_count": 0,
     "records": [
         {
@@ -10619,6 +10619,29 @@
                 "event_count": 2,
                 "raw_count": 1,
                 "promoted_count": 1,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-23-211803-codex-desktop-update-deferred-agent-restart",
+            "slug": "codex-desktop-update-deferred-agent-restart",
+            "timestamp": "2026-08-23-211803",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "9384291231ad867577a7ff9dddb5a7621544b612",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
                 "waived_count": 0,
                 "protection_failures": 0
             },

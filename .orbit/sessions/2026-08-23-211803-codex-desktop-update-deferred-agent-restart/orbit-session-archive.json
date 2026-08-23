@@ -1,0 +1,52 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T19:18:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-23-211803-codex-desktop-update-deferred-agent-restart",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/docs-lint-2026-08-23T185332Z-c93add29327e.json",
+        "evidence/retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T191340Z-6d1bda63af6a.json",
+        "workers/deferred-agent-restart-impl.json",
+        "workers/deferred-agent-restart-review.json",
+        "workers/handoff/deferred-agent-restart-impl-3a51bc1a4593466473f112960e09a2f1a4748685.md",
+        "workers/handoff/deferred-agent-restart-impl-9384291231ad867577a7ff9dddb5a7621544b612.md",
+        "workers/handoff/deferred-agent-restart-impl-c8235c577ae00551257d777e66292b0e8ec768d5.md",
+        "workers/handoff/deferred-agent-restart-impl-ebfc1ad134ff6d9a50450cae80a000bbc81dee83.md",
+        "workers/handoff/deferred-agent-restart-review-3a51bc1a4593466473f112960e09a2f1a4748685.md",
+        "workers/handoff/deferred-agent-restart-review-9384291231ad867577a7ff9dddb5a7621544b612.md",
+        "workers/handoff/deferred-agent-restart-review-c8235c577ae00551257d777e66292b0e8ec768d5.md",
+        "workers/handoff/deferred-agent-restart-review-ebfc1ad134ff6d9a50450cae80a000bbc81dee83.md"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/docs-lint-2026-08-23T185332Z-c93add29327e.json": "36048b293402816763a150a9e4e04fd18dbd3ad17c8eb2dd54fec4820ac0ac21",
+        "evidence/retained-incus-proof.md": "b24f0595e2fb3c006caed406edf4a0ef2c1d1400bb5534ade06891e8ffdf124a",
+        "loop.md": "a880a1e85efbd6fd86f8d2dadab774d6be8133b7bde4cf3d13e2207c062e7b50",
+        "quality-gates/quality-check-2026-08-23T191340Z-6d1bda63af6a.json": "0822124f463a623c9b749791fa6b12a6c0eae18ffef95d379c720f1581be4be6",
+        "workers/deferred-agent-restart-impl.json": "2a29544292294aa36f94013823cb54ef691144c364f03128bd72e1e4d210b0e0",
+        "workers/deferred-agent-restart-review.json": "621c1ee2eddbfea13cba938853e3ecdd323317c3370a37f35a87bfb975372257",
+        "workers/handoff/deferred-agent-restart-impl-3a51bc1a4593466473f112960e09a2f1a4748685.md": "a1b217e39aeb2dc087c7cef56b2edde6bdd8b2e97d7900bfb377dc6ad6b87845",
+        "workers/handoff/deferred-agent-restart-impl-9384291231ad867577a7ff9dddb5a7621544b612.md": "64c2f0ce6745af35b1a17981683ecbec35a5c2b80670c33c75167a97238d41eb",
+        "workers/handoff/deferred-agent-restart-impl-c8235c577ae00551257d777e66292b0e8ec768d5.md": "e40a1d78ad8f19dbe3b5ed6436f30ec491578452960b003efe2f50099e49049b",
+        "workers/handoff/deferred-agent-restart-impl-ebfc1ad134ff6d9a50450cae80a000bbc81dee83.md": "2a2b2db921611acc89352d17c0482530a2f25d3d8de6961bdc7eaeea6910853c",
+        "workers/handoff/deferred-agent-restart-review-3a51bc1a4593466473f112960e09a2f1a4748685.md": "7cb2588e3133b53170f580f6a21f2736edfe70490453eca9190c36179ecd49c1",
+        "workers/handoff/deferred-agent-restart-review-9384291231ad867577a7ff9dddb5a7621544b612.md": "a4b18f1d02bbd0c65b36f742adf8eb2241e1f0019b40fd84fb829f6f80ae4ba0",
+        "workers/handoff/deferred-agent-restart-review-c8235c577ae00551257d777e66292b0e8ec768d5.md": "e4844121e007995803d65baed4d3520d5a7f2be578c17cf5d8d2170f4c50ebd3",
+        "workers/handoff/deferred-agent-restart-review-ebfc1ad134ff6d9a50450cae80a000bbc81dee83.md": "77fac22b77b28452571b02d744f4e8ed0a593a64215d7cd708af0556e1ac494f"
+    },
+    "slug": "codex-desktop-update-deferred-agent-restart",
+    "requested_slug": "codex-desktop-update-deferred-agent-restart",
+    "compatible_slugs": [
+        "codex-desktop-update-deferred-agent-restart"
+    ],
+    "branch": "codex/desktop-update-deferred-agent-restart",
+    "candidate_commit": "9384291231ad867577a7ff9dddb5a7621544b612",
+    "accepted_feature_tip": "9384291231ad867577a7ff9dddb5a7621544b612",
+    "accepted_main_tip": "848dc136a86cd0a9dd6fe3a8b8b10cccab982a15",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

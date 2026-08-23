@@ -1,0 +1,32 @@
+{
+    "id": "deferred-agent-restart-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=deferred-agent-restart-review",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-desktop-update-deferred-agent-restart",
+        "window": "deferred-agent-restart-review",
+        "pane_id": "%10",
+        "pane_pid": 3837209,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart/.orbit/workers/briefs/deferred-agent-restart-review.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T19:17:05Z",
+    "note": "PASS: rebase equivalent by patch-id and file hashes; base delta disjoint from feature paths; receipts SHA-bound",
+    "started_at": "2026-08-23T18:43:28Z",
+    "exited_at": "2026-08-23T19:17:53Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-desktop-update-deferred-agent-restart/.orbit/workers/handoff/deferred-agent-restart-review-9384291231ad867577a7ff9dddb5a7621544b612.md"
+}

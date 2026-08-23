@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-23T18:53:27Z",
+    "ended_at": "2026-08-23T18:53:32Z",
+    "duration_seconds": 5,
+    "exit_code": 1,
+    "git": {
+        "branch": "codex/desktop-update-deferred-agent-restart",
+        "commit": "c8235c577ae00551257d777e66292b0e8ec768d5",
+        "dirty": true
+    },
+    "subgates": []
+}
