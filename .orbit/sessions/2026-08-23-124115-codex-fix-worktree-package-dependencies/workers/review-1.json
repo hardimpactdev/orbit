@@ -1,0 +1,32 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-fix-worktree-package-dependencies",
+        "window": "review-1",
+        "pane_id": "%3",
+        "pane_pid": 3780109,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies/.orbit/workers/briefs/review-1.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T10:40:08Z",
+    "note": "corrected-tip general review complete",
+    "started_at": "2026-08-23T10:12:43Z",
+    "exited_at": "2026-08-23T10:41:06Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies/.orbit/workers/handoff/review-1-bb0d79f1252524955801f1898caae7590a1b6e75.md"
+}

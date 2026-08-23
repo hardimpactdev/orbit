@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 410,
-    "unique_candidate_commit_count": 306,
+    "record_count": 411,
+    "unique_candidate_commit_count": 307,
     "orphan_count": 4,
     "records": [
         {
@@ -10493,6 +10493,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "c7de10543b76816d94db84682207e6142c823a99",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-23-124115-codex-fix-worktree-package-dependencies",
+            "slug": "codex-fix-worktree-package-dependencies",
+            "timestamp": "2026-08-23-124115",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "bb0d79f1252524955801f1898caae7590a1b6e75",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

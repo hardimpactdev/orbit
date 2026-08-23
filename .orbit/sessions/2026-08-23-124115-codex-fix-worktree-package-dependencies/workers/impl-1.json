@@ -1,0 +1,30 @@
+{
+    "id": "impl-1",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-1",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-fix-worktree-package-dependencies",
+        "window": "impl-1",
+        "pane_id": "%1",
+        "pane_pid": 3080598,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies/.orbit/workers/briefs/impl-1.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T09:46:40Z",
+    "note": "",
+    "started_at": "2026-08-23T09:46:40Z",
+    "exited_at": "2026-08-23T09:48:01Z",
+    "provider_ref": null,
+    "handoff": null
+}

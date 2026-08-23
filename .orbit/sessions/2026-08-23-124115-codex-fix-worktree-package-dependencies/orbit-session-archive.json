@@ -1,0 +1,50 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T10:41:15+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-fix-worktree-package-dependencies/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-23-124115-codex-fix-worktree-package-dependencies",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T103351Z-70f5b1356656.json",
+        "workers/handoff/impl-2-1850023b95246803c7ed692af92ce93f0d8ae99a.md",
+        "workers/handoff/impl-2-307545beed70bc94e87b1380cc0446e9068634d6.md",
+        "workers/handoff/impl-2-bb0d79f1252524955801f1898caae7590a1b6e75.md",
+        "workers/handoff/impl-2.md",
+        "workers/handoff/review-1-307545beed70bc94e87b1380cc0446e9068634d6.md",
+        "workers/handoff/review-1-bb0d79f1252524955801f1898caae7590a1b6e75.md",
+        "workers/handoff/review-1-fix-1.md",
+        "workers/handoff/review-1.md",
+        "workers/impl-1.json",
+        "workers/impl-2.json",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "loop.md": "af2cfe46176a2215de7a39363f440f039218803c8bd00fc3dc2deba9b1bf3d48",
+        "quality-gates/quality-check-2026-08-23T103351Z-70f5b1356656.json": "ae71199cf2a1e1820a63ffb4b9930b7751aa4ef2bd79e59a9961312bf1c4756c",
+        "workers/handoff/impl-2-1850023b95246803c7ed692af92ce93f0d8ae99a.md": "8d5657158b2dda9844794b23ee8eaaea77a7383402c794dc28b8251967e518e5",
+        "workers/handoff/impl-2-307545beed70bc94e87b1380cc0446e9068634d6.md": "c11bee81a74de71a7ecada626101cfb10181ff712388d83b65e0b766cc1a07f6",
+        "workers/handoff/impl-2-bb0d79f1252524955801f1898caae7590a1b6e75.md": "648664162358b7bf1afb74789beda0114c231bf35b9e461f61045e6d354dd946",
+        "workers/handoff/impl-2.md": "648664162358b7bf1afb74789beda0114c231bf35b9e461f61045e6d354dd946",
+        "workers/handoff/review-1-307545beed70bc94e87b1380cc0446e9068634d6.md": "9db2e3788cd64f78aa2035d87cd1eb61fd2d4aeb13f3f1f9a971949977e13260",
+        "workers/handoff/review-1-bb0d79f1252524955801f1898caae7590a1b6e75.md": "5bb1ef298d4417a2f83751fcf5b3556071d89d0a8a7539ef4e6d433939d79943",
+        "workers/handoff/review-1-fix-1.md": "5bb1ef298d4417a2f83751fcf5b3556071d89d0a8a7539ef4e6d433939d79943",
+        "workers/handoff/review-1.md": "5bb1ef298d4417a2f83751fcf5b3556071d89d0a8a7539ef4e6d433939d79943",
+        "workers/impl-1.json": "4d681b2b2fe687730d8416f22bcd0ab3d1709ffd40ef727b672ac6bbbbb04efc",
+        "workers/impl-2.json": "01ae9d18d8851731a98efb3f95960b318338abf475c298641de446f9f362db47",
+        "workers/review-1.json": "02e1639b288d0ed5f5af3a6de0b63526a565aded15f2bf68ec74e45b6add80ec"
+    },
+    "slug": "codex-fix-worktree-package-dependencies",
+    "requested_slug": "codex-fix-worktree-package-dependencies",
+    "compatible_slugs": [
+        "codex-fix-worktree-package-dependencies"
+    ],
+    "branch": "codex/fix-worktree-package-dependencies",
+    "candidate_commit": "bb0d79f1252524955801f1898caae7590a1b6e75",
+    "accepted_feature_tip": "bb0d79f1252524955801f1898caae7590a1b6e75",
+    "accepted_main_tip": "3bbf0742044904654a1a9b6ab7602dc2b7434983",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
