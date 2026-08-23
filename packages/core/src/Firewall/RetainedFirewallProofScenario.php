@@ -33,6 +33,7 @@ final class RetainedFirewallProofScenario
         $managed = self::ManagedIdentity;
 
         return [
+            'sudo ufw --force enable',
             "sudo ufw allow {$port}/{$protocol} comment '{$protected}'",
             "sudo ufw allow from any to any port {$port} proto {$protocol} comment '{$managed}'",
             "sudo ufw deny {$port}/{$protocol}",

@@ -253,8 +253,12 @@ function run_firewall_proof_scenario(array $state): string
     $ufwAfterAllow = beast_incus_exec($dev, 'sudo ufw status numbered');
     $inspection = RetainedFirewallProofInspection::fromUfwStatus($ufwAfterAllow);
 
-    if ($inspection->managedComments(RetainedFirewallProofScenario::Port) !== [RetainedFirewallProofScenario::ManagedIdentity]) {
-        throw new RuntimeException('managed comment identity was not unique after allow');
+    $managedComments = $inspection->managedComments(RetainedFirewallProofScenario::Port);
+
+    if ($managedComments !== [RetainedFirewallProofScenario::ManagedIdentity]) {
+        throw new RuntimeException(
+            'managed comment identity was not unique after allow: '.implode(',', $managedComments),
+        );
     }
 
     if (! $inspection->hasComment(RetainedFirewallProofScenario::ProtectedComment)) {
