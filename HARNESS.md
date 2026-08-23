@@ -42,6 +42,7 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
+5. Split planned paths with different non-automated venues before dispatch.
 
 ### BUILD
 
