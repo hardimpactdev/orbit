@@ -33,8 +33,10 @@ final readonly class FleetUpdateAgentRestartReadiness
             usleep($settleMilliseconds * 1000);
         }
 
+        $skips = app(FleetUpdatePreMutationSkipRegistry::class);
+
         foreach ($this->targets->workloadNodes($operationRun) as $node) {
-            if (! $node->isAgentEligible()) {
+            if (! $node->isAgentEligible() || $skips->skipped($operationRun->id, $node->name)) {
                 continue;
             }
 

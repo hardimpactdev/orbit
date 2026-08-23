@@ -8,6 +8,7 @@ use App\Commands\Concerns\EmitsCanonicalEnvelopes;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayApiClient;
 use LaravelZero\Framework\Commands\Command;
+use Orbit\Core\Updates\AgentAvailabilityError;
 
 abstract class GatewayCommand extends Command
 {
@@ -96,10 +97,20 @@ abstract class GatewayCommand extends Command
     protected function renderGatewayFailure(GatewayApiException $exception): int
     {
         if ($exception->hasGatewayError()) {
+            $code = $exception->gatewayErrorCode() ?? $exception->cliFailureCode();
+            $message = $exception->gatewayErrorMessage() ?? $exception->getMessage();
+            $meta = $exception->gatewayErrorMeta();
+
+            if ($code === AgentAvailabilityError::GatewayUnreachable) {
+                $code = AgentAvailabilityError::publicCode($code);
+                $meta = AgentAvailabilityError::publicMeta($meta);
+                $message = AgentAvailabilityError::publicMessage($message, $meta);
+            }
+
             return $this->renderFailure(
-                $exception->gatewayErrorCode() ?? $exception->cliFailureCode(),
-                $exception->gatewayErrorMessage() ?? $exception->getMessage(),
-                $exception->gatewayErrorMeta(),
+                $code,
+                $message,
+                $meta,
                 $exception->gatewayErrorData(),
             );
         }

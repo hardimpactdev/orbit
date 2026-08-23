@@ -322,13 +322,25 @@ final readonly class UpdateRunner
             'manifest_version' => $plan->manifest_version,
             ...($plan->usesTopologyCandidateManifest() ? ['cli_artifacts' => $plan->cli_artifacts] : []),
             ...($plan->usesTopologyCandidateManifest() ? ['agent_artifacts' => $plan->agent_artifacts ?? []] : []),
+            ...(($plan->desktop_artifacts ?? []) !== [] ? ['desktop_artifacts' => $plan->desktop_artifacts] : []),
             ...($allCurrent ? ['skipped' => true] : []),
+            ...$this->skippedTargets($operationRun),
         ];
 
         $this->operationRuns->appendComplete($operationRun->id, 0, $result);
         $this->operationRuns->succeeded($operationRun->id, result: $result);
 
         $this->logOutcomeActivity($operationRun, $plan, 'completed');
+    }
+
+    /**
+     * @return array{skipped_targets?: array<string, string>}
+     */
+    private function skippedTargets(OperationRun $operationRun): array
+    {
+        $skips = app(FleetUpdatePreMutationSkipRegistry::class)->forOperation($operationRun->id);
+
+        return $skips === [] ? [] : ['skipped_targets' => $skips];
     }
 
     private function markFailed(OperationRun $operationRun, Throwable $exception): void

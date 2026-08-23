@@ -20,6 +20,15 @@ final readonly class LocalFleetUpdateInstallCliPayloadField
         return self::stringMatching($value, self::SHA_256_PATTERN, $field);
     }
 
+    public static function nonEmptyString(mixed $value, string $field): string
+    {
+        if (is_string($value) && trim($value) !== '') {
+            return trim($value);
+        }
+
+        throw self::validationFailure($field);
+    }
+
     public static function absolutePath(mixed $value, string $field): string
     {
         if (

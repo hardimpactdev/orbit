@@ -106,6 +106,7 @@ final readonly class ToolScriptDispatcher
             meta: [
                 'reason' => 'agent_push_unavailable',
                 'node' => $node->name,
+                'platform' => (string) $node->platform,
                 'tool' => $tool,
                 'action' => $action,
                 'error' => $exception->getMessage(),

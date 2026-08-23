@@ -209,6 +209,7 @@ class UpdateAllStartController implements Loggable
                 'gateway_image' => $request->input('gateway_image'),
                 'cli_artifacts' => $request->input('cli_artifacts'),
                 'agent_artifacts' => $request->input('agent_artifacts'),
+                'desktop_artifacts' => $request->input('desktop_artifacts'),
                 'role_images' => $request->input('role_images'),
             ],
             fn (mixed $value): bool => $value !== null,

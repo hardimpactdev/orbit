@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Nodes\ProvisioningAgentReadinessProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use RuntimeException;
@@ -33,6 +34,8 @@ final readonly class WorkloadNodeUpdater
         private RemoteNodeDoctor $nodeDoctor,
         private NodeAgentServicePayloadBuilder $agentServices,
         private PhpRuntimeCatalog $phpRuntimes,
+        private ProvisioningAgentReadinessProbe $agentReadiness,
+        private FleetUpdatePreMutationSkipRegistry $preMutationSkips,
     ) {}
 
     /**
@@ -61,6 +64,14 @@ final readonly class WorkloadNodeUpdater
             "Updating workload node {$node->name}",
         );
 
+        $preMutationSkip = $this->preMutationSkip($operationRun, $node);
+
+        if ($preMutationSkip !== null) {
+            $this->recordSkippedResult($operationRun, $node, $preMutationSkip);
+
+            return $preMutationSkip;
+        }
+
         try {
             $result = $this->leases->withLease(
                 resourceType: 'node',
@@ -88,15 +99,11 @@ final readonly class WorkloadNodeUpdater
             ];
         }
 
+        /** @var array<string, mixed> $result */
         $status = $result['status'] ?? null;
 
         if ($status === 'skipped') {
-            $this->operationRuns->appendStep(
-                $operationRun->id,
-                $this->eventKey($node),
-                'done',
-                "Workload node {$node->name} skipped: already up to date",
-            );
+            $this->recordSkippedResult($operationRun, $node, $result);
 
             return $result;
         }
@@ -205,6 +212,49 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    private function preMutationSkip(OperationRun $operationRun, Node $node): ?array
+    {
+        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
+            return null;
+        }
+
+        if ($this->agentReadiness->isReady($node)) {
+            return null;
+        }
+
+        return [
+            ...$this->targetPayload($node),
+            'status' => 'skipped',
+            'reason' => 'orbit_desktop_not_running',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function recordSkippedResult(OperationRun $operationRun, Node $node, array $result): void
+    {
+        $reason = is_string($result['reason'] ?? null) ? $result['reason'] : null;
+
+        if ($reason === 'orbit_desktop_not_running') {
+            $this->preMutationSkips->record($operationRun->id, $node->name, $reason);
+        }
+
+        $message = $reason === 'orbit_desktop_not_running'
+            ? "Workload node {$node->name} skipped: Orbit Desktop is not running"
+            : "Workload node {$node->name} skipped: already up to date";
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            $this->eventKey($node),
+            'done',
+            $message,
+        );
+    }
+
+    /**
      * Run streaming `orbit doctor` in verify mode for the node as the final per-node step.
      * The verify is non-fatal: a non-zero issue count is surfaced per node but
      * does not by itself fail the node's update, and any failure to resolve the
@@ -236,6 +286,8 @@ final readonly class WorkloadNodeUpdater
      *     shared_binary_path: string|null,
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
      *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}|null,
+     *     desktop_artifact: array{artifact_url: string, sha256: string, signature: string, version: string, platform: string, architecture: string, staged_path: string}|null,
+     *     pending_desktop_update: array{path: string, operation_id: string, version: string, build_id: string|null, install_mode: string}|null,
      *     role_images: list<string>,
      *     role_image_artifacts: list<array{image: string, url: string, sha256: string}>,
      *     role_image_aliases: list<array{source: string, target: string}>,
@@ -257,6 +309,8 @@ final readonly class WorkloadNodeUpdater
             'shared_binary_path' => null,
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'agent_service' => $this->agentServicePayload($node),
+            'desktop_artifact' => $this->desktopArtifactPayload($operationRun, $plan, $node),
+            'pending_desktop_update' => $this->pendingDesktopUpdatePayload($operationRun, $plan, $node),
             'role_images' => $this->requiredRoleImages($plan, $node),
             'role_image_artifacts' => $this->requiredRoleImageArtifacts($plan, $node),
             'role_image_aliases' => $this->requiredRoleImageAliases($plan, $node),
@@ -395,6 +449,61 @@ final readonly class WorkloadNodeUpdater
         }
 
         return $this->agentServices->forNode($node, $gateway);
+    }
+
+    /**
+     * @return array{artifact_url: string, sha256: string, signature: string, version: string, platform: string, architecture: string, staged_path: string}|null
+     */
+    private function desktopArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
+    {
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+            return null;
+        }
+
+        $artifact = $this->artifactRelay->desktopArtifactFor(
+            operationRun: $operationRun,
+            plan: $plan,
+            platform: CliArtifactPlatform::forNode($node),
+        );
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        return [
+            'artifact_url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'signature' => $artifact['signature'],
+            'version' => $artifact['version'],
+            'platform' => $artifact['platform'],
+            'architecture' => $artifact['architecture'],
+            'staged_path' =>
+                $this->hostPaths->homeDirectory($node)
+                    .'/.local/share/orbit/updates/desktop-'
+                    .$this->shaPrefix($artifact['sha256'])
+                    .'.tar.gz',
+        ];
+    }
+
+    /**
+     * @return array{path: string, operation_id: string, version: string, build_id: string|null, install_mode: string}|null
+     */
+    private function pendingDesktopUpdatePayload(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $node,
+    ): ?array {
+        if ($this->desktopArtifactPayload($operationRun, $plan, $node) === null) {
+            return null;
+        }
+
+        return [
+            'path' => $this->hostPaths->userConfigRoot($node).'/pending-desktop-update.json',
+            'operation_id' => $operationRun->id,
+            'version' => $plan->target_version,
+            'build_id' => $this->manifestBuildId($plan),
+            'install_mode' => 'automatic',
+        ];
     }
 
     /**

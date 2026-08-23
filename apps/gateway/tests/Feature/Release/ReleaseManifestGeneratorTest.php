@@ -170,6 +170,48 @@ it('rejects gateway images that cannot be pinned to a digest', function (): void
     expect($process->getExitCode())->toBe(1)->and($process->getErrorOutput())->toContain('gateway digest');
 });
 
+it('generates optional Darwin desktop artifacts with updater signatures', function (): void {
+    $root = sys_get_temp_dir().'/orbit-release-manifest-desktop-'.bin2hex(random_bytes(6));
+    $linux = "{$root}/orbit-linux-x64";
+    $desktop = "{$root}/Orbit.app.tar.gz";
+    $output = "{$root}/orbit-release-manifest.json";
+
+    mkdir($root, 0700, true);
+    file_put_contents($linux, 'linux-binary');
+    file_put_contents($desktop, 'desktop-archive');
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/orbit-release-manifest'),
+            '--version=1.2.3',
+            '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', times: 64),
+            "--cli-artifact=linux-amd64=orbit-linux-x64={$linux}",
+            "--desktop-artifact=darwin-arm64=Orbit.app.tar.gz={$desktop}",
+            '--desktop-signature=darwin-arm64=dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==',
+            '--role-image=orbit-caddy=caddy:2-alpine',
+            '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3@sha256:'.str_repeat('d', times: 64),
+            "--output={$output}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $manifest = json_decode(file_get_contents($output), true);
+
+        expect($manifest['desktop_artifacts']['darwin-arm64'])->toMatchArray([
+            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/Orbit.app.tar.gz',
+            'sha256' => hash_file('sha256', $desktop),
+            'signature' => 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==',
+            'version' => '1.2.3',
+            'platform' => 'darwin',
+            'architecture' => 'arm64',
+        ]);
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
 it('rejects mutable websocket role images', function (): void {
     $root = sys_get_temp_dir().'/orbit-release-manifest-mutable-websocket-'.bin2hex(random_bytes(6));
     $linux = "{$root}/orbit-linux-x64";

@@ -459,12 +459,13 @@ Rust/Axum service binary that loads local agent config, exposes an
 authenticated Agent listener plus minimal loopback `/health` and `/status`
 endpoints, receives binary argv envelopes, executes only node-local
 allowlisted binaries through no-shell process APIs, and reports collected
-stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri tray UI
-that reads service status and performs one-shot gateway status refreshes. When
-no local headless service is already reachable, the macOS UI starts an embedded
-`apps/agent` service in the app process; quitting the UI stops that embedded
-instance. If a separately installed service is already reachable, the UI uses
-that service and does not manage its lifetime.
+stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri Orbit
+Desktop app that owns Agent lifetime on Darwin. Native supervisor and menu
+behavior lands in a separate slice. The release manifest may include an
+optional Darwin ARM64 desktop updater archive with URL, SHA-256, Tauri updater
+signature, version, platform, and architecture. `update:all` stages that
+archive with matching Agent and CLI artifacts for reachable managed Macs and
+writes an owner-only pending desktop update handoff for the native installer.
 
 V1 is scoped narrowly:
 

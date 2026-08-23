@@ -483,13 +483,15 @@ gateway. `app-dev` convergence is sent as a direct gateway-pushed command
 envelope; `node role:add` does not create an Agent work item because
 workload-role convergence sends the envelope directly.
 
-The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
-it can show service/gateway status, refresh status on menu open or Refresh, and
-offer UI-level Restart and Quit actions. When no local Agent service is
-reachable, the macOS UI starts an embedded `apps/agent` service inside the app
-process and quitting the UI stops that embedded instance. If an external
-service is already reachable, the UI uses it without managing that service's
-lifetime. Execution history belongs in gateway operation/activity history.
+The macOS menu-bar surface lives in `apps/macos`. Orbit Desktop is the macOS
+lifecycle owner of Orbit Agent: it starts at login, supervises one Agent child,
+and quitting the desktop app stops that Agent. Closing only the dashboard
+window does not quit the menu-bar app or stop the Agent. Native supervisor,
+login-item, and menu implementation lands in a separate `apps/macos` slice;
+this contract is already binding for gateway and CLI update behavior. The CLI
+remains usable while Orbit Desktop is stopped. Agent-dependent commands then
+fail with `orbit_agent_unavailable` and tell the operator to open Orbit
+Desktop. Execution history belongs in gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc

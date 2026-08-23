@@ -34,10 +34,44 @@ final readonly class FleetUpdateTargetSelector
         $nodes = $this
             ->activeNonGatewayRoleNodes()
             ->filter(static fn (Node $node): bool => $node->isAgentEligible())
-            ->except($callerNodeId === null ? null : [$callerNodeId])
+            ->concat($this->activeManagedNonGatewayAgentEligibleNodes())
+            ->unique('id')
+            ->keyBy('id')
+            ->except($callerNodeId === null ? [] : [$callerNodeId])
+            ->sortBy('name')
             ->values();
 
         return $nodes;
+    }
+
+    /**
+     * @return Collection<int, Node>
+     *
+     * @mago-expect analysis:docblock-type-mismatch
+     * @mago-expect analysis:less-specific-nested-return-statement
+     */
+    private function activeManagedNonGatewayAgentEligibleNodes(): Collection
+    {
+        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
+
+        /** @var Collection<int, Node> $nodes */
+        $nodes = Node::query()
+            ->where('status', NodeStatus::Active->value)
+            ->where('managed', true)
+            ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
+            ->with('roleAssignments')
+            ->orderBy('name')
+            ->get();
+
+        $eligible = [];
+
+        foreach ($nodes as $node) {
+            if ($node->isAgentEligible()) {
+                $eligible[] = $node;
+            }
+        }
+
+        return new Collection($eligible);
     }
 
     /**

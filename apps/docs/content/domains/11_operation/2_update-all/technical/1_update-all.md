@@ -140,20 +140,29 @@ execution details live in the renderer contracts.
 - Include the caller's local Orbit installation.
 - Include active non-gateway nodes with at least one active role assignment
   only when they are Agent-eligible.
-- **Exclude roleless operator identities, regardless of managed Agent intent or
-  caller.** Operator workstations update locally through
-  [`orbit update`](../../1_update/update.md) on each workstation.
+- Include active non-gateway Agent-eligible nodes with `managed=true`, even
+  when they have no workload role.
+- Exclude unmanaged roleless operator identities. Those workstations update
+  locally through [`orbit update`](../../1_update/update.md).
 - Exclude inactive, removed, unknown, or caller-local node records from the
   gateway-selected installation list. The local installation is updated once
   through the local target.
 - Apply gateway-owned authorization before updating any installation.
 
+A managed macOS/Darwin target whose Agent is unreachable during the
+pre-mutation readiness check is skipped with
+`reason=orbit_desktop_not_running` before any install mutation. Skipped Macs
+do not fail `update:all` and do not receive a remote pending restart. After
+the first side effect, later errors stay `failed` and cannot be relabeled
+`skipped`. Non-managed role-bearing targets keep required failure behavior
+when Agent push is unavailable.
+
 The expected target shape per calling context:
 
-| Calling context | Local target | Gateway target | Role-bearing workload targets | Other client targets |
+| Calling context | Local target | Gateway target | Role-bearing workload targets | Managed client targets |
 | --- | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and workload-role targets. | Yes, every active Agent-eligible role-bearing node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Never. |
-| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-eligible role-bearing node selected by the rules above. | Never. |
+| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and remote targets. | Yes, every active Agent-eligible role-bearing node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Yes, every other active Agent-eligible `managed=true` node. The caller is never duplicated into this set. |
+| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-eligible role-bearing node selected by the rules above. | Yes, every active Agent-eligible `managed=true` node. |
 
 ## Durable Operation Rules
 
@@ -165,9 +174,11 @@ The expected target shape per calling context:
   keys, release credentials, or operation tokens.
 - The immutable update plan is keyed by `operation_run_id` and includes target
   version, gateway image registry/tag/digest, manifest source, manifest version,
-  manifest snapshot, CLI artifact URLs and hashes, and required role image
-  references. See [Update plan persistence](#update-plan-persistence) for when
-  the gateway versus the runner persists it.
+  manifest snapshot, CLI artifact URLs and hashes, optional Agent artifacts,
+  optional Darwin desktop artifacts (URL, SHA-256, Tauri updater signature,
+  version, platform, architecture), and required role image references. See
+  [Update plan persistence](#update-plan-persistence) for when the gateway
+  versus the runner persists it.
 - Node records carry gateway-owned installed-artifact DTOs. `installed_cli`
   records the last verified CLI version, platform, SHA-256 hash, manifest
   source, candidate build id when present, original artifact URL, installed
@@ -466,6 +477,8 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php` | Direct `POST /api/update/all` is absent while `POST /api/update/all/start` remains. |
 | `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
-| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, and installed artifact tracking. |
+| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, managed Mac pre-mutation skip, and post-mutation failure. |
+| `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target union of role-bearing Agent-eligible nodes and `managed=true` clients, with caller exclusion. |
+| `apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php` | Owner-only pending desktop update handoff path safety, atomic write, stale identity, and partial artifact rejection. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |
 | `apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php` | Integrated durable fleet update from an operator through gateway event replay. |

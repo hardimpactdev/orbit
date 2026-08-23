@@ -29,6 +29,8 @@ use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 
@@ -698,6 +700,148 @@ it('skips a workload node already on the target version and runs no remote updat
         )
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
+});
+
+it('skips a managed macOS client whose Agent is unavailable before mutation', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $mac = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'managed' => true,
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.80',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.test/orbit-macos-arm64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.80:9477/*' => fn () => throw new ConnectionException('Connection refused'),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'mini',
+                'node' => 'mini',
+                'roles' => [],
+                'status' => 'skipped',
+                'reason' => 'orbit_desktop_not_running',
+            ],
+        ])
+        ->and($shell->calls)
+        ->toBeEmpty()
+        ->and($mac->fresh()->installed_cli)
+        ->toBeNull()
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(
+            ['workload.mini', 'done', 'Workload node mini skipped: Orbit Desktop is not running'],
+        )
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
+});
+
+it('fails a non-managed role-bearing target when the Agent is unavailable', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteLocalExecutorTransportFailed('Connection refused'),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.81',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot());
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'roles' => ['app-dev'],
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => 'Connection refused',
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe(['app-dev-1']);
+});
+
+it('cannot relabel a managed macOS client as skipped after mutation starts', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'mini' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'install failed after download', durationMs: 10),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'managed' => true,
+            'platform' => 'macos_15-5',
+            'architecture' => 'arm64',
+            'wireguard_address' => '10.6.0.82',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.test/orbit-macos-arm64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    Http::fake([
+        'http://10.6.0.82:9477/*' => Http::response('', 405),
+    ]);
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'mini',
+                'node' => 'mini',
+                'roles' => [],
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => 'install failed after download',
+            ],
+        ])
+        ->and($results[0]['status'] ?? null)
+        ->not->toBe('skipped')
+        ->and($shell->updatedNodes())
+        ->toBe(['mini']);
 });
 
 it('runs workload installs through the typed Agent-push local executor', function (): void {
@@ -1737,6 +1881,42 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
             'url' => "http://gateway.test/api/update/artifacts/{$operationRun->id}/agent/{$platform}?token=fake",
             'sha256' => $artifact['sha256'],
             'source_url' => $artifact['url'],
+        ];
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string, signature: string, version: string, platform: string, architecture: string}|null
+     */
+    #[Override]
+    public function desktopArtifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): ?array
+    {
+        $desktopArtifacts = $plan->desktop_artifacts ?? [];
+        $artifact = $desktopArtifacts[$platform] ?? null;
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+            || ! is_string($artifact['signature'] ?? null)
+            || ! is_string($artifact['version'] ?? null)
+            || ! is_string($artifact['platform'] ?? null)
+            || ! is_string($artifact['architecture'] ?? null)
+        ) {
+            throw new RuntimeException("Missing test desktop artifact for [{$platform}].");
+        }
+
+        return [
+            'url' => "http://gateway.test/api/update/artifacts/{$operationRun->id}/desktop/{$platform}?token=fake",
+            'sha256' => $artifact['sha256'],
+            'source_url' => $artifact['url'],
+            'signature' => $artifact['signature'],
+            'version' => $artifact['version'],
+            'platform' => $artifact['platform'],
+            'architecture' => $artifact['architecture'],
         ];
     }
 

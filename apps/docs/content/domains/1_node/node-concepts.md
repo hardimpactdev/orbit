@@ -500,15 +500,13 @@ history, and exposes the command push endpoint on the Agent listener. The
 gateway verifies that endpoint with operation tokens. The service also exposes
 minimal loopback health and status endpoints for local UI/readiness checks.
 
-The macOS UI can show service or gateway status, node/gateway identity,
-Refresh, Restart, and Quit. When no local service is reachable, the UI starts an
-embedded headless service in the app process. Embedded mode follows the same
-fail-closed listener contract as the standalone service: the command listener
-binds only to the configured WireGuard address, while `/health` and `/status`
-remain loopback-only. No command listener starts when a valid WireGuard bind is
-unavailable. Quitting the UI stops that embedded instance. If a separately
-installed service is already reachable, the UI uses it without managing its
-lifetime.
+Orbit Desktop is the macOS lifecycle owner of Orbit Agent. Native supervisor,
+login-item, and menu implementation lands separately in `apps/macos`. The CLI
+stays installed and usable when Orbit Desktop is not running. Agent-dependent
+commands then fail with `orbit_agent_unavailable`, naming the node and, on
+macOS, instructing the operator to open Orbit Desktop. `update:all` treats a
+managed Mac whose Agent is unreachable before mutation as a skip with
+`orbit_desktop_not_running` rather than that failure.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, no native platform installer packaging, signing, notarization,

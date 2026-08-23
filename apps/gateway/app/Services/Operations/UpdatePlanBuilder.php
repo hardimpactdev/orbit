@@ -49,6 +49,7 @@ class UpdatePlanBuilder
             cliArtifacts: $this->artifactInput($request, 'cli_artifacts', 'CLI artifacts') ?? $manifest->cliArtifacts,
             agentArtifacts: $this->artifactInput($request, 'agent_artifacts', 'agent artifacts')
             ?? $manifest->agentArtifacts,
+            desktopArtifacts: $this->desktopArtifactInput($request, 'desktop_artifacts') ?? $manifest->desktopArtifacts,
             roleImages: $this->roleImageInput($request, 'role_images') ?? $manifest->roleImages,
         );
     }
@@ -106,6 +107,16 @@ class UpdatePlanBuilder
         $input = $this->arrayInput($request, $key);
 
         return $input === null ? null : OperationUpdatePlanSnapshot::artifactMap($input, $label);
+    }
+
+    /**
+     * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>|null
+     */
+    private function desktopArtifactInput(Request $request, string $key): ?array
+    {
+        $input = $this->arrayInput($request, $key);
+
+        return $input === null ? null : OperationUpdatePlanSnapshot::desktopArtifactMap($input);
     }
 
     /**

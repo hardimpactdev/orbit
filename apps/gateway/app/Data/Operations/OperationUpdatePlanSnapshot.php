@@ -9,6 +9,7 @@ use RuntimeException;
 
 /**
  * @mago-expect lint:kan-defect
+ * @mago-expect lint:mixed-assignment
  */
 final readonly class OperationUpdatePlanSnapshot
 {
@@ -17,6 +18,7 @@ final readonly class OperationUpdatePlanSnapshot
      * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
      * @param  array<string, string>  $roleImages
      * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
+     * @param  array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>  $desktopArtifacts
      */
     public function __construct(
         public string $targetVersion,
@@ -27,6 +29,7 @@ final readonly class OperationUpdatePlanSnapshot
         public array $cliArtifacts,
         public array $roleImages,
         public array $agentArtifacts = [],
+        public array $desktopArtifacts = [],
     ) {
         $this->assertNonEmptyString($this->targetVersion, 'target version');
         $this->assertDigestPinnedGatewayImage($this->gatewayImage);
@@ -41,6 +44,7 @@ final readonly class OperationUpdatePlanSnapshot
         $this->assertTopologyCandidateManifestSnapshot();
         $this->assertRequiredArtifacts($this->cliArtifacts, 'CLI artifacts');
         $this->assertOptionalArtifacts($this->agentArtifacts, 'agent artifacts');
+        $this->assertDesktopArtifacts($this->desktopArtifacts);
         $this->assertRoleImages($this->roleImages);
     }
 
@@ -57,6 +61,7 @@ final readonly class OperationUpdatePlanSnapshot
             manifestSnapshot: self::arrayValue($data, 'manifest_snapshot'),
             cliArtifacts: self::artifactMap(self::arrayValue($data, 'cli_artifacts'), 'CLI artifacts'),
             agentArtifacts: self::optionalArtifactMap($data, 'agent_artifacts', 'agent artifacts'),
+            desktopArtifacts: self::optionalDesktopArtifactMap($data, 'desktop_artifacts'),
             roleImages: self::roleImageMap(self::arrayValue($data, 'role_images')),
         );
     }
@@ -70,6 +75,7 @@ final readonly class OperationUpdatePlanSnapshot
      *     manifest_snapshot: array<string, mixed>,
      *     cli_artifacts: array<string, array{url: string, sha256: string}>,
      *     agent_artifacts: array<string, array{url: string, sha256: string}>,
+     *     desktop_artifacts: array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>,
      *     role_images: array<string, string>
      * }
      */
@@ -83,6 +89,7 @@ final readonly class OperationUpdatePlanSnapshot
             'manifest_snapshot' => $this->manifestSnapshot,
             'cli_artifacts' => $this->cliArtifacts,
             'agent_artifacts' => $this->agentArtifacts,
+            'desktop_artifacts' => $this->desktopArtifacts,
             'role_images' => $this->roleImages,
         ];
     }
@@ -156,6 +163,14 @@ final readonly class OperationUpdatePlanSnapshot
     /**
      * @param  array<string, mixed>  $artifacts
      */
+    private function assertDesktopArtifacts(array $artifacts): void
+    {
+        self::desktopArtifactMap($artifacts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $artifacts
+     */
     private function assertArtifacts(array $artifacts, string $label): void
     {
         self::artifactMap($artifacts, $label);
@@ -209,6 +224,76 @@ final readonly class OperationUpdatePlanSnapshot
         }
 
         return self::artifactMap(self::arrayValue($data, $key), $label);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>
+     */
+    public static function optionalDesktopArtifactMap(array $data, string $key): array
+    {
+        if (! array_key_exists($key, $data)) {
+            return [];
+        }
+
+        return self::desktopArtifactMap(self::arrayValue($data, $key));
+    }
+
+    /**
+     * @param  array<string, mixed>  $artifacts
+     * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>
+     */
+    public static function desktopArtifactMap(array $artifacts): array
+    {
+        $validated = [];
+
+        foreach ($artifacts as $platform => $artifact) {
+            if (trim($platform) === '' || ! is_array($artifact)) {
+                throw new RuntimeException('Update plan desktop artifacts must be keyed by platform.');
+            }
+
+            $url = $artifact['url'] ?? null;
+            $sha256 = $artifact['sha256'] ?? null;
+            $signature = $artifact['signature'] ?? null;
+            $version = $artifact['version'] ?? null;
+            $artifactPlatform = $artifact['platform'] ?? null;
+            $architecture = $artifact['architecture'] ?? null;
+
+            if (! is_string($url) || trim($url) === '') {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include a URL.");
+            }
+
+            if (! is_string($sha256) || preg_match('/^[a-f0-9]{64}$/', $sha256) !== 1) {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include a sha256 hash.");
+            }
+
+            if (! is_string($signature) || trim($signature) === '') {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include a signature.");
+            }
+
+            if (! is_string($version) || trim($version) === '') {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include a version.");
+            }
+
+            if (! is_string($artifactPlatform) || trim($artifactPlatform) === '') {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include a platform.");
+            }
+
+            if (! is_string($architecture) || trim($architecture) === '') {
+                throw new RuntimeException("Update plan desktop artifacts [{$platform}] must include an architecture.");
+            }
+
+            $validated[$platform] = [
+                'url' => $url,
+                'sha256' => strtolower($sha256),
+                'signature' => $signature,
+                'version' => $version,
+                'platform' => $artifactPlatform,
+                'architecture' => $architecture,
+            ];
+        }
+
+        return $validated;
     }
 
     /**

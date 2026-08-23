@@ -18,6 +18,8 @@ class GatewayCliArtifactRelay
 
     private const string ARTIFACT_KIND_AGENT = 'agent';
 
+    private const string ARTIFACT_KIND_DESKTOP = 'desktop';
+
     public function __construct(
         private readonly ?FleetUpdateTargetSelector $targets = null,
     ) {}
@@ -40,6 +42,27 @@ class GatewayCliArtifactRelay
         }
 
         return $this->artifactForKind($operationRun, $plan, self::ARTIFACT_KIND_AGENT, $platform);
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string, signature: string, version: string, platform: string, architecture: string}|null
+     */
+    public function desktopArtifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): ?array
+    {
+        if (! $this->planHasArtifact($plan, self::ARTIFACT_KIND_DESKTOP, $platform)) {
+            return null;
+        }
+
+        $relayed = $this->artifactForKind($operationRun, $plan, self::ARTIFACT_KIND_DESKTOP, $platform);
+        $artifact = $this->manifestDesktopArtifact($plan, $platform);
+
+        return [
+            ...$relayed,
+            'signature' => $artifact['signature'],
+            'version' => $artifact['version'],
+            'platform' => $artifact['platform'],
+            'architecture' => $artifact['architecture'],
+        ];
     }
 
     /**
@@ -77,6 +100,7 @@ class GatewayCliArtifactRelay
         $artifacts = [
             ...$this->artifactsToRelay($plan, self::ARTIFACT_KIND_CLI),
             ...$this->artifactsToRelay($plan, self::ARTIFACT_KIND_AGENT),
+            ...$this->artifactsToRelay($plan, self::ARTIFACT_KIND_DESKTOP),
         ];
 
         if ($artifacts === []) {
@@ -189,6 +213,7 @@ class GatewayCliArtifactRelay
         $artifact = match ($artifactKind) {
             self::ARTIFACT_KIND_CLI => $plan->cli_artifacts[$platform] ?? null,
             self::ARTIFACT_KIND_AGENT => (($plan->agent_artifacts ?? []))[$platform] ?? null,
+            self::ARTIFACT_KIND_DESKTOP => (($plan->desktop_artifacts ?? []))[$platform] ?? null,
             default => null,
         };
 
@@ -205,6 +230,37 @@ class GatewayCliArtifactRelay
         return [
             'url' => $artifact['url'],
             'sha256' => strtolower($artifact['sha256']),
+        ];
+    }
+
+    /**
+     * @return array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}
+     */
+    private function manifestDesktopArtifact(OperationUpdatePlan $plan, string $platform): array
+    {
+        $artifact = (($plan->desktop_artifacts ?? []))[$platform] ?? null;
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+            || ! is_string($artifact['signature'] ?? null)
+            || ! is_string($artifact['version'] ?? null)
+            || ! is_string($artifact['platform'] ?? null)
+            || ! is_string($artifact['architecture'] ?? null)
+        ) {
+            throw new RuntimeException(
+                "Update plan does not contain a desktop artifact for platform [{$platform}].",
+            );
+        }
+
+        return [
+            'url' => $artifact['url'],
+            'sha256' => strtolower($artifact['sha256']),
+            'signature' => $artifact['signature'],
+            'version' => $artifact['version'],
+            'platform' => $artifact['platform'],
+            'architecture' => $artifact['architecture'],
         ];
     }
 
@@ -346,7 +402,11 @@ class GatewayCliArtifactRelay
         $this->assertSafeArtifactKind($artifactKind);
         $this->assertSafePlatform($platform);
 
-        $file = $artifactKind === self::ARTIFACT_KIND_AGENT ? 'orbit-agent' : 'orbit';
+        $file = match ($artifactKind) {
+            self::ARTIFACT_KIND_AGENT => 'orbit-agent',
+            self::ARTIFACT_KIND_DESKTOP => 'orbit-desktop',
+            default => 'orbit',
+        };
 
         return $this->operationDirectory($operationRun)."/{$artifactKind}/{$platform}/{$file}";
     }
@@ -370,7 +430,11 @@ class GatewayCliArtifactRelay
 
     private function assertSafeArtifactKind(string $artifactKind): void
     {
-        if (! in_array($artifactKind, [self::ARTIFACT_KIND_CLI, self::ARTIFACT_KIND_AGENT], strict: true)) {
+        if (! in_array(
+            $artifactKind,
+            [self::ARTIFACT_KIND_CLI, self::ARTIFACT_KIND_AGENT, self::ARTIFACT_KIND_DESKTOP],
+            strict: true,
+        )) {
             throw new RuntimeException("Unsupported update artifact kind [{$artifactKind}].");
         }
     }
@@ -392,6 +456,7 @@ class GatewayCliArtifactRelay
         $manifestArtifacts = match ($artifactKind) {
             self::ARTIFACT_KIND_CLI => $plan->cli_artifacts,
             self::ARTIFACT_KIND_AGENT => $plan->agent_artifacts ?? [],
+            self::ARTIFACT_KIND_DESKTOP => $plan->desktop_artifacts ?? [],
             default => [],
         };
         $artifacts = [];
@@ -418,6 +483,7 @@ class GatewayCliArtifactRelay
         return match ($artifactKind) {
             self::ARTIFACT_KIND_CLI => is_array($plan->cli_artifacts[$platform] ?? null),
             self::ARTIFACT_KIND_AGENT => is_array((($plan->agent_artifacts ?? []))[$platform] ?? null),
+            self::ARTIFACT_KIND_DESKTOP => is_array((($plan->desktop_artifacts ?? []))[$platform] ?? null),
             default => false,
         };
     }

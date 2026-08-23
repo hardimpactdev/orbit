@@ -133,6 +133,72 @@ describe('internal fleet update install cli command', function (): void {
             ->not->toBeNull();
     });
 
+    it('stages a Darwin desktop archive and writes an owner-only pending update handoff', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentPath = "{$workspace}/artifact/orbit-agent";
+        $desktopPath = "{$workspace}/artifact/Orbit.app.tar.gz";
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        file_put_contents($agentPath, 'agent-binary');
+        file_put_contents($desktopPath, 'desktop-archive');
+        $agentSha256 = fleet_update_install_cli_sha256($agentPath);
+        $desktopSha256 = fleet_update_install_cli_sha256($desktopPath);
+        $handoffPath = "{$workspace}/.config/orbit/pending-desktop-update.json";
+        $stagedPath = "{$workspace}/.local/share/orbit/updates/desktop-{$desktopSha256}.tar.gz";
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'desktop_artifact' => [
+                    'artifact_url' => "file://{$desktopPath}",
+                    'sha256' => $desktopSha256,
+                    'signature' => 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZQ==',
+                    'version' => '9.9.9',
+                    'platform' => 'darwin',
+                    'architecture' => 'arm64',
+                    'staged_path' => $stagedPath,
+                ],
+                'pending_desktop_update' => [
+                    'path' => $handoffPath,
+                    'operation_id' => '018f3f8b-5d7a-7f5e-a45b-93067a93d47e',
+                    'version' => '9.9.9',
+                    'build_id' => 'candidate-build',
+                    'install_mode' => 'automatic',
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($data['desktop_staged'] ?? false)
+            ->toBeTrue()
+            ->and(is_file($stagedPath))
+            ->toBeTrue()
+            ->and(fleet_update_install_cli_sha256($stagedPath))
+            ->toBe($desktopSha256)
+            ->and(is_file($handoffPath))
+            ->toBeTrue()
+            ->and(decoct(fileperms($handoffPath) & 0777))
+            ->toBe('600')
+            ->and(json_decode((string) file_get_contents($handoffPath), true)['install_mode'])
+            ->toBe('automatic');
+    });
+
     it('does not create or alter install metadata when artifact hash verification fails', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";

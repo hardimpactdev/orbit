@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Services\Updates\PendingDesktopUpdateHandoff;
+use App\Services\Updates\PendingDesktopUpdateHandoffFailure;
 use App\Services\Version\InstallMetadataStore;
 use App\Services\Version\VersionOutputParser;
 use JsonException;
@@ -43,6 +45,7 @@ final readonly class LocalFleetUpdateInstallCliAction
 
         $stdout = trim($process->getOutput());
         $this->recordInstallMetadata($installPayload, $stdout, $process);
+        $desktopStaged = $this->stageDesktopUpdate($installPayload);
 
         return [
             'installed' => true,
@@ -50,9 +53,133 @@ final readonly class LocalFleetUpdateInstallCliAction
             'install_root' => $installPayload->installRoot,
             'agent_bin_path' => $installPayload->agentArtifact?->binPath,
             'agent_installed' => $installPayload->agentArtifact instanceof LocalFleetUpdateInstallAgentPayload,
+            'desktop_staged' => $desktopStaged,
             'role_images' => $installPayload->roleImages,
             'stdout' => $stdout,
         ];
+    }
+
+    private function stageDesktopUpdate(LocalFleetUpdateInstallCliPayload $installPayload): bool
+    {
+        $desktop = $installPayload->desktopArtifact;
+        $pending = $installPayload->pendingDesktopUpdate;
+
+        if (! $desktop instanceof LocalFleetUpdateInstallDesktopPayload) {
+            return false;
+        }
+
+        if (! $pending instanceof LocalFleetUpdateInstallPendingDesktopUpdatePayload) {
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'validation_failed',
+                message: 'Fleet update CLI install payload is invalid.',
+                meta: ['field' => 'pending_desktop_update'],
+            );
+        }
+
+        $this->stageDesktopArchive($desktop);
+
+        try {
+            PendingDesktopUpdateHandoff::fromArray([
+                'schema_version' => 1,
+                'operation_id' => $pending->operationId,
+                'version' => $pending->version,
+                'build_id' => $pending->buildId,
+                'install_mode' => $pending->installMode,
+                'desktop' => [
+                    'sha256' => strtolower($desktop->sha256),
+                    'signature' => $desktop->signature,
+                    'staged_path' => $desktop->stagedPath,
+                    'version' => $desktop->version,
+                    'platform' => $desktop->platform,
+                    'architecture' => $desktop->architecture,
+                ],
+                'agent' => [
+                    'sha256' => strtolower($installPayload->agentArtifact?->sha256 ?? ''),
+                    'bin_path' => $installPayload->agentArtifact?->binPath ?? '',
+                ],
+                'cli' => [
+                    'sha256' => strtolower($installPayload->sha256),
+                    'bin_path' => $installPayload->binPath,
+                ],
+            ])->write($pending->path);
+        } catch (PendingDesktopUpdateHandoffFailure $exception) {
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'fleet_update.desktop_handoff_failed',
+                message: $exception->getMessage(),
+                meta: [],
+            );
+        }
+
+        return true;
+    }
+
+    private function stageDesktopArchive(LocalFleetUpdateInstallDesktopPayload $desktop): void
+    {
+        $directory = dirname($desktop->stagedPath);
+
+        if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'fleet_update.desktop_stage_failed',
+                message: 'Desktop update archive directory could not be created.',
+                meta: [],
+            );
+        }
+
+        $temporaryPath = $desktop->stagedPath.'.tmp.'.bin2hex(random_bytes(8));
+
+        try {
+            $this->copyDesktopArtifact($desktop->artifactUrl, $temporaryPath);
+            $actual = hash_file('sha256', $temporaryPath);
+
+            if ($actual !== strtolower($desktop->sha256)) {
+                throw new LocalFleetUpdateInstallCliFailure(
+                    errorCode: 'fleet_update.desktop_hash_mismatch',
+                    message: 'Desktop update archive hash mismatch.',
+                    meta: [],
+                );
+            }
+
+            chmod($temporaryPath, 0600);
+
+            if (! rename($temporaryPath, $desktop->stagedPath)) {
+                throw new LocalFleetUpdateInstallCliFailure(
+                    errorCode: 'fleet_update.desktop_stage_failed',
+                    message: 'Desktop update archive could not be staged.',
+                    meta: [],
+                );
+            }
+        } finally {
+            if (is_file($temporaryPath)) {
+                unlink($temporaryPath);
+            }
+        }
+    }
+
+    private function copyDesktopArtifact(string $url, string $target): void
+    {
+        if (str_starts_with($url, 'file://')) {
+            $source = substr($url, 7);
+
+            if (! is_file($source) || ! copy($source, $target)) {
+                throw new LocalFleetUpdateInstallCliFailure(
+                    errorCode: 'fleet_update.desktop_stage_failed',
+                    message: 'Desktop update archive could not be copied.',
+                    meta: [],
+                );
+            }
+
+            return;
+        }
+
+        $contents = @file_get_contents($url);
+
+        if (! is_string($contents) || file_put_contents($target, $contents) === false) {
+            throw new LocalFleetUpdateInstallCliFailure(
+                errorCode: 'fleet_update.desktop_stage_failed',
+                message: 'Desktop update archive could not be downloaded.',
+                meta: [],
+            );
+        }
     }
 
     private function recordInstallMetadata(

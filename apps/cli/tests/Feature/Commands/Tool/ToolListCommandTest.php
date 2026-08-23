@@ -241,6 +241,35 @@ describe('tool:list', function (): void {
         expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
+    it('renders Agent-dependent unavailability as orbit_agent_unavailable with macOS remediation', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'node.agent_unreachable',
+            "Orbit Agent is unreachable for tool 'composer' start on node 'mini'.",
+            [
+                'reason' => 'agent_push_unavailable',
+                'node' => 'mini',
+                'platform' => 'macos_15-5',
+                'tool' => 'composer',
+                'action' => 'start',
+            ],
+        ), 422);
+
+        [$exitCode, $output] = runCommand($this, 'tool:list', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('orbit_agent_unavailable')
+            ->and($decoded['error']['meta']['node'])
+            ->toBe('mini')
+            ->and($decoded['error']['meta']['platform'])
+            ->toBe('macos_15-5')
+            ->and($decoded['error']['meta']['remediation'])
+            ->toBe('Open Orbit Desktop to start Orbit Agent.');
+    });
+
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('Network is unreachable');
 

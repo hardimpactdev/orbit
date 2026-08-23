@@ -87,7 +87,13 @@ class FleetUpdateVerifier
     {
         app(FleetUpdateAgentRestartReadiness::class)->wait($operationRun, $plan);
 
+        $skips = app(FleetUpdatePreMutationSkipRegistry::class);
+
         foreach ($this->targets->workloadNodes($operationRun) as $node) {
+            if ($skips->skipped($operationRun->id, $node->name)) {
+                continue;
+            }
+
             foreach (FleetUpdateNodeCliLauncher::binPathsToVerify($node) as $binPath) {
                 $result = $this->localExecutor()->runInternal(
                     node: $node,
@@ -123,7 +129,13 @@ class FleetUpdateVerifier
 
     private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
+        $skips = app(FleetUpdatePreMutationSkipRegistry::class);
+
         foreach ($this->targets->workloadNodes($operationRun) as $node) {
+            if ($skips->skipped($operationRun->id, $node->name)) {
+                continue;
+            }
+
             $images = $this->requiredRoleImagesToVerify($plan, $node);
 
             if ($images === []) {

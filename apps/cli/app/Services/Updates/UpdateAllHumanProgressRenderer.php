@@ -35,6 +35,8 @@ final class UpdateAllHumanProgressRenderer
 
     private const string STAGE_SKIPPED = 'skipped';
 
+    private const string STAGE_SKIPPED_DESKTOP = 'skipped_desktop';
+
     private const string STAGE_UPDATING_CLI = 'updating_cli';
 
     private const string STAGE_STARTING_OPERATION = 'starting_operation';
@@ -386,6 +388,12 @@ final class UpdateAllHumanProgressRenderer
             if ($status === 'done') {
                 if ($message !== null && str_contains($message, 'skipped: already up to date')) {
                     $this->setRow($output, $node, self::STATE_SKIPPED, self::STAGE_SKIPPED);
+
+                    return true;
+                }
+
+                if ($message !== null && str_contains($message, 'skipped: Orbit Desktop is not running')) {
+                    $this->setRow($output, $node, self::STATE_SKIPPED, self::STAGE_SKIPPED_DESKTOP);
 
                     return true;
                 }
@@ -1141,6 +1149,7 @@ final class UpdateAllHumanProgressRenderer
             self::STAGE_CHECKING => '',
             self::STAGE_SETTLED => '',
             self::STAGE_SKIPPED => 'Skipped: already up to date',
+            self::STAGE_SKIPPED_DESKTOP => 'Skipped: Orbit Desktop is not running',
             self::STAGE_UPDATING_CLI => 'Updating CLI',
             self::STAGE_STARTING_OPERATION => 'Starting operation',
             self::STAGE_ACQUIRING_LEASES => 'Acquiring leases',

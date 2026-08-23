@@ -108,12 +108,25 @@ node did not update. The failure result includes the failed node results so
 operators see the update failure directly instead of only a later version
 verification error.
 
-`update:all` updates the gateway, the caller-local installation, and active
-non-gateway role-bearing nodes that are Agent-eligible.
-**Clients other than the caller are never remote update targets.** Each
-client is an operator workstation and updates through `orbit update` on
-that machine. When the gateway is the calling peer, the command therefore
-updates the gateway installation and selected nodes only.
+`update:all` updates the gateway, the caller-local installation, and the union
+of active non-gateway role-bearing Agent-eligible nodes and active non-gateway
+Agent-eligible nodes with `managed=true`.
+The caller remains a caller-local target and is not duplicated in remote
+fan-out. Unmanaged roleless clients stay excluded. When the gateway is the
+calling peer, the command therefore updates the gateway installation and
+selected nodes only.
+
+A managed macOS/Darwin target whose Agent is unavailable during an explicit
+pre-mutation readiness check is reported as skipped with stable reason
+`orbit_desktop_not_running`. That skip is visible in human, JSON, and stream
+output and does not fail the operation. After any update side effect starts,
+later errors stay failures and cannot be relabeled skipped. Non-managed
+role-bearing targets keep the current required failure behavior.
+
+The same immutable update plan stages desktop, Agent, and CLI artifacts for a
+reachable managed Mac. Linux targets still receive CLI and Agent artifacts
+only. Native Orbit Desktop restart is consumed from an owner-only pending
+desktop update handoff and lands in a separate native slice.
 
 The command does not create nodes, deploy apps, or repair unrelated family drift.
 It may change app runtime artifacts only when role image updates are required by
@@ -126,7 +139,8 @@ Run `orbit update:all` to see per-node progress and a final summary of updated a
 
 Human output begins with release and fleet version checks, then shows per-node
 progress as updates run. The active row blinks while work is in progress; settled
-rows report `Done`, `Skipped: already up to date`, or a failure message. Progress
+rows report `Done`, `Skipped: already up to date`,
+`Skipped: Orbit Desktop is not running`, or a failure message. Progress
 is rendered from the gateway operation event journal, so reconnecting during
 gateway replacement does not lose already-recorded state. See the
 [terminal output contract](technical/6.1_update-all_output-render_human.md) for

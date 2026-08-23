@@ -33,6 +33,7 @@ class OperationUpdatePlanStore
                 'manifest_snapshot' => $snapshot->manifestSnapshot,
                 'cli_artifacts' => $snapshot->cliArtifacts,
                 'agent_artifacts' => $snapshot->agentArtifacts,
+                'desktop_artifacts' => $snapshot->desktopArtifacts,
                 'role_images' => $snapshot->roleImages,
             ]);
         } catch (QueryException $exception) {

@@ -23,6 +23,7 @@ final readonly class ReleaseManifest
     /**
      * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
      * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
+     * @param  array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>  $desktopArtifacts
      * @param  array<string, string>  $roleImages
      * @param  array<string, mixed>  $snapshot
      */
@@ -35,6 +36,7 @@ final readonly class ReleaseManifest
         public array $cliArtifacts,
         public array $agentArtifacts,
         public array $roleImages,
+        public array $desktopArtifacts,
         private array $snapshot,
     ) {}
 
@@ -74,6 +76,9 @@ final readonly class ReleaseManifest
         $agentArtifacts = array_key_exists('agent_artifacts', $manifest)
             ? self::artifacts(self::arrayValue($manifest, 'agent_artifacts', 'Agent artifacts'), 'Agent artifacts')
             : [];
+        $desktopArtifacts = array_key_exists('desktop_artifacts', $manifest)
+            ? self::desktopArtifacts(self::arrayValue($manifest, 'desktop_artifacts', 'desktop artifacts'))
+            : [];
         $roleImages = self::roleImages(self::arrayValue($manifest, 'role_images', 'role images'));
 
         return new self(
@@ -85,6 +90,7 @@ final readonly class ReleaseManifest
             cliArtifacts: $cliArtifacts,
             agentArtifacts: $agentArtifacts,
             roleImages: $roleImages,
+            desktopArtifacts: $desktopArtifacts,
             snapshot: $snapshot,
         );
     }
@@ -202,6 +208,53 @@ final readonly class ReleaseManifest
             $validated[trim($platform)] = [
                 'url' => $url,
                 'sha256' => $sha256,
+            ];
+        }
+
+        ksort($validated);
+
+        return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $artifacts
+     * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>
+     *
+     */
+    private static function desktopArtifacts(array $artifacts): array
+    {
+        $validated = [];
+
+        foreach ($artifacts as $platform => $artifact) {
+            if (trim($platform) === '' || ! is_array($artifact)) {
+                throw new RuntimeException('Release manifest desktop artifacts must be keyed by platform.');
+            }
+
+            /** @var array<string, mixed> $artifact */
+            $url = self::stringValue($artifact, 'url', "desktop artifacts [{$platform}] URL");
+            $sha256 = self::stringValue($artifact, 'sha256', "desktop artifacts [{$platform}] sha256");
+            $signature = self::stringValue($artifact, 'signature', "desktop artifacts [{$platform}] signature");
+            $version = self::stringValue($artifact, 'version', "desktop artifacts [{$platform}] version");
+            $artifactPlatform = self::stringValue($artifact, 'platform', "desktop artifacts [{$platform}] platform");
+            $architecture = self::stringValue(
+                $artifact,
+                'architecture',
+                "desktop artifacts [{$platform}] architecture",
+            );
+
+            if (preg_match('/^[a-f0-9]{64}$/', $sha256) !== 1) {
+                throw new RuntimeException(
+                    "Release manifest desktop artifacts [{$platform}] sha256 must be a sha256 hash.",
+                );
+            }
+
+            $validated[trim($platform)] = [
+                'url' => $url,
+                'sha256' => $sha256,
+                'signature' => $signature,
+                'version' => $version,
+                'platform' => $artifactPlatform,
+                'architecture' => $architecture,
             ];
         }
 

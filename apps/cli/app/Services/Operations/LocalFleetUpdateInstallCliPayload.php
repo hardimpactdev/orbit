@@ -20,6 +20,10 @@ final class LocalFleetUpdateInstallCliPayload
 
     public ?LocalFleetUpdateInstallAgentServicePayload $agentService;
 
+    public ?LocalFleetUpdateInstallDesktopPayload $desktopArtifact;
+
+    public ?LocalFleetUpdateInstallPendingDesktopUpdatePayload $pendingDesktopUpdate;
+
     /** @var list<LocalFleetUpdateInstallRoleImageArtifactPayload> */
     public array $roleImageArtifacts;
 
@@ -39,6 +43,8 @@ final class LocalFleetUpdateInstallCliPayload
         $this->sharedBinaryPath = null;
         $this->agentArtifact = null;
         $this->agentService = null;
+        $this->desktopArtifact = null;
+        $this->pendingDesktopUpdate = null;
     }
 
     /**
@@ -69,6 +75,12 @@ final class LocalFleetUpdateInstallCliPayload
         );
         $typedPayload->agentService = LocalFleetUpdateInstallAgentServicePayload::fromPayload(
             $payload['agent_service'] ?? null,
+        );
+        $typedPayload->desktopArtifact = LocalFleetUpdateInstallDesktopPayload::fromPayload(
+            $payload['desktop_artifact'] ?? null,
+        );
+        $typedPayload->pendingDesktopUpdate = LocalFleetUpdateInstallPendingDesktopUpdatePayload::fromPayload(
+            $payload['pending_desktop_update'] ?? null,
         );
         $typedPayload->roleImageArtifacts = LocalFleetUpdateInstallRoleImageArtifactPayload::listFromPayload(
             $payload['role_image_artifacts'] ?? null,

@@ -34,6 +34,7 @@ use App\Services\NodeCommandTransport\NodeAgentPushDispatcher;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\WireGuardSelfRouteOutput;
+use App\Services\Operations\FleetUpdatePreMutationSkipRegistry;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
@@ -127,6 +128,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ActivityLogCorrelation::class);
         $this->app->scoped(WebSocketRoleBaselineTiming::class);
         $this->app->singleton(OperationResultRegistry::class);
+        $this->app->singleton(FleetUpdatePreMutationSkipRegistry::class);
         $this->app->afterResolving(DataConfig::class, function (DataConfig $config): void {
             $config->enforceMorphMap([
                 'orbit_instance_driver_config' => OrbitInstanceDriverConfigData::class,

@@ -18,8 +18,10 @@ final readonly class FleetUpdateAgentVerifier
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
+        $skips = app(FleetUpdatePreMutationSkipRegistry::class);
+
         foreach ($this->nodes($operationRun) as $node) {
-            if (! $node->isAgentEligible()) {
+            if (! $node->isAgentEligible() || $skips->skipped($operationRun->id, $node->name)) {
                 continue;
             }
 

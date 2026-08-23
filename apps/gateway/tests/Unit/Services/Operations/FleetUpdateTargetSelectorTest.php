@@ -99,8 +99,20 @@ it('selects only active Agent-eligible workload nodes', function (): void {
         operationType: 'update:all',
     );
 
+    $unmanagedOperator = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'unmanaged-operator',
+            'managed' => false,
+            'platform' => 'macos_15-5',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.46',
+        ]);
+
     expect($operator->isAgentEligible())
         ->toBeTrue()
+        ->and($unmanagedOperator->isAgentEligible())
+        ->toBeFalse()
         ->and($selector->activeNonGatewayRoleNodes()->pluck('name')->all())
         ->toBe([
             'eligible-app',
@@ -109,5 +121,37 @@ it('selects only active Agent-eligible workload nodes', function (): void {
             'vpn-node',
         ])
         ->and($selector->workloadNodes($run)->pluck('name')->all())
-        ->toBe(['eligible-app']);
+        ->toBe(['eligible-app', 'managed-operator']);
+});
+
+it('excludes the caller from remote fan-out even when the caller is a managed client', function (): void {
+    $caller = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'caller-mac',
+            'managed' => true,
+            'platform' => 'macos_15-5',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.50',
+        ]);
+    $remote = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'remote-mac',
+            'managed' => true,
+            'platform' => 'macos_15-5',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.51',
+        ]);
+
+    $selector = app(FleetUpdateTargetSelector::class);
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+        callerNodeId: $caller->id,
+    );
+
+    expect($selector->workloadNodes($run)->pluck('name')->all())
+        ->toBe(['remote-mac']);
 });

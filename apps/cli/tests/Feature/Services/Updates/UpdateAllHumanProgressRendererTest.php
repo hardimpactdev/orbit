@@ -565,6 +565,32 @@ it('does not emit ansi spinner noise or duplicate rows in non-decorated output',
     expect($text)->not->toMatch('/\e\[/');
 });
 
+it('renders a managed Mac skip as Orbit Desktop is not running', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-fleet-versions',
+        'status' => 'done',
+        'message' => 'Done: 1 outdated node found',
+        'update_targets' => ['gateway', 'local', 'mini'],
+    ]);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'gateway',
+        'status' => 'done',
+        'message' => 'Gateway services updated',
+    ]);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'workload.mini',
+        'status' => 'done',
+        'message' => 'Workload node mini skipped: Orbit Desktop is not running',
+    ]);
+    $renderer->finishSuccess($output, '1.2.3');
+
+    expect($output->fetch())->toContain('Skipped: Orbit Desktop is not running');
+});
+
 function stopUpdateAllHumanProgressTicker(UpdateAllHumanProgressRenderer $renderer): void
 {
     $method = new ReflectionMethod(UpdateAllHumanProgressRenderer::class, 'stopTicker');

@@ -53,6 +53,8 @@ final readonly class FleetUpdateInstallResultInspector
             'shared_binary_path' => $payload['shared_binary_path'] ?? null,
             'agent_artifact' => null,
             'agent_service' => null,
+            'desktop_artifact' => null,
+            'pending_desktop_update' => null,
             'role_images' => [],
             'role_image_artifacts' => [],
             'role_image_aliases' => [],

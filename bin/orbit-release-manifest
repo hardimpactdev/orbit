@@ -15,6 +15,8 @@ $options = getopt('', [
     'output::',
     'cli-artifact:',
     'agent-artifact:',
+    'desktop-artifact:',
+    'desktop-signature:',
     'role-image:',
     'role-image-artifact:',
 ]);
@@ -33,6 +35,13 @@ try {
     );
     $cliArtifacts = cli_artifacts(repeated_values($options, 'cli-artifact'), $repository, $version, $assetBaseUrl);
     $agentArtifacts = optional_artifacts(repeated_values($options, 'agent-artifact'), $repository, $version, $assetBaseUrl, 'agent');
+    $desktopArtifacts = desktop_artifacts(
+        repeated_values($options, 'desktop-artifact'),
+        repeated_values($options, 'desktop-signature'),
+        $repository,
+        $version,
+        $assetBaseUrl,
+    );
     $roleImages = role_images(repeated_values($options, 'role-image'));
     $roleImageArtifacts = role_image_artifacts(
         repeated_values($options, 'role-image-artifact'),
@@ -65,6 +74,10 @@ try {
 
     if ($agentArtifacts !== []) {
         $manifest['agent_artifacts'] = $agentArtifacts;
+    }
+
+    if ($desktopArtifacts !== []) {
+        $manifest['desktop_artifacts'] = $desktopArtifacts;
     }
 
     if ($roleImageArtifacts !== []) {
@@ -285,6 +298,65 @@ function artifacts(array $values, string $repository, string $version, string $a
     ksort($artifacts);
 
     return $artifacts;
+}
+
+/**
+ * @param  list<string>  $values
+ * @param  list<string>  $signatures
+ * @return array<string, array{url: string, sha256: string, signature: string, version: string, platform: string, architecture: string}>
+ */
+function desktop_artifacts(
+    array $values,
+    array $signatures,
+    string $repository,
+    string $version,
+    string $assetBaseUrl,
+): array {
+    if ($values === []) {
+        return [];
+    }
+
+    $signatureByPlatform = [];
+
+    foreach ($signatures as $value) {
+        [$platform, $signature] = array_pad(explode('=', $value, 2), 2, null);
+
+        if (! is_string($platform) || trim($platform) === '' || ! is_string($signature) || trim($signature) === '') {
+            fail('Desktop signatures must use platform=signature format.');
+        }
+
+        $signatureByPlatform[trim($platform)] = trim($signature);
+    }
+
+    $artifacts = artifacts($values, $repository, $version, $assetBaseUrl, 'desktop');
+    $desktop = [];
+
+    foreach ($artifacts as $platform => $artifact) {
+        $signature = $signatureByPlatform[$platform] ?? null;
+
+        if (! is_string($signature) || $signature === '') {
+            fail("Desktop artifact [{$platform}] requires --desktop-signature={$platform}=<signature>.");
+        }
+
+        [$os, $architecture] = array_pad(explode('-', $platform, 2), 2, null);
+
+        if (! is_string($os) || $os === '' || ! is_string($architecture) || $architecture === '') {
+            fail("Desktop artifact platform [{$platform}] must be os-architecture.");
+        }
+
+        $desktop[$platform] = [
+            'url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'signature' => $signature,
+            'version' => $version,
+            'platform' => $os,
+            'architecture' => $architecture,
+        ];
+    }
+
+    ksort($desktop);
+
+    return $desktop;
 }
 
 function artifact_url(string $asset, string $repository, string $tag, string $assetBaseUrl): string
