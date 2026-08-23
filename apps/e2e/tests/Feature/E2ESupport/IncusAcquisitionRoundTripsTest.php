@@ -296,9 +296,10 @@ it('does not require a mutation generation when source cleanup is the live workt
     expect($result)
         ->toBe($original)
         ->and($result->getMessage())
-        ->not->toContain('Scoped source cleanup requires an active mutation generation.')
-        ->and(implode("\n", $host->commands))
-        ->toContain("incus delete --force 'clone-operator'")
+        ->not->toContain('Scoped source cleanup requires an active mutation generation.')->and(implode(
+            "\n",
+            $host->commands,
+        ))->toContain("incus delete --force 'clone-operator'")
         ->not->toContain(escapeshellarg(repo_path()));
 });
 

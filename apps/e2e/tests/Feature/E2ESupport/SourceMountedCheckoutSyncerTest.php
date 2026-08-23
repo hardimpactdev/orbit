@@ -559,7 +559,8 @@ it('normalizes staged source modes even when rsync reports no content changes', 
     $path = new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     expect($path)
-        ->not->toBe(repo_path())
+        ->not
+        ->toBe(repo_path())
         ->and(implode("\n", $commands))
         ->toContain('find . -type d -exec chmod a+rx {} +')
         ->toContain('find . -type f -exec chmod a+r {} +');
