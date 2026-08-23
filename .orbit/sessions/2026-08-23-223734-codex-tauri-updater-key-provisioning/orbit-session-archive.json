@@ -1,0 +1,40 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T20:37:34+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-223734-codex-tauri-updater-key-provisioning",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-23T202421Z-71962b413eb7.json",
+        "evidence/tauri-updater-key-host-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T203038Z-c7d07c149156.json",
+        "workers/handoff/review-1-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md",
+        "workers/handoff/tauri-updater-key-impl-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md",
+        "workers/review-1.json",
+        "workers/tauri-updater-key-impl.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-23T202421Z-71962b413eb7.json": "610fcd6364d9722d0a6b893ff97931adba63db826ab2d3d2828a57f97cf85702",
+        "evidence/tauri-updater-key-host-proof.txt": "0f57a9001d5bfbd4a63631dd2d44137da0f1be60329633f5b376de3a6cbe607f",
+        "loop.md": "f7ee6ebf90fab5fce7df8bf03fe58011a5d53b39d49b3bf07f0a5f8b323a1dcc",
+        "quality-gates/quality-check-2026-08-23T203038Z-c7d07c149156.json": "c2c6e2759d4878a2966958fdf74911b5416f93a99013cac624f358ffbf9aaf52",
+        "workers/handoff/review-1-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md": "46905621169b737ea4fa8c5ebc27ac7d4467f754a132f841b3830db217de8925",
+        "workers/handoff/tauri-updater-key-impl-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md": "befad35186b131b25d7b8fb4a34461b732ba51467274e16fe388fc20b83909d4",
+        "workers/review-1.json": "51e786d5dd9099f1463d6179bc75f9d9b0dbe10985a1138c78fb64cafe293ad8",
+        "workers/tauri-updater-key-impl.json": "764360d7ed5fc5120a0c6b6b24dd6aae92471a0d3e7ea23688dde9b90d9ae46c"
+    },
+    "slug": "codex-tauri-updater-key-provisioning",
+    "requested_slug": "codex-tauri-updater-key-provisioning",
+    "compatible_slugs": [
+        "codex-tauri-updater-key-provisioning"
+    ],
+    "branch": "codex/tauri-updater-key-provisioning",
+    "candidate_commit": "caa866fcbdbf3fb2c301e86b29d68ec7abd34905",
+    "accepted_feature_tip": "caa866fcbdbf3fb2c301e86b29d68ec7abd34905",
+    "accepted_main_tip": "7b62e72cd8216897d7bbe1923c72f7dd272e8b8b",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

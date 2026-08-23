@@ -1,0 +1,33 @@
+host-macos updater key proof
+candidate=caa866fcbdbf3fb2c301e86b29d68ec7abd34905
+host=mini
+uname=Darwin arm64
+sw_vers=ProductName:		macOS ProductVersion:		27.0 BuildVersion:		26A5416b 
+pubkey_id=6D3598A45B5D960D
+pubkey_sha256=3f77cf4ff4fee0795199d27fcf0632a97b371513f0872a47cf706f46be73d473
+public_key_path=/Users/nckrtl/.config/orbit/release/tauri-updater.key.pub
+signing=TAURI_SIGNING_PRIVATE_KEY_PATH plus TAURI_SIGNING_PRIVATE_KEY_PASSWORD from 0600 Mini files, never printed
+signed_payload=orbit-desktop-updater-trust-root
+signed_payload_sha256=86bd984e5831ac7a6fee64bb9f5ce7868ae5726cd3d8fc7ee87361cd1c4948f2
+command=cargo test --manifest-path apps/macos/Cargo.toml --lib committed_pubkey_verifies_a_signature_from_the_release_private_key
+expected=committed pubkey verifies the Mini-signed payload and rejects a tampered payload or signature
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (apps/macos/target/debug/deps/orbit_macos-2b7a03e7e9a5ab11)
+
+running 1 test
+test installer::tests::committed_pubkey_verifies_a_signature_from_the_release_private_key ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.00s
+
+host_archive_verify=PASS
+tampered_archive=rejected
+tampered_signature=rejected
+HOST_PROOF_RESULT=passed
+no private key or password recorded
+quality_check=composer quality-check
+quality_check_artifact=.orbit/quality-gates/quality-check-2026-08-23T203038Z-c7d07c149156.json
+quality_check_exit_code=0
+quality_check_candidate=caa866fcbdbf3fb2c301e86b29d68ec7abd34905
+quality_check_dirty=false
+proof_receipt=ok
+venue=host-macos

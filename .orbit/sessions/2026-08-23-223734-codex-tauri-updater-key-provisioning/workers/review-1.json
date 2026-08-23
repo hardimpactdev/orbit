@@ -1,0 +1,33 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-tauri-updater-key-provisioning",
+        "window": "review-1",
+        "pane_id": "%11",
+        "pane_pid": 27014,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning/.orbit/workers/briefs/tauri-updater-key-review.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:36:54Z",
+    "note": "PASS; blast-radius=complete; human-judgment=not-required; candidate=caa866fcbdbf3fb2c301e86b29d68ec7abd34905",
+    "started_at": "2026-08-23T20:31:33Z",
+    "exited_at": "2026-08-23T20:37:25Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning/.orbit/workers/handoff/review-1-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md"
+}

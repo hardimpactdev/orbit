@@ -1,0 +1,31 @@
+{
+    "id": "tauri-updater-key-impl",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=tauri-updater-key-impl",
+        "ORBIT_WORKER_ROLE=impl",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-tauri-updater-key-provisioning",
+        "window": "tauri-updater-key-impl",
+        "pane_id": "%10",
+        "pane_pid": 7010,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning/.orbit/workers/briefs/tauri-updater-key-impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:32:32Z",
+    "note": "candidate=caa866fcbdbf3fb2c301e86b29d68ec7abd34905 loop evidence recorded quality-check artifact named dirty=false",
+    "started_at": "2026-08-23T20:10:37Z",
+    "exited_at": "2026-08-23T20:37:25Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-tauri-updater-key-provisioning/.orbit/workers/handoff/tauri-updater-key-impl-caa866fcbdbf3fb2c301e86b29d68ec7abd34905.md"
+}
