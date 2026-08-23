@@ -42,12 +42,13 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
-5. Before dispatch, map planned owned paths to the Acceptance Venues table; split different non-automated venues into separate feature branches.
+5. Map planned owned paths; split mixed non-automated venues before dispatch.
 
 ### BUILD
 
 Keep docs, tests, and implementation aligned. Start with failing coverage in
-the owning framework. An incidental/status question does not terminate a nonterminal loop, and a blocked sub-scope does not end other unblocked work. Continue until LAND, a required human-judgment handoff, or a whole-goal blocker.
+the owning framework. Prefer a small vertical slice and existing abstractions.
+Status/blocked sub-scopes are not terminal. Continue until LAND, a required human-judgment handoff, or a whole-goal blocker.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
@@ -83,7 +84,10 @@ proof stays in PROVE: `ready`/`accept` refuse, normalize `State` to `prove`
 with `Acceptance: pending` and accepted tips `none`, preserve a still-valid
 Review and Reviewed feature tip, and return through BUILD -> PROVE before
 ACCEPT. A same-candidate proof retry is not a reviewer FIX: the retry keeps
-Review and the reviewed tip; only a reviewer FIX resets them. Do not invent a post-LAND closure proof.
+Review and the reviewed tip; only a reviewer FIX resets them. A repair that
+moves HEAD still needs a refreshed review via the existing identity check. Do
+not invent a post-LAND closure proof. Historical archives stay readable; the
+strict receipt applies to new acceptance or finalization.
 
 After focused checks pass, commit the candidate and confirm a clean worktree
 before the diff-routed broader gate, general review, and acceptance. Run

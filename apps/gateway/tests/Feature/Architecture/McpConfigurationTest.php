@@ -731,14 +731,15 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
     $fastPathBytes = strlen(file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '');
 
     expect(strlen($skill))
-        ->toBeLessThanOrEqual(6779)
+        ->toBeLessThanOrEqual(6720)
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
-        ->toBeLessThanOrEqual(35663)
+        ->toBeLessThanOrEqual(35692)
         ->and($skill)
-        ->toContain('this skill is the compact route')
+        ->toContain('exact checkout identity')
         ->toContain('Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed.')
+        ->toContain('Load owning skills')
         ->toContain('## FRAME')
         ->toContain('## BUILD')
         ->toContain('## PROVE')
@@ -801,7 +802,10 @@ it('keeps reviewer FIX and same-candidate proof retry distinct transitions', fun
     expect($harness)
         ->toContain('A same-candidate proof retry is not a reviewer FIX')
         ->toContain('preserve a still-valid Review and Reviewed feature tip')
-        ->toContain('reset `Reviewed feature tip: none`');
+        ->toContain('reset `Reviewed feature tip: none`')
+        ->toContain('A repair that moves HEAD still needs a refreshed review via the existing identity check')
+        ->toContain('Historical archives stay readable')
+        ->toContain('the strict receipt applies to new acceptance or finalization');
 });
 
 it('keeps the eight high-stakes constraints explicit on the implementing path', function (): void {

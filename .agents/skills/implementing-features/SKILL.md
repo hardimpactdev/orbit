@@ -6,28 +6,28 @@ description: Implement an Orbit feature, bug fix, command change, or docs correc
 # Implementing Orbit Features
 
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
-`HARNESS.md` is the canonical loop contract; this skill is the compact route.
+`HARNESS.md` is the canonical loop contract.
 The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-An incidental/status user question does not terminate a nonterminal loop, and a blocked sub-scope does not end other unblocked work. Continue until LAND, a required human-judgment handoff, or a genuine whole-goal blocker.
+Status questions or blocked sub-scopes do not end the loop. Continue until LAND, a required human-judgment handoff, or a whole-goal blocker.
 Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
 
 ## Non-Negotiable Boundaries
 
-- Work in an isolated worktree created by `bin/orbit-prepare-worktree`. It seeds `.orbit/loop.md` when it is missing; do not recreate the setup flow manually.
+- Work in an isolated worktree created by `bin/orbit-prepare-worktree`. It seeds `.orbit/loop.md` when it is missing. If preparation fails, report the blocker; do not recreate the setup flow manually.
 - Never run, delegate, background, schedule, hook, script, or trigger a `composer test:e2e*` command; canonical rule: `HARNESS.md`.
 - `human-judgment=required` work needs explicit user acceptance before merge. Do not rebase or amend an accepted feature tip.
 
 ## FRAME
 
-1. Confirm checkout identity; route with `AGENT_FAST_PATH.md`.
+1. Confirm exact checkout identity; route with `AGENT_FAST_PATH.md`.
 2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
 3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
-5. Before dispatch, map planned owned paths to the venue table; split different non-automated venues into separate feature branches. Derive the venue: `bin/orbit-feature-acceptance route`.
+5. Map owned paths to the venue table; split mixed non-automated venues before dispatch. Derive the venue: `bin/orbit-feature-acceptance route`.
 
 ## BUILD
 
-Start with failing coverage; capture red, make the smallest change, rerun. Load skills: `command-designer` + `orbit-cli-development`; Spatie + Pest; `orbit-core-development` / `orbit-sdk-development`; `librarian` + `orbit-docs-development`;
+Start with failing coverage; capture red, make the smallest change, rerun. Load owning skills: `command-designer` + `orbit-cli-development`; Spatie + Pest; `orbit-core-development` / `orbit-sdk-development`; `librarian` + `orbit-docs-development`;
 macOS Agent: `tauri-agent-development`.
 
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
@@ -42,7 +42,7 @@ Missing tmux, grok, or claude on the machine is a blocker.
 
 Run the narrowest relevant verification while building, then the diff-routed broader gate: docs-only `composer docs-lint`; non-docs `composer quality-check`. `composer quality-gate:final-check` is an evidence read; it must not rerun Pest or quality-check; missing comparable timing means `timing analysis was skipped`.
 
-When the Goal claims runtime reachability or convergence, proof must directly exercise the claimed final outcome. A failed, excluded, still-required, or deferred final hop means `Verification.runtime` cannot be recorded as `passed`; stay in PROVE. For non-`automated` venues, record the structured runtime receipt per `HARNESS.md`. A same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX resets them.
+When the Goal claims runtime reachability or convergence, proof must directly exercise the claimed final outcome. A failed, excluded, still-required, or deferred final hop means `Verification.runtime` cannot be recorded as `passed`; stay in PROVE. For non-`automated` venues, record the structured runtime receipt on the `Verification.runtime` row per `HARNESS.md` PROVE. A same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX resets them.
 
 After focused checks pass, commit the candidate and confirm the worktree is clean. Run focused Mago formatting and linting for every changed PHP file, including tests, before each candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
 and reviewer consume the exact-SHA receipt without rerunning it.
