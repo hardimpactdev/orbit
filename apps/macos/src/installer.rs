@@ -559,6 +559,47 @@ mod tests {
     }
 
     #[test]
+    fn embeds_the_committed_tauri_conf_updater_pubkey() {
+        let conf = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"));
+        let committed = crate::updater_pubkey::resolve_tauri_updater_pubkey(conf, None)
+            .expect("committed pubkey");
+        let embedded = trusted_updater_pubkey().expect("embedded pubkey");
+        assert_eq!(committed, embedded);
+        assert_eq!(committed, env!("ORBIT_UPDATER_PUBKEY"));
+
+        let decoded = String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(&committed)
+                .expect("decode pubkey"),
+        )
+        .expect("utf8 pubkey");
+        assert!(
+            decoded.contains("minisign public key: 6D3598A45B5D960D"),
+            "committed updater pubkey must be the Mini release public key"
+        );
+    }
+
+    #[test]
+    fn committed_pubkey_verifies_a_signature_from_the_release_private_key() {
+        let payload = b"orbit-desktop-updater-trust-root";
+        let signature = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRTmxsMWJwSmcxYlo3VW9ybzdqL2JKNDZ3L3ZONXJNYjl3R2xwWDlCZ1NqZE04dUZ2ckY1UHFjWExFS1dIckd3elNPUHhBbXYvOGVWMkhmbjl5enFYY01DaTdteG4vWFFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg3NTE2MTA3CWZpbGU6YXJjaGl2ZS5iaW4KSW9Ec0VpSUk3ZHBFVlBSQlgreFlodXNLVC9LNWRnTTRNWGZCOXNzeW9rcjByWmFRYmZndU5LQjdadnE2OC9ENVRqS3hOOUhjSkszZjM0ckQ3OElLQlE9PQo=";
+        let pubkey = trusted_updater_pubkey().expect("embedded pubkey");
+
+        verify_updater_signature(payload, signature, &pubkey).expect("release key signature");
+        assert_eq!(
+            verify_updater_signature(b"tampered-archive", signature, &pubkey),
+            Err(InstallError::InvalidSignature)
+        );
+
+        let mut tampered_signature = signature.to_string();
+        tampered_signature.replace_range(80..81, "A");
+        assert_eq!(
+            verify_updater_signature(payload, &tampered_signature, &pubkey),
+            Err(InstallError::InvalidSignature)
+        );
+    }
+
+    #[test]
     fn verifies_signatures_against_the_embedded_trusted_pubkey() {
         let pubkey = trusted_updater_pubkey().expect("embedded pubkey");
         assert_eq!(pubkey, env!("ORBIT_UPDATER_PUBKEY"));

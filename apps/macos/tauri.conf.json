@@ -25,7 +25,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ4RkQ5QzgwQTJBNTE0QUYKUldTdkZLV2lnSno5U0VoRVdUZmpDWGtCN0trOVF0ZWZDY0VXWmlhZ21NakNkZCswMDFqTGprR0EK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZEMzU5OEE0NUI1RDk2MEQKUldRTmxsMWJwSmcxYmZ6cUZrd2tBYzFqSTlGTU8ycFppNHk3bXp4MHVmMEkyRkdRTU0vOUVCK3MK",
       "endpoints": [
         "https://github.com/hardimpactdev/orbit/releases/latest/download/latest.json"
       ]
