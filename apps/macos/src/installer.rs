@@ -1,5 +1,7 @@
 use crate::paths::is_protected_system_launcher;
-use crate::pending_update::{file_sha256, PendingDesktopUpdate, PendingUpdateError};
+use crate::pending_update::{file_sha256, sha256_hex, PendingDesktopUpdate, PendingUpdateError};
+use base64::Engine;
+use minisign_verify::{PublicKey, Signature};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub enum InstallError {
     UnsafePath,
     HashMismatch,
+    InvalidSignature,
     Io(String),
 }
 
@@ -101,25 +104,86 @@ pub fn reconcile_installed_identity(
     Ok(false)
 }
 
-pub fn desktop_archive_ready(update: &PendingDesktopUpdate) -> Result<(), InstallError> {
-    let staged = PathBuf::from(&update.desktop.staged_path);
+pub fn trusted_updater_pubkey() -> Result<String, InstallError> {
+    let config: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tauri.conf.json"
+    )))
+    .map_err(|error| InstallError::Io(error.to_string()))?;
 
-    if !crate::pending_update::staged_bytes_match(&staged, &update.desktop.sha256)? {
-        return Err(InstallError::HashMismatch);
+    config
+        .get("plugins")
+        .and_then(|plugins| plugins.get("updater"))
+        .and_then(|updater| updater.get("pubkey"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+        .map(ToString::to_string)
+        .ok_or(InstallError::InvalidSignature)
+}
+
+pub fn verify_updater_signature(
+    data: &[u8],
+    signature: &str,
+    pubkey: &str,
+) -> Result<(), InstallError> {
+    if signature.trim().is_empty() || pubkey.trim().is_empty() {
+        return Err(InstallError::InvalidSignature);
     }
 
-    if update.desktop.signature.trim().is_empty() {
-        return Err(InstallError::HashMismatch);
-    }
+    let public_key_text = decode_minisign_text(pubkey)?;
+    let signature_text = decode_minisign_text(signature)?;
+    let public_key =
+        PublicKey::decode(&public_key_text).map_err(|_| InstallError::InvalidSignature)?;
+    let decoded_signature =
+        Signature::decode(&signature_text).map_err(|_| InstallError::InvalidSignature)?;
+
+    public_key
+        .verify(data, &decoded_signature, true)
+        .map_err(|_| InstallError::InvalidSignature)?;
 
     Ok(())
+}
+
+pub fn desktop_archive_ready(update: &PendingDesktopUpdate) -> Result<(), InstallError> {
+    desktop_archive_ready_with_pubkey(update, &trusted_updater_pubkey()?)
+}
+
+pub fn desktop_archive_ready_with_pubkey(
+    update: &PendingDesktopUpdate,
+    pubkey: &str,
+) -> Result<(), InstallError> {
+    let staged = PathBuf::from(&update.desktop.staged_path);
+    let bytes = fs::read(&staged).map_err(|_| PendingUpdateError::Incomplete)?;
+
+    if sha256_hex(&bytes) != update.desktop.sha256 {
+        return Err(InstallError::HashMismatch);
+    }
+
+    verify_updater_signature(&bytes, &update.desktop.signature, pubkey)
+}
+
+fn decode_minisign_text(encoded: &str) -> Result<String, InstallError> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded.trim())
+        .map_err(|_| InstallError::InvalidSignature)?;
+
+    String::from_utf8(decoded).map_err(|_| InstallError::InvalidSignature)
 }
 
 pub fn install_desktop_bundle(
     update: &PendingDesktopUpdate,
     destination_app: &Path,
 ) -> Result<(), InstallError> {
-    desktop_archive_ready(update)?;
+    install_desktop_bundle_with_pubkey(update, destination_app, &trusted_updater_pubkey()?)
+}
+
+pub fn install_desktop_bundle_with_pubkey(
+    update: &PendingDesktopUpdate,
+    destination_app: &Path,
+    pubkey: &str,
+) -> Result<(), InstallError> {
+    desktop_archive_ready_with_pubkey(update, pubkey)?;
 
     if destination_app.as_os_str().is_empty() {
         return Err(InstallError::UnsafePath);
@@ -301,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_a_verified_desktop_archive_into_the_destination_app() {
+    fn rejects_invalid_updater_signatures_without_replacing_the_app() {
         let root = temp_dir();
         let source_app = root.join("Orbit Desktop.app");
         fs::create_dir_all(source_app.join("Contents/MacOS")).expect("app");
@@ -324,16 +388,73 @@ mod tests {
         let mut update = update_for("agent-v2", "cli-v2", "desktop");
         update.desktop.sha256 = digest;
         update.desktop.staged_path = archive.to_string_lossy().into_owned();
+        update.desktop.signature = "dW50cnVzdGVkIGNvbW1lbnQ6IG5vdC1hLXNpZ25hdHVyZQ==".to_string();
 
         let destination = root.join("installed/Orbit Desktop.app");
-        install_desktop_bundle(&update, &destination).expect("install desktop");
+        fs::create_dir_all(destination.join("Contents/MacOS")).expect("existing");
+        fs::write(
+            destination.join("Contents/MacOS/orbit-macos"),
+            b"desktop-v1",
+        )
+        .expect("existing bin");
+
+        let error = desktop_archive_ready(&update).expect_err("invalid signature");
+        assert_eq!(error, InstallError::InvalidSignature);
+        let install_error = install_desktop_bundle(&update, &destination).expect_err("rejected");
+        assert_eq!(install_error, InstallError::InvalidSignature);
+        assert_eq!(
+            fs::read_to_string(destination.join("Contents/MacOS/orbit-macos")).expect("kept"),
+            "desktop-v1"
+        );
+
+        update.desktop.signature.clear();
+        assert_eq!(
+            desktop_archive_ready(&update).expect_err("empty"),
+            InstallError::InvalidSignature
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn extracts_a_verified_desktop_archive_into_the_destination_app() {
+        let root = temp_dir();
+        let source_app = root.join("Orbit Desktop.app");
+        fs::create_dir_all(source_app.join("Contents/MacOS")).expect("app");
+        fs::write(source_app.join("Contents/MacOS/orbit-macos"), b"desktop-v2").expect("bin");
+        let archive = root.join("desktop.tar.gz");
+        let status = std::process::Command::new("tar")
+            .args([
+                "-czf",
+                &archive.to_string_lossy(),
+                "-C",
+                &root.to_string_lossy(),
+                "Orbit Desktop.app",
+            ])
+            .status()
+            .expect("tar");
+        assert!(status.success());
+        fs::remove_dir_all(&source_app).expect("remove source");
+
+        let bytes = fs::read(&archive).expect("read archive");
+        let digest = sha256_hex(&bytes);
+        let (pubkey, signature) = sign_archive(&bytes);
+        let mut update = update_for("agent-v2", "cli-v2", "desktop");
+        update.desktop.sha256 = digest;
+        update.desktop.staged_path = archive.to_string_lossy().into_owned();
+        update.desktop.signature = signature;
+
+        let destination = root.join("installed/Orbit Desktop.app");
+        install_desktop_bundle_with_pubkey(&update, &destination, &pubkey)
+            .expect("install desktop");
         assert_eq!(
             fs::read_to_string(destination.join("Contents/MacOS/orbit-macos")).expect("read"),
             "desktop-v2"
         );
 
         fs::write(&archive, b"tampered-archive").expect("tamper");
-        let error = install_desktop_bundle(&update, &destination).expect_err("mismatch");
+        let error = install_desktop_bundle_with_pubkey(&update, &destination, &pubkey)
+            .expect_err("mismatch");
         assert_eq!(error, InstallError::HashMismatch);
         assert_eq!(
             fs::read_to_string(destination.join("Contents/MacOS/orbit-macos")).expect("kept"),
@@ -341,5 +462,38 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn verifies_signatures_against_the_embedded_trusted_pubkey() {
+        let pubkey = trusted_updater_pubkey().expect("embedded pubkey");
+        assert!(pubkey.starts_with("dW50cnVzdGVk"));
+        assert_eq!(
+            verify_updater_signature(b"desktop-archive", "not-base64", &pubkey),
+            Err(InstallError::InvalidSignature)
+        );
+
+        let (test_pubkey, signature) = sign_archive(b"desktop-archive");
+        verify_updater_signature(b"desktop-archive", &signature, &test_pubkey).expect("valid");
+        assert_eq!(
+            verify_updater_signature(b"other-bytes", &signature, &test_pubkey),
+            Err(InstallError::InvalidSignature)
+        );
+        assert_eq!(
+            verify_updater_signature(b"desktop-archive", &signature, &pubkey),
+            Err(InstallError::InvalidSignature)
+        );
+    }
+
+    fn sign_archive(bytes: &[u8]) -> (String, String) {
+        let keypair = minisign::KeyPair::generate_unencrypted_keypair().expect("keypair");
+        let signature =
+            minisign::sign(Some(&keypair.pk), &keypair.sk, bytes, None, None).expect("sign");
+        let pubkey = keypair.pk.to_box().expect("public key box").to_string();
+
+        (
+            base64::engine::general_purpose::STANDARD.encode(pubkey),
+            base64::engine::general_purpose::STANDARD.encode(signature.into_string()),
+        )
     }
 }

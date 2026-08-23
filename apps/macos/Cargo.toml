@@ -13,6 +13,8 @@ name = "orbit-macos"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
+minisign-verify = "0.2"
 orbit-agent = { path = "../agent" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -22,6 +24,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 ureq = { version = "2", features = ["native-certs"] }
 url = "2"
+
+[dev-dependencies]
+minisign = "0.7"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
