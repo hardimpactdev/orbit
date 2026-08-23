@@ -2031,7 +2031,15 @@ function worker_tools_make_prepare_repo(string $root, string $stubBin): void
     copy(repo_path('LOOP.md.example'), $root.'/LOOP.md.example');
     file_put_contents($root.'/bin/quality-gate-seed-baselines', data: "#!/usr/bin/env bash\nexit 0\n");
     chmod($root.'/bin/quality-gate-seed-baselines', permissions: 0o755);
-    file_put_contents($stubBin.'/composer', data: "#!/usr/bin/env bash\nexit 0\n");
+    file_put_contents($stubBin.'/composer', data: <<<'STUB'
+        #!/usr/bin/env bash
+        if [ "$*" = "install" ]; then
+            mkdir -p vendor
+            printf '<?php\n' >vendor/autoload.php
+        fi
+        exit 0
+
+        STUB);
     file_put_contents($stubBin.'/npm', data: "#!/usr/bin/env bash\nexit 0\n");
     chmod($stubBin.'/composer', permissions: 0o755);
     chmod($stubBin.'/npm', permissions: 0o755);
