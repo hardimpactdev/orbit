@@ -13,7 +13,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 
 ## Non-Negotiable Boundaries
 
-- Work in an isolated worktree created by `bin/orbit-prepare-worktree`. It seeds `.orbit/loop.md` when it is missing. If preparation fails, report the blocker; do not recreate the setup flow manually.
+- Work in an isolated worktree created by `bin/orbit-prepare-worktree`. It seeds `.orbit/loop.md` when it is missing; do not recreate the setup flow manually.
 - Never run, delegate, background, schedule, hook, script, or trigger a `composer test:e2e*` command; canonical rule: `HARNESS.md`.
 - `human-judgment=required` work needs explicit user acceptance before merge. Do not rebase or amend an accepted feature tip.
 
@@ -21,7 +21,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 
 1. Confirm checkout identity; route with `AGENT_FAST_PATH.md`.
 2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
-3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
+3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. `primitive=`/`transitions=` per `HARNESS.md`. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
 5. Before dispatch, map planned owned paths to the venue table; split different non-automated venues into separate feature branches. Derive the venue: `bin/orbit-feature-acceptance route`.
 
