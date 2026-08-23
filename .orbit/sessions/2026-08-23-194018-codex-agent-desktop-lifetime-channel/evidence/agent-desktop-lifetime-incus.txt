@@ -1,0 +1,37 @@
+Orbit Agent desktop lifetime retained-Incus proof
+candidate=42c1708d262051a0ee03a8169928440ab6fb1818
+host=beast
+os=Linux 6.8.0-136-generic x86_64
+instance=orbit-e2e-lt42c170-dev
+kind=app-dev clone of orbit-template-app-dev-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base
+source=/home/nckrtl/orbit/.worktrees/codex-agent-desktop-lifetime-channel mounted at /home/orbit/orbit
+binary=apps/agent/target/release/orbit-agent sha256=ba7cf0bd8293c7b35c3cabdf32e8efd650eb136e0c4f2accbb850ee6283c93f8
+quality-check=.orbit/quality-gates/quality-check-2026-08-23T172331Z-7e5f1f130f74.json
+driver=python subprocess.PIPE close_fds=True start_new_session=True
+stdin=one-way pipe parent write-end only; child /proc/pid/fd/0 flags=00 O_RDONLY
+timeout=poll then SIGKILL; never wait while the child is still running
+
+----- guest transcript -----
+candidate_sha=42c1708d262051a0ee03a8169928440ab6fb1818
+binary_sha256=ba7cf0bd8293c7b35c3cabdf32e8efd650eb136e0c4f2accbb850ee6283c93f8
+bind_ip=10.232.1.164
+host=orbit-e2e-lt42c170-dev
+driver=python_subprocess_pipe close_fds=True
+lifetime.rs=present
+===== DESKTOP LIFETIME =====
+desktop_pid=2008
+desktop_stdin=fd0=pipe:[18454] flags=00
+desktop_open_1={"status":"ok"}
+desktop_alive_while_open=yes pid=2008
+desktop_exited_after_eof=yes exit=0
+desktop_stderr=Orbit Agent command listener on http://10.232.1.164:9477 Orbit Agent local status listener on http://127.0.0.1:9477 
+desktop_health_after_eof=unreachable:URLError
+===== STANDALONE =====
+standalone_pid=2011
+standalone_stdin=fd0=pipe:[18469] flags=00
+standalone_open_1=unreachable:URLError
+standalone_open_2={"status":"ok"}
+standalone_health_after_stdin_eof={"status":"ok"}
+standalone_alive_after_stdin_eof=yes pid=2011
+standalone_stopped_by_signal=yes
+RESULT=PASS

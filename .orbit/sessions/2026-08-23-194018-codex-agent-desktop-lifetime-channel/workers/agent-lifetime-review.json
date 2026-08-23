@@ -1,0 +1,32 @@
+{
+    "id": "agent-lifetime-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=agent-lifetime-review",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-agent-desktop-lifetime-channel",
+        "window": "agent-lifetime-review",
+        "pane_id": "%6",
+        "pane_pid": 1800332,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-agent-desktop-lifetime-channel",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-agent-desktop-lifetime-channel/.orbit/workers/briefs/agent-lifetime-review.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T17:39:03Z",
+    "note": "PASS - candidate 42c1708d26; blast radius complete; human-judgment not-required",
+    "started_at": "2026-08-23T17:33:27Z",
+    "exited_at": "2026-08-23T17:40:13Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-agent-desktop-lifetime-channel/.orbit/workers/handoff/agent-lifetime-review-42c1708d262051a0ee03a8169928440ab6fb1818.md"
+}
