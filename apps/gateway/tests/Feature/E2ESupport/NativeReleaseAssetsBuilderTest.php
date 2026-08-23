@@ -40,17 +40,18 @@ it('writes an atomic Darwin arm64 Agent bundle with a rigid checksum manifest', 
             ->toBeEmpty();
 
         $manifest = native_release_assets_parse_manifest("{$fixture['output']}/native-assets.env");
-        expect($manifest)->toMatchArray([
-            'schema' => '2',
-            'commit' => str_repeat('a', 40),
-            'version' => '0.1.200',
-            'builder_os' => 'Darwin',
-            'builder_arch' => 'arm64',
-            'sha256_agent_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/orbit-agent-macos-arm64"),
-            'sha256_desktop_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.app.tar.gz"),
-            'sha256_dmg_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.dmg"),
-            'desktop_signature_darwin_arm64' => 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl',
-        ])
+        expect($manifest)
+            ->toMatchArray([
+                'schema' => '2',
+                'commit' => str_repeat('a', 40),
+                'version' => '0.1.200',
+                'builder_os' => 'Darwin',
+                'builder_arch' => 'arm64',
+                'sha256_agent_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/orbit-agent-macos-arm64"),
+                'sha256_desktop_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.app.tar.gz"),
+                'sha256_dmg_darwin_arm64' => hash_file('sha256', "{$fixture['output']}/Orbit.dmg"),
+                'desktop_signature_darwin_arm64' => 'dW50cnVzdGVkLXRlc3Qtc2lnbmF0dXJl',
+            ])
             ->and("{$fixture['output']}/Orbit.app.tar.gz")
             ->toBeFile()
             ->and("{$fixture['output']}/Orbit.app.tar.gz.sig")

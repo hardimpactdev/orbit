@@ -190,7 +190,7 @@ it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub
         ->toContain('Orbit.app.tar.gz')
         ->toContain('Orbit.app.tar.gz.sig')
         ->toContain('Orbit.dmg')
-        ->toContain("desktop_artifacts")
+        ->toContain('desktop_artifacts')
         // TypeScript SDK is independently versioned and published from its
         // package repository OIDC workflow, not monorepo orbit-release.yml.
         ->not->toContain('prepare_and_verify_sdk_typescript')
