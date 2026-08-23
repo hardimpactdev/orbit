@@ -22,7 +22,7 @@ it('rejects uppercase-ineligible topology names and synthetic proof prefixes', f
         ->toThrow(InvalidArgumentException::class, 'target identity mismatch');
 });
 
-it('does not skip candidate equality when remote git metadata is absent', function (): void {
+it('fails closed when local and remote checkout digests diverge', function (): void {
     $bound = firewall_proof_bind([
         'candidate' => str_repeat('a', times: 40),
         'local_checkout_digest' => str_repeat('b', times: 64),
@@ -38,8 +38,11 @@ it('does not skip candidate equality when remote git metadata is absent', functi
 
     expect($bound['checkout_digest'])
         ->toBe(str_repeat('b', times: 64))
+        ->and($bound['binding'])
+        ->toBe(FIREWALL_PROOF_BINDING)
         ->and($bound)
-        ->not->toHaveKey('cli_digest');
+        ->not->toHaveKey('cli_digest')->and($bound)
+        ->not->toHaveKey('remote_head');
 
     expect(fn () => firewall_proof_bind([
         'candidate' => str_repeat('a', times: 40),
@@ -56,26 +59,91 @@ it('does not skip candidate equality when remote git metadata is absent', functi
         ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
 });
 
-it('rejects a remote HEAD that does not equal the candidate', function (): void {
-    expect(fn () => firewall_proof_bind([
-        'candidate' => str_repeat('a', times: 40),
-        'local_checkout_digest' => str_repeat('b', times: 64),
-        'remote_checkout_digest' => str_repeat('b', times: 64),
-        'target' => 'dev-501dc2',
-        'host' => 'beast',
-        'instances' => [
-            'operator' => 'orbit-e2e-dev-501dc2-operator',
-            'gateway' => 'orbit-e2e-dev-501dc2-gateway',
-            'dev' => 'orbit-e2e-dev-501dc2-dev',
+it('includes synced paths outside the former firewall whitelist', function (): void {
+    $paths = firewall_proof_list_synced_paths(repo_path());
+
+    expect($paths)
+        ->toContain('apps/cli/app/Commands/Firewall/FirewallAllowCommand.php')
+        ->and($paths)
+        ->toContain('packages/sdk/src/Requests/Firewall/StoreFirewallRuleRequest.php')
+        ->and($paths)
+        ->toContain('apps/gateway/app/Http/Controllers/Api/FirewallRuleStoreController.php');
+});
+
+it('fails closed on a missing extra or mismatched synced path', function (): void {
+    expect(fn () => firewall_proof_assert_synced_trees(
+        ['apps/cli/orbit' => str_repeat('a', times: 64)],
+        [],
+    ))
+        ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+
+    expect(fn () => firewall_proof_assert_synced_trees(
+        ['apps/cli/orbit' => str_repeat('a', times: 64)],
+        [
+            'apps/cli/orbit' => str_repeat('a', times: 64),
+            'packages/sdk/src/GatewayRequest.php' => str_repeat('b', times: 64),
         ],
-        'remote_head' => str_repeat('c', times: 40),
-    ]))
-        ->toThrow(InvalidArgumentException::class, 'candidate SHA mismatch');
+    ))
+        ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+
+    expect(fn () => firewall_proof_assert_synced_trees(
+        ['apps/cli/orbit' => str_repeat('a', times: 64)],
+        ['apps/cli/orbit' => str_repeat('b', times: 64)],
+    ))
+        ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+});
+
+it('treats remote-only paths as extras and ignores local ignored files', function (): void {
+    $root = sys_get_temp_dir().'/firewall-proof-extras-'.bin2hex(random_bytes(4));
+
+    try {
+        mkdir($root.'/ignored', recursive: true);
+        file_put_contents($root.'/ignored/local.txt', 'keep');
+
+        $parsed = firewall_proof_parse_remote_tree_output(
+            "H\tapps/cli/orbit\t"
+            .str_repeat('a', times: 64)
+            ."\n"
+            ."H\tmissing.txt\t\n"
+            ."E\tignored/local.txt\n"
+            ."E\tleftover-tracked.php\n",
+        );
+
+        expect($parsed['files'])
+            ->toHaveKey('apps/cli/orbit')
+            ->not
+            ->toHaveKey('missing.txt')
+            ->and($parsed['extras'])
+            ->toContain('ignored/local.txt')
+            ->toContain('leftover-tracked.php');
+
+        $remote = firewall_proof_include_unexplained_extras(
+            $parsed['files'],
+            $parsed['extras'],
+            $root,
+        );
+
+        expect($remote)
+            ->toHaveKey('apps/cli/orbit')
+            ->toHaveKey('leftover-tracked.php')
+            ->not->toHaveKey('ignored/local.txt');
+
+        expect(fn () => firewall_proof_assert_synced_trees(
+            ['apps/cli/orbit' => str_repeat('a', times: 64)],
+            $remote,
+        ))
+            ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+    } finally {
+        @unlink($root.'/ignored/local.txt');
+        @rmdir($root.'/ignored');
+        @rmdir($root);
+    }
 });
 
 it('validates retained state identity before a sync would run', function (): void {
     $state = [
         'candidate' => str_repeat('a', times: 40),
+        'binding' => FIREWALL_PROOF_BINDING,
         'checkout_digest' => str_repeat('b', times: 64),
         'target' => 'dev-501dc2',
         'host' => 'beast',

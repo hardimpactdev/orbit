@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Ubuntu firewall-target eligibility. Exact lowercase `ubuntu` or a
- * literal lowercase `ubuntu_` prefix. SQL lower(platform) = platform
- * keeps case-insensitive LIKE from admitting `Ubuntu_24-04`. The LIKE
- * escape keeps hyphenated values such as `ubuntu-24-04` ineligible.
+ * literal lowercase `ubuntu_` prefix. Any suffix text after that prefix
+ * is allowed. SQLite GLOB is case-sensitive and treats `_` as a literal,
+ * so hyphenated values such as `ubuntu-24-04` stay ineligible.
  */
 final class FirewallTargetPlatform
 {
@@ -22,11 +22,7 @@ final class FirewallTargetPlatform
     public static function constrainUbuntu(Builder $query): void
     {
         $query
-            ->whereRaw('lower(platform) = platform')
-            ->where(function (Builder $ubuntuQuery): void {
-                $ubuntuQuery
-                    ->where('platform', 'ubuntu')
-                    ->orWhereRaw("platform like ? escape '!'", ['ubuntu!_%']);
-            });
+            ->where('platform', 'ubuntu')
+            ->orWhereRaw('platform glob ?', ['ubuntu_*']);
     }
 }

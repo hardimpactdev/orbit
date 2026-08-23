@@ -78,6 +78,8 @@ try {
     $receipt = firewall_proof_receipt([
         'candidate' => $identity['candidate'],
         'target' => $identity['target'],
+        'binding' => $identity['binding'],
+        'checkout_digest' => $identity['checkout_digest'],
         'expected' => 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
         'observed' => $observed,
         'result' => 'passed',
@@ -97,6 +99,8 @@ try {
         $receipt = firewall_proof_receipt([
             'candidate' => $identity['candidate'],
             'target' => $identity['target'],
+            'binding' => $identity['binding'],
+            'checkout_digest' => $identity['checkout_digest'],
             'expected' => 'allow-list-doctor-remove pass with owned comment and unrelated same-port preserved',
             'observed' => $exception->getMessage(),
             'result' => 'failed',
@@ -196,26 +200,24 @@ function acquire_firewall_proof_topology(string $root, string $candidate, string
 
 /**
  * @param  array<string, mixed>  $topology
- * @return array{candidate: string, checkout_digest: string, target: string, host: string, instances: array{operator: string, gateway: string, dev: string}}
+ * @return array{candidate: string, binding: string, checkout_digest: string, target: string, host: string, instances: array{operator: string, gateway: string, dev: string}}
  */
 function bind_remote_firewall_proof_identity(string $root, string $candidate, array $topology): array
 {
     $instances = is_array($topology['instances'] ?? null) ? $topology['instances'] : [];
     $target = is_string($topology['id'] ?? null) ? $topology['id'] : '';
     $gateway = proof_instance(['instances' => $instances], 'gateway');
-    $checkout = proof_checkout($topology, 'gateway');
-    $localDigest = firewall_proof_digest_checkout($root);
-    $remoteDigest = observe_remote_checkout_digest($gateway, $checkout);
-    $remoteHead = observe_remote_head($gateway, $checkout);
+    $localFiles = firewall_proof_local_synced_files($root);
+    $remoteFiles = observe_remote_synced_tree($gateway, $localFiles, $root);
+    firewall_proof_assert_synced_trees($localFiles, $remoteFiles);
 
     return firewall_proof_bind([
         'candidate' => $candidate,
-        'local_checkout_digest' => $localDigest,
-        'remote_checkout_digest' => $remoteDigest,
+        'local_checkout_digest' => firewall_proof_tree_digest($localFiles),
+        'remote_checkout_digest' => firewall_proof_tree_digest($remoteFiles),
         'target' => $target,
         'instances' => $instances,
         'host' => is_string($topology['host'] ?? null) ? strtolower($topology['host']) : FIREWALL_PROOF_HOST,
-        'remote_head' => $remoteHead,
     ]);
 }
 
@@ -477,44 +479,90 @@ function retained_incus_manifest(string $root): ?array
     return null;
 }
 
-function observe_remote_head(string $instance, string $checkout): ?string
+/**
+ * @param  array<string, string>  $localFiles
+ * @return array<string, string>
+ */
+function observe_remote_synced_tree(string $instance, array $localFiles, string $localRoot): array
 {
-    foreach ([$checkout, '/home/orbit/orbit'] as $path) {
-        $output = trim(beast_incus_exec(
-            $instance,
-            'git -C '.escapeshellarg($path).' rev-parse HEAD',
-            asOrbit: true,
-            allowFailure: true,
-        ));
-
-        if (preg_match('/^[a-f0-9]{40}$/', $output) === 1) {
-            return $output;
-        }
-    }
-
-    return null;
+    $excludes = var_export(firewall_proof_synced_exclude_patterns(), true);
+    $code = <<<PHP
+\$excludes = {$excludes};
+\$root = getenv('ORBIT_PROOF_ROOT');
+if (! is_string(\$root) || \$root === '' || ! is_dir(\$root)) {
+    fwrite(STDERR, "checkout digest mismatch\\n");
+    exit(1);
 }
-
-function observe_remote_checkout_digest(string $instance, string $checkout): string
-{
-    $parts = [];
-
-    foreach (firewall_proof_checkout_paths() as $relative) {
-        $path = $checkout.'/'.$relative;
-        $digest = trim(beast_incus_exec(
-            $instance,
-            'php -r '.escapeshellarg('echo hash_file("sha256", '.var_export($path, true).') ?: "";'),
-            asOrbit: true,
-        ));
-
-        if (preg_match('/^[a-f0-9]{64}$/', $digest) !== 1) {
-            throw new InvalidArgumentException('checkout digest mismatch');
+function proof_norm(string \$path): string {
+    \$path = str_replace('\\\\', '/', \$path);
+    return str_starts_with(\$path, './') ? substr(\$path, 2) : ltrim(\$path, '/');
+}
+function proof_excluded(string \$path, array \$excludes): bool {
+    \$path = proof_norm(\$path);
+    if (\$path === '') {
+        return true;
+    }
+    foreach (\$excludes as \$pattern) {
+        \$pattern = proof_norm(\$pattern);
+        if (\$path === \$pattern || str_starts_with(\$path, \$pattern.'/')) {
+            return true;
         }
+        if (fnmatch(\$pattern, \$path)) {
+            return true;
+        }
+    }
+    return false;
+}
+\$expected = [];
+foreach (explode("\\0", (string) stream_get_contents(STDIN)) as \$path) {
+    \$path = proof_norm(\$path);
+    if (\$path === '') {
+        continue;
+    }
+    \$expected[\$path] = true;
+    \$full = \$root.'/'.\$path;
+    if (is_file(\$full)) {
+        echo "H\\t{\$path}\\t".hash_file('sha256', \$full)."\\n";
+    }
+}
+\$iterator = new RecursiveIteratorIterator(
+    new RecursiveCallbackFilterIterator(
+        new RecursiveDirectoryIterator(\$root, FilesystemIterator::SKIP_DOTS),
+        static function (\$current) use (\$root, \$excludes): bool {
+            \$rel = proof_norm(substr(\$current->getPathname(), strlen(\$root) + 1));
+            return ! proof_excluded(\$rel, \$excludes);
+        }
+    )
+);
+foreach (\$iterator as \$file) {
+    if (! \$file->isFile()) {
+        continue;
+    }
+    \$rel = proof_norm(substr(\$file->getPathname(), strlen(\$root) + 1));
+    if (\$rel === '' || isset(\$expected[\$rel])) {
+        continue;
+    }
+    echo "E\\t{\$rel}\\n";
+}
+PHP;
 
-        $parts[] = $relative.':'.$digest;
+    $result = firewall_proof_run_command([
+        'ssh',
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=10',
+        FIREWALL_PROOF_HOST,
+        'incus exec '.escapeshellarg($instance).' -- env ORBIT_PROOF_ROOT='.escapeshellarg(FIREWALL_PROOF_TRANSPORT_CHECKOUT).' php -r '.escapeshellarg($code),
+    ], getcwd() ?: '/', 600, implode("\0", array_keys($localFiles)));
+
+    if ($result['exit'] !== 0) {
+        throw new RuntimeException('incus exec '.$instance.' failed: '.$result['stderr'].$result['stdout']);
     }
 
-    return hash('sha256', implode("\n", $parts));
+    $parsed = firewall_proof_parse_remote_tree_output($result['stdout']);
+
+    return firewall_proof_include_unexplained_extras($parsed['files'], $parsed['extras'], $localRoot);
 }
 
 /**
