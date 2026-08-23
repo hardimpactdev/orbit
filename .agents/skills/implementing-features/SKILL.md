@@ -19,7 +19,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 ## FRAME
 
 1. Confirm exact checkout identity; route with `AGENT_FAST_PATH.md`.
-2. Resolve outcome, owned paths, constraints, and exclusions against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
+2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
 3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
 5. Derive the venue: `bin/orbit-feature-acceptance route`.
@@ -39,7 +39,7 @@ Missing tmux, grok, or claude on the machine is a blocker.
 
 ## PROVE
 
-Narrowest checks first, then the diff-routed gate: docs-only `composer docs-lint`; non-docs `composer quality-check`; PTY only for TTY/stream/liveness risk. `composer quality-gate:final-check` is an evidence read; it must not rerun Pest or quality-check.
+Run the narrowest relevant verification while building, then the diff-routed broader gate: docs-only `composer docs-lint`; non-docs `composer quality-check`. `composer quality-gate:final-check` is an evidence read; it must not rerun Pest or quality-check; missing comparable timing means `timing analysis was skipped`.
 
 When the Goal claims runtime reachability or convergence, proof must directly exercise the claimed final outcome. A failed, excluded, still-required, or deferred final hop means `Verification.runtime` cannot be recorded as `passed`; stay in PROVE. For non-`automated` venues, record the structured runtime receipt on the `Verification.runtime` row per `HARNESS.md` PROVE. A same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX resets them.
 
@@ -54,7 +54,7 @@ Venue table: `HARNESS.md` Acceptance Venues; `automated` surfaces (docs, tests, 
 CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.
 On `actor=automated`, run
 `bin/orbit-feature-acceptance accept --loop=.orbit/loop.md --actor=automated`
-to validate and record the candidate in one command. Do not arm with `ready` first. Do not send an acceptance handoff when the actor is automated.
+to validate and record the candidate in one command. Do not send an acceptance handoff when the actor is automated.
 On `actor=user`, arm with `bin/orbit-feature-acceptance ready --loop=.orbit/loop.md`, then record delayed verbatim acceptance with `--actor=user --source-ref=<codex-or-claude-ref>`.
 
 On feedback, use `bin/orbit-feature-feedback record`, invalidate acceptance, return to BUILD, and re-prove. Close feedback through `HARNESS.md` Feedback And Protections; Never solicit a waiver.

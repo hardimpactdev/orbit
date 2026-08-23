@@ -72,11 +72,12 @@ it('retains structured worker handoffs and failed gate summaries in compact arch
                 'note' => 'candidate ready',
                 'started_at' => '2026-07-10T17:00:00Z',
                 'heartbeat_at' => '2026-07-10T17:30:00Z',
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
         );
         file_put_contents(
-            "{$handoffDir}/impl-1-".str_repeat('a', 40).".md",
-            "candidate=".str_repeat('a', 40)."\nVERDICT: PASS\n",
+            "{$handoffDir}/impl-1-".str_repeat('a', 40).'.md',
+            'candidate='.str_repeat('a', 40)."\nVERDICT: PASS\n",
         );
         file_put_contents(
             "{$handoffDir}/review-1.md",
@@ -92,7 +93,8 @@ it('retains structured worker handoffs and failed gate summaries in compact arch
                 'exit_code' => 1,
                 'duration_ms' => 42,
                 'command' => 'composer quality-check',
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
         );
 
         $process = run_session_archive([
@@ -113,10 +115,8 @@ it('retains structured worker handoffs and failed gate summaries in compact arch
             ->toContain('workers/impl-1.json')
             ->toContain('workers/handoff/review-1.md')
             ->toContain('diagnostics/failed-gates/quality-check-failed.json')
-            ->not->toContain('workers/logs/impl-1.log')
-            ->and("{$archive}/workers/logs")
-            ->not->toBeDirectory()
-            ->and("{$archive}/agent-sessions")
+            ->not->toContain('workers/logs/impl-1.log')->and("{$archive}/workers/logs")
+            ->not->toBeDirectory()->and("{$archive}/agent-sessions")
             ->not->toBeDirectory();
     } finally {
         remove_session_archive_workspace($workspace);
