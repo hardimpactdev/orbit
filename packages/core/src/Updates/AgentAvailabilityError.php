@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Core\Updates;
 
-/** @mago-expect lint:cyclomatic-complexity */
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect analysis:mixed-assignment
+ */
 final class AgentAvailabilityError
 {
     public const string Unavailable = 'orbit_agent_unavailable';
@@ -16,6 +19,66 @@ final class AgentAvailabilityError
     public static function publicCode(string $code): string
     {
         return $code === self::GatewayUnreachable ? self::Unavailable : $code;
+    }
+
+    /**
+     * @param  array<string, mixed>  $error
+     * @return array<string, mixed>
+     */
+    public static function remapError(array $error): array
+    {
+        $code = $error['code'] ?? null;
+
+        if (! is_string($code) || $code !== self::GatewayUnreachable) {
+            return $error;
+        }
+
+        $message = is_string($error['message'] ?? null) ? $error['message'] : '';
+        $meta = [];
+
+        foreach (is_array($error['meta'] ?? null) ? $error['meta'] : [] as $key => $value) {
+            if (is_string($key)) {
+                $meta[$key] = $value;
+            }
+        }
+
+        $publicMeta = self::publicMeta($meta);
+
+        return [
+            ...$error,
+            'code' => self::Unavailable,
+            'message' => self::publicMessage($message, $publicMeta),
+            'meta' => $publicMeta,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public static function remapStreamPayload(array $payload): array
+    {
+        $payload = self::remapError($payload);
+
+        foreach (['data', 'error'] as $key) {
+            $nested = $payload[$key] ?? null;
+
+            if (! is_array($nested)) {
+                continue;
+            }
+
+            $stringKeyed = [];
+
+            foreach ($nested as $nestedKey => $value) {
+                if (is_string($nestedKey)) {
+                    $stringKeyed[$nestedKey] = $value;
+                }
+            }
+
+            $payload[$key] = self::remapError($stringKeyed);
+        }
+
+        return $payload;
     }
 
     /**

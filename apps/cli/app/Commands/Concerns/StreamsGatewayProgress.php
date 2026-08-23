@@ -11,6 +11,7 @@ use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamedStepTree;
+use Orbit\Core\Updates\AgentAvailabilityError;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -187,6 +188,7 @@ trait StreamsGatewayProgress
      */
     protected function renderProgressTerminalFrame(ProgressEventType $type, array $payload): int
     {
+        $payload = AgentAvailabilityError::remapStreamPayload($payload);
         $terminal = new ProgressEvent($type, $payload);
 
         if ($this->wantsStreamingJson()) {

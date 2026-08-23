@@ -341,4 +341,110 @@ describe('ToolStream commands', function (): void {
             ->and($decoded['error']['meta']['tool'])
             ->toBe('docker');
     });
+
+    it('remaps a streamed tool:install Agent-unavailable error in json mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', tool_install_agent_unavailable_stream_payload()),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'composer',
+            '--node' => 'proof-unavailable-agent',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['event'])
+            ->toBe('error')
+            ->and($decoded['data']['data']['code'])
+            ->toBe('orbit_agent_unavailable')
+            ->and($decoded['data']['data']['meta']['platform'])
+            ->toBe('darwin')
+            ->and($decoded['data']['data']['meta']['remediation'])
+            ->toBe('Open Orbit Desktop to start Orbit Agent.')
+            ->and($output)
+            ->not->toContain('node.agent_unreachable');
+    });
+
+    it('remaps a streamed tool:install Agent-unavailable error in stream-json mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', tool_install_agent_unavailable_stream_payload()),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'composer',
+            '--node' => 'proof-unavailable-agent',
+            '--stream-json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['event'])
+            ->toBe('error')
+            ->and($decoded['error']['code'])
+            ->toBe('orbit_agent_unavailable')
+            ->and($decoded['error']['meta']['remediation'])
+            ->toBe('Open Orbit Desktop to start Orbit Agent.')
+            ->and($output)
+            ->not->toContain('node.agent_unreachable');
+    });
+
+    it('renders streamed Agent unavailability in human output', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('error', tool_install_agent_unavailable_stream_payload()),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'composer',
+            '--node' => 'proof-unavailable-agent',
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('orbit_agent_unavailable')
+            ->and($output)
+            ->toContain('Orbit Agent is unavailable')
+            ->and($output)
+            ->toContain('Open Orbit Desktop')
+            ->and($output)
+            ->not->toContain('node.agent_unreachable');
+    });
 });
+
+/**
+ * @return array{
+ *     exit_code: int,
+ *     message: string,
+ *     data: array{code: string, message: string, meta: array<string, string>, footer: string}
+ * }
+ */
+function tool_install_agent_unavailable_stream_payload(): array
+{
+    $message = "Orbit Agent is unreachable for tool 'composer' install on node 'proof-unavailable-agent'.";
+
+    return [
+        'exit_code' => 1,
+        'message' => $message,
+        'data' => [
+            'code' => 'node.agent_unreachable',
+            'message' => $message,
+            'meta' => [
+                'reason' => 'agent_push_unavailable',
+                'node' => 'proof-unavailable-agent',
+                'platform' => 'darwin',
+                'tool' => 'composer',
+                'action' => 'install',
+            ],
+            'footer' => 'Tool install failed',
+        ],
+    ];
+}
