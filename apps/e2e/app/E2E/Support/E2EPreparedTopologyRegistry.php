@@ -17,6 +17,9 @@ final readonly class E2EPreparedTopologyRegistry
         $convergeValkeyRuntime = $convergeRuntime
             ? "\n            app(\\App\\Services\\Nodes\\Roles\\RoleBaselines\\RoleRuntimeConverger::class)->convergeProcess(\$node, \$valkey, 'valkey');"
             : '';
+        $disablePrerequisitePull = $convergeRuntime
+            ? "\n            \$runtimeConfig['prepare_prerequisites'] = false;"
+            : '';
 
         return <<<PHP
             \$node = \\App\\Models\\Node::query()->where('name', {$nodeNameValue})->firstOrFail();
@@ -50,6 +53,8 @@ final readonly class E2EPreparedTopologyRegistry
                 ],
             );
 
+            \$runtimeConfig = \$valkeyDescriptor->runtimeConfig;{$disablePrerequisitePull}
+
             \$valkey = \\App\\Models\\Process::query()->updateOrCreate(
                 [
                     'owner_type' => \$node->getMorphClass(),
@@ -63,7 +68,7 @@ final readonly class E2EPreparedTopologyRegistry
                     'crash_notification' => \\App\\Enums\\ProcessCrashNotification::None->value,
                     'runtime' => \\App\\Enums\\Processes\\ProcessRuntime::Docker->value,
                     'tool' => null,
-                    'runtime_config' => \$valkeyDescriptor->runtimeConfig,
+                    'runtime_config' => \$runtimeConfig,
                     'sort_order' => 10,
                 ],
             );{$convergeValkeyRuntime}

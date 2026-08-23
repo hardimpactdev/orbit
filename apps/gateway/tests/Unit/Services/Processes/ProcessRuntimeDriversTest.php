@@ -216,6 +216,33 @@ it('applies node owned docker service processes from runtime config', function (
     expect(docker_process_driver_agent_actions())->toBe(['apply', 'start', 'stop', 'restart']);
 });
 
+it('skips docker prerequisite pulls when a node owned process opts out', function (): void {
+    fake_docker_process_driver_agent_responses();
+
+    $node = Node::factory()
+        ->database()
+        ->managed()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
+    $process = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'valkey',
+            'command' => 'valkey-server --appendonly yes --bind 0.0.0.0 --protected-mode no',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'image' => 'valkey/valkey:8.1',
+                'prepare_prerequisites' => false,
+            ],
+        ]);
+
+    expect(app(DockerProcessRuntimeDriver::class)->apply($node, null, $process))->toBeTrue();
+
+    expect(docker_process_driver_agent_payloads()[0]['prepare_prerequisites'])->toBeFalse();
+});
+
 it('publishes managed service ports when applying node owned docker processes', function (): void {
     fake_docker_process_driver_agent_responses();
 

@@ -70,5 +70,65 @@ it('can include Valkey runtime convergence in prepared topology fixture code', f
     expect(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp(convergeRuntime: true))
         ->toContain('RoleRuntimeConverger')
         ->toContain("convergeProcess(\$node, \$valkey, 'valkey')")
-        ->toContain("removeProcess(\$node, \$legacyRedis, 'redis')");
+        ->toContain("removeProcess(\$node, \$legacyRedis, 'redis')")
+        ->toContain("\$runtimeConfig['prepare_prerequisites'] = false")
+        ->toContain("'runtime_config' => \$runtimeConfig");
+});
+
+it('converges prepared Valkey without a registry pull after the image was preloaded', function (): void {
+    $executor = new class implements \App\Services\RemoteShell\RunsInternalCommands
+    {
+        /** @var list<array<string, mixed>> */
+        public array $payloads = [];
+
+        public function runInternal(
+            \App\Models\Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): \App\Data\RemoteShell\RemoteShellResult {
+            $payload = json_decode((string) ($transportOptions['input'] ?? ''), true);
+            $this->payloads[] = is_array($payload) ? $payload : [];
+
+            if (($payload['action'] ?? null) === 'apply') {
+                return new \App\Data\RemoteShell\RemoteShellResult(
+                    0,
+                    json_encode([
+                        'success' => [
+                            'data' => ['outcome' => 'created'],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                    '',
+                    1,
+                );
+            }
+
+            return new \App\Data\RemoteShell\RemoteShellResult(0, '', '', 1);
+        }
+    };
+    app()->instance(\App\Services\RemoteShell\RunsInternalCommands::class, $executor);
+
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
+
+    eval(E2EPreparedTopologyRegistry::appdevDatabaseAndValkeyPhp(convergeRuntime: true));
+
+    $apply = collect($executor->payloads)->first(
+        fn (array $payload): bool => ($payload['action'] ?? null) === 'apply',
+    );
+
+    expect($apply)
+        ->toBeArray()
+        ->and($apply['prepare_prerequisites'] ?? true)
+        ->toBeFalse()
+        ->and($apply['spec']['image'] ?? null)
+        ->toBe('valkey/valkey:8.1')
+        ->and(Process::query()->where('name', 'valkey')->sole()->runtime_config['prepare_prerequisites'] ?? true)
+        ->toBeFalse();
 });

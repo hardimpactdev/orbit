@@ -46,7 +46,7 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
             $this->manager->apply(
                 node: $node,
                 container: $container,
-                preparePrerequisites: $process->owner instanceof Node,
+                preparePrerequisites: $this->preparesPrerequisites($process),
             );
             $this->clearReplacementRuntimeUnit($process);
 
@@ -103,6 +103,17 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         ])
             ->filter()
             ->implode(' ');
+    }
+
+    private function preparesPrerequisites(Process $process): bool
+    {
+        $process->loadMissing('owner');
+
+        if (! $process->owner instanceof Node) {
+            return false;
+        }
+
+        return ($process->runtime_config['prepare_prerequisites'] ?? true) !== false;
     }
 
     private function replacementRuntimeUnit(Process $process): ?string
