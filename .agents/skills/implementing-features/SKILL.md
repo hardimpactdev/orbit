@@ -6,7 +6,7 @@ description: Implement an Orbit feature, bug fix, command change, or docs correc
 # Implementing Orbit Features
 
 Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
-`HARNESS.md` is the loop contract.
+`HARNESS.md` is the canonical loop contract; this skill is the compact route.
 The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
 An incidental/status user question does not terminate a nonterminal loop, and a blocked sub-scope does not end other unblocked work. Continue until LAND, a required human-judgment handoff, or a genuine whole-goal blocker.
 Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
@@ -21,7 +21,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 
 1. Confirm checkout identity; route with `AGENT_FAST_PATH.md`.
 2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
-3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. `primitive=`/`transitions=` per `HARNESS.md`. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
+3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
 5. Before dispatch, map planned owned paths to the venue table; split different non-automated venues into separate feature branches. Derive the venue: `bin/orbit-feature-acceptance route`.
 
