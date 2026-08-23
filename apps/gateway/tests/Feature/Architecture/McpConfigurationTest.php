@@ -735,7 +735,7 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->and(strlen($orbitAuthoredAgents))
         ->toBeLessThanOrEqual(6144)
         ->and(strlen($skill) + strlen($orbitAuthoredAgents) + $harnessBytes + $fastPathBytes)
-        ->toBeLessThanOrEqual(35658)
+        ->toBeLessThanOrEqual(35600)
         ->and($skill)
         ->toContain('## FRAME')
         ->toContain('## BUILD')

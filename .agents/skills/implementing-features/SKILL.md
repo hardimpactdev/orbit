@@ -22,7 +22,7 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 2. Resolve outcome against `PRODUCT_DECISIONS.md` and `apps/docs/content/`.
 3. Fill or update the seeded `.orbit/loop.md` Goal and Scope; raw feedback stays in `.orbit/feedback.jsonl`. Append `primitive=`/`transitions=` per `HARNESS.md` FRAME when needed. When the goal changes a predicate, identity, vocabulary, or schema, list bounded producers, consumers, and dangerous invariants before dispatch; skip that inventory for ordinary local changes.
 4. Pull prior feedback: `bin/orbit-feature-feedback relevant --surface=<scope> --json`.
-5. Before dispatch, split planned paths by non-automated venue; then run `bin/orbit-feature-acceptance route`.
+5. Split mixed non-automated venues before dispatch; then run `bin/orbit-feature-acceptance route`.
 
 ## BUILD
 
@@ -32,7 +32,7 @@ macOS Agent: `tauri-agent-development`.
 Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
 Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
 Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
-Keep nonterminal work active through status questions and partial blockers; stop only at LAND, required human judgment, or a whole-goal blocker.
+Status questions and partial blockers are nonterminal. Stop only at LAND, required human judgment, or a whole-goal blocker.
 Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
 Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
 Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
