@@ -3152,6 +3152,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
+                "apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
             ],
             "verification_hints": [
@@ -3168,6 +3169,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalFirewallRuleCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalFirewallRuleCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php",
@@ -3223,6 +3231,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
+                "apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
             ],
             "verification_hints": [
@@ -3239,6 +3248,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalFirewallRuleCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalFirewallRuleCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalFirewallRuleCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php",
