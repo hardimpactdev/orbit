@@ -141,6 +141,7 @@ class IncusHost
                 pullIfMissing: true,
             );
             $this->stageWebSocketImageArchive($bundleDir);
+            $this->stageValkeyImageArchive($bundleDir);
             $this->stageDockerImageArchive(
                 WgEasyServiceInstaller::Image,
                 self::DefaultWgEasyImageArchive,
@@ -174,6 +175,7 @@ class IncusHost
             pullIfMissing: true,
         );
         $this->stageWebSocketImageArchive($bundleDir);
+        $this->stageValkeyImageArchive($bundleDir);
         $this->stageDockerImageArchive(
             WgEasyServiceInstaller::Image,
             self::DefaultWgEasyImageArchive,
@@ -216,6 +218,16 @@ class IncusHost
             $this->defaultWebSocketImage(),
             self::DefaultOrbitWebSocketImageArchive,
             $bundleDir,
+        );
+    }
+
+    public function stageValkeyImageArchive(string $bundleDir): void
+    {
+        $this->stageDockerImageArchive(
+            E2EArtifactProdManifest::ValkeyImage,
+            E2EArtifactProdManifest::ValkeyImageArchive,
+            $bundleDir,
+            pullIfMissing: true,
         );
     }
 

@@ -12,6 +12,10 @@ final readonly class E2EArtifactProdManifest
 
     public const string WebSocketImageArchive = 'orbit-reverb-current.tar';
 
+    public const string ValkeyImageArchive = 'valkey-8.1.tar';
+
+    public const string ValkeyImage = 'valkey/valkey:8.1';
+
     public const string BinaryArtifactDirectory = 'apps/cli/builds/e2e-artifact-prod';
 
     public function __construct(

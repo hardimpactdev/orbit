@@ -808,6 +808,8 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
                 $commandOutput,
             )->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
                 'orbit-reverb-current.tar',
+            )->and($commandOutput)->toContain('valkey-8.1.tar')->and($commandOutput)->toContain(
+                'valkey/valkey:8.1',
             )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
                 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain('docker.io')->and(
@@ -1024,6 +1026,8 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
                 'caddy-2-alpine.tar',
             )->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
                 'orbit-reverb-current.tar',
+            )->and($commandOutput)->toContain('valkey-8.1.tar')->and($commandOutput)->toContain(
+                'valkey/valkey:8.1',
             )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
                 'ghcr.io/hardimpactdev/orbit-frankenphp:2-php8.5-bookworm',
             )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain(
@@ -2014,6 +2018,12 @@ it('builds artifact backed prepared websocket topology through a gateway first c
                 '/home/${user}/.local/bin/orbit --version >/dev/null',
             )->and($commandOutput)->toContain(
                 'artisan orbit:internal:bake-websocket-node',
+            )->and($commandOutput)->toContain(
+                '/tmp/orbit-e2e-gateway-artifacts-test/valkey-8.1.tar',
+            )->and($commandOutput)->toContain('valkey/valkey:8.1')->and($phaseNames)->toContain(
+                'prepared-artifact-runtime.valkey-image.push',
+            )->and($phaseNames)->toContain('prepared-artifact-runtime.valkey-image.load')->and($phaseNames)->toContain(
+                'prepared-artifact-runtime.valkey-image.inspect',
             )->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.start')->and(
                 $phaseNames,
             )->toContain('prepared-websocket.operator-downstream.prepare')->and($phaseNames)->toContain(

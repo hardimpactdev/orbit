@@ -1792,6 +1792,10 @@ class IncusTopologyBuilder
                 'guest' => '/var/tmp/orbit-reverb-current.tar',
                 'host' => "{$bundleDir}/orbit-reverb-current.tar",
             ],
+            [
+                'guest' => '/var/tmp/'.E2EArtifactProdManifest::ValkeyImageArchive,
+                'host' => "{$bundleDir}/".E2EArtifactProdManifest::ValkeyImageArchive,
+            ],
         ];
 
         if ($includeGatewayImage) {
@@ -1836,6 +1840,14 @@ class IncusTopologyBuilder
             "Could not install prepared app runtime prerequisites on {$instance->name()}",
             timeoutSeconds: 900,
         );
+
+        $this->loadPreparedRuntimeImageArchive(
+            $instance,
+            hostArchive: "{$bundleDir}/".E2EArtifactProdManifest::ValkeyImageArchive,
+            guestArchive: '/var/tmp/'.E2EArtifactProdManifest::ValkeyImageArchive,
+            image: E2EArtifactProdManifest::ValkeyImage,
+            timerPrefix: 'prepared-artifact-runtime.valkey-image',
+        );
     }
 
     private function installPreparedArtifactRuntimePrerequisites(IncusInstance $instance): void
@@ -1846,25 +1858,6 @@ class IncusTopologyBuilder
             throw new RuntimeException('No gateway artifact bundle has been staged.');
         }
 
-        $archive = "{$bundleDir}/".E2EArtifactProdManifest::WebSocketImageArchive;
-        $guestArchive = '/var/tmp/'.E2EArtifactProdManifest::WebSocketImageArchive;
-        $image = DockerTopologyProvider::webSocketRuntimeImage();
-
-        $push = $this->timer->measure('prepared-artifact-runtime.websocket-image.push', fn (): ProcessResult => $this->host->run(
-            sprintf(
-                'incus file push %s %s',
-                escapeshellarg($archive),
-                escapeshellarg("{$instance->name()}{$guestArchive}"),
-            ),
-            timeoutSeconds: 300,
-        ));
-
-        if (! $push->successful()) {
-            throw new RuntimeException(
-                "Could not push websocket image archive [{$archive}] into [{$instance->name()}]: {$push->errorOutput()}",
-            );
-        }
-
         $this->timer->measure('prepared-artifact-runtime.docker-start', fn () => E2ECommand::exec($instance, <<<'BASH'
             set -euo pipefail
             if command -v systemctl >/dev/null 2>&1; then
@@ -1872,14 +1865,52 @@ class IncusTopologyBuilder
             fi
             BASH, "Could not start Docker for prepared runtime image install on {$instance->name()}", timeoutSeconds: 60));
 
-        $this->timer->measure('prepared-artifact-runtime.websocket-image.load', fn () => E2ECommand::exec(
+        $this->loadPreparedRuntimeImageArchive(
             $instance,
-            sprintf('sudo docker load -i %s', escapeshellarg($guestArchive)),
-            "Could not load prepared websocket runtime image on {$instance->name()}",
+            hostArchive: "{$bundleDir}/".E2EArtifactProdManifest::WebSocketImageArchive,
+            guestArchive: '/var/tmp/'.E2EArtifactProdManifest::WebSocketImageArchive,
+            image: DockerTopologyProvider::webSocketRuntimeImage(),
+            timerPrefix: 'prepared-artifact-runtime.websocket-image',
+        );
+        $this->loadPreparedRuntimeImageArchive(
+            $instance,
+            hostArchive: "{$bundleDir}/".E2EArtifactProdManifest::ValkeyImageArchive,
+            guestArchive: '/var/tmp/'.E2EArtifactProdManifest::ValkeyImageArchive,
+            image: E2EArtifactProdManifest::ValkeyImage,
+            timerPrefix: 'prepared-artifact-runtime.valkey-image',
+        );
+    }
+
+    private function loadPreparedRuntimeImageArchive(
+        IncusInstance $instance,
+        string $hostArchive,
+        string $guestArchive,
+        string $image,
+        string $timerPrefix,
+    ): void {
+        $push = $this->timer->measure("{$timerPrefix}.push", fn (): ProcessResult => $this->host->run(
+            sprintf(
+                'incus file push %s %s',
+                escapeshellarg($hostArchive),
+                escapeshellarg("{$instance->name()}{$guestArchive}"),
+            ),
             timeoutSeconds: 300,
         ));
 
-        $this->timer->measure('prepared-artifact-runtime.websocket-image.inspect', fn () => E2ECommand::exec(
+        if (! $push->successful()) {
+            throw new RuntimeException(
+                "Could not push runtime image archive [{$hostArchive}] into [{$instance->name()}]: {$push->errorOutput()}",
+            );
+        }
+
+        $this->timer->measure("{$timerPrefix}.load", fn () => E2ECommand::exec(
+            $instance,
+            sprintf('sudo docker load -i %s', escapeshellarg($guestArchive)),
+            "Could not load prepared runtime image [{$image}] on {$instance->name()}",
+            timeoutSeconds: 300,
+        ));
+
+        $this->timer->measure("{$timerPrefix}.inspect", fn () => E2ECommand::exec(
             $instance,
             sprintf(<<<'BASH'
                 set -euo pipefail
@@ -1888,14 +1919,14 @@ class IncusTopologyBuilder
                     sudo -u orbit docker image inspect %s >/dev/null
                 fi
                 BASH, escapeshellarg($image), escapeshellarg($image)),
-            "Could not inspect prepared websocket runtime image on {$instance->name()}",
+            "Could not inspect prepared runtime image [{$image}] on {$instance->name()}",
             timeoutSeconds: 60,
         ));
 
-        $this->timer->measure('prepared-artifact-runtime.websocket-image.cleanup', fn () => E2ECommand::exec(
+        $this->timer->measure("{$timerPrefix}.cleanup", fn () => E2ECommand::exec(
             $instance,
             'sudo rm -f '.escapeshellarg($guestArchive),
-            "Could not clean prepared websocket runtime image archive on {$instance->name()}",
+            "Could not clean prepared runtime image archive [{$guestArchive}] on {$instance->name()}",
             timeoutSeconds: 60,
         ));
     }

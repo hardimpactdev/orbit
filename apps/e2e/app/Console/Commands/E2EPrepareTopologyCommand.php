@@ -395,6 +395,7 @@ class E2EPrepareTopologyCommand extends Command
                 E2EArtifactBuildFingerprint::webSocketImage(),
                 $timer,
             );
+            $host->stageValkeyImageArchive($remoteDir);
         } catch (RuntimeException $exception) {
             $host->run('rm -rf '.escapeshellarg($remoteDir).' || true', timeoutSeconds: 30);
 
