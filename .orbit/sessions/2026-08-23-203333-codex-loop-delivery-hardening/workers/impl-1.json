@@ -1,0 +1,30 @@
+{
+    "id": "impl-1",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-1",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-loop-delivery-hardening",
+        "window": "impl-1",
+        "pane_id": "%4",
+        "pane_pid": 1463262,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-loop-delivery-hardening",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-loop-delivery-hardening/.orbit/workers/briefs/impl-1.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T18:27:58Z",
+    "note": "Candidate ab7eef830ecd0d23530d82f980770ce61d31974a restores the 35600 combined contract cap.",
+    "started_at": "2026-08-23T17:20:46Z",
+    "exited_at": "2026-08-23T18:33:18Z",
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-loop-delivery-hardening/.orbit/workers/handoff/impl-1-ab7eef830ecd0d23530d82f980770ce61d31974a.md"
+}
