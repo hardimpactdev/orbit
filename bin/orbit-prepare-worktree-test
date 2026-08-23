@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-prepare-worktree-test.XXXXXX")"
-TMP="$(cd "$TMP" && pwd)"
+TMP="$(cd "$TMP" && pwd -P)"
 REAL_GIT="$(command -v git)"
 
 cleanup() {
@@ -242,12 +242,13 @@ MISSING_AUTOLOAD_BRANCH='feature-missing-autoload'
 if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$MISSING_AUTOLOAD_BRANCH" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     fail "prepare-worktree must fail when Composer install does not produce vendor/autoload.php"
 fi
-grep -qF "$REPO/.worktrees/${MISSING_AUTOLOAD_BRANCH}" /tmp/orbit-prepare-worktree-test.err \
+grep -qxF "orbit-prepare-worktree: Composer install did not produce vendor/autoload.php in $REPO/.worktrees/${MISSING_AUTOLOAD_BRANCH}" /tmp/orbit-prepare-worktree-test.err \
     || fail "missing autoload error must print the exact project path"
 grep -qF 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
     || fail "missing autoload error must name vendor/autoload.php"
-grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out \
-    && fail "missing autoload must not print WORKTREE_PREPARED"
+if grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out; then
+    fail "missing autoload must not print WORKTREE_PREPARED"
+fi
 
 cat >"$STUB_BIN/composer" <<'STUB'
 #!/usr/bin/env bash
@@ -278,14 +279,16 @@ GATEWAY_APP_PATH="$REPO/.worktrees/${MISSING_GATEWAY_AUTOLOAD_BRANCH}/apps/gatew
 if PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$MISSING_GATEWAY_AUTOLOAD_BRANCH" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
     fail "prepare-worktree must fail when a tracked app Composer install does not produce vendor/autoload.php"
 fi
-grep -qF "$GATEWAY_APP_PATH" /tmp/orbit-prepare-worktree-test.err \
+grep -qxF "orbit-prepare-worktree: Composer install did not produce vendor/autoload.php in $GATEWAY_APP_PATH" /tmp/orbit-prepare-worktree-test.err \
     || fail "missing gateway autoload error must print the exact project path"
 grep -qF 'vendor/autoload.php' /tmp/orbit-prepare-worktree-test.err \
     || fail "missing gateway autoload error must name vendor/autoload.php"
-grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out \
-    && fail "missing gateway autoload must not print WORKTREE_PREPARED"
-grep -qF 'Preparing gateway app state' /tmp/orbit-prepare-worktree-test.out \
-    && fail "missing gateway autoload must not run gateway app setup"
+if grep -qF 'WORKTREE_PREPARED' /tmp/orbit-prepare-worktree-test.out; then
+    fail "missing gateway autoload must not print WORKTREE_PREPARED"
+fi
+if grep -qF 'Preparing gateway app state' /tmp/orbit-prepare-worktree-test.out; then
+    fail "missing gateway autoload must not run gateway app setup"
+fi
 [ ! -e "${GATEWAY_APP_PATH}/storage/framework/testing/worktree-orbit" ] \
     || fail "missing gateway autoload must not create gateway app state"
 
@@ -324,8 +327,9 @@ grep -qF "$ORIGIN_MAIN" /tmp/orbit-prepare-worktree-test.err \
     || fail "stale-main error must print the origin/main SHA"
 grep -qF 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
     || fail "stale-main error must say that local main must be updated"
-grep -qF 'must be pushed' /tmp/orbit-prepare-worktree-test.err \
-    && fail "stale-main error must not say that local main must be pushed"
+if grep -qF 'must be pushed' /tmp/orbit-prepare-worktree-test.err; then
+    fail "stale-main error must not say that local main must be pushed"
+fi
 [ ! -s "$GIT_WORKTREE_ADD_LOG" ] \
     || fail "stale-main must fail before git worktree add"
 [ ! -e "$REPO/.worktrees/feature-stale-main" ] \
@@ -364,8 +368,9 @@ grep -qF 'is ahead of origin/main' /tmp/orbit-prepare-worktree-test.err \
     || fail "ahead-main error must say that local main is ahead"
 grep -qF 'must be pushed' /tmp/orbit-prepare-worktree-test.err \
     || fail "ahead-main error must say that local main must be pushed"
-grep -qF 'local main must be updated' /tmp/orbit-prepare-worktree-test.err \
-    && fail "ahead-main error must not say that local main must be updated"
+if grep -qF 'local main must be updated' /tmp/orbit-prepare-worktree-test.err; then
+    fail "ahead-main error must not say that local main must be updated"
+fi
 [ ! -s "$GIT_WORKTREE_ADD_LOG" ] \
     || fail "ahead-main must fail before git worktree add"
 [ ! -e "$REPO/.worktrees/feature-ahead-main" ] \
