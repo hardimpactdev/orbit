@@ -227,6 +227,58 @@ it('builds the process list from the worker registry and infers providers from c
     }
 });
 
+it('infers grok from the spawn env plus assignment command vector', function (string $command): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'spawn-env-vector');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $workerId = 'impl-9';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        $cwd = (string) realpath($cwd);
+        write_grok_worker_session(home: $home, cwd: $cwd, workerId: $workerId);
+        write_worker_registry_entry($cwd, $workerId, $command, [
+            'workingDir' => $cwd,
+            'startedAt' => '2026-07-01T08:03:00Z',
+            'cli' => 'grok',
+        ]);
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--home={$home}",
+                "--cwd={$cwd}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+        );
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(1)
+            ->and($results[0])
+            ->toMatchArray([
+                'worker_id' => $workerId,
+                'agent' => 'grok',
+                'status' => 'ok',
+            ])
+            ->and($results[0]['reason'] ?? null)
+            ->not->toBe('unsupported_provider');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'spawn vector' => ['env ORBIT_WORKER_ID=impl-9 ORBIT_WORKER_ROLE=impl grok --yolo --reasoning-effort medium'],
+    'env options and assignments' => [
+        'env -i -u HOME --ignore-environment ORBIT_WORKER_ID=impl-9 ORBIT_WORKER_ROLE=impl grok --yolo --reasoning-effort medium',
+    ],
+]);
+
 it('resolves claude and codex transcripts from registry provider_ref values', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'provider-ref');
     $home = "{$temp}/home";

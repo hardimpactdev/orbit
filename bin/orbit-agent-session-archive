@@ -200,7 +200,8 @@ echo json_encode(array_map('publicResult', $results), JSON_PRETTY_PRINT | JSON_U
 
 function inferRuntime(string $command): string
 {
-    $binary = basename(strtok(trim($command), " \t\n\r\0\x0B") ?: '');
+    $tokens = preg_split('/\s+/', trim($command), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $binary = basename(commandBinaryFromTokens($tokens));
 
     return match ($binary) {
         'claude' => 'claude',
@@ -210,6 +211,79 @@ function inferRuntime(string $command): string
         'antigravity' => 'antigravity',
         default => 'unknown',
     };
+}
+
+/**
+ * @param  list<string>  $tokens
+ */
+function commandBinaryFromTokens(array $tokens): string
+{
+    $tokens = skipEnvLauncherTokens($tokens);
+
+    return $tokens[0] ?? '';
+}
+
+/**
+ * @param  list<string>  $tokens
+ * @return list<string>
+ */
+function skipEnvLauncherTokens(array $tokens): array
+{
+    if ($tokens === [] || basename($tokens[0]) !== 'env') {
+        return $tokens;
+    }
+
+    array_shift($tokens);
+
+    while ($tokens !== []) {
+        $token = $tokens[0];
+
+        if ($token === '--') {
+            array_shift($tokens);
+            break;
+        }
+
+        if ($token === '-' || isEnvAssignmentToken($token)) {
+            array_shift($tokens);
+            continue;
+        }
+
+        if (! str_starts_with($token, '-')) {
+            break;
+        }
+
+        array_shift($tokens);
+
+        if (envOptionTakesSeparateArgument($token) && $tokens !== []) {
+            array_shift($tokens);
+        }
+    }
+
+    return array_values($tokens);
+}
+
+function isEnvAssignmentToken(string $token): bool
+{
+    return ! str_starts_with($token, '-') && str_contains($token, '=');
+}
+
+function envOptionTakesSeparateArgument(string $option): bool
+{
+    if (str_contains($option, '=')) {
+        return false;
+    }
+
+    return in_array($option, [
+        '-C',
+        '-S',
+        '-u',
+        '--block-signal',
+        '--chdir',
+        '--default-signal',
+        '--ignore-signal',
+        '--split-string',
+        '--unset',
+    ], true);
 }
 
 /**
