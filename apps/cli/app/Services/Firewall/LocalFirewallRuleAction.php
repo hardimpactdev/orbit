@@ -77,7 +77,7 @@ final readonly class LocalFirewallRuleAction
      */
     private function placementArguments(LocalFirewallRuleShape $shape): array
     {
-        return $shape->action === 'allow' ? ['insert', '1'] : [];
+        return $shape->action === 'allow' ? ['prepend'] : [];
     }
 
     /**
@@ -176,11 +176,13 @@ final readonly class LocalFirewallRuleAction
      */
     private function commentArguments(LocalFirewallRuleShape $shape): array
     {
-        if ($shape->reason === null) {
+        $comment = $shape->reason ?? ($shape->name === null ? null : "orbit:{$shape->name}");
+
+        if ($comment === null) {
             return [];
         }
 
-        return ['comment', $shape->reason];
+        return ['comment', $comment];
     }
 
     private function sourceEndpointForFamily(LocalFirewallRuleShape $shape, string $endpoint): string

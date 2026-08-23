@@ -19,6 +19,7 @@ final readonly class LocalFirewallRuleShape
         public string $protocol,
         public string $addressFamily,
         public ?string $interface,
+        public ?string $name,
         public ?string $reason,
     ) {}
 
@@ -37,6 +38,7 @@ final readonly class LocalFirewallRuleShape
             protocol: self::oneOf($value['protocol'] ?? null, 'protocol', ['tcp', 'udp']),
             addressFamily: self::oneOf($value['address_family'] ?? 'both', 'address_family', ['v4', 'v6', 'both']),
             interface: self::nullableInterface($value['interface'] ?? null),
+            name: self::nullableString($value['name'] ?? null, 'name'),
             reason: self::nullableString($value['reason'] ?? null, 'reason'),
         );
     }

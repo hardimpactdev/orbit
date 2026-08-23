@@ -223,6 +223,49 @@ it('does not replace an unrelated same-port rule', function (): void {
         ->toBe(['apply']);
 });
 
+it('replaces reasonless managed drift by its stable name comment', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.101:9477/v1/commands' => Http::sequence()
+            ->push(ufw_firewall_rule_probe_agent_payload(<<<'OUT'
+                Status: active
+
+                     To                         Action      From
+                     --                         ------      ----
+                [ 1] 8080/tcp                   ALLOW IN    Anywhere                   # orbit:private-api
+                [ 2] 8080/tcp on wg-orbit       ALLOW IN    10.6.0.0/24                # protected unrelated rule
+
+                OUT))
+            ->push(ufw_firewall_rule_agent_payload('delete'))
+            ->push(ufw_firewall_rule_agent_payload('apply')),
+    ]);
+    app()->instance(RemoteFirewallRule::class, ufw_firewall_rule_remote());
+    $node = ufw_firewall_rule_node('10.44.0.101');
+    $rule = ufw_firewall_rule($node, [
+        'name' => 'private-api',
+        'source' => '192.168.1.0/24',
+        'port' => '8080',
+        'reason' => null,
+    ]);
+    $convergence = UfwFirewallRule::fromRule($rule);
+
+    $probe = $convergence->probe($node);
+    $result = $convergence->apply($node, $convergence->plan($probe));
+    $requests = ufw_firewall_rule_agent_requests();
+
+    expect($probe->partialMatch['comment'] ?? null)
+        ->toBe('orbit:private-api')
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and(array_column($requests, 'action'))
+        ->toBe(['delete', 'apply'])
+        ->and($requests[1]['shape'])
+        ->toMatchArray([
+            'name' => 'private-api',
+            'reason' => null,
+        ]);
+});
+
 it('canonicalizes host CIDR and both family in expected shape for convergence', function (): void {
     $node = ufw_firewall_rule_node('10.44.0.95');
     $rule = ufw_firewall_rule($node, [
@@ -243,7 +286,7 @@ it('canonicalizes host CIDR and both family in expected shape for convergence', 
         ]);
 });
 
-it('uses the same family-normalized rule body for UFW apply and delete commands', function (
+it('normalizes family endpoints for UFW delete commands', function (
     string $addressFamily,
     string $normalizedAny,
 ): void {
@@ -260,16 +303,9 @@ it('uses the same family-normalized rule body for UFW apply and delete commands'
         reason: 'public HTTPS',
     );
 
-    $applyBody = str_replace(
-        search: " comment 'public HTTPS'",
-        replace: '',
-        subject: substr($rule->applyCommand(), strlen('sudo ufw ')),
-    );
     $deleteBody = substr($rule->deleteCommand($rule->mutationShape()), strlen('sudo ufw delete '));
 
-    expect($applyBody)
-        ->toBe($deleteBody)
-        ->and($deleteBody)
+    expect($deleteBody)
         ->toContain("from '{$normalizedAny}' to '{$normalizedAny}'")
         ->and($rule->deleteCommand($rule->mutationShape()))
         ->not->toContain('comment');

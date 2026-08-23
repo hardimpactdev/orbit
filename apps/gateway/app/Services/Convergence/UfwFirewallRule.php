@@ -162,21 +162,6 @@ final readonly class UfwFirewallRule
         );
     }
 
-    public function applyCommand(): string
-    {
-        $parts = [
-            'sudo ufw',
-            ...$this->commandBody($this->mutationShape()),
-        ];
-
-        if (is_string($this->reason) && $this->reason !== '') {
-            $parts[] = 'comment';
-            $parts[] = escapeshellarg($this->reason);
-        }
-
-        return implode(' ', $parts);
-    }
-
     /**
      * @param  array<string, mixed>  $shape
      */
@@ -226,6 +211,7 @@ final readonly class UfwFirewallRule
     {
         return [
             ...$this->expectedShape(),
+            'name' => $this->name,
             'reason' => $this->reason,
         ];
     }
@@ -241,7 +227,11 @@ final readonly class UfwFirewallRule
                 continue;
             }
 
-            if (! FirewallRuleShapeCanonicalizer::reasonIdentifiesObservedRule($this->reason, $observed)) {
+            if (! FirewallRuleShapeCanonicalizer::managedCommentIdentifiesObservedRule(
+                $this->reason,
+                $this->name,
+                $observed,
+            )) {
                 continue;
             }
 

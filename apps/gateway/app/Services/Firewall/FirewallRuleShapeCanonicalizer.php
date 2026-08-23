@@ -16,9 +16,17 @@ final class FirewallRuleShapeCanonicalizer
      *
      * @param  array<string, mixed>  $observed
      */
-    public static function reasonIdentifiesObservedRule(?string $reason, array $observed): bool
+    public static function managedCommentIdentifiesObservedRule(
+        ?string $reason,
+        string $name,
+        array $observed,
+    ): bool {
+        return ($observed['comment'] ?? null) === self::managedComment($reason, $name);
+    }
+
+    public static function managedComment(?string $reason, string $name): string
     {
-        return is_string($reason) && $reason !== '' && ($observed['comment'] ?? null) === $reason;
+        return is_string($reason) && $reason !== '' ? $reason : "orbit:{$name}";
     }
 
     /**

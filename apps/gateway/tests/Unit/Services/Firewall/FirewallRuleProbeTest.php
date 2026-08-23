@@ -234,6 +234,32 @@ describe('firewall backend UFW reality', function (): void {
             ->toBe(DriftKind::Missing);
     });
 
+    it('identifies reasonless managed drift by its stable name comment', function (): void {
+        $node = createFirewallRuleProbeAppHostNode();
+        $rule = FirewallRule::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'private-api',
+            'source' => '10.6.0.0/24',
+            'port' => '8080',
+            'reason' => null,
+        ]);
+        $snapshot = new FirewallRuleProbe()->snapshotFromUfwOutput(<<<'UFW'
+            Status: active
+
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 8080/tcp                   ALLOW IN    Anywhere                   # orbit:private-api
+            [ 2] 8080/tcp on wg-orbit       ALLOW IN    10.6.0.0/24                # protected unrelated rule
+            UFW);
+
+        $issue = firewallProbeIssue(new FirewallRuleProbe()->diff($rule, $snapshot), 'firewall_rule.rule_mismatch');
+
+        expect($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['observed']['comment'] ?? null)
+            ->toBe('orbit:private-api');
+    });
+
     it('passes when backend rule shape matches gateway intent', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create([

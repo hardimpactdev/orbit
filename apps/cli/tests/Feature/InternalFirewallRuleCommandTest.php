@@ -77,7 +77,48 @@ describe('internal firewall rule command', function (): void {
             ->toBe('Firewall rule shape is invalid.');
     });
 
-    it('inserts applied rules before existing broad policy', function (): void {
+    it('prepends IPv4 and IPv6 allow rules before existing broad policy', function (
+        string $addressFamily,
+        string $source,
+    ): void {
+        $shape = LocalFirewallRuleShape::from([
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => $source,
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'address_family' => $addressFamily,
+            'interface' => null,
+            'reason' => 'SSH from Main LAN',
+        ]);
+        $method = new ReflectionMethod(LocalFirewallRuleAction::class, 'applyCommand');
+
+        expect(array_slice($method->invoke(new LocalFirewallRuleAction, $shape), 0, 3))
+            ->toBe(['sudo', 'ufw', 'prepend']);
+    })->with([
+        'IPv4' => ['v4', '192.168.1.0/24'],
+        'IPv6' => ['v6', 'fd00::/64'],
+    ]);
+
+    it('keeps deny placement unchanged', function (): void {
+        $shape = LocalFirewallRuleShape::from([
+            'direction' => 'incoming',
+            'action' => 'deny',
+            'source' => 'any',
+            'destination' => null,
+            'port' => '22',
+            'protocol' => 'tcp',
+            'address_family' => 'both',
+            'interface' => null,
+        ]);
+        $method = new ReflectionMethod(LocalFirewallRuleAction::class, 'applyCommand');
+
+        expect(array_slice($method->invoke(new LocalFirewallRuleAction, $shape), 0, 3))
+            ->toBe(['sudo', 'ufw', 'deny']);
+    });
+
+    it('uses the managed rule name as the comment when reason is omitted', function (): void {
         $shape = LocalFirewallRuleShape::from([
             'direction' => 'incoming',
             'action' => 'allow',
@@ -87,12 +128,15 @@ describe('internal firewall rule command', function (): void {
             'protocol' => 'tcp',
             'address_family' => 'v4',
             'interface' => null,
-            'reason' => 'SSH from Main LAN',
+            'name' => 'beast-main-lan-ssh',
+            'reason' => null,
         ]);
         $method = new ReflectionMethod(LocalFirewallRuleAction::class, 'applyCommand');
 
-        expect(array_slice($method->invoke(new LocalFirewallRuleAction, $shape), 0, 4))
-            ->toBe(['sudo', 'ufw', 'insert', '1']);
+        $command = $method->invoke(new LocalFirewallRuleAction, $shape);
+
+        expect(array_slice($command, -2))
+            ->toBe(['comment', 'orbit:beast-main-lan-ssh']);
     });
 });
 
