@@ -545,7 +545,7 @@ it('itemizes rsync changes so unchanged syncs can skip maintenance work', functi
     expect(implode("\n", $commands))->toContain('rsync -az --delete --itemize-changes');
 });
 
-it('skips permission normalization when rsync reports no changes', function (): void {
+it('normalizes staged source modes even when rsync reports no content changes', function (): void {
     $commands = [];
     Process::fake(function ($process) use (&$commands) {
         $commands[] = implode("\n", array_filter([
@@ -556,11 +556,13 @@ it('skips permission normalization when rsync reports no changes', function (): 
         return source_mounted_sync_process_result($process);
     });
 
-    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
+    $path = new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
-    expect(implode("\n", $commands))
-        ->not->toContain('find . -type d -exec chmod a+rx {} +')
-        ->not->toContain('find . -type f -exec chmod a+r {} +');
+    expect($path)
+        ->not->toBe(repo_path())
+        ->and(implode("\n", $commands))
+        ->toContain('find . -type d -exec chmod a+rx {} +')
+        ->toContain('find . -type f -exec chmod a+r {} +');
 });
 
 it('normalizes permissions when rsync reports changed files', function (): void {

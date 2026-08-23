@@ -249,11 +249,10 @@ final readonly class SourceMountedCheckoutSyncer
             "Could not install the source checkout rsync guard on {$host}",
             input: $rsyncGuardInstallation['input'],
         );
-        $rsync = $this->mustRun(
+        $this->mustRun(
             $this->rsyncCommand($host, $targetPath, $rsyncGuard),
             "Could not rsync source checkout to {$host}:{$targetPath}",
         );
-        $changed = trim($rsync->output()) !== '';
         $this->mustRun(
             $this->sourceMutationSshCommand($host, $mutationFence, $this->staleMutableStateCleanupCommand($targetPath)),
             "Could not clear stale source checkout state on {$host}:{$targetPath}",
@@ -270,17 +269,14 @@ final readonly class SourceMountedCheckoutSyncer
             "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}",
             input: $vendorArchive['input'],
         );
-
-        if ($changed) {
-            $this->mustRun(
-                $this->sourceMutationSshCommand(
-                    $host,
-                    $mutationFence,
-                    $this->permissionNormalizationCommand($targetPath),
-                ),
-                "Could not normalize source checkout permissions on {$host}:{$targetPath}",
-            );
-        }
+        $this->mustRun(
+            $this->sourceMutationSshCommand(
+                $host,
+                $mutationFence,
+                $this->permissionNormalizationCommand($targetPath),
+            ),
+            "Could not normalize source checkout permissions on {$host}:{$targetPath}",
+        );
     }
 
     private function rsyncCommand(
@@ -693,10 +689,7 @@ final readonly class SourceMountedCheckoutSyncer
 
     private function isLocalHost(string $host): bool
     {
-        return (
-            in_array(strtolower($host), ['local', '', 'localhost', '127.0.0.1', '::1'], true)
-            || strtolower($host) === strtolower((string) gethostname())
-        );
+        return in_array(strtolower($host), ['local', '', 'localhost', '127.0.0.1', '::1'], true);
     }
 
     private function mustRun(

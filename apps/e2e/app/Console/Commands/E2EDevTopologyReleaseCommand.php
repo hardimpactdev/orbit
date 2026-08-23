@@ -327,10 +327,7 @@ class E2EDevTopologyReleaseCommand extends Command
 
     private function isLocalHost(string $host): bool
     {
-        return (
-            in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], strict: true)
-            || strtolower($host) === strtolower((string) gethostname())
-        );
+        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], strict: true);
     }
 
     private function removeScopedSourcePath(

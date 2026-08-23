@@ -260,6 +260,48 @@ it('cleans up acquisition instances through one bulk host call', function (): vo
         ->toContain("incus delete --force 'clone-gateway'");
 });
 
+it('does not require a mutation generation when source cleanup is the live worktree', function (): void {
+    $commands = [];
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
+        /** @param array<int, string> $commands */
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusRoundTripsResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusRoundTripsConfig());
+    $method = new ReflectionMethod($provider, 'acquisitionFailureAfterCleanup');
+    $method->setAccessible(true);
+    $original = new \RuntimeException('cd: /home/orbit/orbit: Permission denied');
+
+    $result = $method->invoke(
+        $provider,
+        $original,
+        $host,
+        ['clone-operator'],
+        repo_path(),
+    );
+
+    expect($result)
+        ->toBe($original)
+        ->and($result->getMessage())
+        ->not->toContain('Scoped source cleanup requires an active mutation generation.')
+        ->and(implode("\n", $host->commands))
+        ->toContain("incus delete --force 'clone-operator'")
+        ->not->toContain(escapeshellarg(repo_path()));
+});
+
 it('cleans up a scoped source path with its source-mounted lease', function (): void {
     $commands = [];
     $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {

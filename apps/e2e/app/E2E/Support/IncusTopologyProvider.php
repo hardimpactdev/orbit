@@ -245,15 +245,16 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $sourcePath,
             ): void {
                 $cycleTimer->measure('cleanup.bulk', fn () => $this->deleteInstancesOrFail($host, $names));
+                $retainedSourcePath = $this->retainedScopedSourcePath($sourcePath);
 
-                if ($sourcePath !== null) {
+                if ($retainedSourcePath !== null) {
                     if ($mutationFence === null) {
                         throw new \LogicException('Scoped source cleanup requires an active mutation generation.');
                     }
 
                     $cycleTimer->measure('cleanup.source', fn () => $this->removeScopedSourcePath(
                         $host,
-                        $sourcePath,
+                        $retainedSourcePath,
                         $mutationFence,
                     ));
                 }
@@ -291,13 +292,14 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $sourcePath,
             ): void {
                 $this->deleteInstancesOrFail($host, $expectedNames);
+                $retainedSourcePath = $this->retainedScopedSourcePath($sourcePath);
 
-                if ($sourcePath !== null) {
+                if ($retainedSourcePath !== null) {
                     if ($mutationFence === null) {
                         throw new \LogicException('Scoped source cleanup requires an active mutation generation.');
                     }
 
-                    $this->removeScopedSourcePath($host, $sourcePath, $mutationFence);
+                    $this->removeScopedSourcePath($host, $retainedSourcePath, $mutationFence);
                 }
             };
 
@@ -328,11 +330,28 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      */
     private function withScopedSourceLock(IncusHost $host, ?string $sourcePath, \Closure $operation): mixed
     {
-        if ($sourcePath === null || basename(dirname(rtrim(string: $sourcePath, characters: '/'))) !== 'retained') {
+        $retainedSourcePath = $this->retainedScopedSourcePath($sourcePath);
+
+        if ($retainedSourcePath === null) {
             return $operation(null);
         }
 
-        return new SourceMountedCheckoutLifecycleLock($host->config->host, $sourcePath)->run($operation);
+        return new SourceMountedCheckoutLifecycleLock($host->config->host, $retainedSourcePath)->run($operation);
+    }
+
+    private function retainedScopedSourcePath(?string $sourcePath): ?string
+    {
+        if ($sourcePath === null) {
+            return null;
+        }
+
+        $sourcePath = rtrim(string: $sourcePath, characters: '/');
+
+        if ($sourcePath === '' || basename(dirname($sourcePath)) !== 'retained') {
+            return null;
+        }
+
+        return $sourcePath;
     }
 
     private function syncSourcePath(
@@ -371,7 +390,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         string $sourcePath,
         SourceMountedCheckoutMutationFence $mutationFence,
     ): void {
-        if (basename(dirname($sourcePath)) !== 'retained') {
+        if ($this->retainedScopedSourcePath($sourcePath) === null) {
             return;
         }
 

@@ -129,12 +129,14 @@ Root Composer E2E scripts source the repository-level `.env.e2e`; that file is
 not converted into `apps/e2e/.env`. When running the `apps/e2e` command directly,
 either export the variable in the shell or put it in `apps/e2e/.env`.
 
-Retained/live Incus acquisitions also source-mount the initiating worktree at
-`/home/orbit/orbit`. Remote Incus hosts rsync the current worktree to
-`/tmp/orbit-e2e-sources/<worktree>-<hash>` before acquisition and then mount that
-synced path. Set `ORBIT_E2E_INCUS_SOURCE_PATH` only when a host needs a fixed
-target path, or use `ORBIT_E2E_INCUS_SOURCE_PATH_<HOST>` for a host-specific
-override.
+Retained/live Incus acquisitions source-mount a staged checkout at
+`/home/orbit/orbit`. Incus hosts rsync the current worktree to
+`/tmp/orbit-e2e-sources/<worktree>-<hash>/retained/<topology>` (or an explicit
+`ORBIT_E2E_INCUS_SOURCE_PATH` base) and normalize directory and file modes on
+that staged copy so the guest `orbit` user can traverse it. The live worktree is
+not the mount source, including when the Incus host name matches this machine.
+Set `ORBIT_E2E_INCUS_SOURCE_PATH` only when a host needs a fixed target path, or
+use `ORBIT_E2E_INCUS_SOURCE_PATH_<HOST>` for a host-specific override.
 
 ## Artifact namespace
 
