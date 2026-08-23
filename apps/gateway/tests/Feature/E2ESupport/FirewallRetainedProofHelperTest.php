@@ -98,7 +98,7 @@ it('treats remote-only paths as extras and ignores local ignored files', functio
 
     try {
         mkdir($root.'/ignored', recursive: true);
-        file_put_contents($root.'/ignored/local.txt', 'keep');
+        file_put_contents($root.'/ignored/local.txt', data: 'keep');
 
         $parsed = firewall_proof_parse_remote_tree_output(
             "H\tapps/cli/orbit\t"
@@ -134,9 +134,9 @@ it('treats remote-only paths as extras and ignores local ignored files', functio
         ))
             ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
     } finally {
-        @unlink($root.'/ignored/local.txt');
-        @rmdir($root.'/ignored');
-        @rmdir($root);
+        unlink($root.'/ignored/local.txt');
+        rmdir($root.'/ignored');
+        rmdir($root);
     }
 });
 
