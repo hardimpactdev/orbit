@@ -1,0 +1,16 @@
+candidate=3fd8a965a9d61782c2d5ef6e22630c446979c691
+host=mini
+os=Darwin 27.0.0 arm64 macOS 27.0 26A5416b
+command=cd apps/macos && cargo test --lib handoff && cargo run --bin orbit-macos
+bound_set=installer::tests::resumes_from_preserved_handoff_after_partial_owner_bin_replacement ok
+retry_unit=installer::tests::keeps_handoff_and_returns_restart_ready_when_apply_fails_before_replacement ok
+live_desktop_pid=95848
+live_agent_pid=95947
+live_parent_child=orbit-macos 95848 owns orbit-agent 95947
+live_launchd=absent
+live_handoff=/Users/nckrtl/.config/orbit/pending-desktop-update.json retained install_mode=automatic
+live_agent_sha=f786e28156ee42d52b485163c07482f304ef1ff85b9795f73dfa37a250798ec3
+live_cli_sha=581bc854313781874e23ef5d69e6ec7727b261b17f2a5a3fc3313059a1bdb28d
+live_desktop_dest=not written
+visible_label=Restart to Update Orbit 0.1.196
+quality_gate=.orbit/quality-gates/profiles/2026-08-23T19-53-20Z-3fd8a965a9d6

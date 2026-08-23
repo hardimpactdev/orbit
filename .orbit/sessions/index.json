@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 415,
-    "unique_candidate_commit_count": 311,
+    "record_count": 416,
+    "unique_candidate_commit_count": 312,
     "orphan_count": 0,
     "records": [
         {
@@ -10636,6 +10636,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-23-220529-codex-macos-desktop-managed-agent",
+            "slug": "codex-macos-desktop-managed-agent",
+            "timestamp": "2026-08-23-220529",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "3fd8a965a9d61782c2d5ef6e22630c446979c691",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "host-macos",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

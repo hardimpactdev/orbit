@@ -1,0 +1,30 @@
+{
+    "id": "macos-managed-agent-impl",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=macos-managed-agent-impl",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-macos-desktop-managed-agent",
+        "window": "macos-managed-agent-impl",
+        "pane_id": "%4",
+        "pane_pid": 65416,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent/.orbit/workers/briefs/macos-managed-agent-impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:03:48Z",
+    "note": "ACCEPT metadata: record reviewer PASS on 3fd8a965a without moving HEAD",
+    "started_at": "2026-08-23T17:43:10Z",
+    "exited_at": "2026-08-23T20:05:21Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent/.orbit/workers/handoff/macos-managed-agent-impl-3fd8a965a9d61782c2d5ef6e22630c446979c691.md"
+}

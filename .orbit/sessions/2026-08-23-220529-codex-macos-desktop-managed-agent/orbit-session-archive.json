@@ -1,0 +1,48 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T20:05:29+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-220529-codex-macos-desktop-managed-agent",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-23T181158Z-fc3ab3f231cf.json",
+        "diagnostics/failed-gates/quality-check-2026-08-23T195242Z-3445e1b6b9b5.json",
+        "evidence/macos-desktop-managed-agent-3fd8a965a/update-install-proof.txt",
+        "loop.md",
+        "workers/handoff/macos-managed-agent-impl-225b24dfefdd829500ab5c337b25a4a6493d4aa3.md",
+        "workers/handoff/macos-managed-agent-impl-3fd8a965a9d61782c2d5ef6e22630c446979c691.md",
+        "workers/handoff/macos-managed-agent-impl.md",
+        "workers/handoff/macos-managed-agent-impl.pause.md",
+        "workers/handoff/macos-managed-agent-review-225b24dfefdd829500ab5c337b25a4a6493d4aa3.md",
+        "workers/handoff/macos-managed-agent-review-3fd8a965a9d61782c2d5ef6e22630c446979c691.md",
+        "workers/macos-managed-agent-impl.json",
+        "workers/macos-managed-agent-review.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-23T181158Z-fc3ab3f231cf.json": "284a5007be45a915b962fc27a1c281fd3539c9f5df45b9848092dffdd9ef1a75",
+        "diagnostics/failed-gates/quality-check-2026-08-23T195242Z-3445e1b6b9b5.json": "744ae00809796191a1d4103984141f8aaf54f540f76491ad26903d9798078acc",
+        "evidence/macos-desktop-managed-agent-3fd8a965a/update-install-proof.txt": "17d521a5b451c9fddf4b5b5b831f3da5c96b935fedee4220efa50b9399178820",
+        "loop.md": "369b7285b2053e64680c6e87748bc3ea740b05e96a0d03f2671d55cadf9dca42",
+        "workers/handoff/macos-managed-agent-impl-225b24dfefdd829500ab5c337b25a4a6493d4aa3.md": "22b525b18bbb9556a377d5725e0b175086733001ac60ef81142c80c3ba224952",
+        "workers/handoff/macos-managed-agent-impl-3fd8a965a9d61782c2d5ef6e22630c446979c691.md": "c726f31403dd56bd5ce07daf4d67ea4acb56664bb5549a1a4d3ab0c123500a69",
+        "workers/handoff/macos-managed-agent-impl.md": "c726f31403dd56bd5ce07daf4d67ea4acb56664bb5549a1a4d3ab0c123500a69",
+        "workers/handoff/macos-managed-agent-impl.pause.md": "e1d4e0aec2bfb5a9c57c73789f70f440ec6eb21c3a867173e41268b0ce604b7f",
+        "workers/handoff/macos-managed-agent-review-225b24dfefdd829500ab5c337b25a4a6493d4aa3.md": "886287f8923853cd83e089e06cedd79217f69fb47d78a3a1af6cffab92ae20e1",
+        "workers/handoff/macos-managed-agent-review-3fd8a965a9d61782c2d5ef6e22630c446979c691.md": "80171db1e3064d60ce53aea1bc37174efde1fe3b01dddcf5f9a13c819309434f",
+        "workers/macos-managed-agent-impl.json": "b9f0311100b440fe150a65cf96180820c07a14c675fdd0bd730c25423efb6f89",
+        "workers/macos-managed-agent-review.json": "86c07a864de7fb2db150b38b7307b4caaac3c367ef8bd28cae1e2b574d3d67f5"
+    },
+    "slug": "codex-macos-desktop-managed-agent",
+    "requested_slug": "codex-macos-desktop-managed-agent",
+    "compatible_slugs": [
+        "codex-macos-desktop-managed-agent"
+    ],
+    "branch": "codex/macos-desktop-managed-agent",
+    "candidate_commit": "3fd8a965a9d61782c2d5ef6e22630c446979c691",
+    "accepted_feature_tip": "3fd8a965a9d61782c2d5ef6e22630c446979c691",
+    "accepted_main_tip": "732e61be405b88c36be05aec3379f4bf6abfa1a2",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

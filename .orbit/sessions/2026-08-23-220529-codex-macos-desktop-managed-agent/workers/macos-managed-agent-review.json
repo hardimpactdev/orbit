@@ -1,0 +1,33 @@
+{
+    "id": "macos-managed-agent-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=macos-managed-agent-review",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-macos-desktop-managed-agent",
+        "window": "macos-managed-agent-review",
+        "pane_id": "%6",
+        "pane_pid": 95774,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent/.orbit/workers/briefs/macos-managed-agent-review.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T20:03:03Z",
+    "note": "RE-REVIEW: VERDICT: PASS; BLAST_RADIUS: complete; HUMAN_JUDGMENT: not-required \u2014 DEFECT 1 resolved (state machine wired live, success-only handoff deletion, failure retry visible, partial-replacement resume); 34/34 lib tests + candidate-bound Mini update proof",
+    "started_at": "2026-08-23T19:34:21Z",
+    "exited_at": "2026-08-23T20:05:21Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-macos-desktop-managed-agent/.orbit/workers/handoff/macos-managed-agent-review-3fd8a965a9d61782c2d5ef6e22630c446979c691.md"
+}
