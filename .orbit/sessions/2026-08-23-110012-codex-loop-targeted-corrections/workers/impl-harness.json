@@ -1,0 +1,30 @@
+{
+    "id": "impl-harness",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-harness",
+        "ORBIT_WORKER_ROLE=impl",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-loop-targeted-corrections",
+        "window": "impl-harness",
+        "pane_id": "%1",
+        "pane_pid": 56495,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections/.orbit/workers/briefs/impl-harness-loop-corrections.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T08:50:39Z",
+    "note": "lean loop candidate 060b6fce0c: watch ack, atomic handoff, one-command automated accept, compact diagnostics",
+    "started_at": "2026-08-23T08:21:09Z",
+    "exited_at": "2026-08-23T09:00:04Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections/.orbit/workers/handoff/impl-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md"
+}

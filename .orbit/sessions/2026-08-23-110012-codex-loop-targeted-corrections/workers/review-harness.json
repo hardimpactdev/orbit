@@ -1,0 +1,32 @@
+{
+    "id": "review-harness",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-harness",
+        "ORBIT_WORKER_ROLE=review",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-loop-targeted-corrections",
+        "window": "review-harness",
+        "pane_id": "%5",
+        "pane_pid": 90716,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections/.orbit/workers/briefs/review-harness-loop-corrections.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T08:59:07Z",
+    "note": "PASS - all ten dangerous invariants hold on 060b6fce0; four POLISH items, no DEFECT; blast radius complete; human-judgment not-required",
+    "started_at": "2026-08-23T08:51:59Z",
+    "exited_at": "2026-08-23T09:00:04Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections/.orbit/workers/handoff/review-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md"
+}

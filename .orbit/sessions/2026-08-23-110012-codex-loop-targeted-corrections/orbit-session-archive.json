@@ -1,0 +1,38 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T09:00:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-targeted-corrections/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-110012-codex-loop-targeted-corrections",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-23T084707Z-715dee6b3d36.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T085007Z-d224f82345bf.json",
+        "workers/handoff/impl-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md",
+        "workers/handoff/review-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md",
+        "workers/impl-harness.json",
+        "workers/review-harness.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-23T084707Z-715dee6b3d36.json": "d487d44148c5596e08a7628fe9b89326db64c2cff75c87a58c0973a6b87ad632",
+        "loop.md": "bc1e8c41bc136b6578dd510a553c0cb131d8be46f9c1a93865d11a96320bf306",
+        "quality-gates/quality-check-2026-08-23T085007Z-d224f82345bf.json": "1954ed427f621eb36d5f5f4549c43d79f85e3b6b293eeea262cf2691a4d77389",
+        "workers/handoff/impl-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md": "681a8a88a742421159584d0d6887f0138171c9986b66725e4e668adf07dff332",
+        "workers/handoff/review-harness-060b6fce0cf96e232c046c6e3b121f7bed4212f2.md": "7d6c581386640683477a24ee4c7f01f81f7d1f9ab78a5aab0e1d751ab8c14709",
+        "workers/impl-harness.json": "40b5da6c757d0ed240951d5756f016dab6e5b0d481565b0c41a7a2830793d5e0",
+        "workers/review-harness.json": "b9b6cf0681e698ca3b4bae3c8346af9ca629762e76eb2e0cf516a791e1a0fa38"
+    },
+    "slug": "codex-loop-targeted-corrections",
+    "requested_slug": "codex-loop-targeted-corrections",
+    "compatible_slugs": [
+        "codex-loop-targeted-corrections"
+    ],
+    "branch": "codex/loop-targeted-corrections",
+    "candidate_commit": "060b6fce0cf96e232c046c6e3b121f7bed4212f2",
+    "accepted_feature_tip": "060b6fce0cf96e232c046c6e3b121f7bed4212f2",
+    "accepted_main_tip": "76be3a42484ee9654d381125d0ca0543319f0f47",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
