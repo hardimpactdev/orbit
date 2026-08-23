@@ -59,8 +59,10 @@ archive="${output}/Orbit.app.tar.gz"
 tar -C "$(dirname "$app_bundle")" -czf "$archive" "$(basename "$app_bundle")"
 [ -s "$archive" ] || fail 'desktop updater archive is empty.'
 
-npx --yes --prefix "$macos_dir" @tauri-apps/cli signer sign "$archive" \
-    || fail 'desktop updater archive could not be signed.'
+(
+    cd "$macos_dir"
+    npm run tauri -- signer sign "$archive"
+) || fail 'desktop updater archive could not be signed.'
 [ -s "${archive}.sig" ] || fail 'desktop updater signature is missing.'
 
 if [ "${ORBIT_NATIVE_REQUIRE_NOTARIZATION:-}" = '1' ]; then

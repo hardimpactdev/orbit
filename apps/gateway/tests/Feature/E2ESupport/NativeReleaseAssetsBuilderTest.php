@@ -126,6 +126,21 @@ it('installs locked TypeScript SDK dependencies before the Tauri desktop build',
         ->toContain('npm ci --ignore-scripts --include=dev');
 });
 
+it('signs the desktop updater archive through the installed local Tauri CLI', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+    $signatureCheck = '[ -s "${archive}.sig" ]';
+    $parts = explode($signatureCheck, $source);
+
+    expect($source)
+        ->not->toContain('npx --yes --prefix')
+        ->not->toContain('@tauri-apps/cli signer sign');
+
+    expect($parts)
+        ->toHaveCount(2)
+        ->and($parts[0])
+        ->toContain('npm run tauri -- signer sign "$archive"');
+});
+
 it('fails closed when the desktop signing key is missing', function (): void {
     $root = sys_get_temp_dir().'/orbit-desktop-bundle-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);
