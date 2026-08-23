@@ -18,7 +18,8 @@ it('rejects uppercase-ineligible topology names and synthetic proof prefixes', f
             'gateway' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa-gateway',
             'dev' => 'orbit-e2e-fw-proof-aaaaaaaaaaaa-dev',
         ],
-    ]))->toThrow(InvalidArgumentException::class, 'target identity mismatch');
+    ]))
+        ->toThrow(InvalidArgumentException::class, 'target identity mismatch');
 });
 
 it('does not skip candidate equality when remote git metadata is absent', function (): void {
@@ -51,7 +52,8 @@ it('does not skip candidate equality when remote git metadata is absent', functi
             'gateway' => 'orbit-e2e-dev-501dc2-gateway',
             'dev' => 'orbit-e2e-dev-501dc2-dev',
         ],
-    ]))->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
+    ]))
+        ->toThrow(InvalidArgumentException::class, 'checkout digest mismatch');
 });
 
 it('rejects a remote HEAD that does not equal the candidate', function (): void {
@@ -67,7 +69,8 @@ it('rejects a remote HEAD that does not equal the candidate', function (): void 
             'dev' => 'orbit-e2e-dev-501dc2-dev',
         ],
         'remote_head' => str_repeat('c', times: 40),
-    ]))->toThrow(InvalidArgumentException::class, 'candidate SHA mismatch');
+    ]))
+        ->toThrow(InvalidArgumentException::class, 'candidate SHA mismatch');
 });
 
 it('validates retained state identity before a sync would run', function (): void {
@@ -126,7 +129,8 @@ it('accepts a single replaced managed allow that precedes deny', function (): vo
 
     firewall_proof_assert_single_managed_source($rules, FIREWALL_PROOF_SOURCE);
 
-    expect(firewall_proof_managed_allow_precedes_deny($rules))->toBeTrue()
+    expect(firewall_proof_managed_allow_precedes_deny($rules))
+        ->toBeTrue()
         ->and(firewall_proof_seed_cleanup_indexes($rules))
         ->toBe([3, 2, 1]);
 });
