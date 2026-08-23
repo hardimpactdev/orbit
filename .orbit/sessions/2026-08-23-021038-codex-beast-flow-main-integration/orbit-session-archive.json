@@ -1,0 +1,28 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-23T00:10:38+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-beast-flow-main-integration/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-23-021038-codex-beast-flow-main-integration",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md",
+        "quality-gates/quality-check-2026-08-23T000458Z-1286e0694971.json"
+    ],
+    "entry_digests": {
+        "loop.md": "10ebb87e3dbae31ef30a77267374d188e1fd7bdb58dadd911384063184a0d83b",
+        "quality-gates/quality-check-2026-08-23T000458Z-1286e0694971.json": "6241997daee8f0078d0af3f5ad7dc1a57f00c27cb72886733097c0942090bef2"
+    },
+    "slug": "codex-beast-flow-main-integration",
+    "requested_slug": "codex-beast-flow-main-integration",
+    "compatible_slugs": [
+        "codex-beast-flow-main-integration"
+    ],
+    "branch": "codex/beast-flow-main-integration",
+    "candidate_commit": "ebc693f09fbcc522fc60103986fdfaf84214fd28",
+    "accepted_feature_tip": "ebc693f09fbcc522fc60103986fdfaf84214fd28",
+    "accepted_main_tip": "baaee77ac38d629848f6c024a69ddd4d6ff0afdd",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
