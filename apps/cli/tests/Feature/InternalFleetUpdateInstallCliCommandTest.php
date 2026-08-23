@@ -525,12 +525,18 @@ describe('internal fleet update install cli command', function (): void {
 
     it('installs an optional Orbit Agent artifact into the requested binary path', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
+        $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
         chmod(filename: $agentArtifactPath, permissions: 0o755);
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
         $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
+        $path = $systemdBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
 
         [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
             [
