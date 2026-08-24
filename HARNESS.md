@@ -41,7 +41,9 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
-5. Split mixed non-automated venues before dispatch.
+5. Aggregate mixed non-automated venues in one route. Each required venue must
+   provide one exact candidate/base/merge-base-bound runtime receipt; routes
+   reject missing, duplicate, unknown, or stale receipts.
 
 ### BUILD
 

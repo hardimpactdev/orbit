@@ -108,10 +108,14 @@ function compact_loop_problems(string $contents, ?string $path = null): array
     }
 
     $venue = orbitLoopStatusHead(orbitLoopLabel($contents, 'Proof', 'Acceptance venue'));
-    if ($venue === null || ! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+    $venuesLabel = orbitLoopLabel($contents, 'Proof', 'Acceptance venues');
+    $venues = $venue !== null
+        ? [$venue]
+        : array_values(array_filter(array_map('trim', explode(',', (string) $venuesLabel))));
+    if ($venues === [] || array_diff($venues, ORBIT_LOOP_ACCEPTANCE_VENUES) !== [] || count($venues) !== count(array_unique($venues))) {
         $problems[] =
-            'Acceptance venue must be automated, retained-incus, browser, or host-macos; current: '
-            .($venue ?? 'missing');
+            'Acceptance venue(s) must be automated, retained-incus, browser, or host-macos; current: '
+            .($venue ?? $venuesLabel ?? 'missing');
     }
 
     $acceptance = orbitLoopStatusHead(orbitLoopLabel($contents, 'Proof', 'Acceptance'));

@@ -819,7 +819,7 @@ function compact_feature_check(
         $worktree,
         $branchTip,
         $compactChangedFiles,
-        $candidateVenue['venue'],
+        $candidateVenue['venues'],
     );
 
     if ($acceptanceProblem !== null) {
@@ -831,7 +831,7 @@ function compact_feature_check(
         'subject' => $subject,
         'changed_files' => $compactChangedFiles,
         'loop' => $worktree.'/.orbit/loop.md',
-        'venue' => $candidateVenue['venue'],
+        'venues' => $candidateVenue['venues'],
     ]);
 
     if ($proofProblem !== null) {

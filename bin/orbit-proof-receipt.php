@@ -8,7 +8,8 @@ declare(strict_types=1);
  *     loop?: ?string,
  *     subject?: string,
  *     changed_files?: list<string>|null,
- *     venue?: string
+ *     venue?: string,
+ *     venues?: list<string>
  * }  $options
  * @return array{
  *     ok: bool,
@@ -19,6 +20,7 @@ declare(strict_types=1);
  *     gate: string,
  *     artifact: ?string,
  *     venue: string,
+ *     venues: list<string>,
  *     runtime: string
  * }
  */
@@ -39,24 +41,41 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
     $dirty = $dirtyStatus !== '';
     $resolvedChangedFiles = $changedFiles;
     $docsOnly = false;
-    $venue = is_string($options['venue'] ?? null) && $options['venue'] !== ''
+    $overrideVenue = is_string($options['venue'] ?? null) && $options['venue'] !== ''
         ? (string) $options['venue']
-        : 'automated';
+        : null;
+    $venue = $overrideVenue ?? 'automated';
+    $venues = ['automated'];
 
     if ($candidate !== '' && $candidateResult['exit_code'] === 0 && ! $dirty) {
         try {
             if ($resolvedChangedFiles !== null) {
-                if (! isset($options['venue'])) {
-                    $venue = orbitLoopAcceptanceVenue($resolvedChangedFiles);
-                }
+                $venues = orbitLoopAcceptanceVenues($resolvedChangedFiles);
             } else {
                 $route = orbitLoopExactProofRoute($worktree);
-                $venue = isset($options['venue']) ? $venue : $route['venue'];
+                $venues = $route['venues'];
                 $resolvedChangedFiles = $route['changed_files'];
             }
         } catch (Throwable) {
             // Fall back to compact_diff_proof_problem routing below.
         }
+    }
+
+    if ($resolvedChangedFiles !== null) {
+        $venues = orbitLoopAcceptanceVenues($resolvedChangedFiles);
+    }
+
+    if (isset($options['venues'])) {
+        $venues = array_values($options['venues']);
+    }
+
+    if (count($venues) > 1 && $overrideVenue !== null) {
+        $receipt = ['ok' => false, 'problem' => 'mixed-venue proof receipts cannot accept a singular venue override', 'candidate' => $candidate, 'dirty' => $dirty, 'docs_only' => false, 'gate' => 'quality-check', 'artifact' => null, 'venue' => '', 'venues' => $venues, 'runtime' => 'not applicable'];
+        return $receipt;
+    }
+
+    if ($overrideVenue === null && count($venues) === 1) {
+        $venue = $venues[0];
     }
 
     if (is_array($resolvedChangedFiles)) {
@@ -81,6 +100,7 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
         'gate' => $gate,
         'artifact' => $artifactPath,
         'venue' => $venue,
+        'venues' => $venues,
         'runtime' => $runtime,
     ];
 
@@ -112,17 +132,14 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
         ? (string) file_get_contents($loopPath)
         : null;
 
-    if ($venue !== 'automated' && ! is_string($loopContents)) {
+    if (array_diff($venues, ['automated']) !== [] && ! is_string($loopContents)) {
         $receipt['problem'] = 'non-automated venue requires a readable `.orbit/loop.md` runtime receipt';
 
         return $receipt;
     }
 
-    if (is_string($loopContents) && $venue !== 'automated') {
-        $route = orbitLoopExactProofRoute($worktree);
-        $venues = $route['venues'];
-
-        if (count($venues) > 1 && ! array_key_exists('venue', $options)) {
+    if (is_string($loopContents) && array_diff($venues, ['automated']) !== []) {
+        if (count($venues) > 1) {
             foreach ($venues as $requiredVenue) {
                 $runtimeProblem = orbitLoopRuntimeProofProblem($loopContents, $requiredVenue, $candidate, $worktree);
                 if ($runtimeProblem !== null) {
