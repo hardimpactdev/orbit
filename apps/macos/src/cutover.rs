@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -396,9 +396,8 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
         ));
     }
     let mut offset = 0;
-    let mut output = Vec::with_capacity(bytes.len() - 512);
-    let mut records = 0;
-    let mut root_removed = false;
+    let mut entries = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+    let mut root_seen = false;
     while offset + 512 <= bytes.len() {
         let header = &bytes[offset..offset + 512];
         if header.iter().all(|byte| *byte == 0) {
@@ -408,8 +407,14 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                     "malformed tar trailer".into(),
                 ));
             }
-            output.extend_from_slice(&[0; 1024]);
-            return if root_removed {
+            return if root_seen {
+                let mut output = Vec::new();
+                for (path, entry) in entries {
+                    output.extend_from_slice(&(path.len() as u64).to_le_bytes());
+                    output.extend_from_slice(&path);
+                    output.extend_from_slice(&(entry.len() as u64).to_le_bytes());
+                    output.extend_from_slice(&entry);
+                }
                 Ok(output)
             } else {
                 Err(CutoverError::Invalid(
@@ -470,26 +475,59 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             .iter()
             .position(|byte| *byte == 0)
             .unwrap_or(100);
-        let name = &header[..name_end];
-        let root = name == b"./" && header[156] == b'5';
-        if records == 0 && !root {
-            return Err(CutoverError::Invalid(
-                "volume".into(),
-                "missing root directory".into(),
-            ));
+        let mut name = header[..name_end].to_vec();
+        let prefix_end = header[345..500]
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(155);
+        if prefix_end > 0 {
+            let prefix = &header[345..345 + prefix_end];
+            name = [prefix, b"/", &name].concat();
         }
+        let kind = header[156];
+        let root = name == b"./" && kind == b'5';
         if root {
-            if root_removed || records != 0 {
+            if root_seen {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
                     "duplicate root directory".into(),
                 ));
             }
-            root_removed = true;
+            root_seen = true;
         } else {
-            output.extend_from_slice(&bytes[offset..end]);
+            let canonical = name.strip_prefix(b"./").unwrap_or(&name);
+            if canonical.is_empty()
+                || canonical[0] == b'/'
+                || canonical
+                    .split(|byte| *byte == b'/')
+                    .any(|part| part == b".." || (part.is_empty() && !name.ends_with(b"/")))
+            {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "unsafe tar path".into(),
+                ));
+            }
+            if !matches!(kind, 0 | b'0' | b'1' | b'2' | b'5') {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "unsupported tar entry".into(),
+                ));
+            }
+            let mut entry = Vec::from(&header[100..124]);
+            entry.push(kind);
+            entry.extend_from_slice(&header[136..148]);
+            entry.extend_from_slice(&header[157..257]);
+            if kind != b'5' {
+                entry.extend_from_slice(&bytes[offset + 512..end]);
+            }
+            let key = canonical.strip_suffix(b"/").unwrap_or(canonical).to_vec();
+            if entries.insert(key, entry).is_some() {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "duplicate tar entry".into(),
+                ));
+            }
         }
-        records += 1;
         offset = end;
     }
     Err(CutoverError::Invalid(
