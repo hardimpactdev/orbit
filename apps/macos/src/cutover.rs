@@ -866,7 +866,7 @@ pub fn preflight(
     }
     Ok(())
 }
-fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
+fn create_args_with_image(c: &LegacyContainer, image: &str) -> Result<Vec<String>, CutoverError> {
     let v = inspect(&c.inspect)?;
     let cfg = v
         .get("Config")
@@ -970,9 +970,13 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
             x.extend(["--network-alias".into(), alias.into()])
         }
     }
-    x.push(c.image.clone());
+    x.push(image.into());
     x.extend(cmd);
     Ok(x)
+}
+#[cfg(test)]
+fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
+    create_args_with_image(c, &c.image)
 }
 fn exact_retry_counterpart(
     program: &Path,
@@ -1033,6 +1037,101 @@ fn save_image(program: &Path, source: &str, image: &str, path: &Path) -> Result<
         return Err(CutoverError::Command("docker save failed".into()));
     }
     Ok(())
+}
+
+fn normalized_architecture(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "amd64" | "x86_64" | "x86-64" => Some("amd64"),
+        "arm64" | "aarch64" => Some("arm64"),
+        "arm" | "arm32" | "armhf" => Some("arm"),
+        "386" | "i386" | "i686" => Some("386"),
+        "ppc64le" => Some("ppc64le"),
+        "s390x" => Some("s390x"),
+        _ => None,
+    }
+}
+
+fn daemon_architecture(program: &Path, endpoint: &str) -> Result<&'static str, CutoverError> {
+    let out = docker(
+        program,
+        endpoint,
+        &a(&["info", "--format", "{{.Architecture}}"]),
+    )?;
+    let architecture = String::from_utf8_lossy(&out.stdout);
+    if architecture.trim().is_empty() {
+        return Ok("amd64");
+    }
+    normalized_architecture(&architecture).ok_or_else(|| {
+        CutoverError::Invalid(
+            endpoint.into(),
+            "unsupported or missing daemon architecture".into(),
+        )
+    })
+}
+
+fn image_architecture(
+    program: &Path,
+    endpoint: &str,
+    image: &str,
+) -> Result<&'static str, CutoverError> {
+    let out = docker(
+        program,
+        endpoint,
+        &a(&["image", "inspect", "--format", "{{.Architecture}}", image]),
+    )?;
+    let architecture = String::from_utf8_lossy(&out.stdout);
+    if architecture.trim().is_empty() {
+        return Ok("amd64");
+    }
+    normalized_architecture(&architecture).ok_or_else(|| {
+        CutoverError::Invalid(
+            image.into(),
+            "unsupported or missing image architecture".into(),
+        )
+    })
+}
+
+fn portable_tagged_reference(image: &str) -> bool {
+    if image.is_empty() || image.starts_with("sha256:") || image.contains('@') {
+        return false;
+    }
+    let last = image.rsplit('/').next().unwrap_or_default();
+    last.rsplit_once(':')
+        .is_some_and(|(_, tag)| !tag.is_empty())
+}
+
+fn target_image_reference(
+    program: &Path,
+    source: &str,
+    target: &str,
+    image: &str,
+    target_arch: &'static str,
+) -> Result<Option<String>, CutoverError> {
+    let source_arch = image_architecture(program, source, image)?;
+    if source_arch == target_arch {
+        return Ok(None);
+    }
+    if !portable_tagged_reference(image) {
+        return Err(CutoverError::Invalid(
+            image.into(),
+            "cross-architecture migration requires a portable tagged registry reference".into(),
+        ));
+    }
+    docker(
+        program,
+        target,
+        &a(&["pull", "--platform", &format!("linux/{target_arch}"), image]),
+    )?;
+    let target_image_arch = image_architecture(program, target, image)?;
+    if target_image_arch != target_arch {
+        return Err(CutoverError::Invalid(
+            image.into(),
+            format!(
+                "target image architecture {target_image_arch} does not match target {target_arch}"
+            ),
+        ));
+    }
+    Ok(Some(image.into()))
 }
 fn start_and_verify_running<F>(
     program: &Path,
@@ -1159,12 +1258,20 @@ where
                 )?;
             }
         }
+        let target_arch = daemon_architecture(program, target)?;
         let mut images = HashMap::new();
         for c in &cs {
             if !images.contains_key(&c.image) {
-                let p = tmp.join(format!("image-{}.tar", images.len()));
-                save_image(program, source, &c.image, &p)?;
-                images.insert(c.image.clone(), p);
+                let reference =
+                    target_image_reference(program, source, target, &c.image, target_arch)?;
+                let image = if reference.is_some() {
+                    None
+                } else {
+                    let p = tmp.join(format!("image-{}.tar", images.len()));
+                    save_image(program, source, &c.image, &p)?;
+                    Some(p)
+                };
+                images.insert(c.image.clone(), (image, reference));
             }
         }
         let net = docker(
@@ -1209,18 +1316,23 @@ where
             copy_named_volume(program, source, target, volume, &tmp)?;
         }
         for c in &cs {
-            let p = images.get(&c.image).unwrap();
-            let mut load = Command::new(program)
-                .args(["load"])
-                .env("DOCKER_HOST", target)
-                .env_remove("DOCKER_CONTEXT")
-                .stdin(File::open(p)?)
-                .stdout(Stdio::null())
-                .spawn()?;
-            if !load.wait()?.success() {
-                return Err(CutoverError::Command("docker load failed".into()));
-            }
-            docker(program, target, &create_args(c)?)?;
+            let (archive, reference) = images.get(&c.image).unwrap();
+            let image = if let Some(reference) = reference {
+                reference.as_str()
+            } else {
+                let mut load = Command::new(program)
+                    .args(["load"])
+                    .env("DOCKER_HOST", target)
+                    .env_remove("DOCKER_CONTEXT")
+                    .stdin(File::open(archive.as_ref().unwrap())?)
+                    .stdout(Stdio::null())
+                    .spawn()?;
+                if !load.wait()?.success() {
+                    return Err(CutoverError::Command("docker load failed".into()));
+                }
+                &c.image
+            };
+            docker(program, target, &create_args_with_image(c, image)?)?;
         }
         for c in &cs {
             let actual = inspect(&String::from_utf8_lossy(
