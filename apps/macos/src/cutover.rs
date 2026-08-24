@@ -186,13 +186,20 @@ fn mounts(v: &Value) -> Vec<&Value> {
         .map(|x| x.iter().collect())
         .unwrap_or_default()
 }
+fn mount_identity(m: &Value) -> Option<&str> {
+    match m.get("Type").and_then(Value::as_str) {
+        Some("volume") => m.get("Name").and_then(Value::as_str),
+        Some("bind") => m.get("Source").and_then(Value::as_str),
+        _ => None,
+    }
+}
 fn normalized_mounts(v: &Value) -> Vec<(String, String, bool)> {
     let mut mounts = mounts(v)
         .into_iter()
         .filter_map(|m| {
             Some((
                 m.get("Type")?.as_str()?.to_owned(),
-                m.get("Source")?.as_str()?.to_owned(),
+                mount_identity(m)?.to_owned(),
                 m.get("Destination")?.as_str()?.to_owned(),
                 m.get("RW").and_then(Value::as_bool).unwrap_or(true),
             ))
@@ -293,12 +300,12 @@ fn validate_container(c: &LegacyContainer) -> Result<(), CutoverError> {
                 }
             }
             Some("volume") => {
-                if m.get("Source").and_then(Value::as_str).is_none()
+                if m.get("Name").and_then(Value::as_str).is_none()
                     || m.get("Destination").and_then(Value::as_str).is_none()
                 {
                     return Err(CutoverError::Invalid(
                         c.name.clone(),
-                        "named volume lacks source or destination".into(),
+                        "named volume lacks name or destination".into(),
                     ));
                 }
             }
@@ -324,14 +331,14 @@ fn named_volumes(containers: &[LegacyContainer]) -> Result<Vec<String>, CutoverE
         let v = inspect(&c.inspect)?;
         for mount in mounts(&v) {
             if mount.get("Type").and_then(Value::as_str) == Some("volume") {
-                let source = mount
-                    .get("Source")
+                let name = mount
+                    .get("Name")
                     .and_then(Value::as_str)
-                    .filter(|source| !source.is_empty())
+                    .filter(|name| !name.is_empty())
                     .ok_or_else(|| {
-                        CutoverError::Invalid(c.name.clone(), "named volume lacks source".into())
+                        CutoverError::Invalid(c.name.clone(), "named volume lacks name".into())
                     })?;
-                names.insert(source.to_owned());
+                names.insert(name.to_owned());
             }
         }
     }
@@ -595,7 +602,7 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
         ])
     }
     for m in mounts(&v) {
-        let source = m.get("Source").and_then(Value::as_str).unwrap_or("");
+        let source = mount_identity(m).unwrap_or("");
         let dest = m.get("Destination").and_then(Value::as_str).unwrap_or("");
         let mode = if m.get("RW").and_then(Value::as_bool) == Some(false) {
             ":ro"
@@ -1094,7 +1101,7 @@ mod tests {
         v["Mounts"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"Type":"volume","Source":"data","Destination":"/data"}));
+            .push(json!({"Type":"volume","Name":"data","Source":"/var/lib/docker/volumes/data/_data","Destination":"/data"}));
         c.inspect = json!([v]).to_string();
         validate_container(&c).unwrap();
         assert_eq!(named_volumes(&[c]).unwrap(), vec!["data"]);
@@ -1130,6 +1137,7 @@ mod tests {
         );
         cutover(&fake, &source, &target).unwrap();
         let lines = fs::read_to_string(&log).unwrap();
+        assert!(!lines.contains("/var/lib/docker/volumes/"));
         assert_eq!(
             lines
                 .matches(" volume create --label orbit.cutover.volume_sha256=")
@@ -1187,6 +1195,7 @@ mod tests {
         assert!(cutover(&fake, &source, &target).is_err());
         let lines = fs::read_to_string(&log).unwrap();
         assert!(lines.contains(" volume rm shared-data"));
+        assert!(!lines.contains("/var/lib/docker/volumes/"));
         assert!(lines.contains(" network rm orbit-network"));
         assert!(lines.contains(" rm -f orbit-caddy"));
         assert!(lines.contains(" rm -f orbit-runtime"));
@@ -1232,6 +1241,7 @@ mod tests {
         assert!(delta.contains(" rm orbit-runtime"));
         assert!(delta.contains("source.sock run --rm --volume shared-data:/orbit-volume:ro"));
         assert!(delta.contains("target.sock run --rm --volume shared-data:/orbit-volume:ro"));
+        assert!(!delta.contains("/var/lib/docker/volumes/"));
         for line in delta
             .lines()
             .filter(|line| line.contains(" run ") && line.contains(" tar -C /orbit-volume -cf -"))
@@ -1303,11 +1313,15 @@ mod tests {
         let mut runtime = runtime_fixture();
         for c in [&mut caddy, &mut runtime] {
             let mut v = inspect(&c.inspect).unwrap();
-            v["Mounts"] = json!([{"Type":"volume","Name":"shared-data","Source":"shared-data","Destination":"/data","RW":true}]);
+            v["Mounts"] = json!([{"Type":"volume","Name":"shared-data","Source":"/var/lib/docker/volumes/shared-data/_data","Destination":"/data","RW":true}]);
             c.inspect = json!([v]).to_string();
         }
         let mut target_caddy = inspect(&caddy.inspect).unwrap();
         let mut target_runtime = inspect(&runtime.inspect).unwrap();
+        for target in [&mut target_caddy, &mut target_runtime] {
+            target["Mounts"][0]["Source"] =
+                json!("/var/lib/docker/volumes/shared-data/_data-target");
+        }
         target_caddy["Id"] = json!("caddy-id");
         target_runtime["Id"] = json!("runtime-id");
         fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
