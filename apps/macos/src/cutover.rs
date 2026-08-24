@@ -470,8 +470,6 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                                 output.extend_from_slice(&(m.len() as u64).to_le_bytes());
                                 output.extend_from_slice(m);
                             }
-                            output.extend_from_slice(&(anchor.len() as u64).to_le_bytes());
-                            output.extend_from_slice(anchor);
                             output.extend_from_slice(&a.metadata);
                             output.extend_from_slice(&a.declared_size.to_le_bytes());
                             output.extend_from_slice(&(a.payload.len() as u64).to_le_bytes());
@@ -2447,6 +2445,21 @@ esac
         assert_ne!(
             tar_manifest(&symlink(0o777, 1, 2, 3, b"one")).unwrap(),
             tar_manifest(&symlink(0o777, 1, 2, 3, b"two")).unwrap()
+        );
+
+        let forward = archive(vec![
+            root(b"./"),
+            file(b"a", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+            file(b"b", b"", 99, 0o600, 9, 8, b'1', b"a", &[]),
+        ]);
+        let reversed = archive(vec![
+            root(b"./"),
+            file(b"a", b"", 99, 0o600, 9, 8, b'1', b"b", &[]),
+            file(b"b", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+        ]);
+        assert_eq!(
+            tar_manifest(&forward).unwrap(),
+            tar_manifest(&reversed).unwrap()
         );
     }
 
