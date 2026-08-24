@@ -796,6 +796,7 @@ Command contracts live under [docs/domains/](domains/).
 Orbit Desktop owns only the macOS Colima profile `orbit` and its explicit
 Docker socket. A secure ownership record moves from reservation to ready;
 profile name alone is not proof. Desktop starts Colima and verifies the socket.
+On Apple Silicon, that daemon is native ARM64 and runs with Rosetta disabled. Migration prepares or reuses only matching-architecture images; an AMD64 source uses an explicit linux/arm64 pull only when a portable tagged registry reference exists, and the pulled architecture is verified. If native architecture cannot be proven, migration fails and rolls back before source removal. Architecture and Rosetta are fixed safety boundaries, not resource overrides.
 Before Agent starts, it migrates every recognized Orbit-owned OrbStack
 container, preserving configuration, mounts, ports, labels, volumes, and
 running/stopped state. Unknown managed kinds fail closed; unrelated containers

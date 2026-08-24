@@ -1141,7 +1141,7 @@ Platform-specific behavior — installing packages, writing config files, contro
 
 ## macOS Runtime
 
-Desktop waits for the owned Colima Docker socket before starting Agent. It
+Desktop waits for the owned Colima Docker socket before starting Agent. It makes the Apple Silicon orbit daemon native ARM64 with Rosetta disabled. Migration prepares or reuses only images matching that daemon; an AMD64 source is converted only through an explicit linux/arm64 pull from a portable tagged registry reference, followed by target-architecture verification. Missing portable references or unverifiable architecture fail and roll back before source removal. Architecture and Rosetta are fixed safety boundaries, while CPU, memory, and disk overrides remain persistent resource settings.
 migrates recognized Orbit-owned OrbStack containers through an explicit source
 socket before Agent startup, preserving mounts, labels, ports, volumes, and
 lifecycle state; unknown managed kinds fail closed and unrelated containers are
