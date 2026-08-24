@@ -1946,6 +1946,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn provider_cutover_precedes_owned_agent_start() {
+        let source = include_str!("main.rs");
+        let function = &source[source.find("fn start_provider_in_background").unwrap()..];
+        assert!(
+            function.find("cutover::cutover").unwrap()
+                < function.find("start_owned_agent").unwrap()
+        );
+    }
+
+    #[test]
     fn loads_orbit_tray_icon_asset() {
         let icon = tray_icon();
 

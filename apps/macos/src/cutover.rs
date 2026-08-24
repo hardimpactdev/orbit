@@ -130,28 +130,14 @@ pub fn discover(program: &Path, source: &str) -> Result<Vec<LegacyContainer>, Cu
         let raw = docker(program, source, &a(&["inspect", id]))?;
         let text = String::from_utf8_lossy(&raw.stdout).into_owned();
         let v = inspect(&text)?;
-        let labels = v.pointer("/Config/Labels").and_then(Value::as_object);
-        if labels
-            .and_then(|x| x.get("orbit.managed"))
-            .and_then(Value::as_str)
-            != Some("true")
-        {
-            continue;
-        }
         let name = v
             .get("Name")
             .and_then(Value::as_str)
             .unwrap_or(id)
             .trim_start_matches('/')
             .to_owned();
-        let kind = labels
-            .and_then(|x| x.get("orbit.container.kind"))
-            .and_then(Value::as_str);
-        if !kind.is_some_and(|k| KNOWN_KINDS.contains(&k)) {
-            return Err(CutoverError::Invalid(
-                name,
-                "unknown or missing orbit.container.kind".into(),
-            ));
+        if !classify_inspect(&v, &name)? {
+            continue;
         }
         let image = v
             .pointer("/Config/Image")
@@ -173,11 +159,112 @@ pub fn discover(program: &Path, source: &str) -> Result<Vec<LegacyContainer>, Cu
     }
     Ok(r)
 }
+
+fn classify_inspect(v: &Value, name: &str) -> Result<bool, CutoverError> {
+    let labels = v.pointer("/Config/Labels").and_then(Value::as_object);
+    if labels
+        .and_then(|x| x.get("orbit.managed"))
+        .and_then(Value::as_str)
+        != Some("true")
+    {
+        return Ok(false);
+    }
+    let kind = labels
+        .and_then(|x| x.get("orbit.container.kind"))
+        .and_then(Value::as_str);
+    if !kind.is_some_and(|k| KNOWN_KINDS.contains(&k)) {
+        return Err(CutoverError::Invalid(
+            name.into(),
+            "unknown or missing orbit.container.kind".into(),
+        ));
+    }
+    Ok(true)
+}
 fn mounts(v: &Value) -> Vec<&Value> {
     v.pointer("/Mounts")
         .and_then(Value::as_array)
         .map(|x| x.iter().collect())
         .unwrap_or_default()
+}
+fn normalized_mounts(v: &Value) -> Vec<(String, String, bool)> {
+    let mut mounts = mounts(v)
+        .into_iter()
+        .filter_map(|m| {
+            Some((
+                m.get("Type")?.as_str()?.to_owned(),
+                m.get("Source")?.as_str()?.to_owned(),
+                m.get("Destination")?.as_str()?.to_owned(),
+                m.get("RW").and_then(Value::as_bool).unwrap_or(true),
+            ))
+        })
+        .map(|(ty, source, destination, rw)| (format!("{ty}:{source}"), destination, rw))
+        .collect::<Vec<_>>();
+    mounts.sort();
+    mounts
+}
+fn normalized_ports(v: &Value) -> Vec<(String, String, String)> {
+    let mut ports = v
+        .pointer("/HostConfig/PortBindings")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|ports| ports.iter())
+        .flat_map(|(container, bindings)| {
+            bindings
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |binding| {
+                    (
+                        container.clone(),
+                        binding
+                            .get("HostIp")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        binding
+                            .get("HostPort")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    ports.sort();
+    ports
+}
+fn normalized_restart(v: &Value) -> (String, u64) {
+    (
+        v.pointer("/HostConfig/RestartPolicy/Name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        v.pointer("/HostConfig/RestartPolicy/MaximumRetryCount")
+            .and_then(Value::as_u64)
+            .unwrap_or_default(),
+    )
+}
+fn effective_command(v: &Value) -> Vec<String> {
+    let mut command = strings(v.pointer("/Config/Entrypoint"));
+    command.extend(strings(v.pointer("/Config/Cmd")));
+    command
+}
+fn normalized_aliases(v: &Value, c: &LegacyContainer) -> Vec<String> {
+    let mut aliases = v
+        .pointer("/NetworkSettings/Networks/orbit-network/Aliases")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|alias| {
+            *alias != c.name
+                && *alias != c.id
+                && !(alias.len() >= 12 && alias.chars().all(|ch| ch.is_ascii_hexdigit()))
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    aliases.sort();
+    aliases
 }
 fn validate_container(c: &LegacyContainer) -> Result<(), CutoverError> {
     let v = inspect(&c.inspect)?;
@@ -359,7 +446,12 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
             for b in bs.as_array().into_iter().flatten() {
                 let ip = b.get("HostIp").and_then(Value::as_str).unwrap_or("");
                 let hp = b.get("HostPort").and_then(Value::as_str).unwrap_or("");
-                x.extend(["--publish".into(), format!("{ip}:{hp}:{container}")])
+                let published = if ip.is_empty() {
+                    format!("{hp}:{container}")
+                } else {
+                    format!("{ip}:{hp}:{container}")
+                };
+                x.extend(["--publish".into(), published])
             }
         }
     }
@@ -372,7 +464,11 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
         .pointer("/NetworkSettings/Networks/orbit-network/Aliases")
         .and_then(Value::as_array)
     {
-        for alias in n.iter().filter_map(Value::as_str) {
+        for alias in n.iter().filter_map(Value::as_str).filter(|alias| {
+            *alias != c.name
+                && *alias != c.id
+                && !(alias.len() >= 12 && alias.chars().all(|ch| ch.is_ascii_hexdigit()))
+        }) {
             x.extend(["--network-alias".into(), alias.into()])
         }
     }
@@ -492,27 +588,22 @@ pub fn cutover(
                 &docker(program, target, &a(&["inspect", &c.name]))?.stdout,
             ))?;
             let expected = inspect(&c.inspect)?;
-            let selected = [
+            let scalar_equal = [
                 "/Config/Labels",
                 "/Config/Env",
                 "/Config/WorkingDir",
                 "/Config/User",
-                "/Mounts",
-                "/HostConfig/PortBindings",
-                "/HostConfig/RestartPolicy",
                 "/HostConfig/ExtraHosts",
-                "/NetworkSettings/Networks/orbit-network/Aliases",
                 "/State/Running",
-            ];
-            let effective = |v: &Value| {
-                let mut command = strings(v.pointer("/Config/Entrypoint"));
-                command.extend(strings(v.pointer("/Config/Cmd")));
-                command
-            };
-            if selected
-                .iter()
-                .any(|path| actual.pointer(path) != expected.pointer(path))
-                || effective(&actual) != effective(&expected)
+            ]
+            .iter()
+            .all(|path| actual.pointer(path) == expected.pointer(path));
+            if !scalar_equal
+                || normalized_mounts(&actual) != normalized_mounts(&expected)
+                || normalized_ports(&actual) != normalized_ports(&expected)
+                || normalized_restart(&actual) != normalized_restart(&expected)
+                || normalized_aliases(&actual, c) != normalized_aliases(&expected, c)
+                || effective_command(&actual) != effective_command(&expected)
             {
                 return Err(CutoverError::Invalid(
                     c.name.clone(),
@@ -543,6 +634,162 @@ pub fn cutover(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    static CUTOVER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn caddy_fixture() -> LegacyContainer {
+        let mut v = json!({"Id":"caddy-id","Name":"/orbit-caddy","State":{"Running":true},"Config":{"Image":"caddy:2-alpine","Labels":{"orbit.managed":"true","orbit.container.kind":"caddy","orbit.caddy.spec_hash":"sha256:mini-caddy"},"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin","CADDY_VERSION=2.10.0","XDG_CONFIG_HOME=/config","XDG_DATA_HOME=/data"],"Entrypoint":null,"Cmd":["caddy","run","--config","/etc/caddy/Caddyfile","--adapter","caddyfile"]},"HostConfig":{"RestartPolicy":{"Name":"always","MaximumRetryCount":0},"PortBindings":{"80/tcp":[{"HostIp":"","HostPort":"80"}],"443/tcp":[{"HostIp":"","HostPort":"443"}],"443/udp":[{"HostIp":"","HostPort":"443"}],"8081/tcp":[{"HostIp":"10.6.0.8","HostPort":"8081"}]},"ExtraHosts":["host.docker.internal:host-gateway"]},"Mounts":[],"NetworkSettings":{"Networks":{"orbit-network":{"Aliases":["orbit-caddy","caddy-id","caddy"]}}},"Config2":{"WorkingDir":""}});
+        v["Mounts"] = json!([
+            {"Type":"bind","Source":"/Users","Destination":"/Users","RW":false},
+            {"Type":"bind","Source":"/Users/nckrtl/.local/share/orbit/caddy/config","Destination":"/config/caddy","RW":true},
+            {"Type":"bind","Source":"/Users/nckrtl/.local/share/orbit/caddy/data","Destination":"/data/caddy","RW":true},
+            {"Type":"bind","Source":"/Users/nckrtl/.config/orbit/caddy/Caddyfile","Destination":"/etc/caddy/Caddyfile","RW":false},
+            {"Type":"bind","Source":"/Users/nckrtl/.config/orbit/caddy/orbit","Destination":"/etc/caddy/orbit","RW":false},
+            {"Type":"bind","Source":"/Users/nckrtl/.config/orbit/caddy/sites","Destination":"/etc/caddy/sites","RW":false},
+            {"Type":"bind","Source":"/Users/nckrtl/.config/orbit","Destination":"/etc/orbit","RW":false}
+        ]);
+        v["Config"]["Cmd"] = json!([
+            "caddy",
+            "run",
+            "--config",
+            "/etc/caddy/Caddyfile",
+            "--adapter",
+            "caddyfile"
+        ]);
+        LegacyContainer {
+            id: "caddy-id".into(),
+            name: "orbit-caddy".into(),
+            image: "caddy:2-alpine".into(),
+            running: true,
+            inspect: json!([v]).to_string(),
+        }
+    }
+
+    fn runtime_fixture() -> LegacyContainer {
+        let mut v = json!({"Id":"runtime-id","Name":"/orbit-runtime","State":{"Running":false},"Config":{"Image":"orbit-runtime:current","Labels":{"orbit.managed":"true","orbit.container.kind":"runtime"},"Env":["ORBIT_HOST_PATH=/Users/nckrtl/orbit","ORBIT_SOURCE_PATH=/Users/nckrtl/orbit/src"],"Entrypoint":[],"Cmd":["sleep","infinity"]},"HostConfig":{"RestartPolicy":{"Name":"unless-stopped","MaximumRetryCount":0}},"Mounts":[],"NetworkSettings":{"Networks":{"orbit-network":{"Aliases":["orbit-runtime","runtime-id","runtime"]}}}});
+        v["Mounts"] = json!([
+            {"Type":"bind","Source":"/etc/caddy","Destination":"/etc/caddy","RW":true},
+            {"Type":"bind","Source":"/etc/orbit","Destination":"/etc/orbit","RW":true},
+            {"Type":"bind","Source":"/Users/nckrtl/orbit","Destination":"/opt/orbit","RW":true},
+            {"Type":"bind","Source":"/var/run/docker.sock","Destination":"/var/run/docker.sock","RW":true}
+        ]);
+        v["Config"]["Entrypoint"] = json!([
+            "/usr/bin/tini",
+            "--",
+            "/usr/local/bin/orbit-runtime-entrypoint"
+        ]);
+        v["Config"]["WorkingDir"] = json!("/opt/orbit");
+        LegacyContainer {
+            id: "runtime-id".into(),
+            name: "orbit-runtime".into(),
+            image: "orbit-runtime:current".into(),
+            running: false,
+            inspect: json!([v]).to_string(),
+        }
+    }
+
+    #[test]
+    fn exact_live_and_legacy_fixtures_preserve_create_and_semantics() {
+        let caddy = caddy_fixture();
+        let args = create_args(&caddy).unwrap();
+        assert!(args.windows(2).any(|w| w == ["--publish", "80:80/tcp"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--publish", "10.6.0.8:8081:8081/tcp"]));
+        assert!(!args.iter().any(|x| x.starts_with(':')));
+        assert_eq!(
+            normalized_mounts(&inspect(&caddy.inspect).unwrap()).len(),
+            7
+        );
+        assert_eq!(
+            effective_command(&inspect(&caddy.inspect).unwrap()),
+            vec![
+                "caddy",
+                "run",
+                "--config",
+                "/etc/caddy/Caddyfile",
+                "--adapter",
+                "caddyfile"
+            ]
+        );
+        let runtime = runtime_fixture();
+        let args = create_args(&runtime).unwrap();
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--restart", "unless-stopped"]));
+        assert_eq!(
+            effective_command(&inspect(&runtime.inspect).unwrap()),
+            vec![
+                "/usr/bin/tini",
+                "--",
+                "/usr/local/bin/orbit-runtime-entrypoint",
+                "sleep",
+                "infinity",
+            ]
+        );
+        assert_eq!(
+            normalized_mounts(&inspect(&runtime.inspect).unwrap()).len(),
+            4
+        );
+        let source = inspect(&caddy_fixture().inspect).unwrap();
+        let mut target = source.clone();
+        target["Id"] = json!("target-daemon-id");
+        target["Name"] = json!("/orbit-caddy");
+        target["State"]["Running"] = json!(true);
+        target["NetworkSettings"]["Networks"]["orbit-network"]["Aliases"] =
+            json!(["orbit-caddy", "target-daemon-id", "caddy"]);
+        assert_eq!(normalized_mounts(&source), normalized_mounts(&target));
+        assert_eq!(normalized_ports(&source), normalized_ports(&target));
+        assert_eq!(normalized_restart(&source), normalized_restart(&target));
+        assert_eq!(effective_command(&source), effective_command(&target));
+        let mut target_container = caddy.clone();
+        target_container.id = "target-daemon-id".into();
+        assert_eq!(
+            normalized_aliases(&source, &caddy),
+            normalized_aliases(&target, &target_container)
+        );
+        assert_eq!(source["Config"]["Labels"], target["Config"]["Labels"]);
+        assert_eq!(source["State"], target["State"]);
+    }
+
+    #[test]
+    fn classification_accepts_known_kinds_and_rejects_owned_unknowns() {
+        for kind in KNOWN_KINDS {
+            assert!(classify_inspect(
+                &json!({"Config":{"Labels":{"orbit.managed":"true","orbit.container.kind":kind}}}),
+                "x"
+            )
+            .unwrap());
+        }
+        assert!(
+            !classify_inspect(&json!({"Config":{"Labels":{"orbit.managed":"false"}}}), "x")
+                .unwrap()
+        );
+        assert!(classify_inspect(
+            &json!({"Config":{"Labels":{"orbit.managed":"true","orbit.container.kind":"unknown"}}}),
+            "x"
+        )
+        .is_err());
+        assert!(
+            classify_inspect(&json!({"Config":{"Labels":{"orbit.managed":"true"}}}), "x").is_err()
+        );
+    }
+
+    #[test]
+    fn named_volume_is_rejected_before_plan_creation() {
+        let mut c = runtime_fixture();
+        let mut v = inspect(&c.inspect).unwrap();
+        v["Mounts"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"Type":"volume","Source":"data","Destination":"/data"}));
+        c.inspect = json!([v]).to_string();
+        assert!(validate_container(&c)
+            .unwrap_err()
+            .to_string()
+            .contains("named volumes"));
+    }
+
     #[test]
     fn known_kinds_are_bounded() {
         assert_eq!(KNOWN_KINDS.len(), 8);
@@ -554,5 +801,140 @@ mod tests {
         c.env("DOCKER_HOST", "unix:///source.sock")
             .env_remove("DOCKER_CONTEXT");
         assert!(c.get_envs().any(|(k, _)| k == "DOCKER_HOST"))
+    }
+
+    fn test_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "orbit-cutover-test-{}-{}",
+            label,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn fake_docker(fixture_dir: &Path, fail_verify: bool) -> (PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = test_dir("fake");
+        let log = dir.join("argv.log");
+        let script = dir.join("docker-fake");
+        let verify = if fail_verify {
+            "exit 31"
+        } else {
+            "cat \"$FIXTURE/target.json\"; exit 0"
+        };
+        let body = "#!/bin/sh\nprintf '%s %s\\n' \"$DOCKER_HOST\" \"$*\" >> \"$LOG\"\ncase \"$DOCKER_HOST:$1:$2\" in\nunix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;\nunix://*/source.sock:ps:-aq) printf 'caddy-id\\nruntime-id\\nunrelated-id\\n'; exit 0 ;;\nunix://*/target.sock:ps:-aq) exit 0 ;;\nunix://*/source.sock:inspect:caddy-id) cat \"$FIXTURE/source.json\"; exit 0 ;;\nunix://*/source.sock:inspect:runtime-id) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/source.sock:inspect:unrelated-id) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/target.sock:inspect:orbit-caddy) VERIFY;;\nunix://*/target.sock:inspect:orbit-runtime) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/target.sock:inspect:*) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/source.sock:network:inspect) cat \"$FIXTURE/network.json\"; exit 0 ;;\nunix://*/target.sock:network:inspect) exit 1 ;;\nunix://*/target.sock:network:create*) exit 0 ;;\nunix://*/target.sock:network:rm*) exit 0 ;;\nunix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;\nunix://*/source.sock:save:*|unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;\n*) exit 0 ;;\nesac\n".replace("VERIFY", verify);
+        // Keep fixture paths in the environment so the shell program remains readable.
+        let body = body.replace("$FIXTURE", fixture_dir.to_str().unwrap());
+        fs::write(&script, body).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, script, log)
+    }
+
+    fn cutover_fixture_dir(caddy: &LegacyContainer, runtime: &LegacyContainer) -> PathBuf {
+        let dir = test_dir("fixtures");
+        fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
+        fs::write(dir.join("runtime.json"), &runtime.inspect).unwrap();
+        fs::write(
+            dir.join("unrelated.json"),
+            json!([{"Name":"/unrelated"}]).to_string(),
+        )
+        .unwrap();
+        fs::write(dir.join("network.json"), json!([{"Name":"orbit-network","Labels":{"orbit.managed":"true","orbit.network.kind":"runtime"}}]).to_string()).unwrap();
+        let mut target = inspect(&caddy.inspect).unwrap();
+        target["Id"] = json!("feedfacecafebeef");
+        target["NetworkSettings"]["Networks"]["orbit-network"]["Aliases"] =
+            json!(["orbit-caddy", "feedfacecafebeef", "caddy"]);
+        fs::write(dir.join("target.json"), json!([target]).to_string()).unwrap();
+        dir
+    }
+
+    fn unix_socket(dir: &Path, name: &str) -> (PathBuf, String) {
+        let socket_dir = dir.join(name);
+        let _ = fs::remove_file(&socket_dir);
+        let path = socket_dir;
+        std::os::unix::net::UnixListener::bind(&path).unwrap();
+        (path.clone(), format!("unix://{}", path.display()))
+    }
+
+    #[test]
+    fn real_cutover_transfers_all_owned_containers_and_excludes_unrelated() {
+        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let caddy = caddy_fixture();
+        let runtime = runtime_fixture();
+        let fixture = cutover_fixture_dir(&caddy, &runtime);
+        let (_fake_dir, fake, log) = fake_docker(&fixture, false);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let moved = cutover(&fake, &source, &target).unwrap();
+        assert_eq!(
+            moved.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            vec!["orbit-caddy", "orbit-runtime"]
+        );
+        let log_text = fs::read_to_string(log).unwrap();
+        assert!(log_text.contains("network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network"));
+        assert!(log_text.contains("unix://"));
+        assert!(log_text.contains("stop orbit-caddy"));
+        assert!(!log_text.contains("stop orbit-runtime"));
+        assert!(log_text.contains("load"));
+        assert!(log_text.contains("create --name orbit-caddy"));
+        assert!(log_text.contains("create --name orbit-runtime"));
+        assert!(log_text.contains("start orbit-caddy"));
+        assert!(log_text.contains("rm orbit-caddy"));
+        assert!(log_text.contains("rm orbit-runtime"));
+        assert!(!log_text.contains("create --name unrelated"));
+        assert!(!log_text.contains("stop unrelated"));
+        assert!(!log_text.contains("rm unrelated"));
+        let lines = log_text.lines().collect::<Vec<_>>();
+        let first_stop = lines
+            .iter()
+            .position(|line| line.contains(" stop orbit-caddy"))
+            .unwrap();
+        let last_save = lines
+            .iter()
+            .rposition(|line| line.contains(" save "))
+            .unwrap();
+        let network_create = lines
+            .iter()
+            .position(|line| line.contains(" network create "))
+            .unwrap();
+        let first_remove = lines
+            .iter()
+            .position(|line| line.contains(" rm orbit-caddy"))
+            .unwrap();
+        let last_inspect = lines
+            .iter()
+            .rposition(|line| line.contains(" inspect orbit-runtime"))
+            .unwrap();
+        assert!(last_save < first_stop);
+        assert!(network_create < first_stop);
+        assert!(last_inspect < first_remove);
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
+    }
+
+    #[test]
+    fn real_cutover_failure_cleans_targets_and_restarts_only_originally_running() {
+        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let caddy = caddy_fixture();
+        let runtime = runtime_fixture();
+        let fixture = cutover_fixture_dir(&caddy, &runtime);
+        let (_fake_dir, fake, log) = fake_docker(&fixture, true);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        assert!(cutover(&fake, &source, &target).is_err());
+        let log_text = fs::read_to_string(log).unwrap();
+        assert!(log_text.contains("rm -f orbit-caddy"));
+        assert!(log_text.contains("rm -f orbit-runtime"));
+        assert!(log_text.contains("network rm orbit-network"));
+        assert!(log_text.contains("start orbit-caddy"));
+        assert!(!log_text.contains("start orbit-runtime"));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
     }
 }
