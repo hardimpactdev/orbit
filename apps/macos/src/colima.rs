@@ -178,6 +178,11 @@ pub fn has_owned_profile(home: &Path) -> bool {
             .is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
 }
 
+fn profile_exists(home: &Path) -> bool {
+    fs::symlink_metadata(home.join(".colima").join(PROFILE))
+        .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+}
+
 pub fn stop_owned_profile(home: &Path, colima: &Path) -> Result<(), ColimaError> {
     let record = load_record(home)?;
     validate_record(&record)?;
@@ -234,6 +239,19 @@ pub fn existing_start_plan() -> Vec<String> {
     .into_iter()
     .map(String::from)
     .collect()
+}
+
+fn start_plan_for_profile(
+    reserved: bool,
+    profile_exists: bool,
+    logical_cpus: u32,
+    physical_memory_bytes: u64,
+) -> Result<Vec<String>, ColimaError> {
+    if reserved && !profile_exists {
+        first_creation_plan(logical_cpus, physical_memory_bytes)
+    } else {
+        Ok(existing_start_plan())
+    }
 }
 pub fn parse_status(json: &str) -> Result<ProviderReady, ColimaError> {
     let s: Status = serde_json::from_str(json)?;
@@ -439,14 +457,14 @@ pub fn ensure_ready(
         vec!["status".into(), PROFILE.into(), "--json".into()],
     ));
     if status.is_err() {
-        let args = if record.state == "reserved" {
+        let args = if record.state == "reserved" && !profile_exists(home) {
             let cpus = std::thread::available_parallelism()
                 .map(|x| x.get() as u32)
                 .unwrap_or(1);
             let memory = host_memory_bytes().ok_or(ColimaError::InsufficientMemory)?;
-            first_creation_plan(cpus, memory)?
+            start_plan_for_profile(true, false, cpus, memory)?
         } else {
-            existing_start_plan()
+            start_plan_for_profile(record.state == "reserved", profile_exists(home), 1, 0)?
         };
         run(&direct_command(colima.clone(), args))?;
     }
@@ -813,6 +831,13 @@ mod tests {
         assert!(!p
             .iter()
             .any(|x| matches!(x.as_str(), "--cpus" | "--memory" | "--disk")));
+    }
+
+    #[test]
+    fn reserved_record_with_existing_profile_uses_existing_start_plan() {
+        let plan = start_plan_for_profile(true, true, 8, 16 * 1024 * 1024 * 1024).unwrap();
+        assert_eq!(plan, existing_start_plan());
+        assert!(!plan.iter().any(|arg| arg == "--cpus" || arg == "--memory"));
     }
     #[test]
     fn unowned_profile_is_rejected_without_record() {

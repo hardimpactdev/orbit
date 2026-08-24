@@ -13,9 +13,9 @@ use orbit_macos::legacy::{
 use orbit_macos::lifecycle::{
     agent_restart_endpoint, begin_mutation, classify_missing_executable, dashboard_close_action,
     disarm_reset, install_runtime_enabled, provider_health_action, provider_label,
-    provider_retry_enabled, quit_disposition, reset_click, reset_runtime_enabled,
-    try_begin_provider_attempt, MissingPrerequisiteCause, ProviderHealthAction,
-    ProviderRuntimeState, QuitDisposition,
+    provider_retry_enabled, quit_provider_action, reset_click, reset_runtime_enabled,
+    stop_failed_exit_enabled, try_begin_provider_attempt, MissingPrerequisiteCause,
+    ProviderHealthAction, ProviderRuntimeState, QuitDisposition,
 };
 use orbit_macos::lifecycle::{reset_confirmation_label, ResetConfirmation};
 use orbit_macos::paths::{
@@ -67,6 +67,7 @@ const PROVIDER_MENU_ID: &str = "provider_status";
 const RETRY_PROVIDER_MENU_ID: &str = "retry_provider";
 const INSTALL_RUNTIME_MENU_ID: &str = "install_local_runtime";
 const RESET_RUNTIME_MENU_ID: &str = "reset_local_runtime";
+const EXIT_AFTER_STOP_FAILURE_MENU_ID: &str = "exit_after_stop_failure";
 const IP_ROW_MIN_GAP_WIDTH_UNITS: usize = 1_200;
 const IP_ROW_PAD_WIDE: char = '\u{2002}';
 const IP_ROW_PAD_WIDE_WIDTH_UNITS: usize = 642;
@@ -158,6 +159,7 @@ fn main() {
                     UPDATE_MENU_ID => restart_to_update_if_ready(app),
                     RESTART_MENU_ID => restart_orbit(app),
                     QUIT_MENU_ID => quit_orbit(app),
+                    EXIT_AFTER_STOP_FAILURE_MENU_ID => app.exit(0),
                     RETRY_PROVIDER_MENU_ID => retry_local_runtime(app),
                     INSTALL_RUNTIME_MENU_ID => install_local_runtime_action(app),
                     RESET_RUNTIME_MENU_ID => reset_local_runtime_action(app),
@@ -944,7 +946,13 @@ fn quit_orbit(app: &AppHandle) {
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
     let colima =
         PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
-    match quit_disposition(stop_owned_profile(&home, &colima).map_err(|error| error.to_string())) {
+    let owned = has_owned_profile(&home);
+    let stop_result = if owned {
+        stop_owned_profile(&home, &colima).map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    };
+    match quit_provider_action(owned, stop_result) {
         QuitDisposition::Exit => app.exit(0),
         QuitDisposition::RemainOpen(detail) => {
             if let Ok(mut quitting) = runtime.quitting.lock() {
@@ -1100,6 +1108,7 @@ struct TrayMenuItems {
     retry_provider: MenuItem<Wry>,
     install_runtime: MenuItem<Wry>,
     reset_runtime: MenuItem<Wry>,
+    exit_after_stop_failure: MenuItem<Wry>,
 }
 
 impl TrayMenuItems {
@@ -1188,6 +1197,18 @@ impl TrayMenuItems {
                         .is_some_and(|attempt| *attempt),
                 ))
                 .build(app)?,
+            exit_after_stop_failure: MenuItemBuilder::with_id(
+                EXIT_AFTER_STOP_FAILURE_MENU_ID,
+                "Exit with Colima Running",
+            )
+            .enabled(
+                runtime
+                    .provider_state
+                    .lock()
+                    .ok()
+                    .is_some_and(|state| stop_failed_exit_enabled(&state)),
+            )
+            .build(app)?,
         })
     }
 
@@ -1236,6 +1257,9 @@ impl TrayMenuItems {
                 .ok()
                 .is_some_and(|attempt| *attempt),
         ));
+        let _ = self
+            .exit_after_stop_failure
+            .set_enabled(stop_failed_exit_enabled(&provider));
         let armed = runtime.reset_confirmation.lock().ok().is_some_and(|state| {
             state
                 .as_ref()
@@ -1381,6 +1405,7 @@ fn build_tray_menu(
         .item(&items.retry_provider)
         .item(&items.install_runtime)
         .item(&items.reset_runtime)
+        .item(&items.exit_after_stop_failure)
         .text(RESTART_MENU_ID, restart_orbit_label())
         .text(QUIT_MENU_ID, quit_orbit_label())
         .build()?;

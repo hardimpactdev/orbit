@@ -55,6 +55,7 @@ pub enum RuntimeAction {
     Quit,
     Restart,
     RestartToUpdate,
+    ExitAfterStopFailure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,6 +166,18 @@ pub fn quit_disposition(result: Result<(), String>) -> QuitDisposition {
     result.map_or_else(QuitDisposition::RemainOpen, |_| QuitDisposition::Exit)
 }
 
+pub fn quit_provider_action(owned: bool, stop_result: Result<(), String>) -> QuitDisposition {
+    if owned {
+        quit_disposition(stop_result)
+    } else {
+        QuitDisposition::Exit
+    }
+}
+
+pub fn stop_failed_exit_enabled(state: &ProviderRuntimeState) -> bool {
+    matches!(state, ProviderRuntimeState::StopFailed { .. })
+}
+
 pub fn provider_label(state: &ProviderRuntimeState) -> String {
     match state {
         ProviderRuntimeState::Starting => "Provider: Starting".into(),
@@ -189,6 +202,7 @@ pub fn action_order(action: RuntimeAction) -> &'static [&'static str] {
         RuntimeAction::Quit => &["stop-agent", "stop-colima-orbit", "exit"],
         RuntimeAction::Restart | RuntimeAction::RestartToUpdate => &["stop-agent", "restart"],
         RuntimeAction::RetryLocalRuntime => &["start-colima-orbit", "probe-docker", "start-agent"],
+        RuntimeAction::ExitAfterStopFailure => &["exit"],
     }
 }
 
@@ -420,5 +434,26 @@ mod tests {
             quit_disposition(Err("failed".into())),
             QuitDisposition::RemainOpen("failed".into())
         );
+    }
+
+    #[test]
+    fn quit_without_owned_profile_exits_without_attempting_provider_stop() {
+        assert_eq!(
+            quit_provider_action(false, Err("missing home".into())),
+            QuitDisposition::Exit
+        );
+    }
+
+    #[test]
+    fn stop_failure_has_an_exit_action_only_for_stop_failed_state() {
+        assert!(stop_failed_exit_enabled(
+            &ProviderRuntimeState::StopFailed {
+                detail: "busy".into()
+            }
+        ));
+        assert!(!stop_failed_exit_enabled(&ProviderRuntimeState::Ready {
+            endpoint: "x".into()
+        }));
+        assert_eq!(action_order(RuntimeAction::ExitAfterStopFailure), &["exit"]);
     }
 }
