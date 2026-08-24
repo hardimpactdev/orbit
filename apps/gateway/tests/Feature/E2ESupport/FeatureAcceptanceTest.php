@@ -77,6 +77,76 @@ it('requires an active Slices index before deriving route JSON', function (): vo
     }
 });
 
+it('routes a fresh FRAME loop with a packet authored from the templates', function (): void {
+    $fixture = acceptance_test_workspace('slice-route-fresh-frame', 'README.md');
+    if (! is_dir($fixture.'/.orbit/slices')) {
+        mkdir($fixture.'/.orbit/slices', recursive: true);
+    }
+
+    $loop = str_replace(
+        [
+            '<one verifiable outcome>',
+            '- Owned:',
+            '- Constraints:',
+            '- Out of scope:',
+            '- Session:',
+            '- Worktree:',
+            '- Branch:',
+        ],
+        [
+            'route a fresh framed slice',
+            '- Owned: route contract',
+            '- Constraints: no manual E2E',
+            '- Out of scope: archive work',
+            '- Session: fresh-frame',
+            "- Worktree: {$fixture}",
+            '- Branch: feature',
+        ],
+        (string) file_get_contents(repo_path('LOOP.md.example')),
+    );
+    $packet = str_replace(
+        [
+            '01-example',
+            '<one observable vertical increment>',
+            '- Included:',
+            '- Excluded:',
+            '- Decisions:',
+            '- Product docs:',
+            '- Focused:',
+        ],
+        [
+            '01-fresh-route',
+            'route a fresh framed slice',
+            '- Included: route contract',
+            '- Excluded: archive work',
+            '- Decisions: lifecycle contract',
+            '- Product docs: feature lifecycle',
+            '- Focused: acceptance route tests',
+        ],
+        (string) file_get_contents(repo_path('SLICE.md.example')),
+    );
+    file_put_contents($fixture.'/.orbit/loop.md', str_replace(
+        '.orbit/slices/01-example.md',
+        '.orbit/slices/01-fresh-route.md',
+        $loop,
+    ));
+    unlink($fixture.'/.orbit/slices/01-one.md');
+    file_put_contents($fixture.'/.orbit/slices/01-fresh-route.md', $packet);
+
+    try {
+        $process = acceptance_test_run($fixture, ['route']);
+        $payload = json_decode($process->getOutput(), true);
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(array_keys($payload))
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->and($payload)
+            ->not->toHaveKey('slice');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('rejects sliced route packets with missing or unknown Status.State', function (string $status): void {
     $fixture = acceptance_test_workspace('slice-route-status', 'README.md');
     if (! is_dir($fixture.'/.orbit/slices')) {

@@ -904,6 +904,9 @@ it('keeps FRAME inventory and focused Mago conditional on the change kind', func
     ) ?: '';
 
     expect($harness)
+        ->toContain('.orbit/slices')
+        ->toContain('SLICE.md.example')
+        ->toContain('to-tickets')
         ->toContain('predicate, identity, vocabulary, or schema')
         ->toContain('bounded producers, consumers, and dangerous invariants')
         ->toContain('ordinary local changes')

@@ -37,7 +37,7 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
    inventory for ordinary local changes. Deterministic lint checks only
    marker syntax, not statefulness or prose; `bin/orbit-loop-contract.php`
    teaching errors are authoritative. Do not add a new Scope row, lane, or
-   semantic grader for this framing.
+   semantic grader for this framing. Use `to-tickets` with `SLICE.md.example`; write to `.orbit/slices`, index `## Slices`, then run `bin/orbit-feature-acceptance route`.
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
