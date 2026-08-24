@@ -8,7 +8,9 @@ use orbit_macos::legacy::{
     parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
 };
 use orbit_macos::lifecycle::dashboard_close_action;
-use orbit_macos::paths::{legacy_launch_agent_plist, pending_update_path};
+use orbit_macos::paths::{
+    desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
+};
 use orbit_macos::pending_update::{
     read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate,
 };
@@ -372,16 +374,16 @@ fn enable_launch_at_login_after_setup(app: &AppHandle, runtime: &DesktopRuntime)
     use tauri_plugin_autostart::ManagerExt;
 
     let manager = app.autolaunch();
-    let enabled = match manager.is_enabled() {
-        Ok(true) => true,
-        Ok(false) => manager.enable().is_ok(),
-        Err(_) => {
-            if let Ok(mut state) = runtime.launch_at_login.lock() {
-                *state = LaunchAtLoginState::Error;
-            };
-            return;
-        }
-    };
+    let enabled = manager.enable().is_ok()
+        && std::env::current_exe()
+            .ok()
+            .and_then(|path| path.canonicalize().ok())
+            .is_some_and(|executable| {
+                let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+                let plist = fs_read_to_string(&desktop_launch_agent_plist(&home));
+
+                launch_at_login_registration_matches(plist.as_deref(), &executable)
+            });
 
     if let Ok(mut state) = runtime.launch_at_login.lock() {
         *state = if enabled {
@@ -390,6 +392,12 @@ fn enable_launch_at_login_after_setup(app: &AppHandle, runtime: &DesktopRuntime)
             LaunchAtLoginState::Error
         };
     };
+}
+
+fn launch_at_login_registration_matches(plist: Option<&str>, current_exe: &Path) -> bool {
+    plist
+        .and_then(parse_plist_program)
+        .is_some_and(|registered| registered == current_exe)
 }
 
 fn toggle_launch_at_login(app: &AppHandle) {
@@ -1467,6 +1475,33 @@ mod tests {
         assert!(source.contains("quit_orbit_label"));
         assert!(source.contains("MacosLauncher::LaunchAgent"));
         assert!(!source.contains("Command::new(\"pgrep\")"));
+    }
+
+    #[test]
+    fn launch_at_login_requires_the_current_executable_path() {
+        let current = Path::new("/Applications/Orbit Desktop.app/Contents/MacOS/orbit-macos");
+        let current_plist = r#"
+            <key>ProgramArguments</key>
+            <array>
+                <string>/Applications/Orbit Desktop.app/Contents/MacOS/orbit-macos</string>
+            </array>
+        "#;
+        let stale_plist = r#"
+            <key>ProgramArguments</key>
+            <array>
+                <string>/tmp/deleted-worktree/orbit-macos</string>
+            </array>
+        "#;
+
+        assert!(launch_at_login_registration_matches(
+            Some(current_plist),
+            current
+        ));
+        assert!(!launch_at_login_registration_matches(
+            Some(stale_plist),
+            current
+        ));
+        assert!(!launch_at_login_registration_matches(None, current));
     }
 
     #[test]

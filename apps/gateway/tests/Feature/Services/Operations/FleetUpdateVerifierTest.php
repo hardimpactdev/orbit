@@ -129,7 +129,13 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.44.0.14',
         ]);
-    Node::factory()->operator()->create(['name' => 'operator-1']);
+    Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'operator-1',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.44.0.15',
+        ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
 
     app(FleetUpdateVerifier::class)->verify($run, $plan);
@@ -137,7 +143,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     $requests = fleet_verifier_agent_requests();
 
     expect($requests)
-        ->toHaveCount(7)
+        ->toHaveCount(8)
         ->and($requests[0]['node'])
         ->toBe('10.44.0.11')
         ->and($requests[0]['argv'])
@@ -155,18 +161,19 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             '10.44.0.12',
             '10.44.0.13',
             '10.44.0.14',
+            '10.44.0.15',
             '10.44.0.11',
             '10.44.0.12',
             '10.44.0.14',
         ])
-        ->and($requests[4]['argv'])
+        ->and($requests[5]['argv'])
         ->toMatchArray([
             'internal:fleet-update:verify',
             'role-images',
         ])
-        ->and($requests[4]['input'])
-        ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR))
         ->and($requests[5]['input'])
+        ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR))
+        ->and($requests[6]['input'])
         ->toBe(json_encode([
             'images' => [
                 'caddy:2-alpine',

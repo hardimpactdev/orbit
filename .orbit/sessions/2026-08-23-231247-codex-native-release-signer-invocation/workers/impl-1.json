@@ -1,0 +1,31 @@
+{
+    "id": "impl-1",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-1",
+        "ORBIT_WORKER_ROLE=impl",
+        "PATH=/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-native-release-signer-invocation",
+        "window": "impl-1",
+        "pane_id": "%16",
+        "pane_pid": 33106,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-native-release-signer-invocation",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-native-release-signer-invocation/.orbit/workers/briefs/native-release-signer-impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-23T21:12:20Z",
+    "note": "candidate=f4249db8bdcd525a2f26c5624dbe40fd5e89b892 exact quality-check proof; State=prove",
+    "started_at": "2026-08-23T21:00:48Z",
+    "exited_at": "2026-08-23T21:12:46Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-native-release-signer-invocation/.orbit/workers/handoff/impl-1-f4249db8bdcd525a2f26c5624dbe40fd5e89b892.md"
+}

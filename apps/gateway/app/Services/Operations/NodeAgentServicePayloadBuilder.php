@@ -29,6 +29,14 @@ final readonly class NodeAgentServicePayloadBuilder
     /**
      * @return array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}
      */
+    public function forFleetUpdateNode(Node $node, Node $gateway): array
+    {
+        return $this->payload($node, $gateway, $this->configs->renderForFleetUpdate($node, $gateway));
+    }
+
+    /**
+     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}
+     */
     public function forProvisioningNode(Node $node, Node $gateway): array
     {
         return $this->payload($node, $gateway, $this->configs->renderForProvisioning($node, $gateway));

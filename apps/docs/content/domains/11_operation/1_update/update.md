@@ -108,7 +108,7 @@ metadata.
 Use these commands before or after running `orbit update`.
 
 - [`update:all`](../2_update-all/update-all.md) - update the local installation and
-  every managed Orbit installation
+  every active supported Orbit installation
 - [`doctor`](../3_doctor/doctor.md) - verify drift after updates
 
 ## Technical Contract

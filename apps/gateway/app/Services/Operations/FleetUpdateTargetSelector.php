@@ -27,51 +27,31 @@ final readonly class FleetUpdateTargetSelector
 
     /**
      * @return Collection<int, Node>
+     *
+     * @mago-expect analysis:invalid-argument
      */
     public function workloadNodesExcluding(?int $callerNodeId): Collection
     {
-        /** @var Collection<int, Node> $nodes */
-        $nodes = $this
-            ->activeNonGatewayRoleNodes()
-            ->filter(static fn (Node $node): bool => $node->isAgentEligible())
-            ->concat($this->activeManagedNonGatewayAgentEligibleNodes())
+        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
+        $query = Node::query()->where('status', NodeStatus::Active->value);
+
+        if ($gatewayIds !== []) {
+            $query->whereNotIn('id', $gatewayIds);
+        }
+
+        /** @var Collection<int, Node> $selected */
+        $selected = $query
+            ->with('roleAssignments')
+            ->orderBy('name')
+            ->get()
+            ->filter(static fn (Node $node): bool => $node->isFleetUpdateEligible())
             ->unique('id')
             ->keyBy('id')
             ->except($callerNodeId === null ? [] : [$callerNodeId])
             ->sortBy('name')
             ->values();
 
-        return $nodes;
-    }
-
-    /**
-     * @return Collection<int, Node>
-     *
-     * @mago-expect analysis:docblock-type-mismatch
-     * @mago-expect analysis:less-specific-nested-return-statement
-     */
-    private function activeManagedNonGatewayAgentEligibleNodes(): Collection
-    {
-        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
-
-        /** @var Collection<int, Node> $nodes */
-        $nodes = Node::query()
-            ->where('status', NodeStatus::Active->value)
-            ->where('managed', true)
-            ->when($gatewayIds !== [], fn ($query) => $query->whereNotIn('id', $gatewayIds))
-            ->with('roleAssignments')
-            ->orderBy('name')
-            ->get();
-
-        $eligible = [];
-
-        foreach ($nodes as $node) {
-            if ($node->isAgentEligible()) {
-                $eligible[] = $node;
-            }
-        }
-
-        return new Collection($eligible);
+        return $selected;
     }
 
     /**

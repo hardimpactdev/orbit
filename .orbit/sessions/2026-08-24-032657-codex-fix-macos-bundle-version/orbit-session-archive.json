@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-24T01:26:57+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-bundle-version/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-032657-codex-fix-macos-bundle-version",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-24T012330Z-fba6d408e960.json",
+        "evidence/macos-bundle-version-3476d98b7.md",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-24T012330Z-fba6d408e960.json": "aa114111360a048532c848d417c312f8b4017e9f38b1a93b9654ae3ed4e55527",
+        "evidence/macos-bundle-version-3476d98b7.md": "ddac8c66509394ac5bf7948015b6870326763bc2035e7193becb17ca87f66561",
+        "loop.md": "b69f118d200bf0000b2ce3b3c1b1c1cf1520fb8d99b9cacf38efb3e3339710fc"
+    },
+    "slug": "codex-fix-macos-bundle-version",
+    "requested_slug": "codex-fix-macos-bundle-version",
+    "compatible_slugs": [
+        "codex-fix-macos-bundle-version"
+    ],
+    "branch": "codex/fix-macos-bundle-version",
+    "candidate_commit": "3476d98b7820b9978affb4089f027f2ef4ada1e6",
+    "accepted_feature_tip": "3476d98b7820b9978affb4089f027f2ef4ada1e6",
+    "accepted_main_tip": "744004f624c7d6b3ed2b44aee6c35da1f893e5c5",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

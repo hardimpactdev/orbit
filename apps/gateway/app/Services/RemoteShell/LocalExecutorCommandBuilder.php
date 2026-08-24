@@ -567,6 +567,20 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             return;
         }
 
+        if (
+            in_array(
+                $command,
+                [
+                    InternalCommand::FleetUpdateInstallCli,
+                    InternalCommand::FleetUpdateVerify,
+                ],
+                strict: true,
+            )
+            && $targetNode->isOperator()
+        ) {
+            return;
+        }
+
         foreach ($allowedRoles as $role) {
             if ($this->nodeHasEligibleRole($targetNode, $role->value)) {
                 return;

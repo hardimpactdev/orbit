@@ -1,0 +1,30 @@
+{
+    "schema_version": 3,
+    "generated_at": "2026-08-24T01:06:23+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-login-path/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-030623-codex-fix-macos-login-path",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/host-macos-login-path-c80e217d6972.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-24T010547Z-c6517704f04c.json"
+    ],
+    "entry_digests": {
+        "evidence/host-macos-login-path-c80e217d6972.txt": "6e416e03ad7dd0ca4f9b5d50389fddbe5aa28736d8fdf950db755c8835d38a7f",
+        "loop.md": "473494af5ad88e108d28c66cdfeeb7eacedb55816daf83a5990af8be48c8a1a6",
+        "quality-gates/quality-check-2026-08-24T010547Z-c6517704f04c.json": "49ec884f4f0ec6dc59ad5b38ea28a1d0d3bafec4d3d82cb03c298823adf4f92f"
+    },
+    "slug": "codex-fix-macos-login-path",
+    "requested_slug": "codex-fix-macos-login-path",
+    "compatible_slugs": [
+        "codex-fix-macos-login-path"
+    ],
+    "branch": "codex/fix-macos-login-path",
+    "candidate_commit": "c80e217d6972af933484523bd162dee5da2ae658",
+    "accepted_feature_tip": "c80e217d6972af933484523bd162dee5da2ae658",
+    "accepted_main_tip": "3c9321b663a92451840afef1c3d393ffa01ffb92",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

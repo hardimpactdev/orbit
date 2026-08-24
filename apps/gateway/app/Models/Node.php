@@ -246,6 +246,23 @@ class Node extends Model
         );
     }
 
+    public function isFleetUpdateEligible(): bool
+    {
+        if ($this->hasActiveRole('gateway')) {
+            return false;
+        }
+
+        return ! in_array(
+            false,
+            [
+                $this->isActive(),
+                $this->hasSupportedAgentPlatform(),
+                $this->hasValidWireguardAddress(),
+            ],
+            strict: true,
+        );
+    }
+
     public function isAgentProvisioningReady(): bool
     {
         return $this->isProvisioning() && $this->hasSupportedAgentPlatform() && $this->hasValidWireguardAddress();

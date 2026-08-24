@@ -217,18 +217,18 @@ final readonly class WorkloadNodeUpdater
      */
     private function preMutationSkip(Node $node): ?array
     {
-        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
-            return null;
-        }
-
         if ($this->agentReadiness->isReady($node)) {
             return null;
         }
 
+        $reason = NodeHostPaths::isMacosPlatform($node->platform)
+            ? AgentAvailabilityError::DesktopNotRunning
+            : AgentAvailabilityError::AgentNotRunning;
+
         return [
             ...$this->targetPayload($node),
             'status' => 'skipped',
-            'reason' => AgentAvailabilityError::DesktopNotRunning,
+            'reason' => $reason,
         ];
     }
 
@@ -239,13 +239,20 @@ final readonly class WorkloadNodeUpdater
     {
         $reason = is_string($result['reason'] ?? null) ? $result['reason'] : null;
 
-        if ($reason === AgentAvailabilityError::DesktopNotRunning) {
+        if (
+            $reason === AgentAvailabilityError::DesktopNotRunning
+            || $reason === AgentAvailabilityError::AgentNotRunning
+        ) {
             $this->preMutationSkips->record($operationRun->id, $node->name, $reason);
         }
 
-        $message = $reason === AgentAvailabilityError::DesktopNotRunning
-            ? "Workload node {$node->name} skipped: Orbit Desktop is not running"
-            : "Workload node {$node->name} skipped: already up to date";
+        $message = match ($reason) {
+            AgentAvailabilityError::DesktopNotRunning
+                => "Workload node {$node->name} skipped: Orbit Desktop is not running",
+            AgentAvailabilityError::AgentNotRunning
+                => "Workload node {$node->name} skipped: Orbit Agent is not running",
+            default => "Workload node {$node->name} skipped: already up to date",
+        };
 
         $this->operationRuns->appendStep(
             $operationRun->id,
@@ -357,7 +364,7 @@ final readonly class WorkloadNodeUpdater
 
     private function recordInstalledAgent(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
     {
-        if (! $node->isAgentEligible()) {
+        if (! $this->shouldInstallAgentArtifact($node)) {
             return;
         }
 
@@ -419,7 +426,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function agentArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
     {
-        if (! $node->isAgentEligible()) {
+        if (! $this->shouldInstallAgentArtifact($node)) {
             return null;
         }
 
@@ -445,7 +452,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function agentServicePayload(Node $node): ?array
     {
-        if (! $node->isAgentEligible()) {
+        if (! $this->shouldInstallAgentArtifact($node)) {
             return null;
         }
 
@@ -455,7 +462,12 @@ final readonly class WorkloadNodeUpdater
             throw new RuntimeException('An active gateway identity is required to configure Orbit Agent.');
         }
 
-        return $this->agentServices->forNode($node, $gateway);
+        return $this->agentServices->forFleetUpdateNode($node, $gateway);
+    }
+
+    private function shouldInstallAgentArtifact(Node $node): bool
+    {
+        return $node->isFleetUpdateEligible();
     }
 
     /**
@@ -463,7 +475,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function desktopArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
     {
-        if (! $node->managed || ! NodeHostPaths::isMacosPlatform($node->platform)) {
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
             return null;
         }
 

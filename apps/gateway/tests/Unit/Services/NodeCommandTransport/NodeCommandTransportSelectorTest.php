@@ -112,6 +112,34 @@ it('selects agent-push when node is active, managed, and the envelope supports i
     expect($selector->select($node, $envelope))->toBe(NodeTransport::AgentPush);
 });
 
+it('selects agent-push for fleet-update commands on roleless unmanaged nodes', function (string $command): void {
+    $node = activeAgentUnavailableNode();
+    $selector = new NodeCommandTransportSelector;
+    $envelope = NodeCommandEnvelope::agentPushBinary(
+        operationId: 'op-1',
+        binary: 'orbit',
+        argv: [$command],
+    );
+
+    expect($selector->select($node, $envelope))->toBe(NodeTransport::AgentPush);
+})->with([
+    'install-cli' => ['internal:fleet-update:install-cli'],
+    'verify' => ['internal:fleet-update:verify'],
+]);
+
+it('does not widen agent-push for an unknown fleet-update prefix on roleless unmanaged nodes', function (): void {
+    $node = activeAgentUnavailableNode();
+    $selector = new NodeCommandTransportSelector;
+    $envelope = NodeCommandEnvelope::agentPushBinary(
+        operationId: 'op-1',
+        binary: 'orbit',
+        argv: ['internal:fleet-update:future'],
+    );
+
+    expect(fn () => $selector->select($node, $envelope))
+        ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
+});
+
 it('fails while node lacks agent capability instead of falling back to ssh', function (): void {
     $node = activeAgentUnavailableNode();
     $selector = new NodeCommandTransportSelector;

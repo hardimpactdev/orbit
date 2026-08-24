@@ -147,6 +147,35 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         ]);
     });
 
+    it('allows fleet update install and verify on roleless operator nodes', function (): void {
+        $operationToken = local_executor_test_operation_token();
+        $node = localExecutorTargetNode([]);
+
+        expect(localExecutorCommandBuilder()->buildArgv(
+            targetNode: $node,
+            commandName: 'internal:fleet-update:install-cli',
+            arguments: [],
+            options: [],
+            operationToken: $operationToken,
+        ))->toBe([
+            'internal:fleet-update:install-cli',
+            "--operation-token={$operationToken}",
+            '--json',
+        ])
+            ->and(localExecutorCommandBuilder()->buildArgv(
+                targetNode: $node,
+                commandName: 'internal:fleet-update:verify',
+                arguments: ['cli'],
+                options: [],
+                operationToken: $operationToken,
+            ))->toBe([
+            'internal:fleet-update:verify',
+            'cli',
+            "--operation-token={$operationToken}",
+            '--json',
+        ]);
+    });
+
     it('allows gateway host update verification on gateway-only nodes', function (): void {
         $operationToken = local_executor_test_operation_token();
 
@@ -717,7 +746,6 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'env file' => ['internal:env-file', ['app-dev'], ['vpn']],
         'firewall rule' => ['internal:firewall-rule', ['app-dev'], []],
         'firewall rule probe' => ['internal:firewall-rule:probe', ['app-dev'], []],
-        'fleet update verify' => ['internal:fleet-update:verify', ['gateway'], ['operator']],
         'gateway runtime backend probe' => ['internal:gateway-runtime-backend:probe', ['gateway'], ['app-dev']],
         'managed file' => ['internal:managed-file', ['app-dev'], ['gateway']],
         'node security posture probe' => ['internal:node-security-posture:probe', ['app-dev'], []],

@@ -2,8 +2,8 @@
 
 [Back to Operation commands.](../README.md)
 
-Update the gateway, the local Orbit CLI, and every managed Orbit installation
-selected for a fleet update.
+Update the gateway, the local Orbit CLI, and every selected active non-gateway
+installation that has a supported Agent platform.
 
 This is the fleet update command. It is useful after a new Orbit release lands,
 or while validating a release candidate from a topology-reachable manifest,
@@ -111,24 +111,25 @@ node did not update. The failure result includes the failed node results so
 operators see the update failure directly instead of only a later version
 verification error.
 
-`update:all` updates the gateway, the caller-local installation, and the union
-of active non-gateway role-bearing Agent-eligible nodes and active non-gateway
-Agent-eligible nodes with `managed=true`.
-The caller remains a caller-local target and is not duplicated in remote
-fan-out. Unmanaged roleless clients stay excluded. When the gateway is the
-calling peer, the command therefore updates the gateway installation and
-selected nodes only.
+`update:all` updates the gateway, the caller-local installation, and every
+active non-gateway node that has a supported Agent platform and a valid
+WireGuard identity. Roles and stored `managed` do not control inclusion. The
+caller remains a caller-local target and is not duplicated in remote fan-out.
+The command excludes inactive, removed, unsupported-platform, and gateway
+records, and it never duplicates the caller. When the gateway is the calling
+peer, the command therefore updates the gateway installation and selected
+nodes only.
 
-A managed macOS/Darwin target whose Agent is unavailable during an explicit
-pre-mutation readiness check is reported as skipped with stable reason
-`orbit_desktop_not_running`. That skip is visible in human, JSON, and stream
+A selected remote target whose Agent listener is unreachable during an explicit
+pre-mutation readiness check is reported as skipped. macOS/Darwin uses stable
+reason `orbit_desktop_not_running`. Other platforms use
+`orbit_agent_not_running`. That skip is visible in human, JSON, and stream
 output and does not fail the operation. After any update side effect starts,
-later errors stay failures and cannot be relabeled skipped. Non-managed
-role-bearing targets keep the current required failure behavior.
+later errors stay failures and cannot be relabeled skipped.
 
 The same immutable update plan stages desktop, Agent, and CLI artifacts for a
-reachable managed Mac. Linux targets still receive CLI and Agent artifacts
-only. On that managed Mac the CLI defers Agent restart to Orbit Desktop
+reachable selected Mac. Linux targets still receive CLI and Agent artifacts
+only. On that selected Mac the CLI defers Agent restart to Orbit Desktop
 through the pending desktop update handoff, which is owner-only, and does not
 restart a standalone Agent service. Native Orbit Desktop restart is consumed
 from that handoff and lands in a separate native slice.
@@ -145,7 +146,8 @@ Run `orbit update:all` to see per-node progress and a final summary of updated a
 Human output begins with release and fleet version checks, then shows per-node
 progress as updates run. The active row blinks while work is in progress; settled
 rows report `Done`, `Skipped: already up to date`,
-`Skipped: Orbit Desktop is not running`, or a failure message. Progress
+`Skipped: Orbit Desktop is not running`,
+`Skipped: Orbit Agent is not running`, or a failure message. Progress
 is rendered from the gateway operation event journal, so reconnecting during
 gateway replacement does not lose already-recorded state. See the
 [terminal output contract](technical/6.1_update-all_output-render_human.md) for
@@ -161,9 +163,10 @@ the exact shape of both modes.
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
-- The gateway can reach every selected role-bearing node through authenticated
-  Agent push over WireGuard to run the installer and verifier. Provisioning SSH
-  is outside `update:all`.
+- The gateway can reach every selected remote node through authenticated Agent
+  push over WireGuard to run the installer and verifier. An unreachable selected
+  node is skipped before mutation and does not fail the remaining fleet.
+  Provisioning SSH is outside `update:all`.
 - The gateway can persist operation rows, event journal rows, immutable update
   plans, and expiring update leases.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`

@@ -23,6 +23,15 @@ class NodeAgentConfigRenderer
         return $this->renderConfig($node, $gateway);
     }
 
+    public function renderForFleetUpdate(Node $node, Node $gateway): string
+    {
+        if (! $node->isFleetUpdateEligible()) {
+            throw new RuntimeException("Node [{$node->name}] is not eligible for fleet-update Agent installation.");
+        }
+
+        return $this->renderConfig($node, $gateway);
+    }
+
     public function renderForProvisioning(Node $node, Node $gateway): string
     {
         if (! $node->isAgentProvisioningReady()) {

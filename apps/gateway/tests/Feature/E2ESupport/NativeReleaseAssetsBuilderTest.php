@@ -111,7 +111,18 @@ it('passes the release updater pubkey through TAURI_CONFIG', function (): void {
     expect($source)
         ->toContain('ORBIT_TAURI_UPDATER_PUBKEY')
         ->toContain('TAURI_CONFIG')
+        ->toContain('build --bundles app --config "$TAURI_CONFIG"')
         ->toContain('plugins":{"updater":{"pubkey":"%s"}}');
+});
+
+it('fails closed when the built desktop bundle version differs from Orbit', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+
+    expect($source)
+        ->toContain('CFBundleShortVersionString')
+        ->toContain('CFBundleVersion')
+        ->toContain('desktop bundle short version')
+        ->toContain('desktop bundle build version');
 });
 
 it('installs locked TypeScript SDK dependencies before the Tauri desktop build', function (): void {
@@ -124,6 +135,21 @@ it('installs locked TypeScript SDK dependencies before the Tauri desktop build',
         ->and($parts[0])
         ->toContain('packages/sdk-typescript')
         ->toContain('npm ci --ignore-scripts --include=dev');
+});
+
+it('signs the desktop updater archive through the installed local Tauri CLI', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+    $signatureCheck = '[ -s "${archive}.sig" ]';
+    $parts = explode($signatureCheck, $source);
+
+    expect($source)
+        ->not->toContain('npx --yes --prefix')
+        ->not->toContain('@tauri-apps/cli signer sign');
+
+    expect($parts)
+        ->toHaveCount(2)
+        ->and($parts[0])
+        ->toContain('npm run tauri -- signer sign "$archive"');
 });
 
 it('fails closed when the desktop signing key is missing', function (): void {

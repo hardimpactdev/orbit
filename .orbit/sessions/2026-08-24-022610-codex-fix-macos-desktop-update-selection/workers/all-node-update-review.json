@@ -1,0 +1,33 @@
+{
+    "id": "all-node-update-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=all-node-update-review",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/home/nckrtl/.vite-plus/bin:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.codex/tmp/arg0/codex-arg0x1INEV:/home/nckrtl/.vite-plus/js_runtime/node/24.19.0/bin:/home/nckrtl/.local/bin:/home/nckrtl/.grok/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nckrtl/.npm-global/bin:/home/nckrtl/.local/bin:/home/nckrtl/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-fix-macos-desktop-update-selection",
+        "window": "all-node-update-review",
+        "pane_id": "%21",
+        "pane_pid": 2139472,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection/.orbit/workers/briefs/all-node-update-review.md",
+    "status": "handoff",
+    "heartbeat_at": "2026-08-24T00:25:07Z",
+    "note": "VERDICT: PASS; BLAST_RADIUS: complete; HUMAN_JUDGMENT: not-required; DEFECT 4 closed at the predicate (gateway excluded from isFleetUpdateEligible) with ubuntu_24-04 regression tests; receipt ok=true, full quality-check exit 0 (46 subgates), exact-candidate retained Linux and native NMBP evidence confirmed",
+    "started_at": "2026-08-23T23:03:16Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection/.orbit/workers/handoff/all-node-update-review-f9a9f40793167ea32f6b202bef8d32cccd5fbd18.md"
+}

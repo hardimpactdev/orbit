@@ -30,7 +30,7 @@ final class UpdateAllCommand extends GatewayCommand
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
-    protected $description = 'Update every managed Orbit installation through the gateway.';
+    protected $description = 'Update every active supported Orbit installation through the gateway.';
 
     public function handle(
         RunsLocalUpdate $localUpdater,

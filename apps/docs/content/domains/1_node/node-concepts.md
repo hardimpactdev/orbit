@@ -474,7 +474,9 @@ Orbit Agent intent is derived from an active workload role. A roleless,
 non-gateway operator can opt in explicitly through canonical `managed=true`.
 Eligibility additionally requires an active node, a supported Ubuntu/macOS/
 Darwin platform, and a valid WireGuard identity. Gateway nodes are never Agent
-targets.
+targets. `update:all` does not use that Agent-intent flag to choose fleet
+targets: it selects every active non-gateway node with a supported Agent
+platform and a valid WireGuard identity.
 
 The gateway remains authoritative and owns caller authorization, grants, node
 targeting, argv construction, Agent listener delivery authenticated over
@@ -502,12 +504,15 @@ minimal loopback health and status endpoints for local UI/readiness checks.
 
 Orbit Desktop is the macOS lifecycle owner of Orbit Agent. It starts at login,
 supervises one owner-local Agent child, hides the dashboard without stopping
-the Agent, and stops that child on Quit. The CLI
+the Agent, and stops that child on Quit. At startup, it enables its login item
+and verifies that the generated LaunchAgent points to the current Orbit Desktop
+app bundle. A stale or missing path marks launch at login as unavailable. The CLI
 stays installed and usable when Orbit Desktop is not running. Agent-dependent
 commands then fail with `orbit_agent_unavailable`, naming the node and, on
 macOS, instructing the operator to open Orbit Desktop. `update:all` treats a
-managed Mac whose Agent is unreachable before mutation as a skip with
-`orbit_desktop_not_running` rather than that failure.
+selected remote node whose Agent is unreachable before mutation as a skip:
+`orbit_desktop_not_running` on macOS/Darwin and `orbit_agent_not_running` on
+other platforms, rather than that failure.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, and no separate approval UI. Native Darwin updater archives

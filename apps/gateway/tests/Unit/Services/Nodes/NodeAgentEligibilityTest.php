@@ -62,6 +62,25 @@ it('accepts explicit managed opt-in only for a roleless supported operator ident
         ->toBeFalse();
 });
 
+it('excludes gateway-role nodes from fleet-update eligibility', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $workload = Node::factory()
+        ->operator()
+        ->create([
+            'managed' => false,
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.96',
+        ]);
+
+    expect($gateway->fresh()->isFleetUpdateEligible())->toBeFalse();
+    expect($workload->isFleetUpdateEligible())->toBeTrue();
+});
+
 it('fails closed without a supported platform or WireGuard identity', function (): void {
     $unsupported = Node::factory()->create([
         'platform' => 'windows_11',

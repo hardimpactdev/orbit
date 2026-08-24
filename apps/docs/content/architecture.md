@@ -492,7 +492,11 @@ lifecycle owner of Orbit Agent: it starts at login, supervises one Agent child,
 and quitting the desktop app stops that Agent. Closing only the dashboard
 window does not quit the menu-bar app or stop the Agent. Orbit Desktop launches the owner-local Agent as a direct child with a private
 stdin lifetime channel, intercepts dashboard close to hide the window, and
-stops the child on explicit Quit. Canonical `dev.orbit.agent` LaunchAgent state
+stops the child on explicit Quit. At startup, Orbit Desktop asks Tauri to
+enable launch at login. It verifies that the generated LaunchAgent points to
+the current app bundle. A stale or missing path marks launch at login as
+unavailable. Canonical
+`dev.orbit.agent` LaunchAgent state
 is migrated on first ownership launch; an unproven listener fails closed as
 Agent Conflict. Launch at login uses Tauri's LaunchAgent autostart. The CLI
 remains usable while Orbit Desktop is stopped. Agent-dependent commands then
