@@ -352,6 +352,138 @@ fn volume_args(volume: &str, read_only: bool) -> String {
         if read_only { ":ro" } else { "" }
     )
 }
+fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
+    if bytes.len() < 1024 || bytes.len() % 512 != 0 {
+        return Err(CutoverError::Invalid(
+            "volume".into(),
+            "malformed tar stream".into(),
+        ));
+    }
+    let mut offset = 0;
+    let mut output = Vec::with_capacity(bytes.len() - 512);
+    let mut records = 0;
+    let mut root_removed = false;
+    while offset + 512 <= bytes.len() {
+        let header = &bytes[offset..offset + 512];
+        if header.iter().all(|byte| *byte == 0) {
+            if offset + 1024 > bytes.len()
+                || bytes[offset + 512..offset + 1024]
+                    .iter()
+                    .any(|byte| *byte != 0)
+            {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "malformed tar trailer".into(),
+                ));
+            }
+            output.extend_from_slice(&bytes[offset..]);
+            return if root_removed && records > 0 {
+                Ok(output)
+            } else {
+                Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "missing root directory".into(),
+                ))
+            };
+        }
+        let stored = u64::from_str_radix(
+            std::str::from_utf8(&header[148..156])
+                .map_err(|_| CutoverError::Invalid("volume".into(), "invalid tar checksum".into()))?
+                .trim()
+                .trim_end_matches('\0'),
+            8,
+        )
+        .map_err(|_| CutoverError::Invalid("volume".into(), "invalid tar checksum".into()))?;
+        let checksum = header
+            .iter()
+            .enumerate()
+            .map(|(i, byte)| {
+                if (148..156).contains(&i) {
+                    b' ' as u64
+                } else {
+                    *byte as u64
+                }
+            })
+            .sum::<u64>();
+        if stored != checksum {
+            return Err(CutoverError::Invalid(
+                "volume".into(),
+                "invalid tar checksum".into(),
+            ));
+        }
+        let size_text = std::str::from_utf8(&header[124..136])
+            .map_err(|_| CutoverError::Invalid("volume".into(), "invalid tar size".into()))?
+            .trim()
+            .trim_end_matches('\0');
+        let size = u64::from_str_radix(size_text, 8)
+            .map_err(|_| CutoverError::Invalid("volume".into(), "invalid tar size".into()))?;
+        let padded = size
+            .checked_add(511)
+            .and_then(|x| x.checked_div(512))
+            .and_then(|x| x.checked_mul(512))
+            .ok_or_else(|| CutoverError::Invalid("volume".into(), "tar size overflow".into()))?
+            as usize;
+        let end = offset
+            .checked_add(512)
+            .and_then(|x| x.checked_add(padded))
+            .ok_or_else(|| CutoverError::Invalid("volume".into(), "tar size overflow".into()))?;
+        if end > bytes.len() {
+            return Err(CutoverError::Invalid(
+                "volume".into(),
+                "truncated tar record".into(),
+            ));
+        }
+        let name_end = header[0..100]
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(100);
+        let name = &header[..name_end];
+        let root = name == b"./" && header[156] == b'5';
+        if records == 0 && !root {
+            return Err(CutoverError::Invalid(
+                "volume".into(),
+                "missing root directory".into(),
+            ));
+        }
+        if root {
+            if root_removed || records != 0 {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "duplicate root directory".into(),
+                ));
+            }
+            root_removed = true;
+        } else {
+            output.extend_from_slice(&bytes[offset..end]);
+        }
+        records += 1;
+        offset = end;
+    }
+    Err(CutoverError::Invalid(
+        "volume".into(),
+        "missing tar trailer".into(),
+    ))
+}
+fn volume_manifest(program: &Path, endpoint: &str, volume: &str) -> Result<Vec<u8>, CutoverError> {
+    Ok(docker(
+        program,
+        endpoint,
+        &[
+            "run".into(),
+            "--rm".into(),
+            "--volume".into(),
+            volume_args(volume, true),
+            "busybox:stable".into(),
+            "tar".into(),
+            "-C".into(),
+            "/orbit-volume".into(),
+            "-cf".into(),
+            "-".into(),
+            ".".into(),
+        ],
+    )?
+    .stdout)
+}
 fn copy_named_volume(
     program: &Path,
     source: &str,
@@ -444,9 +576,9 @@ fn copy_named_volume(
             "named volume verification failed: {volume}"
         )));
     }
-    let target_hash = crate::pending_update::file_sha256(&target_archive)
-        .map_err(|e| CutoverError::Command(e.to_string()))?;
-    if source_hash != target_hash {
+    let source_manifest = tar_manifest(&fs::read(&archive)?)?;
+    let target_manifest = tar_manifest(&fs::read(&target_archive)?)?;
+    if source_manifest != target_manifest {
         return Err(CutoverError::Invalid(
             volume.into(),
             "named volume byte manifest mismatch".into(),
@@ -686,28 +818,17 @@ fn exact_retry_counterpart(
         && effective_command(&actual) == effective_command(&expected))
 }
 fn retry_volume_matches(program: &Path, target: &str, source: &str, volume: &str) -> bool {
-    let hash = |endpoint: &str| -> Option<Vec<u8>> {
-        let out = docker(
-            program,
-            endpoint,
-            &[
-                "run".into(),
-                "--rm".into(),
-                "--volume".into(),
-                volume_args(volume, true),
-                "busybox:stable".into(),
-                "tar".into(),
-                "-C".into(),
-                "/orbit-volume".into(),
-                "-cf".into(),
-                "-".into(),
-                ".".into(),
-            ],
-        )
-        .ok()?;
-        Some(out.stdout)
-    };
-    hash(source).is_some() && hash(source) == hash(target)
+    let source =
+        match volume_manifest(program, source, volume).and_then(|bytes| tar_manifest(&bytes)) {
+            Ok(manifest) => manifest,
+            Err(_) => return false,
+        };
+    let target =
+        match volume_manifest(program, target, volume).and_then(|bytes| tar_manifest(&bytes)) {
+            Ok(manifest) => manifest,
+            Err(_) => return false,
+        };
+    source == target
 }
 fn save_image(program: &Path, source: &str, image: &str, path: &Path) -> Result<(), CutoverError> {
     let mut child = Command::new(program)
@@ -1148,7 +1269,7 @@ mod tests {
             lines
                 .matches(" run --rm --volume shared-data:/orbit-volume:ro")
                 .count(),
-            2
+            4
         );
         assert_eq!(
             lines
