@@ -32,6 +32,105 @@ it('blocks direct cleanup when the matching archive and index are present but un
     }
 });
 
+it('blocks LAND before a complete indexed checkpoint chain', function (): void {
+    $fixture = land_create_fixture();
+
+    try {
+        land_commit_feature_change($fixture['worktree']);
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $mainBefore = trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput());
+        $tip = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        $loop = str_replace("complete | {$tip}", 'ready | none', file_get_contents($fixture['worktree'].'/.orbit/loop.md'));
+        file_put_contents($fixture['worktree'].'/.orbit/loop.md', $loop);
+        $process = land_run_land($fixture, land_args($fixture, ['--one-step']));
+
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput().$process->getOutput())->toContain('terminal phase requires every indexed slice to be complete')
+            ->and(trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput()))->toBe($mainBefore)
+            ->and(glob($fixture['repo'].'/.orbit/sessions/*-feature') ?: [])->toBe([]);
+    } finally {
+        land_remove_fixture($fixture);
+    }
+});
+
+it('rejects malformed checkpoints at the LAND boundary', function (): void {
+    $fixture = land_create_fixture();
+    try {
+        land_commit_feature_change($fixture['worktree']);
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $loop = str_replace('complete | '.trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput()), 'complete | malformed', file_get_contents($fixture['worktree'].'/.orbit/loop.md'));
+        file_put_contents($fixture['worktree'].'/.orbit/loop.md', $loop);
+        $mainBefore = trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput());
+        $process = land_run_land($fixture, land_args($fixture, ['--one-step']));
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput().$process->getOutput())->toContain('01-example')
+            ->and(trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput()))->toBe($mainBefore)
+            ->and(glob($fixture['repo'].'/.orbit/sessions/*-feature') ?: [])->toBe([]);
+    } finally { land_remove_fixture($fixture); }
+});
+
+it('rejects non ancestor checkpoints at the LAND boundary', function (): void {
+    $fixture = land_create_fixture();
+    try {
+        land_commit_feature_change($fixture['worktree']);
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $tree = trim(new Process(['git', 'rev-parse', 'HEAD^{tree}'], $fixture['worktree'])->mustRun()->getOutput());
+        $side = trim(new Process(['git', 'commit-tree', $tree, '-m', 'side'], $fixture['worktree'])->mustRun()->getOutput());
+        $tip = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        file_put_contents($fixture['worktree'].'/.orbit/loop.md', str_replace($tip, $side, file_get_contents($fixture['worktree'].'/.orbit/loop.md')));
+        $mainBefore = trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput());
+        $process = land_run_land($fixture, land_args($fixture, ['--one-step']));
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput().$process->getOutput())->toContain('ancestor')
+            ->and(trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput()))->toBe($mainBefore)
+            ->and(glob($fixture['repo'].'/.orbit/sessions/*-feature') ?: [])->toBe([]);
+    } finally { land_remove_fixture($fixture); }
+});
+
+it('rejects backwards checkpoints at the landed cleanup boundary', function (): void {
+    $fixture = land_create_fixture();
+    try {
+        land_commit_feature_change($fixture['worktree']);
+        $c1 = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        land_run($fixture['worktree'], ['git', 'commit', '--allow-empty', '-m', 'Feature change two']);
+        $c2 = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $loop = file_get_contents($fixture['worktree'].'/.orbit/loop.md');
+        $loop = preg_replace('/\| `\.orbit\/slices\/01-example\.md` \| complete \| [0-9a-f]{40} \|/', "| `.orbit/slices/01-one.md` | complete | {$c2} |\n| `.orbit/slices/02-two.md` | complete | {$c1} |", $loop);
+        file_put_contents($fixture['worktree'].'/.orbit/loop.md', $loop);
+        unlink($fixture['worktree'].'/.orbit/slices/01-example.md');
+        file_put_contents($fixture['worktree'].'/.orbit/slices/01-one.md', "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: land\n- Excluded: handoffs\n\n## Authority\n- Decisions: land\n- Product docs: land\n\n## Proof\n- Focused: land\n");
+        file_put_contents($fixture['worktree'].'/.orbit/slices/02-two.md', str_replace('01-one', '02-two', file_get_contents($fixture['worktree'].'/.orbit/slices/01-one.md')));
+        file_put_contents($fixture['worktree'].'/.orbit/slices/02-two.md', str_replace('Depends on: none', 'Depends on: 01-one', file_get_contents($fixture['worktree'].'/.orbit/slices/02-two.md')));
+        $mainBefore = trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput());
+        $process = land_run_land($fixture, land_args($fixture, ['--one-step']));
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput().$process->getOutput())->toMatch('/02-two|backward|order/i')
+            ->and(trim(new Process(['git', 'rev-parse', 'main'], $fixture['repo'])->mustRun()->getOutput()))->toBe($mainBefore)
+            ->and(is_dir($fixture['worktree']))->toBeTrue();
+    } finally { land_remove_fixture($fixture); }
+});
+
+it('lands a valid multi slice checkpoint chain', function (): void {
+    $fixture = land_create_fixture();
+    try {
+        land_commit_feature_change($fixture['worktree']);
+        $c1 = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        land_run($fixture['worktree'], ['git', 'commit', '--allow-empty', '-m', 'Feature change two']);
+        $c2 = trim(new Process(['git', 'rev-parse', 'HEAD'], $fixture['worktree'])->mustRun()->getOutput());
+        land_write_accepted_loop($fixture['repo'], $fixture['worktree']);
+        $loop = preg_replace('/\| `\.orbit\/slices\/01-example\.md` \| complete \| [0-9a-f]{40} \|/', "| `.orbit/slices/01-one.md` | complete | {$c1} |\n| `.orbit/slices/02-two.md` | complete | {$c2} |", file_get_contents($fixture['worktree'].'/.orbit/loop.md'));
+        file_put_contents($fixture['worktree'].'/.orbit/loop.md', $loop);
+        unlink($fixture['worktree'].'/.orbit/slices/01-example.md');
+        file_put_contents($fixture['worktree'].'/.orbit/slices/01-one.md', "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: land\n- Excluded: handoffs\n\n## Authority\n- Decisions: land\n- Product docs: land\n\n## Proof\n- Focused: land\n");
+        file_put_contents($fixture['worktree'].'/.orbit/slices/02-two.md', str_replace(['01-one', 'Depends on: none'], ['02-two', 'Depends on: 01-one'], file_get_contents($fixture['worktree'].'/.orbit/slices/01-one.md')));
+        $process = land_run_land($fixture, land_args($fixture, ['--plan']));
+        expect($process->getExitCode())->toBe(0)
+            ->and($process->getOutput().$process->getErrorOutput())->toContain('phase=merge')
+            ->and($process->getOutput().$process->getErrorOutput())->not->toMatch('/slice|checkpoint/i');
+    } finally { land_remove_fixture($fixture); }
+});
+
 it('refuses unaccepted zero-delta LAND --plan and does not claim archive', function (): void {
     $fixture = land_prepare(accepted: false, merged: false);
 
@@ -1308,10 +1407,18 @@ function land_write_accepted_loop(string $repo, string $worktree, string $gate =
         - State: accepted
         - Blocker: none
 
+        ## Slices
+
+        | Slice | State | Checkpoint |
+        | --- | --- | --- |
+        | `.orbit/slices/01-example.md` | complete | {$featureTip} |
+
         ## Feedback
 
         - Events: .orbit/feedback.jsonl
         MARKDOWN);
+    land_mkdir("{$worktree}/.orbit/slices");
+    file_put_contents("{$worktree}/.orbit/slices/01-example.md", "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: land\n- Excluded: handoffs\n\n## Authority\n- Decisions: land\n- Product docs: land\n\n## Proof\n- Focused: land\n");
 }
 
 /** @return array<string, int> */

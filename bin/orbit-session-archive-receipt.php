@@ -33,7 +33,7 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
 
     if (
         ! is_array($receipt)
-        || ! in_array($schemaVersion, [2, 3], true)
+        || ! in_array($schemaVersion, [2, 3, 4], true)
         || ($receipt['archive_mode'] ?? null) !== 'compact'
         || ($receipt['branch'] ?? null) !== $branch
     ) {
@@ -121,6 +121,10 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
         return false;
     }
 
+    if ($schemaVersion === 4 && ! compact_archive_schema4_slice_identity_is_valid($receipt, $archiveDir, $root, $branchTip)) {
+        return false;
+    }
+
     $actualEntries = compact_archive_actual_entries($archiveDir, $schemaVersion);
 
     if ($actualEntries === null || $actualEntries !== $copiedEntries) {
@@ -151,6 +155,54 @@ function compact_archive_receipt_is_valid(string $archiveDir, string $root, stri
     }
 
     return true;
+}
+
+/**
+ * @param array{copied_entries?: list<string>} $receipt
+ */
+function compact_archive_schema4_slice_identity_is_valid(
+    array $receipt,
+    string $archiveDir,
+    string $root,
+    string $candidate,
+): bool
+{
+    try {
+        $loop = (string) file_get_contents($archiveDir.'/loop.md');
+        $rows = orbitLoopSlicePacketRowsValidated($loop, $archiveDir);
+    } catch (Throwable) {
+        return false;
+    }
+    /** @var list<string> $expected */
+    $expected = [];
+    $previous = null;
+    foreach ($rows as $id => $row) {
+        if ($row['state'] !== 'complete' || $row['checkpoint'] === 'none') {
+            return false;
+        }
+        if (
+            run_git($root, ['merge-base', '--is-ancestor', $row['checkpoint'], $candidate])['exit_code'] !== 0
+        ) {
+            return false;
+        }
+        if (
+            $previous !== null
+            && run_git($root, ['merge-base', '--is-ancestor', $previous, $row['checkpoint']])['exit_code'] !== 0
+        ) {
+            return false;
+        }
+        $previous = $row['checkpoint'];
+        $expected[] = 'slices/'.basename($row['path']);
+    }
+    sort($expected, SORT_STRING);
+    /** @var list<string> $actual */
+    $actual = array_values(array_filter(
+        $receipt['copied_entries'] ?? [],
+        static fn (mixed $entry): bool => is_string($entry) && str_starts_with($entry, 'slices/'),
+    ));
+    sort($actual, SORT_STRING);
+
+    return $expected === $actual;
 }
 
 /**
@@ -191,6 +243,7 @@ function compact_archive_proof_root_prefixes(int $schemaVersion): array
     return match ($schemaVersion) {
         2 => ['evidence', 'quality-gates'],
         3 => ['evidence', 'quality-gates', 'release-evidence'],
+        4 => ['evidence', 'quality-gates', 'release-evidence'],
         default => [],
     };
 }
@@ -207,6 +260,9 @@ function compact_archive_entry_digest(string $path): ?string
 function compact_archive_entry_path_is_allowed(string $entry, int $schemaVersion): bool
 {
     if (in_array($entry, ['feedback.jsonl', 'loop.md'], true)) {
+        return true;
+    }
+    if ($schemaVersion === 4 && preg_match('~^slices/[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$~', $entry) === 1) {
         return true;
     }
 
@@ -250,6 +306,7 @@ function compact_archive_actual_entries(string $archiveDir, int $schemaVersion):
             ...compact_archive_proof_root_prefixes($schemaVersion),
             'workers',
             'diagnostics',
+            ...($schemaVersion === 4 ? ['slices'] : []),
         ],
     ));
 

@@ -578,7 +578,7 @@ function session_archive_receipt_matches_branch_slug(string $archiveDir, string 
 
     $schemaVersion = $receipt['schema_version'] ?? null;
 
-    if (! in_array($schemaVersion, [2, 3], true) || ($receipt['archive_mode'] ?? null) !== 'compact') {
+    if (! in_array($schemaVersion, [2, 3, 4], true) || ($receipt['archive_mode'] ?? null) !== 'compact') {
         return false;
     }
 

@@ -390,6 +390,31 @@ function orbitLoopSliceFinalizationProblems(string $markdown, string $worktree, 
     } catch (Throwable $exception) {
         return [$exception->getMessage()];
     }
+    $phase = orbitLoopStatusHead(orbitLoopLabel($markdown, 'Status', 'State'));
+    $terminal = in_array($phase, ['prove', 'accept', 'accepted', 'land'], true);
+    if ($terminal) {
+        foreach ($slices as $id => $slice) {
+            if ($slice['state'] !== 'complete') {
+                return ["terminal phase requires every indexed slice to be complete: {$id}"];
+            }
+        }
+        $previous = null;
+        foreach ($slices as $id => $slice) {
+            $checkpoint = $slice['checkpoint'];
+            if ($checkpoint === 'none') {
+                return ["complete slice {$id} requires an exact checkpoint"];
+            }
+            if (orbitLoopGitExitCode($worktree, ['merge-base', '--is-ancestor', $checkpoint, $featureTip]) !== 0) {
+                return ["checkpoint for slice {$id} is not an ancestor of feature HEAD"];
+            }
+            if ($previous !== null && orbitLoopGitExitCode($worktree, ['merge-base', '--is-ancestor', $previous, $checkpoint]) !== 0) {
+                return ["checkpoint chain moves backwards at slice {$id}"];
+            }
+            $previous = $checkpoint;
+        }
+
+        return [];
+    }
     $building = array_filter($slices, static function (array $slice): bool {
         return $slice['state'] === 'building';
     });
@@ -433,6 +458,20 @@ function orbitLoopSliceFinalizationProblems(string $markdown, string $worktree, 
     }
 
     return [];
+}
+
+/** @param list<string> $arguments */
+function orbitLoopGitExitCode(string $cwd, array $arguments): int
+{
+    $process = proc_open(['git', '-C', $cwd, ...$arguments], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (! is_resource($process)) {
+        return 1;
+    }
+    foreach ($pipes as $pipe) {
+        fclose($pipe);
+    }
+
+    return proc_close($process);
 }
 
 function orbitLoopIsCompact(string $markdown): bool

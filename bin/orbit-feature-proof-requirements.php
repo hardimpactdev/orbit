@@ -8,6 +8,22 @@ function compact_diff_proof_problem(
     string $subject,
     ?array $changedFiles = null,
 ): ?string {
+    $loopPath = rtrim($worktree, '/').'/.orbit/loop.md';
+    if (is_file($loopPath) && ! is_link($loopPath)) {
+        $loop = (string) file_get_contents($loopPath);
+        $featureTip = orbitLoopGitValue($worktree, ['rev-parse', 'HEAD']) ?? str_repeat('0', 40);
+        $sliceProblems = orbitLoopSliceFinalizationProblems($loop, $worktree, $featureTip);
+        if (
+            in_array(
+                orbitLoopStatusHead(orbitLoopLabel($loop, 'Status', 'State')),
+                ['prove', 'accept', 'accepted', 'land'],
+                true,
+            )
+            && $sliceProblems !== []
+        ) {
+            return 'Slices: '.$sliceProblems[0];
+        }
+    }
     $requirements = verification_requirements($root, $worktree, $subject);
 
     if ($changedFiles !== null) {
@@ -281,4 +297,3 @@ function is_host_macos_topology_proof(string $value): bool
 
     return true;
 }
-

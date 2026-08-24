@@ -68,7 +68,7 @@ if (array_key_exists('help', $options)) {
           --processes-json, --worker-id, --home, --marker, --max-start-distance, --only-ok.
 
         The active <source-orbit-dir>/loop.md is required. When an existing compact
-        schema-v2/v3 archive already has matching content identity (byte-identical
+        schema-v2/v3/v4 archive already has matching content identity (byte-identical
         loop.md and/or matching receipt entry_digests for loop.md), that archive is
         refreshed in place instead of minting a near-duplicate directory — including
         when the caller's slug differs from the archive basename. The existing valid
@@ -77,8 +77,9 @@ if (array_key_exists('help', $options)) {
         slugs is preserved via receipt branch/compatible_slugs metadata, not by
         pre-success rename. Compact loop.md files stay byte-stable; the versioned
         receipt records the archive. Newly written compact receipts use schema_version
-        3 (release-evidence roots included). Historical schema-v2 receipts remain
-        valid with evidence/quality-gates proof roots only. Historical loop packets
+        4 (indexed slice packets and release-evidence roots included). Historical
+        compact schemas 2 and 3 remain readable with their existing proof roots.
+        Historical loop packets
         retain their Evidence Links write-back behavior.
 
         In --full mode, if no explicit --processes-json/--worker-id is supplied, this
@@ -129,6 +130,16 @@ try {
 } catch (Throwable $exception) {
     fwrite(STDERR, "Active feedback stream is invalid: {$exception->getMessage()}\n");
     exit(2);
+}
+
+if (! array_key_exists('full', $options) && orbitLoopIsCompact((string) file_get_contents($activeLoopPath))) {
+    $activeLoopForValidation = (string) file_get_contents($activeLoopPath);
+    $featureTipForValidation = archiveGitValue($cwd, ['rev-parse', 'HEAD']) ?? str_repeat('0', 40);
+    $sliceProblemsForValidation = orbitLoopSliceFinalizationProblems($activeLoopForValidation, $cwd, $featureTipForValidation);
+    if ($sliceProblemsForValidation !== []) {
+        fwrite(STDERR, 'Slices: '.$sliceProblemsForValidation[0].PHP_EOL);
+        exit(2);
+    }
 }
 
 [$secretScanExit, , $secretScanError] = runCommand([
@@ -195,6 +206,15 @@ $updatedLoop = orbitLoopIsCompact($activeLoop)
     ? $activeLoop
     : sessionArchiveLinkedLoopContent($activeLoopPath, basename($archiveDir));
 
+if ($archiveMode === 'compact') {
+    $featureTip = archiveGitValue($cwd, ['rev-parse', 'HEAD']) ?? str_repeat('0', 40);
+    $sliceProblems = orbitLoopSliceFinalizationProblems($activeLoop, $cwd, $featureTip);
+    if ($sliceProblems !== []) {
+        fwrite(STDERR, 'Slices: '.$sliceProblems[0].PHP_EOL);
+        exit(2);
+    }
+}
+
 try {
     orbitSessionArchiveEnsureDirectory($temporaryArchiveDir);
     $copiedEntries = $archiveMode === 'full'
@@ -254,7 +274,7 @@ try {
     $compatibleSlugs = archiveCompatibleSlugs($options, $cwd, $archiveDir, $mode);
 
     $summary = [
-        'schema_version' => $archiveMode === 'compact' ? 3 : 2,
+        'schema_version' => $archiveMode === 'compact' ? 4 : 2,
         'generated_at' => gmdate('c'),
         'mode' => $mode,
         'archive_mode' => $archiveMode,
@@ -541,6 +561,16 @@ function archiveGitExitCode(string $cwd, array $arguments): int
 
 function assertRefreshPreservesArchive(string $archiveDir, string $temporaryArchiveDir): void
 {
+    $receipt = readArchiveReceipt($archiveDir);
+    if (($receipt['schema_version'] ?? null) === 4) {
+        $sets = [
+            schema4RefreshSliceEntries($archiveDir.'/slices'),
+            schema4RefreshSliceEntries($temporaryArchiveDir.'/slices'),
+        ];
+        if ($sets[0] !== $sets[1]) {
+            throw new RuntimeException('Schema-4 refresh slice entry set changed.');
+        }
+    }
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($archiveDir, RecursiveDirectoryIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST,
@@ -614,6 +644,36 @@ function assertRefreshPreservesArchive(string $archiveDir, string $temporaryArch
             throw new RuntimeException("Refresh would replace immutable archived entry: {$relative}");
         }
     }
+}
+
+/** @return list<string> */
+function schema4RefreshSliceEntries(string $directory): array
+{
+    if (! is_dir($directory) || is_link($directory)) {
+        throw new RuntimeException('Schema-4 refresh requires a safe slices directory.');
+    }
+
+    $entries = [];
+    foreach (scandir($directory) ?: [] as $name) {
+        if ($name === '.' || $name === '..') {
+            continue;
+        }
+
+        $path = $directory.'/'.$name;
+        if (
+            preg_match('/^[0-9]{2}-[a-z0-9][a-z0-9-]*\.md$/', $name) !== 1
+            || is_link($path)
+            || ! is_file($path)
+        ) {
+            throw new RuntimeException("Schema-4 refresh found unsafe slice entry: slices/{$name}");
+        }
+
+        $entries[] = 'slices/'.$name;
+    }
+
+    sort($entries, SORT_STRING);
+
+    return $entries;
 }
 
 /**
@@ -883,7 +943,7 @@ function isVersionedCompactArchive(string $archiveDir): bool
 
     $schemaVersion = $receipt['schema_version'] ?? null;
 
-    return in_array($schemaVersion, [2, 3], true) && ($receipt['archive_mode'] ?? null) === 'compact';
+    return in_array($schemaVersion, [2, 3, 4], true) && ($receipt['archive_mode'] ?? null) === 'compact';
 }
 
 /**
@@ -1114,6 +1174,13 @@ function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): ar
     orbitSessionArchiveEnsureDirectory($archiveDir);
     $sourceIdentity = archiveDirectoryIdentity($sourceOrbitDir);
     $copiedEntries = [];
+    $sliceRows = orbitLoopSlicePacketRowsValidated((string) file_get_contents($sourceOrbitDir.'/loop.md'), $sourceOrbitDir);
+    foreach ($sliceRows as $row) {
+        $relative = 'slices/'.basename($row['path']);
+        $source = $sourceOrbitDir.'/slices/'.basename($row['path']);
+        orbitSessionArchiveCopyFile($source, $archiveDir.'/'.$relative);
+        $copiedEntries[] = $relative;
+    }
 
     foreach (['loop.md', 'feedback.jsonl'] as $name) {
         assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
