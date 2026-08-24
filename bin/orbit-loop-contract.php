@@ -142,6 +142,7 @@ function orbitLoopReadSlicePacket(string $path, string $relativePath): string
         ) {
             throw new RuntimeException("unsafe slice packet: {$relativePath}");
         }
+
         return $contents;
     } finally {
         fclose($handle);
@@ -367,7 +368,8 @@ function orbitLoopSliceFrameProblems(string $markdown, string $orbitDir): array
                 && array_reduce(
                     $slice['depends'],
                     static function (bool $complete, string $dependency) use ($slices): bool {
-                        return $complete && $slices[$dependency]['state'] === 'complete';
+                        return $complete
+                        && $slices[$dependency]['state'] === 'complete';
                     },
                     true,
                 )
@@ -407,7 +409,10 @@ function orbitLoopSliceFinalizationProblems(string $markdown, string $worktree, 
             if (orbitLoopGitExitCode($worktree, ['merge-base', '--is-ancestor', $checkpoint, $featureTip]) !== 0) {
                 return ["checkpoint for slice {$id} is not an ancestor of feature HEAD"];
             }
-            if ($previous !== null && orbitLoopGitExitCode($worktree, ['merge-base', '--is-ancestor', $previous, $checkpoint]) !== 0) {
+            if (
+                $previous !== null
+                && orbitLoopGitExitCode($worktree, ['merge-base', '--is-ancestor', $previous, $checkpoint]) !== 0
+            ) {
                 return ["checkpoint chain moves backwards at slice {$id}"];
             }
             $previous = $checkpoint;
@@ -434,7 +439,8 @@ function orbitLoopSliceFinalizationProblems(string $markdown, string $worktree, 
             && array_reduce(
                 $slice['depends'],
                 static function (bool $complete, string $dependency) use ($slices): bool {
-                    return $complete && $slices[$dependency]['state'] === 'complete';
+                    return $complete
+                    && $slices[$dependency]['state'] === 'complete';
                 },
                 true,
             )
@@ -1032,6 +1038,11 @@ function orbitLoopRuntimeProofProblem(
     $runtime = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime');
     $requiredVenues = orbitLoopAcceptanceVenues(orbitLoopChangedFilesForRuntime($worktree));
     if (count($requiredVenues) > 1) {
+        if (orbitLoopStatusHead($runtime) !== 'passed') {
+            return (
+                "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing')
+            );
+        }
         preg_match_all('/^\s{2,}-\s+runtime\[([^\]]+)\]:/mi', $markdown, $runtimeMatches);
         $runtimeVenues = $runtimeMatches[1] ?? [];
         if (count($runtimeVenues) !== count(array_unique($runtimeVenues))) {
@@ -1046,55 +1057,22 @@ function orbitLoopRuntimeProofProblem(
             if ($receipt === null) {
                 return "Verification runtime receipt is missing for acceptance venue {$requiredVenue}";
             }
-            $problem = orbitLoopRuntimeProofProblemForValue($receipt, $requiredVenue, $candidateCommit, $worktree, true);
+            $problem = orbitLoopRuntimeProofProblemForValue(
+                $receipt,
+                $requiredVenue,
+                $candidateCommit,
+                $worktree,
+                true,
+            );
             if ($problem !== null) {
                 return $problem;
             }
         }
+
         return null;
     }
 
-    if (orbitLoopStatusHead($runtime) !== 'passed') {
-        return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
-    }
-
-    $runtime = (string) $runtime;
-
-    if (preg_match('/^passed\s+-\s+(.+)$/is', $runtime, $match) !== 1) {
-        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
-    }
-
-    $detail = trim($match[1]);
-    $fields = orbitLoopRuntimeProofParseFields($detail);
-
-    if ($fields === null) {
-        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($detail);
-
-        if ($deferredProblem !== null) {
-            return $deferredProblem;
-        }
-
-        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
-    }
-
-    $receiptProblem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree, false);
-
-    if ($receiptProblem !== null) {
-        return $receiptProblem;
-    }
-
-    foreach (['environment', 'expected', 'observed'] as $narrativeField) {
-        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($fields[$narrativeField]);
-
-        if ($deferredProblem !== null) {
-            return $deferredProblem;
-        }
-    }
-
-    // After deferred-hop narrative checks so open final-hop language keeps its
-    // existing error surface; completed live/production claims still require
-    // exact environment=live.
-    return orbitLoopRuntimeProofLiveEnvironmentProblem($fields);
+    return orbitLoopRuntimeProofProblemForValue((string) $runtime, $venue, $candidateCommit, $worktree, false);
 }
 
 /** @return list<string> */
@@ -1109,12 +1087,22 @@ function orbitLoopChangedFilesForRuntime(string $worktree): array
     try {
         $base = orbitLoopGitValue($worktree, ['rev-parse', 'main']);
         $head = orbitLoopGitValue($worktree, ['rev-parse', 'HEAD']);
-        $mergeBase = $base !== null && $head !== null
-            ? orbitLoopGitValue($worktree, ['merge-base', $base, $head])
-            : null;
-        $diff = $mergeBase !== null && $head !== null
-            ? orbitLoopGitOutput($worktree, ['diff', '--name-status', '-z', '--diff-filter=ACDMRT', $mergeBase, $head])
-            : null;
+        $mergeBase =
+            $base !== null && $head !== null
+                ? orbitLoopGitValue($worktree, ['merge-base', $base, $head])
+                : null;
+        $diff =
+            $mergeBase !== null && $head !== null
+                ? orbitLoopGitOutput($worktree, [
+                    'diff',
+                    '--name-status',
+                    '-z',
+                    '--diff-filter=ACDMRT',
+                    $mergeBase,
+                    $head,
+                ])
+                : null;
+
         return $diff === null ? [] : orbitLoopParseNameStatusDiff($diff);
     } catch (Throwable) {
         return [];
@@ -1127,17 +1115,41 @@ function orbitLoopRuntimeProofProblemForValue(
     string $candidateCommit,
     string $worktree,
     bool $multiVenue = false,
-): ?string
-{
-    $fields = orbitLoopRuntimeProofParseFields(preg_replace('/^passed\s+-\s+/i', '', $runtime) ?? $runtime);
+): ?string {
+    if (orbitLoopStatusHead($runtime) !== 'passed') {
+        return "Verification runtime must be passed for acceptance venue {$venue}; current: {$runtime}";
+    }
+    if (preg_match('/^passed\s+-\s+(.+)$/s', $runtime, $match) !== 1) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+    $detail = trim($match[1]);
+    $fields = orbitLoopRuntimeProofParseFields($detail);
     if ($fields === null) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($detail);
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+
         return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
     }
     $problem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree, $multiVenue);
     if ($problem !== null) {
         return $problem;
     }
-    return null;
+    foreach (['environment', 'expected', 'observed'] as $narrativeField) {
+        $deferredProblem = orbitLoopRuntimeProofDeferredFinalHopProblem($fields[$narrativeField]);
+        if ($deferredProblem !== null) {
+            return $deferredProblem;
+        }
+    }
+
+    return orbitLoopRuntimeProofLiveEnvironmentProblem($fields);
+}
+
+/** @param list<string> $venues */
+function orbitLoopAcceptanceSurface(array $venues): string
+{
+    return 'acceptance.'.(count($venues) === 1 ? $venues[0] : implode('-', $venues));
 }
 
 function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
@@ -1225,7 +1237,18 @@ function orbitLoopRuntimeProofReceiptProblem(
     }
 
     $required = $multiVenue
-        ? ['candidate', 'base_tip', 'merge_base', 'venue', 'environment', 'command', 'expected', 'observed', 'result', 'evidence']
+        ? [
+            'candidate',
+            'base_tip',
+            'merge_base',
+            'venue',
+            'environment',
+            'command',
+            'expected',
+            'observed',
+            'result',
+            'evidence',
+        ]
         : ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
 
     if (! $multiVenue && (array_key_exists('base_tip', $fields) || array_key_exists('merge_base', $fields))) {
@@ -1235,7 +1258,7 @@ function orbitLoopRuntimeProofReceiptProblem(
     $targetPresent = array_key_exists('target', $fields) && trim($fields['target']) !== '';
     $commandPresent = array_key_exists('command', $fields) && trim($fields['command']) !== '';
     $targetOrCommand = (int) $targetPresent + (int) $commandPresent;
-    if ($targetOrCommand !== 1 || ($multiVenue && ! $commandPresent)) {
+    if ($targetOrCommand !== 1 || $multiVenue && ! $commandPresent) {
         return 'Verification runtime structured receipt must include exactly one of target= or command=; remain in PROVE and re-prove the final hop';
     }
 
@@ -1493,6 +1516,7 @@ function orbitLoopAcceptanceVenues(array $changedFiles): array
         return ['automated'];
     }
     sort($venues, SORT_STRING);
+
     return $venues;
 }
 
@@ -1509,7 +1533,7 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         || str_starts_with($path, '.github/')
         // Repository-root static documentation HTML only (docs/**.html). Does not
         // reclassify apps/docs runtime, resources, or other product frontend paths.
-        || (str_starts_with($path, 'docs/') && str_ends_with($path, '.html'))
+        || str_starts_with($path, 'docs/') && str_ends_with($path, '.html')
         // TypeScript SDK is repository packaging only. PHP packages/sdk is a
         // production require of CLI/gateway and stays retained-incus by default.
         // packages/core/src remains retained-incus.
@@ -1554,7 +1578,14 @@ function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $he
     $baseTip = orbitLoopGitValue($cwd, ['rev-parse', $base]);
     $mergeBase = orbitLoopGitValue($cwd, ['merge-base', $base, $head]);
 
-    if ($candidate === null || $candidate === '' || $baseTip === null || $baseTip === '' || $mergeBase === null || $mergeBase === '') {
+    if (
+        $candidate === null
+        || $candidate === ''
+        || $baseTip === null
+        || $baseTip === ''
+        || $mergeBase === null
+        || $mergeBase === ''
+    ) {
         throw new RuntimeException('unable to derive exact proof route');
     }
 

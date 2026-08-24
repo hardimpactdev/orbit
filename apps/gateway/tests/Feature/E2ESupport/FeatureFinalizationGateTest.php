@@ -969,7 +969,32 @@ it('fails closed when a multi-venue runtime receipt is incomplete or stale', fun
     'stale merge base',
     'duplicate receipt',
     'unknown receipt',
+    'deferred observed narrative',
+    'live claim with fixture environment',
+    'parent runtime not passed',
+    'child receipt head not passed',
 ]);
+
+it('preserves deferred final-hop rejection for an unstructured passed receipt', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/gateway/resources/js/app.js', "changed\n");
+        commit_finalization_gate_file($worktree, 'apps/macos/src/main.rs', "changed\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_multi_venue_feature_loop_for_fixture($repo, $worktree, 'unstructured passed receipt');
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('claims passed while the decisive final hop')
+            ->toContain('remains required');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
 
 it('fails closed when candidate acceptance venue resolution times out', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
@@ -1973,6 +1998,41 @@ it('allows exact user acceptance provenance', function (): void {
             $sourceRef,
             'acceptance.retained-incus',
         );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('allows plural user acceptance provenance for multi-venue finalization', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/gateway/resources/js/app.js', "changed\n");
+        commit_finalization_gate_file($worktree, 'apps/macos/src/main.rs', "changed\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_multi_venue_feature_loop_for_fixture($repo, $worktree);
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $sourceRef = 'codex://threads/019f4bd5-ba0e-7d33-af71-2e8ebc774627#accepted';
+        $loop = file_get_contents("{$worktree}/.orbit/loop.md");
+        $loop = str_replace(
+            'accepted - automated - reviewer-confirmed no-human-judgment',
+            "accepted - user @ {$sourceRef}",
+            $loop,
+        );
+        $loop = str_replace(
+            'passed - reviewer example - human-judgment=not-required',
+            'passed - reviewer example - observable',
+            $loop,
+        );
+        file_put_contents("{$worktree}/.orbit/loop.md", $loop);
+        write_finalization_acceptance_event($worktree, $featureTip, $sourceRef, 'acceptance.browser-host-macos');
 
         $process = run_finalization_gate($repo, 'git merge feature');
 
@@ -4845,11 +4905,26 @@ function write_multi_venue_feature_loop_for_fixture(string $repo, string $worktr
         $receipts['browser'] .= "\n          - runtime[browser]: {$receipts['browser']}";
     } elseif ($variant === 'unknown receipt') {
         $receipts['tablet'] = $receipts['browser'];
+    } elseif ($variant === 'deferred observed narrative') {
+        $receipts['browser'] = str_replace(
+            'observed=exit 0',
+            'observed=final hop remains required',
+            $receipts['browser'],
+        );
+    } elseif ($variant === 'live claim with fixture environment') {
+        $receipts['browser'] = str_replace('command=fixture browser', 'command=live production', $receipts['browser']);
+    } elseif ($variant === 'parent runtime not passed') {} elseif ($variant === 'child receipt head not passed') {
+        $receipts['browser'] = str_replace('passed - candidate=', 'deferred - candidate=', $receipts['browser']);
+    } elseif ($variant === 'unstructured passed receipt') {
+        $receipts['browser'] = 'passed - final hop remains required';
     }
 
     $runtime = "passed - aggregate multi-venue runtime proof\n";
     foreach ($receipts as $venue => $receipt) {
         $runtime .= "          - runtime[{$venue}]: {$receipt}\n";
+    }
+    if ($variant === 'parent runtime not passed') {
+        $runtime = "deferred - final hop remains required\n";
     }
     $packet = compact_feature_loop_packet(
         featureTip: $candidate,
