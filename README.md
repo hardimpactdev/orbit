@@ -12,6 +12,7 @@ The repository root is orchestration only. Current applications and packages:
 - `apps/reverb` — Laravel Reverb runtime packaged as `hardimpact/orbit-reverb`.
 - `apps/agent` — headless Orbit Agent service.
 - `apps/macos` — Tauri/Rust Orbit Agent macOS menu-bar runtime.
+- `apps/ui` — local Launch-based Laravel 13/Inertia 3/React 19 browser UI.
 - `packages/core` — shared Orbit contracts and helpers.
 - `packages/sdk` — Laravel SDK for the gateway API.
 - `packages/sdk-typescript` — generated public TypeScript gateway client.
