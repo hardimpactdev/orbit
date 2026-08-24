@@ -837,7 +837,7 @@ it('skips a managed macOS client whose Agent is unavailable before mutation', fu
         ->toBe(0);
 });
 
-it('stages a desktop archive and pending automatic handoff for a reachable selected role-bearing Mac', function (): void {
+it('stages a desktop archive and pending restart-ready handoff for a reachable selected role-bearing Mac', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -929,7 +929,7 @@ it('omits an incomplete desktop identity when the same-platform Agent artifact i
         ->toBeNull();
 });
 
-it('stages a desktop archive and pending automatic handoff for a reachable managed Mac', function (): void {
+it('stages a desktop archive and pending restart-ready handoff for a reachable managed Mac', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -1227,7 +1227,7 @@ it('skips an unreachable selected Linux node before mutation', function (): void
         ->toBe(0);
 });
 
-it('stages a desktop archive and pending automatic handoff for a reachable roleless unmanaged Mac', function (): void {
+it('stages a desktop archive and pending restart-ready handoff for a reachable roleless unmanaged Mac', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
