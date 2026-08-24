@@ -467,30 +467,34 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                         ));
                     }
                     let anchor = anchors.first().copied();
+                    if let Some(anchor) = anchor {
+                        for member in members {
+                            done.insert(member.clone());
+                        }
+                        let a = &entries[anchor];
+                        output.push(b'H');
+                        output.extend_from_slice(&(members.len() as u64).to_le_bytes());
+                        for member in members {
+                            output.extend_from_slice(&(member.len() as u64).to_le_bytes());
+                            output.extend_from_slice(member);
+                        }
+                        output.extend_from_slice(&a.metadata);
+                        output.extend_from_slice(&a.declared_size.to_le_bytes());
+                        output.extend_from_slice(&(a.payload.len() as u64).to_le_bytes());
+                        output.extend_from_slice(&a.payload);
+                        output.extend_from_slice(&(0u64).to_le_bytes());
+                        continue;
+                    }
                     for member in members {
                         done.insert(member.clone());
                         output.extend_from_slice(&(member.len() as u64).to_le_bytes());
                         output.extend_from_slice(member);
                         let entry = &entries[member];
-                        if let Some(anchor) = anchor {
-                            let a = &entries[anchor];
-                            output.push(b'H');
-                            output.extend_from_slice(&(members.len() as u64).to_le_bytes());
-                            for m in members {
-                                output.extend_from_slice(&(m.len() as u64).to_le_bytes());
-                                output.extend_from_slice(m);
-                            }
-                            output.extend_from_slice(&a.metadata);
-                            output.extend_from_slice(&a.declared_size.to_le_bytes());
-                            output.extend_from_slice(&(a.payload.len() as u64).to_le_bytes());
-                            output.extend_from_slice(&a.payload);
-                        } else {
-                            output.push(entry.kind);
-                            output.extend_from_slice(&entry.metadata);
-                            output.extend_from_slice(&entry.declared_size.to_le_bytes());
-                            output.extend_from_slice(&(entry.payload.len() as u64).to_le_bytes());
-                            output.extend_from_slice(&entry.payload);
-                        }
+                        output.push(entry.kind);
+                        output.extend_from_slice(&entry.metadata);
+                        output.extend_from_slice(&entry.declared_size.to_le_bytes());
+                        output.extend_from_slice(&(entry.payload.len() as u64).to_le_bytes());
+                        output.extend_from_slice(&entry.payload);
                         output.extend_from_slice(&(0u64).to_le_bytes());
                     }
                 }
@@ -2493,6 +2497,23 @@ esac
         let started = Instant::now();
         let manifest = tar_manifest(&archive).unwrap();
         assert!(!manifest.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(10));
+
+        let component_count = 20_000;
+        let mut hardlinks = record(b"./", None);
+        hardlinks[156] = b'5';
+        hardlinks[148..156].fill(b' ');
+        let checksum: u32 = hardlinks.iter().take(512).map(|byte| *byte as u32).sum();
+        hardlinks[148..156].copy_from_slice(format!("{:06o}\0 ", checksum).as_bytes());
+        hardlinks.extend(record(b"anchor", None));
+        for index in 0..component_count {
+            let name = format!("link-{index:05}");
+            hardlinks.extend(record(name.as_bytes(), Some(b"anchor")));
+        }
+        hardlinks.extend([0u8; 1024]);
+        let started = Instant::now();
+        let manifest = tar_manifest(&hardlinks).unwrap();
+        assert!(manifest.len() < component_count * 64);
         assert!(started.elapsed() < Duration::from_secs(10));
     }
 
