@@ -4,6 +4,7 @@ use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::Duration;
 
 pub const PROFILE: &str = "orbit";
 pub const MIN_COLIMA_VERSION: (u64, u64, u64) = (0, 8, 1);
@@ -15,6 +16,7 @@ pub enum ColimaError {
     InsufficientMemory,
     InvalidStatus(String),
     Command(String),
+    DockerReadinessTimeout(String),
     Io(io::Error),
     Json(serde_json::Error),
 }
@@ -50,6 +52,61 @@ pub struct OwnershipRecord {
 pub struct ColimaCommand {
     pub program: PathBuf,
     pub args: Vec<String>,
+}
+
+pub const DEFAULT_DOCKER_READY_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_DOCKER_READY_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Poll Docker through the owned endpoint. The closures make timeout behavior deterministic.
+pub fn poll_docker_ready<F, S>(
+    endpoint: &str,
+    timeout: Duration,
+    interval: Duration,
+    mut now: impl FnMut() -> Duration,
+    mut probe: F,
+    mut sleep: S,
+) -> Result<(), ColimaError>
+where
+    F: FnMut(&str, Option<&str>) -> bool,
+    S: FnMut(Duration),
+{
+    let started = now();
+    loop {
+        if probe(endpoint, None) {
+            return Ok(());
+        }
+        if now().saturating_sub(started) >= timeout {
+            return Err(ColimaError::DockerReadinessTimeout(endpoint.into()));
+        }
+        sleep(interval);
+    }
+}
+
+pub fn docker_info_command(docker: impl Into<PathBuf>, endpoint: &str) -> Command {
+    let mut command = Command::new(docker.into());
+    command
+        .args(["info"])
+        .env("DOCKER_HOST", endpoint)
+        .env_remove("DOCKER_CONTEXT");
+    command
+}
+
+pub fn stop_plan(colima: impl Into<PathBuf>) -> ColimaCommand {
+    ColimaCommand {
+        program: colima.into(),
+        args: vec!["stop".into(), PROFILE.into()],
+    }
+}
+
+pub fn stop_owned_profile(home: &Path, colima: &Path) -> Result<(), ColimaError> {
+    let record = load_record(home)?;
+    validate_record(&record)?;
+    if record.state != "ready" {
+        return Err(ColimaError::OwnershipConflict);
+    }
+    let executable = resolve_executable(colima)?;
+    run(&stop_plan(executable))?;
+    Ok(())
 }
 #[derive(Deserialize)]
 struct Status {
@@ -336,14 +393,19 @@ pub fn ensure_ready(
             "Docker socket parent is outside owned profile".into(),
         ));
     }
-    let info = Command::new(docker)
-        .args(["info"])
-        .env("DOCKER_HOST", &ready.socket)
-        .env_remove("DOCKER_CONTEXT")
-        .output()?;
-    if !info.status.success() {
-        return Err(ColimaError::Command("docker info failed".into()));
-    }
+    let started = std::time::Instant::now();
+    poll_docker_ready(
+        &ready.socket,
+        DEFAULT_DOCKER_READY_TIMEOUT,
+        DEFAULT_DOCKER_READY_INTERVAL,
+        || started.elapsed(),
+        |endpoint, _| {
+            docker_info_command(docker.clone(), endpoint)
+                .output()
+                .is_ok_and(|output| output.status.success())
+        },
+        std::thread::sleep,
+    )?;
     mark_ready(home)?;
     Ok(ready)
 }
@@ -620,5 +682,95 @@ mod tests {
             parse_status(j).unwrap().socket,
             "unix:///Users/test/.colima/orbit/docker.sock"
         )
+    }
+
+    #[test]
+    fn readiness_retries_with_explicit_endpoint_and_no_context() {
+        let elapsed = std::cell::Cell::new(Duration::ZERO);
+        let mut probes = 0;
+        let result = poll_docker_ready(
+            "unix:///owned/orbit/docker.sock",
+            Duration::from_secs(3),
+            Duration::from_secs(1),
+            || elapsed.get(),
+            |host, context| {
+                probes += 1;
+                assert_eq!(host, "unix:///owned/orbit/docker.sock");
+                assert!(context.is_none());
+                probes >= 3
+            },
+            |delay| elapsed.set(elapsed.get() + delay),
+        );
+        assert!(result.is_ok());
+        assert_eq!(probes, 3);
+    }
+
+    #[test]
+    fn readiness_times_out_without_success() {
+        let elapsed = std::cell::Cell::new(Duration::ZERO);
+        let result = poll_docker_ready(
+            "unix://owned",
+            Duration::from_secs(2),
+            Duration::from_secs(1),
+            || elapsed.get(),
+            |_, _| false,
+            |delay| elapsed.set(elapsed.get() + delay),
+        );
+        assert!(
+            matches!(result, Err(ColimaError::DockerReadinessTimeout(endpoint)) if endpoint == "unix://owned")
+        );
+    }
+
+    #[test]
+    fn stop_plan_targets_only_orbit_profile() {
+        assert_eq!(
+            stop_plan("/usr/local/bin/colima").args,
+            vec!["stop", "orbit"]
+        );
+    }
+
+    #[test]
+    fn stop_owned_profile_executes_only_owned_ready_profile() {
+        let fixture = Fixture::new();
+        let profile = fixture.home().join(".colima/orbit");
+        fs::create_dir_all(&profile).unwrap();
+        persist_record(
+            fixture.home(),
+            &OwnershipRecord {
+                provider: "colima".into(),
+                profile: "orbit".into(),
+                runtime: "docker".into(),
+                lifecycle: "orbit-desktop".into(),
+                state: "ready".into(),
+            },
+        )
+        .unwrap();
+        let capture = fixture.home().join("argv");
+        let fake = fixture.home().join("colima");
+        fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\nprintf '%s %s' \"$1\" \"$2\" > {}\n",
+                capture.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+        stop_owned_profile(fixture.home(), &fake).unwrap();
+        assert_eq!(fs::read_to_string(capture).unwrap(), "stop orbit");
+        persist_record(
+            fixture.home(),
+            &OwnershipRecord {
+                provider: "colima".into(),
+                profile: "orbit".into(),
+                runtime: "docker".into(),
+                lifecycle: "orbit-desktop".into(),
+                state: "reserved".into(),
+            },
+        )
+        .unwrap();
+        let _ = fs::remove_file(fixture.home().join("argv"));
+        assert!(stop_owned_profile(fixture.home(), &fake).is_err());
+        assert!(!fixture.home().join("argv").exists());
     }
 }

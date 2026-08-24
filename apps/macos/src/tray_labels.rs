@@ -1,3 +1,4 @@
+use crate::lifecycle::{provider_label, ProviderRuntimeState};
 use crate::supervisor::AgentRunState;
 use crate::update_machine::UpdateState;
 
@@ -27,6 +28,10 @@ pub fn quit_orbit_label() -> &'static str {
     "Quit Orbit"
 }
 
+pub fn retry_local_runtime_label() -> &'static str {
+    "Retry Local Runtime"
+}
+
 pub fn compact_menu_rows(
     agent: AgentRunState,
     launch_at_login: LaunchAtLoginState,
@@ -41,6 +46,29 @@ pub fn compact_menu_rows(
         rows.push(update_label);
     }
 
+    rows.push(restart_orbit_label().to_string());
+    rows.push(quit_orbit_label().to_string());
+    rows
+}
+
+pub fn compact_runtime_menu_rows(
+    agent: AgentRunState,
+    provider: &ProviderRuntimeState,
+    launch_at_login: LaunchAtLoginState,
+    update: &UpdateState,
+) -> Vec<String> {
+    let mut rows = vec![
+        crate::supervisor::agent_status_label(agent).to_string(),
+        provider_label(provider),
+    ];
+    rows.push(launch_at_login_label(launch_at_login).to_string());
+    if !matches!(provider, ProviderRuntimeState::Ready { .. }) {
+        rows.push(retry_local_runtime_label().to_string());
+    }
+    let update_label = update.label();
+    if !update_label.is_empty() {
+        rows.push(update_label);
+    }
     rows.push(restart_orbit_label().to_string());
     rows.push(quit_orbit_label().to_string());
     rows

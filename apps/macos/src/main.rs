@@ -2,18 +2,22 @@ use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
     GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
-use orbit_macos::colima::ensure_ready;
+use orbit_macos::colima::{ensure_ready, stop_owned_profile};
 use orbit_macos::installer::{apply_bound_update, commit_install_attempt, ApplyFailure};
 use orbit_macos::legacy::{
     conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
     parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
 };
-use orbit_macos::lifecycle::dashboard_close_action;
+use orbit_macos::lifecycle::{
+    agent_restart_endpoint, dashboard_close_action, provider_health_action, provider_label,
+    provider_retry_enabled, quit_disposition, try_begin_provider_attempt, ProviderHealthAction,
+    ProviderRuntimeState, QuitDisposition,
+};
 use orbit_macos::paths::{
     desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
 };
 use orbit_macos::pending_update::{
-    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate, INSTALL_MODE_RESTART_READY,
+    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate,
 };
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
@@ -54,6 +58,8 @@ const UPDATE_MENU_ID: &str = "update_status";
 const REFRESH_MENU_ID: &str = "refresh_connection";
 const RESTART_MENU_ID: &str = "restart_app";
 const QUIT_MENU_ID: &str = "quit_app";
+const PROVIDER_MENU_ID: &str = "provider_status";
+const RETRY_PROVIDER_MENU_ID: &str = "retry_provider";
 const IP_ROW_MIN_GAP_WIDTH_UNITS: usize = 1_200;
 const IP_ROW_PAD_WIDE: char = '\u{2002}';
 const IP_ROW_PAD_WIDE_WIDTH_UNITS: usize = 642;
@@ -77,6 +83,8 @@ struct DesktopRuntime {
     conflict_reason: Mutex<Option<String>>,
     quitting: Mutex<bool>,
     docker_host: Mutex<Option<String>>,
+    provider_state: Mutex<ProviderRuntimeState>,
+    provider_attempt: Mutex<bool>,
 }
 
 impl DesktopRuntime {
@@ -90,6 +98,8 @@ impl DesktopRuntime {
             conflict_reason: Mutex::new(None),
             quitting: Mutex::new(false),
             docker_host: Mutex::new(None),
+            provider_state: Mutex::new(ProviderRuntimeState::Starting),
+            provider_attempt: Mutex::new(false),
         }
     }
 }
@@ -107,7 +117,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![dashboard_config])
         .setup(|app| {
             let runtime = app.state::<DesktopRuntime>();
-            start_owned_agent(app.handle(), &runtime);
+            request_provider_start(app.handle());
             enable_launch_at_login_after_setup(app.handle(), &runtime);
             consume_pending_update_handoff(&runtime);
             let auto_install = runtime
@@ -123,7 +133,6 @@ fn main() {
             let menu_items = Arc::new(Mutex::new(tray_menu.items));
             let menu_command_items = Arc::clone(&menu_items);
             let tray_click_items = Arc::clone(&menu_items);
-            start_restart_ready_handoff_watcher(app.handle(), Arc::clone(&menu_items));
 
             TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("Orbit Desktop")
@@ -139,6 +148,7 @@ fn main() {
                     UPDATE_MENU_ID => restart_to_update_if_ready(app),
                     RESTART_MENU_ID => restart_orbit(app),
                     QUIT_MENU_ID => quit_orbit(app),
+                    RETRY_PROVIDER_MENU_ID => retry_local_runtime(app),
                     _ => {}
                 })
                 .on_tray_icon_event(move |tray, event| {
@@ -227,41 +237,154 @@ fn bootstrap_process_environment() {
     orbit_agent::install_launchd_safe_path();
 }
 
-fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) {
+fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) -> bool {
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-    let colima =
-        PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
-    let docker =
-        PathBuf::from(std::env::var_os("ORBIT_DOCKER_BIN").unwrap_or_else(|| "docker".into()));
-    let launchd = observed_legacy_launchd(&home);
-    let listener = observed_listener_owner();
-    match inspect_legacy_agent(&home, launchd, listener) {
-        LegacyDecision::Migrate(state) => {
-            migrate_legacy_launchd(&state);
-        }
-        LegacyDecision::Conflict { reason } => {
-            if let Ok(mut agent_state) = runtime.agent_state.lock() {
-                *agent_state = AgentRunState::Conflict;
+    let endpoint = runtime
+        .docker_host
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+    if let Some(endpoint) = endpoint {
+        let started = spawn_or_mark_missing(app, runtime, &home, endpoint);
+        if !started {
+            if let Ok(mut endpoint) = runtime.docker_host.lock() {
+                *endpoint = None;
             }
-            if let Ok(mut conflict) = runtime.conflict_reason.lock() {
-                *conflict = Some(conflict_remediation(&reason));
+            if let Ok(mut provider) = runtime.provider_state.lock() {
+                *provider = ProviderRuntimeState::Degraded {
+                    detail: "Agent failed to start".into(),
+                };
             }
-            return;
         }
-        LegacyDecision::Absent => {}
+        started
+    } else {
+        if let Ok(mut state) = runtime.agent_state.lock() {
+            *state = AgentRunState::Stopped;
+        }
+        if let Ok(mut provider) = runtime.provider_state.lock() {
+            if matches!(*provider, ProviderRuntimeState::Ready { .. }) {
+                *provider = ProviderRuntimeState::Degraded {
+                    detail: "endpoint unavailable".into(),
+                };
+            }
+        }
+        false
     }
+}
 
-    let Ok(provider) = ensure_ready(&home, &colima, &docker) else {
-        if let Ok(mut agent_state) = runtime.agent_state.lock() {
-            *agent_state = AgentRunState::Stopped;
-        }
+fn request_provider_start(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    let Ok(mut attempt) = runtime.provider_attempt.lock() else {
         return;
     };
-    if let Ok(mut endpoint) = runtime.docker_host.lock() {
-        *endpoint = Some(provider.socket.clone());
+    let Ok(mut provider) = runtime.provider_state.lock() else {
+        return;
+    };
+    if !try_begin_provider_attempt(&mut attempt, &mut provider) {
+        return;
     }
+    start_provider_in_background(app, &runtime);
+}
 
-    spawn_or_mark_missing(app, runtime, &home, provider.socket);
+fn start_provider_in_background(app: &AppHandle, _runtime: &DesktopRuntime) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let runtime = handle.state::<DesktopRuntime>();
+        let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()));
+        let colima =
+            PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
+        let docker =
+            PathBuf::from(std::env::var_os("ORBIT_DOCKER_BIN").unwrap_or_else(|| "docker".into()));
+        match inspect_legacy_agent(
+            &home,
+            observed_legacy_launchd(&home),
+            observed_listener_owner(),
+        ) {
+            LegacyDecision::Migrate(state) => migrate_legacy_launchd(&state),
+            LegacyDecision::Conflict { reason } => {
+                *runtime.agent_state.lock().unwrap() = AgentRunState::Conflict;
+                *runtime.conflict_reason.lock().unwrap() = Some(conflict_remediation(&reason));
+                *runtime.provider_state.lock().unwrap() =
+                    ProviderRuntimeState::OwnershipConflict { detail: reason };
+                *runtime.provider_attempt.lock().unwrap() = false;
+                return;
+            }
+            LegacyDecision::Absent => {}
+        }
+        match ensure_ready(&home, &colima, &docker) {
+            Ok(ready) => {
+                if let Ok(mut endpoint) = runtime.docker_host.lock() {
+                    *endpoint = Some(ready.socket.clone());
+                }
+                if let Ok(mut provider) = runtime.provider_state.lock() {
+                    *provider = ProviderRuntimeState::Ready {
+                        endpoint: ready.socket.clone(),
+                    };
+                }
+                if start_owned_agent(&handle, &runtime) {
+                    start_provider_health_monitor(handle.clone(), ready.socket.clone());
+                }
+            }
+            Err(error) => {
+                let detail = error.to_string();
+                let state = match error {
+                    orbit_macos::colima::ColimaError::MissingExecutable(_) => {
+                        ProviderRuntimeState::MissingPrerequisite { detail }
+                    }
+                    orbit_macos::colima::ColimaError::OwnershipConflict => {
+                        ProviderRuntimeState::OwnershipConflict { detail }
+                    }
+                    orbit_macos::colima::ColimaError::UnsupportedVersion(_) => {
+                        ProviderRuntimeState::Incompatible { detail }
+                    }
+                    _ => ProviderRuntimeState::Degraded { detail },
+                };
+                if let Ok(mut provider) = runtime.provider_state.lock() {
+                    *provider = state;
+                }
+            }
+        }
+        if let Ok(mut attempt) = runtime.provider_attempt.lock() {
+            *attempt = false;
+        };
+    });
+}
+
+fn retry_local_runtime(app: &AppHandle) {
+    request_provider_start(app);
+}
+
+fn start_provider_health_monitor(app: AppHandle, endpoint: String) {
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(2));
+        let runtime = app.state::<DesktopRuntime>();
+        let docker =
+            PathBuf::from(std::env::var_os("ORBIT_DOCKER_BIN").unwrap_or_else(|| "docker".into()));
+        if orbit_macos::colima::docker_info_command(docker, &endpoint)
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            continue;
+        }
+        let same = runtime.provider_state.lock().ok().is_some_and(|state| matches!(&*state, ProviderRuntimeState::Ready { endpoint: current } if current == &endpoint));
+        if same {
+            if provider_health_action(&runtime.provider_state.lock().unwrap(), &endpoint, false)
+                != ProviderHealthAction::DegradeAndStop
+            {
+                return;
+            }
+            if let Ok(mut state) = runtime.provider_state.lock() {
+                *state = ProviderRuntimeState::Degraded {
+                    detail: "Docker endpoint unavailable".into(),
+                };
+            }
+            if let Ok(mut stored) = runtime.docker_host.lock() {
+                *stored = None;
+            }
+            stop_owned_child(&runtime);
+        }
+        return;
+    });
 }
 
 fn spawn_or_mark_missing(
@@ -269,13 +392,13 @@ fn spawn_or_mark_missing(
     runtime: &DesktopRuntime,
     home: &Path,
     docker_host: String,
-) {
+) -> bool {
     let override_bin = std::env::var_os("ORBIT_AGENT_BIN").map(PathBuf::from);
     let Some(binary) = resolve_agent_binary(home, override_bin.as_deref()) else {
         if let Ok(mut agent_state) = runtime.agent_state.lock() {
             *agent_state = AgentRunState::Stopped;
         }
-        return;
+        return false;
     };
 
     if let Ok(mut agent_state) = runtime.agent_state.lock() {
@@ -292,11 +415,13 @@ fn spawn_or_mark_missing(
                 *agent_state = AgentRunState::Running;
             }
             watch_child_crashes(app.clone());
+            true
         }
         Err(_) => {
             if let Ok(mut agent_state) = runtime.agent_state.lock() {
                 *agent_state = AgentRunState::Stopped;
             }
+            false
         }
     }
 }
@@ -343,7 +468,13 @@ fn watch_child_crashes(app: AppHandle) {
                     .lock()
                     .ok()
                     .and_then(|value| value.clone());
-                if let Some(endpoint) = endpoint {
+                let state = runtime
+                    .provider_state
+                    .lock()
+                    .ok()
+                    .map(|state| state.clone())
+                    .unwrap_or(ProviderRuntimeState::Starting);
+                if let Some(endpoint) = agent_restart_endpoint(endpoint.as_deref(), &state) {
                     spawn_or_mark_missing(&app, &runtime, &home, endpoint);
                 } else if let Ok(mut state) = runtime.agent_state.lock() {
                     *state = AgentRunState::Stopped;
@@ -468,94 +599,6 @@ fn consume_pending_update_handoff(runtime: &DesktopRuntime) {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum ObservedPendingHandoff {
-    RestartReady(Box<PendingDesktopUpdate>),
-    Automatic,
-    Missing,
-}
-
-fn observe_pending_handoff(
-    update: Result<PendingDesktopUpdate, orbit_macos::pending_update::PendingUpdateError>,
-) -> ObservedPendingHandoff {
-    match update {
-        Ok(update) if update.install_mode == INSTALL_MODE_RESTART_READY => {
-            ObservedPendingHandoff::RestartReady(Box::new(update))
-        }
-        Ok(_) => ObservedPendingHandoff::Automatic,
-        Err(_) => ObservedPendingHandoff::Missing,
-    }
-}
-
-fn reconcile_restart_ready_handoff(runtime: &DesktopRuntime) -> bool {
-    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-    let path = pending_update_path(&home);
-    let handoff = observe_pending_handoff(read_pending_update(
-        &path.to_string_lossy(),
-        &ExpectedUpdateIdentity::default(),
-    ));
-    let Ok(mut state) = runtime.update_state.lock() else {
-        return false;
-    };
-    let Some(next_state) = next_restart_ready_state(&state, &handoff) else {
-        return false;
-    };
-    if *state == next_state {
-        return false;
-    }
-    *state = next_state;
-    true
-}
-
-fn next_restart_ready_state(
-    current: &UpdateState,
-    handoff: &ObservedPendingHandoff,
-) -> Option<UpdateState> {
-    if matches!(
-        current,
-        UpdateState::Installing { .. }
-            | UpdateState::Relaunching { .. }
-            | UpdateState::Verified { .. }
-    ) {
-        return None;
-    }
-
-    match handoff {
-        ObservedPendingHandoff::RestartReady(update) => Some(ready_state_for_handoff(update)),
-        ObservedPendingHandoff::Automatic => None,
-        ObservedPendingHandoff::Missing => {
-            matches!(current, UpdateState::RestartReady { .. }).then_some(UpdateState::Idle)
-        }
-    }
-}
-
-fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<TrayMenuItems>>) {
-    let app = app.clone();
-    thread::spawn(move || loop {
-        let runtime = app.state::<DesktopRuntime>();
-        if runtime
-            .quitting
-            .lock()
-            .map(|quitting| *quitting)
-            .unwrap_or(true)
-        {
-            break;
-        }
-
-        if reconcile_restart_ready_handoff(&runtime) {
-            let update_item = menu_items.lock().ok().map(|items| items.update.clone());
-            if let Some(update_item) = update_item {
-                TrayMenuItems::update_update_item(&update_item, &runtime);
-            }
-            if let Some(tray) = app.tray_by_id(TRAY_ID) {
-                let _ = tray.set_icon(Some(tray_icon_for_update(&runtime)));
-            }
-        }
-
-        thread::sleep(Duration::from_millis(500));
-    });
-}
-
 fn restart_to_update_if_ready(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
     let ready = runtime.update_state.lock().ok().is_some_and(|state| {
@@ -672,7 +715,23 @@ fn quit_orbit(app: &AppHandle) {
         *quitting = true;
     };
     stop_owned_child(&runtime);
-    app.exit(0);
+    if let Ok(mut state) = runtime.provider_state.lock() {
+        *state = ProviderRuntimeState::Stopping;
+    }
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let colima =
+        PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
+    match quit_disposition(stop_owned_profile(&home, &colima).map_err(|error| error.to_string())) {
+        QuitDisposition::Exit => app.exit(0),
+        QuitDisposition::RemainOpen(detail) => {
+            if let Ok(mut quitting) = runtime.quitting.lock() {
+                *quitting = false;
+            }
+            if let Ok(mut state) = runtime.provider_state.lock() {
+                *state = ProviderRuntimeState::StopFailed { detail };
+            }
+        }
+    }
 }
 
 fn stop_owned_child(runtime: &DesktopRuntime) {
@@ -805,16 +864,8 @@ struct TrayMenuItems {
     granted_nodes: Vec<MenuItem<Wry>>,
     launch_at_login: CheckMenuItem<Wry>,
     update: MenuItem<Wry>,
-}
-
-fn update_menu_presentation(update: &UpdateState) -> (String, bool) {
-    let label = if update.label().is_empty() {
-        format!("Orbit {}", orbit_version())
-    } else {
-        update.label()
-    };
-
-    (label, matches!(update, UpdateState::RestartReady { .. }))
+    provider: MenuItem<Wry>,
+    retry_provider: MenuItem<Wry>,
 }
 
 impl TrayMenuItems {
@@ -852,7 +903,38 @@ impl TrayMenuItems {
             .checked(launch_at_login_checked(launch_at_login))
             .enabled(!matches!(launch_at_login, LaunchAtLoginState::Error))
             .build(app)?,
-            update: disabled_menu_item(app, UPDATE_MENU_ID, update_menu_presentation(&update).0)?,
+            update: disabled_menu_item(
+                app,
+                UPDATE_MENU_ID,
+                if update.label().is_empty() {
+                    format!("Orbit {}", orbit_version())
+                } else {
+                    update.label()
+                },
+            )?,
+            provider: disabled_menu_item(
+                app,
+                PROVIDER_MENU_ID,
+                provider_label(
+                    &runtime
+                        .provider_state
+                        .lock()
+                        .map(|state| state.clone())
+                        .unwrap_or(ProviderRuntimeState::Starting),
+                ),
+            )?,
+            retry_provider: MenuItemBuilder::with_id(RETRY_PROVIDER_MENU_ID, "Retry Local Runtime")
+                .enabled(!matches!(
+                    runtime
+                        .provider_state
+                        .lock()
+                        .map(|state| state.clone())
+                        .unwrap_or(ProviderRuntimeState::Starting),
+                    ProviderRuntimeState::Ready { .. }
+                        | ProviderRuntimeState::Starting
+                        | ProviderRuntimeState::Stopping
+                ))
+                .build(app)?,
         })
     }
 
@@ -876,24 +958,24 @@ impl TrayMenuItems {
         let _ = self
             .launch_at_login
             .set_checked(launch_at_login_checked(launch_at_login));
-        let (update_label, update_enabled) = update_menu_presentation(&update);
-        let _ = self.update.set_text(update_label);
-        let _ = self.update.set_enabled(update_enabled);
+        let _ = self.update.set_text(if update.label().is_empty() {
+            format!("Orbit {}", orbit_version())
+        } else {
+            update.label()
+        });
+        let provider = runtime
+            .provider_state
+            .lock()
+            .ok()
+            .map(|state| state.clone())
+            .unwrap_or(ProviderRuntimeState::Starting);
+        let _ = self.provider.set_text(provider_label(&provider));
+        let retry_enabled = provider_retry_enabled(&provider);
+        let _ = self.retry_provider.set_enabled(retry_enabled);
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
             let _ = item.set_text(granted_node_label(node, ip_row_layout));
         }
-    }
-
-    fn update_update_item(update_item: &MenuItem<Wry>, runtime: &DesktopRuntime) {
-        let update = runtime
-            .update_state
-            .lock()
-            .map(|state| state.clone())
-            .unwrap_or(UpdateState::Idle);
-        let (label, enabled) = update_menu_presentation(&update);
-        let _ = update_item.set_text(label);
-        let _ = update_item.set_enabled(enabled);
     }
 
     fn grant_row_count(&self) -> usize {
@@ -906,9 +988,8 @@ fn refresh_menu(
     menu_items: &Arc<Mutex<TrayMenuItems>>,
     refresh_source: RefreshSource,
 ) {
-    let runtime = app.state::<DesktopRuntime>();
-    reconcile_restart_ready_handoff(&runtime);
     let menu_state = load_menu_state();
+    let runtime = app.state::<DesktopRuntime>();
     let current_grant_rows = menu_items
         .lock()
         .map(|items| items.grant_row_count())
@@ -1004,10 +1085,11 @@ fn build_tray_menu(
         .update_state
         .lock()
         .ok()
-        .is_some_and(|state| update_menu_presentation(&state).1);
+        .is_some_and(|state| matches!(*state, UpdateState::RestartReady { .. }));
 
     let mut menu = MenuBuilder::new(app)
         .item(&items.agent_status)
+        .item(&items.provider)
         .item(&items.status)
         .item(&items.node_ip)
         .item(&items.gateway)
@@ -1023,6 +1105,7 @@ fn build_tray_menu(
         .item(&items.update)
         .separator()
         .text(REFRESH_MENU_ID, "Refresh")
+        .item(&items.retry_provider)
         .text(RESTART_MENU_ID, restart_orbit_label())
         .text(QUIT_MENU_ID, quit_orbit_label())
         .build()?;
@@ -1589,186 +1672,6 @@ mod tests {
     }
 
     #[test]
-    fn tray_refresh_updates_update_action_state() {
-        let source = include_str!("main.rs");
-
-        let update_method = source
-            .split("fn update(&self")
-            .nth(1)
-            .expect("tray update method should exist");
-        let refresh_method = source
-            .split("fn refresh_menu(")
-            .nth(1)
-            .expect("tray refresh method should exist");
-
-        assert!(update_method.contains("self.update.set_enabled(update_enabled)"));
-        assert!(refresh_method.contains("reconcile_restart_ready_handoff(&runtime)"));
-    }
-
-    #[test]
-    fn native_left_click_keeps_refresh_hook() {
-        let source = include_str!("main.rs");
-        let setup = source
-            .split("TrayIconBuilder::with_id(TRAY_ID)")
-            .nth(1)
-            .expect("tray builder should exist");
-
-        assert!(setup.contains(".show_menu_on_left_click(true)"));
-        assert!(setup.contains("should_refresh_for_tray_event"));
-    }
-
-    #[test]
-    fn tray_refresh_accepts_left_clicks() {
-        let event = |button| TrayIconEvent::Click {
-            id: tauri::tray::TrayIconId::new(TRAY_ID),
-            position: tauri::PhysicalPosition::default(),
-            rect: tauri::Rect::default(),
-            button,
-            button_state: tauri::tray::MouseButtonState::Up,
-        };
-        let left = event(MouseButton::Left);
-        let right = event(MouseButton::Right);
-
-        assert!(should_refresh_for_tray_event(&left));
-        assert!(!should_refresh_for_tray_event(&right));
-    }
-
-    #[test]
-    fn update_menu_presentation_enables_only_restart_ready_updates() {
-        let (idle_label, idle_enabled) = update_menu_presentation(&UpdateState::Idle);
-        let (restart_label, restart_enabled) =
-            update_menu_presentation(&UpdateState::RestartReady {
-                version: "1.2.3".to_string(),
-            });
-        let (verified_label, verified_enabled) = update_menu_presentation(&UpdateState::Verified {
-            version: "1.2.3".to_string(),
-        });
-
-        assert_eq!(idle_label, format!("Orbit {}", orbit_version()));
-        assert!(!idle_enabled);
-        assert_eq!(restart_label, "Restart to Update Orbit 1.2.3");
-        assert!(restart_enabled);
-        assert_eq!(verified_label, "Restart to Update Orbit 1.2.3");
-        assert!(!verified_enabled);
-    }
-
-    fn pending_update_with_mode(install_mode: &str) -> PendingDesktopUpdate {
-        PendingDesktopUpdate {
-            schema_version: 1,
-            operation_id: "operation".to_string(),
-            version: "1.2.3".to_string(),
-            build_id: "build".to_string(),
-            install_mode: install_mode.to_string(),
-            desktop: orbit_macos::pending_update::DesktopIdentity {
-                sha256: "a".repeat(64),
-                signature: "signature".to_string(),
-                staged_path: "/Users/test/.local/share/orbit/updates/desktop.tar.gz".to_string(),
-                version: "1.2.3".to_string(),
-                platform: "darwin".to_string(),
-                architecture: "arm64".to_string(),
-            },
-            agent: orbit_macos::pending_update::ArtifactIdentity {
-                sha256: "b".repeat(64),
-                bin_path: None,
-            },
-            cli: orbit_macos::pending_update::ArtifactIdentity {
-                sha256: "c".repeat(64),
-                bin_path: None,
-            },
-        }
-    }
-
-    #[test]
-    fn live_handoff_watcher_accepts_restart_ready_only() {
-        let restart_ready = pending_update_with_mode("restart-ready");
-        let automatic = pending_update_with_mode("automatic");
-
-        assert_eq!(
-            observe_pending_handoff(Ok(restart_ready.clone())),
-            ObservedPendingHandoff::RestartReady(Box::new(restart_ready))
-        );
-        assert!(matches!(
-            observe_pending_handoff(Ok(automatic)),
-            ObservedPendingHandoff::Automatic
-        ));
-        assert!(matches!(
-            observe_pending_handoff(Err(
-                orbit_macos::pending_update::PendingUpdateError::Malformed,
-            )),
-            ObservedPendingHandoff::Missing
-        ));
-    }
-
-    #[test]
-    fn live_handoff_reconciliation_sets_and_clears_restart_ready_state() {
-        let handoff = pending_update_with_mode("restart-ready");
-        assert_eq!(
-            next_restart_ready_state(
-                &UpdateState::Idle,
-                &ObservedPendingHandoff::RestartReady(Box::new(handoff.clone())),
-            ),
-            Some(UpdateState::RestartReady {
-                version: "1.2.3".to_string()
-            })
-        );
-        assert_eq!(
-            next_restart_ready_state(
-                &UpdateState::RestartReady {
-                    version: "1.2.3".to_string()
-                },
-                &ObservedPendingHandoff::Missing
-            ),
-            Some(UpdateState::Idle)
-        );
-    }
-
-    #[test]
-    fn live_handoff_reconciliation_preserves_install_states_with_restart_ready_handoff() {
-        let handoff = pending_update_with_mode("restart-ready");
-        for state in [
-            UpdateState::Installing {
-                version: "1.2.3".to_string(),
-            },
-            UpdateState::Relaunching {
-                version: "1.2.3".to_string(),
-            },
-            UpdateState::Verified {
-                version: "1.2.3".to_string(),
-            },
-        ] {
-            assert_eq!(
-                next_restart_ready_state(
-                    &state,
-                    &ObservedPendingHandoff::RestartReady(Box::new(handoff.clone())),
-                ),
-                None
-            );
-        }
-    }
-
-    #[test]
-    fn live_handoff_reconciliation_preserves_automatic_install_state() {
-        assert_eq!(
-            next_restart_ready_state(
-                &UpdateState::Installing {
-                    version: "1.2.3".to_string()
-                },
-                &ObservedPendingHandoff::Automatic
-            ),
-            None
-        );
-        assert_eq!(
-            next_restart_ready_state(
-                &UpdateState::RestartReady {
-                    version: "1.2.3".to_string()
-                },
-                &ObservedPendingHandoff::Automatic
-            ),
-            None
-        );
-    }
-
-    #[test]
     fn agent_service_base_url_defaults_to_local_headless_endpoint() {
         std::env::remove_var("ORBIT_AGENT_SERVICE_URL");
 
@@ -1794,6 +1697,19 @@ mod tests {
         assert!(source.contains("quit_orbit_label"));
         assert!(source.contains("MacosLauncher::LaunchAgent"));
         assert!(!source.contains("Command::new(\"pgrep\")"));
+    }
+
+    #[test]
+    fn restart_paths_do_not_call_provider_stop_but_quit_does() {
+        let source = include_str!("main.rs");
+        fn body<'a>(source: &'a str, name: &str) -> &'a str {
+            let start = source.find(&format!("fn {name}")).unwrap();
+            let end = source[start..].find("\n}\n").unwrap() + start;
+            &source[start..end]
+        }
+        assert!(!body(source, "restart_orbit").contains("stop_owned_profile"));
+        assert!(!body(source, "install_ready_update").contains("stop_owned_profile"));
+        assert!(body(source, "quit_orbit").contains("stop_owned_profile"));
     }
 
     #[test]
