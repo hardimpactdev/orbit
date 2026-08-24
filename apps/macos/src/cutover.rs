@@ -1123,19 +1123,31 @@ fn target_image_reference(
             "cross-architecture migration requires a portable tagged registry reference".into(),
         ));
     }
-    if docker(
+    match docker(
         program,
         target,
         &a(&["image", "inspect", "--format", "{{.Architecture}}", image]),
-    )
-    .is_err()
-    {
-        docker(
-            program,
-            target,
-            &a(&["pull", "--platform", &format!("linux/{target_arch}"), image]),
-        )?;
+    ) {
+        Ok(out) => {
+            let arch = String::from_utf8_lossy(&out.stdout);
+            match normalized_architecture(&arch) {
+                Some(arch) if arch == target_arch => return Ok(Some(image.into())),
+                Some(_) => {}
+                None => {
+                    return Err(CutoverError::Invalid(
+                        image.into(),
+                        "unsupported or missing target image architecture".into(),
+                    ))
+                }
+            }
+        }
+        Err(_) => {}
     }
+    docker(
+        program,
+        target,
+        &a(&["pull", "--platform", &format!("linux/{target_arch}"), image]),
+    )?;
     let target_image_arch = image_architecture(program, target, image)?;
     if target_image_arch != target_arch {
         return Err(CutoverError::Invalid(
