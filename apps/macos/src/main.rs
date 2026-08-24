@@ -339,7 +339,17 @@ fn start_provider_in_background(app: &AppHandle, _runtime: &DesktopRuntime) {
             }
             LegacyDecision::Absent => {}
         }
-        match ensure_ready(&home, &colima, &docker) {
+        let wireguard_address = match AgentConfig::load_default() {
+            Ok(config) => config.wireguard_address,
+            Err(error) => {
+                *runtime.provider_state.lock().unwrap() = ProviderRuntimeState::Degraded {
+                    detail: format!("Agent config unavailable: {error:?}"),
+                };
+                *runtime.provider_attempt.lock().unwrap() = false;
+                return;
+            }
+        };
+        match ensure_ready(&home, &colima, &docker, wireguard_address) {
             Ok(ready) => {
                 if let Ok(mut endpoint) = runtime.docker_host.lock() {
                     *endpoint = Some(ready.socket.clone());

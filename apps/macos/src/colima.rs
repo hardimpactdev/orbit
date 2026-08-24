@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -429,6 +430,63 @@ pub fn direct_command(program: impl Into<PathBuf>, args: Vec<String>) -> ColimaC
         args,
     }
 }
+fn ssh_command(colima: &Path, args: Vec<String>) -> ColimaCommand {
+    let mut command_args = vec!["ssh".into(), PROFILE.into(), "--".into()];
+    command_args.extend(args);
+    direct_command(colima.to_path_buf(), command_args)
+}
+fn normalize_wireguard_route(colima: &Path, address: IpAddr) -> Result<(), ColimaError> {
+    let output = run(&ssh_command(
+        colima,
+        vec![
+            "ip".into(),
+            "-4".into(),
+            "-o".into(),
+            "addr".into(),
+            "show".into(),
+            "dev".into(),
+            "lo".into(),
+        ],
+    ))?;
+    let prefix = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .find_map(|token| {
+            let (ip, prefix) = token.split_once('/')?;
+            (ip.parse::<IpAddr>().ok()? == address)
+                .then(|| prefix.parse::<u8>().ok())
+                .flatten()
+        })
+        .ok_or_else(|| {
+            ColimaError::InvalidStatus(format!(
+                "WireGuard address {address} is not on Colima loopback"
+            ))
+        })?;
+    if prefix == 32 {
+        return Ok(());
+    }
+    let original = format!("{address}/{prefix}");
+    let replace = |cidr: &str| {
+        run(&ssh_command(
+            colima,
+            vec![
+                "ip".into(),
+                "addr".into(),
+                "replace".into(),
+                cidr.into(),
+                "dev".into(),
+                "lo".into(),
+            ],
+        ))
+    };
+    if replace(&format!("{address}/32")).is_ok() {
+        return Ok(());
+    }
+    let rollback = replace(&original);
+    Err(ColimaError::Command(format!(
+        "failed to normalize loopback route for {address}; rollback={}",
+        rollback.is_ok()
+    )))
+}
 pub fn run(c: &ColimaCommand) -> Result<Output, ColimaError> {
     let o = Command::new(&c.program).args(&c.args).output()?;
     if o.status.success() {
@@ -443,6 +501,7 @@ pub fn ensure_ready(
     home: &Path,
     colima: &Path,
     docker: &Path,
+    wireguard_address: IpAddr,
 ) -> Result<ProviderReady, ColimaError> {
     let colima = resolve_executable(colima)?;
     let docker = resolve_executable(docker)?;
@@ -467,6 +526,7 @@ pub fn ensure_ready(
             start_plan_for_profile(record.state == "reserved", profile_exists(home), 1, 0)?
         };
         run(&direct_command(colima.clone(), args))?;
+        normalize_wireguard_route(&colima, wireguard_address)?;
     }
     let status = run(&direct_command(
         colima.clone(),
