@@ -365,6 +365,7 @@ fn copy_named_volume(
             "/orbit-volume",
             "-cf",
             "-",
+            ".",
         ])
         .env("DOCKER_HOST", source)
         .env_remove("DOCKER_CONTEXT")
@@ -425,6 +426,7 @@ fn copy_named_volume(
             "/orbit-volume",
             "-cf",
             "-",
+            ".",
         ])
         .env("DOCKER_HOST", target)
         .env_remove("DOCKER_CONTEXT")
@@ -692,6 +694,7 @@ fn retry_volume_matches(program: &Path, target: &str, source: &str, volume: &str
                 "/orbit-volume".into(),
                 "-cf".into(),
                 "-".into(),
+                ".".into(),
             ],
         )
         .ok()?;
@@ -1145,6 +1148,15 @@ mod tests {
                 .count(),
             1
         );
+        for line in lines
+            .lines()
+            .filter(|line| line.contains(" run ") && line.contains(" tar -C /orbit-volume -cf -"))
+        {
+            assert!(
+                line.ends_with(" tar -C /orbit-volume -cf - ."),
+                "invalid archive argv: {line}"
+            );
+        }
         let lines_vec = lines.lines().collect::<Vec<_>>();
         let first_start = lines_vec
             .iter()
@@ -1220,6 +1232,15 @@ mod tests {
         assert!(delta.contains(" rm orbit-runtime"));
         assert!(delta.contains("source.sock run --rm --volume shared-data:/orbit-volume:ro"));
         assert!(delta.contains("target.sock run --rm --volume shared-data:/orbit-volume:ro"));
+        for line in delta
+            .lines()
+            .filter(|line| line.contains(" run ") && line.contains(" tar -C /orbit-volume -cf -"))
+        {
+            assert!(
+                line.ends_with(" tar -C /orbit-volume -cf - ."),
+                "invalid archive argv: {line}"
+            );
+        }
         assert!(!delta.contains(" pull "));
         assert!(!delta.contains(" save "));
         assert!(!delta.contains(" load "));
@@ -1322,6 +1343,10 @@ mod tests {
         let body = format!(
             r#"#!/bin/sh
 printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
+case "$*" in
+  *" tar -C /orbit-volume -cf - .") ;;
+  *" tar -C /orbit-volume -cf -") exit 97 ;;
+esac
 case "$DOCKER_HOST:$1:$2" in
 unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
 unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
@@ -1388,6 +1413,10 @@ esac
         .unwrap();
         let body = r#"#!/bin/sh
 printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
+case "$*" in
+  *" tar -C /orbit-volume -cf - .") ;;
+  *" tar -C /orbit-volume -cf -") exit 97 ;;
+esac
 case "$DOCKER_HOST:$1:$2" in
 unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
 unix://*/source.sock:ps:-aq)
