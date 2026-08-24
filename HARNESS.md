@@ -7,10 +7,9 @@ owns how a feature moves safely through the repository.
 
 Every feature uses one state machine:
 
-`FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
+`FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND`
 
-The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
+Sol owns one feature/worktree with one or more mandatory dependency-aware vertical slices and all session artifacts. Native Luna children use Codex collaboration; the feature tmux registry is only for the one Claude reviewer and retained proof terminal after all slices.
 
 The local anchor is the compact `.orbit/loop.md` seeded by
 `bin/orbit-prepare-worktree`. It records only Goal, Scope, Proof, Status, and a
@@ -49,17 +48,14 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 Keep docs, tests, and implementation aligned. Start with failing coverage in
 the owning framework. Prefer a small vertical slice and existing abstractions.
 
-Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
-Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
-Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
-Status questions and partial blockers are nonterminal. Stop only at LAND, required human judgment, or a whole-goal blocker.
-Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
-Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
-Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
+For each dependency-ready slice, Sol marks building and dispatches one fresh native child with model `gpt-5.6-luna` and `reasoning_effort=low`. The child uses TDD, produces RED/GREEN and focused proof, handles corrections and amends its single checkpoint, and never edits packets or `.orbit`. There are no slice handoffs or proving state. A fresh child handles each next or reopened slice. Sol audits the diff and independently reruns focused proof before completing and indexing the checkpoint.
 Every `tmux kill*` form from a repository shell is blocked except the validated LAND `kill-session -t '=feat-<slug>'` boundary.
-Missing tmux, grok, or claude on the machine is a blocker.
 
-### PROVE
+### SLICE PROVE / CHECKPOINT
+
+The Luna child owns slice RED/GREEN and focused proof. Sol records a checkpoint only after independent audit.
+
+### FEATURE PROVE / REVIEW
 
 Run the smallest relevant checks first, then the diff-routed broader gate:
 docs-only focused docs checks and `composer docs-lint`; non-docs focused owning
@@ -89,17 +85,16 @@ moves HEAD still needs a refreshed review via the existing identity check. Do
 not invent a post-LAND closure proof. Historical archives stay readable; the
 strict receipt applies to new acceptance or finalization.
 
-After focused checks pass, commit the candidate and confirm a clean worktree
-before the diff-routed broader gate, general review, and acceptance. Run
-focused Mago format/lint on changed PHP, including tests, before each
-candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
-and reviewer consume the exact-SHA receipt without rerunning it.
+After focused checks pass, Sol runs the feature proof and terminal gate, records
+the clean candidate and runtime evidence, and confirms a clean worktree before
+review and acceptance. Run focused Mago format/lint on changed PHP, including
+tests; skip when no PHP changed.
 
 `composer quality-gate:final-check` is evidence-only. It must not rerun Pest,
 quality-check, or E2E lanes; timing analysis may be skipped when no comparable
 baseline exists.
 
-Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.
+After all indexed slices complete, Sol owns the one diff-routed feature proof, terminal gate, clean candidate, runtime evidence, and feature-level proof receipt. Then spawn exactly one Claude general reviewer with existing tmux tooling. Watch, heartbeat, handoff, and stop rules apply only to this reviewer. Specialist personas are checklists consumed by the general reviewer, never spawned processes. Missing required tmux or Claude review tooling is a REVIEW blocker.
 Use `.agents/review-personas/general.md`. Require checkout proof.
 
 Blast radius is the prevention hook inside the same general reviewer, not a new
@@ -110,8 +105,9 @@ result=<summary>`. `gaps` cannot PASS or enter acceptance.
 
 - `PASS`: continue.
 - `FIX`: record `Review: fix`, reset `Reviewed feature tip: none` and `Blast
-  radius: pending`, return to Grok BUILD, fix and commit the clean delta, repeat
-  affected proof, and reuse the same reviewer for the new tip.
+  radius: pending`, identify the earliest affected complete slice, reset that slice and every later indexed slice to pending/none as dependencies require, then set the earliest slice ready and building,
+  rebuild each with a fresh Luna-low child, rerun feature proof, and reuse the
+  same Claude reviewer for the corrected tip.
 - `ESCALATE`: name one specialist and one concrete high-risk question; the
   specialist answers only back to the same general reviewer, which then issues
   the terminal `PASS` or `FIX` even without a code delta. There are no

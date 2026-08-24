@@ -24,8 +24,9 @@ Ordinary changes do not require full `HARNESS.md` ingestion before routing.
    not edit the primary checkout directly.
 3. Fill Goal and Scope in the seeded `.orbit/loop.md`, then follow
    `.agents/skills/implementing-features/SKILL.md` through
-   `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`; `HARNESS.md` holds the
+   `FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND`; `HARNESS.md` holds the
    canonical detail per state.
+   Native slice ownership and proof boundaries are defined there; do not duplicate them here.
 4. Run the narrowest useful verification while developing. In LAND, prefer
    `bin/orbit-feature-land`; validate every destructive mutation with
    `bin/orbit-feature-finalization-check`, execute only after

@@ -1298,7 +1298,7 @@ it('keeps retained cli proof agent-owned unless human judgment remains', functio
             'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`',
         )
         ->toContain(
-            'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.',
+            'After all indexed slices complete, Sol owns the one diff-routed feature proof, terminal gate, clean candidate, runtime evidence, and feature-level proof receipt. Then spawn exactly one Claude general reviewer with existing tmux tooling.',
         )
         ->toContain('Otherwise it is agent-owned proof')
         ->and($normalizedImplementingFeaturesSkill)

@@ -73,6 +73,7 @@ product docs.
 - When an issue is reported against live nodes, verify the fix on those nodes.
 - Prefer small, working vertical slices; keep the command surface
   contract-first via `.agents/skills/command-designer`.
+- Feature lifecycle and Sol/Luna/Claude ownership follow `HARNESS.md` and `.agents/skills/implementing-features/SKILL.md`.
 
 ## PHP And Laravel
 

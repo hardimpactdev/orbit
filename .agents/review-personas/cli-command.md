@@ -31,9 +31,9 @@ This is a reviewer persona, not an implementation workflow. It does not replace
 tests. It tells a reviewer what to inspect after an implementation report or
 diff exists.
 
-## Default Agent
+## Checklist Helper (non-active)
 
-Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. The reviewer inspects, captures
+The one Claude general reviewer may consult this checklist. Never spawn this persona or create a standing lane. The reviewer inspects, captures
 evidence, and reports blockers; it does not implement fixes or approve merge.
 If the selected reviewer has no provider-session archive support, preserve the
 reviewer report itself as the evidence artifact.

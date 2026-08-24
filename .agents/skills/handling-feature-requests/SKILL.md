@@ -59,5 +59,4 @@ Provide:
 - Unresolved product ambiguity, or `none`.
 
 Do not prescribe workers, reviewers, analyzers, captures, or implementation
-steps. The implementing owner applies `FRAME -> BUILD <-> PROVE -> ACCEPT ->
-LAND`.
+steps. The implementing owner applies `FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND`.

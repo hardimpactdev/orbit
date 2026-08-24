@@ -1,14 +1,13 @@
 ---
 name: implementing-features
-description: Implement an Orbit feature, bug fix, command change, or docs correction.
+description: Run the Sol-owned native Luna sliced feature flow with one Claude review.
 ---
 
 # Implementing Orbit Features
 
-Own the requested result through `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
+Own the requested result through `FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND`.
 `HARNESS.md` is the canonical loop contract.
-The orchestrating session (Codex or Claude) that the human started is the sole feature owner.
-Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.
+Sol owns one feature/worktree with one or more mandatory dependency-aware vertical slices and all session artifacts. Native Luna slice children use Codex collaboration; the feature tmux registry is only for the one Claude reviewer and retained proof terminal after all slices.
 
 ## Non-Negotiable Boundaries
 
@@ -29,25 +28,24 @@ Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prep
 Start with failing coverage; capture red, make the smallest change, rerun. Load owning skills: `command-designer` + `orbit-cli-development`; Spatie + Pest; `orbit-core-development` / `orbit-sdk-development`; `librarian` + `orbit-docs-development`;
 macOS Agent: `tauri-agent-development`.
 
-Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.
-Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.
-Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.
-Status questions and partial blockers are nonterminal. Stop only at LAND, required human judgment, or a whole-goal blocker.
-Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.
-Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.
-Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.
-Missing tmux, grok, or claude on the machine is a blocker.
+For each dependency-ready slice, Sol marks building and dispatches one fresh native Codex child using model `gpt-5.6-luna` and `reasoning_effort=low`. The child uses TDD, produces RED/GREEN and focused proof, handles corrections and amends its single checkpoint, and never edits packets or `.orbit`. There are no slice handoffs or proving state. A fresh child handles each next or reopened slice. Sol independently audits the diff, then completes and indexes the checkpoint.
 
-## PROVE
+## SLICE PROVE / CHECKPOINT
 
-Run the narrowest relevant verification while building, then the diff-routed broader gate: docs-only `composer docs-lint`; non-docs `composer quality-check`. `composer quality-gate:final-check` is an evidence read; it must not rerun Pest or quality-check; missing comparable timing means `timing analysis was skipped`.
+The Luna child owns slice RED/GREEN and focused proof. Sol records each checkpoint only after independent audit.
+
+## FEATURE PROVE / REVIEW
+
+After all indexed slices complete, Sol owns one diff-routed feature proof, terminal gate, clean candidate, runtime evidence, and feature-level proof receipt.
+Sol produces and validates `bin/orbit-feature-proof-receipt` for the exact candidate; Claude and acceptance consume that feature-level receipt.
+`composer quality-gate:final-check` is evidence-only and must not rerun Pest, quality-check, or E2E lanes; missing comparable timing means `timing analysis was skipped`.
+Run the narrowest relevant verification while building, then the diff-routed broader gate.
 
 When the Goal claims runtime reachability or convergence, proof must directly exercise the claimed final outcome. A failed, excluded, still-required, or deferred final hop means `Verification.runtime` cannot be recorded as `passed`; stay in PROVE. For non-`automated` venues, record the structured runtime receipt on the `Verification.runtime` row per `HARNESS.md` PROVE. A same-candidate proof retry keeps Review and the reviewed tip; a reviewer FIX resets them.
 
-After focused checks pass, commit the candidate and confirm the worktree is clean. Run focused Mago formatting and linting for every changed PHP file, including tests, before each candidate commit; skip when no PHP changed. The implementer owns focused checks and the one terminal gate; owner
-and reviewer consume the exact-SHA receipt without rerunning it.
-Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.
-The same general reviewer owns blast radius, ESCALATE, and terminal PASS or FIX. FIX resets Review, reviewed tip, and Blast radius; return to Grok BUILD, prove, commit, then reuse the reviewer for the corrected tip. On PASS record the exact reviewed HEAD and `human-judgment=required|not-required`.
+Sol runs the feature proof and terminal gate after slice checkpoints, then records the clean candidate and runtime evidence. Run focused Mago formatting and linting for every changed PHP file, including tests; skip when no PHP changed.
+Spawn exactly one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`. Missing Claude review tooling is a REVIEW blocker.
+The same general reviewer owns blast radius, ESCALATE, and terminal PASS or FIX. FIX identifies the earliest affected complete slice, resets that slice and every later indexed slice to pending/none as dependencies require, then marks the earliest slice ready and building and uses a fresh Luna-low child for each rebuilt slice. Re-prove FEATURE PROVE and review the corrected tip with the same Claude reviewer. On PASS record the exact reviewed HEAD and `human-judgment=required|not-required`.
 
 ## ACCEPT
 

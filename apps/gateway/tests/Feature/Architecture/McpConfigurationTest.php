@@ -349,85 +349,149 @@ it('requires direct final outcome proof for runtime claims before reviewer PASS'
         )->toContain('return `FIX`');
 });
 
-it('keeps the orchestrating session in charge while tmux workers implement and Claude Opus reviews', function (): void {
+it('uses native Luna slices and one Claude feature review', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
     $prompt = file_get_contents(repo_path('.agents/skills/implementing-features/agents/openai.yaml')) ?: '';
-    $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
-    $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
-    $featureGraph = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
-    $ownerSentence = 'The orchestrating session (Codex or Claude) that the human started is the sole feature owner.';
-    $workersSentence = 'Workers run in the feature tmux session `feat-<slug>` created by `bin/orbit-prepare-worktree`.';
-    $dispatchSentence = 'Dispatch substantive repository edits to Grok workers with `bin/orbit-worker-spawn --role=impl --cli=grok --brief=<path>`. Do not substitute an owner subagent or direct owner implementation.';
-    $reviewerSentence = 'Spawn one independent Claude general reviewer for the review cycle with `bin/orbit-worker-spawn --role=review --cli=claude --brief=<path>`.';
-    $missingToolsSentence = 'Missing tmux, grok, or claude on the machine is a blocker.';
-    $watchSentence = 'Wait for workers with `bin/orbit-worker-watch`; read handoff files. Periodically study `bin/orbit-worker-capture <id>`. Observation is not intervention: elapsed time, no diff, or context collection is not a stall. Intervene on stale output, an exited pane, blocked/request status, a repeated failed action, visible loop or drift, or a concrete question.';
-    $heartbeatSentence = 'Every brief requires `bin/orbit-worker-heartbeat <id> --status=<working|blocked> --note=<text>` at working or blocked updates, and `bin/orbit-worker-handoff <id> <file> [--note=<text>]` as the atomic terminal operation; workers never merge.';
-    $implHandoffSentence = 'Impl handoff names `candidate=<40-character sha>` and a valid SHA-bound `bin/orbit-feature-proof-receipt`.';
-    $rearmSentence = 'Re-arm `bin/orbit-worker-watch` after handling an event with `--ack=<snapshot>` or `--target=<id>`. `--ignore` remains as cheap compatibility.';
-    $stopSentence = 'Stop finished workers with `bin/orbit-worker-stop <id>` (or `--all-finished`) before LAND; never kill windows or servers with raw tmux commands.';
-    $proofWindowSentence = 'CLI retained topology proof runs in a user-attachable `proof-1` window of the feature tmux session; keep it open for the user only when `HUMAN_JUDGMENT: required`.';
-    $ownershipSentence = 'Session ownership is exact: the loop `Session:` line equals `feat-<slug>` and the tmux session path equals the feature worktree; LAND refuses to run inside the feature session.';
-    $cleanupSentence = "kill the feature tmux session (`tmux kill-session -t '=feat-<slug>'`, validated by `bin/orbit-feature-finalization-check`), remove the exact clean merged worktree, then delete the exact merged feature branch.";
-    $acceptanceSentence = 'user acceptance reads the verbatim message from STDIN and requires its `codex://` or `claude://` source reference';
-    $waiverSentence = 'a safe Codex or Claude source reference';
+    $fastPath = file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '';
+    $agents = file_get_contents(repo_path('AGENTS.md')) ?: '';
+    expect($harness)->toContain(
+        'FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND',
+    );
+    $active = preg_replace('/\s+/', ' ', implode(' ', [
+        $harness,
+        $skill,
+        $prompt,
+        $fastPath ?? '',
+        $agents ?? '',
+    ])) ?: '';
+    expect($active)
+        ->toContain('gpt-5.6-luna')
+        ->toContain('Sol')
+        ->toContain('FEATURE PROVE')
+        ->toContain('Claude general reviewer')
+        ->not->toContain('Dispatch substantive repository edits to Grok workers')
+        ->not->toContain('grok --yolo')
+        ->not->toContain('Claude Opus');
+});
 
-    $receiptOwnershipSentence = 'The implementer owns focused checks and the one terminal gate; owner';
+it('models the complete native slice workflow graph', function (): void {
+    $html = file_get_contents(repo_path('docs/orbit-feature-development-graph.html')) ?: '';
+    preg_match('~<script type="application/json" id="orbit-feature-graph-data">(.*?)</script>~s', $html, $matches);
+    $graph = json_decode(json: trim($matches[1] ?? ''), associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
 
-    expect($harness)
-        ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
-        ->toContain($ownerSentence)
-        ->toContain($workersSentence)
-        ->toContain($dispatchSentence)
-        ->toContain($reviewerSentence)
-        ->toContain($missingToolsSentence)
-        ->toContain($watchSentence)
-        ->toContain($receiptOwnershipSentence)
-        ->toContain($heartbeatSentence)
-        ->toContain($implHandoffSentence)
-        ->toContain($rearmSentence)
-        ->toContain($stopSentence)
-        ->toContain($proofWindowSentence)
-        ->toContain($ownershipSentence)
-        ->toContain($cleanupSentence)
-        ->toContain($acceptanceSentence)
-        ->toContain($waiverSentence)
-        ->and($skill)
-        ->toContain($ownerSentence)
-        ->toContain($workersSentence)
-        ->toContain($dispatchSentence)
-        ->toContain($reviewerSentence)
-        ->toContain($missingToolsSentence)
-        ->toContain($watchSentence)
-        ->toContain($receiptOwnershipSentence)
-        ->toContain($heartbeatSentence)
-        ->toContain($implHandoffSentence)
-        ->toContain($rearmSentence)
-        ->toContain($stopSentence)
-        ->toContain($proofWindowSentence)
-        ->toContain($cleanupSentence)
-        ->and($prompt)
-        ->toContain('use the feature tmux session')
-        ->toContain('point Grok workers at the exact feature worktree with grok --yolo --reasoning-effort medium')
-        ->toContain(
-            'point one independent Claude general reviewer at that worktree with claude --dangerously-skip-permissions --model opus --effort high',
-        )
-        ->and($intake)
-        ->toContain('hand the outcome to the orchestrating feature owner using')
-        ->not->toContain('whether any bounded worker is useful')->and($intakePrompt)->toContain(
-            'stop when material ambiguity is none',
-        )
-        ->not->toContain('optional delegation')->and($featureGraph)->toContain('"version": "4.0.0"')->toContain(
-            'HARNESS-defined role policy',
-        )->toContain('Grok worker via bin/orbit-worker-spawn at the exact worktree')->toContain(
-            'Claude Opus general reviewer',
-        )->toContain('Kill the feature tmux session; remove worktree, then branch')->toContain(
-            'Codex/Grok/Claude role split',
-        )
-        ->not->toContain('Optional bounded workers')
-        ->not->toContain('"id": "optional-worker"')
-        ->not->toContain('out-of-repo operator instruction')
-        ->not->toContain('implement directly');
+    $featureStates = array_values(array_map(
+        static fn (array $state): string => $state['id'],
+        array_filter($graph['states'], static fn (array $state): bool => ($state['loop'] ?? null) === 'feature'),
+    ));
+    expect($graph['version'])
+        ->toBe('5.0.0')
+        ->and($featureStates)
+        ->toBe([
+            'request',
+            'frame',
+            'build',
+            'slice-prove',
+            'checkpoint',
+            'feature-prove',
+            'review',
+            'accept',
+            'land',
+            'done',
+        ])
+        ->and(array_keys($graph['phases']))
+        ->toBe(['frame', 'build', 'slice-prove', 'checkpoint', 'feature-prove', 'review', 'accept', 'land', 'release']);
+
+    $featureTransitions = collect($graph['transitions'])->where('loop', 'feature')->keyBy('id');
+    expect($featureTransitions->keys()->all())
+        ->toBe([
+            't-request-frame',
+            't-frame-build',
+            't-build-slice-prove',
+            't-slice-prove-checkpoint',
+            't-checkpoint-build',
+            't-checkpoint-feature-prove',
+            't-feature-prove-review',
+            't-review-accept',
+            't-review-fix-build',
+            't-accept-land',
+            't-land-done',
+        ])
+        ->and($featureTransitions['t-build-slice-prove']['from'].'>'.$featureTransitions['t-build-slice-prove']['to'])
+        ->toBe('build>slice-prove')
+        ->and($featureTransitions['t-checkpoint-build']['guard'])
+        ->toBe('ready-slices-remain')
+        ->and($featureTransitions['t-checkpoint-feature-prove']['guard'])
+        ->toBe('all-indexed-slices-complete')
+        ->and($featureTransitions['t-feature-prove-review']['to'])
+        ->toBe('review')
+        ->and($featureTransitions['t-review-accept']['to'])
+        ->toBe('accept')
+        ->and($featureTransitions['t-review-fix-build']['guard'])
+        ->toBe('review-fix-earliest-slice-reset-later')
+        ->and($featureTransitions['t-accept-land']['to'])
+        ->toBe('land')
+        ->and($featureTransitions['t-land-done']['to'])
+        ->toBe('done');
+
+    expect(collect($graph['actors']['harness_generic'])->pluck('id')->all())
+        ->toBe(['sol-owner', 'luna-slice-worker', 'claude-general-reviewer', 'user', 'harness']);
+});
+
+it('keeps 30 effective skill descriptions on the native contract', function (): void {
+    $skills = (array) glob(repo_path('.agents/skills/*/SKILL.md'));
+    $sliceSkills = array_filter(
+        $skills,
+        static fn (string $path): bool => str_contains($path, '/to-spec/') || str_contains($path, '/to-tickets/'),
+    );
+    expect($skills)->toHaveCount(32)->and($sliceSkills)->toHaveCount(2);
+    $descriptions = '';
+    foreach (array_diff($skills, $sliceSkills) as $path) {
+        $contents = (string) file_get_contents($path);
+        preg_match('/^description:\s*(.+)$/m', $contents, $match);
+        expect(trim($match[1] ?? ''))->not->toBeEmpty();
+        $descriptions .= $match[1] ?? '';
+    }
+    expect($descriptions)->not->toContain('Grok worker')->not->toContain('Grok implement')->not->toContain('Opus-high');
+});
+
+it('keeps 11 effective agent metadata surfaces on the native contract', function (): void {
+    $metadata = (array) glob(repo_path('.agents/skills/*/agents/openai.yaml'));
+    $sliceMetadata = array_filter(
+        $metadata,
+        static fn (string $path): bool => str_contains($path, '/to-spec/') || str_contains($path, '/to-tickets/'),
+    );
+    expect($metadata)->toHaveCount(13)->and($sliceMetadata)->toHaveCount(2);
+    $prompts = '';
+    foreach (array_diff($metadata, $sliceMetadata) as $path) {
+        $contents = (string) file_get_contents($path);
+        expect($contents)->toContain('display_name:')->toContain('short_description:')->toContain('default_prompt:');
+        $prompts .= $contents;
+    }
+    expect($prompts)->not->toContain('Grok worker')->not->toContain('Opus-high');
+    expect(repo_path('.agents/skills/to-spec/SKILL.md'))
+        ->toBeFile()
+        ->and(repo_path('.agents/skills/to-tickets/SKILL.md'))
+        ->toBeFile()
+        ->and(repo_path('.agents/skills/to-spec/agents/openai.yaml'))
+        ->toBeFile()
+        ->and(repo_path('.agents/skills/to-tickets/agents/openai.yaml'))
+        ->toBeFile();
+});
+
+it('keeps specialist personas non-active and dormant Grok tooling intact', function (): void {
+    foreach (['cli-command', 'docs-librarian', 'tauri-agent'] as $persona) {
+        $contents = (string) file_get_contents(repo_path(".agents/review-personas/{$persona}.md"));
+        expect($contents)->toContain('Checklist Helper (non-active)')->toContain('Never spawn this persona');
+    }
+    expect((string) file_get_contents(repo_path('.agents/review-personas/general.md')))
+        ->toContain('one completed candidate');
+    expect(strtolower((string) file_get_contents(repo_path('bin/orbit-worker-spawn'))))->toContain('grok');
+    expect(strtolower((string) file_get_contents(repo_path(
+        'apps/gateway/tests/Feature/E2ESupport/WorkerToolsTest.php',
+    ))))
+        ->toContain('grok');
+    expect((string) file_get_contents(repo_path('PRODUCT_DECISIONS.md')))->toContain('global coder role');
 });
 
 it('keeps intake compact and e2e prompts execution-safe', function (): void {
@@ -501,7 +565,7 @@ it('reserves human acceptance for judgment instead of deterministic checks', fun
         ->toContain('Executable files or a retained topology alone do not make a change human-observable')
         ->toContain('all remaining acceptance actions are deterministic commands')
         ->and($implementingPrompt)
-        ->toContain('complete the diff-derived proof venue')
+        ->toContain('Complete the diff-derived proof venue')
         ->toContain('involve the user only for remaining human judgment')
         ->and($e2e)
         ->toContain('Do not ask the user to run E2E for ordinary feature completion')
@@ -810,7 +874,8 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->and($skill)
         ->toContain('## FRAME')
         ->toContain('## BUILD')
-        ->toContain('## PROVE')
+        ->toContain('## SLICE PROVE / CHECKPOINT')
+        ->toContain('## FEATURE PROVE / REVIEW')
         ->toContain('## ACCEPT')
         ->toContain('## LAND')
         ->toContain('bin/orbit-feature-acceptance route')
@@ -820,9 +885,9 @@ it('keeps HARNESS canonical with a compact pointer-based implementing skill', fu
         ->toContain('bin/orbit-feature-finalization-check')
         ->toContain('bin/orbit-session-archive')
         ->toContain('bin/orbit-feature-feedback')
-        ->toContain('The implementer owns focused checks and the one terminal gate; owner')
-        ->toContain('candidate=<40-character sha>')
+        ->toContain('Sol runs the feature proof and terminal gate after slice checkpoints')
         ->toContain('bin/orbit-feature-proof-receipt')
+        ->toContain('handles corrections and amends its single checkpoint')
         ->toContain('focused Mago')
         ->toContain('predicate, identity, vocabulary, or schema')
         ->toContain('HARNESS.md')
@@ -871,6 +936,190 @@ it('keeps reviewer FIX and same-candidate proof retry distinct transitions', fun
         ->toContain('A same-candidate proof retry is not a reviewer FIX')
         ->toContain('preserve a still-valid Review and Reviewed feature tip')
         ->toContain('reset `Reviewed feature tip: none`');
+});
+
+it('requires the native Luna instruction and metadata contract', function (): void {
+    $sources = implode("\n", array_map(
+        static fn (string $path): string => (string) file_get_contents(repo_path($path)),
+        ['AGENTS.md', 'AGENT_FAST_PATH.md', 'HARNESS.md', '.agents/skills/implementing-features/SKILL.md'],
+    ));
+    $decision = (string) file_get_contents(repo_path('PRODUCT_DECISIONS.md'));
+
+    expect($sources)
+        ->toContain(
+            'FRAME -> repeated BUILD <-> SLICE PROVE -> CHECKPOINT -> FEATURE PROVE -> REVIEW -> ACCEPT -> LAND',
+        )
+        ->toContain('mandatory dependency-aware vertical slices')
+        ->toContain('reasoning_effort=low')
+        ->not->toContain('Missing Claude review tooling is a blocker')->toContain('REVIEW blocker')->toContain(
+            'one fresh native Codex child using model `gpt-5.6-luna` and `reasoning_effort=low`',
+        )->toContain('never edits packets or `.orbit`')->toContain(
+            'resets that slice and every later indexed slice to pending/none as dependencies require',
+        )->toContain(
+            'reset that slice and every later indexed slice to pending/none as dependencies require, then set the earliest slice ready and building',
+        )
+        ->not->toContain('Dispatch substantive repository edits to Grok workers')
+        ->not->toContain('grok --yolo');
+    expect($decision)
+        ->toContain('2026-08-24')
+        ->toContain('FRAME -> repeated BUILD <-> SLICE PROVE')
+        ->toContain('same Luna child handles corrections and amends its checkpoint')
+        ->toContain('fresh child handles each next or reopened slice');
+    $brief = (string) file_get_contents(repo_path('.agents/skills/implementing-features/brief-template.md'));
+    $yaml = (string) file_get_contents(repo_path('.agents/skills/implementing-features/agents/openai.yaml'));
+    $general = (string) file_get_contents(repo_path('.agents/review-personas/general.md'));
+    expect($brief)
+        ->toContain('Sol-owned artifacts (read-only):')
+        ->toContain('## Dangerous invariants')
+        ->toContain('Gate receipt commit equals current HEAD and receipt dirty is false.')
+        ->toContain('- <named invariant>');
+    expect($yaml)->toContain('reasoning_effort=low')->toContain('. Complete the diff-derived');
+    expect($general)->toContain('diff-first Claude general review')->not->toContain('provider-neutral review');
+});
+
+it('models the native Luna workflow graph', function (): void {
+    $graph = (string) file_get_contents(repo_path('docs/orbit-feature-development-graph.html'));
+    preg_match('~<script type="application/json" id="orbit-feature-graph-data">(.*?)</script>~s', $graph, $matches);
+    $data = json_decode(json: trim($matches[1] ?? ''), associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
+    expect($data['version'])->toBe('5.0.0')->and($data['scope'])->toBe('feature-development-loop');
+
+    $slice = $data['phases']['slice-prove'];
+    expect(array_keys($slice))
+        ->not->toContain('prove_sequence')
+        ->not->toContain('runtime')
+        ->not->toContain('live_environment_proof')
+        ->not->toContain('protection_ladder');
+    expect($slice['enforcement'])
+        ->toBe('already_enforced')
+        ->and($slice['owns'])
+        ->toBe(['slice-red-green-focused-proof'])
+        ->and($slice['inputs'])
+        ->toBe([
+            'Indexed slice packet and scope',
+            'Owned source and focused test targets',
+            'Fresh native Luna child',
+        ])
+        ->and($slice['happens'])
+        ->toBe([
+            'Capture focused RED before implementation',
+            'Implement the smallest slice correction',
+            'Run focused GREEN proof',
+        ])
+        ->and($slice['exit'])
+        ->toBe(['Focused proof passed → CHECKPOINT'])
+        ->and($slice['mini_flow'])
+        ->toBe(['RED → implementation → GREEN → CHECKPOINT']);
+
+    $sliceJson = json_encode(value: $slice, flags: JSON_THROW_ON_ERROR);
+    expect($sliceJson)
+        ->not->toContain('reviewer')
+        ->not->toContain('runtime')
+        ->not->toContain('live')
+        ->not->toContain('protection')
+        ->not->toContain('ACCEPT')
+        ->not->toContain('feature-level')
+        ->not->toContain('venue')
+        ->not->toContain('broader-gate')
+        ->not->toContain('clean-candidate');
+});
+
+it('models feature proof before one Claude review', function (): void {
+    $graph = (string) file_get_contents(repo_path('docs/orbit-feature-development-graph.html'));
+    preg_match('~<script type="application/json" id="orbit-feature-graph-data">(.*?)</script>~s', $graph, $matches);
+    $data = json_decode(json: trim($matches[1]), associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
+
+    expect($data['version'])
+        ->toBe('5.0.0')
+        ->and($data['scope'])
+        ->toBe('feature-development-loop')
+        ->and($data['model_status'])
+        ->toBe('current-contract');
+
+    $featureProof = $data['phases']['feature-prove'];
+    expect($featureProof['owns'])
+        ->toBe([
+            'feature-level proof receipt',
+            'runtime evidence',
+            'derived venue proof',
+            'protection proof',
+        ])
+        ->and($featureProof['exit'])
+        ->toBe(['Proof and receipt complete → REVIEW']);
+
+    expect(array_keys($data['prove_sequence']))
+        ->not->toContain('proposed_target')
+        ->not->toContain('historical_note')
+        ->not->toContain('retired_note');
+    expect(array_keys($data['live_environment_proof']))
+        ->not->toContain('proposed_target')
+        ->not->toContain('historical_note')
+        ->not->toContain('retired_note');
+    expect(array_column($data['prove_sequence']['current']['steps'], 'id'))->toBe([
+        'focused-and-broader-checks',
+        'exact-candidate-clean',
+        'derived-venue-and-runtime-proof',
+        'feature-proof-receipt',
+        'ready-for-review',
+    ]);
+
+    expect($data['phases']['review']['happens'])
+        ->toBe(['One Claude general reviewer via tmux'])
+        ->and($data['phases']['review']['exit'])
+        ->toBe(['PASS → ACCEPT']);
+});
+
+it('shows the current Luna lifecycle in the workflow graph', function (): void {
+    $graph = (string) file_get_contents(repo_path('docs/orbit-feature-development-graph.html'));
+
+    expect($graph)
+        ->toContain('5.0.0')
+        ->toContain('gpt-5.6-luna')
+        ->toContain('earliest affected complete slice')
+        ->toContain('FRAME → BUILD → SLICE PROVE → CHECKPOINT → FEATURE PROVE → REVIEW → ACCEPT → LAND')
+        ->toContain('Luna RED/GREEN → Sol CHECKPOINT')
+        ->toContain('remaining slices → BUILD')
+        ->toContain('all complete → FEATURE PROVE')
+        ->toContain('→ one Claude REVIEW')
+        ->toContain('FEATURE PROVE: focused checks, then diff-routed broader gate')
+        ->toContain('FEATURE PROVE: exact clean candidate')
+        ->toContain('FEATURE PROVE: derived venue plus required runtime/live receipt')
+        ->toContain('FEATURE PROVE: feature proof receipt')
+        ->toContain('REVIEW: one Claude general reviewer on the exact HEAD');
+});
+
+it('removes stale implementation and proof ordering from the workflow graph', function (): void {
+    $graph = (string) file_get_contents(repo_path('docs/orbit-feature-development-graph.html'));
+
+    foreach ([
+        'Grok worker via',
+        'FRAME → BUILD ↔ PROVE → ACCEPT → LAND',
+        'Proposed target: pre-live venue proof',
+        'proposed-post-review-live-proof',
+        'post-review-second-runtime-receipt',
+        'Mixed current',
+        'proposed/target',
+        'current-vs-proposed',
+        'PROVE sequence: current enforcement vs proposed target',
+        'class="card proposed"',
+        'Reviewer PASS on that exact HEAD',
+        'Conditional live-environment proof with the <em>same</em> reviewed candidate',
+        'Live proof (in PROVE)',
+        'in PROVE:',
+        'Release lifecycle / proposed ordering / future safety',
+        'Solid boxes are enforced; dashed purple',
+        'reviewer PASS (current order)',
+        'Feature proof contract',
+        'Visible as the agreed target',
+        'Pre-live venue proof',
+        'Candidate-bound evidence → ACCEPT',
+        'retired_note',
+        'proposed_target',
+        'proposed_or_clarifying',
+        'reviewer-pass-exact-head',
+        'ready-for-accept',
+    ] as $stale) {
+        expect($graph)->not->toContain($stale);
+    }
 });
 
 it('keeps the eight high-stakes constraints explicit on the implementing path', function (): void {

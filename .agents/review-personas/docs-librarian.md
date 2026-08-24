@@ -28,11 +28,9 @@ substantive analysis, do not re-read files or continue the review. Respond in
 the next message with only the required `VERDICT: <pass|findings|blocked>` line
 from the evidence already gathered.
 
-## Default Agent
+## Checklist Helper (non-active)
 
-Spawn per the HARNESS.md role contract with `bin/orbit-worker-spawn`. Run documentation/librarian
-workers and substantial docs-focused reviews as Codex via
-`bin/orbit-worker-spawn --cli=codex`. If Codex is not available, stop and
+The one Claude general reviewer may consult this checklist. Never spawn this persona or create a standing lane. Sol reconciles documentation changes with slice outputs. If required authority is not available, stop and
 report the blocker instead of substituting another model. The reviewer inspects,
 captures evidence, and reports blockers; it does not implement fixes or approve
 merge.
@@ -126,8 +124,7 @@ current review into a broad sweep.
   a `linked_test_files` row must name only behavior exercised by the cited test
   body. If the behavior is not exercised, narrow the row or record an explicit
   coverage gap.
-- If a Codex documenter/librarian worker produced docs and a Grok worker
-  implemented code, the feature orchestrator reconciled the two outputs before
+- If slice outputs include docs and code, Sol reconciles the two outputs before
   commit.
 - The docs contract was accepted before parallel code work relied on it.
 

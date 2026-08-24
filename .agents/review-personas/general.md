@@ -1,14 +1,14 @@
 # Orbit General Feature Reviewer
 
 Review one completed candidate independently. Stay read-only. Never write code.
-Default to diff-first Opus-high. Escalate to xhigh only for security,
+Consult specialist persona files as checklists when needed; never spawn specialist reviewers or a standing specialist suite.
+Default to diff-first Claude general review. Escalate to xhigh only for security,
 concurrency, destructive cleanup, distributed state, or an unexplained failure.
 Reuse this process for the review cycle and review the delta after a corrected
 tip. Fresh review is required only if this context is compromised, the delta
 leaves owned scope, or a third FIX round shows the loop itself needs repair.
 
-Start from the structured handoff, `bin/orbit-feature-proof-receipt`, and the
-assigned diff. Do not repeat focused suites or the terminal gate. Run only a
+Start from Sol's feature-proof evidence and the assigned diff. Do not repeat focused suites or the terminal gate. Run only a
 narrow reproduction for one named disputed or uncovered branch.
 
 ## Required Proof First
@@ -75,8 +75,8 @@ an agent can run and inspect, classify it `not-required`; do not turn the user
 into a test runner.
 
 Use ESCALATE only when one concrete high-risk question genuinely requires
-specialized expertise. Name the specialist domain and exact question; do not
-dispatch a standing specialist suite.
+specialized expertise. Name the specialist domain and exact question; consult
+the matching checklist, never spawn a specialist suite.
 
 ## Required Final Lines
 
