@@ -247,7 +247,10 @@ fn watch_child_crashes(app: AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(250));
         let runtime = app.state::<DesktopRuntime>();
-        if runtime.quitting.lock().map(|flag| *flag).unwrap_or(false) {
+        if watcher_should_exit(
+            runtime.quitting.lock().map(|flag| *flag).unwrap_or(false),
+            runtime.explicit_exit.load(Ordering::Acquire),
+        ) {
             return;
         }
 
@@ -466,12 +469,14 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
     let app = app.clone();
     thread::spawn(move || loop {
         let runtime = app.state::<DesktopRuntime>();
-        if runtime
-            .quitting
-            .lock()
-            .map(|quitting| *quitting)
-            .unwrap_or(true)
-        {
+        if watcher_should_exit(
+            runtime
+                .quitting
+                .lock()
+                .map(|quitting| *quitting)
+                .unwrap_or(true),
+            runtime.explicit_exit.load(Ordering::Acquire),
+        ) {
             break;
         }
 
@@ -487,6 +492,10 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
 
         thread::sleep(Duration::from_millis(500));
     });
+}
+
+fn watcher_should_exit(_quitting: bool, explicit_exit: bool) -> bool {
+    explicit_exit
 }
 
 fn restart_to_update_if_ready(app: &AppHandle) {
@@ -809,9 +818,24 @@ impl TrayMenuItems {
             )?);
         }
 
+        let conflict = runtime
+            .conflict_reason
+            .lock()
+            .ok()
+            .and_then(|reason| reason.clone());
         Ok(Self {
-            agent_status: disabled_menu_item(app, AGENT_STATUS_MENU_ID, agent_status_label(agent))?,
-            status: disabled_menu_item(app, STATUS_MENU_ID, state.status.label())?,
+            agent_status: disabled_menu_item(
+                app,
+                AGENT_STATUS_MENU_ID,
+                conflict
+                    .as_ref()
+                    .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
+            )?,
+            status: disabled_menu_item(
+                app,
+                STATUS_MENU_ID,
+                conflict.unwrap_or_else(|| state.status.label().to_string()),
+            )?,
             node_ip: disabled_menu_item(
                 app,
                 NODE_IP_MENU_ID,
@@ -838,8 +862,19 @@ impl TrayMenuItems {
         let ip_row_layout = state.ip_row_layout();
         let (agent, launch_at_login, update) = desktop_menu_snapshot(runtime);
 
-        let _ = self.agent_status.set_text(agent_status_label(agent));
-        let _ = self.status.set_text(state.status.label());
+        let conflict = runtime
+            .conflict_reason
+            .lock()
+            .ok()
+            .and_then(|reason| reason.clone());
+        let _ = self.agent_status.set_text(
+            conflict
+                .as_deref()
+                .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
+        );
+        let _ = self
+            .status
+            .set_text(conflict.unwrap_or_else(|| state.status.label().to_string()));
         let _ = self
             .node_ip
             .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_layout));
@@ -1569,6 +1604,12 @@ mod tests {
         let (agent, status) = quit_failure_presentation("runtime remains");
         assert_eq!(agent, "Agent: Quit failed");
         assert!(status.contains("runtime remains"));
+    }
+
+    #[test]
+    fn failed_quit_keeps_watchers_alive_until_explicit_exit() {
+        assert!(!watcher_should_exit(true, false));
+        assert!(watcher_should_exit(true, true));
     }
 
     #[test]

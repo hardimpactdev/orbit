@@ -78,7 +78,7 @@ impl ShutdownPort for SystemShutdownPort {
             .args(["bootout", &target])
             .output()
             .map_err(|error| ShutdownError(format!("launchctl bootout failed: {error}")))?;
-        if output.status.success() {
+        if output.status.success() || launchd_not_found_output(&output.stdout, &output.stderr) {
             Ok(())
         } else {
             Err(ShutdownError(format!(
@@ -88,11 +88,18 @@ impl ShutdownPort for SystemShutdownPort {
     }
 
     fn discover_docker(&mut self) -> Result<Vec<String>, ShutdownError> {
-        let output = Command::new("docker")
+        let output = match Command::new("docker")
             .args(["ps", "-q", "--filter", "label=orbit.managed=true"])
             .output()
-            .map_err(|error| ShutdownError(format!("docker discovery failed: {error}")))?;
+        {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(ShutdownError(format!("docker discovery failed: {error}"))),
+        };
         if !output.status.success() {
+            if docker_provider_absent(&output.stderr) {
+                return Ok(Vec::new());
+            }
             return Err(ShutdownError("docker discovery failed".to_string()));
         }
         Ok(String::from_utf8_lossy(&output.stdout)
@@ -118,6 +125,27 @@ impl ShutdownPort for SystemShutdownPort {
     fn stop_agent(&mut self) -> Result<(), ShutdownError> {
         (self.stop_agent)()
     }
+}
+
+fn launchd_not_found_output(stdout: &[u8], stderr: &[u8]) -> bool {
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    );
+    [
+        "Could not find service",
+        "No such process",
+        "Unknown service",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+}
+
+fn docker_provider_absent(stderr: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(stderr);
+    text.contains("Cannot connect to the Docker daemon")
+        || text.contains("Is the docker daemon running")
 }
 
 fn users_uid() -> Result<String, ShutdownError> {
@@ -204,6 +232,23 @@ mod tests {
             launchd_bootout_target("501", "dev.hardimpact.orbit.caddy"),
             "gui/501/dev.hardimpact.orbit.caddy"
         );
+    }
+
+    #[test]
+    fn tolerates_only_known_launchd_not_found_races() {
+        assert!(launchd_not_found_output(b"", b"Could not find service"));
+        assert!(launchd_not_found_output(b"", b"No such process"));
+        assert!(launchd_not_found_output(b"", b"Unknown service"));
+        assert!(!launchd_not_found_output(b"", b"permission denied"));
+    }
+
+    #[test]
+    fn classifies_only_absent_docker_provider_states_as_empty() {
+        assert!(docker_provider_absent(
+            b"Cannot connect to the Docker daemon"
+        ));
+        assert!(docker_provider_absent(b"Is the docker daemon running?"));
+        assert!(!docker_provider_absent(b"permission denied"));
     }
 
     #[test]
