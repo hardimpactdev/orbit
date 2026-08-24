@@ -441,6 +441,11 @@ fn ssh_command(colima: &Path, args: Vec<String>) -> ColimaCommand {
     direct_command(colima.to_path_buf(), command_args)
 }
 fn normalize_wireguard_route(colima: &Path, address: IpAddr) -> Result<(), ColimaError> {
+    let privileged = |args: Vec<String>| {
+        let mut command = vec!["sudo".into()];
+        command.extend(args);
+        run(&ssh_command(colima, command))
+    };
     let output = run(&ssh_command(
         colima,
         vec![
@@ -460,21 +465,22 @@ fn normalize_wireguard_route(colima: &Path, address: IpAddr) -> Result<(), Colim
             (ip.parse::<IpAddr>().ok()? == address)
                 .then(|| prefix.parse::<u8>().ok())
                 .flatten()
-        })
-        .ok_or_else(|| {
-            ColimaError::InvalidStatus(format!(
-                "WireGuard address {address} is not on Colima loopback"
-            ))
-        })?;
+        });
+    let Some(prefix) = prefix else {
+        privileged(vec![
+            "ip".into(),
+            "addr".into(),
+            "add".into(),
+            format!("{address}/32"),
+            "dev".into(),
+            "lo".into(),
+        ])?;
+        return Ok(());
+    };
     if prefix == 32 {
         return Ok(());
     }
     let original = format!("{address}/{prefix}");
-    let privileged = |args: Vec<String>| {
-        let mut command = vec!["sudo".into()];
-        command.extend(args);
-        run(&ssh_command(colima, command))
-    };
     privileged(vec![
         "ip".into(),
         "addr".into(),
@@ -768,6 +774,62 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn missing_wireguard_address_is_added_as_a_host_route() {
+        let f = Fixture::new();
+        let (bin, log) = fake_script(
+            &f,
+            "colima-missing",
+            r#"if [ "$1" = ssh ]; then
+            case "$*" in
+                *"addr show dev lo"*) exit 0 ;;
+                *"addr add 10.6.0.3/32 dev lo"*) exit 0 ;;
+            esac
+        fi
+        exit 1"#,
+        );
+        normalize_wireguard_route(&bin, "10.6.0.3".parse().unwrap()).unwrap();
+        assert_eq!(fs::read_to_string(log).unwrap(), "ssh --profile orbit -- ip -4 -o addr show dev lo\nssh --profile orbit -- sudo ip addr add 10.6.0.3/32 dev lo\n");
+    }
+
+    #[test]
+    fn existing_wireguard_host_route_is_not_mutated() {
+        let f = Fixture::new();
+        let (bin, log) = fake_script(
+            &f,
+            "colima-host",
+            r#"if [ "$1" = ssh ]; then
+            case "$*" in *"addr show dev lo"*) echo "1: lo    inet 10.6.0.3/32 scope host lo"; exit 0 ;; esac
+        fi
+        exit 1"#,
+        );
+        normalize_wireguard_route(&bin, "10.6.0.3".parse().unwrap()).unwrap();
+        assert_eq!(
+            fs::read_to_string(log).unwrap(),
+            "ssh --profile orbit -- ip -4 -o addr show dev lo\n"
+        );
+    }
+
+    #[test]
+    fn failed_wireguard_normalization_rolls_back_original_route() {
+        let f = Fixture::new();
+        let (bin, log) = fake_script(
+            &f,
+            "colima-rollback",
+            r#"if [ "$1" = ssh ]; then
+            case "$*" in
+                *"addr show dev lo"*) echo "1: lo    inet 10.6.0.3/24 scope global lo"; exit 0 ;;
+                *"addr add 10.6.0.3/32 dev lo"*) exit 1 ;;
+                *"addr del 10.6.0.3/24 dev lo"*) exit 0 ;;
+                *"addr add 10.6.0.3/24 dev lo"*) exit 0 ;;
+            esac
+        fi
+        exit 1"#,
+        );
+        assert!(normalize_wireguard_route(&bin, "10.6.0.3".parse().unwrap()).is_err());
+        assert_eq!(fs::read_to_string(log).unwrap(), "ssh --profile orbit -- ip -4 -o addr show dev lo\nssh --profile orbit -- sudo ip addr del 10.6.0.3/24 dev lo\nssh --profile orbit -- sudo ip addr add 10.6.0.3/32 dev lo\nssh --profile orbit -- sudo ip addr add 10.6.0.3/24 dev lo\n");
     }
 
     #[test]
