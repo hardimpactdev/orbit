@@ -1,0 +1,42 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-24T04:53:12+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-mandatory-slice-native-loop/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-065312-codex-mandatory-slice-native-loop",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-24T035218Z-d7e06f20d320.json",
+        "evidence/mandatory-slice-native-loop-b7c796a.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-24T044618Z-d29ecfa74d6b.json",
+        "slices/01-frame-artifacts.md",
+        "slices/02-slice-contract.md",
+        "slices/03-finalization-archive.md",
+        "slices/04-native-luna-flow.md",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-24T035218Z-d7e06f20d320.json": "c1912ce89bd430d480a56a603709d4377a75a634c2d3da983a95ba38b1d82c1e",
+        "evidence/mandatory-slice-native-loop-b7c796a.md": "07de370c9fef23a3d70a53152a6233085d4b9b7105efa05e6724413d86dbd473",
+        "loop.md": "fd585d623a1a95e64ee2efa297acb72e1aabbb3af3351186b0e77a0e444f1db2",
+        "quality-gates/quality-check-2026-08-24T044618Z-d29ecfa74d6b.json": "b3c8c78e4a4478a816c5c97e6ed3456bfeda896962596e60dfc3ff072756476c",
+        "slices/01-frame-artifacts.md": "0c72319c9193cab30956265e739c80bb158d6b6bcab573ec9f837c1c25a58e9e",
+        "slices/02-slice-contract.md": "1b493670acc5906035373e7dace0cc31e84b22dbcc715c7c0b792fb141467c0a",
+        "slices/03-finalization-archive.md": "210f98f601f7c1dabe70b01e68ad568cf8b99568eb8c9d2d5153fe1436537ef3",
+        "slices/04-native-luna-flow.md": "9cfc08ac418717f536d2fccf914330bd2131aa26e656159edb38e01dfb32eed1",
+        "workers/review-1.json": "0597b311884db0509dd3421c6982d6237cab0d3197260f92883a610ae2e9fc67"
+    },
+    "slug": "codex-mandatory-slice-native-loop",
+    "requested_slug": "codex-mandatory-slice-native-loop",
+    "compatible_slugs": [
+        "codex-mandatory-slice-native-loop"
+    ],
+    "branch": "codex/mandatory-slice-native-loop",
+    "candidate_commit": "b7c796a93685f55e094b8ec568e01d4c84f9ac99",
+    "accepted_feature_tip": "b7c796a93685f55e094b8ec568e01d4c84f9ac99",
+    "accepted_main_tip": "017504f4657c920c2c1cccbf602a63c52cbf0f9a",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,33 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/home/nckrtl/.vite-plus/bin:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.grok/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nckrtl/.npm-global/bin:/home/nckrtl/.local/bin:/home/nckrtl/.codex/tmp/arg0/codex-arg0J3vpGU:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.vite-plus/js_runtime/node/24.19.0/bin:/home/nckrtl/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-mandatory-slice-native-loop",
+        "window": "review-1",
+        "pane_id": "%29",
+        "pane_pid": 2798996,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-mandatory-slice-native-loop",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-mandatory-slice-native-loop/.orbit/workers/briefs/claude-general-review-946ddc2.md",
+    "status": "spawned",
+    "heartbeat_at": "2026-08-24T04:22:02Z",
+    "note": "",
+    "started_at": "2026-08-24T04:22:02Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": null
+}
