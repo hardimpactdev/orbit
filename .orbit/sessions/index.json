@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 425,
-    "unique_candidate_commit_count": 321,
+    "record_count": 426,
+    "unique_candidate_commit_count": 322,
     "orphan_count": 0,
     "records": [
         {
@@ -10866,6 +10866,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-24-094354-codex-live-tray-update-refresh",
+            "slug": "codex-live-tray-update-refresh",
+            "timestamp": "2026-08-24-094354",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "f72abc493fd956c323951488c3f256be4d94dfbc",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "not-required",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "host-macos",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

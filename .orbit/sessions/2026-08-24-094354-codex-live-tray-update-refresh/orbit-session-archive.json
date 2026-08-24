@@ -1,0 +1,38 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-24T07:43:54+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-live-tray-update-refresh/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-094354-codex-live-tray-update-refresh",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/live-tray-update-refresh-f72abc493fd9.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-24T074005Z-136c925aac8f.json",
+        "slices/01-live-tray-update-refresh.md",
+        "workers/handoff/live-tray-update-refresh-review.md",
+        "workers/handoff/review-1.md",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "evidence/live-tray-update-refresh-f72abc493fd9.txt": "c995633d802acc060aa6461210577a0415d122363972d971c705b821d794c12f",
+        "loop.md": "6fecfef51500d1756a9008bb2464b4407eedb03547a5ff7a37c97f1de3fd0f29",
+        "quality-gates/quality-check-2026-08-24T074005Z-136c925aac8f.json": "fc06c9736739f6e279b1d6f3ea40a7d9f59a0de8c1c03737611f207d418452fb",
+        "slices/01-live-tray-update-refresh.md": "72d6a6b0d167bc1a0f8a7876921e38463a998f373e8eb1145c33454fb3f7bb72",
+        "workers/handoff/live-tray-update-refresh-review.md": "89910f5b6fc9571c393179fdbc18ab2aa4487ef41b718916da6e31184c447798",
+        "workers/handoff/review-1.md": "89910f5b6fc9571c393179fdbc18ab2aa4487ef41b718916da6e31184c447798",
+        "workers/review-1.json": "55182537857c3818c0b57ac9417e6e7036030fc8b720dc2cc811007142354b99"
+    },
+    "slug": "codex-live-tray-update-refresh",
+    "requested_slug": "codex-live-tray-update-refresh",
+    "compatible_slugs": [
+        "codex-live-tray-update-refresh"
+    ],
+    "branch": "codex/live-tray-update-refresh",
+    "candidate_commit": "f72abc493fd956c323951488c3f256be4d94dfbc",
+    "accepted_feature_tip": "f72abc493fd956c323951488c3f256be4d94dfbc",
+    "accepted_main_tip": "3c23686d9f8f4e1400cb1ae9c207106e3c412b5c",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

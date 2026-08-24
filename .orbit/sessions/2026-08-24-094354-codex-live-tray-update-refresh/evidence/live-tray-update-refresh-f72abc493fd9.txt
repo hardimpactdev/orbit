@@ -1,0 +1,48 @@
+candidate=f72abc493fd956c323951488c3f256be4d94dfbc
+venue=host-macos
+environment=dev-fixture
+host=mini
+os=Darwin macOS 27.0 (26A5416b)
+source_worktree=/Users/nckrtl/orbit/.worktrees/release-native-f72abc493fd9
+build_target=/Users/nckrtl/.cache/orbit-live-tray-proof-target/debug/orbit-macos
+
+Exact-host verification:
+cargo fmt --all -- --check
+cargo test
+cargo check
+cargo clippy --all-targets -- -D warnings
+cargo build --bin orbit-macos
+result=passed (55 tests; build, check, format, and clippy succeeded)
+
+Live watcher and interaction-race proof:
+1. Launched the exact candidate with an isolated HOME and no pending handoff.
+   observed=Orbit 0.1.197|enabled=false
+2. Copied a structurally valid restart-ready 0.1.197 handoff into the running
+   candidate HOME and immediately opened the native tray, without selecting
+   Refresh. After 1.5 seconds, the same open menu was responsive.
+   observed=Restart to Update Orbit 0.1.197|enabled=true
+   observed=candidate_responsive=passed
+3. Removed the handoff and immediately opened the native tray again. After 1.5
+   seconds, the same open menu remained responsive and had cleared the action.
+   observed=Orbit 0.1.197|enabled=false
+   observed=candidate_responsive=passed
+4. Used the real Quit Orbit menu item to exit the candidate.
+   observed=candidate_quit=passed
+
+Safety restoration:
+- The installed Desktop was quit with its real Quit Orbit menu item before the
+  isolated proof and reopened afterward.
+- Reopened installed Desktop pid=78617; owned Agent child pid=78657.
+- Restored pending owner handoff SHA-256:
+  fa8367659e263bd3f2cf7a9bdc0e0dd6399954dbdac5d3824779e4167a2ae160
+- Removed the isolated HOME, fixture, exact Mini source worktree, and dedicated
+  Cargo proof cache.
+
+expected=A running Desktop observes restart-ready handoff creation and removal,
+updates the native action enabled state and update-ready tray presentation,
+does not require Refresh, and stays responsive when handoff changes race with
+opening the native menu.
+observed=The exact candidate changed disabled -> enabled Restart to Update ->
+disabled, with matching watcher-driven tray icon transitions; both immediate
+menu interactions completed and the process stayed responsive.
+result=passed
