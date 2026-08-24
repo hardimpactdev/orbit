@@ -173,7 +173,7 @@ fn main() {
                     UPDATE_MENU_ID => restart_to_update_if_ready(app),
                     RESTART_MENU_ID => restart_orbit(app),
                     QUIT_MENU_ID => quit_orbit(app),
-                    EXIT_AFTER_STOP_FAILURE_MENU_ID => app.exit(0),
+                    EXIT_AFTER_STOP_FAILURE_MENU_ID => exit_with_provider_running(app),
                     RETRY_PROVIDER_MENU_ID => retry_local_runtime(app),
                     INSTALL_RUNTIME_MENU_ID => install_local_runtime_action(app),
                     RESET_RUNTIME_MENU_ID => reset_local_runtime_action(app),
@@ -958,9 +958,7 @@ fn restart_orbit(app: &AppHandle) {
 fn quit_orbit(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
     disarm_runtime_reset(&runtime);
-    if let Ok(mut quitting) = runtime.quitting.lock() {
-        *quitting = true;
-    };
+    permit_exit(&runtime);
     stop_owned_child(&runtime);
     if let Ok(mut state) = runtime.provider_state.lock() {
         *state = ProviderRuntimeState::Stopping;
@@ -984,6 +982,18 @@ fn quit_orbit(app: &AppHandle) {
                 *state = ProviderRuntimeState::StopFailed { detail };
             }
         }
+    }
+}
+
+fn exit_with_provider_running(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    permit_exit(&runtime);
+    app.exit(0);
+}
+
+fn permit_exit(runtime: &DesktopRuntime) {
+    if let Ok(mut quitting) = runtime.quitting.lock() {
+        *quitting = true;
     }
 }
 
@@ -2089,6 +2099,15 @@ mod tests {
             restart_ready_watcher_action(false),
             RestartReadyWatcherAction::Poll
         );
+    }
+
+    #[test]
+    fn exit_override_permits_tauri_exit_request() {
+        let runtime = DesktopRuntime::new();
+
+        assert!(!runtime.quitting.lock().expect("quitting lock").to_owned());
+        permit_exit(&runtime);
+        assert!(runtime.quitting.lock().expect("quitting lock").to_owned());
     }
 
     fn pending_update_with_mode(install_mode: &str) -> PendingDesktopUpdate {
