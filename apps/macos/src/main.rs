@@ -82,6 +82,20 @@ enum RefreshSource {
     MenuCommand,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RestartReadyWatcherAction {
+    Poll,
+    WaitForQuitResolution,
+}
+
+fn restart_ready_watcher_action(quitting: bool) -> RestartReadyWatcherAction {
+    if quitting {
+        RestartReadyWatcherAction::WaitForQuitResolution
+    } else {
+        RestartReadyWatcherAction::Poll
+    }
+}
+
 struct DesktopRuntime {
     child: Mutex<Option<Child>>,
     agent_state: Mutex<AgentRunState>,
@@ -802,8 +816,16 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
     let app = app.clone();
     thread::spawn(move || loop {
         let runtime = app.state::<DesktopRuntime>();
-        if runtime.quitting.lock().map(|value| *value).unwrap_or(true) {
-            break;
+        if matches!(
+            runtime
+                .quitting
+                .lock()
+                .map(|value| restart_ready_watcher_action(*value))
+                .unwrap_or(RestartReadyWatcherAction::WaitForQuitResolution),
+            RestartReadyWatcherAction::WaitForQuitResolution
+        ) {
+            thread::sleep(Duration::from_millis(500));
+            continue;
         }
         if reconcile_restart_ready_handoff(&runtime) {
             if let Some(item) = menu_items.lock().ok().map(|items| items.update.clone()) {
@@ -1993,7 +2015,10 @@ mod tests {
         let update_method = source
             .split("fn update(&self")
             .nth(1)
-            .expect("tray update method should exist");
+            .expect("tray update method should exist")
+            .split("fn grant_row_count")
+            .next()
+            .expect("tray update method boundary should exist");
 
         for contract in [
             "self.update.set_enabled(update_enabled)",
@@ -2001,6 +2026,7 @@ mod tests {
             "self.retry_provider.set_enabled(retry_enabled)",
             "install_runtime\n            .set_enabled",
             "self.reset_runtime.set_enabled",
+            "self\n            .exit_after_stop_failure\n            .set_enabled",
         ] {
             assert!(
                 update_method.contains(contract),
@@ -2051,6 +2077,18 @@ mod tests {
         assert!(restart_enabled);
         assert_eq!(verified_label, "Restart to Update Orbit 1.2.3");
         assert!(!verified_enabled);
+    }
+
+    #[test]
+    fn restart_ready_watcher_waits_through_failed_quit_and_resumes_polling() {
+        assert_eq!(
+            restart_ready_watcher_action(true),
+            RestartReadyWatcherAction::WaitForQuitResolution
+        );
+        assert_eq!(
+            restart_ready_watcher_action(false),
+            RestartReadyWatcherAction::Poll
+        );
     }
 
     fn pending_update_with_mode(install_mode: &str) -> PendingDesktopUpdate {
