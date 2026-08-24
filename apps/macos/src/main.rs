@@ -22,7 +22,7 @@ use orbit_macos::paths::{
     desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
 };
 use orbit_macos::pending_update::{
-    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate,
+    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate, INSTALL_MODE_RESTART_READY,
 };
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
@@ -142,6 +142,7 @@ fn main() {
             let menu_items = Arc::new(Mutex::new(tray_menu.items));
             let menu_command_items = Arc::clone(&menu_items);
             let tray_click_items = Arc::clone(&menu_items);
+            start_restart_ready_handoff_watcher(app.handle(), Arc::clone(&menu_items));
 
             TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("Orbit Desktop")
@@ -734,6 +735,79 @@ fn consume_pending_update_handoff(runtime: &DesktopRuntime) {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum ObservedPendingHandoff {
+    RestartReady(Box<PendingDesktopUpdate>),
+    Automatic,
+    Missing,
+}
+
+fn observe_pending_handoff(
+    update: Result<PendingDesktopUpdate, orbit_macos::pending_update::PendingUpdateError>,
+) -> ObservedPendingHandoff {
+    match update {
+        Ok(update) if update.install_mode == INSTALL_MODE_RESTART_READY => {
+            ObservedPendingHandoff::RestartReady(Box::new(update))
+        }
+        Ok(_) => ObservedPendingHandoff::Automatic,
+        Err(_) => ObservedPendingHandoff::Missing,
+    }
+}
+
+fn reconcile_restart_ready_handoff(runtime: &DesktopRuntime) -> bool {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let path = pending_update_path(&home);
+    let handoff = observe_pending_handoff(read_pending_update(
+        &path.to_string_lossy(),
+        &ExpectedUpdateIdentity::default(),
+    ));
+    let Ok(mut state) = runtime.update_state.lock() else {
+        return false;
+    };
+    let next = match (&*state, handoff) {
+        (
+            UpdateState::Installing { .. }
+            | UpdateState::Relaunching { .. }
+            | UpdateState::Verified { .. },
+            _,
+        ) => None,
+        (_, ObservedPendingHandoff::RestartReady(update)) => Some(ready_state_for_handoff(&update)),
+        (UpdateState::RestartReady { .. }, ObservedPendingHandoff::Missing) => {
+            Some(UpdateState::Idle)
+        }
+        _ => None,
+    };
+    let Some(next) = next else { return false };
+    if *state == next {
+        return false;
+    }
+    *state = next;
+    true
+}
+
+fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<TrayMenuItems>>) {
+    let app = app.clone();
+    thread::spawn(move || loop {
+        let runtime = app.state::<DesktopRuntime>();
+        if runtime.quitting.lock().map(|value| *value).unwrap_or(true) {
+            break;
+        }
+        if reconcile_restart_ready_handoff(&runtime) {
+            if let Some(item) = menu_items.lock().ok().map(|items| items.update.clone()) {
+                if let Ok(state) = runtime.update_state.lock() {
+                    let (label, enabled) = update_menu_presentation(&state);
+                    let _ = item.set_text(label);
+                    let _ = item.set_enabled(enabled);
+                }
+            }
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                let _ = tray.set_icon(Some(tray_icon_for_update(&runtime)));
+            }
+        }
+        thread::sleep(Duration::from_millis(500));
+    });
+}
+
 fn restart_to_update_if_ready(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
     disarm_runtime_reset(&runtime);
@@ -989,6 +1063,15 @@ fn desktop_menu_snapshot(
     (agent, launch_at_login, update)
 }
 
+fn update_menu_presentation(update: &UpdateState) -> (String, bool) {
+    let label = if update.label().is_empty() {
+        format!("Orbit {}", orbit_version())
+    } else {
+        update.label()
+    };
+    (label, matches!(update, UpdateState::RestartReady { .. }))
+}
+
 struct TrayMenu {
     menu: Menu<Wry>,
     items: TrayMenuItems,
@@ -1013,6 +1096,7 @@ impl TrayMenuItems {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
         let ip_row_layout = state.ip_row_layout();
         let (agent, launch_at_login, update) = desktop_menu_snapshot(runtime);
+        let (update_label, update_enabled) = update_menu_presentation(&update);
 
         for (index, node) in state.granted_nodes.iter().enumerate() {
             granted_nodes.push(disabled_menu_item(
@@ -1043,15 +1127,9 @@ impl TrayMenuItems {
             .checked(launch_at_login_checked(launch_at_login))
             .enabled(!matches!(launch_at_login, LaunchAtLoginState::Error))
             .build(app)?,
-            update: disabled_menu_item(
-                app,
-                UPDATE_MENU_ID,
-                if update.label().is_empty() {
-                    format!("Orbit {}", orbit_version())
-                } else {
-                    update.label()
-                },
-            )?,
+            update: MenuItemBuilder::with_id(UPDATE_MENU_ID, update_label)
+                .enabled(update_enabled)
+                .build(app)?,
             provider: disabled_menu_item(
                 app,
                 PROVIDER_MENU_ID,
@@ -1105,6 +1183,7 @@ impl TrayMenuItems {
     fn update(&self, state: &MenuState, runtime: &DesktopRuntime) {
         let ip_row_layout = state.ip_row_layout();
         let (agent, launch_at_login, update) = desktop_menu_snapshot(runtime);
+        let (update_label, update_enabled) = update_menu_presentation(&update);
 
         let _ = self.agent_status.set_text(agent_status_label(agent));
         let _ = self.status.set_text(state.status.label());
@@ -1122,11 +1201,8 @@ impl TrayMenuItems {
         let _ = self
             .launch_at_login
             .set_checked(launch_at_login_checked(launch_at_login));
-        let _ = self.update.set_text(if update.label().is_empty() {
-            format!("Orbit {}", orbit_version())
-        } else {
-            update.label()
-        });
+        let _ = self.update.set_text(update_label);
+        let _ = self.update.set_enabled(update_enabled);
         let provider = runtime
             .provider_state
             .lock()
