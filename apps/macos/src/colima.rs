@@ -583,7 +583,7 @@ mod tests {
             let path =
                 std::env::temp_dir().join(format!("orbit-colima-{}-{}", std::process::id(), id));
             fs::create_dir_all(&path).unwrap();
-            Self(path)
+            Self(fs::canonicalize(path).unwrap())
         }
         fn home(&self) -> &Path {
             &self.0
