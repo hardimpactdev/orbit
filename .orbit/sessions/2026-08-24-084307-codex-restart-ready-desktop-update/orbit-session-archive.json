@@ -1,0 +1,36 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-24T06:43:07+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-restart-ready-desktop-update/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-084307-codex-restart-ready-desktop-update",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "evidence/restart-ready-handoff.txt",
+        "loop.md",
+        "slices/01-restart-ready-handoff.md",
+        "slices/02-version-0-1-197.md",
+        "slices/03-restart-ready-test-language.md",
+        "workers/restart-ready-general-review.json"
+    ],
+    "entry_digests": {
+        "evidence/restart-ready-handoff.txt": "4e9dd009bd20925d526559a4f8c184f97d21c4fa6772a5a2d0f5750746ce2ac8",
+        "loop.md": "43433c242a2f9dde7c96b90e3ab35778b5cce09e776d4bd77b510ebb3f7f6cc9",
+        "slices/01-restart-ready-handoff.md": "f8800555bd646a60f03c0ea765b50c69b032f0d4e367f9f17dee1c29260e18b6",
+        "slices/02-version-0-1-197.md": "fe2a534a31c5cc1cc81980aeab85e38ae10b74b45b423a48889465fe3c09bd82",
+        "slices/03-restart-ready-test-language.md": "96284595dfbdfe8c50d6e61c940d8991cbd678a8e9d92e59208f9615d4daf4f3",
+        "workers/restart-ready-general-review.json": "134b55fa6f5cd84165aafceb73d2704650ed816eefbd5fbcc93eb6384d5ee5ed"
+    },
+    "slug": "codex-restart-ready-desktop-update",
+    "requested_slug": "codex-restart-ready-desktop-update",
+    "compatible_slugs": [
+        "codex-restart-ready-desktop-update"
+    ],
+    "branch": "codex/restart-ready-desktop-update",
+    "candidate_commit": "5115fa8f9fb578bd1bc39efc7ddec02e3b7762f4",
+    "accepted_feature_tip": "5115fa8f9fb578bd1bc39efc7ddec02e3b7762f4",
+    "accepted_main_tip": "3c1326469d6523f3be313f323865496bcfac4df8",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

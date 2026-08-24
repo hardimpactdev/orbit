@@ -1,0 +1,13 @@
+Retained Incus proof
+timestamp=2026-08-24T08:33:27+02:00
+candidate=5115fa8f9fb578bd1bc39efc7ddec02e3b7762f4
+venue=retained-incus
+environment=dev-fixture
+topology=dev-4d4653
+host=beast
+target=orbit-e2e-dev-4d4653-gateway:/home/orbit/orbit-run
+command=bin/orbit-gateway-pest --compact tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
+expected=exact candidate source emits restart-ready macOS Desktop handoff payloads and reports version 0.1.197
+observed=local and VM aggregate 395769c68ec560be723c705226adf4839d6e0e32a91e778a20e2c4a69c88ab94; VM version 0.1.197; 40 tests passed with 406 assertions
+result=passed
+tmux=feat-codex-restart-ready-desktop-update:proof-1

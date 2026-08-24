@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 424,
-    "unique_candidate_commit_count": 320,
+    "record_count": 425,
+    "unique_candidate_commit_count": 321,
     "orphan_count": 0,
     "records": [
         {
@@ -10838,6 +10838,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "094726ac48bf35a8ee04e715603e8f64c5d2d348",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-24-084307-codex-restart-ready-desktop-update",
+            "slug": "codex-restart-ready-desktop-update",
+            "timestamp": "2026-08-24-084307",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "5115fa8f9fb578bd1bc39efc7ddec02e3b7762f4",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",
