@@ -291,6 +291,15 @@ it('derives the minimum acceptance venue from changed files', function (array $f
     ],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
     'docs frontend resources stay browser' => [['apps/docs/resources/js/app.js'], 'browser'],
+    'apps ui source stays browser' => [['apps/ui/src/main.ts'], 'browser'],
+    'automation-only may coexist with apps ui browser' => [
+        [
+            'apps/ui/src/main.ts',
+            'apps/docs/content/mission.md',
+            'bin/orbit-feature-acceptance',
+        ],
+        'browser',
+    ],
     'docs automation does not downgrade browser resources' => [
         [
             'apps/docs/app/Librarian/Rules/SignatureLiveSurfaceRule.php',

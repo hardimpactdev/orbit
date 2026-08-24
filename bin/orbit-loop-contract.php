@@ -1376,6 +1376,7 @@ function orbitLoopAcceptanceVenue(array $changedFiles): string
         } elseif (
             str_starts_with($path, 'apps/gateway/resources/')
             || str_starts_with($path, 'apps/docs/resources/')
+            || str_starts_with($path, 'apps/ui/')
         ) {
             $venue = 'browser';
         }
