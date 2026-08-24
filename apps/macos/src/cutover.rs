@@ -1245,6 +1245,13 @@ mod tests {
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
         let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let source_tar = fs::read(fixture.join("source.tar")).unwrap();
+        let target_tar = fs::read(fixture.join("target.tar")).unwrap();
+        assert_ne!(source_tar, target_tar);
+        assert_eq!(
+            tar_manifest(&source_tar).unwrap(),
+            tar_manifest(&target_tar).unwrap()
+        );
         assert_eq!(
             named_volumes(&[caddy, runtime]).unwrap(),
             vec!["shared-data"]
@@ -1306,6 +1313,13 @@ mod tests {
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
         let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let source_tar = fs::read(fixture.join("source.tar")).unwrap();
+        let target_tar = fs::read(fixture.join("target.tar")).unwrap();
+        assert_ne!(source_tar, target_tar);
+        assert_ne!(
+            tar_manifest(&source_tar).unwrap(),
+            tar_manifest(&target_tar).unwrap()
+        );
         assert!(cutover(&fake, &source, &target).is_err());
         let lines = fs::read_to_string(&log).unwrap();
         assert!(lines.contains(" volume rm shared-data"));
@@ -1334,6 +1348,13 @@ mod tests {
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
         let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let source_tar = fs::read(fixture.join("source.tar")).unwrap();
+        let target_tar = fs::read(fixture.join("target.tar")).unwrap();
+        assert_ne!(source_tar, target_tar);
+        assert_eq!(
+            tar_manifest(&source_tar).unwrap(),
+            tar_manifest(&target_tar).unwrap()
+        );
 
         assert!(cutover(&fake, &source, &target).is_err());
         let first = fs::read_to_string(&log).unwrap();
@@ -1392,6 +1413,13 @@ mod tests {
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
         let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let source_tar = fs::read(fixture.join("source.tar")).unwrap();
+        let target_tar = fs::read(fixture.join("target.tar")).unwrap();
+        assert_ne!(source_tar, target_tar);
+        assert_ne!(
+            tar_manifest(&source_tar).unwrap(),
+            tar_manifest(&target_tar).unwrap()
+        );
 
         let error = cutover(&fake, &source, &target).unwrap_err();
         assert!(matches!(error, CutoverError::TargetConflict(_)));
@@ -1485,7 +1513,7 @@ unix://*/target.sock:volume:inspect) exit 1 ;;
 unix://*/target.sock:volume:create*) touch "$FIXTURE/retry-state"; exit 0 ;;
 unix://*/target.sock:volume:rm*) exit 0 ;;
 unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
-unix://*/target.sock:run:*) cat "$FIXTURE/{}"; exit 0 ;;
+unix://*/target.sock:run:*) cat "$FIXTURE/target.tar"; exit 0 ;;
 unix://*/source.sock:save:*) printf 'image'; exit 0 ;;
 unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;
 unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;
@@ -1493,9 +1521,7 @@ unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm
 esac
 "#
         .to_string();
-        let body = body
-            .replace("$FIXTURE", fixture.to_str().unwrap())
-            .replace("{}", if mismatch { "target.tar" } else { "source.tar" });
+        let body = body.replace("$FIXTURE", fixture.to_str().unwrap());
         fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
         fs::write(fixture.join("target.tar"), tar_fixture(true, mismatch)).unwrap();
         fs::write(&script, body).unwrap();
@@ -1558,7 +1584,7 @@ unix://*/target.sock:volume:rm*) exit 0 ;;
 unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
 unix://*/target.sock:run:*)
   if [ ! -f "$FIXTURE/volume-state" ]; then exit 1; fi;
-  if [ -f "$FIXTURE/mismatch-volume" ]; then cat "$FIXTURE/target.tar"; else cat "$FIXTURE/source.tar"; fi; exit 0 ;;
+  cat "$FIXTURE/target.tar"; exit 0 ;;
 unix://*/source.sock:save:*) printf image; exit 0 ;;
 unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*) exit 0 ;;
 unix://*/source.sock:stop:*) exit 0 ;;
@@ -1679,25 +1705,48 @@ esac
 
     #[test]
     fn retry_volume_matches_fails_closed_and_calls_each_endpoint_once() {
-        let fixture = test_dir("retry-parser");
-        fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
-        fs::write(fixture.join("target.tar"), tar_fixture(true, false)).unwrap();
-        let log = fixture.join("calls");
-        let script = fixture.join("docker");
-        fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$DOCKER_HOST\" >> {}\nexit 1\n",
-                log.display()
-            ),
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        let source = format!("unix://{}/source", fixture.display());
-        let target = format!("unix://{}/target", fixture.display());
-        assert!(!retry_volume_matches(&script, &target, &source, "data"));
-        assert_eq!(fs::read_to_string(log).unwrap().lines().count(), 2);
+        for mode in ["endpoint", "malformed-source", "malformed-target"] {
+            let fixture = test_dir(&format!("retry-parser-{mode}"));
+            fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
+            fs::write(fixture.join("target.tar"), tar_fixture(true, false)).unwrap();
+            let log = fixture.join("calls");
+            let script = fixture.join("docker");
+            fs::write(&script, format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$DOCKER_HOST\" >> {}\ncase \"$RETRY_MODE:$DOCKER_HOST\" in\nendpoint:*) exit 1 ;;\nmalformed-source:*source*) cat \"$FIXTURE/bad.tar\"; exit 0 ;;\nmalformed-target:*target*) cat \"$FIXTURE/bad.tar\"; exit 0 ;;\nesac\ncase \"$DOCKER_HOST\" in *source*) cat \"$FIXTURE/source.tar\" ;; *) cat \"$FIXTURE/target.tar\" ;; esac\n",
+                log.display())).unwrap();
+            fs::write(fixture.join("bad.tar"), b"not a tar archive").unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+            let source = format!("unix://{}/source", fixture.display());
+            let target = format!("unix://{}/target", fixture.display());
+            std::env::set_var("FIXTURE", &fixture);
+            std::env::set_var("RETRY_MODE", mode);
+            assert!(!retry_volume_matches(&script, &target, &source, "data"));
+            let call_log = fs::read_to_string(log).unwrap();
+            let calls = call_log.lines().collect::<Vec<_>>();
+            assert!(
+                calls
+                    .iter()
+                    .filter(|line| line
+                        .split_whitespace()
+                        .next()
+                        .is_some_and(|endpoint| endpoint.ends_with("/source")))
+                    .count()
+                    <= 1
+            );
+            assert!(
+                calls
+                    .iter()
+                    .filter(|line| line
+                        .split_whitespace()
+                        .next()
+                        .is_some_and(|endpoint| endpoint.ends_with("/target")))
+                    .count()
+                    <= 1
+            );
+            std::env::remove_var("FIXTURE");
+            std::env::remove_var("RETRY_MODE");
+        }
     }
 
     fn fake_docker(fixture_dir: &Path, fail_verify: bool) -> (PathBuf, PathBuf, PathBuf) {
