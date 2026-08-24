@@ -940,7 +940,8 @@ it('finalizes a candidate with complete multi-venue runtime receipts', function 
 
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('FINALIZATION: PASS');
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -961,7 +962,14 @@ it('fails closed when a multi-venue runtime receipt is incomplete or stale', fun
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
-})->with(['missing receipt', 'stale candidate', 'stale base tip', 'stale merge base', 'duplicate receipt', 'unknown receipt']);
+})->with([
+    'missing receipt',
+    'stale candidate',
+    'stale base tip',
+    'stale merge base',
+    'duplicate receipt',
+    'unknown receipt',
+]);
 
 it('fails closed when candidate acceptance venue resolution times out', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());

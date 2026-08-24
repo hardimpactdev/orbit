@@ -41,9 +41,7 @@ Owner prepares the worktree, fills `.orbit/loop.md`, and writes briefs under
 4. Select prior feedback with `bin/orbit-feature-feedback relevant` when the
    changed surface has a stable scope; it searches the primary session archive
    corpus with linked promotions and waivers.
-5. Aggregate mixed non-automated venues in one route. Each required venue must
-   provide one exact candidate/base/merge-base-bound runtime receipt; routes
-   reject missing, duplicate, unknown, or stale receipts.
+5. Aggregate candidate/base/merge-bound receipts per mixed venue.
 
 ### BUILD
 
@@ -154,12 +152,9 @@ Work that needs human judgment needs explicit user acceptance before merge.
 The venue selects proof; the actor selects judgment. A
 `human-judgment=not-required` review permits automated acceptance only after
 reviewer PASS and venue proof; it never changes the venue. `retained-incus`,
-`browser`, and `host-macos` are orthogonal, not a strength ladder. A candidate
-may require multiple non-automated venues; the exact route records them in
-`venues`, and acceptance/finalization require one independently structured
-receipt for every venue. A single-venue candidate keeps the singular `venue`
-contract. Missing, duplicate, unknown, stale, or mismatched candidate/base/
-merge-base receipts fail closed. Automation-only paths may coexist.
+`browser` and `host-macos` are orthogonal. Mixed diffs stay one feature.
+Invalid receipt sets fail closed. Singular and automation-only routes stay
+compatible.
 
 Agents run and inspect every deterministic check. Never ask the user to execute
 a check the agent can execute. Give the user only a prepared surface that
