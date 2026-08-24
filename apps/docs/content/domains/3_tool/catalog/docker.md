@@ -28,24 +28,22 @@ node capability instead of treating it as an operator-installed package tool.
 
 ## macOS Provider Support
 
-On macOS workload nodes, a container provider that is Docker-compatible and
-reachable supplies the Docker capability; there is no host system service.
-Orbit first uses a Docker provider that is already working: it probes the
-current `docker` command and context, does not mutate the global Docker
-context, and does not install or start providers during role convergence. When no Docker provider is
-reachable on a macOS node, Orbit recommends Colima:
+Orbit Desktop-supervised macOS nodes use only the Desktop-owned Colima profile
+`orbit`. Colima runs Docker, disables Kubernetes and activation, and exposes
+`unix://$HOME/.colima/orbit/docker.sock` to the Agent. Ordinary startup never
+installs prerequisites. The explicit `Install Local Runtime` action uses
+existing Homebrew to install `colima` and `docker`.
 
 ```bash
-brew install docker colima
-colima start --runtime docker
+brew install colima docker
 ```
 
-OrbStack and Docker Desktop are compatible providers when they are already
-installed and licensed or allowed for the user's context. OrbStack is not the
-default recommendation because it requires a license for commercial, business,
-nonprofit, government, and freelance use after evaluation. Linux repair
-behavior is unchanged; Orbit does not emit systemd repair commands for Docker
-on macOS.
+The first profile creation uses 50 percent of logical CPU and memory and
+Colima's upstream disk default. Later starts omit resource flags, so manual
+Colima CLI overrides persist. OrbStack and Docker Desktop can run beside this
+profile, but they are not Desktop Agent providers and cannot see or manage its
+containers, images, or volumes. Orbit does not change the global Docker
+context. Linux uses direct Docker Engine; there is no Linux Colima lane.
 
 ## Credentials
 
@@ -66,3 +64,7 @@ configuration owner.
 Docker-backed processes is reported against the concrete process row. Drift in
 the capabilities of tools that depend on Docker is reported against their
 concrete tool row.
+
+On macOS, the Agent uses the owned Colima socket. If it is unavailable, Doctor
+reports `orbit_agent_unavailable` and directs the operator to open Orbit
+Desktop.

@@ -11,13 +11,42 @@ pub enum AppExitAction {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProviderRuntimeState {
     Starting,
-    Ready { endpoint: String },
-    MissingPrerequisite { detail: String },
-    OwnershipConflict { detail: String },
-    Incompatible { detail: String },
-    Degraded { detail: String },
+    Ready {
+        endpoint: String,
+    },
+    MissingPrerequisite {
+        cause: MissingPrerequisiteCause,
+        detail: String,
+    },
+    OwnershipConflict {
+        detail: String,
+    },
+    Incompatible {
+        detail: String,
+    },
+    Degraded {
+        detail: String,
+    },
     Stopping,
-    StopFailed { detail: String },
+    StopFailed {
+        detail: String,
+    },
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissingPrerequisiteCause {
+    Colima,
+    Docker,
+    Homebrew,
+}
+pub fn classify_missing_executable(path: &str) -> MissingPrerequisiteCause {
+    if std::path::Path::new(path)
+        .file_name()
+        .is_some_and(|name| name == "docker")
+    {
+        MissingPrerequisiteCause::Docker
+    } else {
+        MissingPrerequisiteCause::Colima
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +55,55 @@ pub enum RuntimeAction {
     Quit,
     Restart,
     RestartToUpdate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetConfirmation {
+    Armed,
+}
+
+pub fn reset_confirmation_label(state: Option<ResetConfirmation>) -> &'static str {
+    match state {
+        Some(ResetConfirmation::Armed) => "Confirm Reset Local Runtime — Deletes All Data",
+        _ => "Reset Local Runtime…",
+    }
+}
+
+pub fn reset_click(deadline: &mut Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    if deadline.is_some_and(|expires| now < expires) {
+        *deadline = None;
+        true
+    } else {
+        *deadline = Some(now + std::time::Duration::from_secs(30));
+        false
+    }
+}
+pub fn disarm_reset(deadline: &mut Option<std::time::Instant>) {
+    *deadline = None;
+}
+pub fn install_runtime_enabled(state: &ProviderRuntimeState) -> bool {
+    matches!(
+        state,
+        ProviderRuntimeState::MissingPrerequisite {
+            cause: MissingPrerequisiteCause::Colima | MissingPrerequisiteCause::Docker,
+            ..
+        }
+    )
+}
+pub fn reset_runtime_enabled(owned: bool, attempt: bool) -> bool {
+    owned && !attempt
+}
+pub fn begin_mutation(
+    attempt: &mut bool,
+    state: &mut ProviderRuntimeState,
+    target: ProviderRuntimeState,
+) -> bool {
+    if *attempt {
+        return false;
+    }
+    *attempt = true;
+    *state = target;
+    true
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,7 +169,7 @@ pub fn provider_label(state: &ProviderRuntimeState) -> String {
     match state {
         ProviderRuntimeState::Starting => "Provider: Starting".into(),
         ProviderRuntimeState::Ready { .. } => "Provider: Ready".into(),
-        ProviderRuntimeState::MissingPrerequisite { detail } => {
+        ProviderRuntimeState::MissingPrerequisite { detail, .. } => {
             format!("Provider: Missing prerequisite — {detail}")
         }
         ProviderRuntimeState::OwnershipConflict { detail } => {
@@ -116,6 +194,36 @@ pub fn action_order(action: RuntimeAction) -> &'static [&'static str] {
 
 pub fn dashboard_close_action() -> WindowCloseAction {
     WindowCloseAction::Hide
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+
+    #[test]
+    fn reset_requires_two_explicit_clicks() {
+        assert_eq!(reset_confirmation_label(None), "Reset Local Runtime…");
+        let now = std::time::Instant::now();
+        let mut deadline = None;
+        assert!(!reset_click(&mut deadline, now));
+        assert_eq!(
+            reset_confirmation_label(Some(ResetConfirmation::Armed)),
+            "Confirm Reset Local Runtime — Deletes All Data"
+        );
+        assert!(reset_click(
+            &mut deadline,
+            now + std::time::Duration::from_secs(1)
+        ));
+        let mut boundary = None;
+        assert!(!reset_click(&mut boundary, now));
+        assert!(!reset_click(
+            &mut boundary,
+            now + std::time::Duration::from_secs(30)
+        ));
+        assert_eq!(boundary, Some(now + std::time::Duration::from_secs(60)));
+        disarm_reset(&mut deadline);
+        assert!(deadline.is_none());
+    }
 }
 
 pub fn quit_action() -> AppExitAction {
@@ -187,6 +295,7 @@ mod tests {
         );
         assert_eq!(
             provider_label(&ProviderRuntimeState::MissingPrerequisite {
+                cause: MissingPrerequisiteCause::Colima,
                 detail: "colima".into()
             }),
             "Provider: Missing prerequisite — colima"
@@ -209,6 +318,51 @@ mod tests {
         let mut state = ProviderRuntimeState::Degraded { detail: "x".into() };
         assert!(try_begin_provider_attempt(&mut attempt, &mut state));
         assert!(!try_begin_provider_attempt(&mut attempt, &mut state));
+        assert!(install_runtime_enabled(
+            &ProviderRuntimeState::MissingPrerequisite {
+                cause: MissingPrerequisiteCause::Docker,
+                detail: "docker".into()
+            }
+        ));
+        assert!(!install_runtime_enabled(
+            &ProviderRuntimeState::MissingPrerequisite {
+                cause: MissingPrerequisiteCause::Homebrew,
+                detail: "brew".into()
+            }
+        ));
+        assert!(install_runtime_enabled(
+            &ProviderRuntimeState::MissingPrerequisite {
+                cause: MissingPrerequisiteCause::Colima,
+                detail: "colima".into()
+            }
+        ));
+        assert!(!install_runtime_enabled(&ProviderRuntimeState::Ready {
+            endpoint: "x".into()
+        }));
+        assert!(!install_runtime_enabled(&ProviderRuntimeState::Degraded {
+            detail: "x".into()
+        }));
+        assert!(reset_runtime_enabled(true, false));
+        assert!(!reset_runtime_enabled(true, true));
+        assert_eq!(
+            classify_missing_executable("/opt/homebrew/bin/docker"),
+            MissingPrerequisiteCause::Docker
+        );
+        assert_eq!(
+            classify_missing_executable("/opt/homebrew/bin/colima"),
+            MissingPrerequisiteCause::Colima
+        );
+        let mut mutation = false;
+        assert!(begin_mutation(
+            &mut mutation,
+            &mut state,
+            ProviderRuntimeState::Stopping
+        ));
+        assert!(!begin_mutation(
+            &mut mutation,
+            &mut state,
+            ProviderRuntimeState::Starting
+        ));
         assert_eq!(
             provider_health_action(
                 &ProviderRuntimeState::Ready {

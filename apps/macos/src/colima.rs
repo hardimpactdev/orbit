@@ -98,6 +98,86 @@ pub fn stop_plan(colima: impl Into<PathBuf>) -> ColimaCommand {
     }
 }
 
+pub fn homebrew_install_plan(brew: impl Into<PathBuf>) -> ColimaCommand {
+    ColimaCommand {
+        program: brew.into(),
+        args: vec!["install".into(), "colima".into(), "docker".into()],
+    }
+}
+
+pub fn install_local_runtime(brew: impl Into<PathBuf>) -> Result<(), ColimaError> {
+    let brew = resolve_executable(&brew.into())?;
+    run(&homebrew_install_plan(brew))?;
+    Ok(())
+}
+
+pub fn reset_delete_plan(
+    colima: impl Into<PathBuf>,
+    version: &str,
+) -> Result<ColimaCommand, ColimaError> {
+    if !colima_version_supported(version) {
+        return Err(ColimaError::UnsupportedVersion(version.into()));
+    }
+    let mut args = vec!["delete".into(), PROFILE.into(), "--force".into()];
+    if version_at_least(version, (0, 9, 0)) {
+        args.push("--data".into());
+    }
+    Ok(ColimaCommand {
+        program: colima.into(),
+        args,
+    })
+}
+
+fn version_at_least(version: &str, minimum: (u64, u64, u64)) -> bool {
+    let token = version
+        .split_whitespace()
+        .find(|x| x.trim_start_matches('v').split('.').count() >= 3)
+        .unwrap_or("");
+    let n: Vec<u64> = token
+        .trim_start_matches('v')
+        .split('.')
+        .take(3)
+        .map(|x| x.parse().unwrap_or(0))
+        .collect();
+    (
+        n.first().copied().unwrap_or(0),
+        n.get(1).copied().unwrap_or(0),
+        n.get(2).copied().unwrap_or(0),
+    ) >= minimum
+}
+
+pub fn reset_owned_profile(home: &Path, colima: &Path) -> Result<(), ColimaError> {
+    let record = load_record(home)?;
+    validate_record(&record)?;
+    if record.state != "ready" {
+        return Err(ColimaError::OwnershipConflict);
+    }
+    let profile = home.join(".colima").join(PROFILE);
+    let metadata = fs::symlink_metadata(&profile).map_err(|_| ColimaError::OwnershipConflict)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(ColimaError::OwnershipConflict);
+    }
+    let executable = resolve_executable(colima)?;
+    let version_output = run(&direct_command(executable.clone(), vec!["version".into()]))?;
+    let detected = String::from_utf8_lossy(&version_output.stdout).into_owned();
+    if !colima_version_supported(&detected) {
+        return Err(ColimaError::UnsupportedVersion(detected));
+    }
+    run(&stop_plan(executable.clone()))?;
+    run(&reset_delete_plan(executable, &detected)?)?;
+    fs::remove_file(ownership_path(home))?;
+    if let Some(parent) = ownership_path(home).parent() {
+        fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+pub fn has_owned_profile(home: &Path) -> bool {
+    load_record(home).is_ok_and(|record| record.state == "ready")
+        && fs::symlink_metadata(home.join(".colima").join(PROFILE))
+            .is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+}
+
 pub fn stop_owned_profile(home: &Path, colima: &Path) -> Result<(), ColimaError> {
     let record = load_record(home)?;
     validate_record(&record)?;
@@ -531,6 +611,181 @@ mod tests {
                 "8"
             ]
         )
+    }
+
+    #[test]
+    fn install_and_reset_plans_use_exact_non_shell_argv() {
+        assert_eq!(
+            homebrew_install_plan("brew").args,
+            ["install", "colima", "docker"]
+        );
+        assert_eq!(
+            reset_delete_plan("colima", "Colima Version 0.8.9")
+                .unwrap()
+                .args,
+            ["delete", "orbit", "--force"]
+        );
+        assert_eq!(
+            reset_delete_plan("colima", "0.9.0").unwrap().args,
+            ["delete", "orbit", "--force", "--data"]
+        );
+        assert!(reset_delete_plan("colima", "0.8.0").is_err());
+    }
+
+    fn fake_script(fixture: &Fixture, name: &str, body: &str) -> (PathBuf, PathBuf) {
+        let bin = fixture.home().join(name);
+        let log = fixture.home().join(format!("{name}.log"));
+        fs::write(
+            &bin,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n{}\n",
+                log.display(),
+                body
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        (bin, log)
+    }
+
+    fn ready_fixture(fixture: &Fixture) {
+        fs::create_dir_all(fixture.home().join(".colima/orbit")).unwrap();
+        persist_record(
+            fixture.home(),
+            &OwnershipRecord {
+                provider: "colima".into(),
+                profile: "orbit".into(),
+                runtime: "docker".into(),
+                lifecycle: "orbit-desktop".into(),
+                state: "ready".into(),
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn fake_colima_08_deletes_without_data() {
+        let f = Fixture::new();
+        ready_fixture(&f);
+        let (bin, log) = fake_script(
+            &f,
+            "colima08",
+            "if [ \"$1\" = version ]; then echo 'Colima Version 0.8.9'; fi",
+        );
+        reset_owned_profile(f.home(), &bin).unwrap();
+        assert_eq!(
+            fs::read_to_string(log).unwrap(),
+            "version\nstop orbit\ndelete orbit --force\n"
+        );
+        assert!(!ownership_path(f.home()).exists());
+    }
+
+    #[test]
+    fn fake_colima_09_deletes_with_data() {
+        let f = Fixture::new();
+        ready_fixture(&f);
+        let (bin, log) = fake_script(
+            &f,
+            "colima09",
+            "if [ \"$1\" = version ]; then echo 'Colima Version 0.9.0'; fi",
+        );
+        reset_owned_profile(f.home(), &bin).unwrap();
+        assert!(fs::read_to_string(log)
+            .unwrap()
+            .contains("delete orbit --force --data"));
+    }
+
+    #[test]
+    fn reset_failures_preserve_ownership_and_short_circuit() {
+        for (name, body, expected) in [("bad-version", "if [ \"$1\" = version ]; then echo bad; fi", "version\n"), ("stop-fail", "if [ \"$1\" = version ]; then echo 0.9.0; elif [ \"$1\" = stop ]; then echo not running >&2; exit 1; fi", "version\nstop orbit\n"), ("delete-fail", "if [ \"$1\" = version ]; then echo 0.9.0; elif [ \"$1\" = delete ]; then exit 1; fi", "version\nstop orbit\ndelete orbit --force --data\n")] {
+            let f = Fixture::new(); ready_fixture(&f); let (bin, log) = fake_script(&f, name, body);
+            assert!(reset_owned_profile(f.home(), &bin).is_err());
+            assert!(ownership_path(f.home()).exists());
+            assert_eq!(fs::read_to_string(log).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn reset_refuses_unowned_reserved_mismatched_and_symlinked_state_without_execution() {
+        for kind in ["unowned", "reserved", "mismatched", "symlinked"] {
+            let f = Fixture::new();
+            let (bin, log) = fake_script(&f, kind, "exit 0");
+            fs::create_dir_all(f.home().join(".colima/orbit")).unwrap();
+            if kind == "unowned" {
+            } else if kind == "symlinked" {
+                let real = f.home().join("real");
+                fs::create_dir_all(&real).unwrap();
+                fs::remove_dir(f.home().join(".colima/orbit")).unwrap();
+                symlink(real, f.home().join(".colima/orbit")).unwrap();
+            } else {
+                let record = OwnershipRecord {
+                    provider: "colima".into(),
+                    profile: "orbit".into(),
+                    runtime: "docker".into(),
+                    lifecycle: "orbit-desktop".into(),
+                    state: if kind == "reserved" {
+                        "reserved".into()
+                    } else {
+                        "ready".into()
+                    },
+                };
+                persist_record(f.home(), &record).unwrap();
+                if kind == "mismatched" {
+                    fs::write(
+                        ownership_path(f.home()),
+                        serde_json::to_vec(&OwnershipRecord {
+                            provider: "other".into(),
+                            ..record
+                        })
+                        .unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+            assert!(reset_owned_profile(f.home(), &bin).is_err());
+            assert!(!log.exists() || fs::read_to_string(log).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn fake_brew_install_executes_exact_argv_and_classifies_failures() {
+        let f = Fixture::new();
+        let (bin, log) = fake_script(&f, "brew", "exit 0");
+        install_local_runtime(&bin).unwrap();
+        assert_eq!(fs::read_to_string(log).unwrap(), "install colima docker\n");
+        let missing = f.home().join("missing-brew");
+        assert!(matches!(
+            install_local_runtime(&missing),
+            Err(ColimaError::MissingExecutable(_))
+        ));
+        let (fail, _) = fake_script(&f, "brew-fail", "exit 3");
+        assert!(matches!(
+            install_local_runtime(&fail),
+            Err(ColimaError::Command(_))
+        ));
+    }
+
+    #[test]
+    fn owned_profile_predicate_validates_record_identity_and_profile() {
+        let f = Fixture::new();
+        assert!(!has_owned_profile(f.home()));
+        ready_fixture(&f);
+        assert!(has_owned_profile(f.home()));
+        let mut bad: OwnershipRecord = load_record(f.home()).unwrap();
+        bad.provider = "other".into();
+        persist_record(
+            f.home(),
+            &OwnershipRecord {
+                provider: "colima".into(),
+                profile: "orbit".into(),
+                runtime: "docker".into(),
+                lifecycle: "orbit-desktop".into(),
+                state: "ready".into(),
+            },
+        )
+        .unwrap();
+        fs::write(ownership_path(f.home()), serde_json::to_vec(&bad).unwrap()).unwrap();
+        assert!(!has_owned_profile(f.home()));
     }
     #[test]
     fn rejects_old_colima() {

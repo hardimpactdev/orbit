@@ -58,9 +58,11 @@ admits another family.
 
 On macOS workload nodes, the `Firewall` category is skipped: macOS nodes are
 not eligible firewall targets and macOS firewall mutation is unsupported in
-v1. Tool checks on macOS report the Docker capability through the node's
-reachable Docker-compatible container provider and recommend Colima when no
-provider is reachable.
+v1. Desktop Agent checks use only the Desktop-owned Colima `orbit` profile and
+its explicit socket. If the Agent cannot reach it, Doctor reports
+`orbit_agent_unavailable` and directs the operator to open Orbit Desktop.
+Doctor reports only. It never installs, resets, adopts, switches context, or
+mutates OrbStack or Docker Desktop.
 
 `Scheduling` on the gateway surfaces the singleton scheduler daemon's health
 (presence, heartbeat, and stuck locks) plus gateway-target run health. On every

@@ -78,6 +78,10 @@ nodes. Runtime state inside OrbStack remains owned by OrbStack. Orbit only
 dispatches lifecycle when the operator explicitly runs `tool:start`,
 `tool:stop`, or `tool:restart` for `orbstack`.
 
+This operator-requested `tool:*` lifecycle does not make OrbStack the Desktop
+Agent provider. Desktop never invokes `orb` or `orbctl` for Agent startup and
+owns only the Colima `orbit` profile.
+
 ## Scope Boundaries
 
 `orbstack` must not:

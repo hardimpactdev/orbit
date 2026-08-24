@@ -2,17 +2,22 @@ use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
     GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
-use orbit_macos::colima::{ensure_ready, stop_owned_profile};
+use orbit_macos::colima::{
+    ensure_ready, has_owned_profile, install_local_runtime, reset_owned_profile, stop_owned_profile,
+};
 use orbit_macos::installer::{apply_bound_update, commit_install_attempt, ApplyFailure};
 use orbit_macos::legacy::{
     conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
     parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
 };
 use orbit_macos::lifecycle::{
-    agent_restart_endpoint, dashboard_close_action, provider_health_action, provider_label,
-    provider_retry_enabled, quit_disposition, try_begin_provider_attempt, ProviderHealthAction,
+    agent_restart_endpoint, begin_mutation, classify_missing_executable, dashboard_close_action,
+    disarm_reset, install_runtime_enabled, provider_health_action, provider_label,
+    provider_retry_enabled, quit_disposition, reset_click, reset_runtime_enabled,
+    try_begin_provider_attempt, MissingPrerequisiteCause, ProviderHealthAction,
     ProviderRuntimeState, QuitDisposition,
 };
+use orbit_macos::lifecycle::{reset_confirmation_label, ResetConfirmation};
 use orbit_macos::paths::{
     desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
 };
@@ -60,6 +65,8 @@ const RESTART_MENU_ID: &str = "restart_app";
 const QUIT_MENU_ID: &str = "quit_app";
 const PROVIDER_MENU_ID: &str = "provider_status";
 const RETRY_PROVIDER_MENU_ID: &str = "retry_provider";
+const INSTALL_RUNTIME_MENU_ID: &str = "install_local_runtime";
+const RESET_RUNTIME_MENU_ID: &str = "reset_local_runtime";
 const IP_ROW_MIN_GAP_WIDTH_UNITS: usize = 1_200;
 const IP_ROW_PAD_WIDE: char = '\u{2002}';
 const IP_ROW_PAD_WIDE_WIDTH_UNITS: usize = 642;
@@ -85,6 +92,7 @@ struct DesktopRuntime {
     docker_host: Mutex<Option<String>>,
     provider_state: Mutex<ProviderRuntimeState>,
     provider_attempt: Mutex<bool>,
+    reset_confirmation: Mutex<Option<(ResetConfirmation, Instant)>>,
 }
 
 impl DesktopRuntime {
@@ -100,6 +108,7 @@ impl DesktopRuntime {
             docker_host: Mutex::new(None),
             provider_state: Mutex::new(ProviderRuntimeState::Starting),
             provider_attempt: Mutex::new(false),
+            reset_confirmation: Mutex::new(None),
         }
     }
 }
@@ -149,6 +158,8 @@ fn main() {
                     RESTART_MENU_ID => restart_orbit(app),
                     QUIT_MENU_ID => quit_orbit(app),
                     RETRY_PROVIDER_MENU_ID => retry_local_runtime(app),
+                    INSTALL_RUNTIME_MENU_ID => install_local_runtime_action(app),
+                    RESET_RUNTIME_MENU_ID => reset_local_runtime_action(app),
                     _ => {}
                 })
                 .on_tray_icon_event(move |tray, event| {
@@ -328,8 +339,11 @@ fn start_provider_in_background(app: &AppHandle, _runtime: &DesktopRuntime) {
             Err(error) => {
                 let detail = error.to_string();
                 let state = match error {
-                    orbit_macos::colima::ColimaError::MissingExecutable(_) => {
-                        ProviderRuntimeState::MissingPrerequisite { detail }
+                    orbit_macos::colima::ColimaError::MissingExecutable(path) => {
+                        ProviderRuntimeState::MissingPrerequisite {
+                            cause: classify_missing_executable(&path),
+                            detail,
+                        }
                     }
                     orbit_macos::colima::ColimaError::OwnershipConflict => {
                         ProviderRuntimeState::OwnershipConflict { detail }
@@ -351,7 +365,128 @@ fn start_provider_in_background(app: &AppHandle, _runtime: &DesktopRuntime) {
 }
 
 fn retry_local_runtime(app: &AppHandle) {
+    disarm_runtime_reset(&app.state::<DesktopRuntime>());
     request_provider_start(app);
+}
+
+fn disarm_runtime_reset(runtime: &DesktopRuntime) {
+    if let Ok(mut confirmation) = runtime.reset_confirmation.lock() {
+        *confirmation = None;
+    }
+}
+
+fn install_local_runtime_action(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    disarm_runtime_reset(&runtime);
+    if !runtime
+        .provider_state
+        .lock()
+        .ok()
+        .is_some_and(|state| install_runtime_enabled(&state))
+    {
+        return;
+    }
+    let Ok(mut attempt) = runtime.provider_attempt.lock() else {
+        return;
+    };
+    let Ok(mut state) = runtime.provider_state.lock() else {
+        return;
+    };
+    if !begin_mutation(&mut attempt, &mut state, ProviderRuntimeState::Starting) {
+        return;
+    }
+    drop(attempt);
+    drop(state);
+    if let Ok(mut confirmation) = runtime.reset_confirmation.lock() {
+        *confirmation = None;
+    }
+    let handle = app.clone();
+    thread::spawn(move || {
+        let brew =
+            PathBuf::from(std::env::var_os("ORBIT_BREW_BIN").unwrap_or_else(|| "brew".into()));
+        let runtime = handle.state::<DesktopRuntime>();
+        let result = install_local_runtime(brew);
+        if let Err(error) = result {
+            if let Ok(mut state) = runtime.provider_state.lock() {
+                *state = match error {
+                    orbit_macos::colima::ColimaError::MissingExecutable(_) => {
+                        ProviderRuntimeState::MissingPrerequisite {
+                            cause: MissingPrerequisiteCause::Homebrew,
+                            detail: format!("Homebrew Required — {error}"),
+                        }
+                    }
+                    _ => ProviderRuntimeState::Degraded {
+                        detail: format!("Local runtime install failed: {error}"),
+                    },
+                };
+            }
+            if let Ok(mut attempt) = runtime.provider_attempt.lock() {
+                *attempt = false;
+            }
+            return;
+        }
+        if let Ok(mut attempt) = runtime.provider_attempt.lock() {
+            *attempt = false;
+        };
+        request_provider_start(&handle);
+    });
+}
+
+fn reset_local_runtime_action(app: &AppHandle) {
+    let runtime = app.state::<DesktopRuntime>();
+    if !has_owned_profile(&PathBuf::from(
+        std::env::var("HOME").unwrap_or_else(|_| ".".into()),
+    )) {
+        return;
+    }
+    let now = Instant::now();
+    let mut confirmation = runtime.reset_confirmation.lock().unwrap();
+    let mut deadline = confirmation.as_ref().map(|(_, expires)| *expires);
+    if !reset_click(&mut deadline, now) {
+        *confirmation = deadline.map(|expires| (ResetConfirmation::Armed, expires));
+        return;
+    }
+    disarm_reset(&mut deadline);
+    *confirmation = None;
+    let Ok(mut attempt) = runtime.provider_attempt.lock() else {
+        return;
+    };
+    let Ok(mut state) = runtime.provider_state.lock() else {
+        return;
+    };
+    if !begin_mutation(&mut attempt, &mut state, ProviderRuntimeState::Stopping) {
+        return;
+    }
+    drop(attempt);
+    drop(state);
+    drop(confirmation);
+    stop_owned_child(&runtime);
+    if let Ok(mut state) = runtime.agent_state.lock() {
+        *state = AgentRunState::Stopped;
+    }
+    if let Ok(mut endpoint) = runtime.docker_host.lock() {
+        *endpoint = None;
+    }
+    let handle = app.clone();
+    thread::spawn(move || {
+        let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()));
+        let colima =
+            PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
+        let result = reset_owned_profile(&home, &colima);
+        let runtime = handle.state::<DesktopRuntime>();
+        if let Ok(mut state) = runtime.provider_state.lock() {
+            *state = result
+                .map(|_| ProviderRuntimeState::Degraded {
+                    detail: "Local runtime reset; profile and data removed. Retry Local Runtime to create a fresh profile".into(),
+                })
+                .unwrap_or_else(|error| ProviderRuntimeState::Degraded {
+                    detail: format!("Local runtime reset failed: {error}"),
+                });
+        };
+        if let Ok(mut attempt) = runtime.provider_attempt.lock() {
+            *attempt = false;
+        };
+    });
 }
 
 fn start_provider_health_monitor(app: AppHandle, endpoint: String) {
@@ -601,6 +736,7 @@ fn consume_pending_update_handoff(runtime: &DesktopRuntime) {
 
 fn restart_to_update_if_ready(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
+    disarm_runtime_reset(&runtime);
     let ready = runtime.update_state.lock().ok().is_some_and(|state| {
         matches!(
             *state,
@@ -705,12 +841,14 @@ fn desktop_app_destination() -> Option<PathBuf> {
 
 fn restart_orbit(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
+    disarm_runtime_reset(&runtime);
     stop_owned_child(&runtime);
     app.restart();
 }
 
 fn quit_orbit(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
+    disarm_runtime_reset(&runtime);
     if let Ok(mut quitting) = runtime.quitting.lock() {
         *quitting = true;
     };
@@ -866,6 +1004,8 @@ struct TrayMenuItems {
     update: MenuItem<Wry>,
     provider: MenuItem<Wry>,
     retry_provider: MenuItem<Wry>,
+    install_runtime: MenuItem<Wry>,
+    reset_runtime: MenuItem<Wry>,
 }
 
 impl TrayMenuItems {
@@ -935,6 +1075,30 @@ impl TrayMenuItems {
                         | ProviderRuntimeState::Stopping
                 ))
                 .build(app)?,
+            install_runtime: MenuItemBuilder::with_id(
+                INSTALL_RUNTIME_MENU_ID,
+                "Install Local Runtime",
+            )
+            .enabled(
+                runtime
+                    .provider_state
+                    .lock()
+                    .ok()
+                    .is_some_and(|state| install_runtime_enabled(&state)),
+            )
+            .build(app)?,
+            reset_runtime: MenuItemBuilder::with_id(RESET_RUNTIME_MENU_ID, "Reset Local Runtime…")
+                .enabled(reset_runtime_enabled(
+                    has_owned_profile(&PathBuf::from(
+                        std::env::var("HOME").unwrap_or_else(|_| ".".into()),
+                    )),
+                    runtime
+                        .provider_attempt
+                        .lock()
+                        .ok()
+                        .is_some_and(|attempt| *attempt),
+                ))
+                .build(app)?,
         })
     }
 
@@ -972,6 +1136,27 @@ impl TrayMenuItems {
         let _ = self.provider.set_text(provider_label(&provider));
         let retry_enabled = provider_retry_enabled(&provider);
         let _ = self.retry_provider.set_enabled(retry_enabled);
+        let _ = self
+            .install_runtime
+            .set_enabled(install_runtime_enabled(&provider));
+        let _ = self.reset_runtime.set_enabled(reset_runtime_enabled(
+            has_owned_profile(&PathBuf::from(
+                std::env::var("HOME").unwrap_or_else(|_| ".".into()),
+            )),
+            runtime
+                .provider_attempt
+                .lock()
+                .ok()
+                .is_some_and(|attempt| *attempt),
+        ));
+        let armed = runtime.reset_confirmation.lock().ok().is_some_and(|state| {
+            state
+                .as_ref()
+                .is_some_and(|(_, expires)| *expires > Instant::now())
+        });
+        let _ = self.reset_runtime.set_text(reset_confirmation_label(
+            armed.then_some(ResetConfirmation::Armed),
+        ));
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
             let _ = item.set_text(granted_node_label(node, ip_row_layout));
@@ -1106,6 +1291,8 @@ fn build_tray_menu(
         .separator()
         .text(REFRESH_MENU_ID, "Refresh")
         .item(&items.retry_provider)
+        .item(&items.install_runtime)
+        .item(&items.reset_runtime)
         .text(RESTART_MENU_ID, restart_orbit_label())
         .text(QUIT_MENU_ID, quit_orbit_label())
         .build()?;

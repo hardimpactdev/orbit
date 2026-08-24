@@ -1105,11 +1105,8 @@ only supported Linux host platform for roles in v1. The `gateway`, `vpn`,
 `router`, `app-prod`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and
 `analytics` role drivers support Ubuntu only; `app-dev` and `database` support
 Ubuntu and macOS. macOS role support applies to adopted/self-managed workload
-nodes and requires a reachable Docker-compatible container provider: Orbit uses
-an already-working Docker provider first and recommends Colima (`brew install
-docker colima`, `colima start --runtime docker`) when none is reachable, while
-OrbStack and Docker Desktop remain compatible when already installed and
-licensed/allowed for the user's context. Managed-host provisioning through
+nodes. Desktop owns the Colima `orbit` profile and Agent lifecycle on macOS.
+Install and reset are explicit tray actions. Managed-host provisioning through
 `node:new` templates remains Ubuntu-only. See [Architecture: Node
 roles](architecture.md#node-roles) for the driver concept and [Node Concepts:
 Role Platform Support](domains/1_node/node-concepts.md#role-platform-support) for
@@ -1141,3 +1138,14 @@ install and `gateway:add` populates it. Non-gateway machines do not have a local
 `nodes` table or a self-row.
 
 Platform-specific behavior — installing packages, writing config files, controlling services — lives behind handlers and services, so the rest of Orbit doesn't branch on OS.
+## macOS Runtime
+
+Desktop waits for the owned Colima Docker socket before starting Agent. Closing
+the dashboard hides it and preserves the runtime. Restart and Restart-to-Update
+preserve Colima. Quit stops Agent, then only the owned `orbit` profile; a stop
+failure keeps the app open. Reset requires ready ownership and two clicks, then
+removes only that profile and its data. The first profile uses 50 percent of
+logical CPU and memory with Colima's upstream disk default; later starts omit
+resource flags. Desktop uses an explicit socket and never changes Docker
+context. OrbStack is isolated, and Linux uses direct Docker Engine with no
+Linux Colima lane.
