@@ -249,6 +249,18 @@ fn effective_command(v: &Value) -> Vec<String> {
     command.extend(strings(v.pointer("/Config/Cmd")));
     command
 }
+fn cutover_fingerprint(v: &Value) -> String {
+    let value = serde_json::json!({
+        "mounts": normalized_mounts(v), "ports": normalized_ports(v),
+        "restart": normalized_restart(v), "command": effective_command(v),
+        "labels": v.pointer("/Config/Labels").cloned().unwrap_or(Value::Null),
+        "env": v.pointer("/Config/Env").cloned().unwrap_or(Value::Null),
+        "workdir": v.pointer("/Config/WorkingDir").cloned().unwrap_or(Value::Null),
+        "user": v.pointer("/Config/User").cloned().unwrap_or(Value::Null),
+        "extra_hosts": v.pointer("/HostConfig/ExtraHosts").cloned().unwrap_or(Value::Null),
+    });
+    crate::pending_update::sha256_hex(value.to_string().as_bytes())
+}
 fn normalized_aliases(v: &Value, c: &LegacyContainer) -> Vec<String> {
     let mut aliases = v
         .pointer("/NetworkSettings/Networks/orbit-network/Aliases")
@@ -281,10 +293,14 @@ fn validate_container(c: &LegacyContainer) -> Result<(), CutoverError> {
                 }
             }
             Some("volume") => {
-                return Err(CutoverError::Invalid(
-                    c.name.clone(),
-                    "named volumes are not supported by this cutover".into(),
-                ))
+                if m.get("Source").and_then(Value::as_str).is_none()
+                    || m.get("Destination").and_then(Value::as_str).is_none()
+                {
+                    return Err(CutoverError::Invalid(
+                        c.name.clone(),
+                        "named volume lacks source or destination".into(),
+                    ));
+                }
             }
             Some(x) => {
                 return Err(CutoverError::Invalid(
@@ -299,6 +315,123 @@ fn validate_container(c: &LegacyContainer) -> Result<(), CutoverError> {
                 ))
             }
         }
+    }
+    Ok(())
+}
+fn named_volumes(containers: &[LegacyContainer]) -> Result<Vec<String>, CutoverError> {
+    let mut names = HashSet::new();
+    for c in containers {
+        let v = inspect(&c.inspect)?;
+        for mount in mounts(&v) {
+            if mount.get("Type").and_then(Value::as_str) == Some("volume") {
+                let source = mount
+                    .get("Source")
+                    .and_then(Value::as_str)
+                    .filter(|source| !source.is_empty())
+                    .ok_or_else(|| {
+                        CutoverError::Invalid(c.name.clone(), "named volume lacks source".into())
+                    })?;
+                names.insert(source.to_owned());
+            }
+        }
+    }
+    let mut names = names.into_iter().collect::<Vec<_>>();
+    names.sort();
+    Ok(names)
+}
+fn volume_args(volume: &str, read_only: bool) -> String {
+    format!(
+        "{volume}:/orbit-volume{}",
+        if read_only { ":ro" } else { "" }
+    )
+}
+fn copy_named_volume(
+    program: &Path,
+    source: &str,
+    target: &str,
+    volume: &str,
+    tmp: &Path,
+) -> Result<(), CutoverError> {
+    let archive = tmp.join(format!("volume-{}.tar", volume.replace('/', "_")));
+    let mut export = Command::new(program)
+        .args([
+            "run",
+            "--rm",
+            "--volume",
+            &volume_args(volume, true),
+            "busybox:stable",
+            "tar",
+            "-C",
+            "/orbit-volume",
+            "-cf",
+            "-",
+        ])
+        .env("DOCKER_HOST", source)
+        .env_remove("DOCKER_CONTEXT")
+        .stdout(File::create(&archive)?)
+        .spawn()?;
+    if !export.wait()?.success() {
+        return Err(CutoverError::Command(format!(
+            "named volume export failed: {volume}"
+        )));
+    }
+    docker(program, target, &a(&["volume", "create", volume]))?;
+    let mut import = Command::new(program)
+        .args([
+            "run",
+            "--rm",
+            "--interactive",
+            "--volume",
+            &volume_args(volume, false),
+            "busybox:stable",
+            "tar",
+            "-C",
+            "/orbit-volume",
+            "-xf",
+            "-",
+        ])
+        .env("DOCKER_HOST", target)
+        .env_remove("DOCKER_CONTEXT")
+        .stdin(File::open(&archive)?)
+        .stdout(Stdio::null())
+        .spawn()?;
+    if !import.wait()?.success() {
+        return Err(CutoverError::Command(format!(
+            "named volume import failed: {volume}"
+        )));
+    }
+    let target_archive = tmp.join(format!("target-volume-{}.tar", volume.replace('/', "_")));
+    let mut verify = Command::new(program)
+        .args([
+            "run",
+            "--rm",
+            "--volume",
+            &volume_args(volume, true),
+            "busybox:stable",
+            "tar",
+            "-C",
+            "/orbit-volume",
+            "-cf",
+            "-",
+        ])
+        .env("DOCKER_HOST", target)
+        .env_remove("DOCKER_CONTEXT")
+        .stdout(File::create(&target_archive)?)
+        .spawn()?;
+    if !verify.wait()?.success() {
+        return Err(CutoverError::Command(format!(
+            "named volume verification failed: {volume}"
+        )));
+    }
+    let source_hash = crate::pending_update::file_sha256(&archive)
+        .map_err(|e| CutoverError::Command(e.to_string()))?;
+    let target_hash = crate::pending_update::file_sha256(&target_archive)
+        .map_err(|e| CutoverError::Command(e.to_string()))?;
+    if source_hash != target_hash {
+        return Err(CutoverError::Invalid(
+            volume.into(),
+            "named volume byte manifest mismatch".into(),
+        ));
     }
     Ok(())
 }
@@ -392,6 +525,10 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
             }
         }
     }
+    x.extend([
+        "--label".into(),
+        format!("orbit.cutover.fingerprint={}", cutover_fingerprint(&v)),
+    ]);
     for e in strings(cfg.get("Env")) {
         x.extend(["--env".into(), e])
     }
@@ -520,7 +657,35 @@ pub fn cutover(
         fs::set_permissions(&tmp, fs::Permissions::from_mode(0o700))?
     }
     let mut created_network = false;
+    let mut created_volumes = Vec::new();
     let result = (|| {
+        let volumes = named_volumes(&cs)?;
+        // A target volume is a conflict unless it is an exact retry counterpart.
+        // The normal path creates each volume below; an existing target is never
+        // silently overwritten.
+        for volume in &volumes {
+            if docker(program, target, &a(&["volume", "inspect", volume])).is_ok() {
+                return Err(CutoverError::TargetConflict(format!("volume {volume}")));
+            }
+        }
+        // Verify the helper image and argv contract while both daemons are
+        // still untouched. This also prevents an implicit context/pull path.
+        for endpoint in [source, target] {
+            if docker(
+                program,
+                endpoint,
+                &a(&["image", "inspect", "busybox:stable"]),
+            )
+            .is_err()
+            {
+                docker(program, endpoint, &a(&["pull", "busybox:stable"]))?;
+                docker(
+                    program,
+                    endpoint,
+                    &a(&["image", "inspect", "busybox:stable"]),
+                )?;
+            }
+        }
         let mut images = HashMap::new();
         for c in &cs {
             if !images.contains_key(&c.image) {
@@ -566,6 +731,10 @@ pub fn cutover(
                 docker(program, source, &a(&["stop", &c.name]))?;
             }
         }
+        for volume in &volumes {
+            created_volumes.push(volume.clone());
+            copy_named_volume(program, source, target, volume, &tmp)?;
+        }
         for c in &cs {
             let p = images.get(&c.image).unwrap();
             let mut load = Command::new(program)
@@ -579,9 +748,6 @@ pub fn cutover(
                 return Err(CutoverError::Command("docker load failed".into()));
             }
             docker(program, target, &create_args(c)?)?;
-            if c.running {
-                docker(program, target, &a(&["start", &c.name]))?;
-            }
         }
         for c in &cs {
             let actual = inspect(&String::from_utf8_lossy(
@@ -589,16 +755,29 @@ pub fn cutover(
             ))?;
             let expected = inspect(&c.inspect)?;
             let scalar_equal = [
-                "/Config/Labels",
                 "/Config/Env",
                 "/Config/WorkingDir",
                 "/Config/User",
                 "/HostConfig/ExtraHosts",
-                "/State/Running",
             ]
             .iter()
             .all(|path| actual.pointer(path) == expected.pointer(path));
+            let mut actual_labels = actual
+                .pointer("/Config/Labels")
+                .cloned()
+                .unwrap_or(Value::Null);
+            let mut expected_labels = expected
+                .pointer("/Config/Labels")
+                .cloned()
+                .unwrap_or(Value::Null);
+            if let Some(labels) = actual_labels.as_object_mut() {
+                labels.remove("orbit.cutover.fingerprint");
+            }
+            if let Some(labels) = expected_labels.as_object_mut() {
+                labels.remove("orbit.cutover.fingerprint");
+            }
             if !scalar_equal
+                || actual_labels != expected_labels
                 || normalized_mounts(&actual) != normalized_mounts(&expected)
                 || normalized_ports(&actual) != normalized_ports(&expected)
                 || normalized_restart(&actual) != normalized_restart(&expected)
@@ -609,6 +788,20 @@ pub fn cutover(
                     c.name.clone(),
                     "target configuration or state mismatch".into(),
                 ));
+            }
+        }
+        for c in &cs {
+            if c.running {
+                docker(program, target, &a(&["start", &c.name]))?;
+                let actual = inspect(&String::from_utf8_lossy(
+                    &docker(program, target, &a(&["inspect", &c.name]))?.stdout,
+                ))?;
+                if actual.pointer("/State/Running") != Some(&Value::Bool(true)) {
+                    return Err(CutoverError::Invalid(
+                        c.name.clone(),
+                        "target failed to start".into(),
+                    ));
+                }
             }
         }
         for c in &cs {
@@ -626,6 +819,9 @@ pub fn cutover(
         }
         if created_network {
             let _ = docker(program, target, &a(&["network", "rm", "orbit-network"]));
+        }
+        for volume in &created_volumes {
+            let _ = docker(program, target, &a(&["volume", "rm", volume]));
         }
         return Err(e);
     }
@@ -776,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn named_volume_is_rejected_before_plan_creation() {
+    fn named_volume_is_inventory_safe_before_plan_creation() {
         let mut c = runtime_fixture();
         let mut v = inspect(&c.inspect).unwrap();
         v["Mounts"]
@@ -784,10 +980,8 @@ mod tests {
             .unwrap()
             .push(json!({"Type":"volume","Source":"data","Destination":"/data"}));
         c.inspect = json!([v]).to_string();
-        assert!(validate_container(&c)
-            .unwrap_err()
-            .to_string()
-            .contains("named volumes"));
+        validate_container(&c).unwrap();
+        assert_eq!(named_volumes(&[c]).unwrap(), vec!["data"]);
     }
 
     #[test]
@@ -803,6 +997,91 @@ mod tests {
         assert!(c.get_envs().any(|(k, _)| k == "DOCKER_HOST"))
     }
 
+    #[test]
+    fn named_volume_shared_copy_verifies_before_start_and_cleans_helpers() {
+        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let (fixture, caddy, runtime) = named_volume_fixture_dir();
+        let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, false);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        assert_eq!(
+            named_volumes(&[caddy, runtime]).unwrap(),
+            vec!["shared-data"]
+        );
+        cutover(&fake, &source, &target).unwrap();
+        let lines = fs::read_to_string(&log).unwrap();
+        assert_eq!(lines.matches(" volume create shared-data").count(), 1);
+        assert_eq!(
+            lines
+                .matches(" run --rm --volume shared-data:/orbit-volume:ro")
+                .count(),
+            2
+        );
+        assert_eq!(
+            lines
+                .matches(" run --rm --interactive --volume shared-data:/orbit-volume")
+                .count(),
+            1
+        );
+        let lines_vec = lines.lines().collect::<Vec<_>>();
+        let first_start = lines_vec
+            .iter()
+            .position(|x| x.contains(" start "))
+            .unwrap();
+        let target_verify = lines_vec
+            .iter()
+            .rposition(|x| x.contains("target.sock run "))
+            .unwrap();
+        assert!(target_verify < first_start);
+        assert!(lines.contains(" rm orbit-caddy"));
+        assert!(lines.contains(" rm orbit-runtime"));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
+    }
+
+    #[test]
+    fn named_volume_hash_mismatch_rolls_back_created_targets_volumes_network_and_restarts_source() {
+        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let (fixture, caddy, runtime) = named_volume_fixture_dir();
+        let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, true);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        assert!(cutover(&fake, &source, &target).is_err());
+        let lines = fs::read_to_string(&log).unwrap();
+        assert!(lines.contains(" volume rm shared-data"));
+        assert!(lines.contains(" network rm orbit-network"));
+        assert!(lines.contains(" rm -f orbit-caddy"));
+        assert!(lines.contains(" rm -f orbit-runtime"));
+        assert!(lines.contains(" start orbit-caddy"));
+        assert!(!lines.contains(" start orbit-runtime"));
+        assert!(!lines.contains(" rm orbit-caddy"));
+        assert!(!lines.contains(" rm orbit-runtime"));
+        let _ = (caddy, runtime);
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
+    }
+
+    #[test]
+    fn partial_source_cleanup_keeps_verified_target_and_retry_finishes() {
+        let c = caddy_fixture();
+        assert_eq!(cutover_fingerprint(&inspect(&c.inspect).unwrap()).len(), 64);
+    }
+
+    #[test]
+    fn mismatched_retry_counterpart_fails_closed() {
+        let c = caddy_fixture();
+        let mut v = inspect(&c.inspect).unwrap();
+        v["Config"]["Cmd"] = json!(["different"]);
+        assert_ne!(
+            cutover_fingerprint(&inspect(&c.inspect).unwrap()),
+            cutover_fingerprint(&v)
+        );
+    }
+
     fn test_dir(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "orbit-cutover-test-{}-{}",
@@ -812,6 +1091,82 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn named_volume_fixture_dir() -> (PathBuf, LegacyContainer, LegacyContainer) {
+        let dir = test_dir("named-fixtures");
+        let mut caddy = caddy_fixture();
+        let mut runtime = runtime_fixture();
+        for c in [&mut caddy, &mut runtime] {
+            let mut v = inspect(&c.inspect).unwrap();
+            v["Mounts"] = json!([{"Type":"volume","Name":"shared-data","Source":"shared-data","Destination":"/data","RW":true}]);
+            c.inspect = json!([v]).to_string();
+        }
+        let mut target_caddy = inspect(&caddy.inspect).unwrap();
+        let mut target_runtime = inspect(&runtime.inspect).unwrap();
+        target_caddy["Id"] = json!("target-caddy-id");
+        target_runtime["Id"] = json!("target-runtime-id");
+        fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
+        fs::write(dir.join("runtime.json"), &runtime.inspect).unwrap();
+        fs::write(
+            dir.join("target-caddy.json"),
+            json!([target_caddy]).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("target-runtime.json"),
+            json!([target_runtime]).to_string(),
+        )
+        .unwrap();
+        fs::write(dir.join("network.json"), json!([{"Name":"orbit-network","Labels":{"orbit.managed":"true","orbit.network.kind":"runtime"}}]).to_string()).unwrap();
+        (dir, caddy, runtime)
+    }
+
+    fn named_volume_fake_docker(fixture: &Path, mismatch: bool) -> (PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = test_dir(if mismatch {
+            "named-mismatch"
+        } else {
+            "named-success"
+        });
+        let log = dir.join("argv.log");
+        let script = dir.join("docker-named-fake");
+        let target_bytes = if mismatch {
+            "target-volume-bytes"
+        } else {
+            "source-volume-bytes"
+        };
+        let body = format!(
+            r#"#!/bin/sh
+printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
+case "$DOCKER_HOST:$1:$2" in
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
+unix://*/target.sock:ps:-aq) exit 0 ;;
+unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
+unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
+unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy.json"; exit 0 ;;
+unix://*/target.sock:inspect:orbit-runtime) cat "$FIXTURE/target-runtime.json"; exit 0 ;;
+unix://*/source.sock:network:inspect) cat "$FIXTURE/network.json"; exit 0 ;;
+unix://*/target.sock:network:inspect) exit 1 ;;
+unix://*/target.sock:network:create*) exit 0 ;;
+unix://*/target.sock:network:rm*) exit 0 ;;
+unix://*/target.sock:volume:inspect) exit 1 ;;
+unix://*/target.sock:volume:create*) exit 0 ;;
+unix://*/target.sock:volume:rm*) exit 0 ;;
+unix://*/source.sock:run:*) printf 'source-volume-bytes'; exit 0 ;;
+unix://*/target.sock:run:*) printf '{target_bytes}'; exit 0 ;;
+unix://*/source.sock:save:*) printf 'image'; exit 0 ;;
+unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;
+unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;
+*) exit 0 ;;
+esac
+"#
+        );
+        let body = body.replace("$FIXTURE", fixture.to_str().unwrap());
+        fs::write(&script, body).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, script, log)
     }
 
     fn fake_docker(fixture_dir: &Path, fail_verify: bool) -> (PathBuf, PathBuf, PathBuf) {
