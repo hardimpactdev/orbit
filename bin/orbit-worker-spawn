@@ -115,7 +115,15 @@ try {
         ],
         $defaults,
     );
-    $commandString = orbit_worker_command_string($command);
+    $launchCommand = array_merge(
+        [
+            'env',
+            'ORBIT_WORKER_ID='.$id,
+            'ORBIT_WORKER_ROLE='.$role,
+        ],
+        $defaults,
+    );
+    $commandString = orbit_worker_command_string($launchCommand);
     $created = orbit_tmux_run([
         'new-window',
         '-d',
@@ -129,6 +137,11 @@ try {
         'ORBIT_WORKER_ID='.$id,
         '-e',
         'ORBIT_WORKER_ROLE='.$role,
+        ...(
+            is_string($path) && $path !== ''
+                ? ['-e', 'PATH='.$path]
+                : []
+        ),
     ]);
 
     if ($created['exit'] !== 0) {

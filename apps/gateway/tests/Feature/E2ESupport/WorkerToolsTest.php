@@ -930,6 +930,49 @@ it('sends the spawn bootstrap after the fake CLI is running', function (): void 
     });
 });
 
+it('sends the spawn command intact when PATH is longer than the tmux input boundary', function (): void {
+    worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin): void {
+        file_put_contents(
+            $fakeBin.'/grok',
+            data: "#!/usr/bin/env bash\nprintf 'grok-fake-ready\\n'\nprintf 'worker-path:%s\\n' \"\$PATH\"\nexec cat\n",
+        );
+
+        $brief = worker_tools_write_brief($fixture['worktree']);
+        $longPath =
+            $fakeBin
+            .PATH_SEPARATOR
+            .str_repeat('/very-long-worker-path'.PATH_SEPARATOR, 20)
+            .(getenv('PATH') ?: '/usr/bin:/bin');
+        $process = worker_tools_run(
+            'orbit-worker-spawn',
+            [
+                '--role=impl',
+                '--cli=grok',
+                "--brief={$brief}",
+                '--name=impl-long-path',
+                '--ready-delay=8',
+            ],
+            $fixture['worktree'],
+            $socket,
+            $fakeBin,
+            20,
+            $longPath,
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $logPath = $fixture['worktree'].'/.orbit/workers/logs/impl-long-path.log';
+        $seen = worker_tools_wait_for(function () use ($logPath): bool {
+            $log = is_file($logPath) ? (string) file_get_contents($logPath) : '';
+
+            return str_contains($log, 'grok-fake-ready') && str_contains($log, 'worker-path:');
+        }, 12);
+
+        expect($seen)->toBeTrue((string) file_get_contents($logPath));
+    });
+});
+
 it('retries bootstrap submit for a delayed interactive CLI', function (string $cli): void {
     worker_tools_with_session(function (array $fixture, string $socket, string $fakeBin) use ($cli): void {
         file_put_contents(
@@ -2017,11 +2060,12 @@ function worker_tools_run(
     string $socket,
     string $fakeBin,
     int $timeout = 30,
+    ?string $path = null,
 ): Process {
     $process = new Process(
         [PHP_BINARY, repo_path('bin/'.$script), ...$args],
         $cwd,
-        worker_tools_env($socket, $fakeBin),
+        worker_tools_env($socket, $fakeBin, $path),
     );
     $process->setTimeout($timeout);
     $process->run();
@@ -2032,11 +2076,11 @@ function worker_tools_run(
 /**
  * @return array<string, string|false>
  */
-function worker_tools_env(string $socket, string $fakeBin): array
+function worker_tools_env(string $socket, string $fakeBin, ?string $path = null): array
 {
     $env = getenv();
     $env['ORBIT_TMUX_SOCKET'] = $socket;
-    $env['PATH'] = $fakeBin.PATH_SEPARATOR.($env['PATH'] ?? '/usr/bin:/bin');
+    $env['PATH'] = $path ?? $fakeBin.PATH_SEPARATOR.($env['PATH'] ?? '/usr/bin:/bin');
     $env['TMUX'] = false;
     $env['TMUX_PANE'] = false;
     $home = dirname($fakeBin).'-home';
