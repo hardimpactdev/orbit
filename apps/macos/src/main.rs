@@ -249,11 +249,13 @@ fn watch_child_crashes(app: AppHandle) {
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(250));
         let runtime = app.state::<DesktopRuntime>();
-        if watcher_should_exit(
+        match watcher_action(
             runtime.quitting.lock().map(|flag| *flag).unwrap_or(false),
             runtime.explicit_exit.load(Ordering::Acquire),
         ) {
-            return;
+            WatcherAction::Exit => return,
+            WatcherAction::Pause => continue,
+            WatcherAction::Work => {}
         }
 
         let exited = runtime.child.lock().ok().and_then(|mut child| {
@@ -471,7 +473,7 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
     let app = app.clone();
     thread::spawn(move || loop {
         let runtime = app.state::<DesktopRuntime>();
-        if watcher_should_exit(
+        match watcher_action(
             runtime
                 .quitting
                 .lock()
@@ -479,7 +481,12 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
                 .unwrap_or(true),
             runtime.explicit_exit.load(Ordering::Acquire),
         ) {
-            break;
+            WatcherAction::Exit => break,
+            WatcherAction::Pause => {
+                thread::sleep(Duration::from_millis(500));
+                continue;
+            }
+            WatcherAction::Work => {}
         }
 
         if reconcile_restart_ready_handoff(&runtime) {
@@ -496,8 +503,21 @@ fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<Tr
     });
 }
 
-fn watcher_should_exit(_quitting: bool, explicit_exit: bool) -> bool {
-    explicit_exit
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WatcherAction {
+    Work,
+    Pause,
+    Exit,
+}
+
+fn watcher_action(quitting: bool, explicit_exit: bool) -> WatcherAction {
+    if explicit_exit {
+        WatcherAction::Exit
+    } else if quitting {
+        WatcherAction::Pause
+    } else {
+        WatcherAction::Work
+    }
 }
 
 fn restart_to_update_if_ready(app: &AppHandle) {
@@ -633,9 +653,6 @@ fn quit_orbit(app: &AppHandle, menu_items: &Arc<Mutex<TrayMenuItems>>) {
         Err(error) => {
             if let Ok(mut quitting) = runtime.quitting.lock() {
                 *quitting = false;
-            }
-            if let Ok(mut conflict) = runtime.conflict_reason.lock() {
-                *conflict = Some(format!("Quit failed: {}", error.0));
             }
             if let Ok(mut failure) = runtime.quit_failure.lock() {
                 *failure = Some(format!("Quit failed: {}", error.0));
@@ -812,6 +829,21 @@ fn update_menu_presentation(update: &UpdateState) -> (String, bool) {
     (label, matches!(update, UpdateState::RestartReady { .. }))
 }
 
+fn agent_menu_presentation(
+    agent: AgentRunState,
+    conflict: Option<&str>,
+    quit_failure: Option<&str>,
+    status: &str,
+) -> (&'static str, String) {
+    if let Some(failure) = quit_failure {
+        return ("Agent: Quit failed", failure.to_string());
+    }
+    (
+        agent_status_label(agent),
+        conflict.map_or_else(|| status.to_string(), str::to_string),
+    )
+}
+
 impl TrayMenuItems {
     fn new(app: &AppHandle, state: &MenuState, runtime: &DesktopRuntime) -> tauri::Result<Self> {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
@@ -836,21 +868,15 @@ impl TrayMenuItems {
             .lock()
             .ok()
             .and_then(|reason| reason.clone());
+        let (agent_label, status_label) = agent_menu_presentation(
+            agent,
+            conflict.as_deref(),
+            quit_failure.as_deref(),
+            &state.status.label(),
+        );
         Ok(Self {
-            agent_status: disabled_menu_item(
-                app,
-                AGENT_STATUS_MENU_ID,
-                quit_failure
-                    .as_ref()
-                    .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
-            )?,
-            status: disabled_menu_item(
-                app,
-                STATUS_MENU_ID,
-                quit_failure
-                    .or(conflict)
-                    .unwrap_or_else(|| state.status.label().to_string()),
-            )?,
+            agent_status: disabled_menu_item(app, AGENT_STATUS_MENU_ID, agent_label)?,
+            status: disabled_menu_item(app, STATUS_MENU_ID, status_label)?,
             node_ip: disabled_menu_item(
                 app,
                 NODE_IP_MENU_ID,
@@ -887,16 +913,14 @@ impl TrayMenuItems {
             .lock()
             .ok()
             .and_then(|reason| reason.clone());
-        let _ = self.agent_status.set_text(
-            quit_failure
-                .as_deref()
-                .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
+        let (agent_label, status_label) = agent_menu_presentation(
+            agent,
+            conflict.as_deref(),
+            quit_failure.as_deref(),
+            &state.status.label(),
         );
-        let _ = self.status.set_text(
-            quit_failure
-                .or(conflict)
-                .unwrap_or_else(|| state.status.label().to_string()),
-        );
+        let _ = self.agent_status.set_text(agent_label);
+        let _ = self.status.set_text(status_label);
         let _ = self
             .node_ip
             .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_layout));
@@ -1630,17 +1654,44 @@ mod tests {
 
     #[test]
     fn failed_quit_keeps_watchers_alive_until_explicit_exit() {
-        assert!(!watcher_should_exit(true, false));
-        assert!(watcher_should_exit(true, true));
+        assert_eq!(watcher_action(false, false), WatcherAction::Work);
+        assert_eq!(watcher_action(true, false), WatcherAction::Pause);
+        assert_eq!(watcher_action(true, true), WatcherAction::Exit);
     }
 
     #[test]
     fn ordinary_conflicts_do_not_use_quit_failure_presentation() {
-        let source = include_str!("main.rs");
-        assert!(source.contains("quit_failure: Mutex<Option<String>>"));
-        assert!(source.contains("let quit_failure = runtime.quit_failure"));
-        assert!(source.contains("*failure = None;"));
-        assert!(source.contains("*failure = Some(format!(\"Quit failed: {}\", error.0))"));
+        assert_eq!(
+            agent_menu_presentation(
+                AgentRunState::Conflict,
+                Some("legacy conflict"),
+                None,
+                "Connected"
+            ),
+            ("Agent: Conflict", "legacy conflict".to_string())
+        );
+        assert_eq!(
+            agent_menu_presentation(
+                AgentRunState::Running,
+                Some("legacy conflict"),
+                Some("Quit failed: stuck"),
+                "Connected"
+            ),
+            ("Agent: Quit failed", "Quit failed: stuck".to_string())
+        );
+        assert_eq!(
+            agent_menu_presentation(
+                AgentRunState::Conflict,
+                Some("legacy conflict"),
+                None,
+                "Connected"
+            ),
+            ("Agent: Conflict", "legacy conflict".to_string())
+        );
+        assert_eq!(
+            agent_menu_presentation(AgentRunState::Running, None, None, "Connected"),
+            ("Agent: Running", "Connected".to_string())
+        );
     }
 
     #[test]
