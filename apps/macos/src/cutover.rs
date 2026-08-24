@@ -83,13 +83,11 @@ fn strings(v: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 fn normalized_env(v: &Value) -> Result<Vec<(String, String)>, String> {
-    let entries = v
-        .pointer("/Config/Env")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "missing or empty Config.Env".to_owned())?;
-    if entries.is_empty() {
-        return Err("missing or empty Config.Env".to_owned());
-    }
+    let entries = match v.pointer("/Config/Env") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(entries)) => entries,
+        Some(_) => return Err("Config.Env must be an array when present".to_owned()),
+    };
     let mut normalized = Vec::with_capacity(entries.len());
     let mut names = HashSet::with_capacity(entries.len());
     for entry in entries {
@@ -1257,9 +1255,37 @@ mod tests {
     }
 
     #[test]
+    fn missing_null_and_empty_environments_are_equivalent() {
+        for source in [
+            json!({}),
+            json!({"Config":{}}),
+            json!({"Config":{"Env":null}}),
+            json!({"Config":{"Env":[]}}),
+        ] {
+            for target in [
+                json!({}),
+                json!({"Config":{}}),
+                json!({"Config":{"Env":null}}),
+                json!({"Config":{"Env":[]}}),
+            ] {
+                assert_eq!(
+                    normalized_env(&source).unwrap(),
+                    Vec::<(String, String)>::new()
+                );
+                assert_eq!(
+                    normalized_env(&target).unwrap(),
+                    Vec::<(String, String)>::new()
+                );
+                assert!(env_matches(&source, &target));
+            }
+        }
+    }
+
+    #[test]
     fn malformed_environment_never_matches_and_source_validation_rejects_it() {
         for env in [
-            json!([]),
+            json!(true),
+            json!([false]),
             json!(["NO_SEPARATOR"]),
             json!(["=empty-name"]),
             json!(["DUPLICATE=one", "DUPLICATE=two"]),
@@ -1276,6 +1302,17 @@ mod tests {
             valid["Config"]["Env"] = json!(["DUPLICATE=one"]);
             assert!(!env_matches(&inspect(&c.inspect).unwrap(), &valid));
         }
+    }
+
+    #[test]
+    fn environment_semantics_require_exact_names_and_values() {
+        let source = json!({"Config":{"Env":["ALPHA=one", "BETA=two"]}});
+        let missing_name = json!({"Config":{"Env":["ALPHA=one"]}});
+        let extra_name = json!({"Config":{"Env":["ALPHA=one", "BETA=two", "GAMMA=three"]}});
+        let wrong_value = json!({"Config":{"Env":["ALPHA=one", "BETA=changed"]}});
+        assert!(!env_matches(&source, &missing_name));
+        assert!(!env_matches(&source, &extra_name));
+        assert!(!env_matches(&source, &wrong_value));
     }
 
     #[test]
@@ -1311,6 +1348,17 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (fixture, caddy, runtime) = named_volume_fixture_dir();
         let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, false);
+        let source_runtime = inspect(&runtime.inspect).unwrap();
+        let target_runtime =
+            inspect(&fs::read_to_string(fixture.join("target-runtime.json")).unwrap()).unwrap();
+        assert_ne!(
+            source_runtime["Config"]["Env"],
+            target_runtime["Config"]["Env"]
+        );
+        assert_eq!(
+            normalized_env(&source_runtime).unwrap(),
+            normalized_env(&target_runtime).unwrap()
+        );
         std::env::set_var("LOG", &log);
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
@@ -1366,6 +1414,7 @@ mod tests {
             .rposition(|x| x.contains("target.sock run "))
             .unwrap();
         assert!(target_verify < first_start);
+        assert!(lines.contains("target.sock inspect orbit-runtime"));
         assert!(lines.contains(" rm orbit-caddy"));
         assert!(lines.contains(" rm orbit-runtime"));
         std::env::remove_var("LOG");
@@ -1503,6 +1552,69 @@ mod tests {
         std::env::remove_var("FIXTURE");
     }
 
+    #[test]
+    fn malformed_source_environment_fails_before_any_mutation() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (fixture, _caddy, runtime) = named_volume_fixture_dir();
+        let mut invalid_runtime = inspect(&runtime.inspect).unwrap();
+        invalid_runtime["Config"]["Env"] = json!(["BROKEN"]);
+        fs::write(
+            fixture.join("runtime.json"),
+            json!([invalid_runtime]).to_string(),
+        )
+        .unwrap();
+        let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, false);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let error = cutover(&fake, &source, &target).unwrap_err();
+        assert!(matches!(error, CutoverError::Invalid(name, _) if name == "orbit-runtime"));
+        let lines = fs::read_to_string(&log).unwrap();
+        assert!(!lines.contains(" stop "));
+        assert!(!lines.contains(" volume create "));
+        assert!(!lines.contains(" network create "));
+        assert!(!lines.contains(" create --name "));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
+    }
+
+    #[test]
+    fn malformed_target_environment_rejects_retry_counterpart() {
+        let fixture = test_dir("retry-malformed-target-env");
+        let mut runtime = inspect(&runtime_fixture().inspect).unwrap();
+        runtime["Config"]["Labels"]["orbit.cutover.fingerprint"] =
+            json!(cutover_fingerprint(&runtime));
+        runtime["Config"]["Env"] = json!(true);
+        fs::write(
+            fixture.join("target-runtime.json"),
+            json!([runtime]).to_string(),
+        )
+        .unwrap();
+        let script = fixture.join("docker");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\ncase \"$DOCKER_HOST:$1:$2\" in\nunix://target:inspect:orbit-runtime) cat \"{}/target-runtime.json\"; exit 0 ;;\n*) exit 1 ;;\nesac\n",
+                fixture.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!exact_retry_counterpart(
+            &script,
+            "unix://target",
+            &LegacyContainer {
+                name: "orbit-runtime".into(),
+                ..runtime_fixture()
+            }
+        )
+        .unwrap());
+    }
+
     fn test_dir(label: &str) -> PathBuf {
         // macOS resolves the system temp directory to a long `/var/folders/...`
         // path. Keep Unix-socket fixtures below the platform SUN_LEN limit.
@@ -1536,6 +1648,10 @@ mod tests {
         }
         target_caddy["Id"] = json!("caddy-id");
         target_runtime["Id"] = json!("runtime-id");
+        target_runtime["Config"]["Env"] = json!([
+            "ORBIT_SOURCE_PATH=/Users/nckrtl/orbit/src",
+            "ORBIT_HOST_PATH=/Users/nckrtl/orbit"
+        ]);
         fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
         fs::write(dir.join("runtime.json"), &runtime.inspect).unwrap();
         fs::write(
@@ -1592,6 +1708,13 @@ esac
 "#
         .to_string();
         let body = body.replace("$FIXTURE", fixture.to_str().unwrap());
+        assert!(!body.contains("$FIXTURE"));
+        assert!(body.contains("cat \""));
+        assert!(body.contains("target-runtime.json"));
+        assert!(
+            body.contains("unix://*/target.sock:inspect:orbit-runtime) cat \"")
+                && body.contains("/target-runtime.json\"; exit 0 ;;")
+        );
         fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
         fs::write(fixture.join("target.tar"), tar_fixture(true, mismatch)).unwrap();
         fs::write(&script, body).unwrap();
