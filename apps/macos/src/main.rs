@@ -27,7 +27,7 @@ use orbit_macos::pending_update::{
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
     spawn_supervised_agent, stop_supervised_agent, AgentRunState, CrashAction,
-    DEFAULT_CHILD_CRASH_WINDOW, DEFAULT_MAX_CHILD_CRASH_RESTARTS,
+    DEFAULT_CHILD_CRASH_COOLDOWN, DEFAULT_CHILD_CRASH_WINDOW, DEFAULT_MAX_CHILD_CRASH_RESTARTS,
 };
 use orbit_macos::tray_labels::{
     launch_at_login_checked, launch_at_login_label, quit_orbit_label, restart_orbit_label,
@@ -100,6 +100,7 @@ struct DesktopRuntime {
     child: Mutex<Option<Child>>,
     agent_state: Mutex<AgentRunState>,
     crash_times: Mutex<Vec<Instant>>,
+    watcher_started: Mutex<bool>,
     update_state: Mutex<UpdateState>,
     launch_at_login: Mutex<LaunchAtLoginState>,
     conflict_reason: Mutex<Option<String>>,
@@ -116,6 +117,7 @@ impl DesktopRuntime {
             child: Mutex::new(None),
             agent_state: Mutex::new(AgentRunState::Stopped),
             crash_times: Mutex::new(Vec::new()),
+            watcher_started: Mutex::new(false),
             update_state: Mutex::new(UpdateState::Idle),
             launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
             conflict_reason: Mutex::new(None),
@@ -273,7 +275,10 @@ fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) -> bool {
         .ok()
         .and_then(|value| value.clone());
     if let Some(endpoint) = endpoint {
-        let started = spawn_or_mark_missing(app, runtime, &home, endpoint);
+        let started = spawn_or_mark_missing(runtime, &home, endpoint);
+        if started {
+            ensure_child_watcher(app, runtime);
+        }
         if !started {
             if let Ok(mut endpoint) = runtime.docker_host.lock() {
                 *endpoint = None;
@@ -567,12 +572,7 @@ fn start_provider_health_monitor(app: AppHandle, endpoint: String) {
     });
 }
 
-fn spawn_or_mark_missing(
-    app: &AppHandle,
-    runtime: &DesktopRuntime,
-    home: &Path,
-    docker_host: String,
-) -> bool {
+fn spawn_or_mark_missing(runtime: &DesktopRuntime, home: &Path, docker_host: String) -> bool {
     let override_bin = std::env::var_os("ORBIT_AGENT_BIN").map(PathBuf::from);
     let Some(binary) = resolve_agent_binary(home, override_bin.as_deref()) else {
         if let Ok(mut agent_state) = runtime.agent_state.lock() {
@@ -594,7 +594,6 @@ fn spawn_or_mark_missing(
             if let Ok(mut agent_state) = runtime.agent_state.lock() {
                 *agent_state = AgentRunState::Running;
             }
-            watch_child_crashes(app.clone());
             true
         }
         Err(_) => {
@@ -604,6 +603,17 @@ fn spawn_or_mark_missing(
             false
         }
     }
+}
+
+fn ensure_child_watcher(app: &AppHandle, runtime: &DesktopRuntime) {
+    let Ok(mut started) = runtime.watcher_started.lock() else {
+        return;
+    };
+    if *started {
+        return;
+    }
+    *started = true;
+    watch_child_crashes(app.clone());
 }
 
 fn watch_child_crashes(app: AppHandle) {
@@ -655,16 +665,16 @@ fn watch_child_crashes(app: AppHandle) {
                     .map(|state| state.clone())
                     .unwrap_or(ProviderRuntimeState::Starting);
                 if let Some(endpoint) = agent_restart_endpoint(endpoint.as_deref(), &state) {
-                    spawn_or_mark_missing(&app, &runtime, &home, endpoint);
+                    spawn_or_mark_missing(&runtime, &home, endpoint);
                 } else if let Ok(mut state) = runtime.agent_state.lock() {
                     *state = AgentRunState::Stopped;
                 }
             }
-            CrashAction::StayStopped => {
+            CrashAction::Cooldown => {
                 if let Ok(mut agent_state) = runtime.agent_state.lock() {
-                    *agent_state = AgentRunState::Stopped;
+                    *agent_state = AgentRunState::Cooldown;
                 }
-                return;
+                thread::sleep(DEFAULT_CHILD_CRASH_COOLDOWN);
             }
         }
     });
@@ -937,7 +947,9 @@ fn install_ready_update(app: &AppHandle) {
             .ok()
             .and_then(|value| value.clone());
         if let Some(endpoint) = endpoint {
-            spawn_or_mark_missing(app, &runtime, &home, endpoint);
+            if spawn_or_mark_missing(&runtime, &home, endpoint) {
+                ensure_child_watcher(app, &runtime);
+            }
         }
     }
 }

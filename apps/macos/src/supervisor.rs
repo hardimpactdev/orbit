@@ -6,19 +6,21 @@ use std::time::{Duration, Instant};
 
 pub const DEFAULT_MAX_CHILD_CRASH_RESTARTS: u32 = 3;
 pub const DEFAULT_CHILD_CRASH_WINDOW: Duration = Duration::from_secs(60);
+pub const DEFAULT_CHILD_CRASH_COOLDOWN: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentRunState {
     Starting,
     Running,
     Stopped,
+    Cooldown,
     Conflict,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrashAction {
     Restart,
-    StayStopped,
+    Cooldown,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +104,7 @@ pub fn crash_action(
         .count();
 
     if recent >= max_restarts as usize {
-        CrashAction::StayStopped
+        CrashAction::Cooldown
     } else {
         CrashAction::Restart
     }
@@ -113,6 +115,7 @@ pub fn agent_status_label(state: AgentRunState) -> &'static str {
         AgentRunState::Starting => "Agent: Starting",
         AgentRunState::Running => "Agent: Running",
         AgentRunState::Stopped => "Agent: Stopped",
+        AgentRunState::Cooldown => "Agent: Cooling down",
         AgentRunState::Conflict => "Agent: Conflict",
     }
 }
@@ -166,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_restarts_stop_after_repeated_crashes() {
+    fn bounded_restarts_enter_cooldown_after_repeated_crashes() {
         let now = Instant::now();
         let history = vec![
             now - Duration::from_secs(3),
@@ -176,7 +179,7 @@ mod tests {
 
         assert_eq!(
             crash_action(&history, now, 3, Duration::from_secs(60)),
-            CrashAction::StayStopped
+            CrashAction::Cooldown
         );
         assert_eq!(
             crash_action(&history[..1], now, 3, Duration::from_secs(60)),
