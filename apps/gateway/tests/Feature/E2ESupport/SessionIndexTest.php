@@ -24,8 +24,7 @@ it('retains schema 4 slice identity in the session index', function (): void {
         $write = run_session_index($sessionsDir, ['--write']);
         expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
         $record = session_index_record(session_index_json($sessionsDir), 'schema-four-slices');
-        expect($record['candidate_commit'])->toBe($tip)
-            ->and($record['archive_mode'])->toBe('compact');
+        expect($record['candidate_commit'])->toBe($tip)->and($record['archive_mode'])->toBe('compact');
     } finally {
         session_index_remove($workspace);
     }
@@ -37,15 +36,22 @@ it('rejects a schema 4 receipt with a missing slice', function (): void {
     try {
         unlink($fixture['archive'].'/slices/01-example.md');
         expect(compact_archive_receipt_is_valid($fixture['archive'], $fixture['repo'], 'feature'))->toBeFalse();
-    } finally { session_index_remove($workspace); }
+    } finally {
+        session_index_remove($workspace);
+    }
 });
 it('rejects a schema 4 receipt with an extra slice', function (): void {
     $fixture = session_index_schema4_fixture('extra-schema4-slice');
     $workspace = $fixture['workspace'];
     try {
-        file_put_contents($fixture['archive'].'/slices/02-extra.md', file_get_contents($fixture['archive'].'/slices/01-example.md'));
+        file_put_contents(
+            $fixture['archive'].'/slices/02-extra.md',
+            file_get_contents($fixture['archive'].'/slices/01-example.md'),
+        );
         expect(compact_archive_receipt_is_valid($fixture['archive'], $fixture['repo'], 'feature'))->toBeFalse();
-    } finally { session_index_remove($workspace); }
+    } finally {
+        session_index_remove($workspace);
+    }
 });
 it('rejects a schema 4 slice digest mismatch', function (): void {
     $fixture = session_index_schema4_fixture('digest-schema4-slice');
@@ -55,26 +61,34 @@ it('rejects a schema 4 slice digest mismatch', function (): void {
         $receipt['entry_digests']['slices/01-example.md'] = str_repeat('b', 64);
         session_index_write_receipt($fixture['archive'], $receipt);
         expect(compact_archive_receipt_is_valid($fixture['archive'], $fixture['repo'], 'feature'))->toBeFalse();
-    } finally { session_index_remove($workspace); }
+    } finally {
+        session_index_remove($workspace);
+    }
 });
 it('rejects schema 4 loop index drift', function (): void {
     $fixture = session_index_schema4_fixture('drift-schema4-loop');
     $workspace = $fixture['workspace'];
     try {
-        $loop = str_replace('.orbit/slices/01-example.md', '.orbit/slices/02-drift.md', file_get_contents($fixture['archive'].'/loop.md'));
+        $loop = str_replace(
+            '.orbit/slices/01-example.md',
+            '.orbit/slices/02-drift.md',
+            file_get_contents($fixture['archive'].'/loop.md'),
+        );
         file_put_contents($fixture['archive'].'/loop.md', $loop);
         $receipt = $fixture['receipt'];
         $receipt['entry_digests']['loop.md'] = hash('sha256', $loop);
         session_index_write_receipt($fixture['archive'], $receipt);
         expect(compact_archive_receipt_is_valid($fixture['archive'], $fixture['repo'], 'feature'))->toBeFalse();
-    } finally { session_index_remove($workspace); }
+    } finally {
+        session_index_remove($workspace);
+    }
 });
 it('keeps historical compact receipts without slices readable', function (int $schema): void {
     $fixture = session_index_schema4_fixture('legacy-schema-'.$schema);
     try {
         $loop = preg_replace('/\n## Slices\n.*$/s', '', file_get_contents($fixture['archive'].'/loop.md'));
         file_put_contents($fixture['archive'].'/loop.md', $loop);
-        (new Symfony\Component\Filesystem\Filesystem())->remove($fixture['archive'].'/slices');
+        new Symfony\Component\Filesystem\Filesystem()->remove($fixture['archive'].'/slices');
         $receipt = $fixture['receipt'];
         $receipt['schema_version'] = $schema;
         $receipt['copied_entries'] = ['loop.md'];
@@ -85,7 +99,9 @@ it('keeps historical compact receipts without slices readable', function (int $s
         expect($write->getExitCode())->toBe(0);
         $record = session_index_record(session_index_json($fixture['sessionsDir']), 'legacy-schema-'.$schema);
         expect($record['candidate_commit'])->toBe($fixture['tip'])->and($record['archive_mode'])->toBe('compact');
-    } finally { session_index_remove($fixture['workspace']); }
+    } finally {
+        session_index_remove($fixture['workspace']);
+    }
 })->with([2, 3]);
 
 it('indexes compact loop receipts alongside historical archives', function (): void {
@@ -1923,26 +1939,53 @@ function session_index_schema4_fixture(string $suffix): array
     $sessionsDir = "{$workspace}/sessions";
     $repo = "{$workspace}/repo";
     mkdir($repo, recursive: true);
-    foreach ([['init', '--initial-branch=main'], ['config', 'user.email', 'orbit@example.test'], ['config', 'user.name', 'Orbit Test']] as $command) {
-        (new Process(['git', ...$command], $repo))->mustRun();
+    foreach ([
+        ['init',   '--initial-branch=main'],
+        ['config', 'user.email',            'orbit@example.test'],
+        ['config', 'user.name',             'Orbit Test'],
+    ] as $command) {
+        new Process(['git', ...$command], $repo)->mustRun();
     }
     file_put_contents($repo.'/README.md', "fixture\n");
-    (new Process(['git', 'add', 'README.md'], $repo))->mustRun();
-    (new Process(['git', 'commit', '-m', 'initial'], $repo))->mustRun();
-    (new Process(['git', 'checkout', '-b', 'feature'], $repo))->mustRun();
+    new Process(['git', 'add', 'README.md'], $repo)->mustRun();
+    new Process(['git', 'commit', '-m', 'initial'], $repo)->mustRun();
+    new Process(['git', 'checkout', '-b', 'feature'], $repo)->mustRun();
     file_put_contents($repo.'/feature.txt', "feature\n");
-    (new Process(['git', 'add', 'feature.txt'], $repo))->mustRun();
-    (new Process(['git', 'commit', '-m', 'feature'], $repo))->mustRun();
-    $tip = trim((new Process(['git', 'rev-parse', 'HEAD'], $repo))->mustRun()->getOutput());
+    new Process(['git', 'add', 'feature.txt'], $repo)->mustRun();
+    new Process(['git', 'commit', '-m', 'feature'], $repo)->mustRun();
+    $tip = trim(new Process(['git', 'rev-parse', 'HEAD'], $repo)->mustRun()->getOutput());
     $archive = "{$sessionsDir}/2026-07-10-180010-{$suffix}";
     mkdir($archive.'/slices', recursive: true);
-    $mainTip = trim((new Process(['git', 'rev-parse', 'main'], $repo))->mustRun()->getOutput());
-    $loop = str_replace(['a'.str_repeat('a', 39), 'b'.str_repeat('b', 39)], [$tip, $mainTip], session_index_compact_loop());
-    $loop = str_replace('# Orbit Feature Loop', "# Orbit Feature Loop\n\n- Worktree: {$repo}\n- Branch: feature", $loop);
+    $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+    $loop = str_replace(
+        ['a'.str_repeat('a', 39), 'b'.str_repeat('b', 39)],
+        [$tip, $mainTip],
+        session_index_compact_loop(),
+    );
+    $loop = str_replace(
+        '# Orbit Feature Loop',
+        "# Orbit Feature Loop\n\n- Worktree: {$repo}\n- Branch: feature",
+        $loop,
+    );
     $loop .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | complete | {$tip} |\n";
     file_put_contents($archive.'/loop.md', $loop);
-    file_put_contents($archive.'/slices/01-example.md', "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: archive\n- Excluded: handoffs\n\n## Authority\n- Decisions: archive\n- Product docs: archive\n\n## Proof\n- Focused: index\n");
-    $receipt = ['schema_version' => 4, 'archive_mode' => 'compact', 'branch' => 'feature', 'candidate_commit' => $tip, 'accepted_feature_tip' => $tip, 'accepted_main_tip' => trim((new Process(['git', 'rev-parse', 'main'], $repo))->mustRun()->getOutput()), 'copied_entries' => ['loop.md', 'slices/01-example.md'], 'entry_digests' => ['loop.md' => hash_file('sha256', $archive.'/loop.md'), 'slices/01-example.md' => hash_file('sha256', $archive.'/slices/01-example.md')]];
+    file_put_contents(
+        $archive.'/slices/01-example.md',
+        "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: archive\n- Excluded: handoffs\n\n## Authority\n- Decisions: archive\n- Product docs: archive\n\n## Proof\n- Focused: index\n",
+    );
+    $receipt = [
+        'schema_version' => 4,
+        'archive_mode' => 'compact',
+        'branch' => 'feature',
+        'candidate_commit' => $tip,
+        'accepted_feature_tip' => $tip,
+        'accepted_main_tip' => trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput()),
+        'copied_entries' => ['loop.md', 'slices/01-example.md'],
+        'entry_digests' => [
+            'loop.md' => hash_file('sha256', $archive.'/loop.md'),
+            'slices/01-example.md' => hash_file('sha256', $archive.'/slices/01-example.md'),
+        ],
+    ];
     session_index_write_receipt($archive, $receipt);
 
     return compact('workspace', 'sessionsDir', 'repo', 'archive', 'tip', 'receipt');

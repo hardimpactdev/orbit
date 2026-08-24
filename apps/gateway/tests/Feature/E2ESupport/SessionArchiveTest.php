@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use Symfony\Component\Process\Process;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 
 it('archives indexed slice packets in schema 4 with digests', function (): void {
     $workspace = session_archive_workspace('schema-four-slices');
@@ -12,19 +12,27 @@ it('archives indexed slice packets in schema 4 with digests', function (): void 
         $paths = session_archive_paths($workspace);
         session_archive_prepare_accepted_feature($paths);
         $process = run_session_archive([
-            "--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}",
-            '--timestamp=2026-07-10-180001', '--slug=schema-four-slices', "--cwd={$paths['cwd']}",
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180001',
+            '--slug=schema-four-slices',
+            "--cwd={$paths['cwd']}",
         ], full: false);
         $summary = session_archive_summary($process);
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($summary['schema_version'])->toBe(4)
-            ->and($summary['copied_entries'])->toContain('slices/01-example.md')
-            ->and($summary['copied_entries'])->not->toContain('slice-handoffs')
-            ->and($summary['copied_entries'])->not->toContain('handoffs')
-            ->and($summary['entry_digests']['slices/01-example.md'])
-            ->toBe(hash_file('sha256', $summary['archive_dir'].'/slices/01-example.md'));
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($summary['schema_version'])
+            ->toBe(4)
+            ->and($summary['copied_entries'])
+            ->toContain('slices/01-example.md')
+            ->and($summary['copied_entries'])
+            ->not->toContain('slice-handoffs')->and($summary['copied_entries'])
+            ->not->toContain('handoffs')->and($summary['entry_digests']['slices/01-example.md'])->toBe(hash_file(
+                'sha256',
+                $summary['archive_dir'].'/slices/01-example.md',
+            ));
     } finally {
-        (new Filesystem())->remove($workspace);
+        new Filesystem()->remove($workspace);
     }
 });
 
@@ -35,14 +43,20 @@ it('blocks an archive with a missing indexed packet', function (): void {
         session_archive_prepare_accepted_feature($paths);
         unlink($paths['sourceOrbitDir'].'/slices/01-example.md');
         $process = run_session_archive([
-            "--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}",
-            '--timestamp=2026-07-10-180002', '--slug=missing-indexed-slice', "--cwd={$paths['cwd']}",
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180002',
+            '--slug=missing-indexed-slice',
+            "--cwd={$paths['cwd']}",
         ], full: false);
-        expect($process->getExitCode())->toBe(2)
-            ->and($process->getErrorOutput())->toContain('.orbit/slices/01-example.md')
-            ->and(session_archive_directories($paths['archiveRoot']))->toBe([]);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('.orbit/slices/01-example.md')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
     } finally {
-        (new Filesystem())->remove($workspace);
+        new Filesystem()->remove($workspace);
     }
 });
 it('blocks an archive with an unindexed ordinary packet', function (): void {
@@ -51,9 +65,22 @@ it('blocks an archive with an unindexed ordinary packet', function (): void {
         $paths = session_archive_paths($workspace);
         session_archive_prepare_accepted_feature($paths);
         copy($paths['sourceOrbitDir'].'/slices/01-example.md', $paths['sourceOrbitDir'].'/slices/02-extra.md');
-        $process = run_session_archive(["--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}", '--timestamp=2026-07-10-180003', '--slug=unindexed-extra-slice', "--cwd={$paths['cwd']}"], full: false);
-        expect($process->getExitCode())->toBe(2)->and($process->getErrorOutput())->toContain('02-extra.md')->and(session_archive_directories($paths['archiveRoot']))->toBe([]);
-    } finally { (new Filesystem())->remove($workspace); }
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180003',
+            '--slug=unindexed-extra-slice',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('02-extra.md')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        new Filesystem()->remove($workspace);
+    }
 });
 it('blocks an archive with an unindexed dotfile packet', function (): void {
     $workspace = session_archive_workspace('unindexed-hidden-slice');
@@ -61,9 +88,22 @@ it('blocks an archive with an unindexed dotfile packet', function (): void {
         $paths = session_archive_paths($workspace);
         session_archive_prepare_accepted_feature($paths);
         copy($paths['sourceOrbitDir'].'/slices/01-example.md', $paths['sourceOrbitDir'].'/slices/.hidden.md');
-        $process = run_session_archive(["--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}", '--timestamp=2026-07-10-180004', '--slug=unindexed-hidden-slice', "--cwd={$paths['cwd']}"], full: false);
-        expect($process->getExitCode())->toBe(2)->and($process->getErrorOutput())->toContain('.hidden.md')->and(session_archive_directories($paths['archiveRoot']))->toBe([]);
-    } finally { (new Filesystem())->remove($workspace); }
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180004',
+            '--slug=unindexed-hidden-slice',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('.hidden.md')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        new Filesystem()->remove($workspace);
+    }
 });
 it('blocks an archive with an indexed symlink packet', function (): void {
     $workspace = session_archive_workspace('symlink-indexed-slice');
@@ -74,16 +114,35 @@ it('blocks an archive with an indexed symlink packet', function (): void {
         file_put_contents($outside, file_get_contents($paths['sourceOrbitDir'].'/slices/01-example.md'));
         unlink($paths['sourceOrbitDir'].'/slices/01-example.md');
         symlink($outside, $paths['sourceOrbitDir'].'/slices/01-example.md');
-        $process = run_session_archive(["--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}", '--timestamp=2026-07-10-180005', '--slug=symlink-indexed-slice', "--cwd={$paths['cwd']}"], full: false);
-        expect($process->getExitCode())->toBe(2)->and($process->getErrorOutput())->toContain('.orbit/slices/01-example.md')->and(session_archive_directories($paths['archiveRoot']))->toBe([]);
-    } finally { (new Filesystem())->remove($workspace); }
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180005',
+            '--slug=symlink-indexed-slice',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('.orbit/slices/01-example.md')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        new Filesystem()->remove($workspace);
+    }
 });
 it('rejects immutable refresh slice drift', function (): void {
     $workspace = session_archive_workspace('immutable-slice-drift');
     try {
         $paths = session_archive_paths($workspace);
         session_archive_prepare_accepted_feature($paths);
-        $args = ["--source-orbit-dir={$paths['sourceOrbitDir']}", "--archive-root={$paths['archiveRoot']}", '--timestamp=2026-07-10-180006', '--slug=immutable-slice-drift', "--cwd={$paths['cwd']}" ];
+        $args = [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180006',
+            '--slug=immutable-slice-drift',
+            "--cwd={$paths['cwd']}",
+        ];
         $first = run_session_archive($args, full: false);
         expect($first->getExitCode())->toBe(0, $first->getErrorOutput());
         $summary = session_archive_summary($first);
@@ -93,12 +152,18 @@ it('rejects immutable refresh slice drift', function (): void {
         $sliceBefore = file_get_contents($archive.'/slices/01-example.md');
         copy($archive.'/slices/01-example.md', $archive.'/slices/02-extra.md');
         $second = run_session_archive($args, full: false);
-        expect($second->getExitCode())->toBe(2)
-            ->and($second->getErrorOutput())->toContain('Schema-4 refresh slice entry set changed')
-            ->and(file_get_contents($archive.'/orbit-session-archive.json'))->toBe($receiptBefore)
-            ->and(file_get_contents($archive.'/slices/01-example.md'))->toBe($sliceBefore);
+        expect($second->getExitCode())
+            ->toBe(2)
+            ->and($second->getErrorOutput())
+            ->toContain('Schema-4 refresh slice entry set changed')
+            ->and(file_get_contents($archive.'/orbit-session-archive.json'))
+            ->toBe($receiptBefore)
+            ->and(file_get_contents($archive.'/slices/01-example.md'))
+            ->toBe($sliceBefore);
         expect($archive.'/slices/02-extra.md')->toBeFile();
-    } finally { (new Filesystem())->remove($workspace); }
+    } finally {
+        new Filesystem()->remove($workspace);
+    }
 });
 
 it('session archive stores a compact receipt by default', function (): void {
@@ -652,7 +717,10 @@ it('binds a compact receipt to the branch and accepted candidate identity', func
             - Events: .orbit/feedback.jsonl
             MARKDOWN);
         mkdir($paths['sourceOrbitDir'].'/slices', recursive: true);
-        file_put_contents($paths['sourceOrbitDir'].'/slices/01-example.md', "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: identity\n- Excluded: handoffs\n\n## Authority\n- Decisions: identity\n- Product docs: identity\n\n## Proof\n- Focused: identity\n");
+        file_put_contents(
+            $paths['sourceOrbitDir'].'/slices/01-example.md',
+            "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: identity\n- Excluded: handoffs\n\n## Authority\n- Decisions: identity\n- Product docs: identity\n\n## Proof\n- Focused: identity\n",
+        );
         $git(['checkout', 'main']);
         $git(['merge', '--no-ff', '--no-edit', 'feature']);
         $git(['checkout', 'feature']);
@@ -1692,7 +1760,10 @@ function session_archive_prepare_accepted_feature(array $paths, bool $land = tru
         - Events: .orbit/feedback.jsonl
         MARKDOWN);
     mkdir($paths['sourceOrbitDir'].'/slices', recursive: true);
-    file_put_contents($paths['sourceOrbitDir'].'/slices/01-example.md', "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: archive\n- Excluded: handoffs\n\n## Authority\n- Decisions: archive\n- Product docs: archive\n\n## Proof\n- Focused: archive\n");
+    file_put_contents(
+        $paths['sourceOrbitDir'].'/slices/01-example.md',
+        "# Orbit Feature Slice\n\n- Slice: 01-example\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: archive\n- Excluded: handoffs\n\n## Authority\n- Decisions: archive\n- Product docs: archive\n\n## Proof\n- Focused: archive\n",
+    );
 
     if ($land) {
         session_archive_git($paths['cwd'], ['checkout', 'main']);

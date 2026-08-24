@@ -301,6 +301,36 @@ function proof_receipt_fixture(string $changedPath, string $contents): string
     proof_receipt_git($workspace, ['add', $changedPath]);
     proof_receipt_git($workspace, ['commit', '-m', 'Candidate']);
     mkdir("{$workspace}/.orbit", recursive: true);
+    mkdir("{$workspace}/.orbit/slices", recursive: true);
+    file_put_contents("{$workspace}/.orbit/slices/01-example.md", <<<MARKDOWN
+        # Orbit Feature Slice
+
+        - Slice: 01-example
+        - Depends on: none
+
+        ## Outcome
+
+        Proof receipt fixture.
+
+        ## Scope
+
+        - Included:
+          - fixture
+        - Excluded:
+          - none
+
+        ## Authority
+
+        - Decisions:
+          - fixture contract
+        - Product docs:
+          - fixture contract
+
+        ## Proof
+
+        - Focused:
+          - proof receipt test
+        MARKDOWN);
 
     return $workspace;
 }
@@ -408,6 +438,12 @@ function proof_receipt_write_loop(string $workspace, string $candidate, string $
         - Owned: fixture
         - Constraints: none
         - Out of scope: none
+
+        ## Slices
+
+        | Slice | State | Checkpoint |
+        | --- | --- | --- |
+        | `.orbit/slices/01-example.md` | complete | {$candidate} |
 
         ## Proof
 
