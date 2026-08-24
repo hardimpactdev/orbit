@@ -1,0 +1,33 @@
+{
+    "id": "caller-fanout-general-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=caller-fanout-general-review",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/home/nckrtl/.vite-plus/bin:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.codex/tmp/arg0/codex-arg0x1INEV:/home/nckrtl/.vite-plus/js_runtime/node/24.19.0/bin:/home/nckrtl/.local/bin:/home/nckrtl/.grok/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nckrtl/.npm-global/bin:/home/nckrtl/.local/bin:/home/nckrtl/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-update-all-caller-node",
+        "window": "caller-fanout-general-review",
+        "pane_id": "%31",
+        "pane_pid": 177200,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-update-all-caller-node",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-update-all-caller-node/.orbit/workers/briefs/general-review.md",
+    "status": "spawned",
+    "heartbeat_at": "2026-08-24T05:25:22Z",
+    "note": "",
+    "started_at": "2026-08-24T05:25:22Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": null
+}

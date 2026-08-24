@@ -1,0 +1,31 @@
+{
+    "id": "impl-caller-node",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-caller-node",
+        "ORBIT_WORKER_ROLE=impl",
+        "PATH=/home/nckrtl/.vite-plus/bin:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.codex/tmp/arg0/codex-arg0x1INEV:/home/nckrtl/.vite-plus/js_runtime/node/24.19.0/bin:/home/nckrtl/.local/bin:/home/nckrtl/.grok/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nckrtl/.npm-global/bin:/home/nckrtl/.local/bin:/home/nckrtl/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-update-all-caller-node",
+        "window": "impl-caller-node",
+        "pane_id": "%27",
+        "pane_pid": 2788534,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-update-all-caller-node",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-update-all-caller-node/.orbit/workers/briefs/impl.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-24T02:04:04Z",
+    "note": "Candidate 9e5d097100bd committed and quality-check passed; proof receipt refuses because Verification.runtime is not applicable for diff venue retained-incus",
+    "started_at": "2026-08-24T01:49:43Z",
+    "exited_at": "2026-08-24T05:25:48Z",
+    "provider_ref": null,
+    "handoff": null
+}

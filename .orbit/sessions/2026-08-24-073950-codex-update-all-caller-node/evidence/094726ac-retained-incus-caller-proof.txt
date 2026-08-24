@@ -1,0 +1,66 @@
+Candidate: 094726ac48bf35a8ee04e715603e8f64c5d2d348
+Base main: bdcccfb125203b732871b9a3151a5b131ca7ae0b
+Venue: retained-incus
+Topology: dev-b54280 (operator_gateway_agent)
+Host: beast (strict temporary localhost-only SSH shim)
+Captured: 2026-08-24
+
+Exact-source identity
+---------------------
+The candidate source is mounted at /home/orbit/orbit-run in each retained VM
+and at /srv/orbit in the isolated TLS lease container. The aggregate SHA-256
+of the eight changed tracked files was identical in the feature worktree and
+all three VMs:
+
+37a410ae99ef93ff99e9bc4afb5ae9b76959d5a931184884068b63457c83f7af
+
+Agent bootstrap
+---------------
+The supported ProvisioningAgentInstaller installed the live-test candidate
+Agent on agent-1 and reported:
+
+exit_code: 0
+stdout: artifact OK; agent-ready
+
+Caller fan-out proof
+--------------------
+An update:all OperationRun was created in the exact-source TLS lease container
+with caller_node_id=4 (agent-1). The immutable plan resolved the live-test
+topology candidate manifest. The exact candidate services returned:
+
+operation_run_id: fd8e5aae-e324-42d7-aae4-5dbfd0e94fec
+caller_node_name: agent-1
+selector_targets: [agent-1, operator-1]
+progress_targets: [gateway, local, agent-1, operator-1]
+
+workload_results:
+- agent-1: completed
+- operator-1: skipped before mutation (orbit_agent_not_running)
+
+This proves that the registered caller remains a normal workload target and
+that the distinct caller-local CLI target remains in the progress plan. It
+also proves that an unreachable node is skipped without stopping the workload
+fan-out.
+
+Installed caller artifacts
+--------------------------
+CLI:
+- version: 0.1.196
+- build_id: 20260824T013207Z-017504f46
+- sha256: bfb64af79bd33217fc554d9bf7489c576e2d7276af43d729a46b161e65f90003
+- operation_run_id: fd8e5aae-e324-42d7-aae4-5dbfd0e94fec
+
+Agent:
+- version: 0.1.196
+- build_id: 20260824T013207Z-017504f46
+- sha256: bbf91b61dbe881b8719da7292f967abb99791f057a1f48d3cfc4db23e6d2a843
+- operation_run_id: fd8e5aae-e324-42d7-aae4-5dbfd0e94fec
+
+Post-install checks on agent-1
+------------------------------
+orbit-agent.service: active, enabled
+Agent command endpoint: HTTP 405 for GET (ready; POST-only endpoint)
+Installed Agent SHA-256: bbf91b61dbe881b8719da7292f967abb99791f057a1f48d3cfc4db23e6d2a843
+Installed CLI SHA-256: bfb64af79bd33217fc554d9bf7489c576e2d7276af43d729a46b161e65f90003
+
+No composer test:e2e* lane was run.

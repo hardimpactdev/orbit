@@ -1,0 +1,38 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-24T05:39:50+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-update-all-caller-node/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-08-24-073950-codex-update-all-caller-node",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-24T050839Z-ece7479f1908.json",
+        "evidence/094726ac-retained-incus-caller-proof.txt",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-24T051144Z-5227bc42828b.json",
+        "slices/01-caller-workload-fanout.md",
+        "workers/caller-fanout-general-review.json",
+        "workers/impl-caller-node.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-24T050839Z-ece7479f1908.json": "959996c2f56ff7d94685e3ea09fcb8a7133ba5506d9349bf4cfc91355cd57329",
+        "evidence/094726ac-retained-incus-caller-proof.txt": "b11223a3e2d53784ec6f18afc6785e1c8e5c35f3c7f3c8f6354cee1d47f48ef4",
+        "loop.md": "4035e504c847f1df1f0746c34fe72151a0979dd824b41467d43faa6bacf78201",
+        "quality-gates/quality-check-2026-08-24T051144Z-5227bc42828b.json": "ff45008ba3a4bc0c4e337fb677f1550c5b4bc44174099f58e1ac88fe8b6e1740",
+        "slices/01-caller-workload-fanout.md": "482c2160c28a72ecb95f61dc36fc413eb910f9e9a1d50318becd641bd60c1034",
+        "workers/caller-fanout-general-review.json": "971ffc7283ff7ddda842c88088f5aba07d2847b50d46d447056af2cea4f9869d",
+        "workers/impl-caller-node.json": "b248ddf897b11be3f46b37c2542b0fb9d346d2066452088f05f041228310d0ee"
+    },
+    "slug": "codex-update-all-caller-node",
+    "requested_slug": "codex-update-all-caller-node",
+    "compatible_slugs": [
+        "codex-update-all-caller-node"
+    ],
+    "branch": "codex/update-all-caller-node",
+    "candidate_commit": "094726ac48bf35a8ee04e715603e8f64c5d2d348",
+    "accepted_feature_tip": "094726ac48bf35a8ee04e715603e8f64c5d2d348",
+    "accepted_main_tip": "bdcccfb125203b732871b9a3151a5b131ca7ae0b",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
