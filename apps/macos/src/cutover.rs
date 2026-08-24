@@ -353,7 +353,7 @@ fn volume_args(volume: &str, read_only: bool) -> String {
     )
 }
 fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
-    if bytes.len() < 1024 || bytes.len() % 512 != 0 {
+    if bytes.len() < 1024 || !bytes.len().is_multiple_of(512) {
         return Err(CutoverError::Invalid(
             "volume".into(),
             "malformed tar stream".into(),
@@ -366,18 +366,14 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
     while offset + 512 <= bytes.len() {
         let header = &bytes[offset..offset + 512];
         if header.iter().all(|byte| *byte == 0) {
-            if offset + 1024 > bytes.len()
-                || bytes[offset + 512..offset + 1024]
-                    .iter()
-                    .any(|byte| *byte != 0)
-            {
+            if offset + 1024 > bytes.len() || bytes[offset + 512..].iter().any(|byte| *byte != 0) {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
                     "malformed tar trailer".into(),
                 ));
             }
-            output.extend_from_slice(&bytes[offset..]);
-            return if root_removed && records > 0 {
+            output.extend_from_slice(&[0; 1024]);
+            return if root_removed {
                 Ok(output)
             } else {
                 Err(CutoverError::Invalid(
@@ -422,7 +418,8 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             .and_then(|x| x.checked_div(512))
             .and_then(|x| x.checked_mul(512))
             .ok_or_else(|| CutoverError::Invalid("volume".into(), "tar size overflow".into()))?
-            as usize;
+            .try_into()
+            .map_err(|_| CutoverError::Invalid("volume".into(), "tar size overflow".into()))?;
         let end = offset
             .checked_add(512)
             .and_then(|x| x.checked_add(padded))
@@ -818,17 +815,13 @@ fn exact_retry_counterpart(
         && effective_command(&actual) == effective_command(&expected))
 }
 fn retry_volume_matches(program: &Path, target: &str, source: &str, volume: &str) -> bool {
-    let source =
-        match volume_manifest(program, source, volume).and_then(|bytes| tar_manifest(&bytes)) {
-            Ok(manifest) => manifest,
-            Err(_) => return false,
-        };
-    let target =
-        match volume_manifest(program, target, volume).and_then(|bytes| tar_manifest(&bytes)) {
-            Ok(manifest) => manifest,
-            Err(_) => return false,
-        };
-    source == target
+    let source = volume_manifest(program, source, volume)
+        .and_then(|bytes| tar_manifest(&bytes))
+        .ok();
+    let target = volume_manifest(program, target, volume)
+        .and_then(|bytes| tar_manifest(&bytes))
+        .ok();
+    matches!((source, target), (Some(source), Some(target)) if source == target)
 }
 fn save_image(program: &Path, source: &str, image: &str, path: &Path) -> Result<(), CutoverError> {
     let mut child = Command::new(program)
@@ -1269,7 +1262,7 @@ mod tests {
             lines
                 .matches(" run --rm --volume shared-data:/orbit-volume:ro")
                 .count(),
-            4
+            2
         );
         assert_eq!(
             lines
@@ -1470,13 +1463,7 @@ mod tests {
         });
         let log = dir.join("argv.log");
         let script = dir.join("docker-named-fake");
-        let target_bytes = if mismatch {
-            "target-volume-bytes"
-        } else {
-            "source-volume-bytes"
-        };
-        let body = format!(
-            r#"#!/bin/sh
+        let body = r#"#!/bin/sh
 printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
 case "$*" in
   *" tar -C /orbit-volume -cf - .") ;;
@@ -1497,18 +1484,20 @@ unix://*/target.sock:network:rm*) exit 0 ;;
 unix://*/target.sock:volume:inspect) exit 1 ;;
 unix://*/target.sock:volume:create*) touch "$FIXTURE/retry-state"; exit 0 ;;
 unix://*/target.sock:volume:rm*) exit 0 ;;
-unix://*/source.sock:run:*) printf 'source-volume-bytes'; exit 0 ;;
-unix://*/target.sock:run:*) printf '{target_bytes}'; exit 0 ;;
+unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
+unix://*/target.sock:run:*) cat "$FIXTURE/{}"; exit 0 ;;
 unix://*/source.sock:save:*) printf 'image'; exit 0 ;;
 unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;
 unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;
 *) exit 0 ;;
 esac
 "#
-        );
+        .to_string();
         let body = body
             .replace("$FIXTURE", fixture.to_str().unwrap())
-            .replace("{target_bytes}", target_bytes);
+            .replace("{}", if mismatch { "target.tar" } else { "source.tar" });
+        fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
+        fs::write(fixture.join("target.tar"), tar_fixture(true, mismatch)).unwrap();
         fs::write(&script, body).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
         (dir, script, log)
@@ -1566,10 +1555,10 @@ unix://*/target.sock:volume:inspect)
   if [ -f "$FIXTURE/volume-state" ]; then exit 0; else exit 1; fi ;;
 unix://*/target.sock:volume:create*) touch "$FIXTURE/volume-state"; exit 0 ;;
 unix://*/target.sock:volume:rm*) exit 0 ;;
-unix://*/source.sock:run:*) printf 'shared-volume-bytes'; exit 0 ;;
+unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
 unix://*/target.sock:run:*)
   if [ ! -f "$FIXTURE/volume-state" ]; then exit 1; fi;
-  if [ -f "$FIXTURE/mismatch-volume" ]; then printf 'different-volume-bytes'; else printf 'shared-volume-bytes'; fi; exit 0 ;;
+  if [ -f "$FIXTURE/mismatch-volume" ]; then cat "$FIXTURE/target.tar"; else cat "$FIXTURE/source.tar"; fi; exit 0 ;;
 unix://*/source.sock:save:*) printf image; exit 0 ;;
 unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*) exit 0 ;;
 unix://*/source.sock:stop:*) exit 0 ;;
@@ -1581,8 +1570,134 @@ esac
 "#
         .to_string();
         fs::write(&script, body.replace("$FIXTURE", fixture.to_str().unwrap())).unwrap();
+        fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
+        fs::write(fixture.join("target.tar"), tar_fixture(true, mismatch)).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
         (dir, script, log)
+    }
+
+    fn tar_fixture(root_different: bool, descendant_different: bool) -> Vec<u8> {
+        fn record(name: &[u8], kind: u8, data: &[u8], mode: &[u8], mtime: &[u8]) -> Vec<u8> {
+            let mut h = [0u8; 512];
+            h[..name.len()].copy_from_slice(name);
+            h[100..108].copy_from_slice(mode);
+            h[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+            h[136..148].copy_from_slice(mtime);
+            h[148..156].fill(b' ');
+            h[156] = kind;
+            let sum: u32 = h.iter().map(|b| *b as u32).sum();
+            h[148..156].copy_from_slice(format!("{:06o}\0 ", sum).as_bytes());
+            let mut out = h.to_vec();
+            out.extend_from_slice(data);
+            out.resize(512 + data.len().div_ceil(512) * 512, 0);
+            out
+        }
+        let mut out = record(
+            b"./",
+            b'5',
+            &[],
+            if root_different {
+                b"0000700\0"
+            } else {
+                b"0000755\0"
+            },
+            if root_different {
+                b"00000000001\0"
+            } else {
+                b"00000000000\0"
+            },
+        );
+        out.extend(record(
+            b"safe name\n.txt",
+            b'0',
+            b"payload",
+            b"0000644\0",
+            if descendant_different {
+                b"00000000001\0"
+            } else {
+                b"00000000000\0"
+            },
+        ));
+        out.extend([0u8; 2048]);
+        out
+    }
+
+    #[test]
+    fn tar_manifest_validates_and_normalizes_boundaries() {
+        let source = tar_fixture(false, false);
+        let root_only = [&source[..512], &[0u8; 1024]].concat();
+        assert!(tar_manifest(&root_only).is_ok());
+        assert_eq!(
+            tar_manifest(&source).unwrap(),
+            tar_manifest(&tar_fixture(true, false)).unwrap()
+        );
+        assert_ne!(
+            tar_manifest(&source).unwrap(),
+            tar_manifest(&tar_fixture(false, true)).unwrap()
+        );
+        assert!(String::from_utf8_lossy(&source).contains("safe name\n.txt"));
+
+        let mut cases = vec![
+            source[..511].to_vec(),
+            source[..1024].to_vec(),
+            {
+                let mut x = source.clone();
+                x[0] ^= 1;
+                x
+            },
+            {
+                let mut x = source.clone();
+                x[124..136].fill(b'9');
+                x
+            },
+            {
+                let mut x = source[512..].to_vec();
+                x.extend_from_slice(&[0u8; 1024]);
+                x
+            },
+            {
+                let mut x = source.clone();
+                x[156] = b'0';
+                x
+            },
+        ];
+        let root = source[..512].to_vec();
+        cases.push([root.as_slice(), &source[..512], &source[512..]].concat());
+        let mut trailer_bytes = source.clone();
+        *trailer_bytes.last_mut().unwrap() = 1;
+        cases.push(trailer_bytes);
+        for case in cases {
+            assert!(tar_manifest(&case).is_err());
+        }
+        let mut extra_padding = source.clone();
+        extra_padding.extend_from_slice(&[0u8; 1024]);
+        assert_eq!(
+            tar_manifest(&source).unwrap(),
+            tar_manifest(&extra_padding).unwrap()
+        );
+    }
+
+    #[test]
+    fn retry_volume_matches_fails_closed_and_calls_each_endpoint_once() {
+        let fixture = test_dir("retry-parser");
+        fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
+        fs::write(fixture.join("target.tar"), tar_fixture(true, false)).unwrap();
+        let log = fixture.join("calls");
+        let script = fixture.join("docker");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$DOCKER_HOST\" >> {}\nexit 1\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let source = format!("unix://{}/source", fixture.display());
+        let target = format!("unix://{}/target", fixture.display());
+        assert!(!retry_volume_matches(&script, &target, &source, "data"));
+        assert_eq!(fs::read_to_string(log).unwrap().lines().count(), 2);
     }
 
     fn fake_docker(fixture_dir: &Path, fail_verify: bool) -> (PathBuf, PathBuf, PathBuf) {
