@@ -1059,7 +1059,10 @@ fn daemon_architecture(program: &Path, endpoint: &str) -> Result<&'static str, C
     )?;
     let architecture = String::from_utf8_lossy(&out.stdout);
     if architecture.trim().is_empty() {
-        return Ok("amd64");
+        return Err(CutoverError::Invalid(
+            endpoint.into(),
+            "unsupported or missing daemon architecture".into(),
+        ));
     }
     normalized_architecture(&architecture).ok_or_else(|| {
         CutoverError::Invalid(
@@ -1081,7 +1084,10 @@ fn image_architecture(
     )?;
     let architecture = String::from_utf8_lossy(&out.stdout);
     if architecture.trim().is_empty() {
-        return Ok("amd64");
+        return Err(CutoverError::Invalid(
+            image.into(),
+            "unsupported or missing image architecture".into(),
+        ));
     }
     normalized_architecture(&architecture).ok_or_else(|| {
         CutoverError::Invalid(
@@ -1117,11 +1123,19 @@ fn target_image_reference(
             "cross-architecture migration requires a portable tagged registry reference".into(),
         ));
     }
-    docker(
+    if docker(
         program,
         target,
-        &a(&["pull", "--platform", &format!("linux/{target_arch}"), image]),
-    )?;
+        &a(&["image", "inspect", "--format", "{{.Architecture}}", image]),
+    )
+    .is_err()
+    {
+        docker(
+            program,
+            target,
+            &a(&["pull", "--platform", &format!("linux/{target_arch}"), image]),
+        )?;
+    }
     let target_image_arch = image_architecture(program, target, image)?;
     if target_image_arch != target_arch {
         return Err(CutoverError::Invalid(
@@ -2078,9 +2092,14 @@ case "$*" in
   *" tar -C /orbit-volume -cf -") exit 97 ;;
 esac
 case "$DOCKER_HOST:$1:$2" in
-unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
 unix://*/target.sock:ps:-aq) exit 0 ;;
+unix://*/source.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
+unix://*/target.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
 unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
 unix://*/target.sock:inspect:orbit-caddy)
@@ -2173,10 +2192,15 @@ case "$*" in
   *" tar -C /orbit-volume -cf -") exit 97 ;;
 esac
 case "$DOCKER_HOST:$1:$2" in
-unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:ps:-aq)
   if [ -f "$FIXTURE/cleanup-state" ]; then printf 'runtime-id\n'; else printf 'caddy-id\nruntime-id\n'; fi; exit 0 ;;
 unix://*/target.sock:ps:-aq) printf 'target-caddy-id\ntarget-runtime-id\n'; exit 0 ;;
+unix://*/source.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
+unix://*/target.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
 unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
 unix://*/target.sock:inspect:target-caddy-id|unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy.json"; exit 0 ;;
@@ -2219,9 +2243,14 @@ case "$*" in
   *" tar -C /orbit-volume -cf -") exit 97 ;;
 esac
 case "$DOCKER_HOST:$1:$2" in
-unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
 unix://*/target.sock:ps:-aq) exit 0 ;;
+unix://*/source.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
+unix://*/target.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
 unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
 unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
 unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy-stopped.json"; exit 0 ;;
@@ -2631,7 +2660,12 @@ esac
         } else {
             "cat \"$FIXTURE/target.json\"; exit 0"
         };
-        let body = "#!/bin/sh\nprintf '%s %s\\n' \"$DOCKER_HOST\" \"$*\" >> \"$LOG\"\ncase \"$DOCKER_HOST:$1:$2\" in\nunix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;\nunix://*/source.sock:ps:-aq) printf 'caddy-id\\nruntime-id\\nunrelated-id\\n'; exit 0 ;;\nunix://*/target.sock:ps:-aq) exit 0 ;;\nunix://*/source.sock:inspect:caddy-id) cat \"$FIXTURE/source.json\"; exit 0 ;;\nunix://*/source.sock:inspect:runtime-id) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/source.sock:inspect:unrelated-id) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/target.sock:inspect:orbit-caddy) VERIFY;;\nunix://*/target.sock:inspect:orbit-runtime) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/target.sock:inspect:*) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/source.sock:network:inspect) cat \"$FIXTURE/network.json\"; exit 0 ;;\nunix://*/target.sock:network:inspect) exit 1 ;;\nunix://*/target.sock:network:create*) exit 0 ;;\nunix://*/target.sock:network:rm*) exit 0 ;;\nunix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;\nunix://*/source.sock:save:*|unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;\n*) exit 0 ;;\nesac\n".replace("VERIFY", verify);
+        let body = "#!/bin/sh\nprintf '%s %s\\n' \"$DOCKER_HOST\" \"$*\" >> \"$LOG\"\ncase \"$DOCKER_HOST:$1:$2\" in\nunix://*/source.sock:info:*|unix://*/target.sock:info:*) printf 'arm64
+'; exit 0 ;;\nunix://*/source.sock:ps:-aq) printf 'caddy-id\\nruntime-id\\nunrelated-id\\n'; exit 0 ;;\nunix://*/target.sock:ps:-aq) exit 0 ;;\nunix://*/source.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
+unix://*/target.sock:image:inspect*) printf 'arm64
+'; exit 0 ;;
+unix://*/source.sock:inspect:caddy-id) cat \"$FIXTURE/source.json\"; exit 0 ;;\nunix://*/source.sock:inspect:runtime-id) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/source.sock:inspect:unrelated-id) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/target.sock:inspect:orbit-caddy) VERIFY;;\nunix://*/target.sock:inspect:orbit-runtime) cat \"$FIXTURE/runtime.json\"; exit 0 ;;\nunix://*/target.sock:inspect:*) cat \"$FIXTURE/unrelated.json\"; exit 0 ;;\nunix://*/source.sock:network:inspect) cat \"$FIXTURE/network.json\"; exit 0 ;;\nunix://*/target.sock:network:inspect) exit 1 ;;\nunix://*/target.sock:network:create*) exit 0 ;;\nunix://*/target.sock:network:rm*) exit 0 ;;\nunix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;\nunix://*/source.sock:save:*|unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;\n*) exit 0 ;;\nesac\n".replace("VERIFY", verify);
         // Keep fixture paths in the environment so the shell program remains readable.
         let body = body.replace("$FIXTURE", fixture_dir.to_str().unwrap());
         fs::write(&script, body).unwrap();
