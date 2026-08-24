@@ -30,31 +30,30 @@ it('runs Pest through the git-aware runner', function (): void {
         ->and($composer['scripts']['dev'][1] ?? '')->not->toContain('npm run dev');
 });
 
-it('ships committed git hooks that install themselves', function (): void {
-    // `vp config` (run by `bun install` via the prepare script) points
-    // core.hooksPath at VitePlus's dispatcher, which sources these files. They
-    // must be committed and executable or the dispatcher silently exits 0 and
-    // no hook runs at all.
-    foreach (['pre-commit', 'pre-push'] as $hook) {
-        $path = base_path('.vite-hooks/'.$hook);
+it('does not install repository hooks during dependency preparation', function (): void {
+    $package = json_decode(
+        File::get(base_path('package.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-        expect(File::exists($path))->toBeTrue(".vite-hooks/{$hook} must be committed")
-            ->and(is_executable($path))->toBeTrue(".vite-hooks/{$hook} must be executable");
-    }
-
-    expect(File::get(base_path('.vite-hooks/pre-commit')))->toContain('vp staged');
+    expect($package['scripts']['prepare'])
+        ->toBe('vp config --no-hooks')
+        ->and(File::exists(base_path('.vite-hooks/pre-commit')))->toBeFalse()
+        ->and(File::exists(base_path('.vite-hooks/pre-push')))->toBeFalse();
 });
 
-it('isolates pre-push commands from Git arguments and stdin', function (): void {
-    // Git invokes pre-push with the remote name and URL as arguments and pipes
-    // the pushed refs on stdin. Composer would treat a stray remote name as its
-    // own argument, so neither may reach it.
-    $hook = File::get(base_path('.vite-hooks/pre-push'));
+it('declares the Agentation package when local Agentation is enabled', function (): void {
+    $package = json_decode(
+        File::get(base_path('package.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect($hook)
-        ->toContain('composer test </dev/null')
-        ->toContain('composer analyse </dev/null')
-        ->not->toContain('"$@"');
+    expect(File::get(base_path('vite.config.ts')))
+        ->toContain('agentation: true')
+        ->and($package['devDependencies']['agentation'] ?? $package['dependencies']['agentation'] ?? null)
+        ->toBeString();
 });
 
 it('forwards composer test arguments to pest instead of artisan', function (): void {

@@ -21,6 +21,7 @@ it('builds compact routing entries for every known Orbit unit', function (): voi
             'apps-gateway',
             'apps-macos',
             'apps-reverb',
+            'apps-ui',
             'packages-core',
             'packages-sdk',
             'packages-sdk-typescript',
@@ -72,6 +73,16 @@ it('maps app and package units to their local tooling and preferred verification
         ->toHaveKey('facts.tooling.composer_json', 'packages/sdk/composer.json')
         ->and($map['units']['packages-sdk']['verification']['preferred_commands'])
         ->toContain('cd packages/sdk && vendor/bin/pest --compact');
+
+    expect($map['units']['apps-ui'])
+        ->toHaveKey('type', 'laravel-browser-ui')
+        ->toHaveKey('facts.tooling.composer_json', 'apps/ui/composer.json')
+        ->toHaveKey('facts.tooling.package_json', 'apps/ui/package.json')
+        ->and($map['units']['apps-ui']['verification']['preferred_commands'])
+        ->toContain('cd apps/ui && composer test -- --compact')
+        ->toContain('cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M')
+        ->toContain('cd apps/ui && vendor/bin/pint --test')
+        ->toContain('cd apps/ui && bun run build');
 });
 
 it('routes the TypeScript SDK package to its Node toolchain and npm verification', function (): void {
@@ -320,7 +331,7 @@ it('keeps preferred verification commands pointed at current repo entrypoints', 
                 }
 
                 if (
-                    in_array($executable, ['npm', 'npx', 'node'], strict: true)
+                    in_array($executable, ['bun', 'composer', 'npm', 'npx', 'node'], strict: true)
                     && is_file("{$repoRoot}/{$directory}/package.json")
                 ) {
                     continue;

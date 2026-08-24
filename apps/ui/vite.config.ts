@@ -10,8 +10,7 @@ const launchConfig = await defineLaunchConfig({
 export default defineConfig(async (environment) => ({
     ...(await launchConfig(environment)),
     fmt: { ignorePatterns: [".agents/**"] },
-    // Pre-commit tasks, run against staged files only by `vp staged` from
-    // .vite-hooks/pre-commit. Anything they fix is re-staged automatically.
+    // VitePlus checks remain app-local. Orbit's root repository owns Git hooks.
     staged: {
         "*": "vp check --fix",
         "*.php": "vendor/bin/pint",

@@ -19,11 +19,13 @@
             "cd packages/sdk && composer install",
             "cd apps/gateway && composer install",
             "cd apps/docs && composer install",
+            "cd apps/ui && composer install",
             "cd apps/cli && composer install",
             "cd apps/reverb && composer install",
             "cd apps/e2e && composer install",
             "cd apps/gateway && npm install --ignore-scripts && npm run build",
-            "cd apps/docs && npm install --ignore-scripts && npm run build"
+            "cd apps/docs && npm install --ignore-scripts && npm run build",
+            "cd apps/ui && bun install --frozen-lockfile && bun run build"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
@@ -41,6 +43,7 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
             "bin/orbit-cli-pest --exclude-group=slow --compact",
             "bin/orbit-docs-pest --compact",
+            "cd apps/ui && composer test -- --compact",
             "cd packages/core && vendor/bin/pest --compact",
             "cd packages/sdk && vendor/bin/pest --compact"
         ],
@@ -50,6 +53,7 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
+            "cd apps/ui && composer test -- --compact",
             "cd packages/core && vendor/bin/pest --compact",
             "cd packages/sdk && vendor/bin/pest --compact"
         ],
@@ -152,6 +156,7 @@
             "bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium",
             "cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium",
             "cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium",
+            "cd apps/ui && vendor/bin/phpstan analyse",
             "bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium",
             "cd packages/core && vendor/bin/mago analyze src --reporting-format=medium",
             "cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium",
@@ -161,6 +166,7 @@
             "bin/orbit-gateway-vendor-bin mago format",
             "cd apps/cli && vendor/bin/mago format",
             "cd apps/docs && vendor/bin/mago format",
+            "cd apps/ui && vendor/bin/pint",
             "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format",
             "cd packages/core && vendor/bin/mago format",
             "cd packages/sdk && vendor/bin/mago format",
@@ -171,6 +177,7 @@
             "bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium",
             "cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium",
             "cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium",
+            "cd apps/ui && vendor/bin/phpstan analyse",
             "bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium",
             "cd packages/core && vendor/bin/mago analyze src --reporting-format=medium",
             "cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium",
@@ -190,6 +197,7 @@
             "bin/orbit-gateway-vendor-bin mago format",
             "cd apps/cli && vendor/bin/mago format",
             "cd apps/docs && vendor/bin/mago format",
+            "cd apps/ui && vendor/bin/pint",
             "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format",
             "cd packages/core && vendor/bin/mago format",
             "cd packages/sdk && vendor/bin/mago format",
@@ -199,6 +207,7 @@
             "bin/orbit-gateway-vendor-bin mago format --check",
             "cd apps/cli && vendor/bin/mago format --check",
             "cd apps/docs && vendor/bin/mago format --check",
+            "cd apps/ui && vendor/bin/pint --test",
             "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format --check",
             "cd packages/core && vendor/bin/mago format --check",
             "cd packages/sdk && vendor/bin/mago format --check",
@@ -208,6 +217,7 @@
             "bin/orbit-gateway-vendor-bin rector process",
             "cd apps/cli && vendor/bin/rector process",
             "cd apps/docs && vendor/bin/rector process",
+            "cd apps/ui && vendor/bin/rector process",
             "cd packages/core && vendor/bin/rector process",
             "cd packages/sdk && vendor/bin/rector process",
             "cd apps/e2e && vendor/bin/rector process"

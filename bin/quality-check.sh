@@ -148,6 +148,7 @@ GATEWAY_PEST_PROCESSES=$((CPU_BUDGET / 2))
 GATEWAY_COMPONENT_DEMAND="$GATEWAY_PEST_PROCESSES"
 CLI_COMPONENT_DEMAND=5
 DOCS_COMPONENT_DEMAND=1
+UI_COMPONENT_DEMAND=2
 E2E_COMPONENT_DEMAND=1
 REVERB_COMPONENT_DEMAND=1
 CARGO_COMPONENT_DEMAND=3
@@ -179,6 +180,7 @@ QUALITY_CHECK_COMPONENT_SPECS=(
     'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway'
     'apps/cli|CLI_COMPONENT_DEMAND|cli'
     'apps/docs|DOCS_COMPONENT_DEMAND|docs'
+    'apps/ui|UI_COMPONENT_DEMAND|ui'
     'apps/e2e|E2E_COMPONENT_DEMAND|e2e'
     'apps/reverb|REVERB_COMPONENT_DEMAND|reverb'
     'apps/agent|CARGO_COMPONENT_DEMAND|agent'
@@ -283,6 +285,7 @@ PROGRESS_AREAS=(
     packages/core
     packages/sdk
     packages/sdk-typescript
+    apps/ui
 )
 
 PROGRESS_DIM=$'\e[38;5;242m'
@@ -347,6 +350,9 @@ quality_check_label_area() {
             ;;
         sdk_typescript_*)
             echo packages/sdk-typescript
+            ;;
+        ui_*)
+            echo apps/ui
             ;;
         sdk_*)
             echo packages/sdk
@@ -815,6 +821,11 @@ CHECK_LABELS=(
     sdk_typescript_typecheck
     sdk_typescript_build
     sdk_typescript_runtime
+    ui_pest
+    ui_phpstan
+    ui_pint
+    ui_viteplus
+    ui_build
 )
 
 if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
@@ -1211,6 +1222,14 @@ sdk_typescript_component() {
     run_subgate sdk_typescript_runtime bash -lc 'cd packages/sdk-typescript && npm run test:runtime'
 }
 
+ui_component() {
+    run_subgate ui_pest bash -lc 'cd apps/ui && composer test -- --compact'
+    run_subgate ui_phpstan env PHP_MEMORY_LIMIT=512M bash -lc 'cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M'
+    run_subgate ui_pint bash -lc 'cd apps/ui && vendor/bin/pint --test'
+    run_subgate ui_viteplus bash -lc 'cd apps/ui && bun run prepare'
+    run_subgate ui_build bash -lc 'cd apps/ui && bun run build'
+}
+
 core_component() {
     run_subgate core_mago_analyze env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
     run_subgate core_mago_lint env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
@@ -1229,7 +1248,7 @@ quality_check_progress_start_ticker
 
 admit_components "${QUALITY_CHECK_COMPONENT_SPECS[@]}"
 
-wait_for_component_labels gateway cli docs e2e reverb agent macos sdk sdk_typescript core
+wait_for_component_labels gateway cli docs ui e2e reverb agent macos sdk sdk_typescript core
 
 quality_check_progress_render_final
 

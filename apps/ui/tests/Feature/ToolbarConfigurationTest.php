@@ -56,8 +56,7 @@ it('enables Agentation in local frontend development', function (): void {
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect($package['dependencies'] ?? [])->not->toHaveKey('agentation')
-        ->and($package['devDependencies'] ?? [])->not->toHaveKey('agentation')
+    expect($package['devDependencies'] ?? [])->toHaveKey('agentation')
         ->and(File::get(base_path('vite.config.ts')))->toContain('agentation: true');
 });
 

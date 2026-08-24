@@ -34,11 +34,15 @@ it('routes root composer scripts through app-aware helpers', function (): void {
             '--exclude-group=slow',
         )->and($composer['scripts']['test'][4])->toContain('bin/orbit-docs-pest')->and(
             $composer['scripts']['test'][5],
-        )->toContain('cd packages/core && vendor/bin/pest')->and($composer['scripts']['test:slow'][1])->toContain(
+        )->toContain('cd apps/ui && composer test -- --compact')->and($composer['scripts']['test'][6])->toContain(
+            'cd packages/core && vendor/bin/pest',
+        )->and($composer['scripts']['test:slow'][1])->toContain(
             'bin/orbit-gateway-artisan config:clear',
         )->and($composer['scripts']['test:slow'][2])->toContain('bin/orbit-gateway-pest')->and(
             $composer['scripts']['test:slow'][3],
-        )->toContain('bin/orbit-cli-pest --compact')->and($composer['scripts']['test:e2e'][1])->toContain(
+        )->toContain('bin/orbit-cli-pest --compact')->and($composer['scripts']['test:slow'][5])->toContain(
+            'cd apps/ui && composer test -- --compact',
+        )->and($composer['scripts']['test:e2e'][1])->toContain(
             'bin/quality-gate-run',
         )->and($composer['scripts']['test:e2e'][1])->toContain('bin/orbit-e2e-artisan e2e:test')->and(
             $composer['scripts']['test:e2e:docker'][1],

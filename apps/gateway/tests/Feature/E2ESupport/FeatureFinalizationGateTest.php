@@ -5524,6 +5524,11 @@ function finalization_quality_check_subgates(): array
         'sdk_typescript_build',
         'sdk_typescript_runtime',
         'sdk_typescript_typecheck',
+        'ui_build',
+        'ui_phpstan',
+        'ui_pest',
+        'ui_pint',
+        'ui_viteplus',
     ];
 
     return array_fill_keys($labels, 0);

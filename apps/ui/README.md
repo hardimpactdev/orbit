@@ -19,7 +19,7 @@ To do it manually:
 cp .env.example .env
 # Edit .env: set APP_NAME, APP_URL, VITE_APP_URL (e.g. https://my-app.test)
 composer install
-bun install                 # also installs the git hooks
+bun install                 # does not modify the repository's Git hooks
 bunx playwright install chromium   # browser binary for Pest browser tests
 php artisan key:generate
 touch database/database.sqlite
@@ -27,13 +27,9 @@ php artisan migrate --force
 bun run build
 ```
 
-Git hooks need no setup. `bun install` runs `vp config` via the package.json `prepare`
-script, which points `core.hooksPath` at VitePlus's dispatcher; that dispatcher runs the
-committed [`.vite-hooks/pre-commit`](.vite-hooks/pre-commit) and
-[`.vite-hooks/pre-push`](.vite-hooks/pre-push) scripts. Pre-commit runs the `staged` tasks
-declared in `vite.config.ts` against staged files only and re-stages what they fix; pre-push
-runs `composer test && composer analyse`. Prefix a command with `VP_GIT_HOOKS=0` to skip them
-once.
+Orbit owns repository Git hooks at the monorepo root. The UI package's `bun install` runs
+`vp config --no-hooks` and does not set or replace `core.hooksPath`. Run VitePlus checks
+through the UI Composer scripts or the root quality gate.
 
 Then set the site up for your local environment — Herd and Orbit each need different steps,
 and both serve the app themselves, so neither uses `php artisan serve` or `composer dev`:

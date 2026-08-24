@@ -1100,6 +1100,16 @@ gateway entries and use `gateway:use <name>` to switch the active one.
 
 ### Platform and roles
 
+### Browser UI
+
+The Orbit browser UI is the separate `apps/ui` Laravel 13/Inertia 3/React 19
+application. It uses Bun for client and SSR development, with Agentation
+enabled locally at `https://orbit.nmbp`. Laravel routes call the existing PHP
+Saloon SDK, whose configured gateway URL defaults to `https://10.6.0.2` in the
+local development environment. Gateway and node identity are derived by the
+receiving server boundary; the browser does not submit them. Production UI
+hosting and the `ui` node role are deferred.
+
 The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. Ubuntu is Orbit's
 only supported Linux host platform for roles in v1. The `gateway`, `vpn`,
 `router`, `app-prod`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and

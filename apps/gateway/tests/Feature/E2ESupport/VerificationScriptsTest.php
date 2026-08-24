@@ -230,10 +230,10 @@ it('uses Mago for analysis, linting, and formatting', function (): void {
         ])
         ->and(implode("\n", $composer['scripts']['analyse']))
         ->toContain('mago analyze')
-        ->not->toContain('phpstan analyse')->and(implode("\n", $composer['scripts']['format']))->toContain(
+        ->and(implode("\n", $composer['scripts']['format']))
+        ->toContain(
             'mago format',
-        )
-        ->not->toContain('pint');
+        );
 
     foreach ($magoAnalyzeCommands as $command) {
         expect(implode("\n", $composer['scripts']['mago:analyze']))->toContain($command);
@@ -406,32 +406,57 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
         ->toContain('mago analyze')
         ->toContain('mago lint')
         ->toContain('mago format')
-        ->not->toContain('phpstan analyse')
-        ->not->toContain('vendor/bin/pint')->toContain('rector process')->toContain(
+        ->toContain('cd apps/ui && vendor/bin/phpstan analyse')
+        ->toContain('cd apps/ui && vendor/bin/pint --test')
+        ->toContain('rector process')
+        ->toContain(
             'cd apps/cli && vendor/bin/mago analyze',
-        )->toContain('cd apps/docs && vendor/bin/mago analyze')->toContain(
+        )
+        ->toContain('cd apps/docs && vendor/bin/mago analyze')
+        ->toContain(
             'bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze',
-        )->toContain('cd packages/core && vendor/bin/mago analyze')->toContain(
+        )
+        ->toContain('cd packages/core && vendor/bin/mago analyze')
+        ->toContain(
             'cd packages/sdk && vendor/bin/mago analyze',
-        )->toContain('cd apps/e2e && vendor/bin/mago analyze')->toContain(
+        )
+        ->toContain('cd apps/e2e && vendor/bin/mago analyze')
+        ->toContain(
             'cd apps/cli && vendor/bin/rector process',
-        )->toContain('cd apps/docs && vendor/bin/rector process')->toContain(
+        )
+        ->toContain('cd apps/docs && vendor/bin/rector process')
+        ->toContain(
             'cd packages/core && vendor/bin/rector process',
-        )->toContain('cd packages/sdk && vendor/bin/rector process')->toContain(
+        )
+        ->toContain('cd packages/sdk && vendor/bin/rector process')
+        ->toContain(
             'cd apps/e2e && vendor/bin/rector process',
-        )->toContain('cd apps/cli && vendor/bin/mago lint')->toContain(
+        )
+        ->toContain('cd apps/cli && vendor/bin/mago lint')
+        ->toContain(
             'cd apps/docs && vendor/bin/mago lint',
-        )->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint')->toContain(
+        )
+        ->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint')
+        ->toContain(
             'cd packages/core && vendor/bin/mago lint',
-        )->toContain('cd packages/sdk && vendor/bin/mago lint')->toContain(
+        )
+        ->toContain('cd packages/sdk && vendor/bin/mago lint')
+        ->toContain(
             'cd apps/e2e && vendor/bin/mago lint',
-        )->toContain('cd apps/cli && vendor/bin/mago format')->toContain(
+        )
+        ->toContain('cd apps/cli && vendor/bin/mago format')
+        ->toContain(
             'cd apps/docs && vendor/bin/mago format',
-        )->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb format')->toContain(
+        )
+        ->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb format')
+        ->toContain(
             'cd packages/core && vendor/bin/mago format',
-        )->toContain('cd packages/sdk && vendor/bin/mago format')->toContain(
+        )
+        ->toContain('cd packages/sdk && vendor/bin/mago format')
+        ->toContain(
             'cd apps/e2e && vendor/bin/mago format',
-        )->toContain('cd packages/sdk-typescript && npm run test:runtime');
+        )
+        ->toContain('cd packages/sdk-typescript && npm run test:runtime');
 });
 
 it('keeps the aggregate quality gate Pest lanes complete', function (): void {
@@ -455,6 +480,13 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
         ->not->toContain('cd apps/e2e && vendor/bin/pest')
         ->not->toContain('run_bg e2e_pest')
         ->not->toContain('PRE_E2E_PEST_LABELS=(');
+});
+
+it('gives the Orbit UI PHPStan lane an explicit memory budget', function (): void {
+    expect(quality_check_script_source())
+        ->toContain(
+            "run_subgate ui_phpstan env PHP_MEMORY_LIMIT=512M bash -lc 'cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M'",
+        );
 });
 
 it('keeps aggregate quality gate labels complete and ordered', function (): void {
@@ -585,6 +617,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/gateway' => 'Queued',
         'apps/cli' => 'Queued',
         'apps/docs' => 'Queued',
+        'apps/ui' => 'Queued',
         'apps/e2e' => 'Queued',
         'apps/reverb' => 'Queued',
         'apps/agent' => 'Queued',
@@ -597,6 +630,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/gateway' => 'Running',
         'apps/cli' => 'Running',
         'apps/docs' => 'Running',
+        'apps/ui' => 'Running',
         'apps/e2e' => 'Running',
         'apps/reverb' => 'Running',
         'apps/agent' => 'Running',
@@ -607,6 +641,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/gateway' => 'Passed',
         'apps/cli' => 'Passed',
         'apps/docs' => 'Passed',
+        'apps/ui' => 'Passed',
         'packages/sdk' => 'Passed',
     ]);
 
@@ -713,7 +748,8 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         'packages/core=5',
         'packages/sdk=5',
         'packages/sdk-typescript=3',
-        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,apps/macos,packages/core,packages/sdk,packages/sdk-typescript',
+        'apps/ui=5',
+        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,apps/macos,packages/core,packages/sdk,packages/sdk-typescript,apps/ui',
         'failed=apps/gateway',
     ]);
 });
@@ -807,6 +843,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
                 ->toContain('--compact'),
             fn ($script) => $script->toContain('bin/orbit-cli-pest --exclude-group=slow --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
+            fn ($script) => $script->toContain('cd apps/ui && composer test -- --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
             fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
         )
@@ -820,6 +857,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
                 ->toContain('--compact'),
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
+            fn ($script) => $script->toContain('cd apps/ui && composer test -- --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
             fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
         )

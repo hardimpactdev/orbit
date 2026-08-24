@@ -1,5 +1,16 @@
 # Product Decisions
 
+## 2026-08-24 — Orbit browser UI starts as a separate local Launch application
+
+The first Orbit browser UI delivery is a fresh Launch-based Laravel 13,
+Inertia 3, and React 19 application under `apps/ui`. It is developed locally
+at `https://orbit.nmbp` with Agentation enabled and calls the configured
+gateway endpoint through the existing PHP Saloon SDK; the local default is
+`https://10.6.0.2`. Browser requests do not carry gateway or node identity
+fields. This decision covers local development only. Production `app.orbit`,
+a production `ui` role, gateway delegation, and native macOS changes remain
+deferred.
+
 This is Orbit's **intent ledger**: a chronological, append-only record of
 *direction-change* decisions. It sits above the authority-doc chain
 (mission → architecture → concepts → tech-stack → domains) as the anchor for

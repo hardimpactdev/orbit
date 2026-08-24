@@ -211,12 +211,9 @@ not treat the test suite as SSR coverage.
   separate one-time install: `bunx playwright install chromium`. Without it, browser
   tests — and therefore `composer check` — fail on a fresh machine
 - **JS/TS**: VitePlus (Oxc linting + formatting)
-- **Git hooks**: committed `.vite-hooks/` scripts, installed by `vp config` (run
-  automatically by `bun install` via the package.json `prepare` script), which points
-  `core.hooksPath` at the VitePlus dispatcher. Pre-commit runs `vp staged` (the `staged`
-  tasks in `vite.config.ts` against staged files); pre-push runs
-  `composer test && composer analyse`. Skip once with `VP_GIT_HOOKS=0`. Do not configure
-  `hook.*` git config keys — nothing reads them
+- **Git hooks**: Orbit's monorepo root owns repository hooks. `bun install` runs
+  `vp config --no-hooks` and does not set or replace `core.hooksPath`. Run VitePlus checks
+  through the UI Composer scripts or the root quality gate.
 - **CSP**: Spatie laravel-csp with Basic + Development presets
 
 ## Feature Completion Gates

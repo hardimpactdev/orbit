@@ -61,8 +61,6 @@ it('includes the non-interactive setup commands in the guide', function () {
     expect($content)
         ->toContain('composer create-project')
         ->toContain('bun run build')
-        // Dist/path create-project has no VCS; hooks need an explicit git repo.
-        ->toContain('git init')
         // `composer setup` is interactive, so agents must be steered away from it.
         ->toContain('Do not run `composer setup`');
 });

@@ -49,4 +49,9 @@ const QUALITY_CHECK_EXPECTED_SUBGATES = [
     'sdk_typescript_build',
     'sdk_typescript_runtime',
     'sdk_typescript_typecheck',
+    'ui_build',
+    'ui_phpstan',
+    'ui_pest',
+    'ui_pint',
+    'ui_viteplus',
 ];

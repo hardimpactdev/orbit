@@ -260,27 +260,7 @@ function runMigrations($envContent, $updated)
 
 function setupGitHooks($envContent, $updated)
 {
-    // Hooks are installed by `vp config`, which `bun install` runs via the
-    // package.json `prepare` script. It sets core.hooksPath to VitePlus's
-    // dispatcher, which runs the committed .vite-hooks/pre-commit and
-    // .vite-hooks/pre-push scripts. Nothing to configure here -- this step only
-    // reports what happened.
-    //
-    // Do not unset core.hooksPath, and do not set hook.* git config keys: those
-    // need Git 2.54+, cannot be committed because git config is per-clone, and
-    // would disable the dispatcher that already works everywhere.
-    exec('git config --local --get core.hooksPath 2>/dev/null', $output, $code);
-    $hooksPath = $output[0] ?? '';
-
-    if ($code === 0 && $hooksPath !== '') {
-        echo "Git hooks installed (core.hooksPath = {$hooksPath}).\n";
-        echo "  pre-commit: staged tasks from vite.config.ts\n";
-        echo "  pre-push:   composer test && composer analyse\n\n";
-
-        return [$envContent, $updated];
-    }
-
-    echo "Git hooks not installed yet. Run `bun install` (or `vp config`) to install them.\n\n";
+    echo "Git hooks are owned by the Orbit repository root; apps/ui does not modify them.\n\n";
 
     return [$envContent, $updated];
 }

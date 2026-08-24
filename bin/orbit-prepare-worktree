@@ -402,6 +402,7 @@ prepare_laravel_app() {
 
 prepare_gateway_app "${worktree_path}/apps/gateway"
 prepare_laravel_app "${worktree_path}/apps/docs"
+prepare_laravel_app "${worktree_path}/apps/ui"
 prepare_laravel_app "${worktree_path}/apps/e2e"
 
 if [ "$run_frontend" -eq 1 ]; then
@@ -412,6 +413,10 @@ if [ "$run_frontend" -eq 1 ]; then
             run_in "${worktree_path}/${directory}" npm run build
         fi
     done
+    if [ -f "${worktree_path}/apps/ui/package.json" ]; then
+        run_in "${worktree_path}/apps/ui" bun install --frozen-lockfile
+        run_in "${worktree_path}/apps/ui" bun run build
+    fi
 fi
 
 if [ "$run_tests" -eq 1 ]; then

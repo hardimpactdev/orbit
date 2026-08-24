@@ -442,6 +442,71 @@
                 }
             }
         },
+        "apps-ui": {
+            "id": "apps-ui",
+            "type": "laravel-browser-ui",
+            "purpose": "Fresh Launch-based Laravel 13/Inertia 3/React 19 browser UI for Orbit. It owns the local dashboard development surface and consumes the configured gateway through the PHP Saloon SDK.",
+            "start_when": [
+                "Changing Orbit browser UI routes, Inertia pages, React components, Agentation setup, or UI-local gateway SDK integration.",
+                "Developing the local browser UI at https://orbit.nmbp."
+            ],
+            "do_not_start_when": [
+                "Changing gateway HTTP/API behavior or SDK request contracts; route to apps/gateway or packages/sdk.",
+                "Claiming production app.orbit hosting, a production ui role, gateway delegation, request identity, or native macOS behavior; those surfaces are deferred."
+            ],
+            "owning_paths": [
+                "apps/ui",
+                "apps/docs/content/architecture.md",
+                "apps/docs/content/tech-stack.md"
+            ],
+            "entrypoints": [
+                "apps/ui/artisan",
+                "apps/ui/composer.json",
+                "apps/ui/package.json"
+            ],
+            "authority_docs": [
+                "apps/docs/content/architecture.md",
+                "apps/docs/content/tech-stack.md"
+            ],
+            "agent_skills": [
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/skills/laravel-best-practices/SKILL.md",
+                ".agents/skills/spatie-laravel-php/SKILL.md",
+                ".agents/skills/spatie-javascript/SKILL.md",
+                ".agents/skills/pest-testing/SKILL.md"
+            ],
+            "verification": {
+                "preferred_commands": [
+                    "cd apps/ui && composer test -- --compact",
+                    "cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M",
+                    "cd apps/ui && vendor/bin/pint --test",
+                    "cd apps/ui && bun run prepare",
+                    "cd apps/ui && bun run build"
+                ],
+                "path_argument_rules": [
+                    "After cd apps/ui, pass Pest, PHPStan, and Pint paths relative to apps/ui; do not route UI checks through gateway Mago.",
+                    "Use Bun for apps/ui client and SSR checks. Browser tests and Agentation interaction are separate browser acceptance evidence, not part of the deterministic quality gate.",
+                    "The UI server-side SDK reads its configured gateway endpoint; browser requests must not carry a gateway or node identity field."
+                ],
+                "manual_only_commands": []
+            },
+            "facts": {
+                "paths_exist": {
+                    "apps/docs/content/architecture.md": true,
+                    "apps/docs/content/tech-stack.md": true,
+                    "apps/ui": true
+                },
+                "tooling": {
+                    "cargo_toml": null,
+                    "composer_json": "apps/ui/composer.json",
+                    "tauri_config": null,
+                    "package_json": "apps/ui/package.json",
+                    "phpunit_xml": "apps/ui/phpunit.xml",
+                    "mago_config": null,
+                    "rector_config": "apps/ui/rector.php"
+                }
+            }
+        },
         "packages-core": {
             "id": "packages-core",
             "type": "shared-package",

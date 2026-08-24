@@ -177,21 +177,9 @@ is a separate one-time download. Pest browser tests (`composer test:browser`, al
 
 ## 5. Git hooks
 
-`bun install` in step 4 runs `vp config` via the package.json `prepare` script, which points
-`core.hooksPath` at VitePlus's dispatcher; that dispatcher runs the committed
-`.vite-hooks/pre-commit` and `.vite-hooks/pre-push` scripts.
-
-`composer create-project` from a dist or local path artifact does not create a git repository,
-and `vp config` cannot install hooks until one exists. If `.git` is missing after step 1:
-
-```bash
-git init -b main
-vp config
-```
-
-Pre-commit runs the `staged` tasks from `vite.config.ts` against staged files and re-stages
-what they fix. Pre-push runs `composer test && composer analyse`. Prefix a command with
-`VP_GIT_HOOKS=0` to skip them once.
+`bun install` in step 4 runs `vp config --no-hooks` via the package.json `prepare` script.
+It does not modify `core.hooksPath`; Orbit's monorepo root owns repository hooks. Run the
+VitePlus checks through the UI Composer scripts or the root quality gate.
 
 Do not configure `hook.*` git config keys. Nothing reads them.
 

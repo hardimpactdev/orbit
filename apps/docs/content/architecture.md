@@ -786,6 +786,19 @@ orbit_docs_development_feature-docs_vite
 
 ### Next
 
+### Orbit browser UI
+
+`apps/ui` is a separate Laravel 13 application built from the Launch starter
+kit. It owns the Inertia 3 and React 19 browser UI and uses the existing PHP
+Saloon SDK to call the configured gateway endpoint. Local development serves
+the same application at `https://orbit.nmbp`; Agentation is enabled for UI
+iteration. The UI does not accept gateway or node identity from browser
+requests.
+
+This delivery is local-only. Production `app.orbit`, a production `ui` role,
+gateway delegation, and native macOS menu-bar changes are separate deferred
+work.
+
 For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
 containers, the SQLite schema, client bootstrap bundles, and the Orbit Agent
 push lane — see [tech-stack.md](tech-stack.md).
