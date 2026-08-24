@@ -1123,25 +1123,22 @@ fn target_image_reference(
             "cross-architecture migration requires a portable tagged registry reference".into(),
         ));
     }
-    match docker(
+    if let Ok(out) = docker(
         program,
         target,
         &a(&["image", "inspect", "--format", "{{.Architecture}}", image]),
     ) {
-        Ok(out) => {
-            let arch = String::from_utf8_lossy(&out.stdout);
-            match normalized_architecture(&arch) {
-                Some(arch) if arch == target_arch => return Ok(Some(image.into())),
-                Some(_) => {}
-                None => {
-                    return Err(CutoverError::Invalid(
-                        image.into(),
-                        "unsupported or missing target image architecture".into(),
-                    ))
-                }
+        let arch = String::from_utf8_lossy(&out.stdout);
+        match normalized_architecture(&arch) {
+            Some(arch) if arch == target_arch => return Ok(Some(image.into())),
+            Some(_) => {}
+            None => {
+                return Err(CutoverError::Invalid(
+                    image.into(),
+                    "unsupported or missing target image architecture".into(),
+                ))
             }
         }
-        Err(_) => {}
     }
     docker(
         program,
@@ -2660,6 +2657,163 @@ esac
             std::env::remove_var("FIXTURE");
             std::env::remove_var("RETRY_MODE");
         }
+    }
+
+    fn architecture_fake_docker(mode: &str) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = test_dir(&format!("architecture-{mode}"));
+        let log = dir.join("argv.log");
+        let pulled = dir.join("pulled");
+        let script = dir.join("docker-architecture-fake");
+        let body = format!(
+            r#"#!/bin/sh
+printf '%s %s\n' "$DOCKER_HOST" "$*" >> "{}"
+mode="{}"
+pulled="{}"
+case "$DOCKER_HOST:$1:$2" in
+unix://target:info:--format)
+  case "$mode" in
+    empty-daemon) exit 0 ;;
+    unknown-daemon) printf 'mips\n'; exit 0 ;;
+    *) printf 'arm64\n'; exit 0 ;;
+  esac ;;
+unix://source:image:inspect)
+  if [ "$mode" = "empty-source" ]; then exit 0; fi
+  printf 'amd64\n'; exit 0 ;;
+unix://target:image:inspect)
+  case "$mode" in
+    preload-native) printf 'arm64\n'; exit 0 ;;
+    missing-target)
+      if [ -f "$pulled" ]; then printf 'arm64\n'; exit 0; fi
+      exit 1 ;;
+    preload-wrong)
+      if [ -f "$pulled" ]; then printf 'arm64\n'; else printf 'amd64\n'; fi
+      exit 0 ;;
+    wrong-after-pull) printf 'amd64\n'; exit 0 ;;
+    *) exit 97 ;;
+  esac ;;
+unix://target:pull:--platform) touch "$pulled"; exit 0 ;;
+*) exit 97 ;;
+esac
+"#,
+            log.display(),
+            mode,
+            pulled.display(),
+        );
+        fs::write(&script, body).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+        (script, log)
+    }
+
+    fn assert_no_source_mutation(log: &Path) {
+        let commands = fs::read_to_string(log).unwrap();
+        assert!(!commands.lines().any(|line| {
+            line.starts_with("unix://source ") && (line.contains(" stop ") || line.contains(" rm "))
+        }));
+    }
+
+    #[test]
+    fn target_daemon_empty_or_unknown_architecture_fails_before_source_mutation() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        for mode in ["empty-daemon", "unknown-daemon"] {
+            let (fake, log) = architecture_fake_docker(mode);
+            let error = daemon_architecture(&fake, "unix://target").unwrap_err();
+
+            assert!(matches!(error, CutoverError::Invalid(_, _)));
+            assert_no_source_mutation(&log);
+        }
+    }
+
+    #[test]
+    fn source_image_empty_architecture_fails_before_source_mutation() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (fake, log) = architecture_fake_docker("empty-source");
+
+        let error = target_image_reference(
+            &fake,
+            "unix://source",
+            "unix://target",
+            "registry.example/orbit:2",
+            "arm64",
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, CutoverError::Invalid(_, _)));
+        assert_no_source_mutation(&log);
+    }
+
+    #[test]
+    fn preloaded_native_target_tag_is_reused_without_pull_and_used_for_create() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let image = "registry.example/orbit:2";
+        let (fake, log) = architecture_fake_docker("preload-native");
+
+        let reference =
+            target_image_reference(&fake, "unix://source", "unix://target", image, "arm64")
+                .unwrap()
+                .unwrap();
+        let create = create_args_with_image(&runtime_fixture(), &reference).unwrap();
+        let commands = fs::read_to_string(&log).unwrap();
+
+        assert_eq!(reference, image);
+        assert!(create.iter().any(|argument| argument == image));
+        assert!(!create
+            .iter()
+            .any(|argument| argument == "orbit-runtime:current"));
+        assert!(!commands.contains(" pull --platform "));
+        assert_no_source_mutation(&log);
+    }
+
+    #[test]
+    fn wrong_architecture_preload_pulls_arm64_then_verifies_and_uses_tag() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let image = "registry.example/orbit:2";
+        let (fake, log) = architecture_fake_docker("preload-wrong");
+
+        let reference =
+            target_image_reference(&fake, "unix://source", "unix://target", image, "arm64")
+                .unwrap()
+                .unwrap();
+        let create = create_args_with_image(&runtime_fixture(), &reference).unwrap();
+        let commands = fs::read_to_string(&log).unwrap();
+
+        assert!(commands.contains(&format!(
+            "unix://target pull --platform linux/arm64 {image}"
+        )));
+        assert_eq!(commands.matches("unix://target image inspect").count(), 2);
+        assert!(create.iter().any(|argument| argument == image));
+        assert_no_source_mutation(&log);
+    }
+
+    #[test]
+    fn wrong_architecture_after_pull_fails_and_retains_source() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let image = "registry.example/orbit:2";
+        let (fake, log) = architecture_fake_docker("wrong-after-pull");
+
+        let error = target_image_reference(&fake, "unix://source", "unix://target", image, "arm64")
+            .unwrap_err();
+        let commands = fs::read_to_string(&log).unwrap();
+
+        assert!(matches!(error, CutoverError::Invalid(_, _)));
+        assert!(commands.contains(&format!(
+            "unix://target pull --platform linux/arm64 {image}"
+        )));
+        assert_eq!(commands.matches("unix://target image inspect").count(), 2);
+        assert_no_source_mutation(&log);
     }
 
     fn fake_docker(fixture_dir: &Path, fail_verify: bool) -> (PathBuf, PathBuf, PathBuf) {
