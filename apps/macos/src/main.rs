@@ -12,7 +12,7 @@ use orbit_macos::paths::{
     desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
 };
 use orbit_macos::pending_update::{
-    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate,
+    read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate, INSTALL_MODE_RESTART_READY,
 };
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
@@ -120,6 +120,7 @@ fn main() {
             let menu_items = Arc::new(Mutex::new(tray_menu.items));
             let menu_command_items = Arc::clone(&menu_items);
             let tray_click_items = Arc::clone(&menu_items);
+            start_restart_ready_handoff_watcher(app.handle(), Arc::clone(&menu_items));
 
             TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("Orbit Desktop")
@@ -436,6 +437,94 @@ fn consume_pending_update_handoff(runtime: &DesktopRuntime) {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum ObservedPendingHandoff {
+    RestartReady(Box<PendingDesktopUpdate>),
+    Automatic,
+    Missing,
+}
+
+fn observe_pending_handoff(
+    update: Result<PendingDesktopUpdate, orbit_macos::pending_update::PendingUpdateError>,
+) -> ObservedPendingHandoff {
+    match update {
+        Ok(update) if update.install_mode == INSTALL_MODE_RESTART_READY => {
+            ObservedPendingHandoff::RestartReady(Box::new(update))
+        }
+        Ok(_) => ObservedPendingHandoff::Automatic,
+        Err(_) => ObservedPendingHandoff::Missing,
+    }
+}
+
+fn reconcile_restart_ready_handoff(runtime: &DesktopRuntime) -> bool {
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let path = pending_update_path(&home);
+    let handoff = observe_pending_handoff(read_pending_update(
+        &path.to_string_lossy(),
+        &ExpectedUpdateIdentity::default(),
+    ));
+    let Ok(mut state) = runtime.update_state.lock() else {
+        return false;
+    };
+    let Some(next_state) = next_restart_ready_state(&state, &handoff) else {
+        return false;
+    };
+    if *state == next_state {
+        return false;
+    }
+    *state = next_state;
+    true
+}
+
+fn next_restart_ready_state(
+    current: &UpdateState,
+    handoff: &ObservedPendingHandoff,
+) -> Option<UpdateState> {
+    if matches!(
+        current,
+        UpdateState::Installing { .. }
+            | UpdateState::Relaunching { .. }
+            | UpdateState::Verified { .. }
+    ) {
+        return None;
+    }
+
+    match handoff {
+        ObservedPendingHandoff::RestartReady(update) => Some(ready_state_for_handoff(update)),
+        ObservedPendingHandoff::Automatic => None,
+        ObservedPendingHandoff::Missing => {
+            matches!(current, UpdateState::RestartReady { .. }).then_some(UpdateState::Idle)
+        }
+    }
+}
+
+fn start_restart_ready_handoff_watcher(app: &AppHandle, menu_items: Arc<Mutex<TrayMenuItems>>) {
+    let app = app.clone();
+    thread::spawn(move || loop {
+        let runtime = app.state::<DesktopRuntime>();
+        if runtime
+            .quitting
+            .lock()
+            .map(|quitting| *quitting)
+            .unwrap_or(true)
+        {
+            break;
+        }
+
+        if reconcile_restart_ready_handoff(&runtime) {
+            let update_item = menu_items.lock().ok().map(|items| items.update.clone());
+            if let Some(update_item) = update_item {
+                TrayMenuItems::update_update_item(&update_item, &runtime);
+            }
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                let _ = tray.set_icon(Some(tray_icon_for_update(&runtime)));
+            }
+        }
+
+        thread::sleep(Duration::from_millis(500));
+    });
+}
+
 fn restart_to_update_if_ready(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
     let ready = runtime.update_state.lock().ok().is_some_and(|state| {
@@ -680,6 +769,16 @@ struct TrayMenuItems {
     update: MenuItem<Wry>,
 }
 
+fn update_menu_presentation(update: &UpdateState) -> (String, bool) {
+    let label = if update.label().is_empty() {
+        format!("Orbit {}", orbit_version())
+    } else {
+        update.label()
+    };
+
+    (label, matches!(update, UpdateState::RestartReady { .. }))
+}
+
 impl TrayMenuItems {
     fn new(app: &AppHandle, state: &MenuState, runtime: &DesktopRuntime) -> tauri::Result<Self> {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
@@ -715,15 +814,7 @@ impl TrayMenuItems {
             .checked(launch_at_login_checked(launch_at_login))
             .enabled(!matches!(launch_at_login, LaunchAtLoginState::Error))
             .build(app)?,
-            update: disabled_menu_item(
-                app,
-                UPDATE_MENU_ID,
-                if update.label().is_empty() {
-                    format!("Orbit {}", orbit_version())
-                } else {
-                    update.label()
-                },
-            )?,
+            update: disabled_menu_item(app, UPDATE_MENU_ID, update_menu_presentation(&update).0)?,
         })
     }
 
@@ -747,15 +838,24 @@ impl TrayMenuItems {
         let _ = self
             .launch_at_login
             .set_checked(launch_at_login_checked(launch_at_login));
-        let _ = self.update.set_text(if update.label().is_empty() {
-            format!("Orbit {}", orbit_version())
-        } else {
-            update.label()
-        });
+        let (update_label, update_enabled) = update_menu_presentation(&update);
+        let _ = self.update.set_text(update_label);
+        let _ = self.update.set_enabled(update_enabled);
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
             let _ = item.set_text(granted_node_label(node, ip_row_layout));
         }
+    }
+
+    fn update_update_item(update_item: &MenuItem<Wry>, runtime: &DesktopRuntime) {
+        let update = runtime
+            .update_state
+            .lock()
+            .map(|state| state.clone())
+            .unwrap_or(UpdateState::Idle);
+        let (label, enabled) = update_menu_presentation(&update);
+        let _ = update_item.set_text(label);
+        let _ = update_item.set_enabled(enabled);
     }
 
     fn grant_row_count(&self) -> usize {
@@ -768,8 +868,9 @@ fn refresh_menu(
     menu_items: &Arc<Mutex<TrayMenuItems>>,
     refresh_source: RefreshSource,
 ) {
-    let menu_state = load_menu_state();
     let runtime = app.state::<DesktopRuntime>();
+    reconcile_restart_ready_handoff(&runtime);
+    let menu_state = load_menu_state();
     let current_grant_rows = menu_items
         .lock()
         .map(|items| items.grant_row_count())
@@ -865,7 +966,7 @@ fn build_tray_menu(
         .update_state
         .lock()
         .ok()
-        .is_some_and(|state| matches!(*state, UpdateState::RestartReady { .. }));
+        .is_some_and(|state| update_menu_presentation(&state).1);
 
     let mut menu = MenuBuilder::new(app)
         .item(&items.agent_status)
@@ -1447,6 +1548,186 @@ mod tests {
             4,
             5
         ));
+    }
+
+    #[test]
+    fn tray_refresh_updates_update_action_state() {
+        let source = include_str!("main.rs");
+
+        let update_method = source
+            .split("fn update(&self")
+            .nth(1)
+            .expect("tray update method should exist");
+        let refresh_method = source
+            .split("fn refresh_menu(")
+            .nth(1)
+            .expect("tray refresh method should exist");
+
+        assert!(update_method.contains("self.update.set_enabled(update_enabled)"));
+        assert!(refresh_method.contains("reconcile_restart_ready_handoff(&runtime)"));
+    }
+
+    #[test]
+    fn native_left_click_keeps_refresh_hook() {
+        let source = include_str!("main.rs");
+        let setup = source
+            .split("TrayIconBuilder::with_id(TRAY_ID)")
+            .nth(1)
+            .expect("tray builder should exist");
+
+        assert!(setup.contains(".show_menu_on_left_click(true)"));
+        assert!(setup.contains("should_refresh_for_tray_event"));
+    }
+
+    #[test]
+    fn tray_refresh_accepts_left_clicks() {
+        let event = |button| TrayIconEvent::Click {
+            id: tauri::tray::TrayIconId::new(TRAY_ID),
+            position: tauri::PhysicalPosition::default(),
+            rect: tauri::Rect::default(),
+            button,
+            button_state: tauri::tray::MouseButtonState::Up,
+        };
+        let left = event(MouseButton::Left);
+        let right = event(MouseButton::Right);
+
+        assert!(should_refresh_for_tray_event(&left));
+        assert!(!should_refresh_for_tray_event(&right));
+    }
+
+    #[test]
+    fn update_menu_presentation_enables_only_restart_ready_updates() {
+        let (idle_label, idle_enabled) = update_menu_presentation(&UpdateState::Idle);
+        let (restart_label, restart_enabled) =
+            update_menu_presentation(&UpdateState::RestartReady {
+                version: "1.2.3".to_string(),
+            });
+        let (verified_label, verified_enabled) = update_menu_presentation(&UpdateState::Verified {
+            version: "1.2.3".to_string(),
+        });
+
+        assert_eq!(idle_label, format!("Orbit {}", orbit_version()));
+        assert!(!idle_enabled);
+        assert_eq!(restart_label, "Restart to Update Orbit 1.2.3");
+        assert!(restart_enabled);
+        assert_eq!(verified_label, "Restart to Update Orbit 1.2.3");
+        assert!(!verified_enabled);
+    }
+
+    fn pending_update_with_mode(install_mode: &str) -> PendingDesktopUpdate {
+        PendingDesktopUpdate {
+            schema_version: 1,
+            operation_id: "operation".to_string(),
+            version: "1.2.3".to_string(),
+            build_id: "build".to_string(),
+            install_mode: install_mode.to_string(),
+            desktop: orbit_macos::pending_update::DesktopIdentity {
+                sha256: "a".repeat(64),
+                signature: "signature".to_string(),
+                staged_path: "/Users/test/.local/share/orbit/updates/desktop.tar.gz".to_string(),
+                version: "1.2.3".to_string(),
+                platform: "darwin".to_string(),
+                architecture: "arm64".to_string(),
+            },
+            agent: orbit_macos::pending_update::ArtifactIdentity {
+                sha256: "b".repeat(64),
+                bin_path: None,
+            },
+            cli: orbit_macos::pending_update::ArtifactIdentity {
+                sha256: "c".repeat(64),
+                bin_path: None,
+            },
+        }
+    }
+
+    #[test]
+    fn live_handoff_watcher_accepts_restart_ready_only() {
+        let restart_ready = pending_update_with_mode("restart-ready");
+        let automatic = pending_update_with_mode("automatic");
+
+        assert_eq!(
+            observe_pending_handoff(Ok(restart_ready.clone())),
+            ObservedPendingHandoff::RestartReady(Box::new(restart_ready))
+        );
+        assert!(matches!(
+            observe_pending_handoff(Ok(automatic)),
+            ObservedPendingHandoff::Automatic
+        ));
+        assert!(matches!(
+            observe_pending_handoff(Err(
+                orbit_macos::pending_update::PendingUpdateError::Malformed,
+            )),
+            ObservedPendingHandoff::Missing
+        ));
+    }
+
+    #[test]
+    fn live_handoff_reconciliation_sets_and_clears_restart_ready_state() {
+        let handoff = pending_update_with_mode("restart-ready");
+        assert_eq!(
+            next_restart_ready_state(
+                &UpdateState::Idle,
+                &ObservedPendingHandoff::RestartReady(Box::new(handoff.clone())),
+            ),
+            Some(UpdateState::RestartReady {
+                version: "1.2.3".to_string()
+            })
+        );
+        assert_eq!(
+            next_restart_ready_state(
+                &UpdateState::RestartReady {
+                    version: "1.2.3".to_string()
+                },
+                &ObservedPendingHandoff::Missing
+            ),
+            Some(UpdateState::Idle)
+        );
+    }
+
+    #[test]
+    fn live_handoff_reconciliation_preserves_install_states_with_restart_ready_handoff() {
+        let handoff = pending_update_with_mode("restart-ready");
+        for state in [
+            UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            },
+            UpdateState::Relaunching {
+                version: "1.2.3".to_string(),
+            },
+            UpdateState::Verified {
+                version: "1.2.3".to_string(),
+            },
+        ] {
+            assert_eq!(
+                next_restart_ready_state(
+                    &state,
+                    &ObservedPendingHandoff::RestartReady(Box::new(handoff.clone())),
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn live_handoff_reconciliation_preserves_automatic_install_state() {
+        assert_eq!(
+            next_restart_ready_state(
+                &UpdateState::Installing {
+                    version: "1.2.3".to_string()
+                },
+                &ObservedPendingHandoff::Automatic
+            ),
+            None
+        );
+        assert_eq!(
+            next_restart_ready_state(
+                &UpdateState::RestartReady {
+                    version: "1.2.3".to_string()
+                },
+                &ObservedPendingHandoff::Automatic
+            ),
+            None
+        );
     }
 
     #[test]
