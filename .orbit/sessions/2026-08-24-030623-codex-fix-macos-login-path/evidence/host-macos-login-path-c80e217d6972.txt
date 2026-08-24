@@ -1,0 +1,47 @@
+Orbit Desktop host-mac proof
+
+Candidate: c80e217d6972af933484523bd162dee5da2ae658
+Venue: host-macos
+Environment: live
+Target: Mini (Darwin arm64, macOS 27.0, build 26A5416b)
+Native worktree: /Users/nckrtl/orbit/.worktrees/proof-login-c80e217d6972
+Version: 0.1.196
+
+The native release builder reported:
+
+NATIVE_RELEASE_ASSETS path=/Users/nckrtl/orbit/.worktrees/proof-login-c80e217d6972/.orbit/proof-native commit=c80e217d6972af933484523bd162dee5da2ae658 version=0.1.196
+
+Installed identities:
+
+- Orbit Agent SHA-256: 886e2a42e5d69662d90066039e5a788f28b68b8ba2ee8196dafa5c81b06a86bc
+- Orbit Desktop executable SHA-256: 75388a5a0555c3fd0d7ff1231bcd033038900f03531d868d2f5d816387aeaf84
+- The installed Desktop executable hash matched the exact-candidate bundle.
+- The generated `~/Library/LaunchAgents/Orbit Desktop.plist` ProgramArguments[0] was `/Applications/Orbit Desktop.app/Contents/MacOS/orbit-macos`.
+- The canonical legacy `dev.orbit.agent` plist was absent and its launchd job was unloaded.
+
+Lifecycle observations:
+
+STOP_PASS desktop=83590 agent=83634
+LOGIN_START_PASS desktop=83707 agent=83757 parent=83707
+
+The first observation proves that terminating Orbit Desktop closed its private
+lifetime channel and stopped the exact-candidate Agent. The second observation
+proves that bootstrapping the generated user LaunchAgent started Orbit Desktop,
+which then started the Agent as its direct child. The Agent listened on the
+expected WireGuard and loopback addresses at port 9477.
+
+Blast-radius inventory:
+
+- A repository-wide `rg` search covered `Launch at Login`, `launch-at-login`,
+  `launch at login`, `Orbit Desktop`, `OrbitDesktop`,
+  `dev.hardimpact.orbit.macos`, and `dev.orbit.agent`.
+- The bounded consumers were the product ledger, architecture/node/operation
+  docs, the generated unit map and its builder, native bundle/config/runtime
+  code and tests, update skip output/tests, and Agent-unavailable remediation.
+- Only the macOS autostart setup, its path helper/test, and the two matching
+  lifecycle authority paragraphs required changes. Update selection, updater
+  staging, Agent remediation, bundle identity, and generated map behavior did
+  not require a change.
+- Independent review result: `BLAST_RADIUS: complete`; `PASS`.
+
+Result: passed
