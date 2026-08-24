@@ -465,23 +465,39 @@ fn normalize_wireguard_route(colima: &Path, address: IpAddr) -> Result<(), Colim
         return Ok(());
     }
     let original = format!("{address}/{prefix}");
-    let replace = |cidr: &str| {
-        run(&ssh_command(
-            colima,
-            vec![
-                "ip".into(),
-                "addr".into(),
-                "replace".into(),
-                cidr.into(),
-                "dev".into(),
-                "lo".into(),
-            ],
-        ))
+    let privileged = |args: Vec<String>| {
+        let mut command = vec!["sudo".into()];
+        command.extend(args);
+        run(&ssh_command(colima, command))
     };
-    if replace(&format!("{address}/32")).is_ok() {
+    privileged(vec![
+        "ip".into(),
+        "addr".into(),
+        "del".into(),
+        original.clone(),
+        "dev".into(),
+        "lo".into(),
+    ])?;
+    if privileged(vec![
+        "ip".into(),
+        "addr".into(),
+        "add".into(),
+        format!("{address}/32"),
+        "dev".into(),
+        "lo".into(),
+    ])
+    .is_ok()
+    {
         return Ok(());
     }
-    let rollback = replace(&original);
+    let rollback = privileged(vec![
+        "ip".into(),
+        "addr".into(),
+        "add".into(),
+        original,
+        "dev".into(),
+        "lo".into(),
+    ]);
     Err(ColimaError::Command(format!(
         "failed to normalize loopback route for {address}; rollback={}",
         rollback.is_ok()
@@ -526,13 +542,13 @@ pub fn ensure_ready(
             start_plan_for_profile(record.state == "reserved", profile_exists(home), 1, 0)?
         };
         run(&direct_command(colima.clone(), args))?;
-        normalize_wireguard_route(&colima, wireguard_address)?;
     }
     let status = run(&direct_command(
         colima.clone(),
         vec!["status".into(), PROFILE.into(), "--json".into()],
     ))?;
     let ready = parse_status(&String::from_utf8_lossy(&status.stdout))?;
+    normalize_wireguard_route(&colima, wireguard_address)?;
     validate_socket(home, &ready.socket)?;
     let expected = home.join(".colima").join(PROFILE);
     let socket = ready.socket.trim_start_matches("unix://");
