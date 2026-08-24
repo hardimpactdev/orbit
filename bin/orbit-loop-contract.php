@@ -1121,13 +1121,19 @@ function orbitLoopChangedFilesForRuntime(string $worktree): array
     }
 }
 
-function orbitLoopRuntimeProofProblemForValue(string $runtime, string $venue, string $candidateCommit, string $worktree): ?string
+function orbitLoopRuntimeProofProblemForValue(
+    string $runtime,
+    string $venue,
+    string $candidateCommit,
+    string $worktree,
+    bool $multiVenue = false,
+): ?string
 {
     $fields = orbitLoopRuntimeProofParseFields(preg_replace('/^passed\s+-\s+/i', '', $runtime) ?? $runtime);
     if ($fields === null) {
         return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
     }
-    $problem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree, false);
+    $problem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree, $multiVenue);
     if ($problem !== null) {
         return $problem;
     }

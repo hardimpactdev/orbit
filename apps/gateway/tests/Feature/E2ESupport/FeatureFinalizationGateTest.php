@@ -927,26 +927,41 @@ it('preserves unchanged candidate venue enforcement at the finalization boundary
     'host-macos rejects browser' => [['apps/macos/src/main.rs'], 'host-macos', 'browser', false],
 ]);
 
-it('fails closed at the finalization boundary when a candidate needs more than one orthogonal non-automated venue', function (): void {
+it('finalizes a candidate with complete multi-venue runtime receipts', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
     try {
         commit_finalization_gate_file($worktree, 'apps/gateway/resources/js/app.js', "changed\n");
         commit_finalization_gate_file($worktree, 'apps/macos/src/main.rs', "changed\n");
         write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
-        write_compact_feature_loop_for_fixture($repo, $worktree);
+        write_multi_venue_feature_loop_for_fixture($repo, $worktree);
 
         $process = run_finalization_gate($repo, 'git merge feature');
 
         expect($process->getExitCode())
-            ->toBe(2)
-            ->and(strtolower($process->getErrorOutput()))
-            ->toContain('orthogonal')
-            ->toContain('split the feature slice');
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('FINALIZATION: PASS');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
 });
+
+it('fails closed when a multi-venue runtime receipt is incomplete or stale', function (string $variant): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/gateway/resources/js/app.js', "changed\n");
+        commit_finalization_gate_file($worktree, 'apps/macos/src/main.rs', "changed\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_multi_venue_feature_loop_for_fixture($repo, $worktree, $variant);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())->toBe(2, $process->getOutput().$process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with(['missing receipt', 'stale candidate', 'stale base tip', 'stale merge base', 'duplicate receipt', 'unknown receipt']);
 
 it('fails closed when candidate acceptance venue resolution times out', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
@@ -4797,6 +4812,48 @@ function write_compact_feature_loop_for_fixture(
     }
     $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
     file_put_contents("{$worktree}/.orbit/loop.md", $packet);
+    finalization_seed_slice_packets($worktree, $packet);
+}
+
+function write_multi_venue_feature_loop_for_fixture(string $repo, string $worktree, ?string $variant = null): void
+{
+    $candidate = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+    $baseTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+    $mergeBase = trim(new Process(['git', 'merge-base', 'main', 'HEAD'], $worktree)->mustRun()->getOutput());
+    $receipts = [];
+    foreach (['browser', 'host-macos'] as $venue) {
+        $receipt = "passed - candidate={$candidate}; base_tip={$baseTip}; merge_base={$mergeBase}; venue={$venue}; environment=dev-fixture; command=fixture {$venue}; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`";
+        $receipts[$venue] = $receipt;
+    }
+    if ($variant === 'missing receipt') {
+        unset($receipts['host-macos']);
+    } elseif ($variant === 'stale candidate') {
+        $receipts['browser'] = str_replace($candidate, str_repeat('c', 40), $receipts['browser']);
+    } elseif ($variant === 'stale base tip') {
+        $receipts['browser'] = str_replace($baseTip, str_repeat('d', 40), $receipts['browser']);
+    } elseif ($variant === 'stale merge base') {
+        $receipts['browser'] = str_replace($mergeBase, str_repeat('e', 40), $receipts['browser']);
+    } elseif ($variant === 'duplicate receipt') {
+        $receipts['browser'] .= "\n          - runtime[browser]: {$receipts['browser']}";
+    } elseif ($variant === 'unknown receipt') {
+        $receipts['tablet'] = $receipts['browser'];
+    }
+
+    $runtime = "passed - aggregate multi-venue runtime proof\n";
+    foreach ($receipts as $venue => $receipt) {
+        $runtime .= "          - runtime[{$venue}]: {$receipt}\n";
+    }
+    $packet = compact_feature_loop_packet(
+        featureTip: $candidate,
+        mainTip: $baseTip,
+        venue: 'browser',
+        runtime: $runtime,
+    );
+    $packet = str_replace('- Acceptance venue: browser', '- Acceptance venues: browser, host-macos', $packet);
+    $packet = str_replace('- Verification:\n          - focused:', '- Verification:\n          - focused:', $packet);
+    $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
+    file_put_contents("{$worktree}/.orbit/loop.md", $packet);
+    finalization_seed_runtime_evidence($worktree);
     finalization_seed_slice_packets($worktree, $packet);
 }
 

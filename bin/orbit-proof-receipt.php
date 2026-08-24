@@ -40,6 +40,7 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
     $dirtyStatus = trim(run_git($worktree, ['status', '--porcelain', '--untracked-files=all'])['stdout']);
     $dirty = $dirtyStatus !== '';
     $resolvedChangedFiles = $changedFiles;
+    $assertedVenues = null;
     $docsOnly = false;
     $overrideVenue = is_string($options['venue'] ?? null) && $options['venue'] !== ''
         ? (string) $options['venue']
@@ -61,19 +62,22 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
         }
     }
 
-    if ($resolvedChangedFiles !== null) {
+    if ($resolvedChangedFiles !== null && $assertedVenues === null) {
         $venues = orbitLoopAcceptanceVenues($resolvedChangedFiles);
     }
 
     if (isset($options['venues'])) {
         $assertedVenues = array_values($options['venues']);
-        $validAssertion = every($assertedVenues, static fn (mixed $candidate): bool => is_string($candidate) && $candidate !== '')
+        $knownVenues = defined('ORBIT_LOOP_ACCEPTANCE_VENUES')
+            ? ORBIT_LOOP_ACCEPTANCE_VENUES
+            : ['automated', 'retained-incus', 'browser', 'host-macos'];
+        $validAssertion = every($assertedVenues, static fn (mixed $candidate): bool => is_string($candidate) && $candidate !== '' && in_array($candidate, $knownVenues, true))
             && count($assertedVenues) === count(array_unique($assertedVenues));
 
-        if (! $validAssertion || array_diff($assertedVenues, $venues) !== [] || array_diff($venues, $assertedVenues) !== []) {
+        if (! $validAssertion) {
             return [
                 'ok' => false,
-                'problem' => 'proof receipt venues assertion does not match the diff-derived acceptance route',
+                'problem' => 'proof receipt venues assertion is empty, unknown, or duplicated',
                 'candidate' => $candidate,
                 'dirty' => $dirty,
                 'docs_only' => false,
@@ -84,6 +88,8 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
                 'runtime' => 'not applicable',
             ];
         }
+
+        $venues = $assertedVenues;
     }
 
     if ($overrideVenue !== null && count($venues) === 1 && ! orbitLoopVenueSatisfies($overrideVenue, $venues[0])) {
