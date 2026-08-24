@@ -527,7 +527,7 @@ final readonly class WorkloadNodeUpdater
             'operation_id' => $operationRun->id,
             'version' => $plan->target_version,
             'build_id' => $this->manifestBuildId($plan),
-            'install_mode' => 'automatic',
+            'install_mode' => 'restart-ready',
         ];
     }
 

@@ -887,7 +887,7 @@ it('stages a desktop archive and pending automatic handoff for a reachable selec
             'operation_id' => $run->id,
             'version' => '1.2.3',
             'build_id' => null,
-            'install_mode' => 'automatic',
+            'install_mode' => 'restart-ready',
         ]);
 });
 
@@ -987,7 +987,7 @@ it('stages a desktop archive and pending automatic handoff for a reachable manag
             'operation_id' => $run->id,
             'version' => '1.2.3',
             'build_id' => null,
-            'install_mode' => 'automatic',
+            'install_mode' => 'restart-ready',
         ]);
 });
 
@@ -1180,7 +1180,7 @@ it('stages Desktop and Agent when a roleless unmanaged Mac CLI already matches',
         ->and($payload['pending_desktop_update'])
         ->toMatchArray([
             'path' => '/Users/nckrtl/.config/orbit/pending-desktop-update.json',
-            'install_mode' => 'automatic',
+            'install_mode' => 'restart-ready',
         ]);
 });
 
@@ -1280,7 +1280,7 @@ it('stages a desktop archive and pending automatic handoff for a reachable rolel
             'operation_id' => $run->id,
             'version' => '1.2.3',
             'build_id' => null,
-            'install_mode' => 'automatic',
+            'install_mode' => 'restart-ready',
         ]);
 });
 

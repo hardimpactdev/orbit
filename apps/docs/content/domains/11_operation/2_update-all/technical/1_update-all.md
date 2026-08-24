@@ -159,7 +159,7 @@ Skipped nodes do not fail `update:all` and do not receive a remote pending
 restart. After the first side effect, later errors stay `failed` and cannot be
 relabeled `skipped`.
 
-Desktop staging and the automatic pending-desktop-update handoff apply to every
+Desktop staging and the restart-ready pending-desktop-update handoff apply to every
 reachable selected macOS/Darwin target that has matching Desktop, Agent, and CLI
 assets in the immutable plan. That includes roleless unmanaged Macs and
 role-bearing Macs whose stored `managed` flag is false. On those targets the CLI
