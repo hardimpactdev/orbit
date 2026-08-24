@@ -431,7 +431,12 @@ pub fn direct_command(program: impl Into<PathBuf>, args: Vec<String>) -> ColimaC
     }
 }
 fn ssh_command(colima: &Path, args: Vec<String>) -> ColimaCommand {
-    let mut command_args = vec!["ssh".into(), PROFILE.into(), "--".into()];
+    let mut command_args = vec![
+        "ssh".into(),
+        "--profile".into(),
+        PROFILE.into(),
+        "--".into(),
+    ];
     command_args.extend(args);
     direct_command(colima.to_path_buf(), command_args)
 }
@@ -724,6 +729,14 @@ mod tests {
             ["delete", "orbit", "--force", "--data"]
         );
         assert!(reset_delete_plan("colima", "0.8.0").is_err());
+    }
+
+    #[test]
+    fn ssh_plan_uses_the_owned_profile_before_separator() {
+        assert_eq!(
+            ssh_command(Path::new("colima"), vec!["uname".into()]).args,
+            ["ssh", "--profile", "orbit", "--", "uname"]
+        );
     }
 
     fn fake_script(fixture: &Fixture, name: &str, body: &str) -> (PathBuf, PathBuf) {
