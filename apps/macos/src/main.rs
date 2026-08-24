@@ -26,9 +26,9 @@ use orbit_macos::pending_update::{
 };
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, cooldown_retry_allowed, crash_action,
-    resolve_agent_binary, spawn_supervised_agent, stop_supervised_agent, AgentRunState,
-    CrashAction, DEFAULT_CHILD_CRASH_COOLDOWN, DEFAULT_CHILD_CRASH_WINDOW,
-    DEFAULT_MAX_CHILD_CRASH_RESTARTS,
+    provider_recovery_retry_allowed, resolve_agent_binary, spawn_supervised_agent,
+    stop_supervised_agent, AgentRunState, CrashAction, DEFAULT_CHILD_CRASH_COOLDOWN,
+    DEFAULT_CHILD_CRASH_WINDOW, DEFAULT_MAX_CHILD_CRASH_RESTARTS,
 };
 use orbit_macos::tray_labels::{
     launch_at_login_checked, launch_at_login_label, quit_orbit_label, restart_orbit_label,
@@ -102,6 +102,7 @@ struct DesktopRuntime {
     agent_state: Mutex<AgentRunState>,
     crash_times: Mutex<Vec<Instant>>,
     watcher_started: Mutex<bool>,
+    recovery_started: Mutex<bool>,
     update_state: Mutex<UpdateState>,
     launch_at_login: Mutex<LaunchAtLoginState>,
     conflict_reason: Mutex<Option<String>>,
@@ -119,6 +120,7 @@ impl DesktopRuntime {
             agent_state: Mutex::new(AgentRunState::Stopped),
             crash_times: Mutex::new(Vec::new()),
             watcher_started: Mutex::new(false),
+            recovery_started: Mutex::new(false),
             update_state: Mutex::new(UpdateState::Idle),
             launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
             conflict_reason: Mutex::new(None),
@@ -568,8 +570,60 @@ fn start_provider_health_monitor(app: AppHandle, endpoint: String) {
                 *stored = None;
             }
             stop_owned_child(&runtime);
+            start_provider_recovery_monitor(app.clone());
         }
         return;
+    });
+}
+
+fn start_provider_recovery_monitor(app: AppHandle) {
+    let handle = app.clone();
+    let runtime = app.state::<DesktopRuntime>();
+    let Ok(mut started) = runtime.recovery_started.lock() else {
+        return;
+    };
+    if *started {
+        return;
+    }
+    *started = true;
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(5));
+        let runtime = handle.state::<DesktopRuntime>();
+        let quitting = runtime.quitting.lock().map(|v| *v).unwrap_or(true);
+        let attempt = runtime.provider_attempt.lock().map(|v| *v).unwrap_or(true);
+        let state = runtime
+            .provider_state
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or(ProviderRuntimeState::Stopping);
+        let retry = provider_recovery_retry_allowed(
+            quitting,
+            attempt,
+            matches!(state, ProviderRuntimeState::Ready { .. }),
+            matches!(
+                state,
+                ProviderRuntimeState::Stopping | ProviderRuntimeState::StopFailed { .. }
+            ),
+            matches!(state, ProviderRuntimeState::OwnershipConflict { .. }),
+        );
+        if retry {
+            request_provider_start(&handle);
+            continue;
+        }
+        if quitting
+            || matches!(
+                state,
+                ProviderRuntimeState::Ready { .. }
+                    | ProviderRuntimeState::Stopping
+                    | ProviderRuntimeState::StopFailed { .. }
+                    | ProviderRuntimeState::OwnershipConflict { .. }
+            )
+        {
+            if let Ok(mut v) = runtime.recovery_started.lock() {
+                *v = false;
+            }
+            return;
+        }
     });
 }
 

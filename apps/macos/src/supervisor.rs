@@ -110,6 +110,16 @@ pub fn crash_action(
     }
 }
 
+pub fn provider_recovery_retry_allowed(
+    quitting: bool,
+    attempt_in_flight: bool,
+    ready: bool,
+    stopping: bool,
+    ownership_conflict: bool,
+) -> bool {
+    !quitting && !attempt_in_flight && !ready && !stopping && !ownership_conflict
+}
+
 pub fn cooldown_retry_allowed(quitting: bool, endpoint_available: bool) -> bool {
     !quitting && endpoint_available
 }
@@ -193,6 +203,32 @@ mod tests {
             agent_status_label(AgentRunState::Conflict),
             "Agent: Conflict"
         );
+    }
+
+    #[test]
+    fn provider_recovery_retries_only_from_degraded_idle_state() {
+        assert!(provider_recovery_retry_allowed(
+            false, false, false, false, false
+        ));
+        assert!(!provider_recovery_retry_allowed(
+            false, true, false, false, false
+        ));
+        assert!(!provider_recovery_retry_allowed(
+            false, false, true, false, false
+        ));
+    }
+
+    #[test]
+    fn provider_recovery_stops_for_quit_stop_or_conflict() {
+        assert!(!provider_recovery_retry_allowed(
+            true, false, false, false, false
+        ));
+        assert!(!provider_recovery_retry_allowed(
+            false, false, false, true, false
+        ));
+        assert!(!provider_recovery_retry_allowed(
+            false, false, false, false, true
+        ));
     }
 
     #[test]
