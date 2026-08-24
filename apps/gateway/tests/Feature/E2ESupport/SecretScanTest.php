@@ -42,9 +42,7 @@ it('scans indexed slice packets and fails closed on invalid packet trees', funct
 })->with([
     'secret' => [
         'secret',
-        secret_scan_slice_packet('01-one')."password=\""
-            .str_repeat('x', 20)
-            ."\"\n",
+        secret_scan_slice_packet('01-one').'password="'.str_repeat('x', 20)."\"\n",
         2,
         '.orbit/slices/01-one.md',
     ],
@@ -78,8 +76,7 @@ it('rejects a slice packet tree without an indexed Slices table', function (): v
     try {
         $process = secret_scan_test_run($workspace);
 
-        expect($process->getExitCode())->toBe(2)
-            ->and($process->getErrorOutput())->toContain('invalid-slice-contract');
+        expect($process->getExitCode())->toBe(2)->and($process->getErrorOutput())->toContain('invalid-slice-contract');
     } finally {
         secret_scan_test_remove($workspace);
     }
@@ -103,8 +100,7 @@ it('fails closed when the indexed slice ancestry is a symlink', function (): voi
 
     try {
         $process = secret_scan_test_run($workspace);
-        expect($process->getExitCode())->toBe(2)
-            ->and($process->getErrorOutput())->toContain('unsafe');
+        expect($process->getExitCode())->toBe(2)->and($process->getErrorOutput())->toContain('unsafe');
     } finally {
         secret_scan_test_remove($workspace);
         if (is_dir($outside) && ! is_link($outside)) {
@@ -123,7 +119,7 @@ it('scans indexed packets from the provided orbit directory', function (): void 
     );
     file_put_contents(
         "{$orbitDir}/slices/01-one.md",
-        secret_scan_slice_packet('01-one')."password=\"".str_repeat('x', 20)."\"\n",
+        secret_scan_slice_packet('01-one').'password="'.str_repeat('x', 20)."\"\n",
     );
 
     try {
@@ -320,13 +316,15 @@ function secret_scan_test_workspace(string $suffix): string
 
 function secret_scan_slice_packet(string $id): string
 {
-    return "# Orbit Feature Slice\n\n"
+    return (
+        "# Orbit Feature Slice\n\n"
         ."- Slice: {$id}\n"
         ."- Depends on: none\n\n"
         ."## Outcome\n\n"
         ."## Scope\n- Included: secret scan\n- Excluded: archive work\n\n"
         ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
-        ."## Proof\n- Focused: secret scan tests\n";
+        ."## Proof\n- Focused: secret scan tests\n"
+    );
 }
 
 function secret_scan_test_run(string $workspace, ?string $tree = null, ?string $orbitDir = null): Process
@@ -334,7 +332,7 @@ function secret_scan_test_run(string $workspace, ?string $tree = null, ?string $
     $arguments = [
         repo_path('bin/orbit-secret-scan'),
         "--worktree={$workspace}",
-        "--orbit-dir=".($orbitDir ?? "{$workspace}/.orbit"),
+        '--orbit-dir='.($orbitDir ?? "{$workspace}/.orbit"),
     ];
 
     if ($tree !== null) {

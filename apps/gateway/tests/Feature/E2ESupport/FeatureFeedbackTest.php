@@ -12,7 +12,9 @@ it('validates optional feedback slice context as a safe indexed path shape', fun
     $indexed['context'] = ['slice' => '.orbit/slices/01-one.md'];
     expect(static function () use ($indexed): void {
         orbitFeedbackValidate($indexed);
-    })->not->toThrow(RuntimeException::class);
+    })
+        ->not
+        ->toThrow(RuntimeException::class);
     foreach (['../unsafe', '01-one', '.orbit/slices/one.md', ['array']] as $slice) {
         $event = $historical;
         $event['context'] = ['slice' => $slice];
@@ -68,20 +70,31 @@ it('validates feedback slice context against the custom orbit directory', functi
     $workspace = feedback_test_workspace('custom-orbit');
     $orbitDir = $workspace.'/custom-orbit';
     mkdir($orbitDir.'/slices', recursive: true);
-    file_put_contents($orbitDir.'/loop.md', "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n");
+    file_put_contents(
+        $orbitDir.'/loop.md',
+        "# Orbit Feature Loop\n\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-one.md` | ready | none |\n",
+    );
     file_put_contents($orbitDir.'/slices/01-one.md', feedback_slice_packet('01-one', 'none'));
 
     try {
         $process = feedback_test_run(
             $workspace,
-            ['record', '--session-ref=codex://threads/custom#1', '--surface=cli.progress', '--slice=.orbit/slices/01-one.md'],
+            [
+                'record',
+                '--session-ref=codex://threads/custom#1',
+                '--surface=cli.progress',
+                '--slice=.orbit/slices/01-one.md',
+            ],
             "Custom orbit context.\n",
             $orbitDir,
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and(is_file($orbitDir.'/feedback.jsonl'))->toBeTrue()
-            ->and(is_file($workspace.'/.orbit/feedback.jsonl'))->toBeFalse();
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(is_file($orbitDir.'/feedback.jsonl'))
+            ->toBeTrue()
+            ->and(is_file($workspace.'/.orbit/feedback.jsonl'))
+            ->toBeFalse();
     } finally {
         feedback_test_remove($workspace);
     }
@@ -766,13 +779,15 @@ function feedback_test_temp_path(): string
 
 function feedback_slice_packet(string $id, string $depends): string
 {
-    return "# Orbit Feature Slice\n\n"
+    return (
+        "# Orbit Feature Slice\n\n"
         ."- Slice: {$id}\n"
         ."- Depends on: {$depends}\n\n"
         ."## Outcome\n\n"
         ."## Scope\n- Included: feedback context\n- Excluded: archive work\n\n"
         ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
-        ."## Proof\n- Focused: feedback context tests\n";
+        ."## Proof\n- Focused: feedback context tests\n"
+    );
 }
 
 /**
@@ -818,7 +833,7 @@ function feedback_test_run(string $workspace, array $arguments, string $input = 
         repo_path('bin/orbit-feature-feedback'),
         ...$arguments,
         "--cwd={$workspace}",
-        "--orbit-dir=".($orbitDir ?? "{$workspace}/.orbit"),
+        '--orbit-dir='.($orbitDir ?? "{$workspace}/.orbit"),
     ], $workspace);
     $process->setInput($input);
     $process->run();

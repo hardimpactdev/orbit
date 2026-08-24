@@ -1790,7 +1790,10 @@ function worker_tools_make_fixture(): array
     new Process(['git', 'config', 'user.name', 'Orbit Test'], $root)->mustRun();
     mkdir($root.'/.orbit', recursive: true);
     mkdir($root.'/.orbit/slices', recursive: true);
-    file_put_contents($root.'/.orbit/slices/01-one.md', "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: worker fixture\n- Excluded: archive work\n\n## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n## Proof\n- Focused: worker gate tests\n");
+    file_put_contents(
+        $root.'/.orbit/slices/01-one.md',
+        "# Orbit Feature Slice\n\n- Slice: 01-one\n- Depends on: none\n\n## Outcome\n\n## Scope\n- Included: worker fixture\n- Excluded: archive work\n\n## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n## Proof\n- Focused: worker gate tests\n",
+    );
     file_put_contents($root.'/.orbit/loop.md', <<<MARKDOWN
         # Orbit Feature Loop
 
