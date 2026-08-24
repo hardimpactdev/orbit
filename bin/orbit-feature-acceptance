@@ -187,11 +187,7 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException($receiptProblem);
     }
 
-    if (count($venues) === 1) {
-        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
-    } else {
-        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venues', implode(', ', $venues));
-    }
+    $loop = acceptanceSetVenueLabel($loop, $venues, $venue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'pending');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', 'none');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted main tip', 'none');
@@ -200,7 +196,8 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
     acceptanceWriteLoop($loopPath, $loop);
 
     $actor = orbitLoopReviewRequiresHumanJudgment($review) ? 'user' : 'automated';
-    fwrite(STDOUT, "ACCEPTANCE READY venues=".implode(',', $venues)." actor={$actor}\n");
+    $readyVenue = count($venues) === 1 ? 'venue='.$venues[0] : 'venues='.implode(',', $venues);
+    fwrite(STDOUT, "ACCEPTANCE READY {$readyVenue} actor={$actor}\n");
     exit(0);
 }
 
@@ -303,11 +300,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         $acceptanceValue = "accepted - user @ {$sourceRef}";
     }
 
-    if (count($venues) === 1) {
-        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
-    } else {
-        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venues', implode(', ', $venues));
-    }
+    $loop = acceptanceSetVenueLabel($loop, $venues, $venue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', $acceptanceValue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', $featureTip);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted main tip', $mainTip);
@@ -419,6 +412,27 @@ function acceptanceResolvedVenue(array $options, string $loop, string $minimum):
     }
 
     return $minimum;
+}
+
+/** @param list<string> $venues */
+function acceptanceSetVenueLabel(string $loop, array $venues, string $venue = ''): string
+{
+    $label = count($venues) === 1 ? 'Acceptance venue' : 'Acceptance venues';
+    $value = count($venues) === 1 ? $venue : implode(', ', $venues);
+    $lines = preg_split('/\R/', $loop) ?: [];
+    $proof = false;
+    $matches = 0;
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^##\s+Proof\s*$/i', $line) === 1) { $proof = true; continue; }
+        if ($proof && preg_match('/^##\s+/', $line) === 1) { $proof = false; }
+        if (! $proof || preg_match('/^-\s+Acceptance venues?:\s*.*$/i', $line) !== 1) { continue; }
+        $lines[$index] = '- '.$label.': '.$value;
+        $matches++;
+    }
+    if ($matches !== 1) {
+        throw new RuntimeException('Expected exactly one Acceptance venue(s) label in Proof; found '.$matches.'.');
+    }
+    return implode("\n", $lines);
 }
 
 /**

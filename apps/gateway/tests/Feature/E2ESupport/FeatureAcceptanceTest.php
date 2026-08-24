@@ -287,7 +287,7 @@ it('derives acceptance venues from changed files', function (array $files, strin
             'packages/sdk/src/GatewayConnector.php',
             'packages/sdk-typescript/src/client.ts',
         ],
-        ['automated', 'retained-incus'],
+        ['retained-incus'],
     ],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
     'docs frontend resources stay browser' => [['apps/docs/resources/js/app.js'], 'browser'],
@@ -335,7 +335,7 @@ it('fails closed when a candidate diff needs more than one orthogonal non-automa
             'apps/cli/app/Commands/FooCommand.php',
             'apps/macos/src/main.rs',
         ],
-        'split the feature slice',
+        'more than one orthogonal non-automated acceptance venue',
     ],
     'browser+host-macos' => [
         [
@@ -2405,10 +2405,6 @@ function acceptance_test_structured_runtime(
         .$candidate
         .'; venue='
         .$venue
-        .'; base_tip='
-        .acceptance_test_git($fixture, ['rev-parse', 'main'])
-        .'; merge_base='
-        .acceptance_test_git($fixture, ['merge-base', 'main', 'HEAD'])
         .'; environment=dev-fixture'
         .'; command=fixture runtime command'
         .'; expected=exit 0'

@@ -86,7 +86,7 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
         }
     }
 
-    if ($overrideVenue !== null && count($venues) === 1 && $overrideVenue !== $venues[0]) {
+    if ($overrideVenue !== null && count($venues) === 1 && ! orbitLoopVenueSatisfies($overrideVenue, $venues[0])) {
         return [
             'ok' => false,
             'problem' => 'proof receipt venue assertion does not match the diff-derived acceptance route',
