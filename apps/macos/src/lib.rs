@@ -1,3 +1,4 @@
+pub mod colima;
 pub mod installer;
 pub mod legacy;
 pub mod lifecycle;

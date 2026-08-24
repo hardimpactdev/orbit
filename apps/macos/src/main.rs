@@ -2,6 +2,7 @@ use orbit_agent::{
     gateway_host_from_config, ping_gateway_connection, AgentConfig, ConfigError, ConnectionStatus,
     GatewayClient, GatewayConnection, ServiceStatusSnapshot,
 };
+use orbit_macos::colima::ensure_ready;
 use orbit_macos::installer::{apply_bound_update, commit_install_attempt, ApplyFailure};
 use orbit_macos::legacy::{
     conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
@@ -75,6 +76,7 @@ struct DesktopRuntime {
     launch_at_login: Mutex<LaunchAtLoginState>,
     conflict_reason: Mutex<Option<String>>,
     quitting: Mutex<bool>,
+    docker_host: Mutex<Option<String>>,
 }
 
 impl DesktopRuntime {
@@ -87,6 +89,7 @@ impl DesktopRuntime {
             launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
             conflict_reason: Mutex::new(None),
             quitting: Mutex::new(false),
+            docker_host: Mutex::new(None),
         }
     }
 }
@@ -226,6 +229,10 @@ fn bootstrap_process_environment() {
 
 fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) {
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let colima =
+        PathBuf::from(std::env::var_os("ORBIT_COLIMA_BIN").unwrap_or_else(|| "colima".into()));
+    let docker =
+        PathBuf::from(std::env::var_os("ORBIT_DOCKER_BIN").unwrap_or_else(|| "docker".into()));
     let launchd = observed_legacy_launchd(&home);
     let listener = observed_listener_owner();
     match inspect_legacy_agent(&home, launchd, listener) {
@@ -244,10 +251,25 @@ fn start_owned_agent(app: &AppHandle, runtime: &DesktopRuntime) {
         LegacyDecision::Absent => {}
     }
 
-    spawn_or_mark_missing(app, runtime, &home);
+    let Ok(provider) = ensure_ready(&home, &colima, &docker) else {
+        if let Ok(mut agent_state) = runtime.agent_state.lock() {
+            *agent_state = AgentRunState::Stopped;
+        }
+        return;
+    };
+    if let Ok(mut endpoint) = runtime.docker_host.lock() {
+        *endpoint = Some(provider.socket.clone());
+    }
+
+    spawn_or_mark_missing(app, runtime, &home, provider.socket);
 }
 
-fn spawn_or_mark_missing(app: &AppHandle, runtime: &DesktopRuntime, home: &Path) {
+fn spawn_or_mark_missing(
+    app: &AppHandle,
+    runtime: &DesktopRuntime,
+    home: &Path,
+    docker_host: String,
+) {
     let override_bin = std::env::var_os("ORBIT_AGENT_BIN").map(PathBuf::from);
     let Some(binary) = resolve_agent_binary(home, override_bin.as_deref()) else {
         if let Ok(mut agent_state) = runtime.agent_state.lock() {
@@ -260,7 +282,7 @@ fn spawn_or_mark_missing(app: &AppHandle, runtime: &DesktopRuntime, home: &Path)
         *agent_state = AgentRunState::Starting;
     }
 
-    let plan = agent_launch_plan(binary);
+    let plan = agent_launch_plan(binary, docker_host);
     match spawn_supervised_agent(&plan) {
         Ok(child) => {
             if let Ok(mut slot) = runtime.child.lock() {
@@ -316,7 +338,16 @@ fn watch_child_crashes(app: AppHandle) {
         match action {
             CrashAction::Restart => {
                 let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-                spawn_or_mark_missing(&app, &runtime, &home);
+                let endpoint = runtime
+                    .docker_host
+                    .lock()
+                    .ok()
+                    .and_then(|value| value.clone());
+                if let Some(endpoint) = endpoint {
+                    spawn_or_mark_missing(&app, &runtime, &home, endpoint);
+                } else if let Ok(mut state) = runtime.agent_state.lock() {
+                    *state = AgentRunState::Stopped;
+                }
             }
             CrashAction::StayStopped => {
                 if let Ok(mut agent_state) = runtime.agent_state.lock() {
@@ -584,7 +615,14 @@ fn install_ready_update(app: &AppHandle) {
     if disposition.restart_app {
         app.restart();
     } else {
-        spawn_or_mark_missing(app, &runtime, &home);
+        let endpoint = runtime
+            .docker_host
+            .lock()
+            .ok()
+            .and_then(|value| value.clone());
+        if let Some(endpoint) = endpoint {
+            spawn_or_mark_missing(app, &runtime, &home, endpoint);
+        }
     }
 }
 

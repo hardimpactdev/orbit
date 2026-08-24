@@ -26,6 +26,7 @@ pub struct AgentLaunchPlan {
     pub binary: PathBuf,
     pub lifetime_env: &'static str,
     pub lifetime_value: &'static str,
+    pub docker_host: String,
 }
 
 pub fn agent_binary_candidates(home: &Path, override_bin: Option<&Path>) -> Vec<PathBuf> {
@@ -46,17 +47,22 @@ pub fn resolve_agent_binary(home: &Path, override_bin: Option<&Path>) -> Option<
         .find(|path| path.is_file())
 }
 
-pub fn agent_launch_plan(binary: PathBuf) -> AgentLaunchPlan {
+pub fn agent_launch_plan(binary: PathBuf, docker_host: String) -> AgentLaunchPlan {
     AgentLaunchPlan {
         binary,
         lifetime_env: DESKTOP_LIFETIME_ENV,
         lifetime_value: "1",
+        docker_host,
     }
 }
 
 pub fn spawn_supervised_agent(plan: &AgentLaunchPlan) -> std::io::Result<std::process::Child> {
-    Command::new(&plan.binary)
+    let mut command = Command::new(&plan.binary);
+    command
         .env(plan.lifetime_env, plan.lifetime_value)
+        .env_remove("DOCKER_CONTEXT");
+    command.env("DOCKER_HOST", &plan.docker_host);
+    command
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
@@ -135,7 +141,10 @@ mod tests {
 
     #[test]
     fn launch_plan_sets_the_desktop_lifetime_marker_and_piped_stdin() {
-        let plan = agent_launch_plan(PathBuf::from("/Users/nckrtl/.local/bin/orbit-agent"));
+        let plan = agent_launch_plan(
+            PathBuf::from("/Users/nckrtl/.local/bin/orbit-agent"),
+            "unix:///tmp/orbit.sock".into(),
+        );
 
         assert_eq!(plan.lifetime_env, DESKTOP_LIFETIME_ENV);
         assert_eq!(plan.lifetime_value, "1");
@@ -187,7 +196,7 @@ mod tests {
         permissions.set_mode(0o755);
         fs::set_permissions(&script, permissions).expect("chmod");
 
-        let plan = agent_launch_plan(script.clone());
+        let plan = agent_launch_plan(script.clone(), "unix:///tmp/orbit.sock".into());
         let mut child = spawn_supervised_agent(&plan).expect("spawn");
         assert!(child.stdin.is_some());
 
