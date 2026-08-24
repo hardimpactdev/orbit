@@ -1,0 +1,31 @@
+{
+    "id": "impl-3",
+    "role": "impl",
+    "cli": "grok",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=impl-3",
+        "ORBIT_WORKER_ROLE=impl",
+        "PATH=/home/nckrtl/.vite-plus/bin:/home/nckrtl/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/nckrtl/.codex/tmp/arg0/codex-arg0x1INEV:/home/nckrtl/.vite-plus/js_runtime/node/24.19.0/bin:/home/nckrtl/.local/bin:/home/nckrtl/.grok/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.bun/bin:/home/nckrtl/.opencode/bin:/home/nckrtl/.bun/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/nckrtl/.npm-global/bin:/home/nckrtl/.local/bin:/home/nckrtl/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+        "grok",
+        "--yolo",
+        "--reasoning-effort",
+        "medium"
+    ],
+    "tmux": {
+        "session": "feat-codex-fix-macos-desktop-update-selection",
+        "window": "impl-3",
+        "pane_id": "%19",
+        "pane_pid": 1246292,
+        "socket": null
+    },
+    "cwd": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection",
+    "brief": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection/.orbit/workers/briefs/revert-out-of-scope-harness.md",
+    "status": "handoff",
+    "heartbeat_at": "2026-08-23T23:01:46Z",
+    "note": "candidate=034cfb84fe1e644ae8254fdb3b7dd2b47d672fe6 proof-receipt ok quality-check=.orbit/quality-gates/quality-check-2026-08-23T223248Z-d4fa8fce40b8.json venue=retained-incus",
+    "started_at": "2026-08-23T22:29:12Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": "/home/nckrtl/orbit/.worktrees/codex-fix-macos-desktop-update-selection/.orbit/workers/handoff/impl-3-034cfb84fe1e644ae8254fdb3b7dd2b47d672fe6.md"
+}
