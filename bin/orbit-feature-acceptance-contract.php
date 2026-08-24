@@ -15,6 +15,7 @@ function compact_acceptance_provenance_problem(
     $review = orbitLoopLabel($contents, 'Proof', 'Review');
     $singular = orbitLoopStatusHead(orbitLoopLabel($contents, 'Proof', 'Acceptance venue')) ?? '';
     $plural = array_values(array_filter(array_map('trim', explode(',', (string) orbitLoopLabel($contents, 'Proof', 'Acceptance venues')))));
+    $hasPluralRecord = trim((string) orbitLoopLabel($contents, 'Proof', 'Acceptance venues')) !== '';
     $recordedVenues = $plural !== [] ? $plural : ($singular === '' ? [] : [$singular]);
     $actual = $recordedVenues;
     $expected = $routedVenues;
@@ -29,7 +30,11 @@ function compact_acceptance_provenance_problem(
             return "acceptance venue {$recordedVenue} is unknown";
         }
     }
-    if ($actual !== $expected) {
+    if (count($routedVenues) === 1) {
+        if ($hasPluralRecord || count($recordedVenues) !== 1) {
+            return 'acceptance venues must exactly match diff-routed venues';
+        }
+    } elseif ($actual !== $expected) {
         return 'acceptance venues must exactly match diff-routed venues';
     }
     $acceptance = trim((string) orbitLoopLabel($contents, 'Proof', 'Acceptance'));
@@ -169,7 +174,9 @@ function candidate_acceptance_venue(
     $script = <<<'PHP'
         $changedFiles = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
         require $argv[1];
-        $venues = orbitLoopAcceptanceVenues($changedFiles);
+        $venues = function_exists('orbitLoopAcceptanceVenues')
+            ? orbitLoopAcceptanceVenues($changedFiles)
+            : [orbitLoopAcceptanceVenue($changedFiles)];
         fwrite(STDOUT, json_encode(['venue' => count($venues) === 1 ? $venues[0] : '', 'venues' => $venues], JSON_THROW_ON_ERROR).PHP_EOL);
         PHP;
     $result = run_process_with_timeout(
@@ -206,7 +213,9 @@ function candidate_acceptance_venue(
     }
 
     $decoded = json_decode(trim($result['stdout']), true);
-    $venues = is_array($decoded['venues'] ?? null) ? array_values($decoded['venues']) : [];
+    $venues = is_array($decoded) && is_array($decoded['venues'] ?? null)
+        ? array_values($decoded['venues'])
+        : [];
     if ($venues === []) {
         $output = trim($result['stdout']);
         $knownVenues = ['automated', 'retained-incus', 'browser', 'host-macos'];
@@ -226,7 +235,21 @@ function candidate_acceptance_venue(
         ];
     }
 
-    $venue = is_string($decoded['venue'] ?? null) ? (string) $decoded['venue'] : '';
+    $knownVenues = defined('ORBIT_LOOP_ACCEPTANCE_VENUES')
+        ? ORBIT_LOOP_ACCEPTANCE_VENUES
+        : ['automated', 'retained-incus', 'browser', 'host-macos'];
+    if (array_filter($venues, static fn (mixed $venue): bool => ! is_string($venue)) !== []) {
+        return ['venue' => '', 'venues' => [], 'problem' => 'candidate acceptance venue subprocess returned malformed output'];
+    }
+    if (count($venues) !== count(array_unique($venues))) {
+        return ['venue' => '', 'venues' => [], 'problem' => 'candidate acceptance venue subprocess returned duplicate venues'];
+    }
+    foreach ($venues as $candidateVenue) {
+        if (! in_array($candidateVenue, $knownVenues, true)) {
+            return ['venue' => '', 'venues' => [], 'problem' => "candidate acceptance venue subprocess returned unknown venue `{$candidateVenue}`"];
+        }
+    }
+    $venue = is_array($decoded) && is_string($decoded['venue'] ?? null) ? (string) $decoded['venue'] : '';
 
     $stateProblem = candidate_acceptance_venue_state_problem(
         $worktree,
