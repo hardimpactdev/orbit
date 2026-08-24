@@ -4,6 +4,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::time::Duration;
 
 pub const KNOWN_KINDS: [&str; 8] = [
     "caddy",
@@ -15,6 +16,8 @@ pub const KNOWN_KINDS: [&str; 8] = [
     "websocket-runtime",
     "s3-runtime",
 ];
+const START_RETRY_ATTEMPTS: usize = 20;
+const START_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyContainer {
     pub id: String,
@@ -868,11 +871,53 @@ fn save_image(program: &Path, source: &str, image: &str, path: &Path) -> Result<
     }
     Ok(())
 }
+fn start_and_verify_running<F>(
+    program: &Path,
+    target: &str,
+    c: &LegacyContainer,
+    mut sleep: F,
+) -> Result<(), CutoverError>
+where
+    F: FnMut(Duration),
+{
+    for attempt in 1..=START_RETRY_ATTEMPTS {
+        let started = docker(program, target, &a(&["start", &c.name])).is_ok();
+        if started {
+            let running = docker(program, target, &a(&["inspect", &c.name]))
+                .ok()
+                .and_then(|out| inspect(&String::from_utf8_lossy(&out.stdout)).ok())
+                .and_then(|actual| actual.pointer("/State/Running").cloned())
+                == Some(Value::Bool(true));
+            if running {
+                return Ok(());
+            }
+        }
+        if attempt < START_RETRY_ATTEMPTS {
+            sleep(START_RETRY_INTERVAL);
+        }
+    }
+    Err(CutoverError::Invalid(
+        c.name.clone(),
+        "target failed to start".into(),
+    ))
+}
 pub fn cutover(
     program: &Path,
     source: &str,
     target: &str,
 ) -> Result<Vec<LegacyContainer>, CutoverError> {
+    cutover_with_sleep(program, source, target, std::thread::sleep)
+}
+
+fn cutover_with_sleep<F>(
+    program: &Path,
+    source: &str,
+    target: &str,
+    mut sleep: F,
+) -> Result<Vec<LegacyContainer>, CutoverError>
+where
+    F: FnMut(Duration),
+{
     let path = source.strip_prefix("unix://").ok_or_else(|| {
         CutoverError::Invalid(source.into(), "source endpoint must be Unix socket".into())
     })?;
@@ -1058,16 +1103,7 @@ pub fn cutover(
         }
         for c in &cs {
             if c.running {
-                docker(program, target, &a(&["start", &c.name]))?;
-                let actual = inspect(&String::from_utf8_lossy(
-                    &docker(program, target, &a(&["inspect", &c.name]))?.stdout,
-                ))?;
-                if actual.pointer("/State/Running") != Some(&Value::Bool(true)) {
-                    return Err(CutoverError::Invalid(
-                        c.name.clone(),
-                        "target failed to start".into(),
-                    ));
-                }
+                start_and_verify_running(program, target, c, &mut sleep)?;
             }
         }
         verified = true;
@@ -1342,6 +1378,43 @@ mod tests {
     }
 
     #[test]
+    fn start_and_verify_running_retries_until_inspect_reports_running() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fixture = test_dir("start-retry-running");
+        let log = fixture.join("argv.log");
+        let script = fixture.join("docker");
+        std::env::set_var("LOG", &log);
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s %s\\n' \"$DOCKER_HOST\" \"$*\" >> \"$LOG\"\ncase \"$DOCKER_HOST:$1:$2:$3\" in\nunix://target:start:orbit-caddy:)\n  count=$(cat \"{0}/start-count\" 2>/dev/null || echo 0)\n  count=$((count + 1))\n  printf '%s' \"$count\" > \"{0}/start-count\"\n  exit 0 ;;\nunix://target:inspect:orbit-caddy:)\n  count=$(cat \"{0}/start-count\" 2>/dev/null || echo 0)\n  if [ \"$count\" -lt 2 ]; then printf '%s' '[{{\"State\":{{\"Running\":false}}}}]'; else printf '%s' '[{{\"State\":{{\"Running\":true}}}}]'; fi\n  exit 0 ;;\n*) exit 1 ;;\nesac\n",
+                fixture.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let mut sleeps = Vec::new();
+        start_and_verify_running(&script, "unix://target", &caddy_fixture(), |duration| {
+            sleeps.push(duration)
+        })
+        .unwrap();
+
+        assert_eq!(sleeps, vec![START_RETRY_INTERVAL]);
+        assert_eq!(
+            fs::read_to_string(fixture.join("start-count")).unwrap(),
+            "2"
+        );
+        let log_text = fs::read_to_string(log).unwrap();
+        assert_eq!(log_text.matches(" start orbit-caddy").count(), 2);
+        assert_eq!(log_text.matches(" inspect orbit-caddy").count(), 2);
+        std::env::remove_var("LOG");
+    }
+
+    #[test]
     fn named_volume_shared_copy_verifies_before_start_and_cleans_helpers() {
         let _guard = CUTOVER_TEST_LOCK
             .lock()
@@ -1374,7 +1447,7 @@ mod tests {
             named_volumes(&[caddy, runtime]).unwrap(),
             vec!["shared-data"]
         );
-        cutover(&fake, &source, &target).unwrap();
+        cutover_with_sleep(&fake, &source, &target, |_| {}).unwrap();
         let lines = fs::read_to_string(&log).unwrap();
         assert!(!lines.contains("/var/lib/docker/volumes/"));
         assert_eq!(
@@ -1407,13 +1480,51 @@ mod tests {
         let lines_vec = lines.lines().collect::<Vec<_>>();
         let first_start = lines_vec
             .iter()
-            .position(|x| x.contains(" start "))
+            .position(|x| x.contains(" start orbit-caddy"))
             .unwrap();
         let target_verify = lines_vec
             .iter()
             .rposition(|x| x.contains("target.sock run "))
             .unwrap();
         assert!(target_verify < first_start);
+        assert_eq!(
+            lines_vec
+                .iter()
+                .filter(|line| line.ends_with("target.sock start orbit-caddy"))
+                .count(),
+            2
+        );
+        let second_start = lines_vec
+            .iter()
+            .rposition(|line| line.ends_with("target.sock start orbit-caddy"))
+            .unwrap();
+        let failed_start = lines_vec
+            .iter()
+            .position(|line| line.contains("target.sock start orbit-caddy -> exit 1"))
+            .unwrap();
+        let successful_inspect = lines_vec
+            .iter()
+            .enumerate()
+            .skip(second_start + 1)
+            .find_map(|(index, line)| {
+                line.contains("target.sock inspect orbit-caddy")
+                    .then_some(index)
+            })
+            .unwrap();
+        let source_remove = lines_vec
+            .iter()
+            .position(|line| line.contains("source.sock rm orbit-caddy"))
+            .unwrap();
+        assert_eq!(
+            lines_vec
+                .iter()
+                .filter(|line| line.contains("target.sock start orbit-caddy -> exit 1"))
+                .count(),
+            1
+        );
+        assert!(first_start < failed_start);
+        assert!(failed_start < second_start);
+        assert!(successful_inspect < source_remove);
         assert!(lines.contains("target.sock inspect orbit-runtime"));
         assert!(lines.contains(" rm orbit-caddy"));
         assert!(lines.contains(" rm orbit-runtime"));
@@ -1439,7 +1550,7 @@ mod tests {
             tar_manifest(&source_tar).unwrap(),
             tar_manifest(&target_tar).unwrap()
         );
-        assert!(cutover(&fake, &source, &target).is_err());
+        assert!(cutover_with_sleep(&fake, &source, &target, |_| {}).is_err());
         let lines = fs::read_to_string(&log).unwrap();
         assert!(lines.contains(" volume rm shared-data"));
         assert!(!lines.contains("/var/lib/docker/volumes/"));
@@ -1475,7 +1586,7 @@ mod tests {
             tar_manifest(&target_tar).unwrap()
         );
 
-        assert!(cutover(&fake, &source, &target).is_err());
+        assert!(cutover_with_sleep(&fake, &source, &target, |_| {}).is_err());
         let first = fs::read_to_string(&log).unwrap();
         assert!(first.contains(" rm orbit-caddy"));
         assert!(first.contains(" rm orbit-runtime"));
@@ -1485,7 +1596,7 @@ mod tests {
         assert!(fixture.join("cleanup-state").exists());
 
         let before_retry = first.lines().count();
-        cutover(&fake, &source, &target).unwrap();
+        cutover_with_sleep(&fake, &source, &target, |_| {}).unwrap();
         let all = fs::read_to_string(&log).unwrap();
         let delta = all
             .lines()
@@ -1540,7 +1651,7 @@ mod tests {
             tar_manifest(&target_tar).unwrap()
         );
 
-        let error = cutover(&fake, &source, &target).unwrap_err();
+        let error = cutover_with_sleep(&fake, &source, &target, |_| {}).unwrap_err();
         assert!(matches!(error, CutoverError::TargetConflict(_)));
         let lines = fs::read_to_string(&log).unwrap();
         assert!(!lines.contains(" stop "));
@@ -1570,7 +1681,7 @@ mod tests {
         std::env::set_var("FIXTURE", &fixture);
         let (_source_dir, source) = unix_socket(&fixture, "source.sock");
         let (_target_dir, target) = unix_socket(&fixture, "target.sock");
-        let error = cutover(&fake, &source, &target).unwrap_err();
+        let error = cutover_with_sleep(&fake, &source, &target, |_| {}).unwrap_err();
         assert!(matches!(error, CutoverError::Invalid(name, _) if name == "orbit-runtime"));
         let lines = fs::read_to_string(&log).unwrap();
         assert!(!lines.contains(" stop "));
@@ -1647,6 +1758,7 @@ mod tests {
                 json!("/var/lib/docker/volumes/shared-data/_data-target");
         }
         target_caddy["Id"] = json!("caddy-id");
+        target_caddy["State"]["Running"] = json!(false);
         target_runtime["Id"] = json!("runtime-id");
         target_runtime["Config"]["Env"] = json!([
             "ORBIT_SOURCE_PATH=/Users/nckrtl/orbit/src",
@@ -1655,8 +1767,15 @@ mod tests {
         fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
         fs::write(dir.join("runtime.json"), &runtime.inspect).unwrap();
         fs::write(
-            dir.join("target-caddy.json"),
+            dir.join("target-caddy-stopped.json"),
             json!([target_caddy]).to_string(),
+        )
+        .unwrap();
+        let mut target_caddy_running = target_caddy.clone();
+        target_caddy_running["State"]["Running"] = json!(true);
+        fs::write(
+            dir.join("target-caddy-running.json"),
+            json!([target_caddy_running]).to_string(),
         )
         .unwrap();
         fs::write(
@@ -1689,7 +1808,14 @@ unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
 unix://*/target.sock:ps:-aq) exit 0 ;;
 unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
 unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
-unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy.json"; exit 0 ;;
+unix://*/target.sock:inspect:orbit-caddy)
+  if [ -f "$FIXTURE/start-ready" ]; then
+    touch "$FIXTURE/running-state"
+    cat "$FIXTURE/target-caddy-running.json"
+  else
+    cat "$FIXTURE/target-caddy-stopped.json"
+  fi
+  exit 0 ;;
 unix://*/target.sock:inspect:orbit-runtime) cat "$FIXTURE/target-runtime.json"; exit 0 ;;
 unix://*/source.sock:network:inspect) cat "$FIXTURE/network.json"; exit 0 ;;
 unix://*/target.sock:network:inspect) exit 1 ;;
@@ -1701,7 +1827,18 @@ unix://*/target.sock:volume:rm*) exit 0 ;;
 unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
 unix://*/target.sock:run:*) cat "$FIXTURE/target.tar"; exit 0 ;;
 unix://*/source.sock:save:*) printf 'image'; exit 0 ;;
-unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;
+unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:rm:*) exit 0 ;;
+unix://*/target.sock:start:orbit-caddy)
+  count=$(cat "$FIXTURE/start-count" 2>/dev/null || echo 0)
+  count=$((count + 1))
+  printf '%s' "$count" > "$FIXTURE/start-count"
+  if [ "$count" -eq 1 ]; then
+    printf '%s %s\n' "$DOCKER_HOST" "start orbit-caddy -> exit 1" >> "$LOG"
+    exit 1
+  fi
+  touch "$FIXTURE/start-ready"
+  exit 0 ;;
+unix://*/target.sock:start:*) exit 0 ;;
 unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;
 *) exit 0 ;;
 esac
@@ -1793,6 +1930,96 @@ esac
         fs::write(fixture.join("target.tar"), tar_fixture(true, mismatch)).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
         (dir, script, log)
+    }
+
+    fn start_exhaustion_fake_docker(fixture: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = test_dir("start-exhaustion");
+        let log = dir.join("argv.log");
+        let script = dir.join("docker-start-exhaustion");
+        let body = r#"#!/bin/sh
+printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
+case "$*" in
+  *" tar -C /orbit-volume -cf - .") ;;
+  *" tar -C /orbit-volume -cf -") exit 97 ;;
+esac
+case "$DOCKER_HOST:$1:$2" in
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:ps:-aq) printf 'caddy-id\nruntime-id\n'; exit 0 ;;
+unix://*/target.sock:ps:-aq) exit 0 ;;
+unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
+unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
+unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy-stopped.json"; exit 0 ;;
+unix://*/target.sock:inspect:orbit-runtime) cat "$FIXTURE/target-runtime.json"; exit 0 ;;
+unix://*/source.sock:network:inspect) cat "$FIXTURE/network.json"; exit 0 ;;
+unix://*/target.sock:network:inspect) exit 1 ;;
+unix://*/target.sock:network:create*) exit 0 ;;
+unix://*/target.sock:network:rm*) exit 0 ;;
+unix://*/target.sock:volume:inspect) exit 1 ;;
+unix://*/target.sock:volume:create*) exit 0 ;;
+unix://*/target.sock:volume:rm*) exit 0 ;;
+unix://*/source.sock:run:*) cat "$FIXTURE/source.tar"; exit 0 ;;
+unix://*/target.sock:run:*) cat "$FIXTURE/target.tar"; exit 0 ;;
+unix://*/source.sock:save:*) printf 'image'; exit 0 ;;
+unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*|unix://*/target.sock:rm:*) exit 0 ;;
+unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm:*) exit 0 ;;
+*) exit 0 ;;
+esac
+"#
+        .replace("$FIXTURE", fixture.to_str().unwrap());
+        fs::write(fixture.join("source.tar"), tar_fixture(false, false)).unwrap();
+        fs::write(fixture.join("target.tar"), tar_fixture(true, false)).unwrap();
+        fs::write(&script, body).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, script, log)
+    }
+
+    #[test]
+    fn start_retry_exhaustion_rolls_back_and_restarts_only_originally_running() {
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (fixture, _caddy, _runtime) = named_volume_fixture_dir();
+        let (_fake_dir, fake, log) = start_exhaustion_fake_docker(&fixture);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+        let mut sleeps = Vec::new();
+
+        let error = cutover_with_sleep(&fake, &source, &target, |duration| sleeps.push(duration))
+            .unwrap_err();
+
+        assert!(matches!(error, CutoverError::Invalid(name, _) if name == "orbit-caddy"));
+        assert_eq!(sleeps.len(), START_RETRY_ATTEMPTS - 1);
+        assert!(sleeps
+            .iter()
+            .all(|duration| *duration == START_RETRY_INTERVAL));
+
+        let lines = fs::read_to_string(&log).unwrap();
+        let lines_vec = lines.lines().collect::<Vec<_>>();
+        assert_eq!(
+            lines.matches("target.sock start orbit-caddy").count(),
+            START_RETRY_ATTEMPTS
+        );
+        assert_eq!(
+            lines_vec
+                .iter()
+                .skip_while(|line| !line.contains("target.sock start orbit-caddy"))
+                .filter(|line| line.contains("target.sock inspect orbit-caddy"))
+                .count(),
+            START_RETRY_ATTEMPTS
+        );
+        assert!(lines.contains("target.sock rm -f orbit-caddy"));
+        assert!(lines.contains("target.sock rm -f orbit-runtime"));
+        assert!(lines.contains("target.sock network rm orbit-network"));
+        assert!(lines.contains("target.sock volume rm shared-data"));
+        assert!(lines.contains("source.sock start orbit-caddy"));
+        assert!(!lines.contains("source.sock start orbit-runtime"));
+        assert!(!lines.contains("source.sock rm orbit-caddy"));
+        assert!(!lines.contains("source.sock rm orbit-runtime"));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
     }
 
     fn tar_fixture(root_different: bool, descendant_different: bool) -> Vec<u8> {
