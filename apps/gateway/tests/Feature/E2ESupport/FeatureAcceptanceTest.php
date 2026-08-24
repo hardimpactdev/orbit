@@ -2019,8 +2019,10 @@ it('reports all recorded acceptance venues in show JSON', function (): void {
         $show = acceptance_test_run($fixture, ['show', '--json']);
         $status = json_decode($show->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($show->getExitCode())->toBe(0, $show->getErrorOutput())
-            ->and($status['venue'])->toBe('browser, host-macos');
+        expect($show->getExitCode())
+            ->toBe(0, $show->getErrorOutput())
+            ->and($status['venue'])
+            ->toBe('browser, host-macos');
     } finally {
         acceptance_test_remove($fixture);
     }

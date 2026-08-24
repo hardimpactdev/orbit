@@ -55,7 +55,8 @@ it('indexes all recorded acceptance venues while retaining singular labels', fun
 
         $write = run_session_index($sessionsDir, ['--write']);
 
-        expect($write->getExitCode())->toBe(0, $write->getErrorOutput())
+        expect($write->getExitCode())
+            ->toBe(0, $write->getErrorOutput())
             ->and(session_index_record(session_index_json($sessionsDir), 'plural-venues')['acceptance_venue'])
             ->toBe('browser, host-macos');
     } finally {
