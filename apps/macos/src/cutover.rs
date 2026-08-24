@@ -82,6 +82,40 @@ fn strings(v: Option<&Value>) -> Vec<String> {
         })
         .unwrap_or_default()
 }
+fn normalized_env(v: &Value) -> Result<Vec<(String, String)>, String> {
+    let entries = v
+        .pointer("/Config/Env")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "missing or empty Config.Env".to_owned())?;
+    if entries.is_empty() {
+        return Err("missing or empty Config.Env".to_owned());
+    }
+    let mut normalized = Vec::with_capacity(entries.len());
+    let mut names = HashSet::with_capacity(entries.len());
+    for entry in entries {
+        let entry = entry
+            .as_str()
+            .ok_or_else(|| "Config.Env contains a non-string entry".to_owned())?;
+        let (name, value) = entry
+            .split_once('=')
+            .ok_or_else(|| "Config.Env contains an entry without '='".to_owned())?;
+        if name.is_empty() {
+            return Err("Config.Env contains an empty variable name".to_owned());
+        }
+        if !names.insert(name.to_owned()) {
+            return Err(format!("Config.Env contains duplicate variable: {name}"));
+        }
+        normalized.push((name.to_owned(), value.to_owned()));
+    }
+    normalized.sort();
+    Ok(normalized)
+}
+fn env_matches(actual: &Value, expected: &Value) -> bool {
+    match (normalized_env(actual), normalized_env(expected)) {
+        (Ok(actual), Ok(expected)) => actual == expected,
+        _ => false,
+    }
+}
 fn socket_is_owned(path: &Path) -> Result<(), CutoverError> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     if !path.is_absolute() {
@@ -287,6 +321,7 @@ fn normalized_aliases(v: &Value, c: &LegacyContainer) -> Vec<String> {
 }
 fn validate_container(c: &LegacyContainer) -> Result<(), CutoverError> {
     let v = inspect(&c.inspect)?;
+    normalized_env(&v).map_err(|reason| CutoverError::Invalid(c.name.clone(), reason))?;
     for m in mounts(&v) {
         match m.get("Type").and_then(Value::as_str) {
             Some("bind") => {
@@ -804,7 +839,7 @@ fn exact_retry_counterpart(
         .and_then(Value::as_str)
         == Some(cutover_fingerprint(&expected).as_str())
         && actual_labels == expected_labels
-        && actual.pointer("/Config/Env") == expected.pointer("/Config/Env")
+        && env_matches(&actual, &expected)
         && actual.pointer("/Config/WorkingDir") == expected.pointer("/Config/WorkingDir")
         && actual.pointer("/Config/User") == expected.pointer("/Config/User")
         && actual.pointer("/HostConfig/ExtraHosts") == expected.pointer("/HostConfig/ExtraHosts")
@@ -987,13 +1022,13 @@ pub fn cutover(
             ))?;
             let expected = inspect(&c.inspect)?;
             let scalar_equal = [
-                "/Config/Env",
                 "/Config/WorkingDir",
                 "/Config/User",
                 "/HostConfig/ExtraHosts",
             ]
             .iter()
             .all(|path| actual.pointer(path) == expected.pointer(path));
+            let env_equal = env_matches(&actual, &expected);
             let mut actual_labels = actual
                 .pointer("/Config/Labels")
                 .cloned()
@@ -1008,7 +1043,8 @@ pub fn cutover(
             if let Some(labels) = expected_labels.as_object_mut() {
                 labels.remove("orbit.cutover.fingerprint");
             }
-            if !scalar_equal
+            if !env_equal
+                || !scalar_equal
                 || actual_labels != expected_labels
                 || normalized_mounts(&actual) != normalized_mounts(&expected)
                 || normalized_ports(&actual) != normalized_ports(&expected)
@@ -1206,6 +1242,40 @@ mod tests {
         assert!(
             classify_inspect(&json!({"Config":{"Labels":{"orbit.managed":"true"}}}), "x").is_err()
         );
+    }
+
+    #[test]
+    fn environment_semantics_are_order_independent_and_preserve_full_values() {
+        let source = json!({"Config":{"Env":["ALPHA= value\twith=equals", "BETA="]}});
+        let mut target = source.clone();
+        target["Config"]["Env"] = json!(["BETA=", "ALPHA= value\twith=equals"]);
+        assert_eq!(
+            normalized_env(&source).unwrap(),
+            normalized_env(&target).unwrap()
+        );
+        assert!(env_matches(&target, &source));
+    }
+
+    #[test]
+    fn malformed_environment_never_matches_and_source_validation_rejects_it() {
+        for env in [
+            json!([]),
+            json!(["NO_SEPARATOR"]),
+            json!(["=empty-name"]),
+            json!(["DUPLICATE=one", "DUPLICATE=two"]),
+        ] {
+            let mut v = inspect(&runtime_fixture().inspect).unwrap();
+            v["Config"]["Env"] = env;
+            let c = LegacyContainer {
+                inspect: json!([v]).to_string(),
+                ..runtime_fixture()
+            };
+            assert!(normalized_env(&inspect(&c.inspect).unwrap()).is_err());
+            assert!(validate_container(&c).is_err());
+            let mut valid = inspect(&runtime_fixture().inspect).unwrap();
+            valid["Config"]["Env"] = json!(["DUPLICATE=one"]);
+            assert!(!env_matches(&inspect(&c.inspect).unwrap(), &valid));
+        }
     }
 
     #[test]
