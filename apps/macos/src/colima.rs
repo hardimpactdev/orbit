@@ -83,6 +83,15 @@ where
     }
 }
 
+pub fn docker_architecture_command(docker: impl Into<PathBuf>, endpoint: &str) -> Command {
+    let mut command = Command::new(docker.into());
+    command
+        .args(["info", "--format", "{{.Architecture}}"])
+        .env("DOCKER_HOST", endpoint)
+        .env_remove("DOCKER_CONTEXT");
+    command
+}
+
 pub fn docker_info_command(docker: impl Into<PathBuf>, endpoint: &str) -> Command {
     let mut command = Command::new(docker.into());
     command
@@ -219,6 +228,10 @@ pub fn first_creation_plan(
         "docker",
         "--kubernetes=false",
         "--activate=false",
+        "--vm-type=vz",
+        "--arch=aarch64",
+        "--vz-rosetta=false",
+        "--binfmt=false",
         "--cpus",
         &cpus.to_string(),
         "--memory",
@@ -236,6 +249,10 @@ pub fn existing_start_plan() -> Vec<String> {
         "docker",
         "--kubernetes=false",
         "--activate=false",
+        "--vm-type=vz",
+        "--arch=aarch64",
+        "--vz-rosetta=false",
+        "--binfmt=false",
     ]
     .into_iter()
     .map(String::from)
@@ -268,6 +285,19 @@ pub fn parse_status(json: &str) -> Result<ProviderReady, ColimaError> {
     Ok(ProviderReady {
         socket: s.docker_socket,
     })
+}
+pub fn parse_docker_architecture(info: &str) -> Result<(), ColimaError> {
+    match info.trim() {
+        value if value.eq_ignore_ascii_case("arm64") || value.eq_ignore_ascii_case("aarch64") => {
+            Ok(())
+        }
+        "" => Err(ColimaError::InvalidStatus(
+            "Docker daemon architecture is missing".into(),
+        )),
+        value => Err(ColimaError::InvalidStatus(format!(
+            "Docker daemon architecture {value} is not native ARM64"
+        ))),
+    }
 }
 pub fn colima_version_supported(version: &str) -> bool {
     let token = version
@@ -591,6 +621,13 @@ pub fn ensure_ready(
         },
         std::thread::sleep,
     )?;
+    let architecture = docker_architecture_command(docker, &ready.socket).output()?;
+    if !architecture.status.success() {
+        return Err(ColimaError::InvalidStatus(
+            "Docker daemon architecture probe failed".into(),
+        ));
+    }
+    parse_docker_architecture(&String::from_utf8_lossy(&architecture.stdout))?;
     mark_ready(home)?;
     Ok(ready)
 }
@@ -701,8 +738,19 @@ mod tests {
     }
     #[test]
     fn first_creation_uses_safe_resource_defaults() {
+        let plan = first_creation_plan(8, 16 * 1024 * 1024 * 1024).unwrap();
+        assert!(plan
+            .windows(2)
+            .any(|pair| pair == ["--vm-type=vz", "--arch=aarch64"]));
+        assert!(plan
+            .windows(2)
+            .any(|pair| pair == ["--arch=aarch64", "--vz-rosetta=false"]));
+        assert!(plan
+            .windows(2)
+            .any(|pair| pair == ["--vz-rosetta=false", "--binfmt=false"]));
+        assert!(!plan.iter().any(|arg| arg == "--rosetta=false"));
         assert_eq!(
-            first_creation_plan(8, 16 * 1024 * 1024 * 1024).unwrap(),
+            plan,
             vec![
                 "start",
                 "orbit",
@@ -710,12 +758,24 @@ mod tests {
                 "docker",
                 "--kubernetes=false",
                 "--activate=false",
+                "--vm-type=vz",
+                "--arch=aarch64",
+                "--vz-rosetta=false",
+                "--binfmt=false",
                 "--cpus",
                 "4",
                 "--memory",
                 "8"
             ]
         )
+    }
+
+    #[test]
+    fn docker_architecture_requires_native_arm64() {
+        assert!(parse_docker_architecture("arm64\n").is_ok());
+        assert!(parse_docker_architecture("aarch64\n").is_ok());
+        assert!(parse_docker_architecture("amd64\n").is_err());
+        assert!(parse_docker_architecture("Docker Root Dir: /var/lib/docker\n").is_err());
     }
 
     #[test]
