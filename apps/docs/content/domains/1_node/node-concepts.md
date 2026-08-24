@@ -504,7 +504,9 @@ minimal loopback health and status endpoints for local UI/readiness checks.
 
 Orbit Desktop is the macOS lifecycle owner of Orbit Agent. It starts at login,
 supervises one owner-local Agent child, hides the dashboard without stopping
-the Agent, and stops that child on Quit. The CLI
+the Agent, and stops that child on Quit. At startup, it enables its login item
+and verifies that the generated LaunchAgent points to the current Orbit Desktop
+app bundle. A stale or missing path marks launch at login as unavailable. The CLI
 stays installed and usable when Orbit Desktop is not running. Agent-dependent
 commands then fail with `orbit_agent_unavailable`, naming the node and, on
 macOS, instructing the operator to open Orbit Desktop. `update:all` treats a

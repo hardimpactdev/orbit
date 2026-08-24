@@ -35,6 +35,12 @@ pub fn legacy_launch_agent_plist(home: &Path) -> PathBuf {
         .join("dev.orbit.agent.plist")
 }
 
+pub fn desktop_launch_agent_plist(home: &Path) -> PathBuf {
+    home.join("Library")
+        .join("LaunchAgents")
+        .join("Orbit Desktop.plist")
+}
+
 pub fn is_safe_owner_path(path: &str, required_fragment: &str) -> bool {
     !path.is_empty()
         && path.starts_with('/')
@@ -87,6 +93,10 @@ mod tests {
         assert_eq!(
             legacy_launch_agent_plist(&home()),
             PathBuf::from("/Users/nckrtl/Library/LaunchAgents/dev.orbit.agent.plist")
+        );
+        assert_eq!(
+            desktop_launch_agent_plist(&home()),
+            PathBuf::from("/Users/nckrtl/Library/LaunchAgents/Orbit Desktop.plist")
         );
     }
 
