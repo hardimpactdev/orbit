@@ -1,0 +1,31 @@
+# Launch
+
+> A Laravel 13 + React 19 + Inertia v3 starter kit with SSR, Tailwind CSS v4, shadcn (base-nova/Base UI), attribute-based routing, and a typed frontend route layer. Built to be set up and extended by AI coding agents.
+
+If you were pointed at this site to scaffold a new project, read the setup guide below. It is self-contained: follow it top to bottom and you will have a running application.
+
+## Setup
+
+- [Create a new project](https://launch.nckrtl.com/create.md): Complete, non-interactive instructions to create, configure, and run a new Launch project. Start here.
+
+## Building on it
+
+- [Conventions](https://launch.nckrtl.com/conventions.md): The rules a Launch project expects — attribute routing, typed frontend URLs, Base UI over Radix, design tokens, SSR constraints, commands, and the quality gates a feature must clear. Read after setup, before writing code.
+
+## How the app is served
+
+Read the one that matches the machine you are setting up. Both replace the environment and run steps of the main guide.
+
+- [Laravel Herd](https://launch.nckrtl.com/herd.md): Herd serves the app itself, so `php artisan serve` and `composer dev` must not be used.
+- [Orbit](https://launch.nckrtl.com/orbit.md): Orbit serves the app through a managed FrankenPHP process, so `php artisan serve` and `composer dev` must not be used.
+
+## How long-running processes are run
+
+Decided by the choice above: whatever serves the app owns its processes. Under Orbit they belong in Orbit (`orbit process:add`), because Orbit's runtime units inject the Vite dev-server TLS variables that a separately started process would not get.
+
+- [Solo](https://launch.nckrtl.com/solo.md): For agents with the Solo MCP server available, and only when Orbit is not managing the project. The kit ships no `solo.yml`; writing one is part of setup.
+
+## Source
+
+- [launch-laravel](https://github.com/nckrtl/launch-laravel): The Laravel package the starter kit depends on.
+- [launch-ui](https://github.com/nckrtl/launch-ui): The `@launch` shadcn registry and Vite config used by the starter kit.

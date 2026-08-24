@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Runs the `staged` tasks declared in vite.config.ts against staged files only,
+# and re-stages whatever they fix. Installed automatically by `vp config`, which
+# `bun install` runs via the package.json `prepare` script.
+vp staged

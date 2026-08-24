@@ -1,0 +1,114 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "hardimpactdev/orbit-ui",
+    "type": "project",
+    "description": "Orbit UI application with React, Inertia, and the Orbit gateway SDK.",
+    "keywords": [
+        "laravel",
+        "starter-kit",
+        "inertia",
+        "react",
+        "tailwindcss"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "nckrtl/launch-laravel": "^0.3",
+        "nckrtl/waymaker": "^0.2.3",
+        "hardimpactdev/orbit-sdk-laravel": "@dev",
+        "inertiajs/inertia-laravel": "^3.1.1",
+        "laravel/framework": "^13.0",
+        "laravel/tinker": "^3.0",
+        "laravel/wayfinder": "^0.1",
+        "spatie/laravel-csp": "^3.23",
+        "spatie/laravel-data": "^4.14",
+        "spatie/laravel-typescript-transformer": "^3.0"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.9",
+        "laravel/boost": "^2.4",
+        "laravel/pail": "^1.2.5",
+        "laravel/pint": "^1.27",
+        "mockery/mockery": "^1.6",
+        "nckrtl/laravel-toolbar": "^0.3.1",
+        "nckrtl/laravel-toolbar-agentation": "^0.1",
+        "nunomaduro/collision": "^8.6",
+        "pestphp/pest": "^5.0",
+        "pestphp/pest-plugin-browser": "^5.0",
+        "pestphp/pest-plugin-drift": "^5.0",
+        "pestphp/pest-plugin-laravel": "^5.0",
+        "rector/rector": "^2.3",
+        "spatie/pest-plugin-route-testing": "^1.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/",
+            "Database\\Factories\\": "database/factories/",
+            "Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Launch\\": "scripts/",
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "setup": "@php setup.php",
+        "dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "bunx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"bun run dev\" --names=server,queue,logs,vite --kill-others"
+        ],
+        "test": "@php scripts/run-pest.php",
+        "test:browser": "@php scripts/run-browser-tests.php",
+        "lint": "vendor/bin/pint",
+        "analyse": "vendor/bin/phpstan analyse --memory-limit=1G",
+        "rector": "vendor/bin/rector",
+        "check": "composer test && composer analyse && vp check && composer test:browser",
+        "fix": "composer rector && composer lint && vp check --fix",
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover --ansi"
+        ],
+        "post-update-cmd": [
+            "@php artisan vendor:publish --tag=laravel-assets --ansi --force"
+        ],
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate --ansi",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php artisan migrate --graceful --ansi"
+        ],
+        "pre-package-uninstall": [
+            "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": []
+        }
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../packages/sdk",
+            "options": {
+                "symlink": false
+            }
+        }
+    ],
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
