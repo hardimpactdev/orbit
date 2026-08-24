@@ -248,6 +248,18 @@ it('uses Mago for analysis, linting, and formatting', function (): void {
             ->toContain("{$command} format --check");
     }
 
+    foreach ($composer['scripts'] as $script) {
+        $lines = is_array($script) ? $script : [$script];
+        $nonUiLines = array_filter(
+            $lines,
+            fn (mixed $line): bool => is_string($line) && ! str_starts_with($line, 'cd apps/ui &&'),
+        );
+
+        expect(implode("\n", $nonUiLines))
+            ->not->toContain('phpstan analyse')
+            ->not->toContain('vendor/bin/pint');
+    }
+
     foreach ([
         'apps/gateway',
         'apps/cli',

@@ -127,7 +127,7 @@ token signing material.
 
 ## Pest versions
 
-Orbit uses Pest for PHP/Laravel in-memory coverage. All active Composer
+Orbit uses Pest for PHP/Laravel in-memory coverage. All seven active Composer
 projects run the Pest 5 / PHPUnit 13 line:
 
 | Project | Pest line | Notes |
@@ -138,13 +138,14 @@ projects run the Pest 5 / PHPUnit 13 line:
 | `apps/cli` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13; Laravel Zero 13 allows Symfony Process ^7.4.13\|^8.1, ending the former Pest 4 exception |
 | `packages/core` | Pest 5 | PHPUnit 13 (transitive) |
 | `packages/sdk` | Pest 5 | PHPUnit 13 (transitive) |
+| `apps/ui` | Pest 5 + `pest-plugin-laravel` 5 | PHPUnit 13; `pest-plugin-browser` browser tests are separate browser acceptance evidence, not deterministic quality-gate lanes |
 
 `apps/cli` additionally carries `illuminate/validation` in `require-dev`: the
 Laravel Zero foundation test teardown loads `FormRequest` whenever
 `illuminate/http` is installed, and the CLI ships `illuminate/http` without the
 full framework.
 
-A focused architecture guard in the gateway suite asserts all six Pest 5
+A focused architecture guard in the gateway suite asserts all seven Pest 5
 manifests.
 
 ## Development lane invariant

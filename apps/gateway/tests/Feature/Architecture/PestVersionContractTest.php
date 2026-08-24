@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 /**
- * Monorepo Pest version contract: all six active composer projects on Pest 5.
+ * Monorepo Pest version contract: all seven active composer projects on Pest 5.
  *
  * The former apps/cli Pest 4 exception ended with Laravel Zero 13, which allows
  * Symfony Process ^7.4.13|^8.1 and therefore resolves Pest 5 without conflict.
  */
-it('keeps all six active composer projects on pest 5', function (): void {
+it('keeps all seven active composer projects on pest 5', function (): void {
     $pestFiveProjects = [
         'apps/gateway',
         'apps/docs',
@@ -16,6 +16,7 @@ it('keeps all six active composer projects on pest 5', function (): void {
         'apps/cli',
         'packages/core',
         'packages/sdk',
+        'apps/ui',
     ];
 
     foreach ($pestFiveProjects as $projectPath) {

@@ -786,6 +786,11 @@ orbit_docs_development_feature-docs_vite
 
 ### Next
 
+For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
+containers, the SQLite schema, client bootstrap bundles, and the Orbit Agent
+push lane — see [tech-stack.md](tech-stack.md).
+Command contracts live under [docs/domains/](domains/).
+
 ### Orbit browser UI
 
 `apps/ui` is a separate Laravel 13 application built from the Launch starter
@@ -798,8 +803,3 @@ requests.
 This delivery is local-only. Production `app.orbit`, a production `ui` role,
 gateway delegation, and native macOS menu-bar changes are separate deferred
 work.
-
-For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
-containers, the SQLite schema, client bootstrap bundles, and the Orbit Agent
-push lane — see [tech-stack.md](tech-stack.md).
-Command contracts live under [docs/domains/](domains/).

@@ -24,6 +24,10 @@ class AppServiceProvider extends ServiceProvider
                 $caPemPath = null;
             }
 
+            if ($caPemPath === '' || (is_string($caPemPath) && ! is_file($caPemPath))) {
+                $caPemPath = null;
+            }
+
             return new GatewayConnector(
                 clientName: 'ui',
                 baseUrl: config()->string('orbit.gateway.url'),

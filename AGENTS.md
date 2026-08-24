@@ -15,14 +15,11 @@ path — never `find .`, `rg -uu`, or broad hidden-file scans.
 
 ## Repository Shape
 
-- The repository root is orchestration only: root Composer scripts, `bin/`
-  helper launchers, Docker/E2E assets, AI/project configuration, and
-  cross-project documentation artifacts. There is no root Laravel app,
-  `artisan`, `phpunit.xml`, or Rector/Mago config.
-- `apps/gateway/` is the Laravel 13 gateway/control-plane application (gateway
-  HTTP/API surface, SQLite database at
-  `apps/gateway/database/database.sqlite`, provisioning, E2E harness support,
-  frontend build, quality tooling).
+- The root contains orchestration only: Composer scripts, `bin/`, Docker/E2E
+  assets, AI configuration, and cross-project docs. It has no Laravel app or
+  app-level test/quality config.
+- `apps/gateway/` is the Laravel 13 HTTP/API control plane with its SQLite
+  database, provisioning, frontend, E2E support, and quality tooling.
 - `apps/docs/` is the Laravel 13 docs and Librarian application; it owns
   `apps/docs/content/` and docs-linting.
 - `apps/cli/` is the Laravel Zero CLI and executor application.
@@ -30,6 +27,8 @@ path — never `find .`, `rg -uu`, or broad hidden-file scans.
   manual-only.
 - `apps/reverb/` is the Laravel Reverb runtime packaged as
   `hardimpact/orbit-reverb` for websocket role nodes.
+- `apps/ui/` is the local Launch-based Laravel 13/Inertia 3/React 19 UI at
+  `https://orbit.nmbp`; it owns Pest/Pint/PHPStan/Rector configuration.
 - `packages/core/` holds shared contracts, helpers, and cross-application
   primitives; `packages/sdk/` is the Laravel SDK for the gateway API.
 - Each app/package owns its own composer/test/Mago/Rector config; root
@@ -40,14 +39,11 @@ path — never `find .`, `rg -uu`, or broad hidden-file scans.
 
 ## Product Authority
 
-Orbit's product contract lives under `apps/docs/content/`: `architecture.md`,
-`mission.md`, `concepts.md`, `tech-stack.md`, and `domains/**`.
-`PRODUCT_DECISIONS.md` is the chronological intent ledger above that chain: it
-records dated direction-change decisions, and when docs conflict the latest
-dated decision states current intent. Session artifacts (plans, specs) live in
-the operator's shared-knowledge project folder; legacy copies remain under
-`docs/superpowers/`. They are not product authority and are not linted as
-product docs.
+Product contract: `apps/docs/content/` (`architecture.md`, `mission.md`,
+`concepts.md`, `tech-stack.md`, `domains/**`). The latest dated
+`PRODUCT_DECISIONS.md` entry wins conflicts. Plans/specs live in
+shared-knowledge; legacy `docs/superpowers/` artifacts are neither product
+authority nor linted docs.
 
 ## Development Rules
 
@@ -80,7 +76,8 @@ product docs.
 - Use `declare(strict_types=1)` in PHP files.
 - Tests use Pest (Pest 5 / PHPUnit 13 everywhere; see
   `apps/docs/content/testing/README.md#pest-versions`).
-- Style, linting, and static analysis use Mago; refactoring uses Rector.
+- Style, linting, and static analysis use Mago; refactoring uses Rector. Only
+  `apps/ui` uses Pint and PHPStan; root and other apps remain Mago-only.
 - Follow the app-local Boost and Spatie skills in `.agents/skills/`.
 
 ## Verification
