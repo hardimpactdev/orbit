@@ -1141,7 +1141,11 @@ Platform-specific behavior — installing packages, writing config files, contro
 
 ## macOS Runtime
 
-Desktop waits for the owned Colima Docker socket before starting Agent. Closing
+Desktop waits for the owned Colima Docker socket before starting Agent. It
+migrates recognized Orbit-owned OrbStack containers through an explicit source
+socket before Agent startup, preserving mounts, labels, ports, volumes, and
+lifecycle state; unknown managed kinds fail closed and unrelated containers are
+excluded. Closing
 the dashboard hides it and preserves the runtime. Restart and Restart-to-Update
 preserve Colima. Quit stops Agent, then only the owned `orbit` profile; a stop
 failure keeps the app open and offers **Exit with Colima Running**, which exits

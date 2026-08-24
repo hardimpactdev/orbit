@@ -349,6 +349,24 @@ fn start_provider_in_background(app: &AppHandle, _runtime: &DesktopRuntime) {
                         endpoint: ready.socket.clone(),
                     };
                 }
+                let source_socket = home.join(".orbstack/run/docker.sock");
+                let source_endpoint = format!("unix://{}", source_socket.display());
+                if source_socket.exists() {
+                    if let Err(error) =
+                        orbit_macos::cutover::cutover(&docker, &source_endpoint, &ready.socket)
+                    {
+                        if let Ok(mut provider) = runtime.provider_state.lock() {
+                            *provider = ProviderRuntimeState::Degraded {
+                                detail: format!("Legacy OrbStack cutover failed: {error}"),
+                            };
+                        }
+                        if let Ok(mut endpoint) = runtime.docker_host.lock() {
+                            *endpoint = None;
+                        }
+                        *runtime.provider_attempt.lock().unwrap() = false;
+                        return;
+                    }
+                }
                 if start_owned_agent(&handle, &runtime) {
                     start_provider_health_monitor(handle.clone(), ready.socket.clone());
                 }

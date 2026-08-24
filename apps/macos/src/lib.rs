@@ -1,4 +1,5 @@
 pub mod colima;
+pub mod cutover;
 pub mod installer;
 pub mod legacy;
 pub mod lifecycle;

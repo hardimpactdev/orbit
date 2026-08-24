@@ -353,7 +353,10 @@ workload nodes. Hosted provisioning through `node:new` templates remains
 Ubuntu-only: a macOS node enters the fleet as an adopted existing node and then
 receives `app-dev` or `database` role assignments. macOS role support uses the
 Orbit Desktop-owned Colima profile `orbit` and Agent lifecycle. Desktop starts
-it before the Agent and exposes only its explicit Docker socket. Install and
+it before the Agent and exposes only its explicit Docker socket. On first
+applicable launch it migrates recognized Orbit-owned containers from the
+canonical OrbStack socket, with target verification before source removal;
+unrelated containers remain independent. Install and
 reset are explicit actions. OrbStack and Docker Desktop remain separate tools.
 In v1, Orbit does not mutate the macOS firewall or macOS WireGuard self-routes:
 macOS nodes are not eligible firewall targets, and the WireGuard self-route
