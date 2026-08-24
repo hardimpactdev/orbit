@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -396,7 +396,15 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
         ));
     }
     let mut offset = 0;
-    let mut entries = BTreeMap::<Vec<u8>, Vec<u8>>::new();
+    #[derive(Clone)]
+    struct Entry {
+        kind: u8,
+        metadata: Vec<u8>,
+        payload: Vec<u8>,
+        declared_size: u64,
+        target: Option<Vec<u8>>,
+    }
+    let mut entries = BTreeMap::<Vec<u8>, Entry>::new();
     let mut root_seen = false;
     while offset + 512 <= bytes.len() {
         let header = &bytes[offset..offset + 512];
@@ -409,11 +417,74 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             }
             return if root_seen {
                 let mut output = Vec::new();
-                for (path, entry) in entries {
-                    output.extend_from_slice(&(path.len() as u64).to_le_bytes());
-                    output.extend_from_slice(&path);
-                    output.extend_from_slice(&(entry.len() as u64).to_le_bytes());
-                    output.extend_from_slice(&entry);
+                let mut done = BTreeSet::new();
+                for path in entries.keys() {
+                    if done.contains(path) {
+                        continue;
+                    }
+                    let mut members = BTreeSet::from([path.clone()]);
+                    if entries[path]
+                        .target
+                        .as_ref()
+                        .is_some_and(|target| !entries.contains_key(target))
+                    {
+                        return Err(CutoverError::Invalid(
+                            "volume".into(),
+                            "missing hardlink target".into(),
+                        ));
+                    }
+                    let mut changed = true;
+                    while changed {
+                        changed = false;
+                        for (name, entry) in &entries {
+                            if entry.target.as_ref().is_some_and(|t| members.contains(t))
+                                || members
+                                    .iter()
+                                    .any(|m| entries[m].target.as_ref() == Some(name))
+                            {
+                                changed |= members.insert(name.clone());
+                            }
+                        }
+                    }
+                    let anchors = members
+                        .iter()
+                        .filter(|p| entries[*p].kind == b'0')
+                        .collect::<Vec<_>>();
+                    if members.len() > 1 && anchors.len() != 1 {
+                        return Err(CutoverError::Invalid(
+                            "volume".into(),
+                            "invalid hardlink component".into(),
+                        ));
+                    }
+                    let anchor = anchors.first().copied();
+                    for member in &members {
+                        done.insert(member.clone());
+                        output.extend_from_slice(&(member.len() as u64).to_le_bytes());
+                        output.extend_from_slice(member);
+                        let entry = &entries[member];
+                        if let Some(anchor) = anchor {
+                            let a = &entries[anchor];
+                            output.push(b'H');
+                            output.extend_from_slice(&(members.len() as u64).to_le_bytes());
+                            for m in &members {
+                                output.extend_from_slice(&(m.len() as u64).to_le_bytes());
+                                output.extend_from_slice(m);
+                            }
+                            output.extend_from_slice(&(anchor.len() as u64).to_le_bytes());
+                            output.extend_from_slice(anchor);
+                            output.extend_from_slice(&a.metadata);
+                            output.extend_from_slice(&a.declared_size.to_le_bytes());
+                            output.extend_from_slice(&(a.payload.len() as u64).to_le_bytes());
+                            output.extend_from_slice(&a.payload);
+                        } else {
+                            output.push(entry.kind);
+                            output.extend_from_slice(&entry.metadata);
+                            output.extend_from_slice(&entry.declared_size.to_le_bytes());
+                            output.extend_from_slice(&(entry.payload.len() as u64).to_le_bytes());
+                            output.extend_from_slice(&entry.payload);
+                        }
+                        output.extend_from_slice(&(0u64).to_le_bytes());
+                    }
                 }
                 Ok(output)
             } else {
@@ -527,28 +598,28 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                     "unsupported tar entry".into(),
                 ));
             }
-            let mut entry = Vec::new();
+            let mut metadata = Vec::new();
+            let mut payload = Vec::new();
+            let mut target = None;
             if kind == b'2' {
                 // Symlink ownership, mode, and mtime are not portable across
                 // archive extraction implementations. The target is semantic.
-                entry.push(kind);
-                entry.extend_from_slice(&header[157..257]);
+                metadata.extend_from_slice(&header[157..257]);
             } else {
-                entry.extend_from_slice(&header[100..124]);
-                entry.push(kind);
+                metadata.extend_from_slice(&header[100..124]);
                 if kind != b'5' {
-                    entry.extend_from_slice(&header[136..148]);
+                    metadata.extend_from_slice(&header[136..148]);
                     if kind == b'1' {
                         let target_end = header[157..257]
                             .iter()
                             .position(|byte| *byte == 0)
                             .unwrap_or(100);
-                        let target = header[157..157 + target_end]
+                        let link_target = header[157..157 + target_end]
                             .strip_prefix(b"./")
                             .unwrap_or(&header[157..157 + target_end]);
-                        if target.is_empty()
-                            || target[0] == b'/'
-                            || target
+                        if link_target.is_empty()
+                            || link_target[0] == b'/'
+                            || link_target
                                 .split(|byte| *byte == b'/')
                                 .any(|part| part.is_empty() || part == b"." || part == b"..")
                         {
@@ -557,17 +628,27 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                                 "unsafe tar path".into(),
                             ));
                         }
-                        let mut link = [0u8; 100];
-                        link[..target.len()].copy_from_slice(target);
-                        entry.extend_from_slice(&link);
+                        target = Some(link_target.to_vec());
                     } else {
-                        entry.extend_from_slice(&header[157..257]);
+                        metadata.extend_from_slice(&header[157..257]);
                     }
-                    entry.extend_from_slice(&bytes[offset + 512..offset + 512 + size as usize]);
+                    payload.extend_from_slice(&bytes[offset + 512..offset + 512 + size as usize]);
                 }
             }
             let key = canonical.to_vec();
-            if entries.insert(key, entry).is_some() {
+            if entries
+                .insert(
+                    key,
+                    Entry {
+                        kind,
+                        metadata,
+                        payload,
+                        declared_size: size,
+                        target,
+                    },
+                )
+                .is_some()
+            {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
                     "duplicate tar entry".into(),
