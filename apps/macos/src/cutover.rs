@@ -418,34 +418,43 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             return if root_seen {
                 let mut output = Vec::new();
                 let mut done = BTreeSet::new();
+                let names = entries.keys().cloned().collect::<Vec<_>>();
+                let indexes = names
+                    .iter()
+                    .enumerate()
+                    .map(|(index, name)| (name.clone(), index))
+                    .collect::<HashMap<_, _>>();
+                let mut parent = (0..names.len()).collect::<Vec<_>>();
+                fn find(parent: &mut [usize], mut index: usize) -> usize {
+                    while parent[index] != index {
+                        parent[index] = parent[parent[index]];
+                        index = parent[index];
+                    }
+                    index
+                }
+                for (name, entry) in &entries {
+                    if let Some(target) = &entry.target {
+                        let target_index = indexes.get(target).ok_or_else(|| {
+                            CutoverError::Invalid("volume".into(), "missing hardlink target".into())
+                        })?;
+                        let name_index = indexes[name];
+                        let left = find(&mut parent, name_index);
+                        let right = find(&mut parent, *target_index);
+                        if left != right {
+                            parent[left] = right;
+                        }
+                    }
+                }
+                let mut components = BTreeMap::<usize, BTreeSet<Vec<u8>>>::new();
+                for (index, name) in names.iter().enumerate() {
+                    let root = find(&mut parent, index);
+                    components.entry(root).or_default().insert(name.clone());
+                }
                 for path in entries.keys() {
                     if done.contains(path) {
                         continue;
                     }
-                    let mut members = BTreeSet::from([path.clone()]);
-                    if entries[path]
-                        .target
-                        .as_ref()
-                        .is_some_and(|target| !entries.contains_key(target))
-                    {
-                        return Err(CutoverError::Invalid(
-                            "volume".into(),
-                            "missing hardlink target".into(),
-                        ));
-                    }
-                    let mut changed = true;
-                    while changed {
-                        changed = false;
-                        for (name, entry) in &entries {
-                            if entry.target.as_ref().is_some_and(|t| members.contains(t))
-                                || members
-                                    .iter()
-                                    .any(|m| entries[m].target.as_ref() == Some(name))
-                            {
-                                changed |= members.insert(name.clone());
-                            }
-                        }
-                    }
+                    let members = &components[&find(&mut parent, indexes[path])];
                     let anchors = members
                         .iter()
                         .filter(|p| entries[*p].kind == b'0')
@@ -457,7 +466,7 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                         ));
                     }
                     let anchor = anchors.first().copied();
-                    for member in &members {
+                    for member in members {
                         done.insert(member.clone());
                         output.extend_from_slice(&(member.len() as u64).to_le_bytes());
                         output.extend_from_slice(member);
@@ -466,7 +475,7 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                             let a = &entries[anchor];
                             output.push(b'H');
                             output.extend_from_slice(&(members.len() as u64).to_le_bytes());
-                            for m in &members {
+                            for m in members {
                                 output.extend_from_slice(&(m.len() as u64).to_le_bytes());
                                 output.extend_from_slice(m);
                             }
