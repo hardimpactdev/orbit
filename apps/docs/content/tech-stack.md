@@ -460,14 +460,15 @@ authenticated Agent listener plus minimal loopback `/health` and `/status`
 endpoints, receives binary argv envelopes, executes only node-local
 allowlisted binaries through no-shell process APIs, and reports collected
 stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri Orbit
-Desktop app that owns Agent lifetime on Darwin. It supervises one owner-local
-Agent child, registers launch-at-login, and installs a verified
+menu-bar app that owns Agent lifetime on Darwin. It has no native dashboard
+window or desktop frontend. It supervises one owner-local Agent child,
+registers launch-at-login, and installs a verified
 desktop/Agent/CLI update from the owner-only pending handoff or a gateway-selected
 manifest. The release manifest includes a Darwin ARM64 desktop updater archive
 with URL, SHA-256, Tauri updater signature, version, platform, and architecture.
 `update:all` stages that archive with matching Agent and CLI artifacts for
 reachable selected Macs and writes an owner-only pending desktop update handoff
-for Orbit Desktop.
+for the macOS menu-bar app.
 
 V1 is scoped narrowly:
 
@@ -476,13 +477,14 @@ V1 is scoped narrowly:
   retrieval loop and no WebSocket requirement;
 - one-shot gateway/status refresh when the macOS menu opens, showing Connected
   or Disconnected plus node name and gateway name/host;
-- menu icon state belongs to the Desktop process, with Restart and Quit
-  stopping the supervised Agent child before relaunch or exit;
+- menu icon state belongs to the menu-bar process; `Open Orbit` opens
+  `https://app.orbit`, and Restart and explicit Quit stop owned runtimes before
+  relaunch or exit, with Orbit Agent stopped last on Quit;
 - no menu job history;
 - app-dev convergence uses direct gateway-pushed command envelopes;
 - owner-user local Agent installation and updates replace the configured
   artifact; when a fleet update includes a Desktop artifact and pending Desktop
-  handoff, Agent restart is deferred to Orbit Desktop, otherwise an existing
+  handoff, Agent restart is deferred to the macOS menu-bar app, otherwise an existing
   managed service is restarted; first service creation remains bootstrap-owned
   and updates do not create a missing service;
 - native Darwin updater archives and DMGs are Mini-built exact-candidate

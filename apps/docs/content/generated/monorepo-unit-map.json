@@ -380,7 +380,7 @@
                     "cargo_toml": "apps/macos/Cargo.toml",
                     "composer_json": null,
                     "tauri_config": "apps/macos/tauri.conf.json",
-                    "package_json": "apps/macos/package.json",
+                    "package_json": null,
                     "phpunit_xml": null,
                     "mago_config": null,
                     "rector_config": null

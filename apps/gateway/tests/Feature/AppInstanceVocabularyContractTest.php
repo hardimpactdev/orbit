@@ -216,14 +216,13 @@ it('keeps public workload help and messages on App and Instance vocabulary', fun
  * macOS node-detail workload tables must use App headers, not Project.
  */
 it('keeps macOS node detail workload table headers on App vocabulary', function (): void {
-    $macosMain = repo_path('apps/macos/frontend/src/main.ts');
+    $macosMain = repo_path('apps/macos/src/main.rs');
     $source = (string) file_get_contents($macosMain);
 
     expect($source)
-        ->toContain("['Process', 'App', 'Runtime', 'Status']")
-        ->toContain("['App', 'Instance', 'Environment', 'Status']")
-        ->not->toContain("['Process', 'Project', 'Runtime', 'Status']")
-        ->not->toContain("['Project', 'Instance', 'Environment', 'Status']");
+        ->toContain('OPEN_ORBIT_MENU_ID')
+        ->toContain('Open Orbit')
+        ->not->toMatch('/\bProject\b/');
 });
 
 it('rejects active AppInstance model class and app_instances schema names in runtime models', function (): void {

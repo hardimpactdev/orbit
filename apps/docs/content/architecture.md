@@ -475,7 +475,7 @@ wildcard or non-WireGuard command binds fail closed.
 
 Orbit installs and updates the Agent artifact in the configured owner user's
 local installation. When a fleet update includes a Desktop artifact and pending
-Desktop handoff, the CLI defers Agent restart to Orbit Desktop and does not
+Desktop handoff, the CLI defers Agent restart to the macOS menu-bar app and does not
 restart an existing managed service. Otherwise it restarts an existing service
 when that service already exists. Bootstrap owns first service creation;
 `update` and `update:all` replace an existing service but do not create a
@@ -487,21 +487,23 @@ gateway. `app-dev` convergence is sent as a direct gateway-pushed command
 envelope; `node role:add` does not create an Agent work item because
 workload-role convergence sends the envelope directly.
 
-The macOS menu-bar surface lives in `apps/macos`. Orbit Desktop is the macOS
-lifecycle owner of Orbit Agent: it starts at login, supervises one Agent child,
-and quitting the desktop app stops that Agent. Closing only the dashboard
-window does not quit the menu-bar app or stop the Agent. Orbit Desktop launches the owner-local Agent as a direct child with a private
-stdin lifetime channel, intercepts dashboard close to hide the window, and
-stops the child on explicit Quit. At startup, Orbit Desktop asks Tauri to
+The macOS menu-bar surface lives in `apps/macos`. It has no native dashboard
+window or desktop frontend. `Open Orbit` opens `https://app.orbit` in the
+browser. The menu-bar app is the macOS lifecycle owner of Orbit Agent: it
+starts at login and supervises one Agent child. It launches the owner-local
+Agent as a direct child with a private stdin lifetime channel. Explicit Quit
+stops and verifies every provably Orbit-owned launchd job and Docker container,
+then stops Orbit Agent last. If any owned runtime cannot be stopped or verified
+absent, the app stays active and reports the failure. At startup, the app asks Tauri to
 enable launch at login. It verifies that the generated LaunchAgent points to
 the current app bundle. A stale or missing path marks launch at login as
 unavailable. Canonical
 `dev.orbit.agent` LaunchAgent state
 is migrated on first ownership launch; an unproven listener fails closed as
 Agent Conflict. Launch at login uses Tauri's LaunchAgent autostart. The CLI
-remains usable while Orbit Desktop is stopped. Agent-dependent commands then
-fail with `orbit_agent_unavailable` and tell the operator to open Orbit
-Desktop. Execution history belongs in gateway operation/activity history.
+remains usable while the menu-bar app is stopped. Agent-dependent commands then
+fail with `orbit_agent_unavailable` and tell the operator to open Orbit.
+Execution history belongs in gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc

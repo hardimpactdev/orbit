@@ -502,14 +502,17 @@ history, and exposes the command push endpoint on the Agent listener. The
 gateway verifies that endpoint with operation tokens. The service also exposes
 minimal loopback health and status endpoints for local UI/readiness checks.
 
-Orbit Desktop is the macOS lifecycle owner of Orbit Agent. It starts at login,
-supervises one owner-local Agent child, hides the dashboard without stopping
-the Agent, and stops that child on Quit. At startup, it enables its login item
-and verifies that the generated LaunchAgent points to the current Orbit Desktop
-app bundle. A stale or missing path marks launch at login as unavailable. The CLI
-stays installed and usable when Orbit Desktop is not running. Agent-dependent
-commands then fail with `orbit_agent_unavailable`, naming the node and, on
-macOS, instructing the operator to open Orbit Desktop. `update:all` treats a
+The macOS menu-bar app is the lifecycle owner of Orbit Agent. It has no native
+dashboard window or desktop frontend. `Open Orbit` opens `https://app.orbit`.
+It starts at login, supervises one owner-local Agent child, and verifies that
+the generated LaunchAgent points to the current app bundle. Explicit Quit stops
+and verifies every provably Orbit-owned launchd job and Docker container, then
+stops Orbit Agent last; it stays active and reports failure when verification
+does not prove an empty owned runtime set. A stale or missing path marks launch
+at login as unavailable. The CLI stays installed and usable when the menu-bar
+app is not running. Agent-dependent commands then fail with
+`orbit_agent_unavailable`, naming the node and, on macOS, instructing the
+operator to open Orbit. `update:all` treats a
 selected remote node whose Agent is unreachable before mutation as a skip:
 `orbit_desktop_not_running` on macOS/Darwin and `orbit_agent_not_running` on
 other platforms, rather than that failure.
@@ -520,7 +523,7 @@ and DMGs are part of the exact-candidate release; Apple Developer ID signing
 and notarization fail closed when publication requests them without credentials.
 Orbit still installs and updates the owner-user Agent artifact. When a fleet
 update includes a Desktop artifact and pending Desktop handoff, the CLI defers
-Agent restart to Orbit Desktop and does not restart an existing managed service.
+Agent restart to the macOS menu-bar app and does not restart an existing managed service.
 Otherwise it restarts an existing managed service; bootstrap owns first service
 creation and updates do not create a missing service. Agent execution is
 limited to explicitly supported binary argv envelopes with node-local binary
