@@ -34,7 +34,14 @@ Orbit Desktop-supervised macOS nodes use only the Desktop-owned Colima profile
 installs prerequisites. The explicit `Install Local Runtime` action uses
 existing Homebrew to install `colima` and `docker`.
 
-On Apple Silicon, this profile uses a native ARM64 daemon with Rosetta disabled. OrbStack migration accepts only matching-architecture images. For an AMD64 source, it explicitly pulls linux/arm64 only when a portable tagged registry reference exists, then verifies the pulled architecture. Missing portable references or unverifiable architecture fail and roll back before source removal; architecture and Rosetta are not resource overrides.
+On Apple Silicon, Colima creation and existing starts set VZ, `aarch64`,
+`--vz-rosetta=false`, and `--binfmt=false`. Desktop accepts readiness only after
+`docker info --format {{.Architecture}}` proves `arm64` or `aarch64`; Rosetta and
+foreign-architecture emulation stay disabled. OrbStack migration accepts only
+matching-architecture images. For an AMD64 source, it explicitly pulls
+`linux/arm64` only when a portable tagged registry reference exists, then verifies
+the pulled architecture. Missing portable references or unverifiable architecture
+fail and roll back before source removal.
 
 ```bash
 brew install colima docker

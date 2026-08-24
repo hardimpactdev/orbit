@@ -1141,11 +1141,21 @@ Platform-specific behavior — installing packages, writing config files, contro
 
 ## macOS Runtime
 
-Desktop waits for the owned Colima Docker socket before starting Agent. It makes the Apple Silicon orbit daemon native ARM64 with Rosetta disabled. Migration prepares or reuses only images matching that daemon; an AMD64 source is converted only through an explicit linux/arm64 pull from a portable tagged registry reference, followed by target-architecture verification. Missing portable references or unverifiable architecture fail and roll back before source removal. Architecture and Rosetta are fixed safety boundaries, while CPU, memory, and disk overrides remain persistent resource settings.
-migrates recognized Orbit-owned OrbStack containers through an explicit source
-socket before Agent startup, preserving mounts, labels, ports, volumes, and
-lifecycle state; unknown managed kinds fail closed and unrelated containers are
-excluded. Closing
+Desktop waits for the owned Colima Docker socket before starting Agent. On
+Apple Silicon, Colima creation and existing starts set VZ, `aarch64`,
+`--vz-rosetta=false`, and `--binfmt=false`. Desktop accepts readiness only after
+`docker info --format {{.Architecture}}` proves `arm64` or `aarch64`; Rosetta and
+foreign-architecture emulation stay disabled. It migrates recognized Orbit-owned
+OrbStack containers through an explicit source socket before Agent startup,
+preserving mounts, labels, ports, volumes, and lifecycle state; unknown managed
+kinds fail closed and unrelated containers are excluded.
+Migration prepares or reuses only images matching that daemon. An AMD64 source uses
+an explicit `linux/arm64` pull from a portable tagged registry reference, followed
+by target-architecture verification. Missing portable references or unverifiable
+architecture fail and roll back before source removal. Architecture and emulation
+are fixed safety boundaries, while CPU, memory, and disk overrides remain
+persistent resource settings.
+Closing
 the dashboard hides it and preserves the runtime. Restart and Restart-to-Update
 preserve Colima. Quit stops Agent, then only the owned `orbit` profile; a stop
 failure keeps the app open and offers **Exit with Colima Running**, which exits
