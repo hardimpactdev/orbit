@@ -4,7 +4,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub const KNOWN_KINDS: [&str; 8] = [
     "caddy",
@@ -18,6 +18,7 @@ pub const KNOWN_KINDS: [&str; 8] = [
 ];
 const START_RETRY_ATTEMPTS: usize = 20;
 const START_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const CUTOVER_TIMEOUT: Duration = Duration::from_secs(300);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyContainer {
     pub id: String,
@@ -1212,6 +1213,17 @@ fn cutover_with_sleep<F>(
 where
     F: FnMut(Duration),
 {
+    let deadline = Instant::now() + CUTOVER_TIMEOUT;
+    let check_deadline = || {
+        if Instant::now() >= deadline {
+            Err(CutoverError::Invalid(
+                "provider".into(),
+                "cutover timed out; rollback permitted".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    };
     let path = source.strip_prefix("unix://").ok_or_else(|| {
         CutoverError::Invalid(source.into(), "source endpoint must be Unix socket".into())
     })?;
@@ -1268,6 +1280,7 @@ where
         // The normal path creates each volume below; an existing target is never
         // silently overwritten.
         for volume in &volumes {
+            check_deadline()?;
             if docker(program, target, &a(&["volume", "inspect", volume])).is_ok() {
                 return Err(CutoverError::TargetConflict(format!("volume {volume}")));
             }
@@ -1275,6 +1288,7 @@ where
         // Verify the helper image and argv contract while both daemons are
         // still untouched. This also prevents an implicit context/pull path.
         for endpoint in [source, target] {
+            check_deadline()?;
             if docker(
                 program,
                 endpoint,
@@ -1293,6 +1307,7 @@ where
         let target_arch = daemon_architecture(program, target)?;
         let mut images = HashMap::new();
         for c in &cs {
+            check_deadline()?;
             if !images.contains_key(&c.image) {
                 let reference =
                     target_image_reference(program, source, target, &c.image, target_arch)?;
@@ -1344,10 +1359,12 @@ where
             }
         }
         for volume in &volumes {
+            check_deadline()?;
             created_volumes.push(volume.clone());
             copy_named_volume(program, source, target, volume, &tmp)?;
         }
         for c in &cs {
+            check_deadline()?;
             let (archive, reference) = images.get(&c.image).unwrap();
             let image = if let Some(reference) = reference {
                 reference.as_str()
@@ -1367,6 +1384,7 @@ where
             docker(program, target, &create_args_with_image(c, image)?)?;
         }
         for c in &cs {
+            check_deadline()?;
             let actual = inspect(&String::from_utf8_lossy(
                 &docker(program, target, &a(&["inspect", &c.name]))?.stdout,
             ))?;
@@ -2443,6 +2461,39 @@ esac
             tar_manifest(&source).unwrap(),
             tar_manifest(&extra_padding).unwrap()
         );
+    }
+
+    #[test]
+    fn tar_manifest_scales_with_large_hardlink_components() {
+        fn record(name: &[u8], target: Option<&[u8]>) -> Vec<u8> {
+            let mut header = [0u8; 512];
+            header[..name.len()].copy_from_slice(name);
+            header[100..108].copy_from_slice(b"0000644\0");
+            header[124..136].copy_from_slice(b"00000000000\0");
+            header[148..156].fill(b' ');
+            header[156] = if target.is_some() { b'1' } else { b'0' };
+            if let Some(target) = target {
+                header[157..157 + target.len()].copy_from_slice(target);
+            }
+            let checksum: u32 = header.iter().map(|byte| *byte as u32).sum();
+            header[148..156].copy_from_slice(format!("{:06o}\0 ", checksum).as_bytes());
+            header.to_vec()
+        }
+        let mut archive = record(b"./", None);
+        archive[156] = b'5';
+        archive[148..156].fill(b' ');
+        let checksum: u32 = archive.iter().take(512).map(|byte| *byte as u32).sum();
+        archive[148..156].copy_from_slice(format!("{:06o}\0 ", checksum).as_bytes());
+        let count = 20_000;
+        for index in 0..count {
+            let name = format!("file-{index:05}");
+            archive.extend(record(name.as_bytes(), None));
+        }
+        archive.extend([0u8; 1024]);
+        let started = Instant::now();
+        let manifest = tar_manifest(&archive).unwrap();
+        assert!(!manifest.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[test]
