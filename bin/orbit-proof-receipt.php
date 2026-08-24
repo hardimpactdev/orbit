@@ -119,16 +119,27 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
     }
 
     if (is_string($loopContents) && $venue !== 'automated') {
-        $runtimeProblem = orbitLoopRuntimeProofProblem($loopContents, $venue, $candidate, $worktree);
+        $route = orbitLoopExactProofRoute($worktree);
+        $venues = $route['venues'];
 
-        if ($runtimeProblem !== null) {
-            $receipt['problem'] = $runtimeProblem;
-
-            return $receipt;
+        if (count($venues) > 1 && ! array_key_exists('venue', $options)) {
+            foreach ($venues as $requiredVenue) {
+                $runtimeProblem = orbitLoopRuntimeProofProblem($loopContents, $requiredVenue, $candidate, $worktree);
+                if ($runtimeProblem !== null) {
+                    $receipt['problem'] = $runtimeProblem;
+                    return $receipt;
+                }
+            }
+            $receipt['runtime'] = 'passed - venues='.implode(',', $venues);
+        } else {
+            $runtimeProblem = orbitLoopRuntimeProofProblem($loopContents, $venue, $candidate, $worktree);
+            if ($runtimeProblem !== null) {
+                $receipt['problem'] = $runtimeProblem;
+                return $receipt;
+            }
+            $runtimeValue = orbitLoopNestedLabel($loopContents, 'Proof', 'Verification', 'runtime');
+            $receipt['runtime'] = is_string($runtimeValue) && $runtimeValue !== '' ? $runtimeValue : 'passed';
         }
-
-        $runtimeValue = orbitLoopNestedLabel($loopContents, 'Proof', 'Verification', 'runtime');
-        $receipt['runtime'] = is_string($runtimeValue) && $runtimeValue !== '' ? $runtimeValue : 'passed';
     }
 
     $receipt['ok'] = true;

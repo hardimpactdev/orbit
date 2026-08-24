@@ -881,6 +881,8 @@ function orbitLoopVenueSatisfies(string $actual, string $required): bool
 
 const ORBIT_LOOP_RUNTIME_RECEIPT_ALLOWED_KEYS = [
     'candidate',
+    'base_tip',
+    'merge_base',
     'venue',
     'environment',
     'expected',
@@ -1206,19 +1208,12 @@ function orbitLoopRuntimeProofReceiptProblem(
         }
     }
 
-    $required = ['candidate', 'venue', 'environment', 'expected', 'observed', 'result', 'evidence'];
+    $required = ['candidate', 'base_tip', 'merge_base', 'venue', 'environment', 'command', 'expected', 'observed', 'result', 'evidence'];
 
     foreach ($required as $key) {
         if (! array_key_exists($key, $fields) || trim($fields[$key]) === '') {
             return "Verification runtime structured receipt is missing {$key}=; remain in PROVE and re-prove the final hop";
         }
-    }
-
-    $hasTarget = array_key_exists('target', $fields) && trim($fields['target']) !== '';
-    $hasCommand = array_key_exists('command', $fields) && trim($fields['command']) !== '';
-
-    if ($hasTarget === $hasCommand) {
-        return 'Verification runtime structured receipt requires exactly one of target= or command=; remain in PROVE and re-prove the final hop';
     }
 
     if (preg_match('/^[0-9a-f]{40}$/', $fields['candidate']) !== 1) {
@@ -1227,6 +1222,17 @@ function orbitLoopRuntimeProofReceiptProblem(
 
     if (! hash_equals($candidateCommit, $fields['candidate'])) {
         return 'Verification runtime structured receipt candidate= must equal the candidate commit; remain in PROVE and re-prove the final hop';
+    }
+
+    $baseTip = orbitLoopGitValue($worktree, ['rev-parse', 'main']);
+    $mergeBase = $baseTip === null ? null : orbitLoopGitValue($worktree, ['merge-base', 'main', 'HEAD']);
+
+    if ($baseTip === null || ! hash_equals($baseTip, $fields['base_tip'])) {
+        return 'Verification runtime structured receipt base_tip= must equal the current main tip; remain in PROVE and re-prove the final hop';
+    }
+
+    if ($mergeBase === null || ! hash_equals($mergeBase, $fields['merge_base'])) {
+        return 'Verification runtime structured receipt merge_base= must equal the candidate merge-base; remain in PROVE and re-prove the final hop';
     }
 
     if ($fields['venue'] !== $venue) {
