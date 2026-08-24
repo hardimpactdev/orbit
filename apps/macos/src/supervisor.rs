@@ -110,6 +110,10 @@ pub fn crash_action(
     }
 }
 
+pub fn cooldown_retry_allowed(quitting: bool, endpoint_available: bool) -> bool {
+    !quitting && endpoint_available
+}
+
 pub fn agent_status_label(state: AgentRunState) -> &'static str {
     match state {
         AgentRunState::Starting => "Agent: Starting",
@@ -189,6 +193,28 @@ mod tests {
             agent_status_label(AgentRunState::Conflict),
             "Agent: Conflict"
         );
+    }
+
+    #[test]
+    fn crash_burst_enters_cooldown_then_allows_retry() {
+        let now = Instant::now();
+        let history = vec![
+            now - Duration::from_secs(3),
+            now - Duration::from_secs(2),
+            now - Duration::from_secs(1),
+        ];
+
+        assert_eq!(
+            crash_action(&history, now, 3, Duration::from_secs(60)),
+            CrashAction::Cooldown
+        );
+        assert!(cooldown_retry_allowed(false, true));
+    }
+
+    #[test]
+    fn cooldown_retry_is_suppressed_when_quitting_or_endpoint_is_missing() {
+        assert!(!cooldown_retry_allowed(true, true));
+        assert!(!cooldown_retry_allowed(false, false));
     }
 
     #[test]

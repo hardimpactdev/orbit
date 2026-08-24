@@ -25,9 +25,10 @@ use orbit_macos::pending_update::{
     read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate, INSTALL_MODE_RESTART_READY,
 };
 use orbit_macos::supervisor::{
-    agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
-    spawn_supervised_agent, stop_supervised_agent, AgentRunState, CrashAction,
-    DEFAULT_CHILD_CRASH_COOLDOWN, DEFAULT_CHILD_CRASH_WINDOW, DEFAULT_MAX_CHILD_CRASH_RESTARTS,
+    agent_launch_plan, agent_status_label, cooldown_retry_allowed, crash_action,
+    resolve_agent_binary, spawn_supervised_agent, stop_supervised_agent, AgentRunState,
+    CrashAction, DEFAULT_CHILD_CRASH_COOLDOWN, DEFAULT_CHILD_CRASH_WINDOW,
+    DEFAULT_MAX_CHILD_CRASH_RESTARTS,
 };
 use orbit_macos::tray_labels::{
     launch_at_login_checked, launch_at_login_label, quit_orbit_label, restart_orbit_label,
@@ -675,6 +676,24 @@ fn watch_child_crashes(app: AppHandle) {
                     *agent_state = AgentRunState::Cooldown;
                 }
                 thread::sleep(DEFAULT_CHILD_CRASH_COOLDOWN);
+                let quitting = runtime.quitting.lock().map(|flag| *flag).unwrap_or(true);
+                let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+                let endpoint = runtime
+                    .docker_host
+                    .lock()
+                    .ok()
+                    .and_then(|value| value.clone());
+                let state = runtime
+                    .provider_state
+                    .lock()
+                    .ok()
+                    .map(|state| state.clone())
+                    .unwrap_or(ProviderRuntimeState::Starting);
+                if let Some(endpoint) = agent_restart_endpoint(endpoint.as_deref(), &state) {
+                    if cooldown_retry_allowed(quitting, true) {
+                        let _ = spawn_or_mark_missing(&runtime, &home, endpoint);
+                    }
+                }
             }
         }
     });
