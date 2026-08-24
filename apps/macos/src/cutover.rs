@@ -538,8 +538,32 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
                 entry.push(kind);
                 if kind != b'5' {
                     entry.extend_from_slice(&header[136..148]);
-                    entry.extend_from_slice(&header[157..257]);
-                    entry.extend_from_slice(&bytes[offset + 512..end]);
+                    if kind == b'1' {
+                        let target_end = header[157..257]
+                            .iter()
+                            .position(|byte| *byte == 0)
+                            .unwrap_or(100);
+                        let target = header[157..157 + target_end]
+                            .strip_prefix(b"./")
+                            .unwrap_or(&header[157..157 + target_end]);
+                        if target.is_empty()
+                            || target[0] == b'/'
+                            || target
+                                .split(|byte| *byte == b'/')
+                                .any(|part| part.is_empty() || part == b"." || part == b"..")
+                        {
+                            return Err(CutoverError::Invalid(
+                                "volume".into(),
+                                "unsafe tar path".into(),
+                            ));
+                        }
+                        let mut link = [0u8; 100];
+                        link[..target.len()].copy_from_slice(target);
+                        entry.extend_from_slice(&link);
+                    } else {
+                        entry.extend_from_slice(&header[157..257]);
+                    }
+                    entry.extend_from_slice(&bytes[offset + 512..offset + 512 + size as usize]);
                 }
             }
             let key = canonical.to_vec();
