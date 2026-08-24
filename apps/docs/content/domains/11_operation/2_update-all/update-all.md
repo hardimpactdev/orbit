@@ -111,14 +111,18 @@ node did not update. The failure result includes the failed node results so
 operators see the update failure directly instead of only a later version
 verification error.
 
-`update:all` updates the gateway, the caller-local installation, and every
+`update:all` updates the gateway, the caller-local CLI installation, and every
 active non-gateway node that has a supported Agent platform and a valid
-WireGuard identity. Roles and stored `managed` do not control inclusion. The
-caller remains a caller-local target and is not duplicated in remote fan-out.
-The command excludes inactive, removed, unsupported-platform, and gateway
-records, and it never duplicates the caller. When the gateway is the calling
-peer, the command therefore updates the gateway installation and selected
-nodes only.
+WireGuard identity, including the registered caller. Roles and stored
+`managed` do not control inclusion.
+
+When the caller is not the gateway, it is both a normal node fan-out target
+and a separate local CLI target. Node fan-out installs or stages Agent and
+Desktop artifacts on the registered caller. Local fan-out then installs the
+CLI used by the invoking shell. The command excludes inactive, removed,
+unsupported-platform, and gateway records. The gateway is never a workload
+target. When the gateway is the calling peer, the command therefore updates
+the gateway installation and selected nodes only.
 
 A selected remote target whose Agent listener is unreachable during an explicit
 pre-mutation readiness check is reported as skipped. macOS/Darwin uses stable

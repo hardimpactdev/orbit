@@ -22,7 +22,7 @@ final readonly class FleetUpdateTargetSelector
      */
     public function workloadNodes(OperationRun $operationRun): Collection
     {
-        return $this->workloadNodesExcluding($operationRun->caller_node_id);
+        return $this->eligibleNonGatewayNodes();
     }
 
     /**
@@ -30,7 +30,7 @@ final readonly class FleetUpdateTargetSelector
      *
      * @mago-expect analysis:invalid-argument
      */
-    public function workloadNodesExcluding(?int $callerNodeId): Collection
+    private function eligibleNonGatewayNodes(): Collection
     {
         $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
         $query = Node::query()->where('status', NodeStatus::Active->value);
@@ -47,7 +47,6 @@ final readonly class FleetUpdateTargetSelector
             ->filter(static fn (Node $node): bool => $node->isFleetUpdateEligible())
             ->unique('id')
             ->keyBy('id')
-            ->except($callerNodeId === null ? [] : [$callerNodeId])
             ->sortBy('name')
             ->values();
 

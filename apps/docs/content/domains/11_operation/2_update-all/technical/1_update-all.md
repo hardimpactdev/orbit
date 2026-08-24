@@ -139,13 +139,15 @@ execution details live in the renderer contracts.
 
 ## Fleet Selection Rules
 
-- Include the caller's local Orbit installation.
+- Include the caller's local Orbit CLI installation as a separate local target
+  after the gateway phase.
 - Include every active non-gateway node with a supported Agent platform and a
-  valid WireGuard identity, including roleless unmanaged operators.
+  valid WireGuard identity, including the registered caller and roleless
+  unmanaged operators.
 - Do not use workload roles or stored `managed` to include or exclude a node.
-- Exclude inactive, removed, unsupported-platform, gateway, unknown, or
-  caller-local node records from the gateway-selected installation list. The
-  local installation is updated once through the local target.
+- Exclude inactive, removed, unsupported-platform, gateway, and unknown node
+  records from the gateway-selected installation list. Do not exclude the
+  registered non-gateway caller from that list.
 - Apply gateway-owned authorization before updating any installation.
 
 A selected remote target whose Agent listener is unreachable during the
@@ -169,9 +171,13 @@ ownership after selection.
 
 The expected target shape per calling context:
 
+When the caller is not the gateway, node fan-out owns Agent and Desktop
+artifacts on the registered caller, and local fan-out owns the CLI used by
+the invoking shell. Both run after the gateway phase.
+
 | Calling context | Local target | Gateway target | Selected remote nodes |
 | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and remote targets. | Yes, every other selected remote node. Updated in parallel with the local target after the gateway phase. The caller is never duplicated. |
+| Non-gateway caller with gateway-admin authority | The caller-local CLI installation, updated after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first. | Yes. Every selected non-gateway node, including the registered caller. Runs in parallel with the local CLI target. |
 | Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active Agent-platform-eligible non-gateway node selected by the rules above. |
 
 ## Durable Operation Rules
@@ -494,8 +500,8 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllDirectRouteRemovedTest.php` | Direct `POST /api/update/all` is absent while `POST /api/update/all/start` remains. |
 | `apps/cli/tests/Feature/Services/GatewayOperationEventStreamClientTest.php` | Exact transitional SSE adapter decoding, journal-cursor resume through `Last-Event-ID`, idle callback cadence, TLS CA verification, and no-terminal-event handling. |
 | `apps/cli/tests/Feature/Commands/Operation/UpdateAllCommandTest.php` | CLI `update:all` command-path following through reconnects and gateway start failure handling. |
-| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, installed artifact tracking, roleless unmanaged selection, macOS Desktop and Linux Agent pre-mutation skips, Desktop staging regardless of roles or `managed`, and post-mutation failure. |
-| `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target set of every active Agent-platform-eligible non-gateway node, with caller exclusion. |
+| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, including the registered caller, plus skip, Desktop staging, and artifact tracking. |
+| `apps/gateway/tests/Unit/Services/Operations/FleetUpdateTargetSelectorTest.php` | Fleet target set of every active Agent-platform-eligible non-gateway node. Includes the registered caller. Excludes gateway callers. |
 | `apps/cli/tests/Unit/Services/Updates/PendingDesktopUpdateHandoffTest.php` | Owner-only pending desktop update handoff path safety, atomic write, stale identity, and partial artifact rejection. |
 | `apps/cli/tests/Feature/InternalFleetUpdateInstallCliCommandTest.php` | Local fleet-update CLI install: Desktop handoff defers Agent restart with no systemd or launchd calls, and standalone systemd, launchd, and unmanaged restart paths stay unchanged. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |

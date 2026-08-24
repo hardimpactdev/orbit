@@ -124,7 +124,7 @@ it('selects every active Agent-platform-eligible non-gateway node', function ():
         ->toBe(['eligible-app', 'managed-operator', 'unmanaged-operator', 'vpn-node']);
 });
 
-it('excludes the caller from remote fan-out even when the caller is a managed client', function (): void {
+it('includes the registered caller in node fan-out even when the caller is a managed client', function (): void {
     $caller = Node::factory()
         ->operator()
         ->create([
@@ -134,7 +134,7 @@ it('excludes the caller from remote fan-out even when the caller is a managed cl
             'status' => 'active',
             'wireguard_address' => '10.6.0.50',
         ]);
-    $remote = Node::factory()
+    Node::factory()
         ->operator()
         ->create([
             'name' => 'remote-mac',
@@ -150,6 +150,37 @@ it('excludes the caller from remote fan-out even when the caller is a managed cl
         lane: 'gateway',
         operationType: 'update:all',
         callerNodeId: $caller->id,
+    );
+
+    expect($selector->workloadNodes($run)->pluck('name')->all())
+        ->toBe(['caller-mac', 'remote-mac']);
+});
+
+it('excludes a gateway caller from workload fan-out', function (): void {
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'remote-mac',
+            'managed' => true,
+            'platform' => 'macos_15-5',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.51',
+        ]);
+
+    $selector = app(FleetUpdateTargetSelector::class);
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+        callerNodeId: $gateway->id,
     );
 
     expect($selector->workloadNodes($run)->pluck('name')->all())

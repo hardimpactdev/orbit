@@ -53,7 +53,7 @@ beforeEach(function (): void {
         ]);
 });
 
-it('excludes the caller-local node from remote workload updates', function (): void {
+it('includes the registered caller in remote workload updates', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -91,9 +91,9 @@ it('excludes the caller-local node from remote workload updates', function (): v
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
     expect(array_column($results, 'node'))
-        ->toBe(['beast'])
+        ->toBe(['beast', 'mini'])
         ->and(array_values(array_unique($shell->updatedNodes())))
-        ->toBe(['beast']);
+        ->toBe(['beast', 'mini']);
 });
 
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
