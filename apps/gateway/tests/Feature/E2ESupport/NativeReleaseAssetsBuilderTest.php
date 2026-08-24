@@ -127,8 +127,16 @@ it('fails closed when the built desktop bundle version differs from Orbit', func
 
 it('uses a minimal locked Tauri npm project for the desktop build', function (): void {
     $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
-    $package = json_decode((string) file_get_contents(repo_path('apps/macos/package.json')), true, flags: JSON_THROW_ON_ERROR);
-    $lock = json_decode((string) file_get_contents(repo_path('apps/macos/package-lock.json')), true, flags: JSON_THROW_ON_ERROR);
+    $package = json_decode(
+        (string) file_get_contents(repo_path('apps/macos/package.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $lock = json_decode(
+        (string) file_get_contents(repo_path('apps/macos/package-lock.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     expect($package)
         ->toMatchArray([
