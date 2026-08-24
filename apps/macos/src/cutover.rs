@@ -484,7 +484,10 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             let prefix = &header[345..345 + prefix_end];
             name = [prefix, b"/", &name].concat();
         }
-        let kind = header[156];
+        let kind = match header[156] {
+            0 => b'0',
+            value => value,
+        };
         let root = name == b"./" && kind == b'5';
         if root {
             if root_seen {
@@ -495,32 +498,51 @@ fn tar_manifest(bytes: &[u8]) -> Result<Vec<u8>, CutoverError> {
             }
             root_seen = true;
         } else {
-            let canonical = name.strip_prefix(b"./").unwrap_or(&name);
+            let mut canonical = name.strip_prefix(b"./").unwrap_or(&name);
+            if canonical.is_empty() || canonical[0] == b'/' {
+                return Err(CutoverError::Invalid(
+                    "volume".into(),
+                    "unsafe tar path".into(),
+                ));
+            }
+            let trailing_slash = canonical.ends_with(b"/");
+            if trailing_slash {
+                canonical = &canonical[..canonical.len() - 1];
+            }
             if canonical.is_empty()
                 || canonical[0] == b'/'
                 || canonical
                     .split(|byte| *byte == b'/')
-                    .any(|part| part == b".." || (part.is_empty() && !name.ends_with(b"/")))
+                    .any(|part| part.is_empty() || part == b"." || part == b"..")
+                || (trailing_slash && kind != b'5')
             {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
                     "unsafe tar path".into(),
                 ));
             }
-            if !matches!(kind, 0 | b'0' | b'1' | b'2' | b'5') {
+            if !matches!(kind, b'0' | b'1' | b'2' | b'5') {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
                     "unsupported tar entry".into(),
                 ));
             }
-            let mut entry = Vec::from(&header[100..124]);
-            entry.push(kind);
-            entry.extend_from_slice(&header[136..148]);
-            entry.extend_from_slice(&header[157..257]);
-            if kind != b'5' {
-                entry.extend_from_slice(&bytes[offset + 512..end]);
+            let mut entry = Vec::new();
+            if kind == b'2' {
+                // Symlink ownership, mode, and mtime are not portable across
+                // archive extraction implementations. The target is semantic.
+                entry.push(kind);
+                entry.extend_from_slice(&header[157..257]);
+            } else {
+                entry.extend_from_slice(&header[100..124]);
+                entry.push(kind);
+                if kind != b'5' {
+                    entry.extend_from_slice(&header[136..148]);
+                    entry.extend_from_slice(&header[157..257]);
+                    entry.extend_from_slice(&bytes[offset + 512..end]);
+                }
             }
-            let key = canonical.strip_suffix(b"/").unwrap_or(canonical).to_vec();
+            let key = canonical.to_vec();
             if entries.insert(key, entry).is_some() {
                 return Err(CutoverError::Invalid(
                     "volume".into(),
@@ -2158,6 +2180,168 @@ esac
         assert_eq!(
             tar_manifest(&source).unwrap(),
             tar_manifest(&extra_padding).unwrap()
+        );
+    }
+
+    #[test]
+    fn tar_manifest_canonicalizes_paths_and_compares_semantic_metadata() {
+        #[allow(clippy::too_many_arguments)]
+        fn record(
+            name: &[u8],
+            kind: u8,
+            data: &[u8],
+            mode: u32,
+            uid: u32,
+            gid: u32,
+            mtime: u64,
+            link: &[u8],
+            prefix: &[u8],
+        ) -> Vec<u8> {
+            let mut h = [0; 512];
+            h[..name.len()].copy_from_slice(name);
+            h[100..108].copy_from_slice(format!("{mode:07o}\0").as_bytes());
+            h[108..116].copy_from_slice(format!("{uid:07o}\0").as_bytes());
+            h[116..124].copy_from_slice(format!("{gid:07o}\0").as_bytes());
+            h[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+            h[136..148].copy_from_slice(format!("{mtime:011o}\0").as_bytes());
+            h[148..156].fill(b' ');
+            h[156] = kind;
+            h[157..157 + link.len()].copy_from_slice(link);
+            h[345..345 + prefix.len()].copy_from_slice(prefix);
+            let sum: u32 = h.iter().map(|byte| *byte as u32).sum();
+            h[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+            let mut out = h.to_vec();
+            out.extend_from_slice(data);
+            out.resize(512 + data.len().div_ceil(512) * 512, 0);
+            out
+        }
+        fn archive(records: Vec<Vec<u8>>) -> Vec<u8> {
+            let mut out = records.into_iter().flatten().collect::<Vec<_>>();
+            out.extend_from_slice(&[0; 1024]);
+            out
+        }
+        let root = |name| record(name, b'5', &[], 0o755, 7, 8, 0, &[], &[]);
+        let file = |name, data, mtime, mode, uid, gid, kind, link, prefix| {
+            record(name, kind, data, mode, uid, gid, mtime, link, prefix)
+        };
+        let ordered = archive(vec![
+            root(b"./"),
+            root(b"dir/"),
+            file(b"dir/file", b"payload", 3, 0o644, 1, 2, 0, &[], &[]),
+        ]);
+        let reordered = archive(vec![
+            root(b"./"),
+            file(b"dir/file", b"payload", 3, 0o644, 1, 2, 0, &[], &[]),
+            root(b"dir/"),
+        ]);
+        assert_eq!(
+            tar_manifest(&ordered).unwrap(),
+            tar_manifest(&reordered).unwrap()
+        );
+        let baseline_dir = archive(vec![
+            root(b"./"),
+            root(b"dir/"),
+            file(b"dir/file", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+        ]);
+        let dir_mode = archive(vec![
+            root(b"./"),
+            record(b"dir/", b'5', &[], 0o700, 7, 8, 99, &[], &[]),
+            file(b"dir/file", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+        ]);
+        assert_ne!(
+            tar_manifest(&baseline_dir).unwrap(),
+            tar_manifest(&dir_mode).unwrap()
+        );
+        for (uid, gid) in [(9, 8), (7, 9)] {
+            let changed = archive(vec![
+                root(b"./"),
+                record(b"dir/", b'5', &[], 0o755, uid, gid, 99, &[], &[]),
+                file(b"dir/file", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+            ]);
+            assert_ne!(
+                tar_manifest(&baseline_dir).unwrap(),
+                tar_manifest(&changed).unwrap()
+            );
+        }
+        assert_eq!(
+            tar_manifest(&baseline_dir).unwrap(),
+            tar_manifest(&archive(vec![
+                root(b"./"),
+                record(b"dir/", b'5', &[], 0o755, 7, 8, 99, &[], &[]),
+                file(b"dir/file", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+            ]))
+            .unwrap()
+        );
+        let prefixed = archive(vec![
+            root(b"./"),
+            record(b"dir", b'5', &[], 0o755, 7, 8, 99, &[], b""),
+            file(b"file", b"payload", 3, 0o644, 1, 2, b'0', &[], b"dir"),
+        ]);
+        assert_eq!(
+            tar_manifest(&baseline_dir).unwrap(),
+            tar_manifest(&prefixed).unwrap()
+        );
+        for bad in [
+            b"/absolute".as_slice(),
+            b"../traversal",
+            b"dir/./file",
+            b"dir//file",
+        ] {
+            assert!(tar_manifest(&archive(vec![
+                root(b"./"),
+                file(bad, b"", 0, 0o644, 1, 2, b'0', &[], &[])
+            ]))
+            .is_err());
+        }
+        assert!(tar_manifest(&archive(vec![
+            root(b"./"),
+            file(b"file/", b"", 0, 0o644, 1, 2, b'0', &[], &[])
+        ]))
+        .is_err());
+        let duplicate = archive(vec![
+            root(b"./"),
+            file(b"./file", b"", 0, 0o644, 1, 2, b'0', &[], &[]),
+            file(b"file", b"", 0, 0o644, 1, 2, b'0', &[], &[]),
+        ]);
+        assert!(tar_manifest(&duplicate).is_err());
+        assert!(tar_manifest(&archive(vec![
+            root(b"./"),
+            file(b"bad", b"", 0, 0o644, 1, 2, b'3', &[], &[])
+        ]))
+        .is_err());
+        let baseline_file = archive(vec![
+            root(b"./"),
+            file(b"file", b"payload", 3, 0o644, 1, 2, b'0', &[], &[]),
+        ]);
+        for (data, mtime, mode, uid, gid) in [
+            (b"other".as_slice(), 3, 0o644, 1, 2),
+            (b"payload".as_slice(), 4, 0o644, 1, 2),
+            (b"payload".as_slice(), 3, 0o600, 1, 2),
+            (b"payload".as_slice(), 3, 0o644, 9, 2),
+            (b"payload".as_slice(), 3, 0o644, 1, 9),
+        ] {
+            let changed = archive(vec![
+                root(b"./"),
+                file(b"file", data, mtime, mode, uid, gid, b'0', &[], &[]),
+            ]);
+            assert_ne!(
+                tar_manifest(&baseline_file).unwrap(),
+                tar_manifest(&changed).unwrap()
+            );
+        }
+        let symlink = |mode, uid, gid, mtime, link| {
+            archive(vec![
+                root(b"./"),
+                file(b"file", b"", mtime, mode, uid, gid, b'2', link, &[]),
+            ])
+        };
+        assert_eq!(
+            tar_manifest(&symlink(0o777, 1, 2, 3, b"one")).unwrap(),
+            tar_manifest(&symlink(0o600, 9, 8, 99, b"one")).unwrap()
+        );
+        assert_ne!(
+            tar_manifest(&symlink(0o777, 1, 2, 3, b"one")).unwrap(),
+            tar_manifest(&symlink(0o777, 1, 2, 3, b"two")).unwrap()
         );
     }
 
