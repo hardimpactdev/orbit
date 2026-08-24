@@ -375,7 +375,19 @@ fn copy_named_volume(
             "named volume export failed: {volume}"
         )));
     }
-    docker(program, target, &a(&["volume", "create", volume]))?;
+    let source_hash = crate::pending_update::file_sha256(&archive)
+        .map_err(|e| CutoverError::Command(e.to_string()))?;
+    docker(
+        program,
+        target,
+        &[
+            "volume".into(),
+            "create".into(),
+            "--label".into(),
+            format!("orbit.cutover.volume_sha256={source_hash}"),
+            volume.into(),
+        ],
+    )?;
     let mut import = Command::new(program)
         .args([
             "run",
@@ -423,8 +435,6 @@ fn copy_named_volume(
             "named volume verification failed: {volume}"
         )));
     }
-    let source_hash = crate::pending_update::file_sha256(&archive)
-        .map_err(|e| CutoverError::Command(e.to_string()))?;
     let target_hash = crate::pending_update::file_sha256(&target_archive)
         .map_err(|e| CutoverError::Command(e.to_string()))?;
     if source_hash != target_hash {
@@ -460,7 +470,21 @@ pub fn preflight(
     for c in containers {
         validate_container(c)?;
         if names.contains(&c.name) {
-            return Err(CutoverError::TargetConflict(c.name.clone()));
+            let actual = inspect(&String::from_utf8_lossy(
+                &docker(program, target, &a(&["inspect", &c.name]))?.stdout,
+            ))?;
+            let expected = inspect(&c.inspect)?;
+            let fingerprint = actual
+                .pointer("/Config/Labels/orbit.cutover.fingerprint")
+                .and_then(Value::as_str);
+            if fingerprint != Some(cutover_fingerprint(&expected).as_str())
+                || normalized_mounts(&actual) != normalized_mounts(&expected)
+                || normalized_ports(&actual) != normalized_ports(&expected)
+                || normalized_restart(&actual) != normalized_restart(&expected)
+                || effective_command(&actual) != effective_command(&expected)
+            {
+                return Err(CutoverError::TargetConflict(c.name.clone()));
+            }
         }
     }
     if !containers.is_empty() {
@@ -613,6 +637,68 @@ fn create_args(c: &LegacyContainer) -> Result<Vec<String>, CutoverError> {
     x.extend(cmd);
     Ok(x)
 }
+fn exact_retry_counterpart(
+    program: &Path,
+    target: &str,
+    c: &LegacyContainer,
+) -> Result<bool, CutoverError> {
+    let actual = match docker(program, target, &a(&["inspect", &c.name])) {
+        Ok(out) => inspect(&String::from_utf8_lossy(&out.stdout))?,
+        Err(_) => return Ok(false),
+    };
+    let expected = inspect(&c.inspect)?;
+    let mut actual_labels = actual
+        .pointer("/Config/Labels")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mut expected_labels = expected
+        .pointer("/Config/Labels")
+        .cloned()
+        .unwrap_or(Value::Null);
+    if let Some(labels) = actual_labels.as_object_mut() {
+        labels.remove("orbit.cutover.fingerprint");
+    }
+    if let Some(labels) = expected_labels.as_object_mut() {
+        labels.remove("orbit.cutover.fingerprint");
+    }
+    Ok(actual
+        .pointer("/Config/Labels/orbit.cutover.fingerprint")
+        .and_then(Value::as_str)
+        == Some(cutover_fingerprint(&expected).as_str())
+        && actual_labels == expected_labels
+        && actual.pointer("/Config/Env") == expected.pointer("/Config/Env")
+        && actual.pointer("/Config/WorkingDir") == expected.pointer("/Config/WorkingDir")
+        && actual.pointer("/Config/User") == expected.pointer("/Config/User")
+        && actual.pointer("/HostConfig/ExtraHosts") == expected.pointer("/HostConfig/ExtraHosts")
+        && normalized_mounts(&actual) == normalized_mounts(&expected)
+        && normalized_ports(&actual) == normalized_ports(&expected)
+        && normalized_restart(&actual) == normalized_restart(&expected)
+        && normalized_aliases(&actual, c) == normalized_aliases(&expected, c)
+        && effective_command(&actual) == effective_command(&expected))
+}
+fn retry_volume_matches(program: &Path, target: &str, source: &str, volume: &str) -> bool {
+    let hash = |endpoint: &str| -> Option<Vec<u8>> {
+        let out = docker(
+            program,
+            endpoint,
+            &[
+                "run".into(),
+                "--rm".into(),
+                "--volume".into(),
+                volume_args(volume, true),
+                "busybox:stable".into(),
+                "tar".into(),
+                "-C".into(),
+                "/orbit-volume".into(),
+                "-cf".into(),
+                "-".into(),
+            ],
+        )
+        .ok()?;
+        Some(out.stdout)
+    };
+    hash(source).is_some() && hash(source) == hash(target)
+}
 fn save_image(program: &Path, source: &str, image: &str, path: &Path) -> Result<(), CutoverError> {
     let mut child = Command::new(program)
         .args(["save", image])
@@ -639,6 +725,27 @@ pub fn cutover(
     if cs.is_empty() {
         return Ok(cs);
     }
+    let volumes = named_volumes(&cs)?;
+    let cleanup_retry = cs
+        .iter()
+        .all(|c| exact_retry_counterpart(program, target, c).unwrap_or(false))
+        && volumes
+            .iter()
+            .all(|v| retry_volume_matches(program, target, source, v));
+    if cleanup_retry {
+        for c in &cs {
+            docker(program, source, &a(&["rm", &c.name]))?;
+        }
+        return Ok(cs);
+    }
+    if volumes.iter().any(|volume| {
+        docker(program, target, &a(&["volume", "inspect", volume])).is_ok()
+            && !retry_volume_matches(program, target, source, volume)
+    }) {
+        return Err(CutoverError::TargetConflict(
+            "named volume retry counterpart mismatch".into(),
+        ));
+    }
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "orbit-cutover-{}-{}",
@@ -658,8 +765,9 @@ pub fn cutover(
     }
     let mut created_network = false;
     let mut created_volumes = Vec::new();
+    let mut verified = false;
     let result = (|| {
-        let volumes = named_volumes(&cs)?;
+        let volumes = volumes.clone();
         // A target volume is a conflict unless it is an exact retry counterpart.
         // The normal path creates each volume below; an existing target is never
         // silently overwritten.
@@ -804,6 +912,7 @@ pub fn cutover(
                 }
             }
         }
+        verified = true;
         for c in &cs {
             docker(program, source, &a(&["rm", &c.name]))?;
         }
@@ -811,6 +920,10 @@ pub fn cutover(
     })();
     let _ = fs::remove_dir_all(&tmp);
     if let Err(e) = result {
+        if verified {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
         for c in &cs {
             let _ = docker(program, target, &a(&["rm", "-f", &c.name]));
             if c.running {
@@ -999,7 +1112,9 @@ mod tests {
 
     #[test]
     fn named_volume_shared_copy_verifies_before_start_and_cleans_helpers() {
-        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (fixture, caddy, runtime) = named_volume_fixture_dir();
         let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, false);
         std::env::set_var("LOG", &log);
@@ -1012,7 +1127,12 @@ mod tests {
         );
         cutover(&fake, &source, &target).unwrap();
         let lines = fs::read_to_string(&log).unwrap();
-        assert_eq!(lines.matches(" volume create shared-data").count(), 1);
+        assert_eq!(
+            lines
+                .matches(" volume create --label orbit.cutover.volume_sha256=")
+                .count(),
+            1
+        );
         assert_eq!(
             lines
                 .matches(" run --rm --volume shared-data:/orbit-volume:ro")
@@ -1043,7 +1163,9 @@ mod tests {
 
     #[test]
     fn named_volume_hash_mismatch_rolls_back_created_targets_volumes_network_and_restarts_source() {
-        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let (fixture, caddy, runtime) = named_volume_fixture_dir();
         let (_fake_dir, fake, log) = named_volume_fake_docker(&fixture, true);
         std::env::set_var("LOG", &log);
@@ -1067,29 +1189,90 @@ mod tests {
 
     #[test]
     fn partial_source_cleanup_keeps_verified_target_and_retry_finishes() {
-        let c = caddy_fixture();
-        assert_eq!(cutover_fingerprint(&inspect(&c.inspect).unwrap()).len(), 64);
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_fixture, _caddy, _runtime) = named_volume_fixture_dir();
+        let fixture = _fixture;
+        let (_fake_dir, fake, log) = retry_fake_docker(&fixture, false);
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+
+        assert!(cutover(&fake, &source, &target).is_err());
+        let first = fs::read_to_string(&log).unwrap();
+        assert!(first.contains(" rm orbit-caddy"));
+        assert!(first.contains(" rm orbit-runtime"));
+        assert!(first.contains(" volume create "));
+        assert!(!first.contains(" rm -f orbit-caddy"));
+        assert!(!first.contains(" rm -f orbit-runtime"));
+        assert!(fixture.join("cleanup-state").exists());
+
+        let before_retry = first.lines().count();
+        cutover(&fake, &source, &target).unwrap();
+        let all = fs::read_to_string(&log).unwrap();
+        let delta = all
+            .lines()
+            .skip(before_retry)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(delta.contains(" rm orbit-runtime"));
+        assert!(delta.contains("source.sock run --rm --volume shared-data:/orbit-volume:ro"));
+        assert!(delta.contains("target.sock run --rm --volume shared-data:/orbit-volume:ro"));
+        assert!(!delta.contains(" pull "));
+        assert!(!delta.contains(" save "));
+        assert!(!delta.contains(" load "));
+        assert!(!delta.contains(" network create "));
+        assert!(!delta.contains(" volume create "));
+        assert!(!delta.contains(" create --name "));
+        assert!(!delta.contains(" start "));
+        assert!(!delta.contains(" volume rm "));
+        assert!(!delta.contains(" network rm "));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
     }
 
     #[test]
     fn mismatched_retry_counterpart_fails_closed() {
-        let c = caddy_fixture();
-        let mut v = inspect(&c.inspect).unwrap();
-        v["Config"]["Cmd"] = json!(["different"]);
-        assert_ne!(
-            cutover_fingerprint(&inspect(&c.inspect).unwrap()),
-            cutover_fingerprint(&v)
-        );
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_fixture, _caddy, _runtime) = named_volume_fixture_dir();
+        let fixture = _fixture;
+        let (_fake_dir, fake, log) = retry_fake_docker(&fixture, true);
+        fs::write(fixture.join("volume-state"), "volume").unwrap();
+        fs::write(fixture.join("cleanup-state"), "retry").unwrap();
+        std::env::set_var("LOG", &log);
+        std::env::set_var("FIXTURE", &fixture);
+        let (_source_dir, source) = unix_socket(&fixture, "source.sock");
+        let (_target_dir, target) = unix_socket(&fixture, "target.sock");
+
+        let error = cutover(&fake, &source, &target).unwrap_err();
+        assert!(matches!(error, CutoverError::TargetConflict(_)));
+        let lines = fs::read_to_string(&log).unwrap();
+        assert!(!lines.contains(" stop "));
+        assert!(!lines.contains(" rm "));
+        assert!(!lines.contains(" create --name "));
+        assert!(!lines.contains(" start "));
+        assert!(!lines.contains(" load "));
+        std::env::remove_var("LOG");
+        std::env::remove_var("FIXTURE");
     }
 
     fn test_dir(label: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
+        // macOS resolves the system temp directory to a long `/var/folders/...`
+        // path. Keep Unix-socket fixtures below the platform SUN_LEN limit.
+        let temp_root =
+            std::fs::canonicalize("/tmp").expect("test temp directory must be canonical");
+        let path = temp_root.join(format!(
             "orbit-cutover-test-{}-{}",
             label,
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
+        assert!(!path.is_symlink());
         path
     }
 
@@ -1104,8 +1287,8 @@ mod tests {
         }
         let mut target_caddy = inspect(&caddy.inspect).unwrap();
         let mut target_runtime = inspect(&runtime.inspect).unwrap();
-        target_caddy["Id"] = json!("target-caddy-id");
-        target_runtime["Id"] = json!("target-runtime-id");
+        target_caddy["Id"] = json!("caddy-id");
+        target_runtime["Id"] = json!("runtime-id");
         fs::write(dir.join("source.json"), &caddy.inspect).unwrap();
         fs::write(dir.join("runtime.json"), &runtime.inspect).unwrap();
         fs::write(
@@ -1152,7 +1335,7 @@ unix://*/target.sock:network:inspect) exit 1 ;;
 unix://*/target.sock:network:create*) exit 0 ;;
 unix://*/target.sock:network:rm*) exit 0 ;;
 unix://*/target.sock:volume:inspect) exit 1 ;;
-unix://*/target.sock:volume:create*) exit 0 ;;
+unix://*/target.sock:volume:create*) touch "$FIXTURE/retry-state"; exit 0 ;;
 unix://*/target.sock:volume:rm*) exit 0 ;;
 unix://*/source.sock:run:*) printf 'source-volume-bytes'; exit 0 ;;
 unix://*/target.sock:run:*) printf '{target_bytes}'; exit 0 ;;
@@ -1163,8 +1346,77 @@ unix://*/source.sock:stop:*|unix://*/source.sock:start:*|unix://*/source.sock:rm
 esac
 "#
         );
-        let body = body.replace("$FIXTURE", fixture.to_str().unwrap());
+        let body = body
+            .replace("$FIXTURE", fixture.to_str().unwrap())
+            .replace("{target_bytes}", target_bytes);
         fs::write(&script, body).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, script, log)
+    }
+
+    fn retry_fake_docker(fixture: &Path, mismatch: bool) -> (PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = test_dir(if mismatch {
+            "retry-mismatch"
+        } else {
+            "retry-cleanup"
+        });
+        let log = dir.join("argv.log");
+        let script = dir.join("docker-retry-fake");
+        let mut target_caddy =
+            inspect(&fs::read_to_string(fixture.join("source.json")).unwrap()).unwrap();
+        let mut target_runtime =
+            inspect(&fs::read_to_string(fixture.join("runtime.json")).unwrap()).unwrap();
+        target_caddy["Id"] = json!("target-caddy-id");
+        target_runtime["Id"] = json!("target-runtime-id");
+        for target in [&mut target_caddy, &mut target_runtime] {
+            target["Config"]["Labels"]["orbit.cutover.fingerprint"] =
+                json!(cutover_fingerprint(target));
+        }
+        if mismatch {
+            fs::write(fixture.join("mismatch-volume"), "mismatch").unwrap();
+        }
+        fs::write(
+            fixture.join("target-caddy.json"),
+            json!([target_caddy]).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            fixture.join("target-runtime.json"),
+            json!([target_runtime]).to_string(),
+        )
+        .unwrap();
+        let body = r#"#!/bin/sh
+printf '%s %s\n' "$DOCKER_HOST" "$*" >> "$LOG"
+case "$DOCKER_HOST:$1:$2" in
+unix://*/source.sock:info:*|unix://*/target.sock:info:*) exit 0 ;;
+unix://*/source.sock:ps:-aq)
+  if [ -f "$FIXTURE/cleanup-state" ]; then printf 'runtime-id\n'; else printf 'caddy-id\nruntime-id\n'; fi; exit 0 ;;
+unix://*/target.sock:ps:-aq) printf 'target-caddy-id\ntarget-runtime-id\n'; exit 0 ;;
+unix://*/source.sock:inspect:caddy-id) cat "$FIXTURE/source.json"; exit 0 ;;
+unix://*/source.sock:inspect:runtime-id) cat "$FIXTURE/runtime.json"; exit 0 ;;
+unix://*/target.sock:inspect:target-caddy-id|unix://*/target.sock:inspect:orbit-caddy) cat "$FIXTURE/target-caddy.json"; exit 0 ;;
+unix://*/target.sock:inspect:target-runtime-id|unix://*/target.sock:inspect:orbit-runtime) cat "$FIXTURE/target-runtime.json"; exit 0 ;;
+unix://*/source.sock:network:inspect|unix://*/target.sock:network:inspect) cat "$FIXTURE/network.json"; exit 0 ;;
+unix://*/target.sock:volume:inspect)
+  if [ -f "$FIXTURE/volume-state" ]; then exit 0; else exit 1; fi ;;
+unix://*/target.sock:volume:create*) touch "$FIXTURE/volume-state"; exit 0 ;;
+unix://*/target.sock:volume:rm*) exit 0 ;;
+unix://*/source.sock:run:*) printf 'shared-volume-bytes'; exit 0 ;;
+unix://*/target.sock:run:*)
+  if [ ! -f "$FIXTURE/volume-state" ]; then exit 1; fi;
+  if [ -f "$FIXTURE/mismatch-volume" ]; then printf 'different-volume-bytes'; else printf 'shared-volume-bytes'; fi; exit 0 ;;
+unix://*/source.sock:save:*) printf image; exit 0 ;;
+unix://*/target.sock:load:*|unix://*/target.sock:create:*|unix://*/target.sock:start:*) exit 0 ;;
+unix://*/source.sock:stop:*) exit 0 ;;
+unix://*/source.sock:rm:orbit-caddy) exit 0 ;;
+unix://*/source.sock:rm:orbit-runtime)
+  if [ -f "$FIXTURE/cleanup-state" ]; then exit 0; else touch "$FIXTURE/cleanup-state"; exit 1; fi ;;
+*) exit 0 ;;
+esac
+"#
+        .to_string();
+        fs::write(&script, body.replace("$FIXTURE", fixture.to_str().unwrap())).unwrap();
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
         (dir, script, log)
     }
@@ -1215,7 +1467,9 @@ esac
 
     #[test]
     fn real_cutover_transfers_all_owned_containers_and_excludes_unrelated() {
-        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let caddy = caddy_fixture();
         let runtime = runtime_fixture();
         let fixture = cutover_fixture_dir(&caddy, &runtime);
@@ -1238,8 +1492,12 @@ esac
         assert!(log_text.contains("create --name orbit-caddy"));
         assert!(log_text.contains("create --name orbit-runtime"));
         assert!(log_text.contains("start orbit-caddy"));
-        assert!(log_text.contains("rm orbit-caddy"));
-        assert!(log_text.contains("rm orbit-runtime"));
+        assert!(log_text
+            .lines()
+            .any(|line| line.contains("source.sock rm orbit-caddy")));
+        assert!(log_text
+            .lines()
+            .any(|line| line.contains("source.sock rm orbit-runtime")));
         assert!(!log_text.contains("create --name unrelated"));
         assert!(!log_text.contains("stop unrelated"));
         assert!(!log_text.contains("rm unrelated"));
@@ -1273,7 +1531,9 @@ esac
 
     #[test]
     fn real_cutover_failure_cleans_targets_and_restarts_only_originally_running() {
-        let _guard = CUTOVER_TEST_LOCK.lock().unwrap();
+        let _guard = CUTOVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let caddy = caddy_fixture();
         let runtime = runtime_fixture();
         let fixture = cutover_fixture_dir(&caddy, &runtime);
@@ -1289,6 +1549,12 @@ esac
         assert!(log_text.contains("network rm orbit-network"));
         assert!(log_text.contains("start orbit-caddy"));
         assert!(!log_text.contains("start orbit-runtime"));
+        assert!(!log_text
+            .lines()
+            .any(|line| line.contains("source.sock rm orbit-caddy")));
+        assert!(!log_text
+            .lines()
+            .any(|line| line.contains("source.sock rm orbit-runtime")));
         std::env::remove_var("LOG");
         std::env::remove_var("FIXTURE");
     }
