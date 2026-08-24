@@ -111,7 +111,18 @@ it('passes the release updater pubkey through TAURI_CONFIG', function (): void {
     expect($source)
         ->toContain('ORBIT_TAURI_UPDATER_PUBKEY')
         ->toContain('TAURI_CONFIG')
+        ->toContain('build --bundles app --config "$TAURI_CONFIG"')
         ->toContain('plugins":{"updater":{"pubkey":"%s"}}');
+});
+
+it('fails closed when the built desktop bundle version differs from Orbit', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+
+    expect($source)
+        ->toContain('CFBundleShortVersionString')
+        ->toContain('CFBundleVersion')
+        ->toContain('desktop bundle short version')
+        ->toContain('desktop bundle build version');
 });
 
 it('installs locked TypeScript SDK dependencies before the Tauri desktop build', function (): void {

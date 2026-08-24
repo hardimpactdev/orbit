@@ -49,11 +49,25 @@ TAURI_CONFIG="$(printf '{"version":"%s","plugins":{"updater":{"pubkey":"%s"}}}' 
     cd "$macos_dir"
     perl -i -pe "s/^version = \".*\"/version = \"${version}\"/" Cargo.toml
     npm ci
-    npm run tauri -- build --bundles app
+    npm run tauri -- build --bundles app --config "$TAURI_CONFIG"
 )
 
 app_bundle="$(find "${macos_dir}/target/release/bundle/macos" -maxdepth 1 -name '*.app' -print | head -n 1)"
 [ -n "$app_bundle" ] || fail 'Tauri macOS app bundle was not produced.'
+
+plist_buddy='/usr/libexec/PlistBuddy'
+[ -x "$plist_buddy" ] || fail 'PlistBuddy is required to verify the desktop bundle version.'
+
+if ! bundle_short_version="$("$plist_buddy" -c 'Print :CFBundleShortVersionString' "${app_bundle}/Contents/Info.plist")"; then
+    fail 'desktop bundle short version could not be read.'
+fi
+
+if ! bundle_build_version="$("$plist_buddy" -c 'Print :CFBundleVersion' "${app_bundle}/Contents/Info.plist")"; then
+    fail 'desktop bundle build version could not be read.'
+fi
+
+[ "$bundle_short_version" = "$version" ] || fail "desktop bundle short version ${bundle_short_version} does not match Orbit ${version}."
+[ "$bundle_build_version" = "$version" ] || fail "desktop bundle build version ${bundle_build_version} does not match Orbit ${version}."
 
 archive="${output}/Orbit.app.tar.gz"
 tar -C "$(dirname "$app_bundle")" -czf "$archive" "$(basename "$app_bundle")"
