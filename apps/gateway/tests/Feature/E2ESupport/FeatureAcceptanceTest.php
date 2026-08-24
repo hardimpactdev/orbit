@@ -66,9 +66,12 @@ it('requires an active Slices index before deriving route JSON', function (): vo
 
     try {
         $process = acceptance_test_run($fixture, ['route']);
-        expect($process->getExitCode())->toBe(2)
-            ->and($process->getOutput())->toBe('')
-            ->and($process->getErrorOutput())->toContain('Slices');
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and($process->getErrorOutput())
+            ->toContain('Slices');
     } finally {
         acceptance_test_remove($fixture);
     }
@@ -103,7 +106,10 @@ it('rejects sliced route packets with missing or unknown Status.State', function
     'unknown' => '- State: mystery\n- Blocker: none',
 ]);
 
-it('validates building and all-complete sliced route phases before JSON', function (string $sliceState, string $phase): void {
+it('validates building and all-complete sliced route phases before JSON', function (
+    string $sliceState,
+    string $phase,
+): void {
     $fixture = acceptance_test_workspace('slice-route-phase', 'README.md');
     if (! is_dir($fixture.'/.orbit/slices')) {
         mkdir($fixture.'/.orbit/slices', recursive: true);
@@ -117,9 +123,12 @@ it('validates building and all-complete sliced route phases before JSON', functi
     try {
         $process = acceptance_test_run($fixture, ['route']);
         $payload = json_decode($process->getOutput(), true);
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and(array_keys($payload))->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
-            ->and($payload)->not->toHaveKey('slice');
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(array_keys($payload))
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->and($payload)
+            ->not->toHaveKey('slice');
     } finally {
         acceptance_test_remove($fixture);
     }
@@ -1567,7 +1576,7 @@ it('keeps a failed terminal runtime proof in PROVE and completes FIX -> BUILD ->
             ->toContain('- Accepted feature tip: '.$repairedTip)
             ->toContain('- Accepted main tip: '.$mainTip)
             ->toContain('- Reviewed feature tip: '.$repairedTip)
-            ->not->toContain($originalTip);
+            ->toContain('| `.orbit/slices/01-one.md` | complete | '.$originalTip.' |');
     } finally {
         acceptance_test_remove($fixture);
     }
@@ -1676,8 +1685,7 @@ it('does not normalize acceptance through a symlinked .orbit root', function ():
         expect($blocked->getExitCode())
             ->toBe(2)
             ->and($blocked->getErrorOutput())
-            ->toContain('result=')
-            ->toContain('FIX -> BUILD -> PROVE')
+            ->toContain('SECRET_SCAN: BLOCKED slice packets rule=unsafe-slice-contract')
             ->and((string) file_get_contents($outsideLoopPath))
             ->toBe($beforeOutside)
             ->toContain('- State: accept')
@@ -2179,8 +2187,13 @@ function acceptance_test_seed_loop(
     );
     acceptance_test_seed_runtime_evidence($fixture);
     acceptance_test_write_gate_artifact($fixture);
-    acceptance_test_unlink_if_present("{$fixture}/.orbit/slices/01-one.md");
-    acceptance_test_remove_empty_dir("{$fixture}/.orbit/slices");
+    if (! is_dir("{$fixture}/.orbit/slices")) {
+        mkdir("{$fixture}/.orbit/slices", recursive: true);
+    }
+    file_put_contents(
+        "{$fixture}/.orbit/slices/01-one.md",
+        acceptance_slice_packet('01-one', 'none'),
+    );
 
     file_put_contents("{$fixture}/.orbit/loop.md", <<<MARKDOWN
         # Orbit Feature Loop
@@ -2198,6 +2211,12 @@ function acceptance_test_seed_loop(
         - Owned: fixture
         - Constraints: no manual E2E
         - Out of scope: none
+
+        ## Slices
+
+        | Slice | State | Checkpoint |
+        | --- | --- | --- |
+        | `.orbit/slices/01-one.md` | complete | {$reviewedTip} |
 
         ## Proof
 
@@ -2415,13 +2434,15 @@ function acceptance_test_remove_empty_dir(string $directory): void
 
 function acceptance_slice_packet(string $id, string $depends): string
 {
-    return "# Orbit Feature Slice\n\n"
+    return (
+        "# Orbit Feature Slice\n\n"
         ."- Slice: {$id}\n"
         ."- Depends on: {$depends}\n\n"
         ."## Outcome\n\n"
         ."## Scope\n- Included: route contract\n- Excluded: archive work\n\n"
         ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
-        ."## Proof\n- Focused: acceptance route tests\n";
+        ."## Proof\n- Focused: acceptance route tests\n"
+    );
 }
 
 /** @param list<string> $arguments */
