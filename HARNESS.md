@@ -138,7 +138,7 @@ files:
 | --- | --- |
 | `automated` | Docs, tests, declarative workflow files, repository tooling under `bin/`, and repository-only TypeScript SDK packaging under `packages/sdk-typescript/**` |
 | `retained-incus` | Shared core (`packages/core/src/**`), PHP SDK (`packages/sdk/**`; production require of CLI/gateway), CLI commands, and server or node runtime behavior |
-| `browser` | Gateway or docs web UI |
+| `browser` | Gateway, docs, or apps/ui web UI |
 | `host-macos` | Native macOS Agent behavior |
 
 Run `ready` only after recording the venue proof. It refuses every

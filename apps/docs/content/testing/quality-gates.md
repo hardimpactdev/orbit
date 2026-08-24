@@ -16,12 +16,13 @@ composer docs-lint
 
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
-dry-run, the default Pest suites for the gateway, CLI, docs, core, and SDK, and
+dry-run, the default Pest suites for the gateway, CLI, docs, `apps/ui`, core, and SDK, and
 Cargo checks for the headless Orbit Agent service and macOS Tauri UI.
 
 In an interactive TTY, `bin/quality-check.sh` renders an in-place progress tree
-for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
-`apps/reverb`, `apps/agent`, `apps/macos`, `packages/core`, `packages/sdk`)
+for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/ui`,
+`apps/e2e`, `apps/reverb`, `apps/agent`, `apps/macos`, `packages/core`,
+`packages/sdk`)
 while subgates run, leaves the final pass/fail tree visible, and then prints the same
 per-subgate logs and summaries as before.
 
