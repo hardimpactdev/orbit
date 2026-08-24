@@ -1,0 +1,33 @@
+{
+    "id": "general-review",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=general-review",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.local/bin:/Users/nckrtl/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:/Users/nckrtl/.vite-plus/bin:/Users/nckrtl/.codex/tmp/arg0/codex-arg0hgcaz9:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/nckrtl/.local/bin:/Users/nckrtl/.codeium/windsurf/bin:/Users/nckrtl/.grok/bin:/opt/homebrew/opt/mysql-client/bin:/Users/nckrtl/.opencode/bin:/Users/nckrtl/.nvm/versions/node/v24.13.0/bin:/Users/nckrtl/Library/pnpm:/Users/nckrtl/.antigravity/antigravity/bin:/Users/nckrtl/.config/composer/vendor/bin:/Users/nckrtl/.spin/bin:/Users/nckrtl/.bun/bin:/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Users/nckrtl/.orbstack/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-macos-menu-bar-only",
+        "window": "general-review",
+        "pane_id": "%1",
+        "pane_pid": 28370,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-macos-menu-bar-only",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-macos-menu-bar-only/.orbit/workers/briefs/macos-menu-bar-only-general-review.md",
+    "status": "spawned",
+    "heartbeat_at": "2026-08-24T14:38:16Z",
+    "note": "",
+    "started_at": "2026-08-24T14:38:16Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": null
+}

@@ -1,0 +1,48 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-24T15:19:44+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-macos-menu-bar-only/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-24-171944-codex-macos-menu-bar-only",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/docs-lint-2026-08-24T141155Z-9ed641218f81.json",
+        "diagnostics/failed-gates/docs-lint-2026-08-24T141433Z-d4daf2b265a3.json",
+        "diagnostics/failed-gates/docs-lint-2026-08-24T145633Z-cfdd63e6a9f1.json",
+        "diagnostics/failed-gates/quality-check-2026-08-24T141825Z-0616760601e2.json",
+        "diagnostics/failed-gates/quality-check-2026-08-24T150725Z-c96028eb54e3.json",
+        "evidence/macos-runtime-v2/receipt.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-24T151103Z-b1fc0b01190f.json",
+        "slices/01-menu-only.md",
+        "slices/02-owned-shutdown.md",
+        "slices/03-docs-and-cleanup.md",
+        "workers/general-review.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/docs-lint-2026-08-24T141155Z-9ed641218f81.json": "99a20bd52a2c5929774345e20e4a5a25e111d12e852a5a49fa5e26fdeb29e7f5",
+        "diagnostics/failed-gates/docs-lint-2026-08-24T141433Z-d4daf2b265a3.json": "cf52baac81f5c9074c9de7ae1b34dbf3c833143ad8b37d52a5bbfbe6cc9bc51b",
+        "diagnostics/failed-gates/docs-lint-2026-08-24T145633Z-cfdd63e6a9f1.json": "ceccef0553317d143d02909218534ab2e7ce47a46f6cff5ba5cdf99beb2823e6",
+        "diagnostics/failed-gates/quality-check-2026-08-24T141825Z-0616760601e2.json": "9f7bf42a183b065b2b88f0dc617d637f17c42faf4105e47035440c780becc977",
+        "diagnostics/failed-gates/quality-check-2026-08-24T150725Z-c96028eb54e3.json": "315c79f26a70a7dbf7b1c27bdf2468c949e32995cca107e01c58ddeb15402431",
+        "evidence/macos-runtime-v2/receipt.md": "a6d35324f4eb2440d5dd36e5d7f2f07a0bcb12c6b3239b44db03cad9e4c98218",
+        "loop.md": "776b8aa4432de2f0b017fd6804edb506383341fa74bd2c8cbe9246d5d0d80cbe",
+        "quality-gates/quality-check-2026-08-24T151103Z-b1fc0b01190f.json": "db8006bfd75cb13d2d7ba5e980df4ccbf08aa0380a2d5534b936f6ef4a5201e5",
+        "slices/01-menu-only.md": "cbe6a1773a100bcec2647aaed096e2c4e915f4a80c475a8403df7b1aa480dc89",
+        "slices/02-owned-shutdown.md": "cba33c9b161b7f431b1cc5255b48f5af14e55489baceef7d69277953db2c0921",
+        "slices/03-docs-and-cleanup.md": "dfceaea43ba47b5bd225a0d274cf49b8778fa6e09220dcae0db284a85e4b4bd8",
+        "workers/general-review.json": "51c388f952413ec4375e25fc6bcfc5f1354bada03ba8111a85c5e2a9be6cba7e"
+    },
+    "slug": "codex-macos-menu-bar-only",
+    "requested_slug": "codex-macos-menu-bar-only",
+    "compatible_slugs": [
+        "codex-macos-menu-bar-only"
+    ],
+    "branch": "codex-macos-menu-bar-only",
+    "candidate_commit": "8d7e13e2db0fe16ba8ace88a2f3762596a307683",
+    "accepted_feature_tip": "8d7e13e2db0fe16ba8ace88a2f3762596a307683",
+    "accepted_main_tip": "9071bc82784fcd7a367dd16f349cf07101e7622d",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

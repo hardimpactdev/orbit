@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 427,
-    "unique_candidate_commit_count": 323,
+    "record_count": 428,
+    "unique_candidate_commit_count": 324,
     "orphan_count": 4,
     "records": [
         {
@@ -10912,6 +10912,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "browser",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-24-171944-codex-macos-menu-bar-only",
+            "slug": "codex-macos-menu-bar-only",
+            "timestamp": "2026-08-24-171944",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "8d7e13e2db0fe16ba8ace88a2f3762596a307683",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "host-macos",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",
