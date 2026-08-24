@@ -49,7 +49,7 @@ it('keeps the valid sliced route JSON shape unchanged', function (): void {
         expect($process->getExitCode())
             ->toBe(0)
             ->and(array_keys($payload))
-            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue', 'venues'])
             ->and($payload)
             ->not->toHaveKey('slice');
     } finally {
@@ -139,7 +139,7 @@ it('routes a fresh FRAME loop with a packet authored from the templates', functi
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and(array_keys($payload))
-            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue', 'venues'])
             ->and($payload)
             ->not->toHaveKey('slice');
     } finally {
@@ -196,7 +196,7 @@ it('validates building and all-complete sliced route phases before JSON', functi
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and(array_keys($payload))
-            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue'])
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue', 'venues'])
             ->and($payload)
             ->not->toHaveKey('slice');
     } finally {
@@ -231,10 +231,10 @@ it('shows global help without requiring a loop packet', function (string $argume
     'short help' => '-h',
 ]);
 
-it('derives the minimum acceptance venue from changed files', function (array $files, string $venue): void {
+it('derives acceptance venues from changed files', function (array $files, string|array $venue): void {
     require_once repo_path('bin/orbit-loop-contract.php');
 
-    expect(orbitLoopAcceptanceVenue($files))->toBe($venue);
+    expect(orbitLoopAcceptanceVenues($files))->toBe((array) $venue);
 })->with([
     'docs only' => [['apps/docs/content/mission.md'], 'automated'],
     'repository static documentation html' => [
@@ -282,12 +282,12 @@ it('derives the minimum acceptance venue from changed files', function (array $f
         ],
         'retained-incus',
     ],
-    'php sdk does not stay automated when mixed with typescript sdk' => [
+    'mixed sdk venues are sorted exactly' => [
         [
             'packages/sdk/src/GatewayConnector.php',
             'packages/sdk-typescript/src/client.ts',
         ],
-        'retained-incus',
+        ['automated', 'retained-incus'],
     ],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
     'docs frontend resources stay browser' => [['apps/docs/resources/js/app.js'], 'browser'],
@@ -394,7 +394,7 @@ it('routes proof venue from the exact candidate diff without a loop packet', fun
             ->and($payload['changed_files'])
             ->toBe(['packages/sdk-typescript/src/client.ts'])
             ->and(array_keys($payload))
-            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue']);
+            ->toBe(['candidate', 'base', 'base_tip', 'merge_base', 'changed_files', 'venue', 'venues']);
 
         $loopAfter = is_file("{$fixture}/.orbit/loop.md")
             ? (string) file_get_contents("{$fixture}/.orbit/loop.md")
@@ -1628,7 +1628,7 @@ it('keeps a failed terminal runtime proof in PROVE and completes FIX -> BUILD ->
         file_put_contents("{$fixture}/.orbit/loop.md", $loop);
         acceptance_test_write_runtime_row(
             $fixture,
-            acceptance_test_structured_runtime($repairedTip),
+            acceptance_test_structured_runtime($fixture, $repairedTip),
         );
         acceptance_test_write_gate_artifact($fixture);
 
@@ -1783,7 +1783,7 @@ it('rejects runtime evidence when the worktree .orbit root is a symlink', functi
             venue: 'retained-incus',
         );
         $tip = acceptance_test_git($fixture, ['rev-parse', 'HEAD']);
-        acceptance_test_write_runtime_row($fixture, acceptance_test_structured_runtime($tip));
+        acceptance_test_write_runtime_row($fixture, acceptance_test_structured_runtime($fixture, $tip));
         acceptance_test_replace_orbit_root_with_symlink($fixture, $outside);
 
         $problem = orbitLoopRuntimeProofProblem(
@@ -2252,6 +2252,7 @@ function acceptance_test_seed_loop(
     // Seed a candidate-bound structured receipt even when the packet still says
     // venue=automated so ready can upgrade to the diff-derived retained venue.
     $runtime = acceptance_test_structured_runtime(
+        $fixture,
         $reviewedTip,
         $venue === 'automated' ? 'retained-incus' : $venue,
     );
@@ -2394,6 +2395,7 @@ function acceptance_test_write_gate_artifact(string $fixture): void
 }
 
 function acceptance_test_structured_runtime(
+    string $fixture,
     string $candidate,
     string $venue = 'retained-incus',
     string $observed = 'exit 0',
@@ -2403,8 +2405,12 @@ function acceptance_test_structured_runtime(
         .$candidate
         .'; venue='
         .$venue
+        .'; base_tip='
+        .acceptance_test_git($fixture, ['rev-parse', 'main'])
+        .'; merge_base='
+        .acceptance_test_git($fixture, ['merge-base', 'main', 'HEAD'])
         .'; environment=dev-fixture'
-        .'; target=orbit fixture'
+        .'; command=fixture runtime command'
         .'; expected=exit 0'
         .'; observed='
         .$observed
