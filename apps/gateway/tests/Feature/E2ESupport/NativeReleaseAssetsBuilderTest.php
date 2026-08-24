@@ -125,16 +125,26 @@ it('fails closed when the built desktop bundle version differs from Orbit', func
         ->toContain('desktop bundle build version');
 });
 
-it('installs locked TypeScript SDK dependencies before the Tauri desktop build', function (): void {
+it('uses a minimal locked Tauri npm project for the desktop build', function (): void {
     $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
-    $tauriBuild = 'npm run tauri -- build';
-    $parts = explode($tauriBuild, $source);
+    $package = json_decode((string) file_get_contents(repo_path('apps/macos/package.json')), true, flags: JSON_THROW_ON_ERROR);
+    $lock = json_decode((string) file_get_contents(repo_path('apps/macos/package-lock.json')), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($parts)
-        ->toHaveCount(2)
-        ->and($parts[0])
-        ->toContain('packages/sdk-typescript')
-        ->toContain('npm ci --ignore-scripts --include=dev');
+    expect($package)
+        ->toMatchArray([
+            'private' => true,
+            'scripts' => ['tauri' => 'tauri'],
+            'devDependencies' => ['@tauri-apps/cli' => '^2.9.4'],
+        ])
+        ->and($package['dependencies'] ?? [])
+        ->toBeEmpty()
+        ->and(array_keys($package))
+        ->toEqualCanonicalizing(['$schema', 'private', 'scripts', 'devDependencies'])
+        ->and($lock['packages']['']['devDependencies'] ?? [])
+        ->toBe(['@tauri-apps/cli' => '^2.9.4'])
+        ->and($source)
+        ->not->toContain('packages/sdk-typescript')
+        ->not->toContain('npm ci --ignore-scripts --include=dev');
 });
 
 it('signs the desktop updater archive through the installed local Tauri CLI', function (): void {
