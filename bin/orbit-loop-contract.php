@@ -1232,8 +1232,10 @@ function orbitLoopRuntimeProofReceiptProblem(
         return 'Verification runtime structured receipt must use the single-venue schema; remain in PROVE and re-prove the final hop';
     }
 
-    $targetOrCommand = (int) array_key_exists('target', $fields) + (int) array_key_exists('command', $fields);
-    if ($targetOrCommand !== 1 || ($multiVenue && ! array_key_exists('command', $fields))) {
+    $targetPresent = array_key_exists('target', $fields) && trim($fields['target']) !== '';
+    $commandPresent = array_key_exists('command', $fields) && trim($fields['command']) !== '';
+    $targetOrCommand = (int) $targetPresent + (int) $commandPresent;
+    if ($targetOrCommand !== 1 || ($multiVenue && ! $commandPresent)) {
         return 'Verification runtime structured receipt must include exactly one of target= or command=; remain in PROVE and re-prove the final hop';
     }
 

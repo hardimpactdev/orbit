@@ -1462,6 +1462,16 @@ it('rejects deferred or failed final-hop runtime claims and accepts structured c
         false,
         'exactly one of target= or command=',
     ],
+    'empty target' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; target=; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'exactly one of target= or command=',
+    ],
+    'empty command' => [
+        'passed - candidate=<TIP>; venue=retained-incus; environment=dev-fixture; command=; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
+        false,
+        'exactly one of target= or command=',
+    ],
     'malformed fields' => [
         'passed - candidate=<TIP>; venue=retained-incus; not-a-field; environment=dev-fixture; target=orbit fixture; expected=exit 0; observed=exit 0; result=passed; evidence=`.orbit/evidence/runtime-proof.txt`',
         false,
