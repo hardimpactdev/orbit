@@ -40,6 +40,28 @@ it('rejects a schema 4 receipt with a missing slice', function (): void {
         session_index_remove($workspace);
     }
 });
+
+it('indexes all recorded acceptance venues while retaining singular labels', function (): void {
+    $workspace = session_index_workspace('plural-venues');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $plural = str_replace(
+            '- Acceptance venue: automated',
+            '- Acceptance venues: browser, host-macos',
+            session_index_compact_loop(),
+        );
+        session_index_archive($sessionsDir, '2026-07-10-181500-plural-venues', $plural);
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput())
+            ->and(session_index_record(session_index_json($sessionsDir), 'plural-venues')['acceptance_venue'])
+            ->toBe('browser, host-macos');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
 it('rejects a schema 4 receipt with an extra slice', function (): void {
     $fixture = session_index_schema4_fixture('extra-schema4-slice');
     $workspace = $fixture['workspace'];

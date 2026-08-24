@@ -373,7 +373,8 @@ function acceptanceShow(string $cwd, string $loopPath): never
                 'accepted_feature_tip' => $acceptedFeature,
                 'accepted_main_tip' => $acceptedMain,
                 'acceptance' => orbitLoopLabel($loop, 'Proof', 'Acceptance'),
-                'venue' => orbitLoopLabel($loop, 'Proof', 'Acceptance venue'),
+                'venue' => orbitLoopLabel($loop, 'Proof', 'Acceptance venues')
+                    ?? orbitLoopLabel($loop, 'Proof', 'Acceptance venue'),
             ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
         )
@@ -402,7 +403,9 @@ function acceptanceResolvedVenue(array $options, string $loop, string $minimum):
         return $requested;
     }
 
-    $recorded = (string) (orbitLoopLabel($loop, 'Proof', 'Acceptance venue') ?? '');
+    $recorded = orbitLoopLabel($loop, 'Proof', 'Acceptance venues') === null
+        ? (string) (orbitLoopLabel($loop, 'Proof', 'Acceptance venue') ?? '')
+        : '';
 
     if (
         in_array($recorded, ORBIT_LOOP_ACCEPTANCE_VENUES, true)

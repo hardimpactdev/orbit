@@ -1998,6 +1998,34 @@ it('invalidating accepted feedback resets the reviewer identity for the FIX delt
     }
 });
 
+it('reports all recorded acceptance venues in show JSON', function (): void {
+    $fixture = acceptance_test_workspace('show-plural-venues', 'apps/cli/app/Commands/FooCommand.php');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'accept',
+            review: 'passed - reviewer - observable',
+            venue: 'retained-incus',
+        );
+        $loopPath = "{$fixture}/.orbit/loop.md";
+        $loop = str_replace(
+            '- Acceptance venue: retained-incus',
+            '- Acceptance venues: browser, host-macos',
+            (string) file_get_contents($loopPath),
+        );
+        file_put_contents($loopPath, $loop);
+
+        $show = acceptance_test_run($fixture, ['show', '--json']);
+        $status = json_decode($show->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($show->getExitCode())->toBe(0, $show->getErrorOutput())
+            ->and($status['venue'])->toBe('browser, host-macos');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('requires main integration and a fresh proof and acceptance when main moves', function (): void {
     $fixture = acceptance_test_workspace('reprove', 'apps/cli/app/Commands/FooCommand.php');
 
