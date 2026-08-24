@@ -66,7 +66,39 @@ function orbit_proof_receipt(string $worktree, array $options = []): array
     }
 
     if (isset($options['venues'])) {
-        $venues = array_values($options['venues']);
+        $assertedVenues = array_values($options['venues']);
+        $validAssertion = every($assertedVenues, static fn (mixed $candidate): bool => is_string($candidate) && $candidate !== '')
+            && count($assertedVenues) === count(array_unique($assertedVenues));
+
+        if (! $validAssertion || array_diff($assertedVenues, $venues) !== [] || array_diff($venues, $assertedVenues) !== []) {
+            return [
+                'ok' => false,
+                'problem' => 'proof receipt venues assertion does not match the diff-derived acceptance route',
+                'candidate' => $candidate,
+                'dirty' => $dirty,
+                'docs_only' => false,
+                'gate' => 'quality-check',
+                'artifact' => null,
+                'venue' => '',
+                'venues' => $venues,
+                'runtime' => 'not applicable',
+            ];
+        }
+    }
+
+    if ($overrideVenue !== null && count($venues) === 1 && $overrideVenue !== $venues[0]) {
+        return [
+            'ok' => false,
+            'problem' => 'proof receipt venue assertion does not match the diff-derived acceptance route',
+            'candidate' => $candidate,
+            'dirty' => $dirty,
+            'docs_only' => false,
+            'gate' => 'quality-check',
+            'artifact' => null,
+            'venue' => '',
+            'venues' => $venues,
+            'runtime' => 'not applicable',
+        ];
     }
 
     if (count($venues) > 1 && $overrideVenue !== null) {

@@ -1032,6 +1032,15 @@ function orbitLoopRuntimeProofProblem(
     $runtime = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime');
     $requiredVenues = orbitLoopAcceptanceVenues(orbitLoopChangedFilesForRuntime($worktree));
     if (count($requiredVenues) > 1) {
+        preg_match_all('/^\s{2,}-\s+runtime\[([^\]]+)\]:/mi', $markdown, $runtimeMatches);
+        $runtimeVenues = $runtimeMatches[1] ?? [];
+        if (count($runtimeVenues) !== count(array_unique($runtimeVenues))) {
+            return 'Verification runtime receipt has duplicate venue entries';
+        }
+        $unknownVenues = array_diff($runtimeVenues, $requiredVenues);
+        if ($unknownVenues !== []) {
+            return 'Verification runtime receipt has unknown acceptance venue '.implode(', ', $unknownVenues);
+        }
         foreach ($requiredVenues as $requiredVenue) {
             $receipt = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime['.$requiredVenue.']');
             if ($receipt === null) {
