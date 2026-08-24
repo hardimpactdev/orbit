@@ -20,7 +20,7 @@ it('blocks terminal phases until every indexed slice is complete', function (): 
         $problems = orbitLoopSliceFinalizationProblems($packet, $worktree, str_repeat('a', 40));
         expect($problems)->not->toBeEmpty()->and($problems[0])->toContain('terminal phase');
     } finally {
-        (new Symfony\Component\Filesystem\Filesystem())->remove($worktree);
+        new Symfony\Component\Filesystem\Filesystem()->remove($worktree);
     }
 });
 
@@ -30,7 +30,9 @@ it('requires checkpoints for complete slices', function (): void {
         mkdir($worktree.'/.orbit/slices', recursive: true);
     }
     $checkpoint = str_repeat('a', 40);
-    $packet = preg_replace('/complete \| [0-9a-f]{40}/', 'complete | none', compact_feature_loop_packet(state: 'land'), 1) ?? '';
+    $packet =
+        preg_replace('/complete \| [0-9a-f]{40}/', 'complete | none', compact_feature_loop_packet(state: 'land'), 1)
+        ?? '';
     $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
     file_put_contents($worktree.'/.orbit/loop.md', $packet);
     file_put_contents($worktree.'/.orbit/slices/01-example.md', finalization_slice_packet('01-example'));
@@ -39,18 +41,23 @@ it('requires checkpoints for complete slices', function (): void {
         $problems = orbitLoopSliceFinalizationProblems($packet, $worktree, $checkpoint);
         expect($problems)->not->toBeEmpty()->and($problems[0])->toContain('complete slice 01-example');
     } finally {
-        (new Symfony\Component\Filesystem\Filesystem())->remove($worktree);
+        new Symfony\Component\Filesystem\Filesystem()->remove($worktree);
     }
 });
 
 it('preserves the BUILD graph contract', function (): void {
     $worktree = sys_get_temp_dir().'/orbit-slice-build-'.bin2hex(random_bytes(4));
     mkdir($worktree.'/.orbit/slices', recursive: true);
-    $rows = "| `.orbit/slices/01-one.md` | complete | none |\n"
+    $rows =
+        "| `.orbit/slices/01-one.md` | complete | none |\n"
         ."| `.orbit/slices/02-two.md` | building | none |\n"
         ."| `.orbit/slices/03-three.md` | ready | none |\n"
-        ."| `.orbit/slices/04-four.md` | pending | none |";
-    $packet = str_replace("| `.orbit/slices/01-example.md` | ready | none |", $rows, compact_feature_loop_packet(state: 'build'));
+        .'| `.orbit/slices/04-four.md` | pending | none |';
+    $packet = str_replace(
+        '| `.orbit/slices/01-example.md` | ready | none |',
+        $rows,
+        compact_feature_loop_packet(state: 'build'),
+    );
     $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
     file_put_contents($worktree.'/.orbit/loop.md', $packet);
     foreach (['01-one', '02-two', '03-three', '04-four'] as $id) {
@@ -60,7 +67,7 @@ it('preserves the BUILD graph contract', function (): void {
     try {
         expect(orbitLoopSliceFinalizationProblems($packet, $worktree, str_repeat('a', 40)))->toBe([]);
     } finally {
-        (new Symfony\Component\Filesystem\Filesystem())->remove($worktree);
+        new Symfony\Component\Filesystem\Filesystem()->remove($worktree);
     }
 });
 
@@ -77,23 +84,33 @@ it('rejects the first incomplete slice in every terminal phase', function (strin
         $problems = orbitLoopSliceFinalizationProblems($packet, $worktree, str_repeat('a', 40));
         expect($problems[0])->toContain('terminal phase')->toContain('01-example');
     } finally {
-        (new Symfony\Component\Filesystem\Filesystem())->remove($worktree);
+        new Symfony\Component\Filesystem\Filesystem()->remove($worktree);
     }
 })->with(['prove', 'accept', 'accepted', 'land']);
 
 it('reports malformed checkpoints before later slices', function (): void {
     $worktree = sys_get_temp_dir().'/orbit-malformed-'.bin2hex(random_bytes(3));
     mkdir($worktree.'/.orbit/slices', recursive: true);
-    $packet = preg_replace('/complete \| [0-9a-f]{40}/', 'complete | malformed', compact_feature_loop_packet(state: 'land'), 1) ?? '';
+    $packet =
+        preg_replace(
+            '/complete \| [0-9a-f]{40}/',
+            'complete | malformed',
+            compact_feature_loop_packet(state: 'land'),
+            1,
+        ) ?? '';
     $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
     file_put_contents($worktree.'/.orbit/loop.md', $packet);
     file_put_contents($worktree.'/.orbit/slices/01-example.md', finalization_slice_packet('01-example'));
     try {
         $problems = orbitLoopSliceFinalizationProblems($packet, $worktree, str_repeat('a', 40));
-        expect($problems)->not->toBeEmpty()
-            ->and($problems[0])->toContain('invalid slice checkpoint')->toContain('01-example');
+        expect($problems)
+            ->not
+            ->toBeEmpty()
+            ->and($problems[0])
+            ->toContain('invalid slice checkpoint')
+            ->toContain('01-example');
     } finally {
-        (new Symfony\Component\Filesystem\Filesystem())->remove($worktree);
+        new Symfony\Component\Filesystem\Filesystem()->remove($worktree);
     }
 });
 
@@ -112,21 +129,30 @@ it('reports backwards checkpoint chains deterministically', function (): void {
     try {
         $problems = orbitLoopSliceFinalizationProblems($packet, $worktree, $tip);
         expect($problems[0])->toContain('02-two')->toContain('backwards');
-    } finally { remove_finalization_gate_fixture($repo, $worktree); }
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
 });
 
 it('accepts a monotonic multi slice checkpoint chain', function (): void {
     [$repo, $worktree, $packet, $tip] = finalization_git_chain_fixture('valid');
-    try { expect(orbitLoopSliceFinalizationProblems($packet, $worktree, $tip))->toBe([]); }
-    finally { remove_finalization_gate_fixture($repo, $worktree); }
+    try {
+        expect(orbitLoopSliceFinalizationProblems($packet, $worktree, $tip))->toBe([]);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
 });
 
 it('does not require slice handoff files', function (): void {
     [$repo, $worktree, $packet, $tip] = finalization_git_chain_fixture('valid');
     try {
-        expect(orbitLoopSliceFinalizationProblems($packet, $worktree, $tip))->toBe([])
-            ->and(is_dir($worktree.'/.orbit/handoff'))->toBeFalse();
-    } finally { remove_finalization_gate_fixture($repo, $worktree); }
+        expect(orbitLoopSliceFinalizationProblems($packet, $worktree, $tip))
+            ->toBe([])
+            ->and(is_dir($worktree.'/.orbit/handoff'))
+            ->toBeFalse();
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
 });
 
 use Symfony\Component\Process\Process;
@@ -163,7 +189,7 @@ it('documents clean candidate review escalation and landed archive ordering', fu
     $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
 
     expect($harness)
-        ->toContain('commit the candidate and confirm a clean worktree')
+        ->toContain('clean candidate and runtime evidence, and confirms a clean worktree before')
         ->toContain('same general reviewer')
         ->toContain('terminal `PASS` or `FIX`')
         ->toContain('Validate the exact merge mutation with')
@@ -179,7 +205,7 @@ it('documents clean candidate review escalation and landed archive ordering', fu
         )->and(strpos($harness, 'Validate the exact merge mutation with'))->toBeLessThan(strpos(
             $harness,
             'After merge, keep the accepted feature worktree open',
-        ))->and($skill)->toContain('commit the candidate and confirm the worktree is')->toContain(
+        ))->and($skill)->toContain('then records the clean candidate and runtime evidence')->toContain(
             'same general reviewer',
         )->toContain('terminal PASS or FIX')->toContain('bin/orbit-feature-finalization-check')->toContain(
             '`FINALIZATION: PASS`',
@@ -4634,8 +4660,13 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
         $loopMarkdown .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n";
     }
     $loopMarkdown = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $loopMarkdown);
-    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $worktree))->mustRun()->getOutput());
-    $loopMarkdown = preg_replace_callback('/(\.orbit\/slices\/01-example\.md` \| complete \| )[0-9a-f]{40}/', static fn (array $match): string => $match[1].$head, $loopMarkdown) ?? $loopMarkdown;
+    $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+    $loopMarkdown =
+        preg_replace_callback(
+            '/(\.orbit\/slices\/01-example\.md` \| complete \| )[0-9a-f]{40}/',
+            static fn (array $match): string => $match[1].$head,
+            $loopMarkdown,
+        ) ?? $loopMarkdown;
     file_put_contents(filename: "{$worktree}/.orbit/loop.md", data: $loopMarkdown);
     finalization_seed_slice_packets($worktree, $loopMarkdown);
 
@@ -4684,7 +4715,11 @@ function compact_feature_loop_packet(
     $reviewedTip ??= $featureTip;
     $terminal = in_array($state, ['prove', 'accept', 'accepted', 'land'], true);
     $slices = $includeSlices
-        ? "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ".($terminal ? 'complete' : 'ready')." | ".($terminal ? $featureTip : 'none')." |\n"
+        ? "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | "
+        .($terminal ? 'complete' : 'ready')
+        .' | '
+        .($terminal ? $featureTip : 'none')
+        ." |\n"
         : '';
 
     return <<<MARKDOWN
@@ -5032,14 +5067,32 @@ function make_finalization_lint_dir(string $loopMarkdown, bool $includeSlices = 
     file_put_contents($packetDir.'/fixture.txt', "fixture\n");
     run_fixture_command($packetDir, ['git', 'add', 'fixture.txt']);
     run_fixture_command($packetDir, ['git', 'commit', '-m', 'Fixture']);
-    $head = trim((new Process(['git', 'rev-parse', 'HEAD'], $packetDir))->mustRun()->getOutput());
+    $head = trim(new Process(['git', 'rev-parse', 'HEAD'], $packetDir)->mustRun()->getOutput());
     $loopMarkdown = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$packetDir, $loopMarkdown);
     $terminal = preg_match('/^- State: (prove|accept|accepted|land)$/m', $loopMarkdown) === 1;
-    if ($terminal && preg_match('/\| `\.orbit\/slices\/01-example\.md` \| (ready|complete) \| (none|[0-9a-f]{40}) \|/', $loopMarkdown, $match) === 1 && ($match[2] === 'none' || preg_match('/^[0-9a-f]{40}$/', $match[2]) === 1)) {
-        $loopMarkdown = preg_replace_callback('/(\.orbit\/slices\/01-example\.md` \| )(?:ready|complete) \| (?:none|[0-9a-f]{40})/', static fn (array $m): string => $m[1].'complete | '.$head, $loopMarkdown) ?? $loopMarkdown;
+    if (
+        $terminal
+        && preg_match(
+            '/\| `\.orbit\/slices\/01-example\.md` \| (ready|complete) \| (none|[0-9a-f]{40}) \|/',
+            $loopMarkdown,
+            $match,
+        ) === 1
+        && ($match[2] === 'none'
+        || preg_match('/^[0-9a-f]{40}$/', $match[2]) === 1)
+    ) {
+        $loopMarkdown =
+            preg_replace_callback(
+                '/(\.orbit\/slices\/01-example\.md` \| )(?:ready|complete) \| (?:none|[0-9a-f]{40})/',
+                static fn (array $m): string => $m[1].'complete | '.$head,
+                $loopMarkdown,
+            ) ?? $loopMarkdown;
     }
 
-    if ($includeSlices && str_contains($loopMarkdown, '# Orbit Feature Loop') && ! str_contains($loopMarkdown, '## Slices')) {
+    if (
+        $includeSlices
+        && str_contains($loopMarkdown, '# Orbit Feature Loop')
+        && ! str_contains($loopMarkdown, '## Slices')
+    ) {
         $loopMarkdown .= "\n## Slices\n\n| Slice | State | Checkpoint |\n| --- | --- | --- |\n| `.orbit/slices/01-example.md` | ready | none |\n";
     }
 
@@ -5055,13 +5108,15 @@ function make_finalization_lint_dir(string $loopMarkdown, bool $includeSlices = 
 
 function finalization_slice_packet(string $id, string $depends = 'none'): string
 {
-    return "# Orbit Feature Slice\n\n"
+    return (
+        "# Orbit Feature Slice\n\n"
         ."- Slice: {$id}\n"
         ."- Depends on: {$depends}\n\n"
         ."## Outcome\n\n"
         ."## Scope\n- Included: finalization gate\n- Excluded: archive work\n\n"
         ."## Authority\n- Decisions: lifecycle contract\n- Product docs: feature lifecycle\n\n"
-        ."## Proof\n- Focused: finalization lint tests\n";
+        ."## Proof\n- Focused: finalization lint tests\n"
+    );
 }
 
 /** @return array{0:string,1:string,2:string,3:string} */
@@ -5071,23 +5126,28 @@ function finalization_git_chain_fixture(string $mode): array
     file_put_contents($worktree.'/chain.txt', 'one');
     run_fixture_command($worktree, ['git', 'add', 'chain.txt']);
     run_fixture_command($worktree, ['git', 'commit', '-m', 'chain one']);
-    $c1 = trim((new Process(['git', 'rev-parse', 'HEAD'], $worktree))->mustRun()->getOutput());
+    $c1 = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     file_put_contents($worktree.'/chain.txt', 'two');
     run_fixture_command($worktree, ['git', 'add', 'chain.txt']);
     run_fixture_command($worktree, ['git', 'commit', '-m', 'chain two']);
-    $c2 = trim((new Process(['git', 'rev-parse', 'HEAD'], $worktree))->mustRun()->getOutput());
+    $c2 = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     file_put_contents($worktree.'/chain.txt', 'three');
     run_fixture_command($worktree, ['git', 'add', 'chain.txt']);
     run_fixture_command($worktree, ['git', 'commit', '-m', 'chain three']);
-    $c3 = trim((new Process(['git', 'rev-parse', 'HEAD'], $worktree))->mustRun()->getOutput());
+    $c3 = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     $first = $mode === 'backwards' ? $c2 : $c1;
     if ($mode === 'non-ancestor') {
-        $tree = trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $worktree))->mustRun()->getOutput());
-        $first = trim((new Process(['git', 'commit-tree', $tree, '-m', 'side'], $worktree))->mustRun()->getOutput());
+        $tree = trim(new Process(['git', 'rev-parse', 'HEAD^{tree}'], $worktree)->mustRun()->getOutput());
+        $first = trim(new Process(['git', 'commit-tree', $tree, '-m', 'side'], $worktree)->mustRun()->getOutput());
     }
     $second = $c2 === $first && $mode === 'backwards' ? $c1 : $c2;
     $rows = "| `.orbit/slices/01-one.md` | complete | {$first} |\n| `.orbit/slices/02-two.md` | complete | {$second} |\n| `.orbit/slices/03-three.md` | complete | {$c3} |";
-    $packet = preg_replace('/\| `\.orbit\/slices\/01-example\.md` \| (?:ready|complete) \| (?:none|[0-9a-f]{40}) \|/', $rows, compact_feature_loop_packet(state: 'land')) ?? '';
+    $packet =
+        preg_replace(
+            '/\| `\.orbit\/slices\/01-example\.md` \| (?:ready|complete) \| (?:none|[0-9a-f]{40}) \|/',
+            $rows,
+            compact_feature_loop_packet(state: 'land'),
+        ) ?? '';
     $packet = str_replace('- Worktree: .worktrees/example', '- Worktree: '.$worktree, $packet);
     if (is_file($worktree.'/.orbit/slices/01-example.md')) {
         unlink($worktree.'/.orbit/slices/01-example.md');
