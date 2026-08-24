@@ -1028,6 +1028,20 @@ function orbitLoopRuntimeProofProblem(
     }
 
     $runtime = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime');
+    $requiredVenues = orbitLoopAcceptanceVenues(orbitLoopChangedFilesForRuntime($worktree));
+    if (count($requiredVenues) > 1) {
+        foreach ($requiredVenues as $requiredVenue) {
+            $receipt = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime['.$requiredVenue.']');
+            if ($receipt === null) {
+                return "Verification runtime receipt is missing for acceptance venue {$requiredVenue}";
+            }
+            $problem = orbitLoopRuntimeProofProblemForValue($receipt, $requiredVenue, $candidateCommit, $worktree);
+            if ($problem !== null) {
+                return $problem;
+            }
+        }
+        return null;
+    }
 
     if (orbitLoopStatusHead($runtime) !== 'passed') {
         return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
@@ -1070,6 +1084,37 @@ function orbitLoopRuntimeProofProblem(
     // existing error surface; completed live/production claims still require
     // exact environment=live.
     return orbitLoopRuntimeProofLiveEnvironmentProblem($fields);
+}
+
+/** @return list<string> */
+function orbitLoopChangedFilesForRuntime(string $worktree): array
+{
+    try {
+        $base = orbitLoopGitValue($worktree, ['rev-parse', 'main']);
+        $head = orbitLoopGitValue($worktree, ['rev-parse', 'HEAD']);
+        $mergeBase = $base !== null && $head !== null
+            ? orbitLoopGitValue($worktree, ['merge-base', $base, $head])
+            : null;
+        $diff = $mergeBase !== null && $head !== null
+            ? orbitLoopGitOutput($worktree, ['diff', '--name-status', '-z', '--diff-filter=ACDMRT', $mergeBase, $head])
+            : null;
+        return $diff === null ? [] : orbitLoopParseNameStatusDiff($diff);
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+function orbitLoopRuntimeProofProblemForValue(string $runtime, string $venue, string $candidateCommit, string $worktree): ?string
+{
+    $fields = orbitLoopRuntimeProofParseFields(preg_replace('/^passed\s+-\s+/i', '', $runtime) ?? $runtime);
+    if ($fields === null) {
+        return 'Verification runtime must use a structured runtime receipt; remain in PROVE and re-prove the final hop';
+    }
+    $problem = orbitLoopRuntimeProofReceiptProblem($fields, $venue, $candidateCommit, $worktree);
+    if ($problem !== null) {
+        return $problem;
+    }
+    return null;
 }
 
 function orbitLoopRuntimeProofDeferredFinalHopProblem(string $narrative): ?string
@@ -1356,6 +1401,22 @@ function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, 
 
 function orbitLoopAcceptanceVenue(array $changedFiles): string
 {
+    $venues = orbitLoopAcceptanceVenues($changedFiles);
+
+    if (count($venues) !== 1) {
+        throw new RuntimeException(
+            'candidate diff requires more than one orthogonal non-automated acceptance venue ('
+            .implode(', ', $venues)
+            .'); use independently validated receipts for each venue',
+        );
+    }
+
+    return $venues[0];
+}
+
+/** @param list<string> $changedFiles @return list<string> */
+function orbitLoopAcceptanceVenues(array $changedFiles): array
+{
     $venues = [];
 
     foreach ($changedFiles as $path) {
@@ -1386,20 +1447,10 @@ function orbitLoopAcceptanceVenue(array $changedFiles): string
     $venues = array_values($venues);
 
     if ($venues === []) {
-        return 'automated';
+        return ['automated'];
     }
-
-    if (count($venues) === 1) {
-        return $venues[0];
-    }
-
     sort($venues, SORT_STRING);
-
-    throw new RuntimeException(
-        'candidate diff requires more than one orthogonal non-automated acceptance venue ('
-        .implode(', ', $venues)
-        .'); retained-incus, browser, and host-macos proof are not substitutes—split the feature slice so each candidate needs at most one non-automated venue',
-    );
+    return $venues;
 }
 
 function orbitLoopPathIsAutomationOnly(string $path): bool
@@ -1450,7 +1501,8 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
  *     base_tip: string,
  *     merge_base: string,
  *     changed_files: list<string>,
- *     venue: string
+ *     venue: string,
+ *     venues: list<string>
  * }
  */
 function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $head = 'HEAD'): array
@@ -1484,7 +1536,10 @@ function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $he
         'base_tip' => $baseTip,
         'merge_base' => $mergeBase,
         'changed_files' => $changedFiles,
-        'venue' => orbitLoopAcceptanceVenue($changedFiles),
+        'venue' => count(orbitLoopAcceptanceVenues($changedFiles)) === 1
+            ? orbitLoopAcceptanceVenues($changedFiles)[0]
+            : implode(',', orbitLoopAcceptanceVenues($changedFiles)),
+        'venues' => orbitLoopAcceptanceVenues($changedFiles),
     ];
 }
 
