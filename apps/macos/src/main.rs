@@ -13,6 +13,7 @@ use orbit_macos::paths::{
 use orbit_macos::pending_update::{
     read_pending_update, ExpectedUpdateIdentity, PendingDesktopUpdate, INSTALL_MODE_RESTART_READY,
 };
+use orbit_macos::shutdown::{shutdown, ShutdownError, SystemShutdownPort};
 use orbit_macos::supervisor::{
     agent_launch_plan, agent_status_label, crash_action, resolve_agent_binary,
     spawn_supervised_agent, stop_supervised_agent, AgentRunState, CrashAction,
@@ -31,6 +32,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -39,7 +41,7 @@ use tauri::menu::{
     CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItem, MenuItemBuilder,
 };
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, RunEvent, Wry};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_opener::OpenerExt;
 
@@ -76,6 +78,7 @@ struct DesktopRuntime {
     launch_at_login: Mutex<LaunchAtLoginState>,
     conflict_reason: Mutex<Option<String>>,
     quitting: Mutex<bool>,
+    explicit_exit: AtomicBool,
 }
 
 impl DesktopRuntime {
@@ -88,6 +91,7 @@ impl DesktopRuntime {
             launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
             conflict_reason: Mutex::new(None),
             quitting: Mutex::new(false),
+            explicit_exit: AtomicBool::new(false),
         }
     }
 }
@@ -138,7 +142,7 @@ fn main() {
                     LAUNCH_AT_LOGIN_MENU_ID => toggle_launch_at_login(app),
                     UPDATE_MENU_ID => restart_to_update_if_ready(app),
                     RESTART_MENU_ID => restart_orbit(app),
-                    QUIT_MENU_ID => quit_orbit(app),
+                    QUIT_MENU_ID => quit_orbit(app, &menu_command_items),
                     OPEN_ORBIT_MENU_ID => {
                         let _ = app.opener().open_url(open_orbit_url(), None::<&str>);
                     }
@@ -159,7 +163,21 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("failed to build Orbit Desktop")
-        .run(|_, _| {});
+        .run(|app, event| {
+            if let RunEvent::ExitRequested { api, .. } = event {
+                let allowed = app
+                    .state::<DesktopRuntime>()
+                    .explicit_exit
+                    .load(Ordering::Acquire);
+                if should_prevent_incidental_exit(allowed) {
+                    api.prevent_exit();
+                }
+            }
+        });
+}
+
+fn should_prevent_incidental_exit(explicit_exit: bool) -> bool {
+    !explicit_exit
 }
 
 fn open_orbit_url() -> &'static str {
@@ -528,6 +546,7 @@ fn install_ready_update(app: &AppHandle) {
     }
 
     if disposition.restart_app {
+        permit_explicit_exit(&runtime);
         app.restart();
     } else {
         spawn_or_mark_missing(app, &runtime, &home);
@@ -571,30 +590,81 @@ fn desktop_app_destination() -> Option<PathBuf> {
 fn restart_orbit(app: &AppHandle) {
     let runtime = app.state::<DesktopRuntime>();
     stop_owned_child(&runtime);
+    permit_explicit_exit(&runtime);
     app.restart();
 }
 
-fn quit_orbit(app: &AppHandle) {
+fn quit_orbit(app: &AppHandle, menu_items: &Arc<Mutex<TrayMenuItems>>) {
     let runtime = app.state::<DesktopRuntime>();
     if let Ok(mut quitting) = runtime.quitting.lock() {
         *quitting = true;
     };
-    stop_owned_child(&runtime);
-    app.exit(0);
+
+    let app_handle = app.clone();
+    let mut port = SystemShutdownPort {
+        stop_agent: Box::new({
+            let app = app_handle;
+            move || {
+                let runtime = app.state::<DesktopRuntime>();
+                stop_owned_child_checked(&runtime).map_err(|error| ShutdownError(error.to_string()))
+            }
+        }),
+    };
+
+    match shutdown(&mut port) {
+        Ok(()) => {
+            permit_explicit_exit(&runtime);
+            app.exit(0);
+        }
+        Err(error) => {
+            if let Ok(mut quitting) = runtime.quitting.lock() {
+                *quitting = false;
+            }
+            if let Ok(mut conflict) = runtime.conflict_reason.lock() {
+                *conflict = Some(format!("Quit failed: {}", error.0));
+            }
+            if let Ok(mut agent_state) = runtime.agent_state.lock() {
+                *agent_state = AgentRunState::Conflict;
+            }
+            if let Ok(items) = menu_items.lock() {
+                let (agent_label, status_label) = quit_failure_presentation(&error.0);
+                let _ = items.agent_status.set_text(agent_label);
+                let _ = items.status.set_text(status_label);
+            }
+        }
+    }
+}
+
+fn permit_explicit_exit(runtime: &DesktopRuntime) {
+    runtime.explicit_exit.store(true, Ordering::Release);
+}
+
+fn quit_failure_presentation(error: &str) -> (&'static str, String) {
+    ("Agent: Quit failed", format!("Quit failed: {error}"))
 }
 
 fn stop_owned_child(runtime: &DesktopRuntime) {
-    if let Ok(mut slot) = runtime.child.lock() {
-        if let Some(child) = slot.as_mut() {
-            let _ = stop_supervised_agent(child, Duration::from_secs(5));
-        }
-        *slot = None;
+    let _ = stop_owned_child_checked(runtime);
+}
+
+fn stop_owned_child_checked(runtime: &DesktopRuntime) -> std::io::Result<()> {
+    let mut slot = runtime
+        .child
+        .lock()
+        .map_err(|_| std::io::Error::other("agent child state lock is poisoned"))?;
+    if let Some(child) = slot.as_mut() {
+        stop_supervised_agent(child, Duration::from_secs(5))?;
     }
-    if let Ok(mut agent_state) = runtime.agent_state.lock() {
-        if *agent_state != AgentRunState::Conflict {
-            *agent_state = AgentRunState::Stopped;
-        }
+    *slot = None;
+    drop(slot);
+    let mut agent_state = runtime
+        .agent_state
+        .lock()
+        .map_err(|_| std::io::Error::other("agent state lock is poisoned"))?;
+    if *agent_state != AgentRunState::Conflict {
+        *agent_state = AgentRunState::Stopped;
     }
+    Ok(())
 }
 
 fn tray_icon_for_update(runtime: &DesktopRuntime) -> Image<'static> {
@@ -1485,6 +1555,26 @@ mod tests {
         assert!(source.contains("OPEN_ORBIT_MENU_ID"));
         let setup = source.split(".setup(|app|").nth(1).unwrap_or_default();
         assert!(!setup.contains("show_dashboard_window(app.handle())"));
+    }
+
+    #[test]
+    fn incidental_exit_is_blocked_until_explicit_quit_succeeds() {
+        assert!(should_prevent_incidental_exit(false));
+        assert!(!should_prevent_incidental_exit(true));
+        let runtime = DesktopRuntime::new();
+        permit_explicit_exit(&runtime);
+        assert!(!should_prevent_incidental_exit(
+            runtime.explicit_exit.load(Ordering::Acquire)
+        ));
+        let (agent, status) = quit_failure_presentation("runtime remains");
+        assert_eq!(agent, "Agent: Quit failed");
+        assert!(status.contains("runtime remains"));
+    }
+
+    #[test]
+    fn restart_paths_are_explicit_exit_transitions() {
+        let source = include_str!("main.rs");
+        assert!(source.contains("permit_explicit_exit(&runtime);\n        app.restart();"));
     }
 
     #[test]

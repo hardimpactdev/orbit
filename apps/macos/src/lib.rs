@@ -3,6 +3,7 @@ pub mod legacy;
 pub mod lifecycle;
 pub mod paths;
 pub mod pending_update;
+pub mod shutdown;
 pub mod stage_update;
 pub mod supervisor;
 pub mod tray_labels;
