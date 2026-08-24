@@ -7,7 +7,6 @@ use orbit_macos::legacy::{
     conflict_remediation, inspect_legacy_agent, parse_launchctl_pid, parse_lsof_listener_pid,
     parse_plist_program, LegacyDecision, LegacyLaunchdState, ListenerOwner, LEGACY_LAUNCHD_LABEL,
 };
-use orbit_macos::lifecycle::dashboard_close_action;
 use orbit_macos::paths::{
     desktop_launch_agent_plist, legacy_launch_agent_plist, pending_update_path,
 };
@@ -28,7 +27,7 @@ use orbit_macos::update_machine::{
 };
 use orbit_macos::version::orbit_version;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Child;
@@ -40,8 +39,9 @@ use tauri::menu::{
     CheckMenuItem, CheckMenuItemBuilder, Menu, MenuBuilder, MenuItem, MenuItemBuilder,
 };
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, PhysicalPosition, RunEvent, WebviewWindow, Wry};
+use tauri::{AppHandle, Manager, Wry};
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_opener::OpenerExt;
 
 const TRAY_ID: &str = "orbit-macos-tray";
 const AGENT_STATUS_MENU_ID: &str = "agent_status";
@@ -53,6 +53,7 @@ const UPDATE_MENU_ID: &str = "update_status";
 const REFRESH_MENU_ID: &str = "refresh_connection";
 const RESTART_MENU_ID: &str = "restart_app";
 const QUIT_MENU_ID: &str = "quit_app";
+const OPEN_ORBIT_MENU_ID: &str = "open_orbit";
 const IP_ROW_MIN_GAP_WIDTH_UNITS: usize = 1_200;
 const IP_ROW_PAD_WIDE: char = '\u{2002}';
 const IP_ROW_PAD_WIDE_WIDTH_UNITS: usize = 642;
@@ -100,9 +101,11 @@ fn main() {
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(DesktopRuntime::new())
-        .invoke_handler(tauri::generate_handler![dashboard_config])
         .setup(|app| {
+            app.handle()
+                .set_activation_policy(tauri::ActivationPolicy::Accessory)?;
             let runtime = app.state::<DesktopRuntime>();
             start_owned_agent(app.handle(), &runtime);
             enable_launch_at_login_after_setup(app.handle(), &runtime);
@@ -136,6 +139,9 @@ fn main() {
                     UPDATE_MENU_ID => restart_to_update_if_ready(app),
                     RESTART_MENU_ID => restart_orbit(app),
                     QUIT_MENU_ID => quit_orbit(app),
+                    OPEN_ORBIT_MENU_ID => {
+                        let _ = app.opener().open_url(open_orbit_url(), None::<&str>);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(move |tray, event| {
@@ -149,75 +155,15 @@ fn main() {
                 })
                 .build(app)?;
 
-            show_dashboard_window(app.handle());
-
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = dashboard_close_action();
-                api.prevent_close();
-                let _ = window.hide();
-            }
         })
         .build(tauri::generate_context!())
         .expect("failed to build Orbit Desktop")
-        .run(|app, event| {
-            if let RunEvent::ExitRequested { api, .. } = event {
-                let runtime = app.state::<DesktopRuntime>();
-                let quitting = runtime.quitting.lock().map(|flag| *flag).unwrap_or(false);
-
-                if !quitting {
-                    api.prevent_exit();
-                }
-            }
-        });
+        .run(|_, _| {});
 }
 
-#[tauri::command]
-fn dashboard_config() -> DashboardConfig {
-    match AgentConfig::load_default() {
-        Ok(config) => {
-            let gateway_host = gateway_host_from_config(&config);
-            let connection = ping_gateway_connection(&config).label();
-
-            DashboardConfig {
-                base_url: Some(format!("{}/api", config.gateway_url.trim_end_matches('/'))),
-                config_loaded: true,
-                connection,
-                gateway_host,
-                gateway_name: Some(config.gateway_name),
-                node_name: Some(config.node_name),
-            }
-        }
-        Err(ConfigError::MissingConfig(path)) => DashboardConfig {
-            base_url: None,
-            config_loaded: false,
-            connection: ConnectionStatus::MissingConfig(path).label(),
-            gateway_host: "unknown".to_string(),
-            gateway_name: None,
-            node_name: None,
-        },
-        Err(error) => DashboardConfig {
-            base_url: None,
-            config_loaded: false,
-            connection: ConnectionStatus::Disconnected(error.to_string()).label(),
-            gateway_host: "unknown".to_string(),
-            gateway_name: None,
-            node_name: None,
-        },
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DashboardConfig {
-    base_url: Option<String>,
-    config_loaded: bool,
-    connection: String,
-    gateway_host: String,
-    gateway_name: Option<String>,
-    node_name: Option<String>,
+fn open_orbit_url() -> &'static str {
+    "https://app.orbit"
 }
 
 fn bootstrap_process_environment() {
@@ -899,55 +845,6 @@ fn refresh_menu(
     }
 }
 
-fn show_dashboard_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_position(dashboard_window_position(&window));
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-}
-
-fn dashboard_window_position(window: &WebviewWindow<Wry>) -> PhysicalPosition<i32> {
-    window
-        .available_monitors()
-        .ok()
-        .and_then(|monitors| {
-            monitors
-                .into_iter()
-                .map(|monitor| {
-                    let work_area = *monitor.work_area();
-
-                    (monitor_work_area_score(work_area), work_area)
-                })
-                .min_by_key(|(score, _)| *score)
-                .map(|(_, work_area)| {
-                    PhysicalPosition::new(
-                        work_area.position.x.saturating_add(96),
-                        work_area.position.y.saturating_add(96),
-                    )
-                })
-        })
-        .unwrap_or_else(|| PhysicalPosition::new(96, 96))
-}
-
-fn monitor_work_area_score(work_area: tauri::PhysicalRect<i32, u32>) -> (u8, u8, i64) {
-    let width = i32::try_from(work_area.size.width).unwrap_or(i32::MAX);
-    let height = i32::try_from(work_area.size.height).unwrap_or(i32::MAX);
-    let contains_origin = work_area.position.x <= 0
-        && work_area.position.y <= 0
-        && work_area.position.x.saturating_add(width) > 0
-        && work_area.position.y.saturating_add(height) > 0;
-    let starts_on_positive_desktop = work_area.position.x >= 0 && work_area.position.y >= 0;
-    let distance_from_origin =
-        i64::from(work_area.position.x).abs() + i64::from(work_area.position.y).abs();
-
-    (
-        if contains_origin { 0 } else { 1 },
-        if starts_on_positive_desktop { 0 } else { 1 },
-        distance_from_origin,
-    )
-}
-
 fn should_replace_menu_for_refresh(
     refresh_source: RefreshSource,
     current_grant_rows: usize,
@@ -984,6 +881,7 @@ fn build_tray_menu(
         .item(&items.launch_at_login)
         .item(&items.update)
         .separator()
+        .text(OPEN_ORBIT_MENU_ID, "Open Orbit")
         .text(REFRESH_MENU_ID, "Refresh")
         .text(RESTART_MENU_ID, restart_orbit_label())
         .text(QUIT_MENU_ID, quit_orbit_label())
@@ -1580,6 +1478,16 @@ mod tests {
     }
 
     #[test]
+    fn open_orbit_action_targets_the_browser_app() {
+        assert_eq!(open_orbit_url(), "https://app.orbit");
+
+        let source = include_str!("main.rs");
+        assert!(source.contains("OPEN_ORBIT_MENU_ID"));
+        let setup = source.split(".setup(|app|").nth(1).unwrap_or_default();
+        assert!(!setup.contains("show_dashboard_window(app.handle())"));
+    }
+
+    #[test]
     fn tray_refresh_accepts_left_clicks() {
         let event = |button| TrayIconEvent::Click {
             id: tauri::tray::TrayIconId::new(TRAY_ID),
@@ -1746,12 +1654,12 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_close_is_intercepted_and_quit_stops_the_child() {
+    fn menu_only_runtime_has_no_dashboard_window() {
         let source = include_str!("main.rs");
 
-        assert!(source.contains("CloseRequested"));
-        assert!(source.contains("prevent_close"));
-        assert!(source.contains("window.hide()"));
+        let setup = source.split(".setup(|app|").nth(1).unwrap_or_default();
+        assert!(!setup.contains("CloseRequested"));
+        assert!(!setup.contains("show_dashboard_window"));
         assert!(source.contains("stop_owned_child"));
         assert!(source.contains("quit_orbit_label"));
         assert!(source.contains("MacosLauncher::LaunchAgent"));

@@ -3,25 +3,11 @@
   "productName": "Orbit Desktop",
   "version": "0.1.0",
   "identifier": "dev.hardimpact.orbit.macos",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devUrl": "http://127.0.0.1:5174",
-    "frontendDist": "frontend/dist"
-  },
   "app": {
     "security": {
       "capabilities": ["default"]
     },
-    "windows": [
-      {
-        "label": "main",
-        "minHeight": 620,
-        "minWidth": 880,
-        "title": "Orbit Desktop",
-        "visible": true
-      }
-    ]
+    "windows": []
   },
   "plugins": {
     "updater": {
@@ -32,4 +18,3 @@
     }
   }
 }
-

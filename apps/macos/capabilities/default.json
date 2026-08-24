@@ -1,12 +1,16 @@
 {
   "identifier": "default",
-  "description": "Orbit Desktop tray, dashboard, autostart, and updater permissions.",
-  "windows": ["main"],
+  "description": "Orbit menu bar, autostart, updater, and browser opener permissions.",
+  "windows": [],
   "permissions": [
     "core:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
-    "updater:default"
+    "updater:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://app.orbit" }]
+    }
   ]
 }
