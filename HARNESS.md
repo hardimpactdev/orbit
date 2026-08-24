@@ -152,9 +152,12 @@ Work that needs human judgment needs explicit user acceptance before merge.
 The venue selects proof; the actor selects judgment. A
 `human-judgment=not-required` review permits automated acceptance only after
 reviewer PASS and venue proof; it never changes the venue. `retained-incus`,
-`browser`, and `host-macos` are orthogonal, not a strength ladder. At most one
-per candidate; mixed diffs fail closed and must be split. Automation-only
-paths may coexist.
+`browser`, and `host-macos` are orthogonal, not a strength ladder. A candidate
+may require multiple non-automated venues; the exact route records them in
+`venues`, and acceptance/finalization require one independently structured
+receipt for every venue. A single-venue candidate keeps the singular `venue`
+contract. Missing, duplicate, unknown, stale, or mismatched candidate/base/
+merge-base receipts fail closed. Automation-only paths may coexist.
 
 Agents run and inspect every deterministic check. Never ask the user to execute
 a check the agent can execute. Give the user only a prepared surface that

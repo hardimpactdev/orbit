@@ -14,6 +14,9 @@ function compact_acceptance_provenance_problem(
 ): ?string {
     $review = orbitLoopLabel($contents, 'Proof', 'Review');
     $venue = orbitLoopStatusHead(orbitLoopLabel($contents, 'Proof', 'Acceptance venue')) ?? '';
+    $recordedVenues = $venue !== ''
+        ? [$venue]
+        : array_values(array_filter(array_map('trim', explode(',', (string) orbitLoopLabel($contents, 'Proof', 'Acceptance venues')))));
     $acceptance = trim((string) orbitLoopLabel($contents, 'Proof', 'Acceptance'));
     $feedbackPath = $worktree.'/.orbit/feedback.jsonl';
     $events = [];
@@ -27,14 +30,15 @@ function compact_acceptance_provenance_problem(
         }
     }
 
-    if (! orbitLoopVenueSatisfies($venue, $minimumVenue)) {
+    if (count($recordedVenues) === 1 && ! orbitLoopVenueSatisfies($recordedVenues[0], $minimumVenue)) {
         return "acceptance venue {$venue} does not satisfy the diff-routed {$minimumVenue} venue";
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue, $featureTip, $worktree);
-
-    if ($runtimeProblem !== null) {
-        return $runtimeProblem;
+    foreach ($recordedVenues as $recordedVenue) {
+        $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $recordedVenue, $featureTip, $worktree);
+        if ($runtimeProblem !== null) {
+            return $runtimeProblem;
+        }
     }
 
     if (str_starts_with($acceptance, 'accepted - automated')) {

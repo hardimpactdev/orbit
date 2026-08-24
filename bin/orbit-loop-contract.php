@@ -1087,6 +1087,12 @@ function orbitLoopRuntimeProofProblem(
 }
 
 /** @return list<string> */
+function orbitLoopRequiredRuntimeVenues(string $worktree): array
+{
+    return orbitLoopAcceptanceVenues(orbitLoopChangedFilesForRuntime($worktree));
+}
+
+/** @return list<string> */
 function orbitLoopChangedFilesForRuntime(string $worktree): array
 {
     try {
@@ -1501,7 +1507,7 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
  *     base_tip: string,
  *     merge_base: string,
  *     changed_files: list<string>,
- *     venue: string,
+ *     venue: ?string,
  *     venues: list<string>
  * }
  */
@@ -1538,7 +1544,7 @@ function orbitLoopExactProofRoute(string $cwd, string $base = 'main', string $he
         'changed_files' => $changedFiles,
         'venue' => count(orbitLoopAcceptanceVenues($changedFiles)) === 1
             ? orbitLoopAcceptanceVenues($changedFiles)[0]
-            : implode(',', orbitLoopAcceptanceVenues($changedFiles)),
+            : null,
         'venues' => orbitLoopAcceptanceVenues($changedFiles),
     ];
 }

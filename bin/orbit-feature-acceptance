@@ -112,6 +112,7 @@ function acceptanceRoute(string $cwd, array $options): never
                 'merge_base' => $route['merge_base'],
                 'changed_files' => $route['changed_files'],
                 'venue' => $route['venue'],
+                'venues' => $route['venues'],
             ],
             JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
         )
@@ -150,34 +151,44 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException($blastRadiusProblem);
     }
 
-    $minimum = $route['venue'];
+    $venues = $route['venues'];
+    $minimum = $route['venue'] ?? '';
     $venue = (string) ($options['venue'] ?? $minimum);
 
-    if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+    if (count($venues) > 1 && array_key_exists('venue', $options)) {
+        throw new RuntimeException('multi-venue acceptance requires all routed venues; do not select one venue');
+    }
+
+    if (count($venues) === 1 && ! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
         throw new RuntimeException("invalid acceptance venue: {$venue}");
     }
 
-    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+    if (count($venues) === 1 && ! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
-
-    if ($runtimeProblem !== null) {
-        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
+    foreach ($venues as $requiredVenue) {
+        $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $requiredVenue, $featureTip, $cwd);
+        if ($runtimeProblem !== null) {
+            acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
+        }
     }
 
     $receiptProblem = orbit_proof_receipt_problem($cwd, [
         'loop' => $loopPath,
         'changed_files' => $changedFiles,
-        'venue' => $venue,
+        'venue' => count($venues) === 1 ? $venue : 'automated',
     ]);
 
     if ($receiptProblem !== null) {
         throw new RuntimeException($receiptProblem);
     }
 
-    $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
+    if (count($venues) === 1) {
+        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
+    } else {
+        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venues', implode(', ', $venues));
+    }
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', 'pending');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', 'none');
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted main tip', 'none');
@@ -186,7 +197,7 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
     acceptanceWriteLoop($loopPath, $loop);
 
     $actor = orbitLoopReviewRequiresHumanJudgment($review) ? 'user' : 'automated';
-    fwrite(STDOUT, "ACCEPTANCE READY venue={$venue} actor={$actor}\n");
+    fwrite(STDOUT, "ACCEPTANCE READY venues=".implode(',', $venues)." actor={$actor}\n");
     exit(0);
 }
 
@@ -226,27 +237,32 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException($blastRadiusProblem);
     }
 
-    $minimum = $route['venue'];
+    $venues = $route['venues'];
+    $minimum = $route['venue'] ?? '';
+    if (count($venues) > 1 && array_key_exists('venue', $options)) {
+        throw new RuntimeException('multi-venue acceptance requires all routed venues; do not select one venue');
+    }
     $venue = acceptanceResolvedVenue($options, $loop, $minimum);
 
-    if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
+    if (count($venues) === 1 && ! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
         throw new RuntimeException("invalid acceptance venue: {$venue}");
     }
 
-    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
+    if (count($venues) === 1 && ! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue, $featureTip, $cwd);
-
-    if ($runtimeProblem !== null) {
-        acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
+    foreach ($venues as $requiredVenue) {
+        $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $requiredVenue, $featureTip, $cwd);
+        if ($runtimeProblem !== null) {
+            acceptanceRefuseUnresolvedRuntime($loopPath, $loop, $runtimeProblem);
+        }
     }
 
     $receiptProblem = orbit_proof_receipt_problem($cwd, [
         'loop' => $loopPath,
         'changed_files' => $changedFiles,
-        'venue' => $venue,
+        'venue' => count($venues) === 1 ? $venue : 'automated',
     ]);
 
     if ($receiptProblem !== null) {
@@ -277,11 +293,15 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
             throw new RuntimeException('user acceptance requires the verbatim message on STDIN');
         }
 
-        acceptanceAppendUserMessage(dirname($loopPath).'/feedback.jsonl', $raw, $sourceRef, $featureTip, $venue);
+        acceptanceAppendUserMessage(dirname($loopPath).'/feedback.jsonl', $raw, $sourceRef, $featureTip, count($venues) === 1 ? $venue : 'automated');
         $acceptanceValue = "accepted - user @ {$sourceRef}";
     }
 
-    $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
+    if (count($venues) === 1) {
+        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
+    } else {
+        $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venues', implode(', ', $venues));
+    }
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance', $acceptanceValue);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted feature tip', $featureTip);
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Accepted main tip', $mainTip);
