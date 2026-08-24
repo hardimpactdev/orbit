@@ -77,6 +77,7 @@ struct DesktopRuntime {
     update_state: Mutex<UpdateState>,
     launch_at_login: Mutex<LaunchAtLoginState>,
     conflict_reason: Mutex<Option<String>>,
+    quit_failure: Mutex<Option<String>>,
     quitting: Mutex<bool>,
     explicit_exit: AtomicBool,
 }
@@ -90,6 +91,7 @@ impl DesktopRuntime {
             update_state: Mutex::new(UpdateState::Idle),
             launch_at_login: Mutex::new(LaunchAtLoginState::Disabled),
             conflict_reason: Mutex::new(None),
+            quit_failure: Mutex::new(None),
             quitting: Mutex::new(false),
             explicit_exit: AtomicBool::new(false),
         }
@@ -605,6 +607,9 @@ fn restart_orbit(app: &AppHandle) {
 
 fn quit_orbit(app: &AppHandle, menu_items: &Arc<Mutex<TrayMenuItems>>) {
     let runtime = app.state::<DesktopRuntime>();
+    if let Ok(mut failure) = runtime.quit_failure.lock() {
+        *failure = None;
+    }
     if let Ok(mut quitting) = runtime.quitting.lock() {
         *quitting = true;
     };
@@ -631,6 +636,9 @@ fn quit_orbit(app: &AppHandle, menu_items: &Arc<Mutex<TrayMenuItems>>) {
             }
             if let Ok(mut conflict) = runtime.conflict_reason.lock() {
                 *conflict = Some(format!("Quit failed: {}", error.0));
+            }
+            if let Ok(mut failure) = runtime.quit_failure.lock() {
+                *failure = Some(format!("Quit failed: {}", error.0));
             }
             if let Ok(mut agent_state) = runtime.agent_state.lock() {
                 *agent_state = AgentRunState::Conflict;
@@ -823,18 +831,25 @@ impl TrayMenuItems {
             .lock()
             .ok()
             .and_then(|reason| reason.clone());
+        let quit_failure = runtime
+            .quit_failure
+            .lock()
+            .ok()
+            .and_then(|reason| reason.clone());
         Ok(Self {
             agent_status: disabled_menu_item(
                 app,
                 AGENT_STATUS_MENU_ID,
-                conflict
+                quit_failure
                     .as_ref()
                     .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
             )?,
             status: disabled_menu_item(
                 app,
                 STATUS_MENU_ID,
-                conflict.unwrap_or_else(|| state.status.label().to_string()),
+                quit_failure
+                    .or(conflict)
+                    .unwrap_or_else(|| state.status.label().to_string()),
             )?,
             node_ip: disabled_menu_item(
                 app,
@@ -867,14 +882,21 @@ impl TrayMenuItems {
             .lock()
             .ok()
             .and_then(|reason| reason.clone());
+        let quit_failure = runtime
+            .quit_failure
+            .lock()
+            .ok()
+            .and_then(|reason| reason.clone());
         let _ = self.agent_status.set_text(
-            conflict
+            quit_failure
                 .as_deref()
                 .map_or_else(|| agent_status_label(agent), |_| "Agent: Quit failed"),
         );
-        let _ = self
-            .status
-            .set_text(conflict.unwrap_or_else(|| state.status.label().to_string()));
+        let _ = self.status.set_text(
+            quit_failure
+                .or(conflict)
+                .unwrap_or_else(|| state.status.label().to_string()),
+        );
         let _ = self
             .node_ip
             .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_layout));
@@ -1610,6 +1632,15 @@ mod tests {
     fn failed_quit_keeps_watchers_alive_until_explicit_exit() {
         assert!(!watcher_should_exit(true, false));
         assert!(watcher_should_exit(true, true));
+    }
+
+    #[test]
+    fn ordinary_conflicts_do_not_use_quit_failure_presentation() {
+        let source = include_str!("main.rs");
+        assert!(source.contains("quit_failure: Mutex<Option<String>>"));
+        assert!(source.contains("let quit_failure = runtime.quit_failure"));
+        assert!(source.contains("*failure = None;"));
+        assert!(source.contains("*failure = Some(format!(\"Quit failed: {}\", error.0))"));
     }
 
     #[test]
