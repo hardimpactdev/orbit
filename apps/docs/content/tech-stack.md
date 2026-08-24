@@ -1138,12 +1138,14 @@ install and `gateway:add` populates it. Non-gateway machines do not have a local
 `nodes` table or a self-row.
 
 Platform-specific behavior — installing packages, writing config files, controlling services — lives behind handlers and services, so the rest of Orbit doesn't branch on OS.
+
 ## macOS Runtime
 
 Desktop waits for the owned Colima Docker socket before starting Agent. Closing
 the dashboard hides it and preserves the runtime. Restart and Restart-to-Update
 preserve Colima. Quit stops Agent, then only the owned `orbit` profile; a stop
-failure keeps the app open. Reset requires ready ownership and two clicks, then
+failure keeps the app open and offers **Exit with Colima Running**, which exits
+without stopping Colima. Reset requires ready ownership and two clicks, then
 removes only that profile and its data. The first profile uses 50 percent of
 logical CPU and memory with Colima's upstream disk default; later starts omit
 resource flags. Desktop uses an explicit socket and never changes Docker

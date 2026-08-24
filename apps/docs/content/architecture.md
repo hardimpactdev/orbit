@@ -797,7 +797,9 @@ Orbit Desktop owns only the macOS Colima profile `orbit` and its explicit
 Docker socket. A secure ownership record moves from reservation to ready;
 profile name alone is not proof. Desktop starts Colima and verifies the socket
 before Agent, and stops Agent before the owned profile on Quit. Install requires
-an explicit Homebrew action. Reset requires ready ownership and two clicks.
+an explicit Homebrew action. If stopping the owned profile fails during Quit,
+Desktop remains open and offers **Exit with Colima Running**, which exits
+without stopping Colima. Reset requires ready ownership and two clicks.
 First creation uses 50 percent CPU and memory with Colima's upstream disk
 default; later starts preserve CLI resource overrides. OrbStack and Docker
 Desktop remain isolated. This boundary applies to macOS only; Linux uses direct

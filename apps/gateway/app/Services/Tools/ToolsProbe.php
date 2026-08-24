@@ -837,17 +837,11 @@ final readonly class ToolsProbe
         if ($operatingSystem === 'macos') {
             $detail = [
                 ...$detail,
-                'recommended_provider' => 'colima',
-                'remediation_commands' => [
-                    'brew install docker colima',
-                    'colima start --runtime docker',
+                'desktop_action' => 'Open Orbit Desktop',
+                'desktop_actions' => [
+                    'Install Local Runtime',
+                    'Retry Local Runtime',
                 ],
-                'compatible_existing_providers' => [
-                    'colima',
-                    'orbstack',
-                    'docker-desktop',
-                ],
-                'provider_note' => 'OrbStack and Docker Desktop are compatible when already installed and licensed or allowed; Colima is the default recommendation when no provider is reachable.',
             ];
         }
 

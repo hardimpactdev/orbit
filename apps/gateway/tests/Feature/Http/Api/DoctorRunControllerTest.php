@@ -613,7 +613,7 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.capability_missing');
     });
 
-    it('returns Colima remediation when a macos Docker provider is unreachable', function (): void {
+    it('returns Orbit Desktop remediation when a macos Docker provider is unreachable', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode([
             'name' => 'mac-app-1',
@@ -651,12 +651,13 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.healthy', false)
             ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.docker_provider_unreachable')
             ->assertJsonPath('success.data.doctor.issues.0.restorable', false)
-            ->assertJsonPath('success.data.doctor.issues.0.detail.recommended_provider', 'colima')
-            ->assertJsonPath('success.data.doctor.issues.0.detail.remediation_commands.0', 'brew install docker colima')
-            ->assertJsonPath(
-                'success.data.doctor.issues.0.detail.remediation_commands.1',
-                'colima start --runtime docker',
-            );
+            ->assertJsonPath('success.data.doctor.issues.0.detail.desktop_action', 'Open Orbit Desktop')
+            ->assertJsonPath('success.data.doctor.issues.0.detail.desktop_actions.0', 'Install Local Runtime')
+            ->assertJsonPath('success.data.doctor.issues.0.detail.desktop_actions.1', 'Retry Local Runtime')
+            ->assertJsonMissingPath('success.data.doctor.issues.0.detail.recommended_provider')
+            ->assertJsonMissingPath('success.data.doctor.issues.0.detail.remediation_commands')
+            ->assertJsonMissingPath('success.data.doctor.issues.0.detail.compatible_existing_providers')
+            ->assertJsonMissingPath('success.data.doctor.issues.0.detail.provider_note');
     });
 
     it('accepts the instance family scope and returns instance drift', function (): void {

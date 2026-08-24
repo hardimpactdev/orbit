@@ -932,7 +932,7 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
-    it('reports Colima remediation when Docker is present but no provider is reachable on macOS', function (): void {
+    it('reports Orbit Desktop remediation when Docker is present but no provider is reachable on macOS', function (): void {
         $node = createToolsProbeAppHostNode(['platform' => 'macos_14']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'docker']);
         $probe = new ToolsProbe;
@@ -955,12 +955,16 @@ describe('ToolsProbe', function (): void {
             ->toMatchArray([
                 'tool' => 'docker',
                 'provider' => 'docker-compatible',
-                'recommended_provider' => 'colima',
-                'remediation_commands' => [
-                    'brew install docker colima',
-                    'colima start --runtime docker',
+                'desktop_action' => 'Open Orbit Desktop',
+                'desktop_actions' => [
+                    'Install Local Runtime',
+                    'Retry Local Runtime',
                 ],
-            ]);
+            ])
+            ->not->toHaveKey('recommended_provider')
+            ->not->toHaveKey('remediation_commands')
+            ->not->toHaveKey('compatible_existing_providers')
+            ->not->toHaveKey('provider_note');
     });
 
     it('frankenphp probes approved Docker image inventory for the PHP tool instead of host PHP', function (): void {

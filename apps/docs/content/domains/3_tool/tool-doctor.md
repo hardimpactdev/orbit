@@ -139,6 +139,12 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; reconverge the `s3` role baseline (restore does not create tool rows). |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
 
+On macOS, `tool.docker_provider_unreachable` is owned by Orbit Desktop. Open
+Orbit Desktop and use **Install Local Runtime** when prerequisites are missing,
+or **Retry Local Runtime** when the owned runtime needs another readiness check.
+Doctor does not start a default Colima profile, change the global Docker
+context, or treat OrbStack and Docker Desktop as Orbit providers.
+
 The five `tool.dns_*` codes are owned by the DNS tool capability; see
 [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md) for the runtime layout
 they probe. The `vpn` role requires this capability but does not own these
