@@ -248,6 +248,10 @@ class Node extends Model
 
     public function isFleetUpdateEligible(): bool
     {
+        if ($this->hasActiveRole('gateway')) {
+            return false;
+        }
+
         return ! in_array(
             false,
             [

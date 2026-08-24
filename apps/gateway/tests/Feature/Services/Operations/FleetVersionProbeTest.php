@@ -102,6 +102,40 @@ it('counts the gateway as outdated when its tracked image is missing or differs'
     'different digest' => [fleetVersionProbeInstalledGatewayImage(digest: 'sha256:'.str_repeat('c', times: 64))],
 ]);
 
+it('reports all current for an Ubuntu gateway when Agent artifacts exist', function (): void {
+    $run = fleetVersionProbeRun();
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
+
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($gateway->fresh()->isFleetUpdateEligible())
+        ->toBeFalse()
+        ->and($report->outdatedCount)
+        ->toBe(0)
+        ->and($report->allCurrent())
+        ->toBeTrue();
+});
+
 it('reports all current when the gateway digest and workload hashes match', function (): void {
     $run = fleetVersionProbeRun();
     Node::factory()
