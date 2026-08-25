@@ -8,7 +8,7 @@ use std::process::{Command, Output};
 use std::time::Duration;
 
 pub const PROFILE: &str = "orbit";
-pub const MIN_COLIMA_VERSION: (u64, u64, u64) = (0, 8, 1);
+pub const MIN_COLIMA_VERSION: (u64, u64, u64) = (0, 10, 0);
 #[derive(Debug)]
 pub enum ColimaError {
     MissingExecutable(String),
@@ -785,15 +785,12 @@ mod tests {
             ["install", "colima", "docker"]
         );
         assert_eq!(
-            reset_delete_plan("colima", "Colima Version 0.8.9")
+            reset_delete_plan("colima", "Colima Version 0.10.0")
                 .unwrap()
                 .args,
-            ["delete", "orbit", "--force"]
-        );
-        assert_eq!(
-            reset_delete_plan("colima", "0.9.0").unwrap().args,
             ["delete", "orbit", "--force", "--data"]
         );
+        assert!(reset_delete_plan("colima", "0.9.0").is_err());
         assert!(reset_delete_plan("colima", "0.8.0").is_err());
     }
 
@@ -893,30 +890,27 @@ mod tests {
     }
 
     #[test]
-    fn fake_colima_08_deletes_without_data() {
-        let f = Fixture::new();
-        ready_fixture(&f);
-        let (bin, log) = fake_script(
-            &f,
-            "colima08",
-            "if [ \"$1\" = version ]; then echo 'Colima Version 0.8.9'; fi",
-        );
-        reset_owned_profile(f.home(), &bin).unwrap();
-        assert_eq!(
-            fs::read_to_string(log).unwrap(),
-            "version\nstop orbit\ndelete orbit --force\n"
-        );
-        assert!(!ownership_path(f.home()).exists());
-    }
-
-    #[test]
-    fn fake_colima_09_deletes_with_data() {
+    fn fake_colima_09_is_rejected_without_mutation() {
         let f = Fixture::new();
         ready_fixture(&f);
         let (bin, log) = fake_script(
             &f,
             "colima09",
-            "if [ \"$1\" = version ]; then echo 'Colima Version 0.9.0'; fi",
+            "if [ \"$1\" = version ]; then echo 'Colima Version 0.9.9'; fi",
+        );
+        assert!(reset_owned_profile(f.home(), &bin).is_err());
+        assert_eq!(fs::read_to_string(log).unwrap(), "version\n");
+        assert!(ownership_path(f.home()).exists());
+    }
+
+    #[test]
+    fn fake_colima_10_deletes_with_data() {
+        let f = Fixture::new();
+        ready_fixture(&f);
+        let (bin, log) = fake_script(
+            &f,
+            "colima10",
+            "if [ \"$1\" = version ]; then echo 'Colima Version 0.10.0'; fi",
         );
         reset_owned_profile(f.home(), &bin).unwrap();
         assert!(fs::read_to_string(log)
@@ -926,7 +920,7 @@ mod tests {
 
     #[test]
     fn reset_failures_preserve_ownership_and_short_circuit() {
-        for (name, body, expected) in [("bad-version", "if [ \"$1\" = version ]; then echo bad; fi", "version\n"), ("stop-fail", "if [ \"$1\" = version ]; then echo 0.9.0; elif [ \"$1\" = stop ]; then echo not running >&2; exit 1; fi", "version\nstop orbit\n"), ("delete-fail", "if [ \"$1\" = version ]; then echo 0.9.0; elif [ \"$1\" = delete ]; then exit 1; fi", "version\nstop orbit\ndelete orbit --force --data\n")] {
+        for (name, body, expected) in [("bad-version", "if [ \"$1\" = version ]; then echo bad; fi", "version\n"), ("stop-fail", "if [ \"$1\" = version ]; then echo 0.10.0; elif [ \"$1\" = stop ]; then echo not running >&2; exit 1; fi", "version\nstop orbit\n"), ("delete-fail", "if [ \"$1\" = version ]; then echo 0.10.0; elif [ \"$1\" = delete ]; then exit 1; fi", "version\nstop orbit\ndelete orbit --force --data\n")] {
             let f = Fixture::new(); ready_fixture(&f); let (bin, log) = fake_script(&f, name, body);
             assert!(reset_owned_profile(f.home(), &bin).is_err());
             assert!(ownership_path(f.home()).exists());
@@ -1021,8 +1015,8 @@ mod tests {
         assert!(!colima_version_supported(
             "colima version 0.8.0\ngit commit abc"
         ));
-        assert!(colima_version_supported(
-            "colima version 0.8.1\ngit commit abc"
+        assert!(!colima_version_supported(
+            "colima version 0.9.9\ngit commit abc"
         ));
         assert!(colima_version_supported(
             "colima version 0.10.3\ngit commit abc"
