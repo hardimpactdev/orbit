@@ -1142,8 +1142,10 @@ Platform-specific behavior — installing packages, writing config files, contro
 ## macOS Runtime
 
 Desktop waits for the owned Colima Docker socket before starting Agent. On
-Apple Silicon, Colima creation and existing starts set VZ, `aarch64`,
-`--vz-rosetta=false`, and `--binfmt=false`. Desktop accepts readiness only after
+Apple Silicon, Colima 0.10.0 or newer is required; older versions fail closed
+as unsupported before any start or reset mutation. Colima creation and
+existing starts set VZ, `aarch64`, `--vz-rosetta=false`, and `--binfmt=false`.
+Desktop accepts readiness only after
 `docker info --format {{.Architecture}}` proves `arm64` or `aarch64`; Rosetta and
 foreign-architecture emulation stay disabled. It migrates recognized Orbit-owned
 OrbStack containers through an explicit source socket before Agent startup,

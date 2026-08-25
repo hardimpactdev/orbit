@@ -796,6 +796,8 @@ Command contracts live under [docs/domains/](domains/).
 Orbit Desktop owns only the macOS Colima profile `orbit` and its explicit
 Docker socket. A secure ownership record moves from reservation to ready;
 profile name alone is not proof. Desktop starts Colima and verifies the socket.
+The required Colima version is 0.10.0 or newer; older versions fail closed as
+unsupported before any start or reset mutation.
 On Apple Silicon, Colima creation and existing starts set VZ, `aarch64`,
 `--vz-rosetta=false`, and `--binfmt=false`. Desktop accepts readiness only after
 `docker info --format {{.Architecture}}` proves `arm64` or `aarch64`; Rosetta and
