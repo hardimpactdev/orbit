@@ -1,0 +1,32 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-26T13:57:03+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/release-0-1-198/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-26-155703-release-0-1-198",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-26T134711Z-2c6e4cce7327.json",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-26T135419Z-ac165ba3e4c5.json",
+        "slices/01-seal-macos-release-bundle.md"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-26T134711Z-2c6e4cce7327.json": "42b4805111316dd54c777d60b054f4a83ec448d122e3b27cbda628e97745c857",
+        "loop.md": "60fd5e1c7138d785002dd357bb0a9336cd2261dcb31139ab051348ab8e959932",
+        "quality-gates/quality-check-2026-08-26T135419Z-ac165ba3e4c5.json": "50cde2042c66a39710d7bb1eb52b04c8c6d510566e5f5d639fd195f87e4c25d9",
+        "slices/01-seal-macos-release-bundle.md": "db816b3ceb99163f6ffd97bccf21e702f9ffaeef2063160ffb0043a18338d031"
+    },
+    "slug": "release-0-1-198",
+    "requested_slug": "release-0-1-198",
+    "compatible_slugs": [
+        "release-0-1-198"
+    ],
+    "branch": "release-0-1-198",
+    "candidate_commit": "3f99f10d71a7180b106654baa44dc49897a19b14",
+    "accepted_feature_tip": "3f99f10d71a7180b106654baa44dc49897a19b14",
+    "accepted_main_tip": "ac474889fe3072cf8510d435837a08bf8028875f",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
