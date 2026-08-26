@@ -1,0 +1,111 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+
+describe('app development setup step commands', function (): void {
+    it('adds defaults with a typed payload and forwards json', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3, 'command' => 'bun install']]));
+
+        [$exitCode, $output] = runCommand($this, 'app-development-setup-step:add', [
+            'app' => 'fitta',
+            '--command' => 'bun install',
+            '--timeout' => '900',
+            '--before' => '4',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/fitta/development-setup-steps'
+                && $request->data() === ['command' => 'bun install', 'timeout' => 900, 'before' => 4]
+            ),
+        );
+        expect($exitCode)
+            ->toBe(0)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))
+            ->toHaveKey('success.data.step');
+    });
+
+    it('lists defaults in a setup-step table', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'steps' => [['id' => 3, 'sort_order' => 1, 'command' => 'bun install', 'timeout_seconds' => 600]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app-development-setup-step:list', ['app' => 'fitta']);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Development setup defaults for fitta', 'bun install', 'TIMEOUT');
+    });
+
+    it('updates defaults and rejects empty changes before gateway io', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3, 'command' => 'bun run build']]));
+        [$exitCode] = runCommand($this, 'app-development-setup-step:update', [
+            'app' => 'fitta',
+            'step' => '3',
+            '--command' => 'bun run build',
+            '--json' => true,
+        ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PATCH'
+                && $request->url() === 'https://gateway.test/api/apps/fitta/development-setup-steps/3'
+                && $request->data() === ['command' => 'bun run build']
+            ),
+        );
+        expect($exitCode)->toBe(0);
+
+        Http::fake();
+        [$exitCode, $output] = runCommand($this, 'app-development-setup-step:update', [
+            'app' => 'fitta',
+            'step' => '3',
+            '--json' => true,
+        ]);
+        Http::assertNothingSent();
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])
+            ->toBe('validation_failed');
+    });
+
+    it('removes defaults with force consent source', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3]]));
+        [$exitCode] = runCommand($this, 'app-development-setup-step:remove', [
+            'app' => 'fitta',
+            'step' => '3',
+            '--force' => true,
+            '--json' => true,
+        ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/fitta/development-setup-steps/3'
+                && $request->data() === ['destructive_consent' => true, 'destructive_consent_source' => 'force']
+            ),
+        );
+        expect($exitCode)->toBe(0);
+    });
+
+    it('rejects invalid values without gateway io', function (): void {
+        Http::fake();
+        foreach ([
+            ['app-development-setup-step:add', ['app' => 'fitta', '--command' => 'x', '--timeout' => '0']],
+            ['app-development-setup-step:add', ['app' => 'fitta', '--command' => 'x', '--before' => '0']],
+            [
+                'app-development-setup-step:add',
+                ['app' => 'fitta', '--command' => 'x', '--before' => '1', '--after' => '2'],
+            ],
+            ['app-development-setup-step:update', ['app' => 'fitta', 'step' => '0', '--command' => 'x']],
+            ['app-development-setup-step:remove', ['app' => 'fitta', 'step' => '0', '--force' => true]],
+        ] as [$command, $parameters]) {
+            [$exitCode] = runCommand($this, $command, [...$parameters, '--json' => true]);
+            expect($exitCode)->toBe(1);
+        }
+        Http::assertNothingSent();
+    });
+});

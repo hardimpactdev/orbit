@@ -6,29 +6,48 @@ namespace App\Commands\App;
 
 use App\Exceptions\GatewayApiException;
 
+use function Laravel\Prompts\confirm;
+
 final class AppDevelopmentSetupStepRemoveCommand extends AppGatewayCommand
 {
-    protected $signature = 'app-development-setup-step:remove {app : App name} {step : Step id} {--force} {--json}';
+    #[\Override]
+    protected $signature = 'app-development-setup-step:remove {app? : App name} {step? : Step id} {--force : Skip confirmation} {--json : Output JSON}';
     protected $description = 'Remove an app development setup default.';
 
     public function handle(): int
     {
-        if (! $this->option('force'))
-            return $this->failValidation('force', 'Use --force to remove this setup default.');
-        try {
-            $r = $this->gatewayDelete(
-                $this->apiProjectPath(
-                    (string) $this->argument('app'),
-                    '/development-setup-steps/'.(int) $this->argument('step'),
-                ),
-                ['destructive_consent' => true],
+        $app = $this->stringArgument('app') ?? $this->appFromOrbitMarker();
+        if ($app === null)
+            return $this->failValidation('app', 'App is required.');
+        $step = $this->stringArgument('step');
+        if (! is_string($step) || ! ctype_digit($step) || (int) $step < 1)
+            return $this->failValidation('step', 'Step must be a positive integer.');
+        $source = 'prompt';
+        if ($this->option('force'))
+            $source = 'force';
+        elseif (
+            ! $this->wantsJson()
+            && $this->input->isInteractive()
+            && confirm(label: 'Remove this app development setup default?', default: false)
+        ) {
+            $source = 'prompt';
+        } else
+            return $this->failValidation(
+                'force',
+                'This is a destructive operation. Use --force or confirm the prompt.',
             );
-        } catch (GatewayApiException $e) {
-            return $this->renderGatewayFailure($e);
+        try {
+            $response = $this->gatewayDelete($this->apiProjectPath($app, "/development-setup-steps/{$step}"), [
+                'destructive_consent' => true,
+                'destructive_consent_source' => $source,
+            ]);
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
         }
+        if ($this->wantsJson())
+            return $this->renderSuccess($response);
+        $this->line("✓ Removed development setup default {$step} from app '{$app}'.");
 
-        return $this->wantsJson()
-            ? $this->renderSuccess($r)
-            : $this->line('App development setup default removed.') ?? self::SUCCESS;
+        return self::SUCCESS;
     }
 }
