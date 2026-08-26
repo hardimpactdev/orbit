@@ -503,7 +503,7 @@ describe('ToolsFixer', function (): void {
             ->not->toContain("MANAGED_USER='orbit'");
     });
 
-    it('returns null for capability missing when no install script exists', function (): void {
+    it('repairs capability missing through the managed install script', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -520,7 +520,7 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'viteplus'],
         ));
 
-        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
+        expect($action)->not->toBeNull()->and($shell->scripts)->not->toBe([]);
     });
 
     it('does not repair stale service process names as tool rows', function (string $toolName, string $key): void {

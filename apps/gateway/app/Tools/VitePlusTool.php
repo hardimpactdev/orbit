@@ -22,6 +22,7 @@ final class VitePlusTool extends BaseTool
         return 'runtime';
     }
 
+    #[\Override]
     public function capabilities(): array
     {
         return ['install', 'update', 'remove', 'safe-adopt'];
@@ -69,6 +70,7 @@ final class VitePlusTool extends BaseTool
             BASH);
     }
 
+    #[\Override]
     public function probeMetadata(): array
     {
         return [
