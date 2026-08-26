@@ -67,7 +67,7 @@ create baseline tools from scratch unless the tool file says otherwise.
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
 
 The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
-app host tool baseline — `php-cli`, `composer`, `bun`, `git`, `gh`, and
+app host tool baseline — `php-cli`, `composer`, `viteplus`, `bun`, `git`, `gh`, and
 `laravel-installer` — installs on `app-dev`/`app-prod` nodes (the Laravel
 installer on `app-dev` only). `git` is also a role baseline on `agent` nodes for
 repository workflows.
@@ -82,15 +82,14 @@ materialized by their owning role and only required on nodes carrying that role:
 | [`php-cli`](php-cli.md) | `app-dev`, `app-prod` |
 | [`composer`](composer.md) | `app-dev`, `app-prod` |
 | [`bun`](bun.md) | `app-dev`, `app-prod` |
+| [`viteplus`](viteplus.md) | `app-dev`, `app-prod` |
 | [`laravel-installer`](laravel-installer.md) | `app-dev` |
 | [`git`](git.md) | `app-dev`, `app-prod`, `agent` (repository clone and checkout workflows) |
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |
 | [`seaweedfs`](seaweedfs.md) | `s3` |
 | [`node-exporter`](node-exporter.md) | `metrics`; active Ubuntu workload nodes selected by metrics convergence |
 
-[VitePlus](viteplus.md) is optional observational runtime inventory, not a role baseline tool.
-An explicitly selected existing `vp` binary may be adopted into a tool row, but
-an absent row or binary is not role-baseline drift.
+[VitePlus](viteplus.md) is a managed `app-dev` and `app-prod` baseline.
 
 ## Installable Tools
 

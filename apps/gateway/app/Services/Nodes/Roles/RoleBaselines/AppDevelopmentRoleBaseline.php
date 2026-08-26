@@ -34,6 +34,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
         $this->convergeTool($node, 'php-cli', 'installed');
         $this->convergeTool($node, 'composer', 'installed');
         $this->convergeTool($node, 'bun', 'installed');
+        $this->convergeTool($node, 'viteplus', 'installed');
         $this->convergeTool($node, 'git', 'installed');
         $this->convergeTool($node, 'gh', 'installed');
         $this->convergeTool($node, 'laravel-installer', 'installed');
@@ -48,6 +49,7 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
             'php-cli',
             'composer',
             'bun',
+            'viteplus',
             'git',
             'gh',
             'laravel-installer',

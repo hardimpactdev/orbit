@@ -468,8 +468,9 @@ final readonly class NodeConverger
             'docker' => 5,
             'php-cli' => 10,
             'composer' => 20,
-            'bun' => 25,
-            'git' => 30,
+            'viteplus' => 25,
+            'bun' => 30,
+            'git' => 35,
             'gh' => 40,
             'laravel-installer' => 50,
             'caddy' => 60,
@@ -499,7 +500,7 @@ final readonly class NodeConverger
             return null;
         }
 
-        return ['caddy', 'docker', 'php-cli', 'composer', 'bun', 'git', 'gh', 'laravel-installer'];
+        return ['caddy', 'docker', 'php-cli', 'composer', 'viteplus', 'bun', 'git', 'gh', 'laravel-installer'];
     }
 
     /**

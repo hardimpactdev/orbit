@@ -60,6 +60,7 @@ describe('NodeConverger', function (): void {
                 'git',
                 'laravel-installer',
                 'php-cli',
+                'viteplus',
             ])
             ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('valkey'))
             ->toBeFalse()
@@ -75,6 +76,7 @@ describe('NodeConverger', function (): void {
                         'git',
                         'laravel-installer',
                         'php-cli',
+                        'viteplus',
                     ])
                     ->pluck('name')
                     ->sort()
@@ -90,14 +92,15 @@ describe('NodeConverger', function (): void {
                 'git',
                 'laravel-installer',
                 'php-cli',
+                'viteplus',
             ])
             ->and(implode("\n", $shell->scripts))
             ->not->toContain('doctor --restore')->and(implode("\n", $shell->scripts))
             ->not->toContain(' orbit doctor ')
-            // Capability batch probes plus dedicated php-cli runtime probes.
+            // Capability batch probes plus dedicated php-cli runtime probes for 9 tools.
             ->and($shell->probeScripts())->toHaveCount(4)
             // One install/repair path per app-dev baseline tool (8 tools).
-            ->and($shell->repairScripts())->toHaveCount(8);
+            ->and($shell->repairScripts())->toHaveCount(9);
     });
 
     it('keeps setup drift visible when repair fails', function (): void {
@@ -178,6 +181,12 @@ function createNodeConvergerAppDevToolRows(Node $node): void
         'expected_state' => 'installed',
         'config' => ['managed_user' => is_string($node->user) && trim($node->user) !== '' ? $node->user : 'orbit'],
     ]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'viteplus',
+        'expected_state' => 'installed',
+        'config' => ['managed_user' => is_string($node->user) && trim($node->user) !== '' ? $node->user : 'orbit'],
+    ]);
 }
 
 final class NodeConvergerSetupRemoteShell implements RemoteShell
@@ -192,6 +201,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         'php-cli' => false,
         'composer' => false,
         'bun' => false,
+        'viteplus' => false,
         'gh' => false,
         'git' => false,
         'laravel-installer' => false,
@@ -294,6 +304,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
                 'bun',
                 $this->singleProbeOutput('bun', '/usr/local/bin/bun', '1.2.3'),
             ),
+            '/usr/local/bin/vp' => $this->installedProbe('viteplus', "/usr/local/bin/vp\tVite+ 0.1.0\n"),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
             'git' => $this->installedProbe('git', "/usr/bin/git\tgit version 2.53.0\n"),
             '/usr/local/bin/laravel' => $this->installedProbe(
@@ -371,6 +382,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             'git' => ['/usr/bin/git', 'git version 2.53.0'],
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
             'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
+            'viteplus' => ['/usr/local/bin/vp', 'Vite+ 0.1.0'],
         ];
         [$path, $version] = $installedPayloads[$name] ?? [
             is_string($tool['binary'] ?? null) ? $tool['binary'] : null,
@@ -457,6 +469,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
             str_contains($script, '# orbit install bun') => 'bun',
+            str_contains($script, '# orbit install viteplus') => 'viteplus',
             str_contains($script, '# orbit install docker') => 'docker',
             str_contains($script, '# orbit install gh') => 'gh',
             str_contains($script, '# orbit install git') => 'git',

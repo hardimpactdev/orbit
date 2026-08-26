@@ -282,7 +282,7 @@ not plain runtime configuration.
   intent first, then applies the setup slice of that gateway intent to the real
   node before marking the node `active`.
 - The initial setup slice for `app-dev` applies the role baseline tools
-  `caddy`, `php-cli`, `composer`, `bun`, `git`, `gh`, and `laravel-installer` to node
+  `caddy`, `php-cli`, `composer`, `viteplus`, `bun`, `git`, `gh`, and `laravel-installer` to node
   reality through the same internal convergence path that tool doctor restore
   uses for overlapping safe repairs.
 - `node:new` must not report a successful active managed workload node while

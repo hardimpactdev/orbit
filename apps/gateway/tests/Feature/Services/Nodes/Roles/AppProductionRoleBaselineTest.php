@@ -96,6 +96,24 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->toMatchArray(['managed_user' => 'orbit']);
     });
 
+    it('converges viteplus as a managed baseline prerequisite', function (): void {
+        $node = appProdBaselineNode();
+        $assignment = appProdBaselineAssignment($node);
+
+        new AppProductionRoleBaseline()->converge($node, $assignment);
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'viteplus')->value('expected_state'))
+            ->toBe('installed')
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->where('name', 'viteplus')
+                    ->first()
+                    ->config['managed_user'],
+            )
+            ->toBe('orbit');
+    });
+
     it('converges git with expected_state installed', function (): void {
         $node = appProdBaselineNode();
         $assignment = appProdBaselineAssignment($node);
@@ -235,17 +253,17 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'viteplus', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
-            ->toBe(5);
+            ->toBe(6);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'viteplus', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
             ->toBe(0);

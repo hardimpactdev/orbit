@@ -44,6 +44,7 @@ class AppProductionRoleBaseline implements RoleBaseline
         $this->convergeTool($node, 'php-cli', 'installed');
         $this->convergeTool($node, 'composer', 'installed');
         $this->convergeTool($node, 'bun', 'installed');
+        $this->convergeTool($node, 'viteplus', 'installed');
         $this->convergeTool($node, 'git', 'installed');
         $this->convergeTool($node, 'gh', 'installed');
     }
@@ -54,7 +55,7 @@ class AppProductionRoleBaseline implements RoleBaseline
             $this->removeLaravelInstaller($node);
         }
 
-        $this->removeTools($node, ['caddy', 'php', 'php-cli', 'composer', 'bun', 'git', 'gh']);
+        $this->removeTools($node, ['caddy', 'php', 'php-cli', 'composer', 'bun', 'viteplus', 'git', 'gh']);
     }
 
     protected function toolCatalog(): ToolCatalog

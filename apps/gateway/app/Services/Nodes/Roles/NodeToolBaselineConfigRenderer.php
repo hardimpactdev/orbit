@@ -21,7 +21,7 @@ class NodeToolBaselineConfigRenderer
      */
     public function render(string $tool, Node $node): ?array
     {
-        if ($tool === 'bun') {
+        if (in_array($tool, ['bun', 'viteplus'], true)) {
             return ['managed_user' => $node->user ?: 'orbit'];
         }
 

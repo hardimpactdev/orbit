@@ -290,16 +290,15 @@ Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then
 applies the overlapping node and tool intent to the host before activation. The
 initial app-development setup slice applies the role baseline tools
-`caddy`, `php-cli`, `composer`, `bun`, `git`, `gh`, and `laravel-installer` through the
+`caddy`, `php-cli`, `composer`, `viteplus`, `bun`, `git`, `gh`, and `laravel-installer` through the
 shared convergence path. After a node is active, `doctor --restore` uses the
 same internal path for overlapping safe repairs while keeping family-specific
 issue ownership and output.
 
-VitePlus is optional observational runtime inventory, not an `app-dev` or
-`app-prod` role baseline requirement. An absent VitePlus tool row or `vp`
-binary does not produce node role-baseline drift. Explicit tool adoption may
-record an observed binary, after which tool doctor verifies that row's expected
-capability state.
+VitePlus is a required `app-dev` and `app-prod` baseline. Orbit installs it for
+the managed node user, uses it to install and select LTS Node.js, and exposes
+stable `vp`, `node`, `npm`, and `npx` host shims. Bun remains independently
+managed by Orbit.
 
 Local database client binaries (`sqlite3`, `psql`, `mysql`) are not part of
 any role or tool baseline. Orbit interacts with databases through the

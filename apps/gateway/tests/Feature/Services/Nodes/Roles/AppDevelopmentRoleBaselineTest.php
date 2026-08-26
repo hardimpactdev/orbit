@@ -251,7 +251,15 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->firstOrFail();
 
         expect($tools)
-            ->toBe(['bun', 'caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+            ->toBe(['bun', 'caddy', 'composer', 'docker', 'laravel-installer', 'php-cli', 'viteplus'])
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->where('name', 'viteplus')
+                    ->first()
+                    ->config['managed_user'],
+            )
+            ->toBe('nckrtl')
             ->and($caddy->config['container']['published_ports'])
             ->toBe([
                 '80:80',
@@ -303,17 +311,17 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'viteplus', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
-            ->toBe(6);
+            ->toBe(7);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'viteplus', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
             ->toBe(0);

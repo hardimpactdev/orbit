@@ -98,10 +98,11 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'git',
                 'laravel-installer',
                 'php-cli',
+                'viteplus',
             ])->and(
                 $shell->probeScripts(),
                 // Capability batch probes plus dedicated php-cli runtime probes.
-            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(8);
+            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(9);
     });
 
     it('rejects the private service namespace as an app node tld', function (): void {
@@ -147,6 +148,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             )->toMatchArray([
                 'caddy' => 'installed',
                 'bun' => 'installed',
+                'viteplus' => 'installed',
                 'composer' => 'installed',
                 'docker' => 'installed',
                 'gh' => 'installed',
@@ -480,6 +482,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     private array $installed = [
         'caddy' => false,
         'bun' => false,
+        'viteplus' => false,
         'docker' => false,
         'php-cli' => false,
         'composer' => false,
@@ -646,6 +649,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
             'git' => ['/usr/bin/git', 'git version 2.53.0'],
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
             'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
+            'viteplus' => ['/usr/local/bin/vp', 'Vite+ 0.1.0'],
         ];
         [$path, $version] = $installedPayloads[$name] ?? [
             is_string($tool['binary'] ?? null) ? $tool['binary'] : null,
@@ -713,6 +717,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
                 => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install bun') => 'bun',
+            str_contains($script, '# orbit install viteplus') => 'viteplus',
             str_contains($script, '# orbit install composer') => 'composer',
             str_contains($script, '# orbit install docker') => 'docker',
             str_contains($script, '# orbit install gh') => 'gh',

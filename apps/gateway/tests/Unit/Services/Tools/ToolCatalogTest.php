@@ -114,7 +114,7 @@ describe('tool catalog definitions', function (): void {
             ->toBeFalse();
     });
 
-    it('catalogs VitePlus as optional runtime inventory without a required node role', function (): void {
+    it('catalogs VitePlus as a managed app runtime baseline', function (): void {
         $catalog = app(ToolCatalog::class);
 
         expect($catalog->definition('viteplus'))

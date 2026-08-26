@@ -87,7 +87,7 @@ Detailed tool-specific contracts live in [`catalog/`](catalog/README.md).
 | --- | --- | --- | --- | --- | --- |
 | [`caddy`](catalog/caddy.md) | Caddy | `orbit-caddy` Docker container | Role baseline where HTTP routing is needed, adopted and kept converged | `always` | reconfigure, update, fix, adopt, reload, logs |
 | [`docker`](catalog/docker.md) | Docker | system service on Linux; Docker-compatible provider on macOS | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
-| [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Optional observational runtime inventory; no role baseline requirement | `runtime` | probe, explicit adopt |
+| [`viteplus`](catalog/viteplus.md) | VitePlus | managed-user Vite+ runtime with stable host shims | Required baseline on `app-dev` and `app-prod` | `runtime` | install, update, remove, probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | Orbit-owned static host binaries (`coverage` on app-dev, `standard` on app-prod) | Installable/updatable/removable host toolchain on `app-dev` and `app-prod` | `runtime` | install, remove, update, probe, adopt |
 | [`git`](catalog/git.md) | Git | system binary | Role baseline tool for the `app-dev`, `app-prod`, and `agent` roles (repository clone and checkout workflows) | `runtime` | install, update, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |

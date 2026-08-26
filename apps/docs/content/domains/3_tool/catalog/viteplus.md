@@ -10,17 +10,17 @@ These fields describe the VitePlus tool's identity, backend, and support model i
 | --- | --- |
 | Slug | `viteplus` |
 | Label | VitePlus |
-| Backend | system binary |
-| Support model | Optional observational runtime inventory; no role baseline requirement |
+| Backend | managed-user Vite+ runtime with stable host shims |
+| Support model | Managed baseline on `app-dev` and `app-prod` |
 | Category | `runtime` |
 
 ## Capabilities
 
-`viteplus` is not materialized by the `app-dev` or `app-prod` role baseline.
-An existing `vp` binary may be probed and explicitly adopted as observational
-tool inventory. An absent tool row or binary does not create role-baseline
-drift. VitePlus has no install, update, remove, credentials, or reconfigure
-surface. Runtime lifecycle and logs belong to the process family.
+`viteplus` supports install, update, remove, probe, and safe adoption on Linux
+and macOS. Orbit uses the managed node user. Fresh installs use
+`~/.local/share/vite-plus/bin`; older installs use `~/.vite-plus/bin`.
+Vite+ owns LTS Node.js and the `node`, `npm`, and `npx` shims. Bun is a separate
+Orbit-managed baseline and is not auto-downloaded by Vite+.
 
 ## Credentials
 
@@ -39,7 +39,6 @@ fields.
 
 ## Doctor Relationship
 
-`doctor --family=tool` may adopt an explicitly selected existing `vp` binary.
-Once a VitePlus tool row exists, tool doctor verifies the capability expected
-by that row. Without a row, an absent binary is unmanaged inventory rather than
-role-baseline drift.
+Tool doctor verifies executable `vp`, `node`, `npm`, and `npx` links and runs
+their version commands. Removal runs `vp implode --yes` before deleting stable
+host links. A missing or unhealthy baseline is role drift.
