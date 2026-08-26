@@ -1524,6 +1524,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn declares_the_tracked_macos_bundle_icon() {
+        let config = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"));
+        let config: serde_json::Value = serde_json::from_str(config).expect("valid Tauri config");
+
+        let icon_paths = config["bundle"]["icon"]
+            .as_array()
+            .expect("bundle.icon must be an array");
+        assert!(icon_paths.iter().any(|path| path == "icons/orbit.icns"));
+        assert!(icon_paths.iter().all(|path| {
+            path.as_str()
+                .map(|path| {
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join(path)
+                        .is_file()
+                })
+                .unwrap_or(false)
+        }));
+        assert!(
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.png")).is_file()
+        );
+    }
+
+    #[test]
     fn loads_orbit_tray_icon_asset() {
         let icon = tray_icon();
 
