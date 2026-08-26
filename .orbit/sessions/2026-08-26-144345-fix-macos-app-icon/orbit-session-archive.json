@@ -1,0 +1,40 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-26T12:43:46+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-macos-app-icon/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-26-144345-fix-macos-app-icon",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-26T120208Z-d37ec15b905a.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T121111Z-b6f094dc9d49.json",
+        "evidence/macos-app-icon-bundle.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-26T123800Z-30abbd690a8f.json",
+        "slices/01-macos-app-icon-bundle.md",
+        "workers/handoff/macos-app-icon-general.md",
+        "workers/macos-app-icon-general.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-26T120208Z-d37ec15b905a.json": "196174b2d0312ad0a5e3866a8d1e587b04fbab79944ab796474ed433237e9410",
+        "diagnostics/failed-gates/quality-check-2026-08-26T121111Z-b6f094dc9d49.json": "83aab9cb58620b377374d28b1d9202702b4e8ff112ac1ade3e4a93aeddc46ddc",
+        "evidence/macos-app-icon-bundle.md": "59667e7fbd6cd6804d8dcf7d083681acf8c18d68d9a2cdcff4fbc871aa340a82",
+        "loop.md": "1a7642d7f41e7d09fbe828a4dc8caba1b9612fc72ef508c521907a0f9c5ded85",
+        "quality-gates/quality-check-2026-08-26T123800Z-30abbd690a8f.json": "156c2bd9550fab115938bc86219e628a86f906041b7541f723c4f119963231ac",
+        "slices/01-macos-app-icon-bundle.md": "41fbc03b2275718852d477a84138762a1a027defd8ea91817e18a3292efaa827",
+        "workers/handoff/macos-app-icon-general.md": "eb813aa5a97c1d527b24089f2176a6038f8729ce1fc34ed95844358de0d8bd96",
+        "workers/macos-app-icon-general.json": "84c51305be008e3889cf33cd7dbad7cbc38fcfb39d3335299bb42d6359cbae67"
+    },
+    "slug": "fix-macos-app-icon",
+    "requested_slug": "fix-macos-app-icon",
+    "compatible_slugs": [
+        "fix-macos-app-icon"
+    ],
+    "branch": "fix-macos-app-icon",
+    "candidate_commit": "6cada5ab763c1ffde2fbd2a0c67a9f2f3c355fdc",
+    "accepted_feature_tip": "6cada5ab763c1ffde2fbd2a0c67a9f2f3c355fdc",
+    "accepted_main_tip": "dc6dade995d3126ba4bfb697a0b13e0dff01df4f",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}

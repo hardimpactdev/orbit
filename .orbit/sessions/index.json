@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 429,
-    "unique_candidate_commit_count": 325,
+    "record_count": 431,
+    "unique_candidate_commit_count": 327,
     "orphan_count": 4,
     "records": [
         {
@@ -10958,6 +10958,52 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "retained-incus",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-26-144345-fix-macos-app-icon",
+            "slug": "fix-macos-app-icon",
+            "timestamp": "2026-08-26-144345",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "6cada5ab763c1ffde2fbd2a0c67a9f2f3c355fdc",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "host-macos",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-26-155703-release-0-1-198",
+            "slug": "release-0-1-198",
+            "timestamp": "2026-08-26-155703",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "3f99f10d71a7180b106654baa44dc49897a19b14",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "automated",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

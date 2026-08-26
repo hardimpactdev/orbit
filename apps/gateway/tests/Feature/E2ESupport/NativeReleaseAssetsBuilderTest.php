@@ -170,6 +170,30 @@ it('signs the desktop updater archive through the installed local Tauri CLI', fu
         ->toContain('npm run tauri -- signer sign "$archive"');
 });
 
+it('seals the macOS app bundle before creating desktop artifacts', function (): void {
+    $source = (string) file_get_contents(repo_path('bin/orbit-build-desktop-bundle'));
+    $bundleSign = strpos($source, 'codesign_identity="${APPLE_SIGNING_IDENTITY:--}"');
+    $bundleVerify = strpos($source, '"$codesign" --verify --deep --strict "$app_bundle"');
+    $archive = strpos($source, 'tar -C "$(dirname "$app_bundle")" -czf "$archive"');
+
+    expect($bundleSign)
+        ->toBeInt()
+        ->and($bundleVerify)
+        ->toBeInt()
+        ->and($archive)
+        ->toBeInt()
+        ->and($bundleSign)
+        ->toBeLessThan($bundleVerify)
+        ->and($bundleVerify)
+        ->toBeLessThan($archive)
+        ->and($source)
+        ->toContain('"$codesign" --force --deep --sign - "$app_bundle"')
+        ->toContain(
+            '"$codesign" --force --deep --options runtime --timestamp --sign "$codesign_identity" "$app_bundle"',
+        )
+        ->toContain('[ -s "${app_bundle}/Contents/_CodeSignature/CodeResources" ]');
+});
+
 it('fails closed when the desktop signing key is missing', function (): void {
     $root = sys_get_temp_dir().'/orbit-desktop-bundle-'.bin2hex(random_bytes(6));
     mkdir($root, recursive: true);

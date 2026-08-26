@@ -63,6 +63,23 @@ fi
 [ "$bundle_short_version" = "$version" ] || fail "desktop bundle short version ${bundle_short_version} does not match Orbit ${version}."
 [ "$bundle_build_version" = "$version" ] || fail "desktop bundle build version ${bundle_build_version} does not match Orbit ${version}."
 
+codesign='/usr/bin/codesign'
+[ -x "$codesign" ] || fail 'codesign is required to seal the desktop bundle.'
+codesign_identity="${APPLE_SIGNING_IDENTITY:--}"
+
+if [ "$codesign_identity" = '-' ]; then
+    "$codesign" --force --deep --sign - "$app_bundle" \
+        || fail 'desktop bundle could not be sealed with an ad-hoc signature.'
+else
+    "$codesign" --force --deep --options runtime --timestamp --sign "$codesign_identity" "$app_bundle" \
+        || fail 'desktop bundle could not be signed with the configured Apple identity.'
+fi
+
+"$codesign" --verify --deep --strict "$app_bundle" \
+    || fail 'desktop bundle signature verification failed.'
+[ -s "${app_bundle}/Contents/_CodeSignature/CodeResources" ] \
+    || fail 'desktop bundle signed resource manifest is missing.'
+
 archive="${output}/Orbit.app.tar.gz"
 tar -C "$(dirname "$app_bundle")" -czf "$archive" "$(basename "$app_bundle")"
 [ -s "$archive" ] || fail 'desktop updater archive is empty.'
