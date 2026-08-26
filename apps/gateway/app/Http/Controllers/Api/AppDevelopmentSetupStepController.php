@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  * @mago-expect lint:too-many-methods
  */
 final class AppDevelopmentSetupStepController implements Loggable
@@ -226,7 +227,7 @@ final class AppDevelopmentSetupStepController implements Loggable
 
     public function type(): string
     {
-        $suffix = in_array(request()->method(), ['PATCH', 'DELETE'], true) ? '/{step}' : '';
+        $suffix = in_array(request()->method(), ['PATCH', 'DELETE'], strict: true) ? '/{step}' : '';
 
         return 'api:'.strtoupper((string) request()->method()).' /apps/{app}/development-setup-steps'.$suffix;
     }

@@ -35,13 +35,12 @@ final readonly class AddAppDevelopmentSetupStep
                 }
                 $order = $anchor->sort_order + ($afterStepId !== null ? 1 : 0);
                 $all = (clone $steps)->orderBy('sort_order')->orderBy('id')->get();
-                $all->each(fn (AppDevelopmentSetupStep $step): int => $step->increment('sort_order', 1_000_000));
+                $all->each(static fn (AppDevelopmentSetupStep $step): int => $step->increment('sort_order', 1_000_000));
                 foreach ($all as $index => $step) {
                     $step->update(['sort_order' => $index + 1 + ($index >= $order - 1 ? 1 : 0)]);
                 }
-            } else {
-                $order = ((clone $steps)->max('sort_order') ?? 0) + 1;
             }
+            $order ??= ((clone $steps)->max('sort_order') ?? 0) + 1;
 
             return AppDevelopmentSetupStep::query()->create([
                 'app_id' => $appId,

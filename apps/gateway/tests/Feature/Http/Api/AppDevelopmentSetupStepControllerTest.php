@@ -46,6 +46,7 @@ function app_defaults_api_headers(): array
     return ['REMOTE_ADDR' => APP_DEFAULTS_API_IP, 'CONTENT_TYPE' => 'application/json'];
 }
 
+/** @mago-expect lint:halstead */
 describe('app development setup step API', function (): void {
     it('lists and mutates ordered defaults with canonical envelopes', function (): void {
         [$caller, $app] = app_defaults_api_target();
