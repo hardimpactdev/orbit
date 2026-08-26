@@ -1,0 +1,33 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.local/bin:/Users/nckrtl/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:/Users/nckrtl/.vite-plus/bin:/Users/nckrtl/.codex/tmp/arg0/codex-arg0hOPILv:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/nckrtl/.local/bin:/Users/nckrtl/.codeium/windsurf/bin:/Users/nckrtl/.grok/bin:/opt/homebrew/opt/mysql-client/bin:/Users/nckrtl/.opencode/bin:/Users/nckrtl/.nvm/versions/node/v24.13.0/bin:/Users/nckrtl/Library/pnpm:/Users/nckrtl/.antigravity/antigravity/bin:/Users/nckrtl/.config/composer/vendor/bin:/Users/nckrtl/.spin/bin:/Users/nckrtl/.bun/bin:/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Users/nckrtl/.orbstack/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-viteplus-macos-workflows",
+        "window": "review-1",
+        "pane_id": "%13",
+        "pane_pid": 66159,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-macos-workflows",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-macos-workflows/.orbit/workers/briefs/review-1.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-26T16:03:46Z",
+    "note": "PASS exact 06d8e0be6943df90c8983cc1bd8198fb82b59adc; human judgment not required; proof receipt ok",
+    "started_at": "2026-08-26T15:49:08Z",
+    "exited_at": "2026-08-26T16:04:03Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-macos-workflows/.orbit/workers/handoff/review-1.md"
+}

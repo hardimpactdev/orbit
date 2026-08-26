@@ -1,0 +1,48 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-26T16:04:08+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-macos-workflows/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-26-180408-codex-viteplus-macos-workflows",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-26T153655Z-03fbb5bfbe0a.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154009Z-f543c93a84a8.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154332Z-ed62df13b43f.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154603Z-9af8d0d3d2cc.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154828Z-79c7962cae01.json",
+        "evidence/viteplus-macos-blast-radius.md",
+        "evidence/viteplus-macos-runtime-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-26T160043Z-e04db833ab39.json",
+        "slices/01-vp-macos-workflows.md",
+        "workers/handoff/review-1.md",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-26T153655Z-03fbb5bfbe0a.json": "3b16929ce2ecec6b357f306973800a51e58a77c649d0755285f183c19b6e3f83",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154009Z-f543c93a84a8.json": "e10af5e32ed20db91e806ee9d002bf925f5303deae9f594e0d84992c7d38e81b",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154332Z-ed62df13b43f.json": "5b1f3713e9370773a260ceee694eab230508db88e3aedc00aed547058d02af53",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154603Z-9af8d0d3d2cc.json": "3339edf57f3077e66f3213d98035bbede2f2b4c5633fbde3db069eb8a151a8de",
+        "diagnostics/failed-gates/quality-check-2026-08-26T154828Z-79c7962cae01.json": "4403202b5ebfc7dc5d585046348870d77ebdb33a825f8fca8078cc88afaa340d",
+        "evidence/viteplus-macos-blast-radius.md": "5a4491dd07e09656b66dab3033a5afef75580f96f1b7dbcff90e5b71f119603f",
+        "evidence/viteplus-macos-runtime-proof.md": "400b00cae1cf6bb7dde0e5a4419e64556a295fa3c31ba878af0f44695299c91c",
+        "loop.md": "cb48b061fffab16b573cb74c24262763ecebfec1d2e2b7f7c3e3319569379998",
+        "quality-gates/quality-check-2026-08-26T160043Z-e04db833ab39.json": "56011a6e98cd4d7d6a3498c216f86de7b0a0c5dfe56ad5cc4e61bd707ab57ac9",
+        "slices/01-vp-macos-workflows.md": "6b1561becdab0c44d21ea1c6b1fc67f4c972b05a5eb34dd6391a0acf8d75d051",
+        "workers/handoff/review-1.md": "c9291caaa80dd83507f9e355759a5ef7660dc4bbce2d12df50788f308238d7b9",
+        "workers/review-1.json": "0df0dee186e61481dc440347b4fc8c160e5517326a9f81131a6497e545f6a9df"
+    },
+    "slug": "codex-viteplus-macos-workflows",
+    "requested_slug": "codex-viteplus-macos-workflows",
+    "compatible_slugs": [
+        "codex-viteplus-macos-workflows"
+    ],
+    "branch": "codex/viteplus-macos-workflows",
+    "candidate_commit": "06d8e0be6943df90c8983cc1bd8198fb82b59adc",
+    "accepted_feature_tip": "06d8e0be6943df90c8983cc1bd8198fb82b59adc",
+    "accepted_main_tip": "085822a149f0928716c8d595fcc082d9577fb2fe",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
