@@ -110,6 +110,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(DesktopRuntime::new())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
             app.handle()
                 .set_activation_policy(tauri::ActivationPolicy::Accessory)?;
             let runtime = app.state::<DesktopRuntime>();
