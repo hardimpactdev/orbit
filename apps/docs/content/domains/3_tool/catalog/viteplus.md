@@ -17,10 +17,10 @@ These fields describe the VitePlus tool's identity, backend, and support model i
 ## Capabilities
 
 `viteplus` supports install, update, remove, probe, and safe adoption on Linux
-and macOS. Orbit uses the managed node user. Fresh installs use
-`~/.local/share/vite-plus/bin`; older installs use `~/.vite-plus/bin`.
-Vite+ owns LTS Node.js and the `node`, `npm`, and `npx` shims. Bun is a separate
-Orbit-managed baseline and is not auto-downloaded by Vite+.
+and macOS. Orbit installs the shared CLI and default LTS environment under
+`/opt/orbit/vite-plus`. App and workspace commands set an isolated per-runtime
+user `VP_HOME`. Vite+ owns Node.js and the `node`, `npm`, and `npx` shims. Bun
+is a separate Orbit-managed baseline and is not auto-downloaded by Vite+.
 
 ## Credentials
 
@@ -40,5 +40,7 @@ fields.
 ## Doctor Relationship
 
 Tool doctor verifies executable `vp`, `node`, `npm`, and `npx` links and runs
-their version commands. Removal runs `vp implode --yes` before deleting stable
-host links. A missing or unhealthy baseline is role drift.
+their version commands. Install, update, and remove replace or delete only
+stable host links that Orbit can identify as Vite+ links. Removal deletes those
+links before `vp implode --yes`, so deleted targets do not hide stale links. A
+missing or unhealthy baseline is role drift.
