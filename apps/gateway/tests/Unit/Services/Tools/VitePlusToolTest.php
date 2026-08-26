@@ -81,5 +81,7 @@ it('updates, removes, adopts, and probes the stable viteplus entry points', func
     expect($tool->removeScript())
         ->toContain('is_orbit_viteplus_link "${link}"')
         ->toContain('/opt/orbit/vite-plus/*')
-        ->toContain('rm -f "${link}"');
+        ->toContain('rm -f "${link}"')
+        ->toContain('implode --yes || test ! -e "${VP}"')
+        ->toContain('sudo rm -rf /opt/orbit/vite-plus');
 });

@@ -77,7 +77,12 @@ final class VitePlusTool extends BaseTool
                 link="/usr/local/bin/${binary}"
                 if is_orbit_viteplus_link "${link}"; then sudo rm -f "${link}"; fi
             done
-            if [ -n "${VP}" ]; then sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" implode --yes; fi
+            if [ "${VP}" = /opt/orbit/vite-plus/bin/vp ]; then
+                sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" implode --yes || test ! -e "${VP}"
+                sudo rm -rf /opt/orbit/vite-plus
+            elif [ -n "${VP}" ]; then
+                sudo -u "${MANAGED_USER}" -H "${VP}" implode --yes
+            fi
             BASH);
     }
 
