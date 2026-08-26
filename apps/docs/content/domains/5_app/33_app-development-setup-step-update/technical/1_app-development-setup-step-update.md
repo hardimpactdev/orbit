@@ -10,7 +10,7 @@ The command updates the selected app-owned default by ID. It accepts the
 signature shown on the public page; supplied fields replace command, order, or
 timeout, and omitted fields remain unchanged. It writes no instance rows and
 does not execute or migrate existing pipelines. New app-dev instances use the
-updated defaults. Unknown IDs return `app.setup_step_not_found`; denied calls
+updated defaults. Unknown IDs return `app.development_setup_step_not_found`; denied calls
 return `authorization_failed`.
 
 ## Renderers

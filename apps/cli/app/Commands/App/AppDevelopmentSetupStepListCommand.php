@@ -33,11 +33,16 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
         $steps = is_array($data['steps'] ?? null) ? $data['steps'] : [];
         $rows = array_values(array_filter($steps, is_array(...)));
         $this->line("Development setup defaults for {$app}:");
+        if ($rows === []) {
+            $this->line('No development setup defaults found.');
+
+            return self::SUCCESS;
+        }
         table(headers: ['ID', 'ORDER', 'COMMAND', 'TIMEOUT'], rows: array_map(static fn (array $step): array => [
             self::field($step, 'id'),
-            self::firstField($step, 'sort_order', 'order'),
+            self::field($step, 'order'),
             self::field($step, 'command'),
-            self::firstField($step, 'timeout_seconds', 'timeout').'s',
+            self::field($step, 'timeout_seconds').'s',
         ], $rows));
 
         return self::SUCCESS;
@@ -50,12 +55,5 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
         }
 
         return (string) $step[$key];
-    }
-
-    private static function firstField(array $step, string $first, string $second): string
-    {
-        $value = self::field($step, $first);
-
-        return $value !== '—' ? $value : self::field($step, $second);
     }
 }

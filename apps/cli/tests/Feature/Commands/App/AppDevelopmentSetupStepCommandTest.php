@@ -57,7 +57,7 @@ it('resolves the app from the orbit marker when the selector is omitted', functi
 
 it('lists defaults in a setup-step table', function (): void {
     fakeGateway(fakeSuccessEnvelope([
-        'steps' => [['id' => 3, 'sort_order' => 1, 'command' => 'bun install', 'timeout_seconds' => 600]],
+        'steps' => [['id' => 3, 'order' => 1, 'command' => 'bun install', 'timeout_seconds' => 600]],
     ]));
 
     [$exitCode, $output] = runCommand(test: $this, command: 'app-development-setup-step:list', params: [
@@ -116,6 +116,23 @@ it('removes defaults with force consent source', function (): void {
         ),
     );
     expect($exitCode)->toBe(0);
+});
+
+it('fails closed when interactive removal confirmation is declined', function (): void {
+    fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3]]));
+
+    $this
+        ->artisan('app-development-setup-step:remove', [
+            'app' => 'fitta',
+            'step' => '3',
+        ])
+        ->expectsConfirmation(
+            'Remove this app development setup default?',
+            'no',
+        )
+        ->assertFailed();
+
+    Http::assertNothingSent();
 });
 
 it('rejects invalid values without gateway io', function (): void {

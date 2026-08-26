@@ -10,7 +10,7 @@ The command removes one app-owned default by ID after `--force` consent and
 `app:write` authorization through a visible app instance. It does not contact
 nodes, execute a step, or alter any existing instance pipeline. New app-dev
 instances no longer receive the removed default. Unknown IDs return
-`app.setup_step_not_found`; missing consent returns the shared destructive
+`app.development_setup_step_not_found`; missing consent returns the shared destructive
 confirmation failure.
 
 ## Renderers

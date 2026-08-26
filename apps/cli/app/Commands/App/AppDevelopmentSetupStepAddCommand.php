@@ -53,6 +53,8 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
         $step = is_array($data['step'] ?? null) ? $data['step'] : [];
         $this->line('✓ Added development setup default '.self::field($step, 'id')." for app '{$app}'.");
         $this->line('Command: '.self::field($step, 'command'));
+        $this->line('Order: '.self::field($step, 'order'));
+        $this->line('Timeout: '.self::field($step, 'timeout_seconds').'s');
 
         return self::SUCCESS;
     }

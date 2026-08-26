@@ -247,36 +247,45 @@ describe('app development setup step API', function (): void {
         $foreign = AppDevelopmentSetupStep::factory()->for($other)->create();
 
         foreach ([
-            ['before' => 0],
-            ['after' => 'nope'],
-            ['before' => $step->id, 'after' => $step->id],
-            ['before' => 999_999],
-        ] as $input) {
-            $this->postJson(
-                "/api/apps/{$app->name}/development-setup-steps",
-                ['command' => 'x'] + $input,
+            ['input' => ['before' => 0], 'field' => 'before'],
+            ['input' => ['after' => 'nope'], 'field' => 'after'],
+            ['input' => ['before' => $step->id, 'after' => $step->id], 'field' => 'before'],
+            ['input' => ['before' => 999_999], 'field' => 'before'],
+        ] as $case) {
+            $this
+                ->postJson(
+                    "/api/apps/{$app->name}/development-setup-steps",
+                    ['command' => 'x'] + $case['input'],
+                    app_defaults_api_headers(),
+                )
+                ->assertUnprocessable()
+                ->assertJsonPath('error.code', 'validation_failed')
+                ->assertJsonPath('error.meta.field', $case['field']);
+        }
+        $this
+            ->patchJson(
+                "/api/apps/{$app->name}/development-setup-steps/{$step->id}",
+                ['before' => $step->id, 'after' => $step->id],
                 app_defaults_api_headers(),
             )
-                ->assertUnprocessable();
-        }
-        $this->patchJson(
-            "/api/apps/{$app->name}/development-setup-steps/{$step->id}",
-            ['before' => $step->id, 'after' => $step->id],
-            app_defaults_api_headers(),
-        )
-            ->assertUnprocessable();
-        $this->postJson(
-            "/api/apps/{$app->name}/development-setup-steps",
-            ['command' => 'x', 'before' => $foreign->id],
-            app_defaults_api_headers(),
-        )
-            ->assertUnprocessable();
-        $this->patchJson(
-            "/api/apps/{$app->name}/development-setup-steps/{$step->id}",
-            ['after' => $foreign->id],
-            app_defaults_api_headers(),
-        )
-            ->assertUnprocessable();
+            ->assertUnprocessable()
+            ->assertJsonPath('error.meta.field', 'before');
+        $this
+            ->postJson(
+                "/api/apps/{$app->name}/development-setup-steps",
+                ['command' => 'x', 'before' => $foreign->id],
+                app_defaults_api_headers(),
+            )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.meta.field', 'before');
+        $this
+            ->patchJson(
+                "/api/apps/{$app->name}/development-setup-steps/{$step->id}",
+                ['after' => $foreign->id],
+                app_defaults_api_headers(),
+            )
+            ->assertUnprocessable()
+            ->assertJsonPath('error.meta.field', 'after');
     });
 
     it('authorizes through any owned instance, including a non-first instance', function (): void {

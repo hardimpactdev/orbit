@@ -57,29 +57,40 @@ final class AppDevelopmentSetupStepController implements Loggable
         $input = $request->json()->all();
         $command = trim((string) ($input['command'] ?? ''));
         if ($command === '') {
-            return $this->error('validation_failed', 'Command is required.', 422);
+            return $this->error('validation_failed', 'Command is required.', 422, ['field' => 'command']);
         }
         $timeout = $this->positive($input['timeout'] ?? 600);
         if ($timeout === null) {
-            return $this->error('validation_failed', 'Timeout must be a positive integer.', 422);
+            return $this->error('validation_failed', 'Timeout must be a positive integer.', 422, [
+                'field' => 'timeout',
+            ]);
         }
         $before = $this->anchor($input, 'before');
         $after = $this->anchor($input, 'after');
         if ($before === false || $after === false) {
-            return $this->error('app.development_setup_step_invalid_anchor', 'Anchor must be a positive integer.', 422);
+            return $this->error('validation_failed', 'Anchor must be a positive integer.', 422, [
+                'field' => $before === false ? 'before' : 'after',
+            ]);
         }
         if ($before !== null && $after !== null) {
-            return $this->error('validation_failed', 'Both before and after cannot be supplied.', 422);
+            return $this->error('validation_failed', 'Both before and after cannot be supplied.', 422, [
+                'field' => 'before',
+            ]);
         }
         try {
             $step = $this->add->handle($target->id, $command, $timeout, $before, $after);
         } catch (\InvalidArgumentException $e) {
-            return $this->error('validation_failed', $e->getMessage(), 422);
+            return $this->error('validation_failed', $e->getMessage(), 422, [
+                'field' => $before !== null ? 'before' : 'after',
+            ]);
         }
         $this->activitySubject = $step;
 
         return response()->json([
-            'success' => ['data' => ['action' => 'added', 'step' => $this->payload($step)], 'meta' => []],
+            'success' => [
+                'data' => ['action' => 'added', 'step' => $this->payload($step, $target->name)],
+                'meta' => [],
+            ],
         ], 201);
     }
 
@@ -96,20 +107,27 @@ final class AppDevelopmentSetupStepController implements Loggable
         }
         $input = $request->json()->all();
         if ($input === []) {
-            return $this->error('validation_failed', 'At least one setup step value is required.', 422);
+            return $this->error('validation_failed', 'At least one setup step value is required.', 422, [
+                'field' => 'step',
+            ]);
         }
         $command = array_key_exists('command', $input) ? trim((string) $input['command']) : null;
         $timeout = array_key_exists('timeout', $input) ? $this->positive($input['timeout']) : null;
         if ($command === '' || array_key_exists('timeout', $input) && $timeout === null) {
-            return $this->error('validation_failed', 'Invalid setup step values.', 422);
+            return $this->error('validation_failed', 'Invalid setup step values.', 422, [
+                'field' => $command === '' ? 'command' : 'timeout',
+            ]);
         }
         $before = $this->anchor($input, 'before');
         $after = $this->anchor($input, 'after');
         if ($before === false || $after === false || $before !== null && $after !== null) {
+            $field = $before === false || $before !== null ? 'before' : 'after';
+
             return $this->error(
-                'app.development_setup_step_invalid_anchor',
+                'validation_failed',
                 'Provide one valid before or after anchor.',
                 422,
+                ['field' => $field],
             );
         }
         try {
@@ -121,12 +139,17 @@ final class AppDevelopmentSetupStepController implements Loggable
                 $after,
             );
         } catch (\InvalidArgumentException $e) {
-            return $this->error('validation_failed', $e->getMessage(), 422);
+            return $this->error('validation_failed', $e->getMessage(), 422, [
+                'field' => $before !== null ? 'before' : 'after',
+            ]);
         }
         $this->activitySubject = $model;
 
         return response()->json([
-            'success' => ['data' => ['action' => 'updated', 'step' => $this->payload($model)], 'meta' => []],
+            'success' => [
+                'data' => ['action' => 'updated', 'step' => $this->payload($model, $target->name)],
+                'meta' => [],
+            ],
         ]);
     }
 
@@ -149,7 +172,7 @@ final class AppDevelopmentSetupStepController implements Loggable
         if (! $model instanceof AppDevelopmentSetupStep) {
             return $this->error('app.development_setup_step_not_found', 'Setup step was not found.', 404);
         }
-        $removed = $this->payload($model);
+        $removed = $this->payload($model, $target->name);
         $this->activitySubject = $model;
         $this->remove->handle($model);
 
@@ -158,7 +181,7 @@ final class AppDevelopmentSetupStepController implements Loggable
 
     private function target(string $selector, Request $request, string $permission): App|JsonResponse
     {
-        $app = App::query()->with(['instances', 'developmentSetupSteps'])->where('name', $selector)->first();
+        $app = App::query()->with('instances')->where('name', $selector)->first();
         if (! $app instanceof App) {
             return $this->error('app.not_found', "App '{$selector}' was not found.", 404);
         }
@@ -195,7 +218,7 @@ final class AppDevelopmentSetupStepController implements Loggable
                     'steps' => $app
                         ->developmentSetupSteps()
                         ->get()
-                        ->map($this->payload(...))
+                        ->map(fn (AppDevelopmentSetupStep $step): array => $this->payload($step, $app->name))
                         ->values()
                         ->all(),
                 ],
@@ -204,11 +227,11 @@ final class AppDevelopmentSetupStepController implements Loggable
         ]);
     }
 
-    private function payload(AppDevelopmentSetupStep $s): array
+    private function payload(AppDevelopmentSetupStep $s, ?string $appName = null): array
     {
         return [
             'id' => $s->id,
-            'app' => $s->app?->name,
+            'app' => $appName,
             'order' => $s->sort_order,
             'command' => $s->command,
             'timeout_seconds' => $s->timeout_seconds,

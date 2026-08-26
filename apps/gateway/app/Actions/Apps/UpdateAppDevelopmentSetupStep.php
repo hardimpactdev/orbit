@@ -74,7 +74,6 @@ final readonly class UpdateAppDevelopmentSetupStep
 
                 return $step->refresh();
             }
-            $step->save();
 
             return $step->refresh();
         });

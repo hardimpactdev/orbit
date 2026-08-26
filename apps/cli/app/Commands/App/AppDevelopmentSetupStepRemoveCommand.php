@@ -25,23 +25,22 @@ final class AppDevelopmentSetupStepRemoveCommand extends AppGatewayCommand
         if (! is_string($step) || ! ctype_digit($step) || (int) $step < 1) {
             return $this->failValidation('step', 'Step must be a positive integer.');
         }
-        $source = 'prompt';
-        if ($this->option('force')) {
-            $source = 'force';
-        }
-        if (
-            $source === 'prompt'
-            && ! $this->wantsJson()
-            && $this->input->isInteractive()
-            && confirm(label: 'Remove this app development setup default?', default: false)
-        ) {
+        $source = 'force';
+        if (! $this->option('force')) {
+            if (
+                $this->wantsJson()
+                || ! $this->input->isInteractive()
+                || ! confirm(
+                    label: 'Remove this app development setup default?',
+                    default: false,
+                )
+            ) {
+                return $this->failValidation(
+                    'force',
+                    'This is a destructive operation. Use --force or confirm the prompt.',
+                );
+            }
             $source = 'prompt';
-        }
-        if ($source === 'prompt' && ($this->wantsJson() || ! $this->input->isInteractive())) {
-            return $this->failValidation(
-                'force',
-                'This is a destructive operation. Use --force or confirm the prompt.',
-            );
         }
         try {
             $response = $this->gatewayDelete($this->apiProjectPath($app, "/development-setup-steps/{$step}"), [
