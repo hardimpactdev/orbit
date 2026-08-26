@@ -7,8 +7,8 @@ The CLI includes an MCP server that lets AI assistants search, browse, view, and
 ## Setup
 
 ```bash
-shadcn mcp        # start the MCP server (stdio)
-shadcn mcp init   # write config for your editor
+vp dlx shadcn mcp        # start the MCP server (stdio)
+vp dlx shadcn mcp init   # write config for your editor
 ```
 
 Editor config files:
@@ -25,7 +25,7 @@ Editor config files:
 
 ## Tools
 
-> **Tip:** MCP tools handle registry operations (search, view, install). For project configuration (aliases, framework, Tailwind version), use `npx shadcn@latest info` — there is no MCP equivalent.
+> **Tip:** MCP tools handle registry operations (search, view, install). For project configuration (aliases, framework, Tailwind version), use `vp dlx shadcn info` — there is no MCP equivalent.
 
 ### `shadcn:get_project_registries`
 

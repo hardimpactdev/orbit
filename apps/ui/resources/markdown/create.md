@@ -28,7 +28,7 @@ guessing at a workaround.
 
 - PHP 8.4 or newer (`php -v`)
 - Composer 2 (`composer -V`)
-- Bun 1.3 or newer (`bun -v`)
+- VitePlus (`vp --version`)
 - Optionally Orbit or Herd for local HTTPS domains
 
 ## If you can spawn subagents, read this first

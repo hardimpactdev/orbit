@@ -75,6 +75,35 @@ it('tells agents to install the Playwright Chromium binary', function () {
         ->toContain('vp dlx playwright install chromium');
 });
 
+it('routes VitePlus and shadcn commands through the VitePlus runner', function () {
+    $create = file_get_contents(resource_path('markdown/create.md'));
+    $shadcnDirectory = new RecursiveDirectoryIterator(base_path('.agents/skills/shadcn'));
+    $shadcnFiles = new RecursiveIteratorIterator($shadcnDirectory);
+    $shadcn = '';
+
+    foreach ($shadcnFiles as $file) {
+        if ($file->isFile()) {
+            $shadcn .= file_get_contents($file->getPathname());
+        }
+    }
+    $react = file_get_contents(base_path('.agents/skills/react-best-practices/AGENTS.md'));
+    $pest = file_get_contents(base_path('.agents/skills/pest-testing/SKILL.md'));
+
+    expect($create)
+        ->toContain('vp --version')
+        ->not->toContain('Bun 1.3 or newer');
+
+    expect($shadcn)
+        ->toContain('vp dlx shadcn')
+        ->not->toMatch('/(?:npx shadcn|pnpm dlx shadcn|bunx(?: --bun)? shadcn|pnpm add|npm install)/');
+
+    expect($react)->toContain('vp dlx svgo')
+        ->not->toContain('npx svgo');
+
+    expect($pest)->toContain('vp dlx playwright install chromium')
+        ->not->toContain('bunx playwright install chromium');
+});
+
 it('makes the guide branch on the detected environment before writing .env', function () {
     $content = $this->get('/create.md')->getContent();
 

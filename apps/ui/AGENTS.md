@@ -171,7 +171,7 @@ lang/                     # Translation JSON files (when i18n enabled)
 ```bash
 composer dev              # Server, queue, logs, and vite — only when nothing else serves the app
 vp dev                    # VitePlus dev server only
-vp run build             # Production build: vp build && vp build --ssr
+vp run build              # Production build: vp build && vp build --ssr
 vp build                  # Client build only (no SSR bundle)
 vp check                  # Lint + format (Oxc)
 vp check --fix            # Auto-fix

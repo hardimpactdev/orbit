@@ -99,7 +99,7 @@ Browser tests run in real browsers for full integration testing:
 - Browser tests live in `tests/Browser/`. In this kit they are not part of `composer test`;
   run them with `composer test:browser` (builds assets first) or
   `vendor/bin/pest tests/Browser` against an existing build. They need the Playwright
-  Chromium binary: `bunx playwright install chromium` (one-time).
+  Chromium binary: `vp dlx playwright install chromium` (one-time).
 - Use Laravel features like `Event::fake()`, `assertAuthenticated()`, and model factories.
 - Use `RefreshDatabase` for clean state per test.
 - Interact with page: click, type, scroll, select, submit, drag-and-drop, touch gestures.
