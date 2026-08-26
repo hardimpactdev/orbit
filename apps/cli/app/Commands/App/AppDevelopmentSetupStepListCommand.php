@@ -17,23 +17,25 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
     public function handle(): int
     {
         $app = $this->stringArgument('app') ?? $this->appFromOrbitMarker();
-        if ($app === null)
+        if ($app === null) {
             return $this->failValidation('app', 'App is required.');
+        }
         try {
             $response = $this->gatewayGet($this->apiProjectPath($app, '/development-setup-steps'));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
-        if ($this->wantsJson())
+        if ($this->wantsJson()) {
             return $this->renderSuccess($response);
+        }
         $steps = $this->successData($response)['steps'] ?? [];
         $rows = is_array($steps) ? array_values(array_filter($steps, is_array(...))) : [];
         $this->line("Development setup defaults for {$app}:");
         table(headers: ['ID', 'ORDER', 'COMMAND', 'TIMEOUT'], rows: array_map(static fn (array $step): array => [
             self::field($step, 'id'),
-            self::field($step, 'sort_order') ?: self::field($step, 'order'),
+            self::firstField($step, 'sort_order', 'order'),
             self::field($step, 'command'),
-            (self::field($step, 'timeout_seconds') ?: self::field($step, 'timeout')).'s',
+            self::firstField($step, 'timeout_seconds', 'timeout').'s',
         ], $rows));
 
         return self::SUCCESS;
@@ -44,5 +46,12 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
         $value = $step[$key] ?? '';
 
         return is_scalar($value) && (string) $value !== '' ? (string) $value : '—';
+    }
+
+    private static function firstField(array $step, string $first, string $second): string
+    {
+        $value = self::field($step, $first);
+
+        return $value !== '—' ? $value : self::field($step, $second);
     }
 }

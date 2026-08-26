@@ -78,6 +78,12 @@ These rules govern all instance family commands.
   through the same host PHP, Composer, and Artisan routing used by deploy
   steps. Dotted selectors address the instance; a bare app selector is
   shorthand only when exactly one instance exists.
+- Apps may also own reusable development defaults through
+  `app-development-setup-step:*`. Orbit copies those rows only into a new
+  instance on an `app-dev` node; each copied row is independent instance-owned
+  policy. Editing app defaults never changes existing instances unless an
+  explicit migration is added later. App-prod copy, deployment inheritance,
+  releases, and zero-downtime behavior are outside this contract.
 - `instance:setup` is idempotent for an unchanged setup-step set. Re-running setup
   with no step changes returns the latest completed run instead of replaying
   commands.
@@ -388,6 +394,13 @@ Use these commands for setup steps. Codex App registration lives in the
 2. [`orbit instance-setup-step:add [instance]`](23_instance-setup-step-add/instance-setup-step-add.md)
 3. [`orbit instance-setup-step:list [instance]`](24_instance-setup-step-list/instance-setup-step-list.md)
 4. [`orbit instance-setup-step:remove [instance]`](25_instance-setup-step-remove/instance-setup-step-remove.md)
+
+### App Development Setup Defaults
+
+1. [`orbit app-development-setup-step:add [app]`](26_app-development-setup-step-add/app-development-setup-step-add.md)
+2. [`orbit app-development-setup-step:list [app]`](27_app-development-setup-step-list/app-development-setup-step-list.md)
+3. [`orbit app-development-setup-step:update [app]`](28_app-development-setup-step-update/app-development-setup-step-update.md)
+4. [`orbit app-development-setup-step:remove [app]`](29_app-development-setup-step-remove/app-development-setup-step-remove.md)
 
 ## Related
 

@@ -238,6 +238,11 @@ These boundaries define what the app and instance families own and what belongs 
   and ad-hoc app CLI use. `app-prod` does not own lifecycle for database, cache,
   agent, storage, or web runtime units; long-running units are represented by
   processes, while tools remain node-level capability records.
+- **App development setup default:** An ordered, reusable setup-step row owned by
+  an app. It is copied only into a newly created `app-dev` instance's existing
+  instance setup pipeline, then becomes an independent instance row. Later app
+  edits affect future instances only; existing instances need explicit
+  migration. App-prod copy and deployment inheritance are not implied.
 - **Setup boundary:** Instance setup steps may run finite host-toolchain commands
   against the instance source path. They must not represent long-running services,
   service images, scheduled jobs, database service lifecycle, or proxy routes;

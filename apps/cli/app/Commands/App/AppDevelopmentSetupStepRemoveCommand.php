@@ -17,25 +17,31 @@ final class AppDevelopmentSetupStepRemoveCommand extends AppGatewayCommand
     public function handle(): int
     {
         $app = $this->stringArgument('app') ?? $this->appFromOrbitMarker();
-        if ($app === null)
+        if ($app === null) {
             return $this->failValidation('app', 'App is required.');
+        }
         $step = $this->stringArgument('step');
-        if (! is_string($step) || ! ctype_digit($step) || (int) $step < 1)
+        if (! is_string($step) || ! ctype_digit($step) || (int) $step < 1) {
             return $this->failValidation('step', 'Step must be a positive integer.');
+        }
         $source = 'prompt';
-        if ($this->option('force'))
+        if ($this->option('force')) {
             $source = 'force';
-        elseif (
-            ! $this->wantsJson()
+        }
+        if (
+            $source === 'prompt'
+            && ! $this->wantsJson()
             && $this->input->isInteractive()
             && confirm(label: 'Remove this app development setup default?', default: false)
         ) {
             $source = 'prompt';
-        } else
+        }
+        if ($source === 'prompt' && ($this->wantsJson() || ! $this->input->isInteractive())) {
             return $this->failValidation(
                 'force',
                 'This is a destructive operation. Use --force or confirm the prompt.',
             );
+        }
         try {
             $response = $this->gatewayDelete($this->apiProjectPath($app, "/development-setup-steps/{$step}"), [
                 'destructive_consent' => true,
@@ -44,8 +50,9 @@ final class AppDevelopmentSetupStepRemoveCommand extends AppGatewayCommand
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
-        if ($this->wantsJson())
+        if ($this->wantsJson()) {
             return $this->renderSuccess($response);
+        }
         $this->line("✓ Removed development setup default {$step} from app '{$app}'.");
 
         return self::SUCCESS;
