@@ -52,6 +52,7 @@ describe('NodeConverger', function (): void {
             ->toBe(['setup'])
             ->and(collect($result->actions())->pluck('details.tool')->filter()->unique()->sort()->values()->all())
             ->toBe([
+                'bun',
                 'caddy',
                 'composer',
                 'docker',
@@ -65,13 +66,23 @@ describe('NodeConverger', function (): void {
             ->and(
                 NodeTool::query()
                     ->where('node_id', $node->id)
-                    ->whereIn('name', ['caddy', 'composer', 'docker', 'gh', 'git', 'laravel-installer', 'php-cli'])
+                    ->whereIn('name', [
+                        'bun',
+                        'caddy',
+                        'composer',
+                        'docker',
+                        'gh',
+                        'git',
+                        'laravel-installer',
+                        'php-cli',
+                    ])
                     ->pluck('name')
                     ->sort()
                     ->values()
                     ->all(),
             )
             ->toBe([
+                'bun',
                 'caddy',
                 'composer',
                 'docker',
@@ -85,8 +96,8 @@ describe('NodeConverger', function (): void {
             ->not->toContain(' orbit doctor ')
             // Capability batch probes plus dedicated php-cli runtime probes.
             ->and($shell->probeScripts())->toHaveCount(4)
-            // One install/repair path per app-dev baseline tool (7 tools).
-            ->and($shell->repairScripts())->toHaveCount(7);
+            // One install/repair path per app-dev baseline tool (8 tools).
+            ->and($shell->repairScripts())->toHaveCount(8);
     });
 
     it('keeps setup drift visible when repair fails', function (): void {
@@ -160,6 +171,13 @@ function createNodeConvergerAppDevToolRows(Node $node): void
             'expected_state' => 'installed',
         ]);
     }
+
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'bun',
+        'expected_state' => 'installed',
+        'config' => ['managed_user' => is_string($node->user) && trim($node->user) !== '' ? $node->user : 'orbit'],
+    ]);
 }
 
 final class NodeConvergerSetupRemoteShell implements RemoteShell
@@ -173,6 +191,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         'docker' => false,
         'php-cli' => false,
         'composer' => false,
+        'bun' => false,
         'gh' => false,
         'git' => false,
         'laravel-installer' => false,
@@ -190,7 +209,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         }
 
         if ($this->isProbeScript($script)) {
-            return $this->probeResult($node, $options);
+            return $this->probeResult($node, $script, $options);
         }
 
         if (($tool = $this->toolForRepairScript($script)) !== null) {
@@ -225,13 +244,13 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
     /**
      * @param  array<string, mixed>  $options
      */
-    private function probeResult(Node $node, array $options): RemoteShellResult
+    private function probeResult(Node $node, string $script, array $options): RemoteShellResult
     {
         $payload = json_decode((string) ($options['input'] ?? ''), associative: true);
 
         if (! is_array($payload)) {
             $payload = [
-                'tools' => array_fill_keys(array_keys($this->installed), []),
+                'tools' => array_fill_keys($this->requestedToolNames($script), []),
             ];
         }
 
@@ -269,7 +288,11 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
             '/usr/local/bin/composer' => $this->installedProbe(
                 'composer',
-                "/usr/local/bin/composer\tComposer version 2.9.0\n",
+                $this->singleProbeOutput('composer', '/usr/local/bin/composer', 'Composer version 2.9.0'),
+            ),
+            '/usr/local/bin/bun' => $this->installedProbe(
+                'bun',
+                $this->singleProbeOutput('bun', '/usr/local/bin/bun', '1.2.3'),
             ),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
             'git' => $this->installedProbe('git', "/usr/bin/git\tgit version 2.53.0\n"),
@@ -279,6 +302,21 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             ),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
+    }
+
+    /** @return list<string> */
+    private function requestedToolNames(string $script): array
+    {
+        if (preg_match("/done <<'ORBIT_TOOLS'\\R(?<names>.*?)\\RORBIT_TOOLS/s", $script, $matches) !== 1) {
+            return [];
+        }
+
+        $names = preg_split('/\R/', (string) $matches['names']);
+
+        return array_values(array_filter(array_map(
+            trim(...),
+            is_array($names) ? $names : [],
+        )));
     }
 
     /**
@@ -326,6 +364,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         }
 
         $installedPayloads = [
+            'bun' => ['/usr/local/bin/bun', '1.2.3'],
             'composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'docker' => ['/usr/bin/docker', 'Docker version 27.0.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
@@ -360,6 +399,24 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         return $this->installed[$tool]
             ? new RemoteShellResult(exitCode: 0, stdout: $stdout, stderr: '', durationMs: 1)
             : new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    private function singleProbeOutput(string $name, string $path, string $version): string
+    {
+        return json_encode([
+            'name' => $name,
+            'installed' => true,
+            'path' => $path,
+            'version' => $version,
+            'state' => 'unknown',
+            'config_exists' => null,
+            'config_hash' => null,
+            'secret_exists' => null,
+            'secret_hash' => null,
+            'container_exists' => null,
+            'container_state' => null,
+            'container_spec_hash' => null,
+        ], JSON_THROW_ON_ERROR)."\n";
     }
 
     private function isProbeScript(string $script): bool
@@ -399,6 +456,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
                 => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
+            str_contains($script, '# orbit install bun') => 'bun',
             str_contains($script, '# orbit install docker') => 'docker',
             str_contains($script, '# orbit install gh') => 'gh',
             str_contains($script, '# orbit install git') => 'git',

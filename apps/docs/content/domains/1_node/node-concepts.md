@@ -290,7 +290,7 @@ Baseline convergence first stores the gateway intent for the selected role.
 When `node:new` provisions a real managed workload host, node setup then
 applies the overlapping node and tool intent to the host before activation. The
 initial app-development setup slice applies the role baseline tools
-`caddy`, `php-cli`, `composer`, `git`, `gh`, and `laravel-installer` through the
+`caddy`, `php-cli`, `composer`, `bun`, `git`, `gh`, and `laravel-installer` through the
 shared convergence path. After a node is active, `doctor --restore` uses the
 same internal path for overlapping safe repairs while keeping family-specific
 issue ownership and output.

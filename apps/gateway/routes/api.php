@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\AppRootController;
 use App\Http\Controllers\Api\AppRuntimeMountController;
 use App\Http\Controllers\Api\AppSetupController;
 use App\Http\Controllers\Api\AppSetupStepController;
+use App\Http\Controllers\Api\AppDevelopmentSetupStepController;
 use App\Http\Controllers\Api\AppShowController;
 use App\Http\Controllers\Api\AppStoreController;
 use App\Http\Controllers\Api\AppWebSocketController;
@@ -274,6 +275,10 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/workspaces/{name}', WorkspaceShowController::class);
         Route::get('/apps', AppListController::class);
         Route::post('/apps', AppStoreController::class);
+        Route::get('/apps/{app}/development-setup-steps', [AppDevelopmentSetupStepController::class, 'index']);
+        Route::post('/apps/{app}/development-setup-steps', [AppDevelopmentSetupStepController::class, 'store']);
+        Route::patch('/apps/{app}/development-setup-steps/{step}', [AppDevelopmentSetupStepController::class, 'update']);
+        Route::delete('/apps/{app}/development-setup-steps/{step}', [AppDevelopmentSetupStepController::class, 'destroy']);
         Route::post('/instances/register', AppRegisterController::class);
         Route::get('/instances', [InstanceController::class, 'all']);
         Route::middleware(RequireGatewayExtension::class.':codex')->group(function (): void {

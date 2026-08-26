@@ -31,6 +31,10 @@ final class NodePermissionRegistry
             'app:write',
             'app:remove',
             'app:new',
+            'app-development-setup-step:add',
+            'app-development-setup-step:list',
+            'app-development-setup-step:update',
+            'app-development-setup-step:remove',
 
             // Instance
             'instance:*',
@@ -258,7 +262,8 @@ final class NodePermissionRegistry
     {
         return [
             'activity:read' => ['activity:list', 'activity:show'],
-            'app:read' => ['app:list', 'app:show'],
+            'app:read' => ['app:list', 'app:show', 'app-development-setup-step:list'],
+            'app:write' => ['app-development-setup-step:add', 'app-development-setup-step:update', 'app-development-setup-step:remove'],
             'instance:read' => ['instance:list', 'instance:show', 'instance-setup-step:list'],
             'instance:write' => ['instance:setup', 'instance-setup-step:add', 'instance-setup-step:remove'],
             'database:query:write' => ['database:query'],

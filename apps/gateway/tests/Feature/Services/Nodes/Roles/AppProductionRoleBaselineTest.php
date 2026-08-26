@@ -235,17 +235,17 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
-            ->toBe(4);
+            ->toBe(5);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'git'])
+                ->whereIn('name', ['php-cli', 'composer', 'bun', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
             ->toBe(0);

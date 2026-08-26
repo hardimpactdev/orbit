@@ -21,6 +21,10 @@ use App\Commands\App\AppSetupCommand;
 use App\Commands\App\AppSetupStepAddCommand;
 use App\Commands\App\AppSetupStepListCommand;
 use App\Commands\App\AppSetupStepRemoveCommand;
+use App\Commands\App\AppDevelopmentSetupStepAddCommand;
+use App\Commands\App\AppDevelopmentSetupStepListCommand;
+use App\Commands\App\AppDevelopmentSetupStepUpdateCommand;
+use App\Commands\App\AppDevelopmentSetupStepRemoveCommand;
 use App\Commands\App\AppShowCommand;
 use App\Commands\App\AppWebSocketCredentialsCommand;
 use App\Commands\App\AppWebSocketDisableCommand;
@@ -252,6 +256,10 @@ return [
         AppSetupStepAddCommand::class,
         AppSetupStepListCommand::class,
         AppSetupStepRemoveCommand::class,
+        AppDevelopmentSetupStepAddCommand::class,
+        AppDevelopmentSetupStepListCommand::class,
+        AppDevelopmentSetupStepUpdateCommand::class,
+        AppDevelopmentSetupStepRemoveCommand::class,
         AppShowCommand::class,
         AppWebSocketCredentialsCommand::class,
         AppWebSocketDisableCommand::class,

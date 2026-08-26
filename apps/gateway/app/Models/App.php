@@ -94,6 +94,12 @@ class App extends Model
         return $instances;
     }
 
+    /** @return HasMany<AppDevelopmentSetupStep, $this> */
+    public function developmentSetupSteps(): HasMany
+    {
+        return $this->hasMany(AppDevelopmentSetupStep::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     /**
      * @return MorphMany<Process, $this>
      */
