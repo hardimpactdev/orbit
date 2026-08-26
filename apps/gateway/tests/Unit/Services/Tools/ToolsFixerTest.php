@@ -521,7 +521,7 @@ describe('ToolsFixer', function (): void {
         ));
 
         expect($action)->not->toBeNull()->and($shell->scripts)->not->toBe([]);
-        expect($shell->scripts[0] ?? '')->toContain('curl -fsSL https://vite.plus | bash');
+        expect($shell->scripts[0] ?? '')->toContain('# orbit install viteplus');
     });
 
     it('does not repair stale service process names as tool rows', function (string $toolName, string $key): void {

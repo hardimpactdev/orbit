@@ -203,7 +203,9 @@ final readonly class AppCommandRouter
             '/bin',
         ]);
 
-        return 'VP_HOME='.escapeshellarg("{$home}/.local/share/vite-plus").' PATH='.escapeshellarg($pathPrefix).':$PATH ';
+        return (
+            'VP_HOME='.escapeshellarg("{$home}/.local/share/vite-plus").' PATH='.escapeshellarg($pathPrefix).':$PATH '
+        );
     }
 
     private function homeDirectory(App $app, string $runtimeUser, ?Instance $instance = null): string

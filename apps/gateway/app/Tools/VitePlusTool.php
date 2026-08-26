@@ -73,11 +73,11 @@ final class VitePlusTool extends BaseTool
             for candidate in /opt/orbit/vite-plus/bin/vp "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
                 if [ -x "${candidate}" ]; then VP="${candidate}"; break; fi
             done
-            if [ -n "${VP}" ]; then sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" implode --yes; fi
             for binary in vp node npm npx; do
                 link="/usr/local/bin/${binary}"
-                if [ -L "${link}" ] && readlink -f "${link}" 2>/dev/null | grep -q '^/opt/orbit/vite-plus/'; then sudo rm -f "${link}"; fi
+                if is_orbit_viteplus_link "${link}"; then sudo rm -f "${link}"; fi
             done
+            if [ -n "${VP}" ]; then sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" implode --yes; fi
             BASH);
     }
 
@@ -99,7 +99,7 @@ final class VitePlusTool extends BaseTool
 
         $refresh = <<<'BASH'
             VP=""
-            for candidate in "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
+            for candidate in /opt/orbit/vite-plus/bin/vp "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
                 if [ -x "${candidate}" ]; then VP="${candidate}"; break; fi
             done
             if [ -z "${VP}" ]; then
@@ -111,16 +111,28 @@ final class VitePlusTool extends BaseTool
             for binary in vp node npm npx; do
                 link="/usr/local/bin/${binary}"
                 target="${VP_BIN}/${binary}"
-                if [ ! -e "${link}" ] || { [ -L "${link}" ] && readlink -f "${link}" 2>/dev/null | grep -q '^/opt/orbit/vite-plus/'; }; then
+                if { [ ! -e "${link}" ] && [ ! -L "${link}" ]; } || is_orbit_viteplus_link "${link}"; then
                     sudo ln -sfn "${target}" "${link}"
                 fi
             done
+            BASH;
+
+        $linkGuard = <<<'BASH'
+            is_orbit_viteplus_link() {
+                [ -L "$1" ] || return 1
+                case "$(readlink "$1" 2>/dev/null || true)" in
+                    /opt/orbit/vite-plus/*|"${MANAGED_HOME}"/.local/share/vite-plus/*|"${MANAGED_HOME}"/.vite-plus/*) return 0 ;;
+                    *) return 1 ;;
+                esac
+            }
             BASH;
 
         return (
             "#!/usr/bin/env bash\n# orbit {$action} viteplus\nset -e\nMANAGED_USER="
             .escapeshellarg($user)
             ."\nif [ \"\${MANAGED_USER}\" = root ]; then MANAGED_HOME=/root; elif [ \"\$(uname -s)\" = Darwin ]; then MANAGED_HOME=\"/Users/\${MANAGED_USER}\"; else MANAGED_HOME=\"/home/\${MANAGED_USER}\"; fi\n"
+            .$linkGuard
+            ."\n"
             .str_replace('__REFRESH_LINKS__', $refresh, $body)
         );
     }

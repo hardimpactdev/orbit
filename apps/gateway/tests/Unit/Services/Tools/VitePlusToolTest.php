@@ -31,7 +31,7 @@ it('installs viteplus and its lts node environment for the managed user', functi
         ->and($script)
         ->toContain('VP_HOME=/opt/orbit/vite-plus')
         ->and($script)
-        ->toContain('readlink -f "${link}"')
+        ->toContain('is_orbit_viteplus_link "${link}"')
         ->and($script)
         ->toContain('nckrtl');
 
@@ -65,8 +65,8 @@ it('updates, removes, adopts, and probes the stable viteplus entry points', func
         ->toContain('vp upgrade')
         ->and($tool->removeScript())
         ->toContain('implode --yes')
-        ->and(strpos($tool->removeScript(), 'implode --yes'))
-        ->toBeLessThan(strpos($tool->removeScript(), 'rm -f'))
+        ->and(strpos(haystack: $tool->removeScript(), needle: 'rm -f'))
+        ->toBeLessThan(strpos(haystack: $tool->removeScript(), needle: 'implode --yes'))
         ->and($tool->probeMetadata())
         ->toMatchArray([
             'binary' => '/usr/local/bin/vp',
@@ -79,6 +79,7 @@ it('updates, removes, adopts, and probes the stable viteplus entry points', func
 
     expect($tool->removeScript())->toContain('if [ -n "${VP}" ]');
     expect($tool->removeScript())
-        ->toContain('readlink -f "${link}"')
-        ->toContain("grep -q '^/opt/orbit/vite-plus/'");
+        ->toContain('is_orbit_viteplus_link "${link}"')
+        ->toContain('/opt/orbit/vite-plus/*')
+        ->toContain('rm -f "${link}"');
 });
