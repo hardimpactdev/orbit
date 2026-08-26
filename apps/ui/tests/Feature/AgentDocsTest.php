@@ -46,7 +46,7 @@ it('serves the conventions separately from the setup guide', function () {
 
     expect($setup)->toContain('composer create-project')
         ->and($setup)->not->toContain('Quality gates')
-        ->and($setup)->not->toContain('vp dlx shadcn add');
+        ->and($setup)->not->toContain('bunx shadcn add');
 });
 
 it('serves the setup guide as markdown', function () {
@@ -60,19 +60,19 @@ it('includes the non-interactive setup commands in the guide', function () {
 
     expect($content)
         ->toContain('composer create-project')
-        ->toContain('vp run build')
+        ->toContain('bun run build')
         // `composer setup` is interactive, so agents must be steered away from it.
         ->toContain('Do not run `composer setup`');
 });
 
 it('tells agents to install the Playwright Chromium binary', function () {
-    // `vp install` brings in the playwright npm package, but the browser binary is a
+    // `bun install` brings in the playwright npm package, but the browser binary is a
     // separate download. Browser tests — and so `composer check` — fail without it.
     expect($this->get('/create.md')->getContent())
-        ->toContain('vp dlx playwright install chromium');
+        ->toContain('bunx playwright install chromium');
 
     expect($this->get('/conventions.md')->getContent())
-        ->toContain('vp dlx playwright install chromium');
+        ->toContain('bunx playwright install chromium');
 });
 
 it('makes the guide branch on the detected environment before writing .env', function () {
@@ -97,7 +97,7 @@ it('gives agents a parallel plan with an accurate critical path', function () {
     expect($content)
         ->toContain('If you can spawn subagents')
         // VITE_APP_NAME is read from .env and baked into the bundle, so the build
-        // genuinely waits on the .env join rather than only on `vp install`.
+        // genuinely waits on the .env join rather than only on `bun install`.
         ->toContain('VITE_APP_NAME')
         ->toContain('What must stay serial');
 

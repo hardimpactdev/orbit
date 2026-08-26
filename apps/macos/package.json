@@ -6,6 +6,5 @@
     },
     "devDependencies": {
         "@tauri-apps/cli": "^2.9.4"
-    },
-    "packageManager": "npm@11.17.0"
+    }
 }

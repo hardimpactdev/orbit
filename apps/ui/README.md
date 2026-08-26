@@ -19,15 +19,15 @@ To do it manually:
 cp .env.example .env
 # Edit .env: set APP_NAME, APP_URL, VITE_APP_URL (e.g. https://my-app.test)
 composer install
-vp install                 # does not modify the repository's Git hooks
-vp dlx playwright install chromium   # browser binary for Pest browser tests
+bun install                 # does not modify the repository's Git hooks
+bunx playwright install chromium   # browser binary for Pest browser tests
 php artisan key:generate
 touch database/database.sqlite
 php artisan migrate --force
-vp run build
+bun run build
 ```
 
-Orbit owns repository Git hooks at the monorepo root. The UI package's `vp install` runs
+Orbit owns repository Git hooks at the monorepo root. The UI package's `bun install` runs
 `vp config --no-hooks` and does not set or replace `core.hooksPath`. Run VitePlus checks
 through the UI Composer scripts or the root quality gate.
 

@@ -28,7 +28,7 @@ command -v orbit >/dev/null 2>&1 && echo "orbit"
 
 This is not a style preference. Orbit's runtime units inject `APP_URL`, `VITE_APP_URL`, and
 the `VITE_DEV_SERVER_KEY` / `VITE_DEV_SERVER_CERT` pair that Vite needs to serve assets over
-the Orbit domain. The same `vp run dev` started by Solo gets none of those, so HTTPS asset
+the Orbit domain. The same `bun run dev` started by Solo gets none of those, so HTTPS asset
 loading breaks and the page renders unstyled. Defining these processes in both places also
 runs each of them twice.
 
@@ -51,7 +51,7 @@ name: My App
 icon: null
 processes:
     Vite:
-        command: vp run dev
+        command: bun run dev
         auto_start: true
         restart_when_changed:
             - vite.config.ts

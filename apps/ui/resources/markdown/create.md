@@ -36,7 +36,7 @@ guessing at a workaround.
 Setup fans out well. The critical path is short:
 
 ```
-composer create-project  →  .env  →  vp run build  →  verify
+composer create-project  →  .env  →  bun run build  →  verify
 ```
 
 Everything else hangs off it. If you cannot spawn subagents, skip this section and follow the
@@ -56,20 +56,20 @@ Fan out. Nothing here depends on anything else here:
 
 | Task                                              | Owner           | Produces               |
 | ------------------------------------------------- | --------------- | ---------------------- |
-| `vp install && vp dlx playwright install chromium` | subagent        | —                      |
+| `bun install && bunx playwright install chromium` | subagent        | —                      |
 | register the site (Herd/Orbit addendum)           | subagent        | the app URL for `.env` |
 | git hooks (step 5)                                | subagent        | —                      |
 | ask the user for the project name                 | **main thread** | `APP_NAME` for `.env`  |
 
 Ask your questions while those run. That is the point — the main thread should never sit idle
-waiting on `vp install`.
+waiting on `bun install`.
 
 ### Join at .env
 
 `.env` needs both answers: the URL from the registration subagent and the name from the user.
 Write it once, when both are in. Do not write a placeholder and rewrite it later.
 
-`vp run build` depends on this join, not merely on `vp install`. `VITE_APP_NAME` is read from
+`bun run build` depends on this join, not merely on `bun install`. `VITE_APP_NAME` is read from
 `.env` and baked into the JS bundle as the document title suffix, so a build started before the
 name is set produces a bundle you have to discard.
 
@@ -83,7 +83,7 @@ name is set produces a bundle you have to discard.
 - `composer create-project` — everything depends on it.
 - `.env` before the site is registered — under Herd or Orbit the URL is not `localhost`, and you
   do not know it until registration returns.
-- `vp run build` before `.env` — the bundle would carry the wrong app name.
+- `bun run build` before `.env` — the bundle would carry the wrong app name.
 
 ## 1. Create the project
 
@@ -166,18 +166,18 @@ VITE_APP_URL=http://localhost:8000
 ## 4. Install frontend dependencies and build
 
 ```bash
-vp install
-vp dlx playwright install chromium
-vp run build
+bun install
+bunx playwright install chromium
+bun run build
 ```
 
-The `playwright` npm package comes in with `vp install`, but the Chromium binary it drives
+The `playwright` npm package comes in with `bun install`, but the Chromium binary it drives
 is a separate one-time download. Pest browser tests (`composer test:browser`, also part of
 `composer check`) fail without it.
 
 ## 5. Git hooks
 
-`vp install` in step 4 runs `vp config --no-hooks` via the package.json `prepare` script.
+`bun install` in step 4 runs `vp config --no-hooks` via the package.json `prepare` script.
 It does not modify `core.hooksPath`; Orbit's monorepo root owns repository hooks. Run the
 VitePlus checks through the UI Composer scripts or the root quality gate.
 

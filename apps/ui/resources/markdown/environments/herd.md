@@ -58,7 +58,7 @@ origin and the page loads unstyled.
 Herd already runs PHP, so the dev loop is just the asset server:
 
 ```bash
-vp run dev
+bun run dev
 ```
 
 If you also want the queue worker and log tailer, start them separately:

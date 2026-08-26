@@ -57,7 +57,7 @@ Orbit owns this project's processes. Register Vite and the queue worker as Orbit
 rather than starting them by hand, in Solo, or through `composer dev`:
 
 ```bash
-orbit process:add vite 'vp run dev --host' \
+orbit process:add vite 'vp dev --host' \
   --instance=my-app.development --restart-policy=on_failure
 
 orbit process:add queue 'php artisan queue:work --tries=3' \
@@ -76,8 +76,8 @@ using that hostname plus the actual bound port, so a fallback Vite port is recor
 automatically. `public/hot` must still advertise `https://<app-domain>:<vite-port>` —
 for example `https://my-app.nmbp:5173`.
 
-`vp run dev` or `vp run dev` without `--host` binds loopback, which phones and the FrankenPHP
-container cannot reach. The same `vp run dev` started outside Orbit also lacks the injected
+`vp dev` or `bun run dev` without `--host` binds loopback, which phones and the FrankenPHP
+container cannot reach. The same `vp dev` started outside Orbit also lacks the injected
 certificate, so assets fail to load and the page renders unstyled.
 
 Do not register a separate SSR process: in development the `vite` process above serves
@@ -92,7 +92,7 @@ Inspect and manage them with:
 
 ```bash
 orbit process:list --instance=my-app.development
-orbit process:update vite --command='vp run dev --host' --restart
+orbit process:update vite --command='vp dev --host' --restart
 orbit process:remove vite --instance=my-app.development
 ```
 
@@ -113,7 +113,7 @@ while Orbit activates it — poll until it turns `200` before diagnosing anythin
 URL — you should see the Launch homepage, styled. A local browser can look fine while a
 phone or VPN client stays unstyled: that is the listen-address failure above, not an
 `APP_URL` mismatch. Confirm `public/hot` still advertises `https://<app-domain>:<vite-port>`,
-then `orbit process:update vite --command='vp run dev --host' --restart`.
+then `orbit process:update vite --command='vp dev --host' --restart`.
 
 Useful when something looks wrong:
 
