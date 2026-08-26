@@ -1,0 +1,33 @@
+{
+    "id": "macos-app-icon-general",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=macos-app-icon-general",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.local/bin:/Users/nckrtl/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:/Users/nckrtl/.vite-plus/bin:/Users/nckrtl/.codex/tmp/arg0/codex-arg0hOPILv:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/nckrtl/.local/bin:/Users/nckrtl/.codeium/windsurf/bin:/Users/nckrtl/.grok/bin:/opt/homebrew/opt/mysql-client/bin:/Users/nckrtl/.opencode/bin:/Users/nckrtl/.nvm/versions/node/v24.13.0/bin:/Users/nckrtl/Library/pnpm:/Users/nckrtl/.antigravity/antigravity/bin:/Users/nckrtl/.config/composer/vendor/bin:/Users/nckrtl/.spin/bin:/Users/nckrtl/.bun/bin:/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Users/nckrtl/.orbstack/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-fix-macos-app-icon",
+        "window": "macos-app-icon-general",
+        "pane_id": "%6",
+        "pane_pid": 85626,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/fix-macos-app-icon",
+    "brief": "/Users/nckrtl/orbit/.worktrees/fix-macos-app-icon/.orbit/workers/briefs/macos-app-icon-general-review.md",
+    "status": "handoff",
+    "heartbeat_at": "2026-08-26T12:40:23Z",
+    "note": "corrected-review",
+    "started_at": "2026-08-26T12:20:07Z",
+    "exited_at": null,
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/fix-macos-app-icon/.orbit/workers/handoff/macos-app-icon-general.md"
+}
