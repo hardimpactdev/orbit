@@ -35,7 +35,7 @@ final class VitePlusTool extends BaseTool
             MANAGED_GROUP="$(id -gn "${MANAGED_USER}")"
             test -n "${MANAGED_GROUP}"
             sudo install -d -o "${MANAGED_USER}" -g "${MANAGED_GROUP}" "${MANAGED_HOME}/.local" "${MANAGED_HOME}/.local/share"
-            sudo install -d -m 0755 /opt/orbit /opt/orbit/vite-plus
+            sudo install -d -m 0755 /opt/orbit/vite-plus
             sudo chown -R "${MANAGED_USER}:${MANAGED_GROUP}" /opt/orbit/vite-plus
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus bash -lc 'curl -fsSL https://vite.plus | bash'
             VP="$(sudo -u "${MANAGED_USER}" -H bash -lc 'command -v vp' || true)"
@@ -47,6 +47,7 @@ final class VitePlusTool extends BaseTool
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env on
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env install lts
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env default lts
+            sudo chmod -R a+rX /opt/orbit/vite-plus
             __REFRESH_LINKS__
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" --version
             BASH);
@@ -61,6 +62,7 @@ final class VitePlusTool extends BaseTool
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env on
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env install lts
             sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env default lts
+            sudo chmod -R a+rX /opt/orbit/vite-plus
             __REFRESH_LINKS__
             BASH);
     }
@@ -89,9 +91,28 @@ final class VitePlusTool extends BaseTool
     #[\Override]
     public function probeMetadata(): array
     {
+        $managedLinksProbe = <<<'BASH'
+            for binary in vp node npm npx; do
+                link="/usr/local/bin/${binary}"
+                target="/opt/orbit/vite-plus/bin/${binary}"
+                test -L "${link}" || exit 1
+                test "$(readlink "${link}")" = "${target}" || exit 1
+                test -x "${target}" || exit 1
+                test -x "${link}" || exit 1
+            done
+            BASH;
+        $versionCommand = $managedLinksProbe."\n".<<<'BASH'
+            vp_version="$(/usr/local/bin/vp --version)" || exit 1
+            /usr/local/bin/node --version >/dev/null || exit 1
+            /usr/local/bin/npm --version >/dev/null || exit 1
+            /usr/local/bin/npx --version >/dev/null || exit 1
+            printf "%s\n" "${vp_version}"
+            BASH;
+
         return [
             'binary' => '/usr/local/bin/vp',
-            'version_command' => 'vp_version="$(/usr/local/bin/vp --version)" && test -x /usr/local/bin/node && test -x /usr/local/bin/npm && test -x /usr/local/bin/npx && /usr/local/bin/node --version >/dev/null && /usr/local/bin/npm --version >/dev/null && /usr/local/bin/npx --version >/dev/null && printf "%s\\n" "$vp_version"',
+            'probe' => $managedLinksProbe,
+            'version_command' => $versionCommand,
             'update_command' => $this->updateScript(),
         ];
     }
@@ -116,9 +137,21 @@ final class VitePlusTool extends BaseTool
             for binary in vp node npm npx; do
                 link="/usr/local/bin/${binary}"
                 target="${VP_BIN}/${binary}"
-                if { [ ! -e "${link}" ] && [ ! -L "${link}" ]; } || is_orbit_viteplus_link "${link}"; then
-                    sudo ln -sfn "${target}" "${link}"
+                if ! test -x "${target}"; then
+                    printf 'Vite+ source is missing or not executable: %s\n' "${target}" >&2
+                    exit 1
                 fi
+                if { [ -e "${link}" ] || [ -L "${link}" ]; } && ! is_orbit_viteplus_link "${link}"; then
+                    printf 'Vite+ link conflict: %s exists and is not an Orbit-managed Vite+ symlink.\n' "${link}" >&2
+                    exit 1
+                fi
+            done
+            for binary in vp node npm npx; do
+                link="/usr/local/bin/${binary}"
+                target="${VP_BIN}/${binary}"
+                sudo ln -sfn "${target}" "${link}"
+                test -L "${link}"
+                test -x "${link}"
             done
             BASH;
 
