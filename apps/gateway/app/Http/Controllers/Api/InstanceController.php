@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Contracts\Loggable;
 use App\Actions\Apps\CopyAppDevelopmentSetupSteps;
+use App\Contracts\Loggable;
 use App\Data\Apps\InstanceRuntimeRequirementsData;
 use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
@@ -20,9 +20,9 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use ValueError;
 
 final class InstanceController implements Loggable
@@ -50,7 +50,7 @@ final class InstanceController implements Loggable
 
         $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
 
-        if (! $callerIsGateway && ! $this->callerMayReadAnyInstance($caller)) {
+        if (!$callerIsGateway && !$this->callerMayReadAnyInstance($caller)) {
             return $this->authorizationFailed('instance:read');
         }
 
@@ -60,7 +60,7 @@ final class InstanceController implements Loggable
         if ($app !== null) {
             $targetApp = App::query()->where('name', $app)->first();
 
-            if (! $targetApp instanceof App) {
+            if (!$targetApp instanceof App) {
                 return $this->projectNotFound($app);
             }
 
@@ -70,30 +70,26 @@ final class InstanceController implements Loggable
 
         $instances = [];
 
-        foreach ($query
-            ->orderBy('app_id')
-            ->orderBy('name')
-            ->get() as $instance) {
-            if (! $instance instanceof Instance) {
+        foreach ($query->orderBy('app_id')->orderBy('name')->get() as $instance) {
+            if (!$instance instanceof Instance) {
                 continue;
             }
 
             $instances[] = $instance;
         }
 
-        $instances = array_values(array_filter(
-            $instances,
-            function (Instance $instance) use ($caller, $callerIsGateway): bool {
-                if ($instance->driver !== InstanceDriver::Orbit) {
-                    return $callerIsGateway;
-                }
+        $instances = array_values(array_filter($instances, function (Instance $instance) use (
+            $caller,
+            $callerIsGateway,
+        ): bool {
+            if ($instance->driver !== InstanceDriver::Orbit) {
+                return $callerIsGateway;
+            }
 
-                $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+            $servingNode = $this->workspacePlacement->nodeForInstance($instance);
 
-                return $servingNode instanceof Node
-                && $this->authorizer->allows($caller, $servingNode, 'instance:read');
-            },
-        ));
+            return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'instance:read');
+        }));
 
         return $this->success([
             'instances' => array_map($this->payloads->instance(...), $instances),
@@ -111,7 +107,7 @@ final class InstanceController implements Loggable
 
         $this->activitySubject = $targetApp;
 
-        if (! $targetApp instanceof App) {
+        if (!$targetApp instanceof App) {
             return $this->appNotFound($app);
         }
 
@@ -123,32 +119,28 @@ final class InstanceController implements Loggable
 
         $callerIsGateway = $this->nodeRoleAssignments->nodeIsGateway($caller);
 
-        if (! $callerIsGateway && ! $this->callerMayReadAnyInstance($caller)) {
+        if (!$callerIsGateway && !$this->callerMayReadAnyInstance($caller)) {
             return $this->authorizationFailed('instance:read');
         }
 
         /** @var list<Instance> $instances */
         $instances = $targetApp->instances()->with(['runtimeMounts', 'latestDeploymentRun'])->get()->all();
-        $instances = array_values(array_filter(
-            $instances,
-            function (Instance $instance) use ($caller, $callerIsGateway): bool {
-                if ($instance->driver !== InstanceDriver::Orbit) {
-                    return $callerIsGateway;
-                }
+        $instances = array_values(array_filter($instances, function (Instance $instance) use (
+            $caller,
+            $callerIsGateway,
+        ): bool {
+            if ($instance->driver !== InstanceDriver::Orbit) {
+                return $callerIsGateway;
+            }
 
-                $servingNode = $this->workspacePlacement->nodeForInstance($instance);
+            $servingNode = $this->workspacePlacement->nodeForInstance($instance);
 
-                return $servingNode instanceof Node
-                && $this->authorizer->allows($caller, $servingNode, 'instance:read');
-            },
-        ));
+            return $servingNode instanceof Node && $this->authorizer->allows($caller, $servingNode, 'instance:read');
+        }));
 
         return $this->success([
             'app' => $targetApp->name,
-            'instances' => array_map(
-                $this->payloads->instance(...),
-                $instances,
-            ),
+            'instances' => array_map($this->payloads->instance(...), $instances),
         ], ['count' => count($instances)]);
     }
 
@@ -162,7 +154,7 @@ final class InstanceController implements Loggable
         foreach ($appNodeIds as $appNodeId) {
             $node = Node::query()->find($appNodeId);
 
-            if (! $node instanceof Node) {
+            if (!$node instanceof Node) {
                 continue;
             }
 
@@ -206,7 +198,7 @@ final class InstanceController implements Loggable
 
         $this->activitySubject = $targetApp;
 
-        if (! $targetApp instanceof App) {
+        if (!$targetApp instanceof App) {
             return $this->appNotFound($app);
         }
 
@@ -216,7 +208,7 @@ final class InstanceController implements Loggable
             return $this->validationFailed('name', 'Instance name is required.');
         }
 
-        if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
+        if (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name) || mb_strlen($name) > 40) {
             return $this->validationFailed('name', 'Instance name must be a slug of 40 characters or fewer.');
         }
 
@@ -244,7 +236,7 @@ final class InstanceController implements Loggable
             return $caller;
         }
 
-        if ($driver === InstanceDriver::LaravelCloud && ! $this->nodeRoleAssignments->nodeIsGateway($caller)) {
+        if ($driver === InstanceDriver::LaravelCloud && !$this->nodeRoleAssignments->nodeIsGateway($caller)) {
             return $this->externalInstanceAuthorizationFailed();
         }
 
@@ -263,8 +255,20 @@ final class InstanceController implements Loggable
             return $authorization;
         }
 
-        $instance = DB::transaction(function () use ($targetApp, $name, $driver, $driverConfig, $request): Instance {
-            $instance = $targetApp->instances()->create([
+        $instance = $this->createInstance($targetApp, $name, $driver, $driverConfig, $request);
+
+        return $this->success($this->payloads->withCompatibility($instance));
+    }
+
+    private function createInstance(
+        App $app,
+        string $name,
+        InstanceDriver $driver,
+        mixed $driverConfig,
+        Request $request,
+    ): Instance {
+        return DB::transaction(function () use ($app, $name, $driver, $driverConfig, $request): Instance {
+            $instance = $app->instances()->create([
                 'name' => $name,
                 'driver' => $driver,
                 'adopted' => false,
@@ -272,7 +276,7 @@ final class InstanceController implements Loggable
                 // Copy the app creation template onto the new instance. A null
                 // row would resolve through the app at runtime, so a later
                 // change to the app default would move this instance.
-                'php_version' => $targetApp->php_version,
+                'php_version' => $app->php_version,
                 'runtime_requirements' => new InstanceRuntimeRequirementsData(php_extensions: $this->phpExtensions(
                     $request,
                 )),
@@ -281,15 +285,16 @@ final class InstanceController implements Loggable
             $config = $instance->driver_config;
             if ($driver === InstanceDriver::Orbit && $config instanceof OrbitInstanceDriverConfigData) {
                 $node = $config->node_id === null ? null : Node::query()->find($config->node_id);
-                if ($node instanceof Node && $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
-                    $this->copyAppDevelopmentSetupSteps->handle($targetApp, $instance);
+                if (
+                    $node instanceof Node
+                    && $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)
+                ) {
+                    $this->copyAppDevelopmentSetupSteps->handle($app, $instance);
                 }
             }
 
             return $instance;
         });
-
-        return $this->success($this->payloads->withCompatibility($instance));
     }
 
     public function destroy(string $app, string $instance, Request $request): JsonResponse
@@ -310,7 +315,7 @@ final class InstanceController implements Loggable
             return $authorization;
         }
 
-        if (! $request->boolean('destructive_consent') && ! $request->boolean('force')) {
+        if (!$request->boolean('destructive_consent') && !$request->boolean('force')) {
             return $this->validationFailed(
                 'force',
                 'Removing an instance requires destructive consent.',
@@ -347,7 +352,7 @@ final class InstanceController implements Loggable
                     'field' => 'driver',
                     'value' => $value,
                     'allowed' => array_map(
-                        static fn (InstanceDriver $driver): string => $driver->value,
+                        static fn(InstanceDriver $driver): string => $driver->value,
                         InstanceDriver::cases(),
                     ),
                 ],
@@ -361,7 +366,7 @@ final class InstanceController implements Loggable
         $nodeSelector = $this->stringInput($request, 'node');
         $node = $nodeSelector === null ? null : Node::query()->where('name', $nodeSelector)->first();
 
-        if (! $node instanceof Node) {
+        if (!$node instanceof Node) {
             return $this->validationFailed(
                 'node',
                 'Orbit instances require a valid --node value.',
@@ -461,7 +466,7 @@ final class InstanceController implements Loggable
                 'id' => $explicitId ?? $candidate['id'] ?? null,
                 'name' => $explicitName ?? $candidate['name'] ?? null,
                 'selector' => $environment,
-                'reused' => $environmentReused ?? $candidate !== null && ! $environmentCreated,
+                'reused' => $environmentReused ?? $candidate !== null && !$environmentCreated,
                 'created' => $environmentCreated,
             ];
         }
@@ -533,7 +538,7 @@ final class InstanceController implements Loggable
     {
         $environments = $request->input('cloud_environments', []);
 
-        if (! is_array($environments)) {
+        if (!is_array($environments)) {
             return [];
         }
 
@@ -563,7 +568,7 @@ final class InstanceController implements Loggable
             return $environment === '' ? null : ['id' => null, 'name' => $environment];
         }
 
-        if (! is_array($environment)) {
+        if (!is_array($environment)) {
             return null;
         }
 
@@ -648,7 +653,7 @@ final class InstanceController implements Loggable
             $extensions = [$extensions];
         }
 
-        if (! is_array($extensions)) {
+        if (!is_array($extensions)) {
             return [];
         }
 
@@ -656,7 +661,7 @@ final class InstanceController implements Loggable
         $normalized = [];
 
         foreach ($extensions as $extension) {
-            if (! is_string($extension)) {
+            if (!is_string($extension)) {
                 continue;
             }
 
@@ -686,17 +691,13 @@ final class InstanceController implements Loggable
             return $targetApp;
         }
 
-        if (! $targetApp instanceof App) {
+        if (!$targetApp instanceof App) {
             return $this->appNotFound($app);
         }
 
-        $targetInstance = $targetApp
-            ->instances()
-            ->with(['app', 'runtimeMounts'])
-            ->where('name', $instance)
-            ->first();
+        $targetInstance = $targetApp->instances()->with(['app', 'runtimeMounts'])->where('name', $instance)->first();
 
-        if (! $targetInstance instanceof Instance) {
+        if (!$targetInstance instanceof Instance) {
             return response()->json([
                 'error' => [
                     'code' => 'instance.not_found',
@@ -758,7 +759,7 @@ final class InstanceController implements Loggable
     {
         $value = $request->input($key);
 
-        if (! is_string($value)) {
+        if (!is_string($value)) {
             return null;
         }
 
@@ -769,7 +770,7 @@ final class InstanceController implements Loggable
 
     private function booleanInput(Request $request, string $key): ?bool
     {
-        if (! $request->has($key)) {
+        if (!$request->has($key)) {
             return null;
         }
 
@@ -783,7 +784,7 @@ final class InstanceController implements Loggable
             return $value === 1;
         }
 
-        if (! is_string($value)) {
+        if (!is_string($value)) {
             return null;
         }
 
@@ -797,7 +798,7 @@ final class InstanceController implements Loggable
     {
         $value = $values[$key] ?? null;
 
-        if (! is_string($value)) {
+        if (!is_string($value)) {
             return null;
         }
 
@@ -876,7 +877,7 @@ final class InstanceController implements Loggable
 
         $servingNode = $this->workspacePlacement->nodeForInstance($instance);
 
-        if (! $servingNode instanceof Node || ! $this->authorizer->allows($caller, $servingNode, $permission)) {
+        if (!$servingNode instanceof Node || !$this->authorizer->allows($caller, $servingNode, $permission)) {
             return $this->authorizationFailed($permission, $servingNode, $instance->name);
         }
 
@@ -888,13 +889,13 @@ final class InstanceController implements Loggable
         OrbitInstanceDriverConfigData|LaravelCloudInstanceDriverConfigData $driverConfig,
         string $instance,
     ): ?JsonResponse {
-        if (! $driverConfig instanceof OrbitInstanceDriverConfigData) {
+        if (!$driverConfig instanceof OrbitInstanceDriverConfigData) {
             return null;
         }
 
         $targetNode = Node::query()->find($driverConfig->node_id);
 
-        if (! $targetNode instanceof Node || ! $this->authorizer->allows($caller, $targetNode, 'instance:write')) {
+        if (!$targetNode instanceof Node || !$this->authorizer->allows($caller, $targetNode, 'instance:write')) {
             return $this->authorizationFailed('instance:write', $targetNode, $instance);
         }
 

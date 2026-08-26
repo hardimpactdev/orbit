@@ -6,6 +6,8 @@ use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\InstanceDriver;
 use App\Models\App;
+use App\Models\AppDevelopmentSetupStep;
+use App\Models\AppSetupStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -64,6 +66,44 @@ function get_app_instance_json(string $uri): TestResponse
 }
 
 describe('InstanceController', function (): void {
+    it('copies app-dev defaults when adding an Orbit instance', function (): void {
+        $caller = create_app_instance_caller();
+        $node = createTestAppHostNode(['name' => 'target']);
+        grant_app_instance_access($caller, $node, ['instance:write']);
+        $app = App::factory()->create(['name' => 'docs']);
+        AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 2,
+            'command' => 'two',
+            'timeout_seconds' => 22,
+        ]);
+        AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 1,
+            'command' => 'one',
+            'timeout_seconds' => 11,
+        ]);
+
+        $this->call(
+            'POST',
+            '/api/apps/docs/instances',
+            [
+                'name' => 'development',
+                'driver' => 'orbit',
+                'node' => 'target',
+                'path' => '/srv/docs',
+                'root' => 'public',
+            ],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP],
+        )->assertOk();
+
+        $instance = Instance::query()->whereBelongsTo($app)->where('name', 'development')->sole();
+        $steps = AppSetupStep::query()->whereBelongsTo($instance)->orderBy('sort_order')->get();
+        expect($steps->pluck('command')->all())
+            ->toBe(['one', 'two'])
+            ->and($steps->pluck('timeout_seconds')->all())
+            ->toBe([11, 22]);
+    });
     it('returns empty lists when the caller may read instances on an active app node', function (): void {
         $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'app-dev-1']);
@@ -228,25 +268,23 @@ describe('InstanceController', function (): void {
         grant_app_instance_access($caller, $node, ['instance:write']);
         $app = App::factory()->create(['name' => 'docs', 'php_version' => '8.5']);
 
-        $this
-            ->call(
-                'POST',
-                '/api/apps/docs/instances',
-                [
-                    'name' => 'production',
-                    'driver' => 'orbit',
-                    'node' => 'target',
-                    'path' => '/srv/docs',
-                    'root' => 'public',
-                ],
-                [],
-                [],
-                [
-                    'HTTP_ACCEPT' => 'application/json',
-                    'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
-                ],
-            )
-            ->assertOk();
+        $this->call(
+            'POST',
+            '/api/apps/docs/instances',
+            [
+                'name' => 'production',
+                'driver' => 'orbit',
+                'node' => 'target',
+                'path' => '/srv/docs',
+                'root' => 'public',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+                'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
+            ],
+        )->assertOk();
 
         // A null row would resolve through the app at runtime, so changing the
         // app default later would move an instance that already exists.
