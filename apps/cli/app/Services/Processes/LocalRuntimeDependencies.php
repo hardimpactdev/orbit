@@ -48,21 +48,21 @@ final readonly class LocalRuntimeDependencies
         $path = $this->sourcePath($path);
         $dependencies = [];
 
-        if (is_file($path.'/composer.json')) {
+        if (is_file($path . '/composer.json')) {
             $dependencies[] = [
                 'key' => 'composer',
                 'label' => 'Installing PHP dependencies',
-                'present' => is_dir($path.'/vendor') && ! is_link($path.'/vendor'),
-                'reconstructable' => is_file($path.'/composer.lock'),
+                'present' => is_dir($path . '/vendor') && !is_link($path . '/vendor'),
+                'reconstructable' => is_file($path . '/composer.lock'),
             ];
         }
 
-        if (is_file($path.'/package.json')) {
+        if (is_file($path . '/package.json')) {
             $nodeFamily = $this->nodeFamily($path);
             $dependencies[] = [
                 'key' => $nodeFamily ?? 'node',
                 'label' => 'Installing frontend dependencies',
-                'present' => is_dir($path.'/node_modules') && ! is_link($path.'/node_modules'),
+                'present' => is_dir($path . '/node_modules') && !is_link($path . '/node_modules'),
                 'reconstructable' => $nodeFamily !== null,
             ];
         }
@@ -83,17 +83,17 @@ final readonly class LocalRuntimeDependencies
         $pruned = [];
 
         foreach ($state['dependencies'] as $dependency) {
-            if (! $dependency['present'] || ! $dependency['reconstructable']) {
+            if (!$dependency['present'] || !$dependency['reconstructable']) {
                 continue;
             }
 
             $directory = $dependency['key'] === 'composer' ? 'vendor' : 'node_modules';
 
-            if (! $this->mayDelete($path, $directory)) {
+            if (!$this->mayDelete($path, $directory)) {
                 continue;
             }
 
-            if (! File::deleteDirectory($path.'/'.$directory)) {
+            if (!File::deleteDirectory($path . '/' . $directory)) {
                 throw new LocalRuntimeDependenciesFailure(
                     errorCode: 'runtime_dependency_prune_failed',
                     message: 'A generated dependency directory could not be removed.',
@@ -114,16 +114,14 @@ final readonly class LocalRuntimeDependencies
     {
         $path = $this->sourcePath($path);
 
-        if (! is_string($family)) {
+        if (!is_string($family)) {
             throw $this->invalidFamily();
         }
 
         $command = $this->restoreCommand($path, $family);
-        $result = Process::path($path)
-            ->timeout(900)
-            ->run($command);
+        $result = Process::path($path)->timeout(900)->run($command);
 
-        if (! $result->successful()) {
+        if (!$result->successful()) {
             throw new LocalRuntimeDependenciesFailure(
                 errorCode: 'runtime_dependency_restore_failed',
                 message: 'A dependency install did not complete successfully.',
@@ -142,7 +140,7 @@ final readonly class LocalRuntimeDependencies
      */
     private function restoreCommand(string $path, string $family): array
     {
-        if ($family === 'composer' && is_file($path.'/composer.lock')) {
+        if ($family === 'composer' && is_file($path . '/composer.lock')) {
             return ['composer', 'install', '--no-interaction', '--prefer-dist'];
         }
 
@@ -153,10 +151,9 @@ final readonly class LocalRuntimeDependencies
         }
 
         return match ($family) {
-            'npm' => ['npm', 'ci'],
+            'npm', 'bun' => ['vp', 'install', '--frozen-lockfile'],
             'pnpm' => ['pnpm', 'install', '--frozen-lockfile'],
             'yarn' => ['yarn', 'install', '--frozen-lockfile'],
-            'bun' => ['bun', 'install', '--frozen-lockfile'],
             default => throw $this->invalidFamily(),
         };
     }
@@ -173,10 +170,10 @@ final readonly class LocalRuntimeDependencies
     private function nodeFamily(string $path): ?string
     {
         $families = array_values(array_filter([
-            is_file($path.'/package-lock.json') ? 'npm' : null,
-            is_file($path.'/pnpm-lock.yaml') ? 'pnpm' : null,
-            is_file($path.'/yarn.lock') ? 'yarn' : null,
-            is_file($path.'/bun.lock') || is_file($path.'/bun.lockb') ? 'bun' : null,
+            is_file($path . '/package-lock.json') ? 'npm' : null,
+            is_file($path . '/pnpm-lock.yaml') ? 'pnpm' : null,
+            is_file($path . '/yarn.lock') ? 'yarn' : null,
+            is_file($path . '/bun.lock') || is_file($path . '/bun.lockb') ? 'bun' : null,
         ]));
 
         return count($families) === 1 ? $families[0] : null;
@@ -186,29 +183,20 @@ final readonly class LocalRuntimeDependencies
     {
         $latest = 0;
         $directory = new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS);
-        $filter = new RecursiveCallbackFilterIterator(
-            $directory,
-            function (mixed $file) use ($path): bool {
-                if (! $file instanceof SplFileInfo) {
-                    return false;
-                }
+        $filter = new RecursiveCallbackFilterIterator($directory, function (mixed $file) use ($path): bool {
+            if (!$file instanceof SplFileInfo) {
+                return false;
+            }
 
-                $relativePath = ltrim(
-                    substr($file->getPathname(), strlen($path)),
-                    characters: '/',
-                );
+            $relativePath = ltrim(substr($file->getPathname(), strlen($path)), characters: '/');
 
-                return ! $file->isDir() || ! $this->isExcludedSourcePath($relativePath);
-            },
-        );
+            return !$file->isDir() || !$this->isExcludedSourcePath($relativePath);
+        });
         $iterator = new RecursiveIteratorIterator($filter);
 
         /** @var SplFileInfo $file */
         foreach ($iterator as $file) {
-            $relativePath = ltrim(
-                substr($file->getPathname(), strlen($path)),
-                characters: '/',
-            );
+            $relativePath = ltrim(substr($file->getPathname(), strlen($path)), characters: '/');
 
             if ($file->isLink() || $this->isExcludedSourcePath($relativePath)) {
                 continue;
@@ -260,16 +248,16 @@ final readonly class LocalRuntimeDependencies
     {
         return array_any(
             self::EXCLUDED_SOURCE_DIRECTORIES,
-            static fn (string $directory): bool => $relativePath === $directory
-            || str_starts_with($relativePath, $directory.'/'),
+            static fn(string $directory): bool => $relativePath === $directory
+            || str_starts_with($relativePath, $directory . '/'),
         );
     }
 
     private function mayDelete(string $path, string $directory): bool
     {
-        $target = $path.'/'.$directory;
+        $target = $path . '/' . $directory;
 
-        if (! is_dir($target) || is_link($target)) {
+        if (!is_dir($target) || is_link($target)) {
             return false;
         }
 
@@ -279,19 +267,14 @@ final readonly class LocalRuntimeDependencies
         return (
             is_string($realPath)
             && is_string($realTarget)
-            && str_starts_with($realTarget.'/', rtrim($realPath, characters: '/').'/')
+            && str_starts_with($realTarget . '/', rtrim($realPath, characters: '/') . '/')
             && $realTarget !== $realPath
         );
     }
 
     private function sourcePath(mixed $value): string
     {
-        if (
-            ! is_string($value)
-            || $value === ''
-            || ! str_starts_with($value, '/')
-            || str_contains($value, "\0")
-        ) {
+        if (!is_string($value) || $value === '' || !str_starts_with($value, '/') || str_contains($value, "\0")) {
             throw new LocalRuntimeDependenciesFailure(
                 errorCode: 'validation_failed',
                 message: 'The runtime source path must be absolute.',
@@ -301,7 +284,7 @@ final readonly class LocalRuntimeDependencies
 
         $path = realpath($value);
 
-        if (! is_string($path) || ! is_dir($path)) {
+        if (!is_string($path) || !is_dir($path)) {
             throw new LocalRuntimeDependenciesFailure(
                 errorCode: 'runtime_source_missing',
                 message: 'The runtime source path does not exist.',
