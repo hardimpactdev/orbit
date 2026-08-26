@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Launch\BrowserTestRunner;
 
 it('builds assets through vp', function () {
-    expect(file_get_contents(base_path('scripts/BrowserTestRunner.php')))
+    expect(file_get_contents(dirname(__DIR__, 2).'/scripts/BrowserTestRunner.php'))
         ->toContain("new Process(['vp', 'run', 'build']");
 });
 
