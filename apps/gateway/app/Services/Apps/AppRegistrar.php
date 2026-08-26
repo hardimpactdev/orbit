@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Actions\Apps\CopyAppDevelopmentSetupSteps;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Data\Apps\AppRuntimeConfig;
@@ -22,6 +23,7 @@ use App\Services\Proxy\InstanceProxyRouteOwnershipResolver;
 use App\Services\Support\GatewayActionResult;
 use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
+use Illuminate\Support\Facades\DB;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 use function Laravel\Prompts\confirm;
@@ -45,6 +47,7 @@ final class AppRegistrar
         private readonly AppRegistrationResultAction $resultAction,
         private readonly WorkspacePlacement $placement = new WorkspacePlacement,
         private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
+        private readonly CopyAppDevelopmentSetupSteps $copyAppDevelopmentSetupSteps = new CopyAppDevelopmentSetupSteps,
     ) {}
 
     /**
@@ -464,12 +467,13 @@ final class AppRegistrar
             $attributes['runtime_config'] = $this->runtimeConfigForStorage($input['runtime_proxy_transport']);
         }
 
+        return DB::transaction(function () use ($input, $node, $path, $existingApp, $environment, $selected, $selectedName, $effectiveDomain, $selectedConfig, $existingPlacement, $phpVersion, $isDefaultInstance, $attributes): App {
         $app = App::query()->updateOrCreate(
             ['name' => $input['app']],
             $attributes,
         );
 
-        $app->instances()->updateOrCreate(
+        $instance = $app->instances()->updateOrCreate(
             ['name' => $selectedName],
             [
                 'driver' => InstanceDriver::Orbit,
@@ -491,9 +495,14 @@ final class AppRegistrar
                 'runtime_requirements' => $selected?->runtime_requirements ?? new InstanceRuntimeRequirementsData,
             ],
         );
+        $wasRecentlyCreated = $instance->wasRecentlyCreated;
+        if ($wasRecentlyCreated && $environment !== 'production' && $node->hasActiveRole('app-dev')) {
+            $this->copyAppDevelopmentSetupSteps->handle($app, $instance);
+        }
         $app->unsetRelation('instances');
 
         return $app;
+        });
     }
 
     /**

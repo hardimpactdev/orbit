@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Actions\Apps\CopyAppDevelopmentSetupSteps;
 use App\Data\Apps\InstanceRuntimeRequirementsData;
 use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
@@ -18,6 +19,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use ValueError;
@@ -33,6 +35,7 @@ final class InstanceController implements Loggable
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly NodeRoleAssignments $nodeRoleAssignments,
         private readonly WorkspacePlacement $workspacePlacement,
+        private readonly CopyAppDevelopmentSetupSteps $copyAppDevelopmentSetupSteps,
     ) {}
 
     public function all(Request $request): JsonResponse
@@ -259,9 +262,8 @@ final class InstanceController implements Loggable
             return $authorization;
         }
 
-        $instance = $targetApp
-            ->instances()
-            ->create([
+        $instance = DB::transaction(function () use ($targetApp, $name, $driver, $driverConfig, $request): Instance {
+            $instance = $targetApp->instances()->create([
                 'name' => $name,
                 'driver' => $driver,
                 'adopted' => false,
@@ -274,6 +276,17 @@ final class InstanceController implements Loggable
                     $request,
                 )),
             ]);
+
+            $config = $instance->driver_config;
+            if ($driver === InstanceDriver::Orbit && $config instanceof OrbitInstanceDriverConfigData) {
+                $node = $config->node_id === null ? null : Node::query()->find($config->node_id);
+                if ($node instanceof Node && $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-dev')) {
+                    $this->copyAppDevelopmentSetupSteps->handle($targetApp, $instance);
+                }
+            }
+
+            return $instance;
+        });
 
         return $this->success($this->payloads->withCompatibility($instance));
     }
