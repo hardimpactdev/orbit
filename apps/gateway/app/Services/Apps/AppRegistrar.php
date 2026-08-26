@@ -46,9 +46,9 @@ final class AppRegistrar
     public function __construct(
         private readonly RemoteAppSourcePathProbe $sourcePathProbe,
         private readonly AppRegistrationResultAction $resultAction,
-        private readonly WorkspacePlacement $placement = new WorkspacePlacement(),
-        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver(),
-        private readonly CopyAppDevelopmentSetupSteps $copyAppDevelopmentSetupSteps = new CopyAppDevelopmentSetupSteps(),
+        private readonly WorkspacePlacement $placement = new WorkspacePlacement,
+        private readonly InstanceProxyRouteOwnershipResolver $routeOwnership = new InstanceProxyRouteOwnershipResolver,
+        private readonly CopyAppDevelopmentSetupSteps $copyAppDevelopmentSetupSteps = new CopyAppDevelopmentSetupSteps,
     ) {}
 
     /**
@@ -72,7 +72,10 @@ final class AppRegistrar
             return $input;
         }
 
-        $existingApp = App::query()->with('instances')->where('name', $input['app'])->first();
+        $existingApp = App::query()
+            ->with('instances')
+            ->where('name', $input['app'])
+            ->first();
 
         $selected = $this->resolveSelectedInstance($input, $existingApp);
 
@@ -99,8 +102,11 @@ final class AppRegistrar
             return $eligibleNode;
         }
 
-        if ($input['instance'] !== null && !$selected instanceof Instance && $input['instance'] !== $environment) {
-            return $this->failValidation('name', "Instance '{$input['app']}.{$input['instance']}' was not found.");
+        if ($input['instance'] !== null && ! $selected instanceof Instance && $input['instance'] !== $environment) {
+            return $this->failValidation(
+                'name',
+                "Instance '{$input['app']}.{$input['instance']}' was not found.",
+            );
         }
 
         $selectedName = $selected?->name ?? $input['instance'] ?? $environment;
@@ -108,30 +114,30 @@ final class AppRegistrar
         $currentPath = $selectedConfig?->path ?? $existingPlacement?->path;
         $path = $input['path'] ?? $currentPath;
 
-        if ((!is_string($path) || $path === '') && $this->isInteractiveInput()) {
+        if ((! is_string($path) || $path === '') && $this->isInteractiveInput()) {
             $path = trim(text(label: 'Instance path on node', required: true));
         }
 
-        if (!is_string($path) || $path === '') {
+        if (! is_string($path) || $path === '') {
             return $this->failValidation(
                 'path',
                 'The --path option is required when registering an unmanaged instance.',
             );
         }
 
-        if (!str_starts_with($path, '/')) {
+        if (! str_starts_with($path, '/')) {
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
         if (
-            !$existingApp instanceof App
+            ! $existingApp instanceof App
             && $this->isInteractiveInput()
-            && !confirm('Adopt existing project path?', default: true)
+            && ! confirm('Adopt existing project path?', default: true)
         ) {
             return $this->failValidation('path', 'App path adoption was cancelled.');
         }
 
-        if (!$this->sourcePathProbe->exists($node, $path)) {
+        if (! $this->sourcePathProbe->exists($node, $path)) {
             return $this->failValidation('path', "Path '{$path}' does not exist on node '{$node->name}'.");
         }
 
@@ -143,13 +149,13 @@ final class AppRegistrar
 
         $explicitMove = $this->isExplicitMove($input, $path, $node, $existingApp, $currentNodeId, $currentPath);
 
-        if ($existingApp instanceof App && $currentNodeId !== null && $currentNodeId !== $node->id && !$explicitMove) {
+        if ($existingApp instanceof App && $currentNodeId !== null && $currentNodeId !== $node->id && ! $explicitMove) {
             $currentNodeName = Node::query()->find($currentNodeId)?->name;
 
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "Instance '{$input['app']}.{$selectedName}' is already registered on node '{$currentNodeName}'. "
-                . "Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
+                ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
                     'path' => $currentPath,
                     'existing_instance' => "{$input['app']}.{$selectedName}",
@@ -158,11 +164,11 @@ final class AppRegistrar
             );
         }
 
-        if ($existingApp instanceof App && $currentPath !== null && $currentPath !== $path && !$explicitMove) {
+        if ($existingApp instanceof App && $currentPath !== null && $currentPath !== $path && ! $explicitMove) {
             return $this->failCommand(
                 code: 'app.path_collision',
                 message: "Instance '{$input['app']}.{$selectedName}' is already registered at '{$currentPath}'. "
-                . "Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
+                ."Moving it requires the dotted selector '{$input['app']}.{$selectedName}' plus explicit --node and --path.",
                 meta: [
                     'path' => $currentPath,
                     'existing_instance' => "{$input['app']}.{$selectedName}",
@@ -222,7 +228,7 @@ final class AppRegistrar
      */
     private function sharedPolicyFanoutWarnings(?App $before, App $after, string $selectedName): array
     {
-        if (!$before instanceof App) {
+        if (! $before instanceof App) {
             return [];
         }
 
@@ -260,7 +266,7 @@ final class AppRegistrar
                 'family' => 'instance',
                 'message' =>
                     "Sibling instance '{$after->name}.{$sibling->name}'{$placement} now follows the "
-                        . "shared app policy ({$changedFacts}) changed by this run.",
+                        ."shared app policy ({$changedFacts}) changed by this run.",
                 'next_command' => 'doctor --family=instance',
             ];
         }
@@ -284,7 +290,7 @@ final class AppRegistrar
     private function resolveSelectedInstance(array $input, ?App $existingApp): Instance|int|null
     {
         if ($input['instance'] !== null) {
-            if (!$existingApp instanceof App) {
+            if (! $existingApp instanceof App) {
                 return $this->failValidation(
                     'name',
                     "App '{$input['app']}' is not registered. Register the first instance with the bare app name.",
@@ -300,7 +306,7 @@ final class AppRegistrar
             return null;
         }
 
-        if (!$existingApp instanceof App) {
+        if (! $existingApp instanceof App) {
             return null;
         }
 
@@ -320,7 +326,7 @@ final class AppRegistrar
 
         $single = $instances->first();
 
-        if (!$single instanceof Instance) {
+        if (! $single instanceof Instance) {
             return null;
         }
 
@@ -345,7 +351,7 @@ final class AppRegistrar
      */
     private function existingPlacement(?App $app): ?OrbitInstanceDriverConfigData
     {
-        if (!$app instanceof App) {
+        if (! $app instanceof App) {
             return null;
         }
 
@@ -365,17 +371,17 @@ final class AppRegistrar
             ->where('driver_config->data->path', $path)
             ->get()
             ->first(
-                fn(Instance $candidate): bool => (
+                fn (Instance $candidate): bool => (
                     $candidate->app?->name !== $appName
                     || $candidate->name !== $selectedName
                 ),
             );
 
-        if (!$owningInstance instanceof Instance) {
+        if (! $owningInstance instanceof Instance) {
             return null;
         }
 
-        $owningSelector = $owningInstance->app?->name . '.' . $owningInstance->name;
+        $owningSelector = $owningInstance->app?->name.'.'.$owningInstance->name;
 
         return $this->failCommand(
             code: 'app.path_collision',
@@ -401,7 +407,7 @@ final class AppRegistrar
         ?int $currentNodeId,
         ?string $currentPath,
     ): bool {
-        if (!$existingApp instanceof App) {
+        if (! $existingApp instanceof App) {
             return false;
         }
 
@@ -414,7 +420,7 @@ final class AppRegistrar
 
     private function registrationAction(?App $existingApp, bool $explicitMove): string
     {
-        if (!$existingApp instanceof App) {
+        if (! $existingApp instanceof App) {
             return 'adopted';
         }
 
@@ -445,7 +451,8 @@ final class AppRegistrar
         // The default instance is the app's primary concrete instance (a new app
         // makes its first instance the default). App owns no environment column.
         $isDefaultInstance =
-            !$existingApp instanceof App || $selectedName === $this->placement->appPrimaryInstance($existingApp)?->name;
+            ! $existingApp instanceof App
+            || $selectedName === $this->placement->appPrimaryInstance($existingApp)?->name;
 
         // The App is logical-only: registration writes placement/adoption to the
         // concrete instance below, never to the app record.
@@ -453,7 +460,7 @@ final class AppRegistrar
             'repository' => $existingApp?->repository,
         ];
 
-        if (!$existingApp instanceof App) {
+        if (! $existingApp instanceof App) {
             $attributes['php_version'] = $phpVersion;
         }
 
@@ -471,39 +478,47 @@ final class AppRegistrar
             $selectedName,
             $effectiveDomain,
             $selectedConfig,
-            $existingPlacement,
             $phpVersion,
             $isDefaultInstance,
             $attributes,
             $documentRoot,
         ): App {
-            $app = App::query()->updateOrCreate(['name' => $input['app']], $attributes);
+            $app = App::query()->updateOrCreate(
+                ['name' => $input['app']],
+                $attributes,
+            );
 
-            $instance = $app->instances()->updateOrCreate(['name' => $selectedName], [
-                'driver' => InstanceDriver::Orbit,
-                // Instance-scoped: an explicit --php-version writes this
-                // instance only; otherwise keep its stored value, falling back
-                // to the app default when creating the first instance.
-                'php_version' => $input['php_version'] ?? $selected?->php_version ?? $phpVersion,
-                'adopted' => $selected instanceof Instance ? $selected->adopted : !$existingApp instanceof App,
-                'driver_config' => new OrbitInstanceDriverConfigData(
-                    node_id: $node->id,
-                    node: $node->name,
-                    path: $path,
-                    document_root: $documentRoot,
-                    domain: $input['domain'] ?? $selectedConfig?->domain
-                        ?? ($isDefaultInstance ? $effectiveDomain : null),
-                ),
-                'runtime_requirements' => $selected?->runtime_requirements ?? new InstanceRuntimeRequirementsData(),
-            ]);
-            $wasRecentlyCreated = $instance->wasRecentlyCreated;
+            $instance = $app->instances()->updateOrCreate(
+                ['name' => $selectedName],
+                [
+                    'driver' => InstanceDriver::Orbit,
+                    // Instance-scoped: an explicit --php-version writes this
+                    // instance only; otherwise keep its stored value, falling back
+                    // to the app default when creating the first instance.
+                    'php_version' => $input['php_version'] ?? $selected?->php_version ?? $phpVersion,
+                    'adopted' => $selected instanceof Instance
+                        ? $selected->adopted
+                        : ! $existingApp instanceof App,
+                    'driver_config' => new OrbitInstanceDriverConfigData(
+                        node_id: $node->id,
+                        node: $node->name,
+                        path: $path,
+                        document_root: $documentRoot,
+                        domain: $input['domain'] ?? $selectedConfig?->domain
+                            ?? ($isDefaultInstance ? $effectiveDomain : null),
+                    ),
+                    'runtime_requirements' => $selected?->runtime_requirements ?? new InstanceRuntimeRequirementsData,
+                ],
+            );
+
             if (
-                $wasRecentlyCreated
+                $instance->wasRecentlyCreated
                 && $environment !== 'production'
                 && $node->hasActiveRole(NodeRoleName::AppDevelopment->value)
             ) {
                 $this->copyAppDevelopmentSetupSteps->handle($app, $instance);
             }
+
             $app->unsetRelation('instances');
 
             return $app;
@@ -531,20 +546,21 @@ final class AppRegistrar
             [$appName, $instanceName] = explode('.', $name, 2);
         }
 
-        if (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $appName) || mb_strlen($appName) > 40) {
+        if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $appName) || mb_strlen($appName) > 40) {
             return $this->failValidation('name', 'App name must be a slug of 40 characters or fewer.');
         }
 
         if (
             $instanceName !== null
-            && (!preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $instanceName) || mb_strlen($instanceName) > 40)
+            && (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $instanceName)
+            || mb_strlen($instanceName) > 40)
         ) {
             return $this->failValidation('name', 'Instance name must be a slug of 40 characters or fewer.');
         }
 
         $path = $this->stringOption('path');
 
-        if ($path !== null && !str_starts_with($path, '/')) {
+        if ($path !== null && ! str_starts_with($path, '/')) {
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
@@ -556,7 +572,7 @@ final class AppRegistrar
             return $this->failValidation('root', 'Document root is invalid.');
         }
 
-        if ($phpVersion !== null && !in_array($phpVersion, PhpRuntimeCatalog::SUPPORTED, true)) {
+        if ($phpVersion !== null && ! in_array($phpVersion, PhpRuntimeCatalog::SUPPORTED, true)) {
             return $this->failValidation('php_version', 'Unsupported PHP version.');
         }
 
@@ -600,7 +616,7 @@ final class AppRegistrar
 
         $config = AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
 
-        if (!$config->usesInnerHttpsProxyTransport()) {
+        if (! $config->usesInnerHttpsProxyTransport()) {
             return null;
         }
 
@@ -633,7 +649,10 @@ final class AppRegistrar
         if ($nodeName === null) {
             if ($this->isInteractiveInput()) {
                 try {
-                    $selectedNode = $this->promptForVisibleNode(label: 'Select target app node', role: 'app-host');
+                    $selectedNode = $this->promptForVisibleNode(
+                        label: 'Select target app node',
+                        role: 'app-host',
+                    );
                 } catch (PromptAborted) {
                     return $this->failValidation('node', 'Operation cancelled.');
                 }
@@ -670,7 +689,7 @@ final class AppRegistrar
 
         $node = Node::query()->where('name', $nodeName)->first();
 
-        if (!$node instanceof Node) {
+        if (! $node instanceof Node) {
             return $this->failValidation('node', "Node '{$nodeName}' was not found.");
         }
 
@@ -710,7 +729,7 @@ final class AppRegistrar
 
         $route = ProxyRoute::query()->where('domain', $domain)->first();
 
-        if (!$route instanceof ProxyRoute) {
+        if (! $route instanceof ProxyRoute) {
             return null;
         }
 
@@ -742,7 +761,7 @@ final class AppRegistrar
     {
         $value = $this->argument($key);
 
-        if (!is_string($value) || trim($value) === '') {
+        if (! is_string($value) || trim($value) === '') {
             return null;
         }
 
@@ -753,7 +772,7 @@ final class AppRegistrar
     {
         $value = $this->option($key);
 
-        if (!is_string($value) || trim($value) === '') {
+        if (! is_string($value) || trim($value) === '') {
             return null;
         }
 
@@ -803,7 +822,10 @@ final class AppRegistrar
      */
     private function instancePayload(App $app, string $instanceName): array
     {
-        $instance = Instance::query()->where('app_id', $app->id)->where('name', $instanceName)->firstOrFail();
+        $instance = Instance::query()
+            ->where('app_id', $app->id)
+            ->where('name', $instanceName)
+            ->firstOrFail();
 
         return app(InstancePayloads::class)->placement($instance);
     }
@@ -814,7 +836,7 @@ final class AppRegistrar
      */
     private function successCommand(array $data, array $warnings, string $nodeName): int
     {
-        if (!$this->wantsJson()) {
+        if (! $this->wantsJson()) {
             /** @var array{name?: string} $app */
             $app = is_array($data['app'] ?? null) ? $data['app'] : [];
             /** @var array{url?: string} $instance */
@@ -822,16 +844,16 @@ final class AppRegistrar
             $action = (string) ($data['result']['action'] ?? '');
 
             $this->line($this->successLine($action, $app));
-            $this->line('URL: ' . ($instance['url'] ?? ''));
+            $this->line('URL: '.($instance['url'] ?? ''));
 
             if ($warnings !== []) {
                 $this->line('Warnings:');
 
                 foreach ($warnings as $warning) {
-                    $this->line('- ' . (string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
+                    $this->line('- '.(string) ($warning['message'] ?? $warning['code'] ?? 'Warning'));
 
                     if (isset($warning['next_command']) && is_string($warning['next_command'])) {
-                        $this->line('  Retry with: orbit ' . $warning['next_command']);
+                        $this->line('  Retry with: orbit '.$warning['next_command']);
                     }
                 }
             }
@@ -874,7 +896,7 @@ final class AppRegistrar
      */
     private function failCommand(string $code, string $message, array $meta): int
     {
-        if (!$this->wantsJson()) {
+        if (! $this->wantsJson()) {
             $this->error($message);
 
             return self::FAILURE;
@@ -893,6 +915,10 @@ final class AppRegistrar
 
     private function failValidation(string $field, string $message): int
     {
-        return $this->failCommand(code: 'validation_failed', message: $message, meta: ['field' => $field]);
+        return $this->failCommand(
+            code: 'validation_failed',
+            message: $message,
+            meta: ['field' => $field],
+        );
     }
 }

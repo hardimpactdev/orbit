@@ -56,7 +56,12 @@ driver configuration, runtime requirements, and instance-owned defaults.
 6. Copy the app PHP creation template onto the new instance as its own concrete
    version. The row is never stored empty, so a later change to the app default
    cannot move this instance.
-7. Leave the app and sibling instances unchanged.
+7. When Orbit creates an Orbit-driver instance on a node with the persisted
+   active `app-dev` role, copy the app's ordered development setup defaults
+   into independent instance setup rows in the same transaction.
+8. Do not copy development defaults to `app-prod` or Laravel Cloud instances.
+   Updating an existing instance does not copy or refresh defaults.
+9. Leave the app and sibling instances unchanged.
 
 ## Renderer Contracts
 
@@ -88,4 +93,4 @@ placement and required runtime extensions.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php` | CLI add validation and forwarding. |
-| `apps/gateway/tests/Feature/InstanceControllerTest.php` | Driver validation, authorization, creation, and payload shape. |
+| `apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php` | Driver validation, authorization, transactional default copying, creation, and payload shape. |

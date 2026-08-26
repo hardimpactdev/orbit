@@ -20,16 +20,27 @@ it('copies ordered defaults into independent instance steps', function (): void 
     $app = App::factory()->create();
     $instance = Instance::factory()->for($app)->create();
     $defaults = [
-        AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 2, 'command' => 'second', 'timeout_seconds' => 42]),
-        AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 1, 'command' => 'first', 'timeout_seconds' => 21]),
+        AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 2,
+            'command' => 'second',
+            'timeout_seconds' => 42,
+        ]),
+        AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 1,
+            'command' => 'first',
+            'timeout_seconds' => 21,
+        ]),
     ];
 
     app(CopyAppDevelopmentSetupSteps::class)->handle($app, $instance);
 
     $copied = AppSetupStep::query()->whereBelongsTo($instance)->orderBy('sort_order')->get();
-    expect($copied->pluck('command')->all())->toBe(['first', 'second'])
-        ->and($copied->pluck('timeout_seconds')->all())->toBe([21, 42])
-        ->and($copied->first()->instance_id)->toBe($instance->id);
+    expect($copied->pluck('command')->all())
+        ->toBe(['first', 'second'])
+        ->and($copied->pluck('timeout_seconds')->all())
+        ->toBe([21, 42])
+        ->and($copied->first()->instance_id)
+        ->toBe($instance->id);
 
     $defaults[0]->update(['command' => 'changed']);
     expect($copied->fresh()->pluck('command')->all())->toBe(['first', 'second']);
@@ -76,20 +87,32 @@ it('inserts before the first default without violating contiguous order', functi
     $add->handle($app->id, 'third');
     $inserted = $add->handle($app->id, 'zero', 600, $first->id);
 
-    expect($app->developmentSetupSteps()->pluck('command')->all())->toBe(['zero', 'first', 'second', 'third'])
-        ->and($inserted->id)->not->toBe($first->id)
-        ->and($app->developmentSetupSteps()->pluck('sort_order')->all())->toBe([1, 2, 3, 4]);
+    expect($app->developmentSetupSteps()->pluck('command')->all())
+        ->toBe(['zero', 'first', 'second', 'third'])
+        ->and($inserted->id)
+        ->not
+        ->toBe($first->id)
+        ->and($app->developmentSetupSteps()->pluck('sort_order')->all())
+        ->toBe([1, 2, 3, 4]);
 });
 
 it('removes a middle default and preserves unaffected identities', function (): void {
     $app = App::factory()->create();
     $add = app(AddAppDevelopmentSetupStep::class);
-    $steps = collect(['one', 'two', 'three', 'four'])->map(fn (string $command): AppDevelopmentSetupStep => $add->handle($app->id, $command));
+    $steps = collect([
+        'one',
+        'two',
+        'three',
+        'four',
+    ])->map(fn (string $command): AppDevelopmentSetupStep => $add->handle($app->id, $command));
     app(RemoveAppDevelopmentSetupStep::class)->handle($steps[1]);
 
-    expect($app->developmentSetupSteps()->pluck('command')->all())->toBe(['one', 'three', 'four'])
-        ->and($app->developmentSetupSteps()->pluck('sort_order')->all())->toBe([1, 2, 3])
-        ->and($app->developmentSetupSteps()->pluck('id')->all())->toBe([$steps[0]->id, $steps[2]->id, $steps[3]->id]);
+    expect($app->developmentSetupSteps()->pluck('command')->all())
+        ->toBe(['one', 'three', 'four'])
+        ->and($app->developmentSetupSteps()->pluck('sort_order')->all())
+        ->toBe([1, 2, 3])
+        ->and($app->developmentSetupSteps()->pluck('id')->all())
+        ->toBe([$steps[0]->id, $steps[2]->id, $steps[3]->id]);
 });
 
 it('rejects self and cross-app anchors during update', function (): void {
@@ -100,7 +123,10 @@ it('rejects self and cross-app anchors during update', function (): void {
     $other = $add->handle($two->id, 'other');
     $update = app(UpdateAppDevelopmentSetupStep::class);
 
-    expect(fn () => $update->handle($step, null, null, $step->id, null))->toThrow(InvalidArgumentException::class)
-        ->and(fn () => $update->handle($step, null, null, $other->id, null))->toThrow(InvalidArgumentException::class)
-        ->and(fn () => $update->handle($step, null, null, $step->id, $other->id))->toThrow(InvalidArgumentException::class);
+    expect(fn () => $update->handle($step, null, null, $step->id, null))
+        ->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $update->handle($step, null, null, $other->id, null))
+        ->toThrow(InvalidArgumentException::class)
+        ->and(fn () => $update->handle($step, null, null, $step->id, $other->id))
+        ->toThrow(InvalidArgumentException::class);
 });

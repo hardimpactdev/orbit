@@ -246,6 +246,7 @@ Source: [App and Instance Concepts](domains/5_app/app-concepts.md).
 - **Instance setup run**
 - **Instance-owned route**
 - **App and instance boundaries**
+- **App development setup default**
 - **Setup boundary**
 <!-- /concept-index -->
 

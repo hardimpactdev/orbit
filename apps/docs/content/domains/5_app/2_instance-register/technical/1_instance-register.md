@@ -110,6 +110,11 @@ This command follows the shared
   selected instance owns node, path, root, URL, domain, environment, its own PHP
   version, and `adopted`. First adoption
   creates both rows atomically.
+- **App Development Setup Defaults**: When registration creates a new instance
+  on a node with the persisted active `app-dev` role, copies the app's ordered
+  development setup defaults into independent instance setup rows in the same
+  transaction. Re-registration, moves, and `app-prod` registration do not copy
+  or refresh defaults. Later default edits affect future instances only.
 - **Artifact Apply**: Sends typed apply commands to the concrete instance
   node through Agent push to:
   - Configure and restart the runtime container for the app.
@@ -214,7 +219,7 @@ registration attempts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI payload/validation, human registered/adopted/moved/partial/converged output, and warning pass-through. |
-| `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Register/adopt/converged actions, authorization, and ineligible-node rejection. |
+| `apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php` | Register/adopt/converged actions, authorization, transactional default copying, and ineligible-node rejection. |
 | `apps/gateway/tests/Feature/Actions/Apps/EnactAppRuntimeTest.php` | Agent-push artifact convergence across development and production runtimes. |
 
 Context-specific behavior and test mapping live in:

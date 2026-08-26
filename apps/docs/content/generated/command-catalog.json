@@ -216,6 +216,241 @@
                 "response_dto": null
             }
         },
+        "app-development-setup-step:add": {
+            "name": "app-development-setup-step:add",
+            "slug": "app-development-setup-step-add",
+            "family": "app-development-setup-step",
+            "arguments": [
+                "app"
+            ],
+            "options": [
+                "command",
+                "before",
+                "after",
+                "timeout",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/31_app-development-setup-step-add",
+                "public": "domains/5_app/31_app-development-setup-step-add/app-development-setup-step-add.md",
+                "technical": "domains/5_app/31_app-development-setup-step-add/technical/1_app-development-setup-step-add.md",
+                "repo_directory": "apps/docs/content/domains/5_app/31_app-development-setup-step-add",
+                "repo_public": "apps/docs/content/domains/5_app/31_app-development-setup-step-add/app-development-setup-step-add.md",
+                "repo_technical": "apps/docs/content/domains/5_app/31_app-development-setup-step-add/technical/1_app-development-setup-step-add.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "app-development-setup-step:list": {
+            "name": "app-development-setup-step:list",
+            "slug": "app-development-setup-step-list",
+            "family": "app-development-setup-step",
+            "arguments": [
+                "app"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/32_app-development-setup-step-list",
+                "public": "domains/5_app/32_app-development-setup-step-list/app-development-setup-step-list.md",
+                "technical": "domains/5_app/32_app-development-setup-step-list/technical/1_app-development-setup-step-list.md",
+                "repo_directory": "apps/docs/content/domains/5_app/32_app-development-setup-step-list",
+                "repo_public": "apps/docs/content/domains/5_app/32_app-development-setup-step-list/app-development-setup-step-list.md",
+                "repo_technical": "apps/docs/content/domains/5_app/32_app-development-setup-step-list/technical/1_app-development-setup-step-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "app-development-setup-step:remove": {
+            "name": "app-development-setup-step:remove",
+            "slug": "app-development-setup-step-remove",
+            "family": "app-development-setup-step",
+            "arguments": [
+                "app",
+                "step"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/34_app-development-setup-step-remove",
+                "public": "domains/5_app/34_app-development-setup-step-remove/app-development-setup-step-remove.md",
+                "technical": "domains/5_app/34_app-development-setup-step-remove/technical/1_app-development-setup-step-remove.md",
+                "repo_directory": "apps/docs/content/domains/5_app/34_app-development-setup-step-remove",
+                "repo_public": "apps/docs/content/domains/5_app/34_app-development-setup-step-remove/app-development-setup-step-remove.md",
+                "repo_technical": "apps/docs/content/domains/5_app/34_app-development-setup-step-remove/technical/1_app-development-setup-step-remove.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "app-development-setup-step:update": {
+            "name": "app-development-setup-step:update",
+            "slug": "app-development-setup-step-update",
+            "family": "app-development-setup-step",
+            "arguments": [
+                "app",
+                "step"
+            ],
+            "options": [
+                "command",
+                "timeout",
+                "before",
+                "after",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/5_app/33_app-development-setup-step-update",
+                "public": "domains/5_app/33_app-development-setup-step-update/app-development-setup-step-update.md",
+                "technical": "domains/5_app/33_app-development-setup-step-update/technical/1_app-development-setup-step-update.md",
+                "repo_directory": "apps/docs/content/domains/5_app/33_app-development-setup-step-update",
+                "repo_public": "apps/docs/content/domains/5_app/33_app-development-setup-step-update/app-development-setup-step-update.md",
+                "repo_technical": "apps/docs/content/domains/5_app/33_app-development-setup-step-update/technical/1_app-development-setup-step-update.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppDevelopmentSetupStepCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppDevelopmentSetupStepControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "app:list": {
             "name": "app:list",
             "slug": "app-list",
@@ -3906,6 +4141,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/InstanceCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
                 "apps/gateway/tests/Feature/InstanceControllerTest.php"
             ],
             "verification_hints": [
@@ -3915,6 +4151,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/App/InstanceCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/InstanceCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/InstanceControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/InstanceControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/InstanceControllerTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/InstanceControllerTest.php",

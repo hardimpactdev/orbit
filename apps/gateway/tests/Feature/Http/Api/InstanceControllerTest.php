@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -104,6 +105,96 @@ describe('InstanceController', function (): void {
             ->and($steps->pluck('timeout_seconds')->all())
             ->toBe([11, 22]);
     });
+});
+
+describe('InstanceController app development setup boundaries', function (): void {
+    it('does not copy development defaults to app-prod or Laravel Cloud instances', function (): void {
+        $caller = create_app_instance_caller();
+        $productionNode = createTestAppHostNode(
+            attributes: ['name' => 'production-target'],
+            role: 'app-prod',
+        );
+        grant_app_instance_access($caller, $productionNode, ['instance:write']);
+        $app = App::factory()->create(['name' => 'docs']);
+        AppDevelopmentSetupStep::factory()->for($app)->create(['command' => 'development only']);
+
+        $this->call(
+            'POST',
+            '/api/apps/docs/instances',
+            [
+                'name' => 'production',
+                'driver' => 'orbit',
+                'node' => $productionNode->name,
+                'path' => '/srv/docs',
+                'root' => 'public',
+            ],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP],
+        )->assertOk();
+
+        $production = Instance::query()->whereBelongsTo($app)->where('name', 'production')->sole();
+        expect(AppSetupStep::query()->whereBelongsTo($production)->count())->toBe(0);
+
+        Node::query()->whereKey($caller->id)->delete();
+        createTestGatewayNode([
+            'name' => 'gateway-caller',
+            'host' => APP_INSTANCE_CALLER_WG_IP,
+            'wireguard_address' => APP_INSTANCE_CALLER_WG_IP,
+        ]);
+
+        $this->call(
+            'POST',
+            '/api/apps/docs/instances',
+            [
+                'name' => 'cloud',
+                'driver' => 'laravel-cloud',
+                'cloud_application' => 'docs',
+                'cloud_environment' => 'staging',
+            ],
+            [],
+            [],
+            ['HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP],
+        )->assertOk();
+
+        $cloud = Instance::query()->whereBelongsTo($app)->where('name', 'cloud')->sole();
+        expect(AppSetupStep::query()->whereBelongsTo($cloud)->count())->toBe(0);
+    });
+
+    it('rolls back instance creation when copying a development default fails', function (): void {
+        $caller = create_app_instance_caller();
+        $node = createTestAppHostNode(['name' => 'target']);
+        grant_app_instance_access($caller, $node, ['instance:write']);
+        $app = App::factory()->create(['name' => 'docs']);
+        AppDevelopmentSetupStep::factory()->for($app)->create(['command' => 'will fail']);
+        $event = 'eloquent.creating: '.AppSetupStep::class;
+        Event::listen($event, static fn (): never => throw new RuntimeException('copy failed'));
+
+        try {
+            expect(fn () => $this->withoutExceptionHandling()->call(
+                'POST',
+                '/api/apps/docs/instances',
+                [
+                    'name' => 'development',
+                    'driver' => 'orbit',
+                    'node' => 'target',
+                    'path' => '/srv/docs',
+                    'root' => 'public',
+                ],
+                [],
+                [],
+                ['HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP],
+            ))
+                ->toThrow(RuntimeException::class, 'copy failed');
+        } finally {
+            Event::forget($event);
+        }
+
+        expect(Instance::query()->whereBelongsTo($app)->where('name', 'development')->exists())->toBeFalse();
+    });
+});
+
+describe('InstanceController', function (): void {
     it('returns empty lists when the caller may read instances on an active app node', function (): void {
         $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'app-dev-1']);

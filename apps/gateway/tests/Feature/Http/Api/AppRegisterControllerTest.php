@@ -7,6 +7,8 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\AppDevelopmentSetupStep;
+use App\Models\AppSetupStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -91,6 +93,156 @@ function app_register_fallback_server(): array
 }
 
 describe('AppRegisterController', function (): void {
+    it('copies app defaults once when registration creates an app-dev instance', function (): void {
+        createTestGatewayNode(['name' => 'gateway-1']);
+        $caller = createAppRegisterCallerNode();
+        $existingNode = createTestAppHostNode([
+            'name' => 'nmbp',
+            'tld' => 'nmbp',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.40',
+            'managed' => true,
+        ]);
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.41',
+            'managed' => true,
+        ]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.41', '/srv/docs');
+
+        $app = App::factory()->create(['name' => 'docs']);
+        app_register_instance(
+            app: $app,
+            name: 'nmbp',
+            node: $existingNode,
+            path: '/srv/existing',
+        );
+        $second = AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 2,
+            'command' => 'second',
+            'timeout_seconds' => 42,
+        ]);
+        AppDevelopmentSetupStep::factory()->for($app)->create([
+            'sort_order' => 1,
+            'command' => 'first',
+            'timeout_seconds' => 21,
+        ]);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $register = fn () => $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs.development',
+                'node' => 'app-1',
+                'path' => '/srv/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $register()->assertOk();
+        $instance = Instance::query()->whereBelongsTo($app)->where('name', 'development')->sole();
+        $copied = AppSetupStep::query()->whereBelongsTo($instance)->orderBy('sort_order')->get();
+
+        expect($copied->pluck('command')->all())
+            ->toBe(['first', 'second'])
+            ->and($copied->pluck('timeout_seconds')->all())
+            ->toBe([21, 42]);
+
+        $second->update(['command' => 'changed']);
+        expect($copied->fresh()->pluck('command')->all())->toBe(['first', 'second']);
+
+        $register()->assertOk();
+        expect(AppSetupStep::query()->whereBelongsTo($instance)->count())->toBe(2);
+    });
+
+    it('does not copy development defaults for app-prod registration', function (): void {
+        $gateway = createTestGatewayNode([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.1',
+        ]);
+        NodeRoleAssignment::factory()->for($gateway)->create([
+            'role' => 'router',
+            'status' => 'active',
+        ]);
+        $ingressNode = Node::factory()
+            ->ingress()
+            ->managed()
+            ->create([
+                'name' => 'ingress-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+        $caller = createAppRegisterCallerNode();
+        $existingNode = createTestAppHostNode([
+            'name' => 'nmbp',
+            'tld' => 'nmbp',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.40',
+            'managed' => true,
+        ]);
+        $targetNode = createTestAppHostNode(
+            attributes: [
+                'name' => 'prod-1',
+                'tld' => 'example',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.42',
+                'managed' => true,
+            ],
+            role: 'app-prod',
+        );
+        $targetNode
+            ->roleAssignments()
+            ->where('role', 'app-prod')
+            ->update(['settings' => ['ingress_node_id' => $ingressNode->id]]);
+        grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.42', '/srv/docs');
+
+        $app = App::factory()->create(['name' => 'docs']);
+        app_register_instance(
+            app: $app,
+            name: 'nmbp',
+            node: $existingNode,
+            path: '/srv/existing',
+        );
+        AppDevelopmentSetupStep::factory()->for($app)->create(['command' => 'development only']);
+        app()->instance(RemoteShell::class, new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $this->call(
+            'POST',
+            '/api/instances/register',
+            [
+                'name' => 'docs.production',
+                'node' => 'prod-1',
+                'path' => '/srv/docs',
+                'domain' => 'docs.example.com',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        )->assertOk();
+
+        $instance = Instance::query()->whereBelongsTo($app)->where('name', 'production')->sole();
+        expect(AppSetupStep::query()->whereBelongsTo($instance)->count())->toBe(0);
+    });
+
     it('registers an existing app path for authorized callers', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',
