@@ -1,0 +1,33 @@
+{
+    "id": "review-1",
+    "role": "review",
+    "cli": "claude",
+    "command": [
+        "env",
+        "ORBIT_WORKER_ID=review-1",
+        "ORBIT_WORKER_ROLE=review",
+        "PATH=/Users/nckrtl/.local/bin:/Users/nckrtl/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/opt/homebrew/bin:/Users/nckrtl/.vite-plus/bin:/Users/nckrtl/.codex/tmp/arg0/codex-arg0hOPILv:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/Users/nckrtl/.local/bin:/Users/nckrtl/.codeium/windsurf/bin:/Users/nckrtl/.grok/bin:/opt/homebrew/opt/mysql-client/bin:/Users/nckrtl/.opencode/bin:/Users/nckrtl/.nvm/versions/node/v24.13.0/bin:/Users/nckrtl/Library/pnpm:/Users/nckrtl/.antigravity/antigravity/bin:/Users/nckrtl/.config/composer/vendor/bin:/Users/nckrtl/.spin/bin:/Users/nckrtl/.bun/bin:/Users/nckrtl/.cargo/bin:/Users/nckrtl/.orbstack/bin:/Users/nckrtl/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/Applications/ChatGPT.app/Contents/Resources:/Users/nckrtl/.orbstack/bin",
+        "claude",
+        "--dangerously-skip-permissions",
+        "--model",
+        "opus",
+        "--effort",
+        "high"
+    ],
+    "tmux": {
+        "session": "feat-codex-viteplus-ui-workflows",
+        "window": "review-1",
+        "pane_id": "%11",
+        "pane_pid": 95325,
+        "socket": null
+    },
+    "cwd": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-ui-workflows",
+    "brief": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-ui-workflows/.orbit/workers/briefs/review-1.md",
+    "status": "exited",
+    "heartbeat_at": "2026-08-26T15:28:29Z",
+    "note": "PASS exact f35edb321674bb19cabf5ea1acc3d98d48304d2c",
+    "started_at": "2026-08-26T15:01:37Z",
+    "exited_at": "2026-08-26T15:28:53Z",
+    "provider_ref": null,
+    "handoff": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-ui-workflows/.orbit/workers/handoff/review-1-f35edb321674bb19cabf5ea1acc3d98d48304d2c.md"
+}
