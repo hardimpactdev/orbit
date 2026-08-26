@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "producer": "quality-gate-run",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-08-26T07:53:40Z",
+    "ended_at": "2026-08-26T07:53:46Z",
+    "duration_seconds": 6,
+    "exit_code": 1,
+    "git": {
+        "branch": "app-development-setup-defaults",
+        "commit": "d471f715f24ff3a325a72f098963822e6017cd11",
+        "dirty": true
+    },
+    "subgates": []
+}
