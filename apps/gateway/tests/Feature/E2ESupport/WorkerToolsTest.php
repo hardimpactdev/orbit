@@ -2264,10 +2264,14 @@ function worker_tools_make_prepare_repo(string $root, string $stubBin): void
         exit 0
 
         STUB);
-    file_put_contents($stubBin.'/npm', data: "#!/usr/bin/env bash\nexit 0\n");
+    file_put_contents($stubBin.'/vp', data: "#!/usr/bin/env bash\nexit 0\n");
     chmod($stubBin.'/composer', permissions: 0o755);
-    chmod($stubBin.'/npm', permissions: 0o755);
-    file_put_contents($root.'/packages/sdk-typescript/package.json', data: "{}\n");
+    chmod($stubBin.'/vp', permissions: 0o755);
+    file_put_contents($root.'/packages/sdk-typescript/package.json', data: "{\"packageManager\":\"npm@11.17.0\"}\n");
+    file_put_contents(
+        $root.'/packages/sdk-typescript/package-lock.json',
+        data: "{\"name\":\"fixture\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"fixture\"}}}\n",
+    );
     file_put_contents($root.'/.gitignore', data: ".worktrees\n/.worktrees/\n");
 
     new Process(['git', 'init', '-b', 'main'], $root)->mustRun();

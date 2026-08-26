@@ -788,7 +788,7 @@ it('prepares a local durable sdk-typescript package with independent package.jso
         ])->and($packageJson['scripts'] ?? null)->toBe([
             'build' => 'tsc -p tsconfig.build.json',
             'pack:dry-run' => 'npm pack --dry-run',
-            'test' => 'npm run typecheck && npm run test:runtime',
+            'test' => 'vp run typecheck && vp run test:runtime',
             'test:runtime' => 'node --experimental-strip-types --test tests/process-stream.test.ts tests/client.test.ts',
             'typecheck' => 'tsc --noEmit',
         ])->and($packageJson['scripts'] ?? [])
