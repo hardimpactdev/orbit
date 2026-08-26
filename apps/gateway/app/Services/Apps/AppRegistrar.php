@@ -468,7 +468,8 @@ final class AppRegistrar
             $attributes['runtime_config'] = $this->runtimeConfigForStorage($input['runtime_proxy_transport']);
         }
 
-        return DB::transaction(function () use (
+        /** @var App $registered */
+        $registered = DB::transaction(function () use (
             $input,
             $node,
             $path,
@@ -523,6 +524,8 @@ final class AppRegistrar
 
             return $app;
         });
+
+        return $registered;
     }
 
     /**

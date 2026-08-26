@@ -21,7 +21,8 @@ final readonly class UpdateAppDevelopmentSetupStep
             throw new InvalidArgumentException('Both before and after cannot be supplied.');
         }
 
-        return DB::transaction(static function () use (
+        /** @var AppDevelopmentSetupStep $updated */
+        $updated = DB::transaction(static function () use (
             $step,
             $command,
             $timeoutSeconds,
@@ -42,30 +43,28 @@ final readonly class UpdateAppDevelopmentSetupStep
                 if (! $anchor instanceof AppDevelopmentSetupStep || $anchor->id === $step->id) {
                     throw new InvalidArgumentException('Setup step anchor was not found.');
                 }
-                $ordered = AppDevelopmentSetupStep::query()
+                /** @var list<int> $orderedIds */
+                $orderedIds = AppDevelopmentSetupStep::query()
                     ->where('app_id', $step->app_id)
                     ->orderBy('sort_order')
                     ->orderBy('id')
-                    ->get()
+                    ->pluck('id')
+                    ->map(static fn (mixed $id): int => (int) $id)
                     ->all();
-                $ordered = array_values(array_filter(
-                    $ordered,
-                    static fn (AppDevelopmentSetupStep $candidate): bool => $candidate->id !== $step->id,
+                $orderedIds = array_values(array_filter(
+                    $orderedIds,
+                    static fn (int $candidateId): bool => $candidateId !== $step->id,
                 ));
                 $anchorIndex = array_search(
                     $anchor->id,
-                    array_map(static fn (AppDevelopmentSetupStep $candidate): int => $candidate->id, $ordered),
+                    $orderedIds,
                     strict: true,
                 );
                 if ($anchorIndex === false) {
                     throw new \InvalidArgumentException('Setup step anchor was not found.');
                 }
                 $insertAt = $anchorIndex + ($afterStepId !== null ? 1 : 0);
-                array_splice($ordered, offset: $insertAt, length: 0, replacement: [$step]);
-                $orderedIds = array_map(
-                    static fn (AppDevelopmentSetupStep $candidate): int => $candidate->id,
-                    $ordered,
-                );
+                array_splice($orderedIds, offset: $insertAt, length: 0, replacement: [$step->id]);
                 AppDevelopmentSetupStep::query()->where('app_id', $step->app_id)->increment('sort_order', 1_000_000);
                 foreach ($orderedIds as $index => $candidateId) {
                     AppDevelopmentSetupStep::query()
@@ -79,5 +78,7 @@ final readonly class UpdateAppDevelopmentSetupStep
 
             return $step->refresh();
         });
+
+        return $updated;
     }
 }

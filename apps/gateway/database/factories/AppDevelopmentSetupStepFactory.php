@@ -11,9 +11,6 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /** @extends Factory<AppDevelopmentSetupStep> */
 final class AppDevelopmentSetupStepFactory extends Factory
 {
-    #[\Override]
-    protected $model = AppDevelopmentSetupStep::class;
-
     public function definition(): array
     {
         return [

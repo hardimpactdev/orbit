@@ -275,7 +275,8 @@ final class InstanceController implements Loggable
         OrbitInstanceDriverConfigData|LaravelCloudInstanceDriverConfigData $driverConfig,
         Request $request,
     ): Instance {
-        return DB::transaction(function () use ($app, $name, $driver, $driverConfig, $request): Instance {
+        /** @var Instance $created */
+        $created = DB::transaction(function () use ($app, $name, $driver, $driverConfig, $request): Instance {
             $instance = $app->instances()->create([
                 'name' => $name,
                 'driver' => $driver,
@@ -303,6 +304,8 @@ final class InstanceController implements Loggable
 
             return $instance;
         });
+
+        return $created;
     }
 
     public function destroy(string $app, string $instance, Request $request): JsonResponse

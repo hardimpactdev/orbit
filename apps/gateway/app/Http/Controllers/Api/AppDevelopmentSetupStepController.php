@@ -11,6 +11,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\AppDevelopmentSetupStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -159,8 +160,9 @@ final class AppDevelopmentSetupStepController implements Loggable
     {
         $app = App::query()->with(['instances', 'developmentSetupSteps'])->where('name', $selector)->first();
         if (! $app instanceof App) {
-            return $this->error('app.not_found', "App '{$selector}' was not found.", 404); /** @var mixed $caller */
+            return $this->error('app.not_found', "App '{$selector}' was not found.", 404);
         }
+        /** @var mixed $caller */
         $caller = $request->user();
         if (! $caller instanceof Node) {
             return $this->error('authorization_failed', 'Peer identity unknown.', 403, [
@@ -168,7 +170,7 @@ final class AppDevelopmentSetupStepController implements Loggable
                 'target' => $selector,
             ]);
         }
-        $authorized = $app->instances->contains(function (Model $instance) use ($caller, $permission): bool {
+        $authorized = $app->instances->contains(function (Instance $instance) use ($caller, $permission): bool {
             $node = $this->placement->nodeForInstance($instance);
 
             return $node instanceof Node && $this->authorizer->authorize($caller, $node, $permission)->allowed;
@@ -191,7 +193,8 @@ final class AppDevelopmentSetupStepController implements Loggable
                 'data' => [
                     'action' => $action,
                     'steps' => $app
-                        ->developmentSetupSteps
+                        ->developmentSetupSteps()
+                        ->get()
                         ->map($this->payload(...))
                         ->values()
                         ->all(),
@@ -252,7 +255,7 @@ final class AppDevelopmentSetupStepController implements Loggable
     {
         $suffix = in_array(request()->method(), ['PATCH', 'DELETE'], strict: true) ? '/{step}' : '';
 
-        return 'api:'.strtoupper((string) request()->method()).' /apps/{app}/development-setup-steps'.$suffix;
+        return 'api:'.strtoupper(request()->method()).' /apps/{app}/development-setup-steps'.$suffix;
     }
 
     public function subject(): ?Model

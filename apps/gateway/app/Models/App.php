@@ -27,6 +27,7 @@ use Override;
  * @property AppRuntimeKind $runtime
  * @property array<string, mixed>|null $runtime_config
  * @property-read Collection<int, Instance> $instances
+ * @property-read Collection<int, AppDevelopmentSetupStep> $developmentSetupSteps
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, AppDependencyAuditSummary> $dependencyAuditSummaries
@@ -97,7 +98,10 @@ class App extends Model
     /** @return HasMany<AppDevelopmentSetupStep, $this> */
     public function developmentSetupSteps(): HasMany
     {
-        return $this->hasMany(AppDevelopmentSetupStep::class)->orderBy('sort_order')->orderBy('id');
+        $steps = $this->hasMany(AppDevelopmentSetupStep::class);
+        $steps->orderBy('sort_order')->orderBy('id');
+
+        return $steps;
     }
 
     /**

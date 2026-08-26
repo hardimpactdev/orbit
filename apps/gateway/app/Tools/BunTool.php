@@ -131,12 +131,14 @@ final class BunTool extends BaseTool
     }
 
     /**
-     * @param  array<string, mixed>  $config
+     * @param  array<array-key, mixed>  $config
      */
     private function managedUser(array $config): string
     {
-        $user = $config['managed_user'] ?? 'orbit';
+        if (! is_string($config['managed_user'] ?? null) || trim($config['managed_user']) === '') {
+            return escapeshellarg('orbit');
+        }
 
-        return escapeshellarg(is_string($user) && trim($user) !== '' ? trim($user) : 'orbit');
+        return escapeshellarg(trim($config['managed_user']));
     }
 }

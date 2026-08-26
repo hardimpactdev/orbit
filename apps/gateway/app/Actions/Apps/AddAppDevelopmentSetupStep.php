@@ -21,7 +21,8 @@ final readonly class AddAppDevelopmentSetupStep
             throw new InvalidArgumentException('Both before and after cannot be supplied.');
         }
 
-        return DB::transaction(static function () use (
+        /** @var AppDevelopmentSetupStep $created */
+        $created = DB::transaction(static function () use (
             $appId,
             $command,
             $timeoutSeconds,
@@ -35,13 +36,23 @@ final readonly class AddAppDevelopmentSetupStep
                     throw new InvalidArgumentException('Setup step was not found.');
                 }
                 $order = $anchor->sort_order + ($afterStepId !== null ? 1 : 0);
-                $all = (clone $steps)->orderBy('sort_order')->orderBy('id')->get();
-                $all->each(static fn (AppDevelopmentSetupStep $step): int => $step->increment('sort_order', 1_000_000));
-                foreach ($all as $index => $step) {
-                    $step->update(['sort_order' => $index + 1 + ($index >= ($order - 1) ? 1 : 0)]);
+                /** @var list<int> $stepIds */
+                $stepIds = (clone $steps)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->pluck('id')
+                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->all();
+                AppDevelopmentSetupStep::query()->whereIn('id', $stepIds)->increment('sort_order', 1_000_000);
+                foreach ($stepIds as $index => $stepId) {
+                    AppDevelopmentSetupStep::query()
+                        ->whereKey($stepId)
+                        ->update(['sort_order' => $index + 1 + ($index >= ($order - 1) ? 1 : 0)]);
                 }
             }
-            $order ??= ((clone $steps)->max('sort_order') ?? 0) + 1;
+            if (! isset($order)) {
+                $order = (int) ((clone $steps)->max('sort_order') ?? 0) + 1;
+            }
 
             return AppDevelopmentSetupStep::query()->create([
                 'app_id' => $appId,
@@ -50,5 +61,7 @@ final readonly class AddAppDevelopmentSetupStep
                 'timeout_seconds' => $timeoutSeconds,
             ]);
         });
+
+        return $created;
     }
 }
