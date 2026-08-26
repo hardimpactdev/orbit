@@ -111,7 +111,7 @@ it('passes the release updater pubkey through TAURI_CONFIG', function (): void {
     expect($source)
         ->toContain('ORBIT_TAURI_UPDATER_PUBKEY')
         ->toContain('TAURI_CONFIG')
-        ->toContain('build --bundles app --config "$TAURI_CONFIG"')
+        ->toContain('vp run tauri build --bundles app --config "$TAURI_CONFIG"')
         ->toContain('plugins":{"updater":{"pubkey":"%s"}}');
 });
 
