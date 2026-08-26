@@ -141,18 +141,19 @@ it('uses a minimal locked Tauri npm project for the desktop build', function ():
     expect($package)
         ->toMatchArray([
             'private' => true,
+            'packageManager' => 'npm@11.17.0',
             'scripts' => ['tauri' => 'tauri'],
             'devDependencies' => ['@tauri-apps/cli' => '^2.9.4'],
         ])
         ->and($package['dependencies'] ?? [])
         ->toBeEmpty()
         ->and(array_keys($package))
-        ->toEqualCanonicalizing(['$schema', 'private', 'scripts', 'devDependencies'])
+        ->toEqualCanonicalizing(['$schema', 'private', 'packageManager', 'scripts', 'devDependencies'])
         ->and($lock['packages']['']['devDependencies'] ?? [])
         ->toBe(['@tauri-apps/cli' => '^2.9.4'])
         ->and($source)
         ->not->toContain('packages/sdk-typescript')
-        ->not->toContain('vp install --frozen-lockfile --ignore-scripts');
+        ->not->toContain('npm ci')->toContain('vp install --frozen-lockfile --ignore-scripts');
 });
 
 it('signs the desktop updater archive through the installed local Tauri CLI', function (): void {
@@ -167,7 +168,7 @@ it('signs the desktop updater archive through the installed local Tauri CLI', fu
     expect($parts)
         ->toHaveCount(2)
         ->and($parts[0])
-        ->toContain('npm run tauri -- signer sign "$archive"');
+        ->toContain('vp run tauri signer sign "$archive"');
 });
 
 it('seals the macOS app bundle before creating desktop artifacts', function (): void {
