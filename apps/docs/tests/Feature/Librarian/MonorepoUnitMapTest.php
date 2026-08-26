@@ -82,7 +82,7 @@ it('maps app and package units to their local tooling and preferred verification
         ->toContain('cd apps/ui && composer test -- --compact')
         ->toContain('cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M')
         ->toContain('cd apps/ui && vendor/bin/pint --test')
-        ->toContain('cd apps/ui && bun run build');
+        ->toContain('cd apps/ui && vp run build');
 });
 
 it('routes the TypeScript SDK package to its Node toolchain and npm verification', function (): void {
@@ -97,13 +97,13 @@ it('routes the TypeScript SDK package to its Node toolchain and npm verification
         ->and($sdkTypescript['agent_skills'])
         ->toContain('.agents/skills/spatie-javascript/SKILL.md')
         ->and($sdkTypescript['verification']['preferred_commands'])
-        ->toContain('cd packages/sdk-typescript && npm test')
-        ->toContain('cd packages/sdk-typescript && npm run build')
+        ->toContain('cd packages/sdk-typescript && vp run test')
+        ->toContain('cd packages/sdk-typescript && vp run build')
         ->not
-        ->toContain('cd packages/sdk-typescript && npm run typecheck')
+        ->toContain('cd packages/sdk-typescript && vp run typecheck')
         ->and($sdkTypescript['verification']['path_argument_rules'])
         ->toContain(
-            'After cd packages/sdk-typescript, run the package npm scripts (npm test, npm run typecheck, npm run build); this Node/npm package does not use Composer, Pest, or Mago.',
+            'After cd packages/sdk-typescript, run the package vp scripts (vp run test, vp run typecheck, vp run build); this Node/npm package does not use Composer, Pest, or Mago.',
         );
 });
 
@@ -331,7 +331,7 @@ it('keeps preferred verification commands pointed at current repo entrypoints', 
                 }
 
                 if (
-                    in_array($executable, ['bun', 'composer', 'npm', 'npx', 'node'], strict: true)
+                    in_array($executable, ['bun', 'composer', 'npm', 'npx', 'node', 'vp'], strict: true)
                     && is_file("{$repoRoot}/{$directory}/package.json")
                 ) {
                     continue;

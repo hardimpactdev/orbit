@@ -288,7 +288,7 @@ Herd/Valet-style apps.
 Process commands store the operator-provided command and do not rewrite it for a specific frontend server. A development server that must be reachable from a client browser or support HMR across the Orbit network must bind to a node-reachable interface instead of loopback. For Vite-backed processes, the expected command shape is:
 
 ```text
-npm run dev -- --host=0.0.0.0
+vp run dev -- --host=0.0.0.0
 ```
 
 Equivalent package-manager or framework adapter commands are valid when they produce the same non-loopback bind behavior. Orbit supplies `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` so the process can serve the instance/workspace URL over Orbit-managed HTTPS and keep browser HMR connected through the network path.

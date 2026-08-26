@@ -1217,17 +1217,17 @@ sdk_component() {
 }
 
 sdk_typescript_component() {
-    run_subgate sdk_typescript_typecheck bash -lc 'cd packages/sdk-typescript && npm run typecheck'
-    run_subgate sdk_typescript_build bash -lc 'cd packages/sdk-typescript && npm run build'
-    run_subgate sdk_typescript_runtime bash -lc 'cd packages/sdk-typescript && npm run test:runtime'
+    run_subgate sdk_typescript_typecheck bash -lc 'cd packages/sdk-typescript && vp run typecheck'
+    run_subgate sdk_typescript_build bash -lc 'cd packages/sdk-typescript && vp run build'
+    run_subgate sdk_typescript_runtime bash -lc 'cd packages/sdk-typescript && vp run test:runtime'
 }
 
 ui_component() {
     run_subgate ui_pest bash -lc 'cd apps/ui && composer test -- --compact'
     run_subgate ui_phpstan env PHP_MEMORY_LIMIT=512M bash -lc 'cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M'
     run_subgate ui_pint bash -lc 'cd apps/ui && vendor/bin/pint --test'
-    run_subgate ui_viteplus bash -lc 'cd apps/ui && bun run prepare'
-    run_subgate ui_build bash -lc 'cd apps/ui && bun run build'
+    run_subgate ui_viteplus bash -lc 'cd apps/ui && vp run prepare'
+    run_subgate ui_build bash -lc 'cd apps/ui && vp run build'
 }
 
 core_component() {

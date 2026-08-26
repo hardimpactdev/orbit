@@ -5,7 +5,7 @@ This package generates a typed public gateway client from the gateway-owned Open
 ## Generate
 
 ```bash
-npm run generate
+vp run generate
 ```
 
 The command refreshes `.orbit/evidence/gateway-openapi.json` through `apps/gateway`, filters it with `apps/gateway/openapi-sdk-surface.json`, writes `openapi/public-gateway-openapi.json`, then regenerates `src/generated/schema.ts` with `openapi-typescript`.
@@ -206,5 +206,5 @@ to npm and does not stamp root Orbit VERSION into it.
 
 ```bash
 # Optional dry-run from monorepo source package:
-(cd packages/sdk-typescript && npm ci && npm test && npm run build && npm pack --dry-run)
+(cd packages/sdk-typescript && vp install && vp run test && vp run build && npm pack --dry-run)
 ```

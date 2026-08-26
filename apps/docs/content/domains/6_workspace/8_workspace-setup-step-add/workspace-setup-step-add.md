@@ -76,7 +76,7 @@ orbit workspace-setup-step:add --command="php artisan migrate"
 Use `--before` to position the step relative to an existing step ID.
 
 ```bash
-orbit workspace-setup-step:add --command="npm install" --before=12
+orbit workspace-setup-step:add --command="vp install" --before=12
 ```
 
 ## Requirements

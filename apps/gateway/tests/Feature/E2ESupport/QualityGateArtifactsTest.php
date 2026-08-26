@@ -1272,7 +1272,7 @@ it('installs locked TypeScript SDK tools in every prepared worktree', function (
     $script = (string) file_get_contents(repo_path('bin/orbit-prepare-worktree'));
     $sdkInstallPosition = strpos(
         haystack: $script,
-        needle: 'run_in "${worktree_path}/packages/sdk-typescript" npm ci --ignore-scripts --include=dev',
+        needle: 'run_in "${worktree_path}/packages/sdk-typescript" vp install --frozen-lockfile --ignore-scripts',
     );
     $optionalFrontendPosition = strpos(
         haystack: $script,

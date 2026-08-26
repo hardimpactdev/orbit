@@ -24,8 +24,8 @@ it('runs Pest through the git-aware runner', function (): void {
 
     expect($composer['scripts']['test'])->toBe('@php scripts/run-pest.php')
         ->and($composer['scripts']['test:browser'])->toBe('@php scripts/run-browser-tests.php')
-        ->and($composer['scripts']['dev'][1] ?? '')->toContain('bunx concurrently')
-        ->and($composer['scripts']['dev'][1] ?? '')->toContain('bun run dev')
+        ->and($composer['scripts']['dev'][1] ?? '')->toContain('vp dlx concurrently')
+        ->and($composer['scripts']['dev'][1] ?? '')->toContain('vp run dev')
         ->and($composer['scripts']['dev'][1] ?? '')->not->toContain('npx ')
         ->and($composer['scripts']['dev'][1] ?? '')->not->toContain('npm run dev');
 });

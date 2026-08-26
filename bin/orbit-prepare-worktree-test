@@ -129,7 +129,7 @@ chmod +x "$REPO/bin/orbit-prepare-worktree" "$REPO/bin/quality-gate-seed-baselin
 
 write_composer_stub
 
-cat >"$STUB_BIN/npm" <<'STUB'
+cat >"$STUB_BIN/vp" <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
@@ -152,7 +152,7 @@ esac
 exec "$REAL_GIT" "\$@"
 STUB
 
-chmod +x "$STUB_BIN/composer" "$STUB_BIN/npm" "$STUB_BIN/tmux" "$STUB_BIN/git"
+chmod +x "$STUB_BIN/composer" "$STUB_BIN/vp" "$STUB_BIN/tmux" "$STUB_BIN/git"
 
 printf '{}\n' >"$REPO/composer.json"
 printf '{}\n' >"$REPO/packages/core/composer.json"

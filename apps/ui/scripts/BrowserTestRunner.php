@@ -100,7 +100,7 @@ class BrowserTestRunner
 
     protected function buildAssets(): void
     {
-        $build = new Process(['bun', 'run', 'build'], $this->projectRoot);
+        $build = new Process(['vp', 'run', 'build'], $this->projectRoot);
         $build->setTimeout(300);
         $build->run(static function (string $type, string $buffer): void {
             echo $buffer;

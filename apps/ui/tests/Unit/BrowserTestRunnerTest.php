@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 use Launch\BrowserTestRunner;
 
+it('builds assets through vp', function () {
+    expect(file_get_contents(base_path('scripts/BrowserTestRunner.php')))
+        ->toContain("new Process(['vp', 'run', 'build']");
+});
+
 function launchBrowserRunnerScratch(): string
 {
     $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'launch-browser-'.bin2hex(random_bytes(8));

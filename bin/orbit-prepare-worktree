@@ -336,7 +336,7 @@ for composer_manifest in "${worktree_path}"/packages/*/composer.json "${worktree
 done
 
 step "Installing TypeScript SDK dependencies"
-run_in "${worktree_path}/packages/sdk-typescript" npm ci --ignore-scripts --include=dev
+run_in "${worktree_path}/packages/sdk-typescript" vp install --frozen-lockfile --ignore-scripts
 
 prepare_gateway_app() {
     local app_path="$1"
@@ -409,13 +409,13 @@ if [ "$run_frontend" -eq 1 ]; then
     step "Building frontend assets"
     for directory in apps/gateway apps/docs; do
         if [ -f "${worktree_path}/${directory}/package.json" ]; then
-            run_in "${worktree_path}/${directory}" npm install --ignore-scripts
-            run_in "${worktree_path}/${directory}" npm run build
+            run_in "${worktree_path}/${directory}" vp install --ignore-scripts
+            run_in "${worktree_path}/${directory}" vp run build
         fi
     done
     if [ -f "${worktree_path}/apps/ui/package.json" ]; then
-        run_in "${worktree_path}/apps/ui" bun install --frozen-lockfile
-        run_in "${worktree_path}/apps/ui" bun run build
+        run_in "${worktree_path}/apps/ui" vp install --frozen-lockfile
+        run_in "${worktree_path}/apps/ui" vp run build
     fi
 fi
 

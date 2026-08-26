@@ -12,8 +12,8 @@ long-running instance or workspace workers, and development servers.
 ## Usage
 
 ```bash
-orbit process:add vite "npm run dev" --instance=docs.production --crash-notification=none
-orbit process:add vite "npm run dev" --instance=docs.production --label="Vite Dev Server"
+orbit process:add vite "vp run dev" --instance=docs.production --crash-notification=none
+orbit process:add vite "vp run dev" --instance=docs.production --label="Vite Dev Server"
 orbit process:add queue "php artisan queue:work" --instance=docs.production --restart-policy=always
 orbit process:add horizon "php artisan horizon" --instance=docs.development --workspace=feature-docs --runtime=systemd
 orbit process:add feedback "php artisan feedback:work" --instance=feedback.development --runtime=launchd
@@ -26,7 +26,7 @@ orbit process:add postgres-food --node=database-1 --service=postgres --version=1
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
 orbit process:add file-watcher "watch.sh" --instance=static-site.production --runtime=systemd
-orbit process:add vite "npm run dev" --instance=docs.production --json
+orbit process:add vite "vp run dev" --instance=docs.production --json
 ```
 
 ## Behavior Summary

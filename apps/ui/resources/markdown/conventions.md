@@ -53,8 +53,8 @@ import { show } from "@/actions/App/Http/Controllers/ProjectController";
 ## Components: shadcn base-nova on Base UI
 
 ```bash
-bunx shadcn add button dialog               # shadcn components on Base UI primitives
-bunx shadcn add @launch/app-sidebar-layout  # layouts from the @launch registry
+vp dlx shadcn add button dialog               # shadcn components on Base UI primitives
+vp dlx shadcn add @launch/app-sidebar-layout  # layouts from the @launch registry
 ```
 
 Never install `@radix-ui/*` packages. This kit is configured for Base UI, and mixing the two
@@ -98,12 +98,12 @@ import { __ } from "@nckrtl/launch-ui/i18n";
 | `composer lint`         | Pint (PHP formatting)                                                                                                |
 | `composer check`        | test + analyse + frontend lint + browser tests                                                                       |
 | `composer fix`          | Rector + Pint + frontend autofix                                                                                     |
-| `bun run dev`           | Vite dev server only                                                                                                 |
-| `bun run build`         | Production build (client + SSR bundles)                                                                              |
+| `vp run dev`           | Vite dev server only                                                                                                 |
+| `vp run build`         | Production build (client + SSR bundles)                                                                              |
 
 Browser tests drive a real Chromium through Playwright. The `playwright` npm package ships
 as a devDependency, but the browser binary is a separate one-time install:
-`bunx playwright install chromium`. Without it, `composer test:browser` — and therefore
+`vp dlx playwright install chromium`. Without it, `composer test:browser` — and therefore
 `composer check` — fails.
 
 `composer dev` does not exit. Never run it as a blocking foreground step in an automated flow.

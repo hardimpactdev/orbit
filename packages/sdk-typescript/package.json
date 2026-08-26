@@ -39,11 +39,11 @@
     ],
     "scripts": {
         "build": "tsc -p tsconfig.build.json",
-        "generate": "npm run generate:openapi && npm run generate:types",
+        "generate": "vp run generate:openapi && vp run generate:types",
         "generate:openapi": "composer --working-dir=../../apps/gateway openapi:export && node scripts/filter-public-openapi.mjs",
         "generate:types": "openapi-typescript openapi/public-gateway-openapi.json -o src/generated/schema.ts",
         "pack:dry-run": "npm pack --dry-run",
-        "test": "npm run typecheck && npm run test:runtime",
+        "test": "vp run typecheck && vp run test:runtime",
         "test:runtime": "node --experimental-strip-types --test tests/process-stream.test.ts tests/client.test.ts",
         "typecheck": "tsc --noEmit"
     },
@@ -53,5 +53,6 @@
     "devDependencies": {
         "openapi-typescript": "^7.13.0",
         "typescript": "^5.9.3"
-    }
+    },
+    "packageManager": "npm@11.17.0"
 }

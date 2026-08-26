@@ -480,8 +480,8 @@
                     "cd apps/ui && composer test -- --compact",
                     "cd apps/ui && vendor/bin/phpstan analyse --memory-limit=512M",
                     "cd apps/ui && vendor/bin/pint --test",
-                    "cd apps/ui && bun run prepare",
-                    "cd apps/ui && bun run build"
+                    "cd apps/ui && vp run prepare",
+                    "cd apps/ui && vp run build"
                 ],
                 "path_argument_rules": [
                     "After cd apps/ui, pass Pest, PHPStan, and Pint paths relative to apps/ui; do not route UI checks through gateway Mago.",
@@ -640,12 +640,12 @@
             ],
             "verification": {
                 "preferred_commands": [
-                    "cd packages/sdk-typescript && npm test",
-                    "cd packages/sdk-typescript && npm run build"
+                    "cd packages/sdk-typescript && vp run test",
+                    "cd packages/sdk-typescript && vp run build"
                 ],
                 "path_argument_rules": [
-                    "After cd packages/sdk-typescript, run the package npm scripts (npm test, npm run typecheck, npm run build); this Node/npm package does not use Composer, Pest, or Mago.",
-                    "src/generated/schema.ts is generated from the gateway OpenAPI contract; regenerate it with npm run generate instead of hand-editing."
+                    "After cd packages/sdk-typescript, run the package vp scripts (vp run test, vp run typecheck, vp run build); this Node/npm package does not use Composer, Pest, or Mago.",
+                    "src/generated/schema.ts is generated from the gateway OpenAPI contract; regenerate it with vp run generate instead of hand-editing."
                 ],
                 "manual_only_commands": []
             },

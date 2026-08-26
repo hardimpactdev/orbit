@@ -12,7 +12,7 @@ derived unit names so they match the current identity slug.
 ## Usage
 
 ```bash
-orbit process:update vite --instance=docs.production --command="npm run dev"
+orbit process:update vite --instance=docs.production --command="vp run dev"
 orbit process:update vite --instance=docs.production --label="Vite Dev Server"
 orbit process:update queue --instance=docs.production --restart-policy=on_failure --restart
 orbit process:update horizon --instance=docs.development --workspace=feature-docs --command="php artisan horizon"
@@ -22,7 +22,7 @@ orbit process:update worker --instance=feedback.development --runtime=launchd --
 orbit process:update valkey --node=database-1 --bind=wireguard --bind=loopback
 orbit process:update valkey --node=database-1 --bind=wireguard --restart
 orbit process:update mysql --node=database-1 --name=app-mysql --json
-orbit process:update vite --instance=docs.production --command="npm run dev" --json
+orbit process:update vite --instance=docs.production --command="vp run dev" --json
 ```
 
 ## Behavior Summary

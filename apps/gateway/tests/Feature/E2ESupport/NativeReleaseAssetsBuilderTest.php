@@ -143,16 +143,17 @@ it('uses a minimal locked Tauri npm project for the desktop build', function ():
             'private' => true,
             'scripts' => ['tauri' => 'tauri'],
             'devDependencies' => ['@tauri-apps/cli' => '^2.9.4'],
+            'packageManager' => 'npm@11.17.0',
         ])
         ->and($package['dependencies'] ?? [])
         ->toBeEmpty()
         ->and(array_keys($package))
-        ->toEqualCanonicalizing(['$schema', 'private', 'scripts', 'devDependencies'])
+        ->toEqualCanonicalizing(['$schema', 'private', 'scripts', 'devDependencies', 'packageManager'])
         ->and($lock['packages']['']['devDependencies'] ?? [])
         ->toBe(['@tauri-apps/cli' => '^2.9.4'])
         ->and($source)
         ->not->toContain('packages/sdk-typescript')
-        ->not->toContain('npm ci --ignore-scripts --include=dev');
+        ->not->toContain('vp install --frozen-lockfile --ignore-scripts');
 });
 
 it('signs the desktop updater archive through the installed local Tauri CLI', function (): void {
@@ -167,7 +168,7 @@ it('signs the desktop updater archive through the installed local Tauri CLI', fu
     expect($parts)
         ->toHaveCount(2)
         ->and($parts[0])
-        ->toContain('npm run tauri -- signer sign "$archive"');
+        ->toContain('vp run tauri -- signer sign "$archive"');
 });
 
 it('fails closed when the desktop signing key is missing', function (): void {
@@ -357,3 +358,15 @@ function native_release_assets_parse_manifest(string $path): array
 
     return $values;
 }
+
+it('declares package managers for every Orbit-owned JavaScript project', function () {
+    foreach ([
+        'apps/gateway/package.json' => 'npm@11.17.0',
+        'apps/docs/package.json' => 'npm@11.17.0',
+        'apps/macos/package.json' => 'npm@11.17.0',
+        'packages/sdk-typescript/package.json' => 'npm@11.17.0',
+        'apps/ui/package.json' => 'bun@1.3.14',
+    ] as $path => $manager) {
+        expect(json_decode(file_get_contents(repo_path($path)), true)['packageManager'])->toBe($manager);
+    }
+});

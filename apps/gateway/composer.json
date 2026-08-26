@@ -80,12 +80,12 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate",
             "@php artisan migrate --force",
-            "npm install --ignore-scripts",
-            "npm run build"
+            "vp install --ignore-scripts",
+            "vp run build"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "vp dlx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"vp run dev\" --names=server,queue,logs,vite --kill-others"
         ],
         "openapi:prepare": [
             "@php -r \"is_dir('../../.orbit/evidence') || mkdir('../../.orbit/evidence', 0777, true);\"",

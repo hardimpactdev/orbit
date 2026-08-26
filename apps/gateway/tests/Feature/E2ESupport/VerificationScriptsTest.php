@@ -468,7 +468,7 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
         ->toContain(
             'cd apps/e2e && vendor/bin/mago format',
         )
-        ->toContain('cd packages/sdk-typescript && npm run test:runtime');
+        ->toContain('cd packages/sdk-typescript && vp run test:runtime');
 });
 
 it('keeps the aggregate quality gate Pest lanes complete', function (): void {
