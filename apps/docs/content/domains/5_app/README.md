@@ -397,10 +397,10 @@ Use these commands for setup steps. Codex App registration lives in the
 
 ### App Development Setup Defaults
 
-1. [`orbit app-development-setup-step:add [app]`](26_app-development-setup-step-add/app-development-setup-step-add.md)
-2. [`orbit app-development-setup-step:list [app]`](27_app-development-setup-step-list/app-development-setup-step-list.md)
-3. [`orbit app-development-setup-step:update [app]`](28_app-development-setup-step-update/app-development-setup-step-update.md)
-4. [`orbit app-development-setup-step:remove [app]`](29_app-development-setup-step-remove/app-development-setup-step-remove.md)
+1. [`orbit app-development-setup-step:add [app]`](31_app-development-setup-step-add/app-development-setup-step-add.md)
+2. [`orbit app-development-setup-step:list [app]`](32_app-development-setup-step-list/app-development-setup-step-list.md)
+3. [`orbit app-development-setup-step:update [app]`](33_app-development-setup-step-update/app-development-setup-step-update.md)
+4. [`orbit app-development-setup-step:remove [app]`](34_app-development-setup-step-remove/app-development-setup-step-remove.md)
 
 ## Related
 
