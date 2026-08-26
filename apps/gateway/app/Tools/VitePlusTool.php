@@ -31,6 +31,9 @@ final class VitePlusTool extends BaseTool
     public function installScript(array $config = []): string
     {
         return $this->script('install', $config, <<<'BASH'
+            MANAGED_GROUP="$(id -gn "${MANAGED_USER}")"
+            test -n "${MANAGED_GROUP}"
+            sudo install -d -o "${MANAGED_USER}" -g "${MANAGED_GROUP}" "${MANAGED_HOME}/.local" "${MANAGED_HOME}/.local/share"
             sudo -u "${MANAGED_USER}" -H bash -lc 'curl -fsSL https://vite.plus | bash'
             VP="$(sudo -u "${MANAGED_USER}" -H bash -lc 'command -v vp' || true)"
             for candidate in "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do

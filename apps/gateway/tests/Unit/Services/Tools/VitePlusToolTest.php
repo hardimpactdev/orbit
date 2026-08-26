@@ -30,6 +30,11 @@ it('installs viteplus and its lts node environment for the managed user', functi
         ->toContain('/usr/local/bin/${binary}')
         ->and($script)
         ->toContain('nckrtl');
+
+    expect($script)->toContain(
+        'MANAGED_GROUP="$(id -gn "${MANAGED_USER}")"',
+        'install -d -o "${MANAGED_USER}" -g "${MANAGED_GROUP}" "${MANAGED_HOME}/.local" "${MANAGED_HOME}/.local/share"',
+    );
 });
 
 it('supports both viteplus home layouts when exposing stable links', function (): void {
