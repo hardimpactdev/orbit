@@ -134,8 +134,8 @@ function LanguageSwitcher() {
 - `@launch` registry for layout components
 
 ```bash
-bunx shadcn add button dialog              # shadcn components backed by Base UI primitives
-bunx shadcn add @launch/app-sidebar-layout # Layout from the @launch registry
+vp dlx shadcn add button dialog              # shadcn components backed by Base UI primitives
+vp dlx shadcn add @launch/app-sidebar-layout # Layout from the @launch registry
 ```
 
 ## Key Directories
@@ -171,13 +171,13 @@ lang/                     # Translation JSON files (when i18n enabled)
 ```bash
 composer dev              # Server, queue, logs, and vite — only when nothing else serves the app
 vp dev                    # VitePlus dev server only
-bun run build             # Production build: vp build && vp build --ssr
+vp run build             # Production build: vp build && vp build --ssr
 vp build                  # Client build only (no SSR bundle)
 vp check                  # Lint + format (Oxc)
 vp check --fix            # Auto-fix
 composer test             # Pest tests (Unit + Feature suites) via scripts/run-pest.php:
                           #   full suite until the repo has a first commit, --tia after
-composer test:browser     # bun run build, then Pest browser tests (tests/Browser)
+composer test:browser     # vp run build, then Pest browser tests (tests/Browser)
 composer lint             # Pint (PHP formatting)
 composer analyse          # PHPStan level 9
 composer rector           # Rector code upgrades
@@ -192,7 +192,7 @@ its long-running processes are run per environment.
 
 ### SSR
 
-Production SSR is enabled: `bun run build` builds the SSR bundle, and its port
+Production SSR is enabled: `vp run build` builds the SSR bundle, and its port
 is pinned to 13719 in `vite.config.ts` (no env override exists — read the
 comment there before changing it). Feature tests deliberately disable SSR and
 Vite (`tests/Pest.php` sets `inertia.ssr.enabled=false` and calls
@@ -207,11 +207,11 @@ not treat the test suite as SSR coverage.
   Note: `tests/Browser/` is not part of the phpunit.xml testsuites, so `composer test`
   does not run it — run `composer test:browser` (builds assets first) or
   `vendor/bin/pest tests/Browser` against an existing build. The `playwright` npm package
-  is already a devDependency (installed by `bun install`), but the Chromium binary is a
-  separate one-time install: `bunx playwright install chromium`. Without it, browser
+  is already a devDependency (installed by `vp install`), but the Chromium binary is a
+  separate one-time install: `vp dlx playwright install chromium`. Without it, browser
   tests — and therefore `composer check` — fail on a fresh machine
 - **JS/TS**: VitePlus (Oxc linting + formatting)
-- **Git hooks**: Orbit's monorepo root owns repository hooks. `bun install` runs
+- **Git hooks**: Orbit's monorepo root owns repository hooks. `vp install` runs
   `vp config --no-hooks` and does not set or replace `core.hooksPath`. Run VitePlus checks
   through the UI Composer scripts or the root quality gate.
 - **CSP**: Spatie laravel-csp with Basic + Development presets
