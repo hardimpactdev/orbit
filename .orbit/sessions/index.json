@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 431,
-    "unique_candidate_commit_count": 327,
+    "record_count": 432,
+    "unique_candidate_commit_count": 328,
     "orphan_count": 4,
     "records": [
         {
@@ -11004,6 +11004,29 @@
             "blast_radius_status": "complete",
             "acceptance_status": "accepted",
             "acceptance_venue": "automated",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-26-164625-codex-viteplus-package-management-default",
+            "slug": "codex-viteplus-package-management-default",
+            "timestamp": "2026-08-26-164625",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "87c57fa9e0199e9f7e62eddd1e51eb975de74430",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
             "feedback_count": 0,
             "feedback": {
                 "status": "absent",

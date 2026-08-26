@@ -1,0 +1,48 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-26T14:46:26+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-viteplus-package-management-default/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-26-164625-codex-viteplus-package-management-default",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-26T123629Z-18904709a3dc.json",
+        "diagnostics/failed-gates/quality-check-2026-08-26T141730Z-2836bb019040.json",
+        "evidence/quality-gate-timing-triage.md",
+        "evidence/viteplus-retained-incus-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-26T143808Z-30636ca62d46.json",
+        "slices/01-managed-viteplus-runtime.md",
+        "slices/02-vp-project-workflows.md",
+        "slices/03-vp-runtime-dependency-restore.md",
+        "workers/handoff/review-1-c59bf8d892fdb1736964e79add6cd230731ca0b1.md",
+        "workers/handoff/review-1.md",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-26T123629Z-18904709a3dc.json": "d822f7581ef7870974c2068c1e4c9504ef6039a3e4f1bc1f30e09d502a7ea463",
+        "diagnostics/failed-gates/quality-check-2026-08-26T141730Z-2836bb019040.json": "3b33635161b2e88c122d6fec2d219d27b5cc4b0b75e04d0282ca91a789b124cc",
+        "evidence/quality-gate-timing-triage.md": "8dd6bc8a52c8198c0025de69c7c60a53c1ec8ec4926268481c3c7ffd274794b6",
+        "evidence/viteplus-retained-incus-proof.md": "d78798c18ae7775d3e7fe55f9c537549898ae4e056ec939f2e935f166af38f41",
+        "loop.md": "ace532779ed16b904a64fc1ea06ea70f003f7ac7d29859b3e774c42b5482e7c4",
+        "quality-gates/quality-check-2026-08-26T143808Z-30636ca62d46.json": "8546995c4138a50749907c1019915a389af2879dae91f6cf735aef1dac72106f",
+        "slices/01-managed-viteplus-runtime.md": "0abda95b27c9e022953579b02b7c0dabe36fdc88c9a4e61dec6b825ec50c8a02",
+        "slices/02-vp-project-workflows.md": "a1282807da36834bc39ae8d5aaa71feb27f84b8782c98809151b4f60237d74ca",
+        "slices/03-vp-runtime-dependency-restore.md": "2c35344be1b9c45e6dd24882480b5d753e2014ac73b42b33265787b9fe30299b",
+        "workers/handoff/review-1-c59bf8d892fdb1736964e79add6cd230731ca0b1.md": "1fe41bfa92cc04b3bfe6ba487e517e694b2450edf32de3e39cff7baa5adadaf0",
+        "workers/handoff/review-1.md": "dd4f5e678f05f2045fba2b45ae799dc2605d99c2db81c889811b5f0c82854a37",
+        "workers/review-1.json": "78be17a183c9f3d86da92db2b0df5cc8a552122d48174a0cd056d4ae48d082ca"
+    },
+    "slug": "codex-viteplus-package-management-default",
+    "requested_slug": "codex-viteplus-package-management-default",
+    "compatible_slugs": [
+        "codex-viteplus-package-management-default"
+    ],
+    "branch": "codex/viteplus-package-management-default",
+    "candidate_commit": "87c57fa9e0199e9f7e62eddd1e51eb975de74430",
+    "accepted_feature_tip": "87c57fa9e0199e9f7e62eddd1e51eb975de74430",
+    "accepted_main_tip": "55d4ae4b10e8df3eddd81217ecc3822a9d448b88",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
