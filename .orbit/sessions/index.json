@@ -1,8 +1,8 @@
 {
     "schema_version": 3,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 434,
-    "unique_candidate_commit_count": 330,
+    "record_count": 435,
+    "unique_candidate_commit_count": 331,
     "orphan_count": 4,
     "records": [
         {
@@ -11068,6 +11068,29 @@
             "schema": "compact-v1",
             "archive_mode": "compact",
             "candidate_commit": "06d8e0be6943df90c8983cc1bd8198fb82b59adc",
+            "state": "accepted",
+            "review_status": "passed",
+            "blast_radius_status": "complete",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "host-macos",
+            "feedback_count": 0,
+            "feedback": {
+                "status": "absent",
+                "event_count": 0,
+                "raw_count": 0,
+                "promoted_count": 0,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
+        },
+        {
+            "archive": "2026-08-26-213559-fix-macos-activation-policy",
+            "slug": "fix-macos-activation-policy",
+            "timestamp": "2026-08-26-213559",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "candidate_commit": "a716d1eea10463ed4f73ae70e02f973fb9c13b14",
             "state": "accepted",
             "review_status": "passed",
             "blast_radius_status": "complete",

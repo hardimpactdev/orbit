@@ -1,0 +1,38 @@
+{
+    "schema_version": 4,
+    "generated_at": "2026-08-26T19:35:59+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-macos-activation-policy/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-08-26-213559-fix-macos-activation-policy",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "diagnostics/failed-gates/quality-check-2026-08-26T192343Z-07dd894feead.json",
+        "evidence/macos-activation-policy-blast-radius.md",
+        "evidence/macos-activation-policy-platform-proof.md",
+        "loop.md",
+        "quality-gates/quality-check-2026-08-26T192642Z-836f81c15022.json",
+        "slices/01-macos-activation-policy.md",
+        "workers/review-1.json"
+    ],
+    "entry_digests": {
+        "diagnostics/failed-gates/quality-check-2026-08-26T192343Z-07dd894feead.json": "d621159beff3ea4449623c1ca568fa1e12a6ab4b66bbb6d81eed993692c86bb8",
+        "evidence/macos-activation-policy-blast-radius.md": "22c3d765b0caf82d1db247d10f656b3098cbe95b6d45a88fcc98f97eae5c1432",
+        "evidence/macos-activation-policy-platform-proof.md": "0deede64bd29c99ae3d2db8b76fcf3b639938d41a8dcf6b09475dc045363bb38",
+        "loop.md": "87fcad1672d236769bf9bc85ddbc2732a87777006ddb6fa8682f1fb0e40e6dd2",
+        "quality-gates/quality-check-2026-08-26T192642Z-836f81c15022.json": "1a969cf5bae3d7929b21602262cde962ed1f0eb911c7939e9a22b8ca32822519",
+        "slices/01-macos-activation-policy.md": "9c8929d5bb282e63d000838da5ea33d8dc1795706cc898486215585112144e15",
+        "workers/review-1.json": "4c67978bb118ca277b884c3c6f4e0e816c6c69c5a2a253906ebb22ca132a6ecb"
+    },
+    "slug": "fix-macos-activation-policy",
+    "requested_slug": "fix-macos-activation-policy",
+    "compatible_slugs": [
+        "fix-macos-activation-policy"
+    ],
+    "branch": "fix-macos-activation-policy",
+    "candidate_commit": "a716d1eea10463ed4f73ae70e02f973fb9c13b14",
+    "accepted_feature_tip": "a716d1eea10463ed4f73ae70e02f973fb9c13b14",
+    "accepted_main_tip": "ca29251f3035e809c77f59d56aabd5b3bdb70d98",
+    "discovered_worker_ids": [],
+    "agent_results": []
+}
