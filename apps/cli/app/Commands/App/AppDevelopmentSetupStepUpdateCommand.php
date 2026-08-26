@@ -6,7 +6,6 @@ namespace App\Commands\App;
 
 use App\Exceptions\GatewayApiException;
 
-// mago:ignore cyclomatic-complexity -- command input contract intentionally validates multiple independent fields
 final class AppDevelopmentSetupStepUpdateCommand extends AppGatewayCommand
 {
     #[\Override]
@@ -23,25 +22,20 @@ final class AppDevelopmentSetupStepUpdateCommand extends AppGatewayCommand
         if ($step === null) {
             return $this->failValidation('step', 'Step must be a positive integer.');
         }
-        $payload = $this->filledQuery([
-            'command' => $this->stringOption('command'),
-            'timeout' => $this->positiveOption('timeout'),
-            'before' => $this->positiveOption('before'),
-            'after' => $this->positiveOption('after'),
-        ]);
-        foreach (['timeout', 'before', 'after'] as $field) {
-            if ($this->option($field) !== null && ! array_key_exists($field, $payload)) {
-                return $this->failValidation($field, "The --{$field} option must be a positive integer.");
-            }
-        }
-        if (($payload['before'] ?? null) !== null && ($payload['after'] ?? null) !== null) {
-            return $this->failValidation('before', 'Both insertion flags cannot be supplied.');
-        }
-        if ($payload === []) {
-            return $this->failValidation('change', 'At least one change is required.');
+        $input = AppDevelopmentSetupStepUpdateInput::fromOptions(
+            command: $this->stringOption('command'),
+            timeout: $this->option('timeout'),
+            before: $this->option('before'),
+            after: $this->option('after'),
+        );
+        if (array_key_exists('error', $input)) {
+            return $this->failValidation($input['error']['field'], $input['error']['message']);
         }
         try {
-            $response = $this->gatewayPatch($this->apiProjectPath($app, "/development-setup-steps/{$step}"), $payload);
+            $response = $this->gatewayPatch(
+                $this->apiProjectPath($app, "/development-setup-steps/{$step}"),
+                $input['values'],
+            );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -56,13 +50,6 @@ final class AppDevelopmentSetupStepUpdateCommand extends AppGatewayCommand
     private function positiveArgument(string $name): ?int
     {
         $value = $this->stringArgument($name);
-
-        return is_string($value) && ctype_digit($value) && (int) $value > 0 ? (int) $value : null;
-    }
-
-    private function positiveOption(string $name): ?int
-    {
-        $value = $this->option($name);
 
         return is_string($value) && ctype_digit($value) && (int) $value > 0 ? (int) $value : null;
     }

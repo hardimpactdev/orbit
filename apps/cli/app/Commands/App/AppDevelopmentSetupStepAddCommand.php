@@ -8,7 +8,6 @@ use App\Exceptions\GatewayApiException;
 
 use function Laravel\Prompts\text;
 
-// mago:ignore cyclomatic-complexity -- command input contract intentionally validates multiple independent fields
 final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
 {
     #[\Override]
@@ -28,30 +27,19 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
         if ($command === null) {
             return $this->failValidation('command', 'Command is required.');
         }
-        $timeout = $this->positiveInt('timeout', 600);
-        if ($timeout === null) {
-            return $this->failValidation('timeout', 'Timeout must be a positive integer.');
-        }
-        $before = $this->positiveInt('before');
-        $after = $this->positiveInt('after');
-        if ($this->option('before') !== null && $before === null) {
-            return $this->failValidation('before', 'The --before option must be a positive integer.');
-        }
-        if ($this->option('after') !== null && $after === null) {
-            return $this->failValidation('after', 'The --after option must be a positive integer.');
-        }
-        if ($before !== null && $after !== null) {
-            return $this->failValidation('before', 'Both insertion flags cannot be supplied.');
+        $input = AppDevelopmentSetupStepAddInput::fromOptions(
+            command: $command,
+            timeout: $this->option('timeout'),
+            before: $this->option('before'),
+            after: $this->option('after'),
+        );
+        if (array_key_exists('error', $input)) {
+            return $this->failValidation($input['error']['field'], $input['error']['message']);
         }
         try {
             $response = $this->gatewayPost(
                 $this->apiProjectPath($app, '/development-setup-steps'),
-                $this->filledQuery([
-                    'command' => $command,
-                    'timeout' => $timeout,
-                    'before' => $before,
-                    'after' => $after,
-                ]),
+                $input['values'],
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
@@ -64,16 +52,6 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
         $this->line('Command: '.self::field($step, 'command'));
 
         return self::SUCCESS;
-    }
-
-    private function positiveInt(string $name, ?int $default = null): ?int
-    {
-        $value = $this->option($name);
-        if (($value === null || $value === '') && $default !== null) {
-            return $default;
-        }
-
-        return is_string($value) && ctype_digit($value) && (int) $value > 0 ? (int) $value : null;
     }
 
     private static function field(mixed $step, string $key): string
