@@ -11,6 +11,7 @@ use App\Data\Apps\LaravelCloudInstanceDriverConfigData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\InstanceDriver;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -280,7 +281,7 @@ final class InstanceController implements Loggable
             $config = $instance->driver_config;
             if ($driver === InstanceDriver::Orbit && $config instanceof OrbitInstanceDriverConfigData) {
                 $node = $config->node_id === null ? null : Node::query()->find($config->node_id);
-                if ($node instanceof Node && $this->nodeRoleAssignments->nodeHasActiveRole($node, 'app-dev')) {
+                if ($node instanceof Node && $this->nodeRoleAssignments->nodeHasActiveRole($node, NodeRoleName::AppDevelopment->value)) {
                     $this->copyAppDevelopmentSetupSteps->handle($targetApp, $instance);
                 }
             }

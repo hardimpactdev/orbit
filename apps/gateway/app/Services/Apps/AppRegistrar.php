@@ -12,6 +12,7 @@ use App\Data\Apps\InstanceRuntimeRequirementsData;
 use App\Data\Apps\OrbitInstanceDriverConfigData;
 use App\Enums\Apps\InstanceDriver;
 use App\Enums\Nodes\NodeStatus;
+use App\Enums\Nodes\NodeRoleName;
 use App\Exceptions\PromptAborted;
 use App\Models\App;
 use App\Models\Instance;
@@ -496,7 +497,7 @@ final class AppRegistrar
             ],
         );
         $wasRecentlyCreated = $instance->wasRecentlyCreated;
-        if ($wasRecentlyCreated && $environment !== 'production' && $node->hasActiveRole('app-dev')) {
+        if ($wasRecentlyCreated && $environment !== 'production' && $node->hasActiveRole(NodeRoleName::AppDevelopment->value)) {
             $this->copyAppDevelopmentSetupSteps->handle($app, $instance);
         }
         $app->unsetRelation('instances');

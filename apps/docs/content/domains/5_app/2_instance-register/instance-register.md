@@ -77,6 +77,12 @@ Run `instance:register` when you need to install, re-apply, or retry Orbit manag
 gateway and that its runtime artifacts are properly applied on the target app
 node.
 
+When registration creates a new Orbit instance on a node with the persisted
+active `app-dev` role, Orbit copies the app's ordered development setup defaults
+into independent instance setup rows. Re-registration and moves do not copy or
+duplicate rows, and app-prod registrations do not copy development defaults.
+Later default edits affect future instances only.
+
 An `app-dev` node's self-grant includes `instance:register` for that same node, so
 local app-dev CLIs can register or re-apply instances hosted by themselves. `app-prod`
 self-grants do not include `instance:register`; production registration requires an

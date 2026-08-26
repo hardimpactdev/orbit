@@ -49,6 +49,11 @@ defines the instance and Cloud compatibility payload.
 
 ## Related Commands
 
+Creating a new Orbit instance on a node with the persisted active `app-dev`
+role copies the app's ordered development setup defaults into independent
+instance setup rows. App-prod, Laravel Cloud, and existing-instance updates do
+not copy defaults. Later default edits affect future instances only.
+
 - [`app:new`](../1_app-new/app-new.md)
 - [`instance:show`](../26_instance-show/instance-show.md)
 - [`instance:remove`](../28_instance-remove/instance-remove.md)

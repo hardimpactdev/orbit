@@ -3,15 +3,37 @@
 declare(strict_types=1);
 
 use App\Actions\Apps\AddAppDevelopmentSetupStep;
+use App\Actions\Apps\CopyAppDevelopmentSetupSteps;
 use App\Actions\Apps\RemoveAppDevelopmentSetupStep;
 use App\Actions\Apps\UpdateAppDevelopmentSetupStep;
 use App\Models\App;
 use App\Models\AppDevelopmentSetupStep;
+use App\Models\AppSetupStep;
+use App\Models\Instance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+it('copies ordered defaults into independent instance steps', function (): void {
+    $app = App::factory()->create();
+    $instance = Instance::factory()->for($app)->create();
+    $defaults = [
+        AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 2, 'command' => 'second', 'timeout_seconds' => 42]),
+        AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 1, 'command' => 'first', 'timeout_seconds' => 21]),
+    ];
+
+    app(CopyAppDevelopmentSetupSteps::class)->handle($app, $instance);
+
+    $copied = AppSetupStep::query()->whereBelongsTo($instance)->orderBy('sort_order')->get();
+    expect($copied->pluck('command')->all())->toBe(['first', 'second'])
+        ->and($copied->pluck('timeout_seconds')->all())->toBe([21, 42])
+        ->and($copied->first()->instance_id)->toBe($instance->id);
+
+    $defaults[0]->update(['command' => 'changed']);
+    expect($copied->fresh()->pluck('command')->all())->toBe(['first', 'second']);
+});
 
 it('keeps app defaults ordered when adding, moving, and removing steps', function (): void {
     $app = App::factory()->create();
