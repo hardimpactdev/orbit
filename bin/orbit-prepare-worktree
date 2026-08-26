@@ -336,7 +336,7 @@ for composer_manifest in "${worktree_path}"/packages/*/composer.json "${worktree
 done
 
 step "Installing TypeScript SDK dependencies"
-run_in "${worktree_path}/packages/sdk-typescript" vp install --frozen-lockfile --ignore-scripts --include=dev
+run_in "${worktree_path}/packages/sdk-typescript" vp install --frozen-lockfile --ignore-scripts
 
 prepare_gateway_app() {
     local app_path="$1"

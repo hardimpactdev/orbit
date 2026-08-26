@@ -109,6 +109,11 @@ or local conventions.
   never automate `boost:install --silent`.
 - Gateway Boost tools are gateway-scoped; use package/root skills elsewhere.
 
+## Frontend
+
+Use `vp` for generic package/script work. npm defaults; Bun can be declared.
+Missing assets/manifests: `vp run build`, `vp run dev`, or `composer run dev`.
+
 ===
 
 <laravel-boost-guidelines>
@@ -142,15 +147,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
 - Check for existing components to reuse before writing a new one.
 
-## Orbit frontend tooling
-
-Orbit-managed JavaScript projects use Vite+ (`vp`) for generic dependency and
-script workflows. Use npm for the default project package manager. If a
-frontend build is not visible, run `vp run build`, `vp run dev`, or
-`composer run dev` as appropriate.
-If a Vite manifest is missing, run `vp run build` or ask the user to run
-`vp run dev` or `composer run dev`.
-
 ## Verification Scripts
 
 - Do not create verification scripts or tinker when tests cover that functionality and prove they work. Unit and feature tests are more important.
@@ -159,6 +155,10 @@ If a Vite manifest is missing, run `vp run build` or ask the user to run
 
 - Stick to existing directory structure; don't create new base folders without approval.
 - Do not change the application's dependencies without approval.
+
+## Frontend Bundling
+
+- If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `npm run build`, `npm run dev`, or `composer run dev`. Ask them.
 
 ## Documentation Files
 
@@ -248,6 +248,10 @@ If a Vite manifest is missing, run `vp run build` or ask the user to run
 - When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
 - Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
 - When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
+
+## Vite Error
+
+- If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
 
 === pest/core rules ===
 

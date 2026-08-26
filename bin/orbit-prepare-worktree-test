@@ -131,7 +131,10 @@ write_composer_stub
 
 cat >"$STUB_BIN/vp" <<'STUB'
 #!/usr/bin/env bash
-exit 0
+if [ "$*" != "install --frozen-lockfile --ignore-scripts" ]; then
+    printf 'unsupported vp arguments: %s\n' "$*" >&2
+    exit 2
+fi
 STUB
 
 cat >"$STUB_BIN/tmux" <<'STUB'

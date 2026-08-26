@@ -1270,13 +1270,16 @@ it('keeps e2e test commands manual only across default gates and skills', functi
 
 it('installs locked TypeScript SDK tools in every prepared worktree', function (): void {
     $script = (string) file_get_contents(repo_path('bin/orbit-prepare-worktree'));
-    $sdkInstallPosition = strpos(
-        haystack: $script,
+    $scriptLines = explode("\n", $script);
+    $sdkInstallPosition = array_search(
         needle: 'run_in "${worktree_path}/packages/sdk-typescript" vp install --frozen-lockfile --ignore-scripts',
+        haystack: $scriptLines,
+        strict: true,
     );
-    $optionalFrontendPosition = strpos(
-        haystack: $script,
+    $optionalFrontendPosition = array_search(
         needle: 'if [ "$run_frontend" -eq 1 ]; then',
+        haystack: $scriptLines,
+        strict: true,
     );
 
     expect($sdkInstallPosition)
