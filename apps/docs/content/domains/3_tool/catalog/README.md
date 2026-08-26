@@ -67,7 +67,7 @@ create baseline tools from scratch unless the tool file says otherwise.
 | [`dns`](dns.md) | VPN-facing development DNS runtime |
 
 The `php` runtime images and `caddy` proxy run in Orbit-managed containers. The
-app host tool baseline — `php-cli`, `composer`, `git`, `gh`, and
+app host tool baseline — `php-cli`, `composer`, `bun`, `git`, `gh`, and
 `laravel-installer` — installs on `app-dev`/`app-prod` nodes (the Laravel
 installer on `app-dev` only). `git` is also a role baseline on `agent` nodes for
 repository workflows.
@@ -81,6 +81,7 @@ materialized by their owning role and only required on nodes carrying that role:
 | --- | --- |
 | [`php-cli`](php-cli.md) | `app-dev`, `app-prod` |
 | [`composer`](composer.md) | `app-dev`, `app-prod` |
+| [`bun`](bun.md) | `app-dev`, `app-prod` |
 | [`laravel-installer`](laravel-installer.md) | `app-dev` |
 | [`git`](git.md) | `app-dev`, `app-prod`, `agent` (repository clone and checkout workflows) |
 | [`gh`](gh.md) | `app-dev`, `app-prod` (repository cloning and deployment) |

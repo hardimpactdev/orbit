@@ -79,6 +79,23 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->toBe('installed');
     });
 
+    it('converges bun as a managed-user prerequisite', function (): void {
+        $node = appProdBaselineNode();
+        $assignment = appProdBaselineAssignment($node);
+
+        new AppProductionRoleBaseline()->converge($node, $assignment);
+
+        $tool = NodeTool::query()->where('node_id', $node->id)->where('name', 'bun')->first();
+
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed')
+            ->and($tool->config)
+            ->toMatchArray(['managed_user' => 'orbit']);
+    });
+
     it('converges git with expected_state installed', function (): void {
         $node = appProdBaselineNode();
         $assignment = appProdBaselineAssignment($node);

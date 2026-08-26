@@ -21,6 +21,10 @@ class NodeToolBaselineConfigRenderer
      */
     public function render(string $tool, Node $node): ?array
     {
+        if ($tool === 'bun') {
+            return ['managed_user' => $node->user ?: 'orbit'];
+        }
+
         if ($tool === 'php-cli') {
             return [
                 'variant' => $this->phpCliVariantForNode($node)->value,

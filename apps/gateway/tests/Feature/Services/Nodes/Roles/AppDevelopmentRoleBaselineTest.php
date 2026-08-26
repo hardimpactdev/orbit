@@ -91,6 +91,23 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->toBe('installed');
     });
 
+    it('converges bun as a managed-user prerequisite', function (): void {
+        $node = appDevBaselineNode(['user' => 'nckrtl']);
+        $assignment = appDevBaselineAssignment($node);
+
+        new AppDevelopmentRoleBaseline()->converge($node, $assignment);
+
+        $tool = NodeTool::query()->where('node_id', $node->id)->where('name', 'bun')->first();
+
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed')
+            ->and($tool->config)
+            ->toMatchArray(['managed_user' => 'nckrtl']);
+    });
+
     it('converges git with expected_state installed', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);
@@ -234,7 +251,7 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->firstOrFail();
 
         expect($tools)
-            ->toBe(['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+            ->toBe(['bun', 'caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
             ->and($caddy->config['container']['published_ports'])
             ->toBe([
                 '80:80',

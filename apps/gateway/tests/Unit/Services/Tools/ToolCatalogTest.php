@@ -7,6 +7,7 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
+use App\Tools\BunTool;
 use App\Tools\CaddyTool;
 use App\Tools\CodexAppTool;
 use App\Tools\DockerTool;
@@ -21,6 +22,30 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 describe('tool catalog definitions', function (): void {
+    it('catalogs Bun as a managed app runtime prerequisite', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('bun'))
+            ->toBeInstanceOf(BunTool::class)
+            ->and($catalog->supportedOperatingSystems('bun'))
+            ->toBe(['linux', 'macos'])
+            ->and($catalog->hasCapability('bun', 'install'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('bun', 'update'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('bun', 'remove'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('bun', 'safe-adopt'))
+            ->toBeTrue()
+            ->and($catalog->probeMetadata('bun'))
+            ->toMatchArray(['binary' => '/usr/local/bin/bun'])
+            ->and($catalog->installScript('bun', ['managed_user' => 'nckrtl']))
+            ->toContain('MANAGED_USER=\'nckrtl\'')
+            ->and($catalog->updateScript('bun', ['managed_user' => 'nckrtl']))
+            ->toContain(' upgrade')
+            ->and($catalog->removeScript('bun', ['managed_user' => 'nckrtl']))
+            ->toContain("rm -rf \"\${MANAGED_HOME}/.bun\"");
+    });
     it('catalogs Docker-isolated PHP images for Linux and macOS without weakening the provider constraint', function (): void {
         $catalog = app(ToolCatalog::class);
 

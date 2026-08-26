@@ -76,6 +76,7 @@ use App\Support\OpenApi\GatewayOpenApi;
 use App\Support\Streaming\NullProgressReporter;
 use App\Tools\AntigravityCliTool;
 use App\Tools\CaddyTool;
+use App\Tools\BunTool;
 use App\Tools\ClaudeCodeTool;
 use App\Tools\CodexAppTool;
 use App\Tools\CodexCliTool;
@@ -236,6 +237,7 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(GhTool::class),
                     $app->make(GitTool::class),
                     $app->make(ComposerTool::class),
+                    $app->make(BunTool::class),
                     $app->make(DnsTool::class),
                     $app->make(PhpTool::class),
                     $app->make(MailpitTool::class),
