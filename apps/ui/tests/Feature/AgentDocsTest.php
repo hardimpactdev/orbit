@@ -104,6 +104,18 @@ it('routes VitePlus and shadcn commands through the VitePlus runner', function (
         ->not->toContain('bunx playwright install chromium');
 });
 
+it('documents one coherent project-local-first shadcn runner', function () {
+    $content = file_get_contents(base_path('.agents/skills/shadcn/cli.md'));
+    preg_match('/^> \*\*IMPORTANT:\*\*.*$/m', $content, $matches);
+    $important = $matches[0] ?? '';
+
+    expect(substr_count($important, '`vp dlx shadcn`'))->toBe(1)
+        ->and($important)->toContain('project-local-first')
+        ->toContain('packageManager')
+        ->not->toContain('choose the right one')
+        ->not->toContain('substitute the correct runner');
+});
+
 it('makes the guide branch on the detected environment before writing .env', function () {
     $content = $this->get('/create.md')->getContent();
 

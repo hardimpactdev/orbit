@@ -2,7 +2,7 @@
 
 Configuration is read from `components.json`.
 
-> **IMPORTANT:** Always run commands using the project's package runner: `vp dlx shadcn`, `vp dlx shadcn`, or `vp dlx shadcn`. Check `packageManager` from project context to choose the right one. Examples below use `vp dlx shadcn` but substitute the correct runner for the project.
+> **IMPORTANT:** Always run all shadcn CLI commands through the project-local-first Vite+ runner: `vp dlx shadcn`. Vite+ honors the project's `packageManager` setting.
 
 > **IMPORTANT:** Only use the flags documented below. Do not invent or guess flags — if a flag isn't listed here, it doesn't exist. The CLI auto-detects the package manager from the project's lockfile; there is no `--package-manager` flag.
 
