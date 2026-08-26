@@ -28,48 +28,56 @@ final class VitePlusTool extends BaseTool
         return ['install', 'update', 'remove', 'safe-adopt'];
     }
 
+    #[\Override]
     public function installScript(array $config = []): string
     {
         return $this->script('install', $config, <<<'BASH'
             MANAGED_GROUP="$(id -gn "${MANAGED_USER}")"
             test -n "${MANAGED_GROUP}"
             sudo install -d -o "${MANAGED_USER}" -g "${MANAGED_GROUP}" "${MANAGED_HOME}/.local" "${MANAGED_HOME}/.local/share"
-            sudo -u "${MANAGED_USER}" -H bash -lc 'curl -fsSL https://vite.plus | bash'
+            sudo install -d -m 0755 /opt/orbit /opt/orbit/vite-plus
+            sudo chown -R "${MANAGED_USER}:${MANAGED_GROUP}" /opt/orbit/vite-plus
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus bash -lc 'curl -fsSL https://vite.plus | bash'
             VP="$(sudo -u "${MANAGED_USER}" -H bash -lc 'command -v vp' || true)"
-            for candidate in "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
+            for candidate in /opt/orbit/vite-plus/bin/vp "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
                 if [ -x "${candidate}" ]; then VP="${candidate}"; break; fi
             done
             test -x "${VP}"
-            sudo -u "${MANAGED_USER}" -H "${VP}" env setup
-            sudo -u "${MANAGED_USER}" -H "${VP}" env on
-            sudo -u "${MANAGED_USER}" -H "${VP}" env install lts
-            sudo -u "${MANAGED_USER}" -H "${VP}" env default lts
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env setup
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env on
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env install lts
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" env default lts
             __REFRESH_LINKS__
-            sudo -u "${MANAGED_USER}" -H "${VP}" --version
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" --version
             BASH);
     }
 
+    #[\Override]
     public function updateScript(array $config = []): string
     {
         return $this->script('update', $config, <<<'BASH'
-            sudo -u "${MANAGED_USER}" -H /usr/local/bin/vp upgrade
-            sudo -u "${MANAGED_USER}" -H /usr/local/bin/vp env setup
-            sudo -u "${MANAGED_USER}" -H /usr/local/bin/vp env on
-            sudo -u "${MANAGED_USER}" -H /usr/local/bin/vp env install lts
-            sudo -u "${MANAGED_USER}" -H /usr/local/bin/vp env default lts
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp upgrade
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env setup
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env on
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env install lts
+            sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus /opt/orbit/vite-plus/bin/vp env default lts
             __REFRESH_LINKS__
             BASH);
     }
 
+    #[\Override]
     public function removeScript(array $config = []): string
     {
         return $this->script('remove', $config, <<<'BASH'
             VP=""
-            for candidate in /usr/local/bin/vp "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
+            for candidate in /opt/orbit/vite-plus/bin/vp "${MANAGED_HOME}/.local/share/vite-plus/bin/vp" "${MANAGED_HOME}/.vite-plus/bin/vp"; do
                 if [ -x "${candidate}" ]; then VP="${candidate}"; break; fi
             done
-            if [ -n "${VP}" ]; then sudo -u "${MANAGED_USER}" -H "${VP}" implode --yes; fi
-            sudo rm -f /usr/local/bin/vp /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx
+            if [ -n "${VP}" ]; then sudo -u "${MANAGED_USER}" -H env VP_HOME=/opt/orbit/vite-plus "${VP}" implode --yes; fi
+            for binary in vp node npm npx; do
+                link="/usr/local/bin/${binary}"
+                if [ -L "${link}" ] && readlink -f "${link}" 2>/dev/null | grep -q '^/opt/orbit/vite-plus/'; then sudo rm -f "${link}"; fi
+            done
             BASH);
     }
 
@@ -100,11 +108,12 @@ final class VitePlusTool extends BaseTool
             fi
             test -x "${VP}"
             VP_BIN="$(dirname "${VP}")"
-            sudo ln -sf "${VP}" /usr/local/bin/vp
-            for binary in node npm npx; do
-                test -x "${VP_BIN}/${binary}"
-                sudo ln -sf "${VP_BIN}/${binary}" "/usr/local/bin/${binary}"
-                test -x "/usr/local/bin/${binary}"
+            for binary in vp node npm npx; do
+                link="/usr/local/bin/${binary}"
+                target="${VP_BIN}/${binary}"
+                if [ ! -e "${link}" ] || { [ -L "${link}" ] && readlink -f "${link}" 2>/dev/null | grep -q '^/opt/orbit/vite-plus/'; }; then
+                    sudo ln -sfn "${target}" "${link}"
+                fi
             done
             BASH;
 

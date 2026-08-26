@@ -29,6 +29,10 @@ it('installs viteplus and its lts node environment for the managed user', functi
         ->and($script)
         ->toContain('/usr/local/bin/${binary}')
         ->and($script)
+        ->toContain('VP_HOME=/opt/orbit/vite-plus')
+        ->and($script)
+        ->toContain('readlink -f "${link}"')
+        ->and($script)
         ->toContain('nckrtl');
 
     expect($script)->toContain(
@@ -74,4 +78,7 @@ it('updates, removes, adopts, and probes the stable viteplus entry points', func
         ->toContain('/usr/local/bin/npx --version');
 
     expect($tool->removeScript())->toContain('if [ -n "${VP}" ]');
+    expect($tool->removeScript())
+        ->toContain('readlink -f "${link}"')
+        ->toContain("grep -q '^/opt/orbit/vite-plus/'");
 });

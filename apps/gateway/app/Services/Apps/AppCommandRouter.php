@@ -192,7 +192,9 @@ final readonly class AppCommandRouter
         $pathPrefix = implode(':', [
             "/opt/orbit/php/{$phpVersion}/bin",
             "{$home}/.local/bin",
+            "{$home}/.local/share/vite-plus/bin",
             "{$home}/.vite-plus/bin",
+            '/opt/orbit/vite-plus/bin',
             "{$home}/.bun/bin",
             '/opt/homebrew/bin',
             '/opt/homebrew/sbin',
@@ -201,7 +203,7 @@ final readonly class AppCommandRouter
             '/bin',
         ]);
 
-        return 'PATH='.escapeshellarg($pathPrefix).':$PATH ';
+        return 'VP_HOME='.escapeshellarg("{$home}/.local/share/vite-plus").' PATH='.escapeshellarg($pathPrefix).':$PATH ';
     }
 
     private function homeDirectory(App $app, string $runtimeUser, ?Instance $instance = null): string
