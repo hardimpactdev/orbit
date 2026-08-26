@@ -33,7 +33,7 @@ process behavior remain owned by their respective command families.
 
 Vite-backed development servers that need browser/HMR access across the Orbit
 network must bind to a node-reachable interface, such as
-`vp run dev -- --host=0.0.0.0`. Runtime HTTPS support for those servers is
+`vp run dev --host=0.0.0.0`. Runtime HTTPS support for those servers is
 supplied by the process family through Orbit URL and certificate environment
 fields.
 

@@ -206,5 +206,5 @@ to npm and does not stamp root Orbit VERSION into it.
 
 ```bash
 # Optional dry-run from monorepo source package:
-(cd packages/sdk-typescript && vp install && vp run test && vp run build && npm pack --dry-run)
+(cd packages/sdk-typescript && npm ci && npm test && npm run build && npm pack --dry-run)
 ```

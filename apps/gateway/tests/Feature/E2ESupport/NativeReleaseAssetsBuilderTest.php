@@ -167,7 +167,7 @@ it('signs the desktop updater archive through the installed local Tauri CLI', fu
     expect($parts)
         ->toHaveCount(2)
         ->and($parts[0])
-        ->toContain('vp run tauri -- signer sign "$archive"');
+        ->toContain('npm run tauri -- signer sign "$archive"');
 });
 
 it('fails closed when the desktop signing key is missing', function (): void {

@@ -42,8 +42,8 @@ TAURI_CONFIG="$(printf '{"version":"%s","plugins":{"updater":{"pubkey":"%s"}}}' 
 (
     cd "$macos_dir"
     perl -i -pe "s/^version = \".*\"/version = \"${version}\"/" Cargo.toml
-    vp install --frozen-lockfile
-    vp run tauri -- build --bundles app --config "$TAURI_CONFIG"
+    npm ci
+    npm run tauri -- build --bundles app --config "$TAURI_CONFIG"
 )
 
 app_bundle="$(find "${macos_dir}/target/release/bundle/macos" -maxdepth 1 -name '*.app' -print | head -n 1)"
@@ -69,7 +69,7 @@ tar -C "$(dirname "$app_bundle")" -czf "$archive" "$(basename "$app_bundle")"
 
 (
     cd "$macos_dir"
-    vp run tauri -- signer sign "$archive"
+    npm run tauri -- signer sign "$archive"
 ) || fail 'desktop updater archive could not be signed.'
 [ -s "${archive}.sig" ] || fail 'desktop updater signature is missing.'
 
