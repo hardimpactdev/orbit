@@ -3,7 +3,7 @@
 Remove one app-owned development default.
 
 ```bash
-orbit app-development-setup-step:remove [app] --step=<id> --force [--json]
+orbit app-development-setup-step:remove [app] <step> --force [--json]
 ```
 
 Removal requires explicit destructive consent and `app:write`. It removes only

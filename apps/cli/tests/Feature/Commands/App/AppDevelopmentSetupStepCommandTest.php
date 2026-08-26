@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\File;
 
 it('adds defaults with a typed payload and forwards json', function (): void {
     fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3, 'command' => 'bun install']]));
@@ -27,6 +28,28 @@ it('adds defaults with a typed payload and forwards json', function (): void {
         ->toBe(0)
         ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
         ->toHaveKey('success.data.step');
+});
+
+it('resolves the app from the orbit marker when the selector is omitted', function (): void {
+    $root = base_path('tests/.tmp-app-development-setup-step-marker');
+    File::ensureDirectoryExists("{$root}/.orbit");
+    File::put("{$root}/.orbit/config", json_encode(['instance' => 'fitta.development'], JSON_THROW_ON_ERROR));
+    $previousHostCwd = getenv('ORBIT_HOST_CWD');
+    putenv("ORBIT_HOST_CWD={$root}");
+
+    try {
+        fakeGateway(fakeSuccessEnvelope(['step' => ['id' => 3, 'command' => 'bun install']]));
+        [$exitCode] = runCommand(test: $this, command: 'app-development-setup-step:add', params: [
+            '--command' => 'bun install',
+            '--json' => true,
+        ]);
+    } finally {
+        $previousHostCwd === false ? putenv('ORBIT_HOST_CWD') : putenv("ORBIT_HOST_CWD={$previousHostCwd}");
+        File::deleteDirectory($root);
+    }
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/api/apps/fitta/development-setup-steps'));
+    expect($exitCode)->toBe(0);
 });
 
 it('lists defaults in a setup-step table', function (): void {

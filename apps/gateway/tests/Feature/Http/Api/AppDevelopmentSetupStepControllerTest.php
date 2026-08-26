@@ -49,7 +49,7 @@ function app_defaults_api_headers(): array
 /** @mago-expect lint:halstead */
 describe('app development setup step API', function (): void {
     it('lists and mutates ordered defaults with canonical envelopes', function (): void {
-        [$caller, $app] = app_defaults_api_target();
+        [, $app] = app_defaults_api_target();
         $first = AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 1, 'command' => 'one']);
         $second = AppDevelopmentSetupStep::factory()->for($app)->create(['sort_order' => 2, 'command' => 'two']);
 
@@ -107,6 +107,15 @@ describe('app development setup step API', function (): void {
         $step = AppDevelopmentSetupStep::factory()->for($app)->create();
         $this->deleteJson("/api/apps/{$app->name}/development-setup-steps/{$step->id}", [], app_defaults_api_headers())
             ->assertUnprocessable()->assertJsonPath('error.meta.reason', 'destructive_consent_required');
+    });
+
+    it('rejects an empty update body', function (): void {
+        [$caller, $app] = app_defaults_api_target();
+        $step = AppDevelopmentSetupStep::factory()->for($app)->create();
+
+        $this->patchJson("/api/apps/{$app->name}/development-setup-steps/{$step->id}", [], app_defaults_api_headers())
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed');
     });
 
     it('logs mutation subject, effect, type, and properties', function (): void {

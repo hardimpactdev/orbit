@@ -91,6 +91,9 @@ final class AppDevelopmentSetupStepController implements Loggable
             return $this->error('app.development_setup_step_not_found', 'Setup step was not found.', 404);
         }
         $input = $request->json()->all();
+        if ($input === []) {
+            return $this->error('validation_failed', 'At least one setup step value is required.', 422);
+        }
         $command = array_key_exists('command', $input) ? trim((string) $input['command']) : null;
         $timeout = array_key_exists('timeout', $input) ? $this->positive($input['timeout']) : null;
         if ($command === '' || array_key_exists('timeout', $input) && $timeout === null) {
