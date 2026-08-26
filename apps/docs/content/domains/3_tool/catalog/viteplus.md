@@ -20,7 +20,10 @@ These fields describe the VitePlus tool's identity, backend, and support model i
 and macOS. Orbit installs the shared CLI and default LTS environment under
 `/opt/orbit/vite-plus`. App and workspace commands set an isolated per-runtime
 user `VP_HOME`. Vite+ owns Node.js and the `node`, `npm`, and `npx` shims. Bun
-is a separate Orbit-managed baseline and is not auto-downloaded by Vite+.
+is also a separate Orbit-managed host baseline. When a project declares Bun as
+its package manager, Vite+ can download and use that declared Bun version in
+the runtime user's isolated store. That project cache does not replace Orbit's
+host Bun baseline.
 
 ## Credentials
 
@@ -30,6 +33,11 @@ is a separate Orbit-managed baseline and is not auto-downloaded by Vite+.
 
 VitePlus supplies frontend development runtime support. Instance, workspace, and
 process behavior remain owned by their respective command families.
+
+`vp install`, `vp add`, `vp remove`, and `vp update` select the package manager
+declared by the project. `vp run` executes the selected package script through
+Vite Task; it does not become `bun run` for a Bun-managed project. A script that
+requires the Bun runtime must invoke `bun` explicitly.
 
 Vite-backed development servers that need browser/HMR access across the Orbit
 network must bind to a node-reachable interface, such as
