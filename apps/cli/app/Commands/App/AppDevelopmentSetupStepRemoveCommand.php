@@ -12,6 +12,7 @@ final class AppDevelopmentSetupStepRemoveCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'app-development-setup-step:remove {app? : App name} {step? : Step id} {--force : Skip confirmation} {--json : Output JSON}';
+    #[\Override]
     protected $description = 'Remove an app development setup default.';
 
     public function handle(): int

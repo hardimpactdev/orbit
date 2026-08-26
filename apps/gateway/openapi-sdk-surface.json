@@ -92,6 +92,34 @@
       "follow_up": "Add a dedicated PHP SDK request class for deleting an app instance."
     },
     {
+      "operation": "GET /apps/{app}/development-setup-steps",
+      "classification": "public_sdk",
+      "group": "app_setup",
+      "reason": "App development setup defaults are public app lifecycle configuration.",
+      "follow_up": "Add a dedicated PHP SDK request class for listing app development setup defaults."
+    },
+    {
+      "operation": "POST /apps/{app}/development-setup-steps",
+      "classification": "public_sdk",
+      "group": "app_setup",
+      "reason": "App development setup defaults are public app lifecycle configuration.",
+      "follow_up": "Add a dedicated PHP SDK request class for creating an app development setup default."
+    },
+    {
+      "operation": "PATCH /apps/{app}/development-setup-steps/{step}",
+      "classification": "public_sdk",
+      "group": "app_setup",
+      "reason": "App development setup defaults are public app lifecycle configuration.",
+      "follow_up": "Add a dedicated PHP SDK request class for updating an app development setup default."
+    },
+    {
+      "operation": "DELETE /apps/{app}/development-setup-steps/{step}",
+      "classification": "public_sdk",
+      "group": "app_setup",
+      "reason": "App development setup defaults are public app lifecycle configuration.",
+      "follow_up": "Add a dedicated PHP SDK request class for deleting an app development setup default."
+    },
+    {
       "operation": "GET /apps/{app}/instances/{instance}/env",
       "classification": "deferred_optional",
       "group": "instance_env",

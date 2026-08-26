@@ -12,6 +12,7 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'app-development-setup-step:add {app? : App name} {--command= : Shell command} {--before= : Step id} {--after= : Step id} {--timeout=600 : Timeout in seconds} {--json : Output JSON}';
+    #[\Override]
     protected $description = 'Add an app development setup default.';
 
     public function handle(): int
@@ -33,13 +34,14 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
             before: $this->option('before'),
             after: $this->option('after'),
         );
-        if (array_key_exists('error', $input)) {
+        if (isset($input['error'])) {
             return $this->failValidation($input['error']['field'], $input['error']['message']);
         }
+        $values = $input['values'] ?? [];
         try {
             $response = $this->gatewayPost(
                 $this->apiProjectPath($app, '/development-setup-steps'),
-                $input['values'],
+                $values,
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
@@ -47,7 +49,8 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
         if ($this->wantsJson()) {
             return $this->renderSuccess($response);
         }
-        $step = $this->successData($response)['step'] ?? [];
+        $data = $this->successData($response);
+        $step = is_array($data['step'] ?? null) ? $data['step'] : [];
         $this->line('✓ Added development setup default '.self::field($step, 'id')." for app '{$app}'.");
         $this->line('Command: '.self::field($step, 'command'));
 
@@ -56,8 +59,10 @@ final class AppDevelopmentSetupStepAddCommand extends AppGatewayCommand
 
     private static function field(mixed $step, string $key): string
     {
-        $value = is_array($step) ? $step[$key] ?? '' : '';
+        if (! is_array($step) || ! is_scalar($step[$key] ?? null)) {
+            return '';
+        }
 
-        return is_scalar($value) ? (string) $value : '';
+        return (string) $step[$key];
     }
 }

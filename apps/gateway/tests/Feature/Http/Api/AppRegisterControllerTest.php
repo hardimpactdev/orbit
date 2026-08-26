@@ -42,6 +42,7 @@ const APP_REGISTER_CALLER_WG_IP = '10.6.0.78';
 
 final readonly class AppRegisterControllerTestCa extends OrbitCaService
 {
+    #[\Override]
     public function rootCert(): string
     {
         return 'fake-root-ca';

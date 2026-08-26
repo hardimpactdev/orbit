@@ -7,7 +7,7 @@ namespace App\Commands\App;
 final class AppDevelopmentSetupStepPositionInput
 {
     /**
-     * @return array{values: array<string, int>}|array{error: array{field: string, message: string}}
+     * @return array{values: array{before?: int, after?: int}}|array{error: array{field: string, message: string}}
      */
     public static function fromOptions(mixed $before, mixed $after): array
     {
@@ -26,24 +26,22 @@ final class AppDevelopmentSetupStepPositionInput
             return self::error('before', 'Both insertion flags cannot be supplied.');
         }
 
-        return ['values' => self::filled([
-            'before' => $beforeStep,
-            'after' => $afterStep,
-        ])];
+        $values = [];
+
+        if ($beforeStep !== null) {
+            $values['before'] = $beforeStep;
+        }
+
+        if ($afterStep !== null) {
+            $values['after'] = $afterStep;
+        }
+
+        return ['values' => $values];
     }
 
     public static function positiveInteger(mixed $value): ?int
     {
         return is_string($value) && ctype_digit($value) && (int) $value > 0 ? (int) $value : null;
-    }
-
-    /**
-     * @param  array<string, int|string|null>  $values
-     * @return array<string, int|string>
-     */
-    public static function filled(array $values): array
-    {
-        return array_filter($values, static fn (mixed $value): bool => $value !== null && $value !== '');
     }
 
     /**

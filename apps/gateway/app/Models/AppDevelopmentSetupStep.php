@@ -16,8 +16,10 @@ class AppDevelopmentSetupStep extends Model
 
     public const int DEFAULT_TIMEOUT_SECONDS = 600;
 
+    #[\Override]
     protected $fillable = ['app_id', 'sort_order', 'command', 'timeout_seconds'];
 
+    #[\Override]
     protected function casts(): array
     {
         return ['timeout_seconds' => 'integer', 'sort_order' => 'integer'];

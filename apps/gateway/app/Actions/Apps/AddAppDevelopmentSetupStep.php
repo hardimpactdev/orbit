@@ -20,6 +20,7 @@ final readonly class AddAppDevelopmentSetupStep
         if ($beforeStepId !== null && $afterStepId !== null) {
             throw new InvalidArgumentException('Both before and after cannot be supplied.');
         }
+
         return DB::transaction(static function () use (
             $appId,
             $command,
@@ -37,7 +38,7 @@ final readonly class AddAppDevelopmentSetupStep
                 $all = (clone $steps)->orderBy('sort_order')->orderBy('id')->get();
                 $all->each(static fn (AppDevelopmentSetupStep $step): int => $step->increment('sort_order', 1_000_000));
                 foreach ($all as $index => $step) {
-                    $step->update(['sort_order' => $index + 1 + ($index >= $order - 1 ? 1 : 0)]);
+                    $step->update(['sort_order' => $index + 1 + ($index >= ($order - 1) ? 1 : 0)]);
                 }
             }
             $order ??= ((clone $steps)->max('sort_order') ?? 0) + 1;

@@ -7,7 +7,7 @@ namespace App\Commands\App;
 final class AppDevelopmentSetupStepAddInput
 {
     /**
-     * @return array{values: array<string, int|string>}|array{error: array{field: string, message: string}}
+     * @return array{values: array{command: string, timeout: int, before?: int, after?: int}}|array{error: array{field: string, message: string}}
      */
     public static function fromOptions(string $command, mixed $timeout, mixed $before, mixed $after): array
     {
@@ -22,14 +22,23 @@ final class AppDevelopmentSetupStepAddInput
 
         $position = AppDevelopmentSetupStepPositionInput::fromOptions($before, $after);
 
-        if (array_key_exists('error', $position)) {
+        if (isset($position['error'])) {
             return $position;
         }
 
-        return ['values' => AppDevelopmentSetupStepPositionInput::filled([
+        $values = [
             'command' => $command,
             'timeout' => $timeoutSeconds ?? 600,
-            ...$position['values'],
-        ])];
+        ];
+
+        if (isset($position['values']['before'])) {
+            $values['before'] = $position['values']['before'];
+        }
+
+        if (isset($position['values']['after'])) {
+            $values['after'] = $position['values']['after'];
+        }
+
+        return ['values' => $values];
     }
 }

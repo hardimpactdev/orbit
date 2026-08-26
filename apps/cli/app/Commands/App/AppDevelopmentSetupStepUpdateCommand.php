@@ -10,6 +10,7 @@ final class AppDevelopmentSetupStepUpdateCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'app-development-setup-step:update {app? : App name} {step? : Step id} {--command=} {--timeout=} {--before=} {--after=} {--json : Output JSON}';
+    #[\Override]
     protected $description = 'Update an app development setup default.';
 
     public function handle(): int
@@ -28,13 +29,14 @@ final class AppDevelopmentSetupStepUpdateCommand extends AppGatewayCommand
             before: $this->option('before'),
             after: $this->option('after'),
         );
-        if (array_key_exists('error', $input)) {
+        if (isset($input['error'])) {
             return $this->failValidation($input['error']['field'], $input['error']['message']);
         }
+        $values = $input['values'] ?? [];
         try {
             $response = $this->gatewayPatch(
                 $this->apiProjectPath($app, "/development-setup-steps/{$step}"),
-                $input['values'],
+                $values,
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);

@@ -12,6 +12,7 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
 {
     #[\Override]
     protected $signature = 'app-development-setup-step:list {app? : App name} {--json : Output JSON}';
+    #[\Override]
     protected $description = 'List app development setup defaults.';
 
     public function handle(): int
@@ -28,8 +29,9 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
         if ($this->wantsJson()) {
             return $this->renderSuccess($response);
         }
-        $steps = $this->successData($response)['steps'] ?? [];
-        $rows = is_array($steps) ? array_values(array_filter($steps, is_array(...))) : [];
+        $data = $this->successData($response);
+        $steps = is_array($data['steps'] ?? null) ? $data['steps'] : [];
+        $rows = array_values(array_filter($steps, is_array(...)));
         $this->line("Development setup defaults for {$app}:");
         table(headers: ['ID', 'ORDER', 'COMMAND', 'TIMEOUT'], rows: array_map(static fn (array $step): array => [
             self::field($step, 'id'),
@@ -43,9 +45,11 @@ final class AppDevelopmentSetupStepListCommand extends AppGatewayCommand
 
     private static function field(array $step, string $key): string
     {
-        $value = $step[$key] ?? '';
+        if (! is_scalar($step[$key] ?? null) || (string) $step[$key] === '') {
+            return '—';
+        }
 
-        return is_scalar($value) && (string) $value !== '' ? (string) $value : '—';
+        return (string) $step[$key];
     }
 
     private static function firstField(array $step, string $first, string $second): string

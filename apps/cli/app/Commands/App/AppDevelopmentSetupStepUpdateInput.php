@@ -7,7 +7,7 @@ namespace App\Commands\App;
 final class AppDevelopmentSetupStepUpdateInput
 {
     /**
-     * @return array{values: array<string, int|string>}|array{error: array{field: string, message: string}}
+     * @return array{values: array{command?: string, timeout?: int, before?: int, after?: int}}|array{error: array{field: string, message: string}}
      */
     public static function fromOptions(?string $command, mixed $timeout, mixed $before, mixed $after): array
     {
@@ -22,15 +22,27 @@ final class AppDevelopmentSetupStepUpdateInput
 
         $position = AppDevelopmentSetupStepPositionInput::fromOptions($before, $after);
 
-        if (array_key_exists('error', $position)) {
+        if (isset($position['error'])) {
             return $position;
         }
 
-        $values = AppDevelopmentSetupStepPositionInput::filled([
-            'command' => $command,
-            'timeout' => $timeoutSeconds,
-            ...$position['values'],
-        ]);
+        $values = [];
+
+        if (isset($position['values']['before'])) {
+            $values['before'] = $position['values']['before'];
+        }
+
+        if (isset($position['values']['after'])) {
+            $values['after'] = $position['values']['after'];
+        }
+
+        if ($command !== null && $command !== '') {
+            $values['command'] = $command;
+        }
+
+        if ($timeoutSeconds !== null) {
+            $values['timeout'] = $timeoutSeconds;
+        }
 
         if ($values === []) {
             return AppDevelopmentSetupStepPositionInput::error('change', 'At least one change is required.');

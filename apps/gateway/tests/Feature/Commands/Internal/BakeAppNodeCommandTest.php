@@ -90,6 +90,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                     ->values()
                     ->all(),
             )->toBe([
+                'bun',
                 'caddy',
                 'composer',
                 'docker',
@@ -100,7 +101,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             ])->and(
                 $shell->probeScripts(),
                 // Capability batch probes plus dedicated php-cli runtime probes.
-            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(7);
+            )->toHaveCount(4)->and($shell->repairScripts())->toHaveCount(8);
     });
 
     it('rejects the private service namespace as an app node tld', function (): void {
@@ -145,6 +146,7 @@ describe('orbit:internal:bake-app-node', function (): void {
                 NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all(),
             )->toMatchArray([
                 'caddy' => 'installed',
+                'bun' => 'installed',
                 'composer' => 'installed',
                 'docker' => 'installed',
                 'gh' => 'installed',
@@ -477,6 +479,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     /** @var array<string, bool> */
     private array $installed = [
         'caddy' => false,
+        'bun' => false,
         'docker' => false,
         'php-cli' => false,
         'composer' => false,
@@ -538,7 +541,10 @@ final class BakeAppNodeRemoteShell implements RemoteShell
 
         if (! is_array($payload)) {
             $payload = [
-                'tools' => array_fill_keys(array_keys($this->installed), []),
+                'tools' => array_fill_keys(
+                    array_values(array_diff(array_keys($this->installed), ['php-cli'])),
+                    [],
+                ),
             ];
         }
 
@@ -633,6 +639,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
         }
 
         $installedPayloads = [
+            'bun' => ['/usr/local/bin/bun', '1.3.14'],
             'composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'docker' => ['/usr/bin/docker', 'Docker version 27.0.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
@@ -705,6 +712,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
                 || str_contains($script, 'internal:caddy-config') && str_contains($script, 'apply-container')
                 => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
+            str_contains($script, '# orbit install bun') => 'bun',
             str_contains($script, '# orbit install composer') => 'composer',
             str_contains($script, '# orbit install docker') => 'docker',
             str_contains($script, '# orbit install gh') => 'gh',

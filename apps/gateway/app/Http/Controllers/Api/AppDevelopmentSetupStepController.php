@@ -14,9 +14,9 @@ use App\Models\AppDevelopmentSetupStep;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -27,6 +27,7 @@ final class AppDevelopmentSetupStepController implements Loggable
 {
     private ?AppDevelopmentSetupStep $activitySubject = null;
     private string $activityAction = 'list';
+
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly WorkspacePlacement $placement,
@@ -76,7 +77,9 @@ final class AppDevelopmentSetupStepController implements Loggable
         }
         $this->activitySubject = $step;
 
-        return response()->json(['success' => ['data' => ['action' => 'added', 'step' => $this->payload($step)], 'meta' => []]], 201);
+        return response()->json([
+            'success' => ['data' => ['action' => 'added', 'step' => $this->payload($step)], 'meta' => []],
+        ], 201);
     }
 
     public function update(string $app, int $step, Request $request): JsonResponse
@@ -101,8 +104,12 @@ final class AppDevelopmentSetupStepController implements Loggable
         }
         $before = $this->anchor($input, 'before');
         $after = $this->anchor($input, 'after');
-        if ($before === false || $after === false || ($before !== null && $after !== null)) {
-            return $this->error('app.development_setup_step_invalid_anchor', 'Provide one valid before or after anchor.', 422);
+        if ($before === false || $after === false || $before !== null && $after !== null) {
+            return $this->error(
+                'app.development_setup_step_invalid_anchor',
+                'Provide one valid before or after anchor.',
+                422,
+            );
         }
         try {
             $model = $this->update->handle(
@@ -117,7 +124,9 @@ final class AppDevelopmentSetupStepController implements Loggable
         }
         $this->activitySubject = $model;
 
-        return response()->json(['success' => ['data' => ['action' => 'updated', 'step' => $this->payload($model)], 'meta' => []]]);
+        return response()->json([
+            'success' => ['data' => ['action' => 'updated', 'step' => $this->payload($model)], 'meta' => []],
+        ]);
     }
 
     public function destroy(string $app, int $step, Request $request): JsonResponse
@@ -154,14 +163,22 @@ final class AppDevelopmentSetupStepController implements Loggable
         }
         $caller = $request->user();
         if (! $caller instanceof Node) {
-            return $this->error('authorization_failed', 'Peer identity unknown.', 403, ['reason' => 'unknown_caller', 'target' => $selector]);
+            return $this->error('authorization_failed', 'Peer identity unknown.', 403, [
+                'reason' => 'unknown_caller',
+                'target' => $selector,
+            ]);
         }
         $authorized = $app->instances->contains(function (Model $instance) use ($caller, $permission): bool {
             $node = $this->placement->nodeForInstance($instance);
+
             return $node instanceof Node && $this->authorizer->authorize($caller, $node, $permission)->allowed;
         });
         if (! $authorized) {
-            return $this->error('authorization_failed', 'This node is not authorized for this app.', 403, ['reason' => 'missing_permission', 'missing_permission' => $permission, 'target' => $selector]);
+            return $this->error('authorization_failed', 'This node is not authorized for this app.', 403, [
+                'reason' => 'missing_permission',
+                'missing_permission' => $permission,
+                'target' => $selector,
+            ]);
         }
 
         return $app;
@@ -170,14 +187,17 @@ final class AppDevelopmentSetupStepController implements Loggable
     private function success(App $app, string $action): JsonResponse
     {
         return response()->json([
-            'success' => ['data' => [
-                'action' => $action,
-                'steps' => $app
-                    ->developmentSetupSteps
-                    ->map($this->payload(...))
-                    ->values()
-                    ->all(),
-            ], 'meta' => []],
+            'success' => [
+                'data' => [
+                    'action' => $action,
+                    'steps' => $app
+                        ->developmentSetupSteps
+                        ->map($this->payload(...))
+                        ->values()
+                        ->all(),
+                ],
+                'meta' => [],
+            ],
         ]);
     }
 
