@@ -7735,6 +7735,11 @@
             "type": "string",
             "pattern": "^[A-Z]{3}$(?![\\s\\S])"
           },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New display name"
+          },
           "type": {
             "type": "string",
             "enum": [

@@ -121,6 +121,7 @@ A Route target must have a supported relative web root. An Instance rooted at `.
 | Clear an empty Route | The unchanged Route. |
 | Set an Instance that belongs to another Route | `route.target_conflict`. Both associations stay. |
 | Replace or clear a target, or remove the Route, when that detaches an active Instance | `route.target_conflict`. Nothing changes. |
+| Clear the target of a replacement Route that never activated | `route.target_conflict`. Remove the replacement with `route:destroy` instead. |
 | Change the target of an `active` Route | `route.reconciliation_required`. |
 | Set an Instance of another Project, or an inactive Instance | `route.target_app_conflict` or `route.target_inactive`. |
 | Set a generated target without an effective TLD | `route.tld_required`. |
@@ -445,7 +446,7 @@ An identical retry after a completed rename returns the Instance without creatin
 
 During a change, Route inspection shows both records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain returns `route.domain_change_conflict` and changes neither record.
 
-A failure before cutover leaves the old Route authoritative. The Gateway marks the replacement `failed`, removes its sites and staging certificates, restores the Laravel URL or production environment, and republishes private DNS. Then it deletes the replacement, and a retry starts a new change. When that cleanup is incomplete, the `failed` replacement stays inspectable. Only the identical request recovers it, and it starts again from the first step.
+A failure before cutover leaves the old Route authoritative. The Gateway marks the replacement `failed`, removes its sites and staging certificates, restores the Laravel URL or production environment, and republishes private DNS. Then it deletes the replacement, and a retry starts a new change. When that cleanup is incomplete, the `failed` replacement stays inspectable. The identical request recovers it, and it starts again from the first step. To abandon the change instead, remove the replacement with `route:destroy`, as [Remove a replacement that never activated](#remove-a-replacement-that-never-activated) describes.
 
 A failure after cutover keeps the replacement authoritative. A retry continues until the replacement is `active` and the retiring Route is deleted.
 
@@ -481,7 +482,9 @@ The grace period covers clients whose resolver honors the TTL, such as systemd-r
 
 ## Remove a Route
 
-`route:destroy` removes a Route and its projections. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
+`route:destroy` removes a Route and its projections. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
+
+Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
 
 Removal releases the domain at once. The Node's shared runtime and Caddy service stay.
 
@@ -490,6 +493,18 @@ A targeted Route can be removed only when none of its Instances is active and th
 The PHP-FPM step converges each Node of a development target, right after its site leaves. It converges every pool on the Node, so a PHP-FPM problem unrelated to the Route also stops the removal; fix it and retry. A pool skipped only because its working directory is missing does not stop it, as in [Instance removal](/reference/instance-removal). A production target keeps its dedicated PHP-FPM service, and every target keeps its Instance certificate, until [Instance removal](/reference/instance-removal). The Instances stay without a Route.
 
 A targeted removal records its failed step with the prefix `targeted:`, for example `targeted:caddy`. A retry of the same removal resumes it. A Route whose untargeted removal failed and that has gained a target since then is refused with `env.owner_changed`.
+
+### Remove a replacement that never activated
+
+A domain change, an Instance rename, or a Project slug update reserves a `pending` replacement Route that copies the target of the Route it replaces. Until cutover, the replaced Route stays `active` and serves the Instance. `route:destroy` on such a replacement, `pending` or `failed`, abandons the change.
+
+It runs the same withdrawal as a failure before cutover. It marks the replacement `failed` and removes its sites and staging certificates. It restores the Laravel URL or production environment for the old domain and republishes private DNS. Then it clears `replaced_by_route_id` on the replaced Route and deletes the replacement with its target. The replaced Route and its target stay as they are. A failure keeps the replacement `failed`, with `failed_step` `withdrawal` when the change had recorded none. Repeat the command to retry.
+
+A replacement that has cut over is `activating` or `active`. `route:destroy` refuses it like any Route that an active Instance needs, with `route.target_conflict`. Finish that change by repeating its request. `route:target:unset` on a replacement that never activated is refused with `route.target_conflict`, and the message names `route:destroy`, because a replacement without its target would replace nothing.
+
+```bash
+orbit route:destroy 199
+```
 
 ### Remove a Route from an unreachable Node
 

@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Data\Instances\InstanceData;
@@ -167,6 +168,39 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         }
     }
 
+    /**
+     * A replacement Route that never activated belongs to an interrupted domain change of the
+     * Instance's own Route. Once every refusal check has passed, removal abandons that change like
+     * `route:destroy` on the replacement, so the recorded removal handles only the Route it replaces.
+     *
+     * @param  Collection<int, Instance>  $members
+     */
+    private function withdrawUnactivatedReplacements(Collection $members): void
+    {
+        $routes = $members
+            ->flatMap(fn (Instance $member): array => $member->routes
+                ->filter(fn (Route $route): bool => $this->ownUnactivatedReplacement($route, $member))
+                ->all())
+            ->unique('id')
+            ->values();
+
+        foreach ($routes as $route) {
+            app(ConvergeRouteAction::class)->withdrawReplacement($route);
+        }
+
+        if ($routes->isNotEmpty()) {
+            $members->each(static fn (Instance $member): Instance => $member->unsetRelation('routes')->load('routes.targets'));
+        }
+    }
+
+    private function ownUnactivatedReplacement(Route $route, Instance $instance): bool
+    {
+        return ! $route->hasWebRoot()
+            && $route->isUnactivatedReplacement()
+            && $route->targets->count() === 1
+            && $route->targets->sole()->instance_id === $instance->id;
+    }
+
     /** @return list<int> */
     private function removalEnvironmentOwnerIds(Instance $requested, bool $force): array
     {
@@ -297,6 +331,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             }
         }
 
+        $this->withdrawUnactivatedReplacements($members);
         $this->removeWebRootRoutes($members);
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
@@ -343,7 +378,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         $this->conflict($snapshot);
                     }
 
-                    if (Route::query()->whereNotNull('web_root')->whereHas('targets', static fn ($query) => $query->where('instance_id', $member->id))->exists()) {
+                    if (Route::query()->where(static fn ($query) => $query->whereNotNull('web_root')->orWhereNotNull('replaces_route_id'))->whereHas('targets', static fn ($query) => $query->where('instance_id', $member->id))->exists()) {
                         $this->conflict($snapshot);
                     }
 
@@ -427,6 +462,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->assertSupported($snapshot);
         $route = $this->productionRoute($snapshot);
         $inventory = $this->productionContent->inventory($snapshot);
+        $this->withdrawUnactivatedReplacements(collect([$snapshot]));
         $this->removeWebRootRoutes(collect([$snapshot]));
 
         $operation = $this->processAdmissions->run([$snapshot->id], fn (): InstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): InstanceRemoval {
@@ -764,14 +800,16 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     }
 
     /**
-     * The Instance's own Routes. Routes with a web root are additional sites that an accepted removal
-     * removes first.
+     * The Instance's own Routes. Routes with a web root are additional sites, and a replacement that
+     * never activated is an interrupted domain change; an accepted removal removes both first.
      *
      * @return \Illuminate\Database\Eloquent\Collection<int, Route>
      */
     private function ownRoutes(Instance $instance): \Illuminate\Database\Eloquent\Collection
     {
-        return $instance->routes->reject(static fn (Route $route): bool => $route->hasWebRoot())->values();
+        return $instance->routes
+            ->reject(fn (Route $route): bool => $route->hasWebRoot() || $this->ownUnactivatedReplacement($route, $instance))
+            ->values();
     }
 
     private function withoutRoute(Instance $instance): bool

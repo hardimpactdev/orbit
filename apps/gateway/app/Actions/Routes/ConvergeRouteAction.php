@@ -1248,6 +1248,12 @@ final readonly class ConvergeRouteAction
     }
 
     /** @param list<Instance> $targets */
+    /**
+     * A failure before cutover withdraws the replacement. When the withdrawal fails too, the
+     * replacement stays `failed` and the original error is reported.
+     *
+     * @param  list<Instance>  $targets
+     */
     private function failBeforeCutover(Route $replacement, array $targets): void
     {
         $replacement->refresh();
@@ -1256,51 +1262,96 @@ final readonly class ConvergeRouteAction
             return;
         }
 
-        $old = Route::query()->find((int) $replacement->replaces_route_id);
-
-        // Stored state changes first: a failed replacement renders no site, so the Caddy publications
-        // below withdraw the candidate before its certificates are removed. It stays failed when
-        // the rollback cannot finish.
-        Route::query()
-            ->whereKey($replacement->id)
-            ->update(['status' => RouteStatus::Failed->value]);
-
         try {
-            foreach ($targets as $instance) {
-                $this->projection->rollbackCaddy($instance, $replacement);
-            }
-
-            foreach ($targets as $instance) {
-                $this->projection->rollbackCertificates($instance, $replacement);
-
-                if ($instance->placedOnAppProd()) {
-                    $this->routeEnvironment->synchronizeRouteDomain(
-                        $instance,
-                        InstanceEnvironmentRouteDomain::Authoritative,
-                    );
-                } elseif ($instance->source_is_laravel && $old instanceof Route) {
-                    $this->configuration->configureLaravelUrl(
-                        $instance,
-                        "https://{$old->domain}",
-                    );
-                }
-            }
-
-            $this->projection->rollbackDns($replacement);
-
-            if ($replacement->publication === RoutePublication::Public) {
-                $this->projection->rollbackPublicEdge($replacement);
-            }
-
-            DB::transaction(function () use ($replacement): void {
-                $locked = Route::query()->lockForUpdate()->findOrFail($replacement->id);
-                $old = Route::query()->lockForUpdate()->findOrFail((int) $locked->replaces_route_id);
-                $old->update(['replaced_by_route_id' => null]);
-                $locked->targets()->delete();
-                $locked->delete();
-            });
+            $this->withdrawBeforeCutover($replacement, $targets);
         } catch (Throwable) {
         }
+    }
+
+    /**
+     * Abandons a domain change whose replacement never cut over, as `route:destroy` on the
+     * replacement, Instance removal, and a Project update rollback do. The replaced Route and its
+     * targets stay authoritative ([Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated)).
+     */
+    public function withdrawReplacement(Route $replacement): Route
+    {
+        $targetIds = $this->targetIds($replacement);
+
+        return $this->owned($targetIds, function () use ($replacement, $targetIds): Route {
+            $locked = Route::query()
+                ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
+                ->findOrFail($replacement->id);
+
+            if (! $locked->isUnactivatedReplacement()) {
+                app(RouteReconciliationGuard::class)->refuse();
+            }
+
+            $this->assertTargetsUnchanged($locked, $targetIds);
+            $targets = array_values($locked->targets
+                ->sortBy('position')
+                ->map(static fn (RouteTarget $row): Instance => $row->instance)
+                ->all());
+            $this->withdrawBeforeCutover($locked, $targets);
+
+            return $locked;
+        });
+    }
+
+    /**
+     * Stored state changes first: a failed replacement renders no site, so the Caddy publications
+     * below withdraw the candidate before its certificates are removed. It stays failed when
+     * the withdrawal cannot finish.
+     *
+     * @param  list<Instance>  $targets
+     */
+    private function withdrawBeforeCutover(Route $replacement, array $targets): void
+    {
+        $old = Route::query()->find((int) $replacement->replaces_route_id);
+
+        // A replacement abandoned without a failed step records the withdrawal as its step.
+        Route::query()
+            ->whereKey($replacement->id)
+            ->update([
+                'status' => RouteStatus::Failed->value,
+                'failed_step' => $replacement->failed_step ?? 'withdrawal',
+                'error_code' => $replacement->error_code ?? 'route.replacement_withdrawn',
+            ]);
+
+        foreach ($targets as $instance) {
+            $this->projection->rollbackCaddy($instance, $replacement);
+        }
+
+        foreach ($targets as $instance) {
+            $this->projection->rollbackCertificates($instance, $replacement);
+
+            if ($instance->placedOnAppProd()) {
+                $this->routeEnvironment->synchronizeRouteDomain(
+                    $instance,
+                    InstanceEnvironmentRouteDomain::Authoritative,
+                );
+            } elseif ($instance->source_is_laravel && $old instanceof Route) {
+                $this->configuration->configureLaravelUrl(
+                    $instance,
+                    "https://{$old->domain}",
+                );
+            }
+        }
+
+        $this->projection->rollbackDns($replacement);
+
+        if ($replacement->publication === RoutePublication::Public) {
+            $this->projection->rollbackPublicEdge($replacement);
+        }
+
+        DB::transaction(function () use ($replacement): void {
+            $locked = Route::query()->lockForUpdate()->findOrFail($replacement->id);
+            Route::query()
+                ->whereKey((int) $locked->replaces_route_id)
+                ->where('replaced_by_route_id', $locked->id)
+                ->update(['replaced_by_route_id' => null]);
+            $locked->targets()->delete();
+            $locked->delete();
+        });
     }
 
     private function checkpoint(Route $route, RouteReplacementStep $step): void
