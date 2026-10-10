@@ -88,6 +88,31 @@ final readonly class IncusHost
         return $images;
     }
 
+    /**
+     * The names of every instance in the host's project. Only the project's own instances: `incus list` without
+     * `--all-projects` never reads another project.
+     *
+     * @return list<string>
+     */
+    public function instanceNames(TaskVmHost $host, Node $node): array
+    {
+        $result = $this->run($host, $node, ['list', '--format', 'json']);
+        if (! $result->succeeded()) {
+            throw self::failed("the instances of Node [{$node->name}]", 'list', $result);
+        }
+
+        $list = self::json("the instances of Node [{$node->name}]", $result);
+        if (! array_is_list($list)) {
+            throw self::invalid("the instances of Node [{$node->name}]", 'the instance list is not a JSON list');
+        }
+
+        return array_map(static function (mixed $instance) use ($node): string {
+            $name = is_array($instance) ? $instance['name'] ?? null : null;
+
+            return is_string($name) && $name !== '' ? $name : throw self::invalid("the instances of Node [{$node->name}]", 'an instance has no name');
+        }, $list);
+    }
+
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
     public function aliasTarget(TaskVmHost $host, Node $node, string $alias): ?string
     {
