@@ -2171,7 +2171,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     {
         $worker = TaskWorkerUser::name() ?? '';
 
-        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
+        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'SHELL'
             # Stop the caller's own processes whose working directory or executable is inside the tree.
             # Owned Processes and Schedules are systemd units that runtime cleanup removes after ownership checks.
             stop_own_tree_processes() {
@@ -2278,6 +2278,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 rmdir -- "$grouping_directory"
             }
 
-            BASH;
+            SHELL;
     }
 }
