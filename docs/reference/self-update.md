@@ -87,7 +87,7 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
 | `available` | null | Every field is set. `cli.commit` is the Gateway's commit. |
-| `available` | `release_missing`, `release_mismatch`, or `release_incomplete` | A [fallback](#fallback-to-an-ancestor-release): every field is set, `cli.commit` is an ancestor's, and `reason` says why the commit's own release was not used. |
+| `available` | `release_missing`, `release_mismatch`, or `release_incomplete` | A [fallback](#fallback-to-an-ancestor-release): every field is set, `cli.commit` is an ancestor's, and `reason` says why the commit's own release was not used. The PHP SDK keeps this `reason`. |
 | `pending` | `release_missing` | The version, tag, and commit are set, but the release is not published yet. Check again in a few minutes. |
 | `unavailable` | `gateway_commit_unknown` | The Gateway version is not a commit its Git history knows. |
 | `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |

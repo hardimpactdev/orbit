@@ -27,7 +27,7 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the host's [base
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
 1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. The VM disk is a ZFS clone of the image, so the launch takes under a second. On beast, cloud-init is done about 12 seconds later.
+2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 12 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
