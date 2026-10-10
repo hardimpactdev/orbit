@@ -107,8 +107,8 @@ cd ../desktop && bun install
 bun run dev
 ```
 
-`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests and no CI job yet. The [desktop app](/reference/desktop-app) page describes the build and its limits.
+`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests yet. Before you submit a change, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`; CI runs the same checks. The [desktop app](/reference/desktop-app) page describes the build and its limits.
 
 ## CI
 
-The `Web`, `Pi server`, and `Rust agent` jobs check these projects on every pull request. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI does not build the desktop app.
+The `Web`, `Pi server`, `Rust agent`, and `Desktop app` jobs check these projects on every pull request. The `Rust agent` and `Desktop app` jobs skip their steps when the pull request does not change their project or the CI workflow. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI checks the desktop app's Rust shell but does not build a bundle.
