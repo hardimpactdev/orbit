@@ -47,6 +47,7 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | --- | --- |
 | `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
 | `Task VM: no capacity.` | Every host is inactive or full. See [Place task VMs](#place-task-vms) |
+| `Task VM: another placement is running.` | Another claim held the placement lock for 15 seconds |
 | `Task VM: provisioning.` | The jobs are still running |
 | `Task VM: failed: <code>: <message>` | A job failed. The group also asks for assistance. Cancel the group to destroy the VM |
 | `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid. Shared groups keep working, because only `vm` claims read these settings |
