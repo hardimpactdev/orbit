@@ -77,6 +77,7 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -119,11 +120,14 @@ use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\UnreachableSshExecutor;
 
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();
+    // The tick Node's address is not a test host. A test that reaches it over SSH sees it fail at once.
+    app()->instance(SshExecutor::class, new UnreachableSshExecutor);
 });
 
 function tick_group(): Task
