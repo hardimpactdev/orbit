@@ -18,6 +18,7 @@ final class UpdateProjectCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'project:update
         {project : Numeric project ID}
+        {--name= : New display name}
         {--type= : New Project type}
         {--slug= : New Project slug}
         {--repository= : New repository access URL}
@@ -46,6 +47,7 @@ final class UpdateProjectCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $name = $this->stringOption('name');
         $type = $this->stringOption('type');
         $slug = $this->stringOption('slug');
         $repositoryUrl = $this->stringOption('repository');
@@ -122,7 +124,7 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null
+        if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null
             && ! $reviewAndMergeProvided && $mergeCheck === null && ! $clearMergeCheck) {
             return $this->renderGatewayFailure(
                 'project.update_required',
@@ -141,6 +143,7 @@ final class UpdateProjectCommand extends GatewayCommand
             new UpdateProjectRequest(
                 projectId: $projectId,
                 type: $type,
+                name: $name,
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
                 defaultBranch: $defaultBranch,

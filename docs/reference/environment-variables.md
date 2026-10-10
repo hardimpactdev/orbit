@@ -179,7 +179,9 @@ When the change fails before the cutover, recovery renders the stored configurat
 
 ## Project update boundary
 
-A Project slug change updates the Laravel `APP_URL` that the Route domain owns. The Gateway resolves the new domain, stores the value, and then synchronizes `.env`. When a step fails before the new slug is published, the Gateway restores the stored configuration, the file, and the old Route. After publication, a retry continues forward. See [Applications](/domains/applications).
+A Project slug change updates the Laravel `APP_URL` that the Route domain owns. For a development Instance with stored configuration, the Gateway synchronizes `.env` against the replacement Route before the cutover. An Instance without stored configuration skips that synchronization, because there is nothing to render; the update evidence records `environment: skipped` with the reason `env.configuration_missing`. Route convergence then writes the new `APP_URL` into the `.env` and cached configuration of the [application directory](/reference/projects#application-directory) in both cases. For a monorepo Project with root `server/web/public`, that is `server/web/.env`, never a file at the repository root. Run `env:import` to start storing the configuration.
+
+When a step fails before the new slug is published, the Gateway restores the stored configuration, renders the file against the old Route again, and withdraws the replacement Route. After publication, a retry continues forward. See [Update lifecycle](/reference/projects#update-lifecycle).
 
 ## Inspect the projection with Doctor
 

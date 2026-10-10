@@ -14,7 +14,7 @@ covers:
 
 # Node agent
 
-`orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
+`orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
 The agent service observes and listens on no port. The separate `orbit-agent sandbox` command controls task-owned Incus resources through a closed protocol. The Gateway invokes that command over SSH; the service does not accept remote execution requests.
 

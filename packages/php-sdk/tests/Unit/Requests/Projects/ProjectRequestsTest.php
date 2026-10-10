@@ -178,6 +178,15 @@ describe('project requests', function (): void {
             ->toBe('stable');
     });
 
+    it('transports a display name update only when one is given', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, name: 'Ofide')->body()->all())
+            ->toBe(['name' => 'Ofide'])
+            ->and(new UpdateProjectRequest(projectId: 3, slug: 'ofide', name: 'Ofide')->body()->all())
+            ->toBe(['name' => 'Ofide', 'slug' => 'ofide'])
+            ->and(new UpdateProjectRequest(projectId: 3, slug: 'ofide')->body()->all())
+            ->toBe(['slug' => 'ofide']);
+    });
+
     it('transports a task check update and an explicit clear', function (): void {
         $set = new UpdateProjectRequest(projectId: 3, taskCheck: 'vp run check', taskCheckProvided: true);
         $clear = new UpdateProjectRequest(projectId: 3, taskCheckProvided: true);

@@ -34,6 +34,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?bool $reviewAndMerge = null,
         private readonly ?string $mergeCheck = null,
         private readonly bool $mergeCheckProvided = false,
+        private readonly ?string $name = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -51,6 +52,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
+                'name' => $this->name,
                 'type' => $this->type,
                 'slug' => $this->slug,
                 'repository_url' => $this->repositoryUrl,
