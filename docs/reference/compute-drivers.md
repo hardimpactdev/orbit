@@ -27,10 +27,10 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the host's [base
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
 1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. The VM disk is a ZFS clone of the image, so the launch takes under a second. The VM boots once, and cloud-init is done about 12 seconds later on beast.
+2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. The VM disk is a ZFS clone of the image, so the launch takes under a second. On beast, cloud-init is done about 12 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
-5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. The base image already holds the pinned Pi executable, so only an older image needs the upload. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
+5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
 
 `AllocateTaskVmAction` takes the first host in `task_vms.incus.hosts` that is an active Node and has fewer live task VMs than its `max_vms`. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
@@ -147,18 +147,22 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Build the base image
 
-Run `task-vms:build-image {node}` after `task-vms:prepare-host`, once for each host. It builds the host's base image and prints each stage with its time. It runs these steps on the host over SSH, with `sudo -n incus --project <project> …`:
+Run `task-vms:build-image {node}` after `task-vms:prepare-host`, once for each host. It builds the host's base image and prints each stage with its time. It runs these stages on the host over SSH, with `sudo -n incus --project <project> …`:
 
-1. It launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge.
-2. It waits for cloud-init. It then runs the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites as `orbit` through `incus exec`.
-3. It installs the pinned [Node agent](/reference/node-agent) binary.
-4. When the Gateway pins a Pi executable, it streams it to the VM and installs it for `orbit` as `~/.local/bin/pi-server`, after it checks the digest. This is stage `pi-artifact`.
-5. It makes the image boot once. This is stage `single-boot`, described below.
-6. It runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity.
-7. It stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>`.
-8. It boots a smoke VM from the new image with the task VM user-data. The smoke VM must finish cloud-init without errors, have an ed25519 SSH host key and the Gateway's key for `orbit`, and list one boot only.
-9. It points the alias `orbit-task-base` at the new image in one step.
-10. It deletes every other `orbit-task-base-<time>` image that no VM in the project uses.
+| Stage | What it does |
+| --- | --- |
+| `launch`, `cloud-init` | Launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge, and waits for cloud-init |
+| `bootstrap`, `caddy-package`, `app-dev-prerequisites` | Runs the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites as `orbit` through `incus exec` |
+| `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
+| `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
+| `single-boot` | Makes a VM from the image boot once, as described below |
+| `clean` | Runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity |
+| `publish` | Stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>` |
+| `smoke` | Boots a smoke VM from the new image with the task VM user-data |
+| `promote` | Points the alias `orbit-task-base` at the new image in one step |
+| `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
+
+The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only.
 
 A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. The `single-boot` stage drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
 

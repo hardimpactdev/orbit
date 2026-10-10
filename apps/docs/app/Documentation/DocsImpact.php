@@ -45,7 +45,8 @@ final readonly class DocsImpact
         'problems:file' => 'docs/reference/tasks.md',
         'tasks:archive-threads' => 'docs/reference/tasks.md',
         'orbit:node-retarget' => 'docs/reference/node-agent.md',
-        'queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500' => 'docs/reference/compute-drivers.md',
+        // The task VM worker. Keyed by name, so a change of its options keeps the owner.
+        'queue:work' => 'docs/reference/compute-drivers.md',
     ];
 
     /** @param list<string>|null $ratchetPages */
@@ -957,7 +958,7 @@ final readonly class DocsImpact
             $statement = substr($source, $offset, (strpos($source, ';', $offset) ?: strlen($source)) - $offset);
             preg_match('/->[^;]+/', $statement, $scheduleExpression);
             $expression = $scheduleExpression[0] ?? '';
-            $page = self::NON_CLI_COMMAND_OWNERS[$command] ?? null;
+            $page = self::NON_CLI_COMMAND_OWNERS[$command] ?? self::NON_CLI_COMMAND_OWNERS[$this->commandName($command)] ?? null;
             if ($page === null && str_contains($command, ':')) {
                 $family = explode(':', $command, 2)[0];
                 if (in_array($family, self::CLI_FAMILIES, true)) {
