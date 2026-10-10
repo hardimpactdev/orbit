@@ -2,6 +2,10 @@ version: 2
 
 # One pull request a day bundles every update, so the self-hosted runners
 # see one CI run instead of a burst of one run per package.
+# Automatic updates propose only releases that are at least seven days old.
+# Security updates are not delayed. Manual updates take only releases that
+# are at least three days old, through Vet and bunfig.toml. See the
+# Dependencies section of docs/contributor-guide.md.
 multi-ecosystem-groups:
   daily:
     schedule:
@@ -12,19 +16,29 @@ updates:
     directory: /apps/cli
     patterns: ["*"]
     multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
   - package-ecosystem: composer
     directory: /apps/gateway
     patterns: ["*"]
     multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
   - package-ecosystem: composer
     directory: /apps/e2e
     patterns: ["*"]
     multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
   - package-ecosystem: composer
     directory: /packages/php-sdk
     patterns: ["*"]
     multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     patterns: ["*"]
     multi-ecosystem-group: daily
+    cooldown:
+      default-days: 7

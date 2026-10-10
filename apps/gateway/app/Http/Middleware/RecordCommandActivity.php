@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Data\Instances\InstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Conn\ConnProfileSections;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
@@ -612,9 +613,8 @@ final readonly class RecordCommandActivity
             return $this->inputSanitizer->sanitizeProperties($request->only(['environment_id', 'label', 'url']));
         }
 
-        if ($command === 'conn:profile:settings:update') {
-            // A settings document can hold workspace pictures; Activity keeps the version it replaced.
-            return $this->inputSanitizer->sanitizeProperties($request->only(['version']));
+        if ($command === 'conn:profile:settings:update' || $command === 'conn:profile:settings:patch') {
+            return $this->inputSanitizer->sanitizeProperties($this->connSettingsInput($request, $command));
         }
 
         if (
@@ -1195,5 +1195,34 @@ final readonly class RecordCommandActivity
         usort($values, static fn (string $first, string $second): int => strlen($second) <=> strlen($first));
 
         return $values;
+    }
+
+    /**
+     * A settings document holds workspace pictures, themes, and device values. Activity keeps the section
+     * names and the versions the client sent, and nothing of the sections themselves.
+     *
+     * @return array<string, mixed>
+     */
+    private function connSettingsInput(Request $request, string $command): array
+    {
+        if ($command === 'conn:profile:settings:update') {
+            $settings = $request->input('settings');
+
+            return [
+                ...$request->only(['version']),
+                'sections' => is_array($settings) ? array_values(array_intersect(array_keys($settings), ['workspaces', 'appearance', 'devices'])) : [],
+            ];
+        }
+
+        $sections = $request->input('sections');
+        $versions = [];
+
+        foreach (is_array($sections) ? $sections : [] as $name => $change) {
+            if (is_string($name) && ConnProfileSections::isKnown($name) && is_array($change) && is_int($change['version'] ?? null)) {
+                $versions[$name] = $change['version'];
+            }
+        }
+
+        return ['sections' => $versions];
     }
 }

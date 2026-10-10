@@ -10,7 +10,7 @@ covers:
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
   - apps/docs/**
-  - .github/workflows/{ci,dependency-audit}.yml
+  - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
 
 # Contributing to Orbit
@@ -87,7 +87,7 @@ composer check
 
 Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. The test application reads the tracked `.env.example`, not your `.env`. Child processes that boot the Gateway, such as `artisan` calls, still read `.env` when it exists.
 
-Tests of Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`, run on a Linux test host. The host is beast, an Ubuntu machine like the Nodes, or the SSH host that `ORBIT_LINUX_TEST_HOST` names. On Linux, such as in CI or on beast, these tests run directly. The host must accept `ssh` without a prompt, or these tests fail.
+Some tests run Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`. On Linux, such as in CI, these tests run directly. On another system, such as macOS, they run on the Linux SSH host that `ORBIT_LINUX_TEST_HOST` names, such as an Ubuntu machine like the Nodes. The host needs `acl`, a `caddy` service account, and passwordless `sudo`, and it must accept `ssh` without a prompt. When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs them on Linux, so a skip on your machine does not hide them from review.
 
 Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
 
@@ -97,7 +97,9 @@ Add regression tests for behavior changes and their important failure modes. Con
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+GitHub CI runs quality checks and affected tests for the five Composer projects, including documentation lint. It also checks and tests the web app, the Pi server, and the Rust agent.
+
+Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five Composer projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 ## Audit tests and unused code
 
@@ -120,23 +122,20 @@ The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larast
 
 ## Dependencies
 
-Routine dependency releases wait seven days before a project takes them:
+Manual updates take only releases that are at least three days old:
 
 - Composer: the `laravel/vet` plugin skips releases younger than `minimum-release-age` days, as each project's `vet.json` sets.
-- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 604800 seconds in `apps/web`, `apps/pi-server`, and `apps/desktop`.
+- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 259200 seconds in `apps/web`, `apps/pi-server`, and `apps/desktop`.
 
 The wait applies only when Composer or Bun resolves a version. `composer install` and `bun install --frozen-lockfile` install the locked versions. Vet keeps no trust entries, so it prints a notice on each install.
 
 Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
-A fix for a published advisory does not wait:
+Dependabot is the automatic updater. Every entry in `.github/dependabot.yml` sets `cooldown.default-days: 7`, so its daily pull request proposes only releases that are at least seven days old. Security updates through Dependabot are not delayed.
 
-1. Link the CVE or GHSA advisory in the pull request.
-2. If the fixed release is younger than seven days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`.
-3. Run `composer audit:dependencies` and the checks, and get a review.
-4. Remove the exclusion when the release is seven days old.
+When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.
 
-Do not hide an advisory that has no fix. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
+If an advisory has no fix, do not hide it. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
 
 From the repository root, `composer audit:dependencies` runs `composer audit --locked` for each Composer lockfile and `bun audit` for each Bun lockfile. The Dependency audit workflow runs it every night and on manual dispatch.
 
@@ -163,7 +162,7 @@ The skills in the repository guide an agent through the work.
 | Task | Skill |
 | --- | --- |
 | Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/nckrtl/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
-| Split an agreed feature into Orbit Tasks | [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) |
+| Prepare, implement, or review work tracked by Orbit Tasks | [orbit-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) |
 | Implement, verify, and submit the feature | [developing-features](https://github.com/nckrtl/orbit/blob/main/.agents/skills/developing-features/SKILL.md) |
 | Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
 | Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
@@ -233,7 +232,7 @@ The lint command reads the repository only, with no network, external service, o
 
 ### Audits stay outside the gate
 
-Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and the advisory steps above ship the fix.
+Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and an advisory fix pull request ships the fix.
 
 Vet runs without a trust baseline. A baseline makes each routine update a manual approval, and the release age already holds back a compromised release while it is found and pulled.
 

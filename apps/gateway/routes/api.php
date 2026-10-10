@@ -103,6 +103,9 @@ Route::prefix('v1')->group(function (): void {
         Route::put('profiles/{profile}/settings', [ConnProfilesController::class, 'replaceSettings'])
             ->whereNumber('profile')
             ->name('conn:profile:settings:update');
+        Route::patch('profiles/{profile}/settings', [ConnProfilesController::class, 'patchSettings'])
+            ->whereNumber('profile')
+            ->name('conn:profile:settings:patch');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');

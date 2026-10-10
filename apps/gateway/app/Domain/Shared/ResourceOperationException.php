@@ -10,7 +10,7 @@ use Throwable;
 class ResourceOperationException extends RuntimeException
 {
     /**
-     * @param  array<string, int|string>  $details
+     * @param  array<string, mixed>  $details
      */
     public function __construct(
         public readonly string $errorCode,

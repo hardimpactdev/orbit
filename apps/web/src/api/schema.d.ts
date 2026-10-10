@@ -469,19 +469,23 @@ export interface paths {
         };
         /**
          * Show profile settings
-         * @description Returns the profile settings document, its version, and when it last changed.
+         * @description Returns the profile settings document, its version, and when it last changed. `sections` lists the sections that were written (`workspaces`, `appearance`, `devices.<type>`) with their version, the time of the last write, and the name of the Node that wrote it. A section that is not listed is at version 0.
          */
         get: operations["conn-profile-settings-show"];
         /**
-         * Replace profile settings
-         * @description Replaces the whole settings document. Send the version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.
+         * Replace profile settings sections
+         * @description Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type and must hold at least one; a patch removes one type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.
          */
         put: operations["conn-profile-settings-update"];
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Patch profile settings sections
+         * @description Changes sections of the settings document, each with the version the client last read: `{"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). A section with no recorded version reads as 0, including one written before sections had versions. A null value removes `appearance` or a device section; an empty string returns `validation.failed` (422). The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.
+         */
+        patch: operations["conn-profile-settings-patch"];
         trace?: never;
     };
     "/api/v1/database-connections": {
@@ -3968,6 +3972,9 @@ export interface components {
             settings?: {
                 [key: string]: unknown;
             };
+            sections?: {
+                [key: string]: unknown;
+            };
             updated_at?: string;
         };
         DatabaseConnection: {
@@ -6561,9 +6568,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description The document version the client last read. */
                     version: number;
+                    /** @description The sections to replace; the others stay. The whole document is at most 4 MB. */
                     settings: {
-                        workspaces: {
+                        workspaces?: {
                             id: string;
                             name: string;
                             color: string;
@@ -6572,6 +6581,209 @@ export interface operations {
                             projectRefs?: string[];
                             projectKeys?: string[];
                         }[];
+                        /** @description Serialized at most 512 KB. */
+                        appearance?: {
+                            schema: number;
+                            /** @enum {string} */
+                            mode: "light" | "dark" | "system";
+                            contrast: number;
+                            themes?: {
+                                light?: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    source: "stock" | "builtin" | "custom" | "published";
+                                    name?: string;
+                                    /** @enum {string} */
+                                    appearance?: "light" | "dark";
+                                    colors?: {
+                                        [key: string]: string;
+                                    };
+                                };
+                                dark?: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    source: "stock" | "builtin" | "custom" | "published";
+                                    name?: string;
+                                    /** @enum {string} */
+                                    appearance?: "light" | "dark";
+                                    colors?: {
+                                        [key: string]: string;
+                                    };
+                                };
+                            };
+                            customThemes?: {
+                                /** @description Unique in the list. */
+                                id: string;
+                                name: string;
+                                /** @enum {string} */
+                                appearance: "light" | "dark";
+                                colors: {
+                                    [key: string]: string;
+                                };
+                                variants?: {
+                                    light?: {
+                                        [key: string]: string;
+                                    };
+                                    dark?: {
+                                        [key: string]: string;
+                                    };
+                                };
+                            }[];
+                        };
+                        /** @description Replaces every device type. At least one; a patch removes one type. */
+                        devices?: {
+                            [key: string]: {
+                                schema: number;
+                                values: {
+                                    [key: string]: (string | number | boolean | null) | (string | number | boolean)[];
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ConnProfileSettings"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "conn-profile-settings-patch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The sections to change by name. At most 8 device types may exist after the change, and the whole document is at most 4 MB. */
+                    sections: {
+                        workspaces?: {
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
+                            version: number;
+                            value: {
+                                id: string;
+                                name: string;
+                                color: string;
+                                icon: string | null;
+                                image?: string | null;
+                                projectRefs?: string[];
+                                projectKeys?: string[];
+                            }[];
+                        };
+                        appearance?: {
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
+                            version: number;
+                            value: {
+                                schema: number;
+                                /** @enum {string} */
+                                mode: "light" | "dark" | "system";
+                                contrast: number;
+                                themes?: {
+                                    light?: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        source: "stock" | "builtin" | "custom" | "published";
+                                        name?: string;
+                                        /** @enum {string} */
+                                        appearance?: "light" | "dark";
+                                        colors?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                    dark?: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        source: "stock" | "builtin" | "custom" | "published";
+                                        name?: string;
+                                        /** @enum {string} */
+                                        appearance?: "light" | "dark";
+                                        colors?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                };
+                                customThemes?: {
+                                    /** @description Unique in the list. */
+                                    id: string;
+                                    name: string;
+                                    /** @enum {string} */
+                                    appearance: "light" | "dark";
+                                    colors: {
+                                        [key: string]: string;
+                                    };
+                                    variants?: {
+                                        light?: {
+                                            [key: string]: string;
+                                        };
+                                        dark?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                }[];
+                            } | null;
+                        };
+                    } & {
+                        [key: string]: {
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
+                            version: number;
+                            value: {
+                                schema: number;
+                                values: {
+                                    [key: string]: (string | number | boolean | null) | (string | number | boolean)[];
+                                };
+                            } | null;
+                        };
                     };
                 };
             };
