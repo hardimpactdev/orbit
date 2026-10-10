@@ -250,7 +250,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'single-boot', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -294,6 +294,29 @@ describe('a build', function (): void {
                 'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi,
             ])
             ->and(array_slice($pi->arguments, -2))->toBe(['--', $digest]);
+    });
+
+    it('drops the seed templates, so a VM from the image boots once and cloud-init reads its user-data from the Incus agent', function (): void {
+        $this->travelTo('2026-10-10 03:00:00');
+
+        ($this->build)();
+
+        $metadata = Yaml::parse((string) $this->incus->metadata['tvm-image-20261010030000']);
+        $dropIn = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => in_array('install', $command->arguments, true));
+        expect(array_keys($metadata['templates']))->toBe(['/etc/hostname'])
+            ->and($metadata['properties'])->toBe(['os' => 'ubuntu', 'release' => 'resolute'])
+            ->and($metadata['creation_date'])->toBe(1791653894)
+            ->and(Yaml::parse((string) $this->incus->metadata['tvm-image-20261010030000'], Yaml::PARSE_OBJECT_FOR_MAP)->templates->{'/etc/hostname'}->properties)->toBeInstanceOf(stdClass::class)
+            ->and(array_slice($dropIn->arguments, -2))->toBe(['/dev/stdin', '/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf'])
+            ->and($dropIn->input)->toBe("[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n");
+    });
+
+    it('fails the smoke test when a VM from the new image reboots on its first boot', function (): void {
+        $this->incus->boots = 2;
+
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'failed at stage [smoke]: Incus returned invalid output for the base image smoke VM [tvm-image-');
+        expect($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm']])
+            ->and($this->incus->instances)->toBe([]);
     });
 
     it('moves the base alias in one request, keeps an image a VM uses and deletes the unused ones', function (): void {
