@@ -8,6 +8,10 @@ use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Models\Node;
+use App\Models\Task;
+use App\Models\TaskVm;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use Illuminate\Support\Facades\DB;
 
 it('projects active nodes from prospective roles and explicit preferences once', function (): void {
@@ -175,4 +179,23 @@ it('does not select a managed mac for the Linux exporter', function (): void {
         $projection->for($metrics),
     ))->not->toContain('mini')
         ->and($projection->forNode($metrics, $mac))->toBeNull();
+});
+
+it('never selects a task VM Node, whose hub filter keeps the Metrics Node out', function (): void {
+    $metrics = metricsExporterProjectionNode('metrics');
+    $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    $vmNode = metricsExporterProjectionNode('tvm-7');
+    $vmNode->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $group = Task::topLevel()->create(['title' => 'Task VM', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
+    TaskVm::query()->create([
+        'group_id' => $group->id, 'host_node_id' => $metrics->id, 'node_id' => $vmNode->id, 'provider' => 'incus', 'name' => 'tvm-7',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.135', 'pi_token' => str_repeat('a', 64),
+    ]);
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($vmNode->id, ExporterPreference::Enabled);
+    $projection = new NativeMetricsExporterProjection(new ExporterSelector, $preferences);
+
+    expect(array_map(static fn (MetricsExporterProjectionItem $item): string => $item->node->name, $projection->for($metrics)))
+        ->toBe(['metrics'])
+        ->and($projection->forNode($metrics, $vmNode))->toBeNull();
 });
