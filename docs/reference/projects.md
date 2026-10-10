@@ -135,7 +135,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | --- | --- |
 | `name` and `--name` | Applies at once and touches no checkout, Route, or runtime. At most 255 characters. The slug, domains, and code stay. |
 | `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
-| `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
+| `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Deployment, removal, and Doctor find a checkout from its stored path, not from the slug, so a checkout created under the old slug keeps working. Generated Routes use the new slug; explicit domains do not. |
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout and re-binds each production home. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
 | `source_access` and `--source-access` | Applies at once and touches no checkout. See [Change source access](#change-source-access). |
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
