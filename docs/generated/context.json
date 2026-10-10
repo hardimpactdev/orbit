@@ -1232,7 +1232,8 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Project"
+                "Project",
+                "Role"
             ],
             "governing_adrs": []
         },

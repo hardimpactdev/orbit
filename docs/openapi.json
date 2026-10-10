@@ -2940,7 +2940,7 @@
             "description": ""
           }
         ],
-        "description": "Returns the profile settings document, its version, and when it last changed.",
+        "description": "Returns the profile settings document, its version, and when it last changed. `sections` lists the sections that were written (`workspaces`, `appearance`, `devices.<type>`) with their version, the time of the last write, and the name of the Node that wrote it. A section that is not listed is at version 0.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -2993,9 +2993,9 @@
           }
         ]
       },
-      "put": {
-        "operationId": "conn-profile-settings-update",
-        "summary": "Replace profile settings",
+      "patch": {
+        "operationId": "conn-profile-settings-patch",
+        "summary": "Patch profile settings sections",
         "tags": [
           "Conn"
         ],
@@ -3010,21 +3010,521 @@
             "description": ""
           }
         ],
-        "description": "Replaces the whole settings document. Send the version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.",
+        "description": "Changes sections of the settings document, each with the version the client last read: `{\"sections\": {\"appearance\": {\"version\": 3, \"value\": {...}}, \"devices.iphone\": {\"version\": 0, \"value\": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). Version 0 means never written; a null value removes `appearance` or a device section. The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "sections"
+                ],
+                "properties": {
+                  "sections": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": false,
+                    "description": "The sections to change by name. At most 8 device types may exist after the change, and the whole document is at most 4 MB.",
+                    "properties": {
+                      "workspaces": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "version",
+                          "value"
+                        ],
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "The section version the client last read; 0 means never written."
+                          },
+                          "value": {
+                            "type": "array",
+                            "maxItems": 200,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "id",
+                                "name",
+                                "color",
+                                "icon"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                "color": {
+                                  "type": "string",
+                                  "maxLength": 32
+                                },
+                                "icon": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 64
+                                },
+                                "image": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "maxLength": 200000,
+                                  "pattern": "^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/]+=*$(?![\\s\\S])"
+                                },
+                                "projectRefs": {
+                                  "type": "array",
+                                  "maxItems": 500,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 512,
+                                    "pattern": "^[^:\\s]+:\\S+$(?![\\s\\S])"
+                                  }
+                                },
+                                "projectKeys": {
+                                  "type": "array",
+                                  "maxItems": 500,
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 512
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "appearance": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "version",
+                          "value"
+                        ],
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "The section version the client last read; 0 means never written."
+                          },
+                          "value": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "schema",
+                                  "mode",
+                                  "contrast"
+                                ],
+                                "description": "Serialized at most 512 KB.",
+                                "properties": {
+                                  "schema": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 1000
+                                  },
+                                  "mode": {
+                                    "type": "string",
+                                    "enum": [
+                                      "light",
+                                      "dark",
+                                      "system"
+                                    ]
+                                  },
+                                  "contrast": {
+                                    "type": "integer",
+                                    "minimum": 50,
+                                    "maximum": 200
+                                  },
+                                  "themes": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "minProperties": 1,
+                                    "properties": {
+                                      "light": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                          "id",
+                                          "source"
+                                        ],
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "maxLength": 100
+                                          },
+                                          "source": {
+                                            "type": "string",
+                                            "enum": [
+                                              "stock",
+                                              "builtin",
+                                              "custom",
+                                              "published"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "maxLength": 100
+                                          },
+                                          "appearance": {
+                                            "type": "string",
+                                            "enum": [
+                                              "light",
+                                              "dark"
+                                            ]
+                                          },
+                                          "colors": {
+                                            "type": "object",
+                                            "minProperties": 1,
+                                            "maxProperties": 80,
+                                            "propertyNames": {
+                                              "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "maxLength": 64,
+                                              "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "dark": {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                          "id",
+                                          "source"
+                                        ],
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "maxLength": 100
+                                          },
+                                          "source": {
+                                            "type": "string",
+                                            "enum": [
+                                              "stock",
+                                              "builtin",
+                                              "custom",
+                                              "published"
+                                            ]
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "maxLength": 100
+                                          },
+                                          "appearance": {
+                                            "type": "string",
+                                            "enum": [
+                                              "light",
+                                              "dark"
+                                            ]
+                                          },
+                                          "colors": {
+                                            "type": "object",
+                                            "minProperties": 1,
+                                            "maxProperties": 80,
+                                            "propertyNames": {
+                                              "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                            },
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "maxLength": 64,
+                                              "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "customThemes": {
+                                    "type": "array",
+                                    "maxItems": 50,
+                                    "items": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                        "id",
+                                        "name",
+                                        "appearance",
+                                        "colors"
+                                      ],
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "maxLength": 100,
+                                          "description": "Unique in the list."
+                                        },
+                                        "name": {
+                                          "type": "string",
+                                          "maxLength": 100
+                                        },
+                                        "appearance": {
+                                          "type": "string",
+                                          "enum": [
+                                            "light",
+                                            "dark"
+                                          ]
+                                        },
+                                        "colors": {
+                                          "type": "object",
+                                          "minProperties": 1,
+                                          "maxProperties": 80,
+                                          "propertyNames": {
+                                            "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                          },
+                                          "additionalProperties": {
+                                            "type": "string",
+                                            "maxLength": 64,
+                                            "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                          }
+                                        },
+                                        "variants": {
+                                          "type": "object",
+                                          "additionalProperties": false,
+                                          "minProperties": 1,
+                                          "properties": {
+                                            "light": {
+                                              "type": "object",
+                                              "minProperties": 1,
+                                              "maxProperties": 80,
+                                              "propertyNames": {
+                                                "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "maxLength": 64,
+                                                "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                              }
+                                            },
+                                            "dark": {
+                                              "type": "object",
+                                              "minProperties": 1,
+                                              "maxProperties": 80,
+                                              "propertyNames": {
+                                                "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                              },
+                                              "additionalProperties": {
+                                                "type": "string",
+                                                "maxLength": 64,
+                                                "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "patternProperties": {
+                      "^devices\\.[a-z][a-z0-9-]{1,23}$": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "version",
+                          "value"
+                        ],
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "The section version the client last read; 0 means never written."
+                          },
+                          "value": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "schema",
+                                  "values"
+                                ],
+                                "description": "Serialized at most 64 KB. The Gateway checks the envelope and the value types; each client checks its own keys.",
+                                "properties": {
+                                  "schema": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 1000
+                                  },
+                                  "values": {
+                                    "type": "object",
+                                    "minProperties": 1,
+                                    "maxProperties": 128,
+                                    "propertyNames": {
+                                      "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                    },
+                                    "additionalProperties": {
+                                      "oneOf": [
+                                        {
+                                          "type": [
+                                            "string",
+                                            "number",
+                                            "boolean",
+                                            "null"
+                                          ],
+                                          "maxLength": 512
+                                        },
+                                        {
+                                          "type": "array",
+                                          "maxItems": 32,
+                                          "items": {
+                                            "type": [
+                                              "string",
+                                              "number",
+                                              "boolean"
+                                            ],
+                                            "maxLength": 512
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ConnProfileSettings"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/conn/profiles/1/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"sections\": {}}'\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "conn-profile-settings-update",
+        "summary": "Replace profile settings sections",
+        "tags": [
+          "Conn"
+        ],
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "settings"
+                ],
                 "properties": {
                   "version": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "description": "The document version the client last read."
                   },
                   "settings": {
                     "type": "object",
                     "additionalProperties": false,
+                    "minProperties": 1,
+                    "description": "The sections to replace; the others stay. The whole document is at most 4 MB.",
                     "properties": {
                       "workspaces": {
                         "type": "array",
@@ -3032,6 +3532,12 @@
                         "items": {
                           "type": "object",
                           "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "name",
+                            "color",
+                            "icon"
+                          ],
                           "properties": {
                             "id": {
                               "type": "string",
@@ -3057,6 +3563,7 @@
                                 "string",
                                 "null"
                               ],
+                              "maxLength": 200000,
                               "pattern": "^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/]+=*$(?![\\s\\S])"
                             },
                             "projectRefs": {
@@ -3064,8 +3571,8 @@
                               "maxItems": 500,
                               "items": {
                                 "type": "string",
-                                "pattern": "^[^:\\s]+:\\S+$(?![\\s\\S])",
-                                "maxLength": 512
+                                "maxLength": 512,
+                                "pattern": "^[^:\\s]+:\\S+$(?![\\s\\S])"
                               }
                             },
                             "projectKeys": {
@@ -3076,25 +3583,278 @@
                                 "maxLength": 512
                               }
                             }
-                          },
-                          "required": [
-                            "id",
-                            "name",
-                            "color",
-                            "icon"
-                          ]
+                          }
                         }
+                      },
+                      "appearance": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "schema",
+                          "mode",
+                          "contrast"
+                        ],
+                        "description": "Serialized at most 512 KB.",
+                        "properties": {
+                          "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "light",
+                              "dark",
+                              "system"
+                            ]
+                          },
+                          "contrast": {
+                            "type": "integer",
+                            "minimum": 50,
+                            "maximum": 200
+                          },
+                          "themes": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "minProperties": 1,
+                            "properties": {
+                              "light": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "id",
+                                  "source"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stock",
+                                      "builtin",
+                                      "custom",
+                                      "published"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "appearance": {
+                                    "type": "string",
+                                    "enum": [
+                                      "light",
+                                      "dark"
+                                    ]
+                                  },
+                                  "colors": {
+                                    "type": "object",
+                                    "minProperties": 1,
+                                    "maxProperties": 80,
+                                    "propertyNames": {
+                                      "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 64,
+                                      "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                    }
+                                  }
+                                }
+                              },
+                              "dark": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "id",
+                                  "source"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stock",
+                                      "builtin",
+                                      "custom",
+                                      "published"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "maxLength": 100
+                                  },
+                                  "appearance": {
+                                    "type": "string",
+                                    "enum": [
+                                      "light",
+                                      "dark"
+                                    ]
+                                  },
+                                  "colors": {
+                                    "type": "object",
+                                    "minProperties": 1,
+                                    "maxProperties": 80,
+                                    "propertyNames": {
+                                      "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                    },
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 64,
+                                      "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "customThemes": {
+                            "type": "array",
+                            "maxItems": 50,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "id",
+                                "name",
+                                "appearance",
+                                "colors"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "maxLength": 100,
+                                  "description": "Unique in the list."
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                "appearance": {
+                                  "type": "string",
+                                  "enum": [
+                                    "light",
+                                    "dark"
+                                  ]
+                                },
+                                "colors": {
+                                  "type": "object",
+                                  "minProperties": 1,
+                                  "maxProperties": 80,
+                                  "propertyNames": {
+                                    "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                  }
+                                },
+                                "variants": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "minProperties": 1,
+                                  "properties": {
+                                    "light": {
+                                      "type": "object",
+                                      "minProperties": 1,
+                                      "maxProperties": 80,
+                                      "propertyNames": {
+                                        "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string",
+                                        "maxLength": 64,
+                                        "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                      }
+                                    },
+                                    "dark": {
+                                      "type": "object",
+                                      "minProperties": 1,
+                                      "maxProperties": 80,
+                                      "propertyNames": {
+                                        "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                                      },
+                                      "additionalProperties": {
+                                        "type": "string",
+                                        "maxLength": 64,
+                                        "pattern": "^[#A-Za-z0-9(),.%/ -]+$"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "devices": {
+                        "type": "object",
+                        "maxProperties": 8,
+                        "propertyNames": {
+                          "pattern": "^[a-z][a-z0-9-]{1,23}$"
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "schema",
+                            "values"
+                          ],
+                          "description": "Serialized at most 64 KB. The Gateway checks the envelope and the value types; each client checks its own keys.",
+                          "properties": {
+                            "schema": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 1000
+                            },
+                            "values": {
+                              "type": "object",
+                              "minProperties": 1,
+                              "maxProperties": 128,
+                              "propertyNames": {
+                                "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,63}$"
+                              },
+                              "additionalProperties": {
+                                "oneOf": [
+                                  {
+                                    "type": [
+                                      "string",
+                                      "number",
+                                      "boolean",
+                                      "null"
+                                    ],
+                                    "maxLength": 512
+                                  },
+                                  {
+                                    "type": "array",
+                                    "maxItems": 32,
+                                    "items": {
+                                      "type": [
+                                        "string",
+                                        "number",
+                                        "boolean"
+                                      ],
+                                      "maxLength": 512
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "description": "Replaces every device type."
                       }
-                    },
-                    "required": [
-                      "workspaces"
-                    ]
+                    }
                   }
                 },
-                "required": [
-                  "version",
-                  "settings"
-                ],
                 "additionalProperties": false
               }
             }
@@ -29428,6 +30188,10 @@
             "type": "integer"
           },
           "settings": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sections": {
             "type": "object",
             "additionalProperties": true
           },

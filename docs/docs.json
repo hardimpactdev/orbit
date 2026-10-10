@@ -597,6 +597,7 @@
               "GET /api/v1/conn/profiles",
               "POST /api/v1/conn/profiles",
               "GET /api/v1/conn/profiles/{profile}/settings",
+              "PATCH /api/v1/conn/profiles/{profile}/settings",
               "PUT /api/v1/conn/profiles/{profile}/settings"
             ]
           },
