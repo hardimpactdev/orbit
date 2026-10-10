@@ -39,6 +39,8 @@ The built app does not contain the web app. Its window loads `https://gateway.or
 
 ## Window and permissions
 
+The window and its permissions come from the Tauri configuration in `src-tauri`.
+
 | Setting | Value |
 | --- | --- |
 | Product name | `Orbit` |
@@ -52,7 +54,10 @@ The built app does not contain the web app. Its window loads `https://gateway.or
 
 ## Limits
 
-- The app registers no Tauri commands. Native work that a browser page cannot do, such as installing the Orbit root certificate or setting up local DNS, is planned for the shell but not built. Use `orbit gateway:trust` and the [`dns`](/cli/dns) commands instead.
+The app is a shell only, with these limits.
+
+- The app registers no Tauri commands.
+- Native work such as installing the Orbit root certificate or setting up local DNS is not built. Use `orbit gateway:trust` and the [`dns`](/cli/dns) commands instead.
 - The app works only while the Gateway is reachable. It has no offline mode.
 - CI does not build or check the app, and no workflow publishes it.
 
