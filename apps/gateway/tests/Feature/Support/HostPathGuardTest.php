@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Processes\LockRenewingProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use Tests\Support\HostPathGuardedProcessRunner;
@@ -14,7 +15,8 @@ it('refuses a privileged command that names a managed host path before it runs',
         input: "touch '{$marker}'\n{$input}\n",
     )))->toThrow(LogicException::class, 'privileged command against the host path');
 
-    expect(file_exists($marker))->toBeFalse();
+    expect(file_exists($marker))->toBeFalse()
+        ->and(app(ProcessRunner::class))->toBeInstanceOf(LockRenewingProcessRunner::class);
 })->with([
     'systemd unit' => [': unit_directory=/etc/systemd/system'],
     'Orbit state' => [': "/var/lib/orbit/private-dns/catalog.json"'],

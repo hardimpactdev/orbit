@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -45,8 +46,9 @@ abstract class TestCase extends BaseTestCase
         TestDatabaseGuard::register($app);
         $app->make(Kernel::class)->bootstrap();
         // No test may change the host's systemd units, dnsmasq fragments, or Orbit state through real sudo.
+        // The guard wraps the native runner, so the container's ProcessRunner keeps its own class.
         $app->extend(
-            ProcessRunner::class,
+            NativeProcessRunner::class,
             static fn (ProcessRunner $runner): ProcessRunner => new HostPathGuardedProcessRunner($runner),
         );
 
