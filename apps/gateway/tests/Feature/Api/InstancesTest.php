@@ -728,6 +728,52 @@ describe('development Instance rename', function (): void {
             ->and(Route::query()->orderBy('id')->get()->map->getAttributes()->all())->toBe($beforeRoutes);
     })->with(['before cutover' => false, 'after cutover' => true]);
 
+    it('removes a replacement that never activated and keeps the Route it would replace', function (string $state): void {
+        $id = $this->renameInstance->id;
+        $this->renameInstance->update(['source_is_laravel' => true]);
+        $original = Route::query()->sole();
+        $replacement = slug_fix_unactivated_replacement($original, $state);
+        $this->configuration->urls = [];
+
+        $this->deleteJson("/api/v1/routes/{$replacement->id}/target")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.target_conflict')
+            ->assertJsonPath('error.message', fn (string $message): bool => str_contains($message, 'route:destroy'));
+        $this->deleteJson("/api/v1/routes/{$replacement->id}")->assertOk()->assertJsonPath('data.id', $replacement->id);
+
+        expect(Route::query()->find($replacement->id))->toBeNull()
+            ->and(Route::query()->sole()->only(['id', 'domain', 'status', 'replaced_by_route_id']))
+            ->toBe(['id' => $original->id, 'domain' => 'dev.acme.test', 'status' => RouteStatus::Active, 'replaced_by_route_id' => null])
+            ->and(RouteTarget::query()->sole()->only(['route_id', 'instance_id']))->toBe(['route_id' => $original->id, 'instance_id' => $id])
+            ->and($this->configuration->urls)->toBe(['https://dev.acme.test']);
+
+        $this->postJson("/api/v1/instances/{$id}/rename", ['domain' => 'login.acme.test'])->assertOk();
+        expect(Route::query()->sole()->domain)->toBe('login.acme.test');
+    })->with(['reserved by a Project slug update' => 'reserved', 'failed before cutover' => 'failed']);
+
+    it('refuses to remove a replacement that has cut over', function (): void {
+        $replacement = slug_fix_unactivated_replacement(Route::query()->sole(), 'reserved');
+        $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => 'database-cutover']);
+
+        $this->deleteJson("/api/v1/routes/{$replacement->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.reconciliation_required');
+        expect(Route::query()->count())->toBe(2);
+    });
+
+    it('removes an active Instance whose Route has a replacement that never activated', function (string $state): void {
+        $id = $this->renameInstance->id;
+        slug_fix_unactivated_replacement(Route::query()->sole(), $state);
+
+        $this->deleteJson("/api/v1/instances/{$id}")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'completed');
+
+        expect(Instance::query()->find($id))->toBeNull()
+            ->and(Route::query()->count())->toBe(0)
+            ->and(RouteTarget::query()->count())->toBe(0);
+    })->with(['reserved by a Project slug update' => 'reserved', 'failed before cutover' => 'failed']);
+
     it('refuses an Instance with an unfinished removal', function (): void {
         $id = $this->renameInstance->id;
         $this->removalSource->fail = 'prepare';
@@ -3491,3 +3537,32 @@ it('retains the checkout when setup execution cannot be confirmed', function ():
     expect($instance->refresh()->failed_step)->toBeNull();
 
 });
+
+/**
+ * The state a failed Project slug update or domain change leaves: the original Route stays active,
+ * and a replacement that copies its target never cut over.
+ */
+function slug_fix_unactivated_replacement(Route $original, string $state): Route
+{
+    $replacement = Route::query()->create([
+        'project_id' => $original->project_id,
+        'node_id' => $original->node_id,
+        'cluster_id' => $original->cluster_id,
+        'generation_basis_node_id' => $original->generation_basis_node_id,
+        'domain' => 'stuck.acme.test',
+        'provenance' => $original->provenance,
+        'publication' => $original->publication,
+        'status' => $state === 'failed' ? RouteStatus::Failed : RouteStatus::Pending,
+        'replaces_route_id' => $original->id,
+        'replacement_step' => $state === 'failed' ? 'workload-caddy' : 'reserved',
+        'failed_step' => $state === 'failed' ? 'dns-publication' : null,
+        'error_code' => $state === 'failed' ? 'route.domain_change_failed' : null,
+    ]);
+    $original->update(['replaced_by_route_id' => $replacement->id]);
+
+    foreach ($original->targets as $target) {
+        $replacement->targets()->create(['instance_id' => $target->instance_id, 'position' => $target->position]);
+    }
+
+    return $replacement;
+}

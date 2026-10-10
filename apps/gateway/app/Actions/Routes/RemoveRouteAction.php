@@ -76,20 +76,9 @@ final readonly class RemoveRouteAction
 
     private function remove(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
     {
-        $expectedTargetIds = $route
-            ->targets()
-            ->orderBy('instance_id')
-            ->pluck('instance_id')
-            ->map(static fn (mixed $id): int => StoredInteger::from($id))
-            ->values()
-            ->all();
-        $expectedTargetIds = array_values($expectedTargetIds);
-        $result = $this->environmentOperations->run(
-            $expectedTargetIds,
-            fn (): Route => $this->owner->run(
-                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking, $offline, $offersOffline),
-            ),
-        );
+        $result = $route->isUnactivatedReplacement() && ! $allowTracking
+            ? app(ConvergeRouteAction::class)->withdrawReplacement($route)
+            : $this->removeRoute($route, $allowTracking, $offline, $offersOffline);
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteDeleted,
@@ -100,6 +89,24 @@ final readonly class RemoveRouteAction
         $this->metrics?->reconcile();
 
         return $result;
+    }
+
+    private function removeRoute(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
+    {
+        $expectedTargetIds = $route
+            ->targets()
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
+            ->values()
+            ->all();
+        $expectedTargetIds = array_values($expectedTargetIds);
+        return $this->environmentOperations->run(
+            $expectedTargetIds,
+            fn (): Route => $this->owner->run(
+                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking, $offline, $offersOffline),
+            ),
+        );
     }
 
     /**

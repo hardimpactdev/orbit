@@ -402,10 +402,10 @@ describe('UpdateProjectAction', function (): void {
             ]);
     });
 
-    it('refuses a conflicting update while one update is incomplete', function (): void {
+    it('refuses a conflicting update while a published update is incomplete', function (): void {
         ProjectUpdate::query()->create([
             'project_id' => $this->fixture->project->id,
-            'status' => ProjectUpdateStatus::Prepared,
+            'status' => ProjectUpdateStatus::CleaningUp,
             'fingerprint' => orb101_update_data(defaultBranch: 'stable')->fingerprint(),
             'requested_default_branch' => 'stable',
             'previous_slug' => 'acme',
@@ -424,4 +424,196 @@ describe('UpdateProjectAction', function (): void {
 
         expect($this->fixture->project->refresh()->slug)->toBe('acme');
     });
+
+    it('completes a monorepo slug update for an Instance without stored environment configuration', function (): void {
+        $this->fixture->project->update(['root' => 'server/web/public']);
+        $instance = $this->fixture->defaultInstance;
+        $instance->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+        $log = slug_fix_native_projection();
+
+        app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_update_data(slug: 'shop', repositoryUrl: 'https://github.com/acme/shop.git'),
+        );
+
+        $row = ProjectUpdate::query()->sole()->evidence['slug']['routes'][0];
+        expect($this->fixture->project->refresh()->only(['slug', 'repository_url']))
+            ->toBe(['slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop.git'])
+            ->and(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::Complete)
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->pluck('domain', 'status')->all())
+            ->toBe(['active' => 'shop.test'])
+            ->and($instance->refresh()->applicationDirectory())->toBe('/srv/orbit/apps/acme/default/server/web')
+            ->and($log['writes'])->toBe([])
+            ->and($log['urls'])->toBe(['https://shop.test'])
+            ->and($row['environment'] ?? null)->toBe('skipped')
+            ->and($row['environment_reason'] ?? null)->toBe('env.configuration_missing')
+            ->and(InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->count())->toBe(0);
+    });
+
+    it('rolls back every step when the slug projection fails before a Route cuts over, and a retry succeeds', function (): void {
+        $instance = $this->fixture->defaultInstance;
+        $instance->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
+        $instance->environmentValues()->create(['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}']);
+        $instance->environmentValues()->create(['env_key' => 'APP_NAME', 'env_value' => 'Acme']);
+        $fail = true;
+        $log = slug_fix_native_projection(function (string $url) use (&$fail): void {
+            if ($fail && $url === 'https://shop.test') {
+                throw new RuntimeException('Laravel URL configuration failed.');
+            }
+        });
+        $data = orb101_update_data(slug: 'shop', repositoryUrl: 'https://github.com/acme/shop.git');
+
+        expect(fn () => app(UpdateProjectAction::class)->execute($this->fixture->project, $data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('project.slug_projection_failed');
+            });
+
+        expect($this->fixture->project->refresh()->only(['slug', 'repository_url']))
+            ->toBe(['slug' => 'acme', 'repository_url' => 'git@github.com:acme/site.git'])
+            ->and(ProjectUpdate::query()->sole()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->get()->map->only(['id', 'domain', 'status', 'replaced_by_route_id'])->all())
+            ->toBe([['id' => $this->fixture->defaultRoute->id, 'domain' => 'acme.test', 'status' => RouteStatus::Active, 'replaced_by_route_id' => null]])
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default'])
+            ->and($log['writes'])->toBe(['shop.test', 'acme.test'])
+            ->and($log['urls'])->toBe(['https://shop.test', 'https://acme.test'])
+            ->and(InstanceEnvironmentValue::query()->where('env_key', 'APP_URL')->value('env_value'))->toBe('https://{{instance.domain}}');
+
+        $fail = false;
+        app(UpdateProjectAction::class)->execute($this->fixture->project->refresh(), $data);
+
+        expect($this->fixture->project->refresh()->slug)->toBe('shop')
+            ->and(ProjectUpdate::query()->latest('id')->value('status'))->toBe(ProjectUpdateStatus::Complete)
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->pluck('domain')->all())->toBe(['shop.test']);
+    });
+
+    it('rolls back an unpublished stopped update before a different request', function (): void {
+        $project = $this->fixture->project;
+        $route = $this->fixture->defaultRoute;
+        $replacement = Route::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $route->node_id,
+            'generation_basis_node_id' => $route->generation_basis_node_id,
+            'domain' => 'shop.test',
+            'provenance' => 'generated',
+            'publication' => 'private',
+            'status' => RouteStatus::Pending,
+            'replaces_route_id' => $route->id,
+            'replacement_step' => 'reserved',
+        ]);
+        $replacement->targets()->create(['instance_id' => $this->fixture->defaultInstance->id, 'position' => 0]);
+        $route->update(['replaced_by_route_id' => $replacement->id]);
+        $stopped = ProjectUpdate::query()->create([
+            'project_id' => $project->id,
+            'status' => ProjectUpdateStatus::Publishing,
+            'fingerprint' => orb101_update_data(slug: 'shop', repositoryUrl: 'https://github.com/acme/shop.git')->fingerprint(),
+            'requested_slug' => 'shop',
+            'requested_repository_url' => 'https://github.com/acme/shop.git',
+            'previous_slug' => 'acme',
+            'previous_repository_url' => $project->repository_url,
+            'previous_default_branch' => 'main',
+            'previous_root' => 'public',
+            'evidence' => [
+                'origins' => [[
+                    'path' => '/srv/orbit/apps/acme/default',
+                    'previous_url' => $project->repository_url,
+                    'current_url' => 'https://github.com/acme/shop.git',
+                    'mutated' => true,
+                ]],
+                'slug' => ['routes' => [[
+                    'route_id' => $route->id,
+                    'previous_domain' => 'acme.test',
+                    'proposed_domain' => 'shop.test',
+                    'instance_id' => $this->fixture->defaultInstance->id,
+                    'replacement_id' => $replacement->id,
+                    'previous_env' => null,
+                ]]],
+            ],
+        ]);
+
+        $data = new UpdateProjectData(
+            typeProvided: false,
+            type: null,
+            slugProvided: true,
+            slug: 'shop',
+            repositoryUrlProvided: true,
+            repositoryUrl: 'https://github.com/acme/shop.git',
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+            name: 'Shop',
+        );
+        app(UpdateProjectAction::class)->execute($project, $data);
+
+        expect($stopped->refresh()->status)->toBe(ProjectUpdateStatus::RolledBack)
+            ->and($this->fixture->sources->originRestores)->toBe(['/srv/orbit/apps/acme/default'])
+            ->and(ProjectUpdate::query()->latest('id')->value('status'))->toBe(ProjectUpdateStatus::Complete)
+            ->and($project->refresh()->only(['name', 'slug', 'repository_url']))
+            ->toBe(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop.git'])
+            ->and(Route::query()->where('project_id', $project->id)->pluck('domain')->all())->toBe(['shop.test'])
+            ->and(Route::query()->find($replacement->id))->toBeNull();
+    });
+
+    it('changes the display name without reconciling sources or Routes', function (): void {
+        $data = new UpdateProjectData(
+            typeProvided: false,
+            type: null,
+            slugProvided: false,
+            slug: null,
+            repositoryUrlProvided: false,
+            repositoryUrl: null,
+            defaultBranchProvided: false,
+            defaultBranch: null,
+            rootProvided: false,
+            root: null,
+            name: 'Acme Shop',
+        );
+
+        app(UpdateProjectAction::class)->execute($this->fixture->project, $data);
+
+        expect($this->fixture->project->refresh()->only(['name', 'slug']))->toBe(['name' => 'Acme Shop', 'slug' => 'acme'])
+            ->and(ProjectUpdate::query()->count())->toBe(0)
+            ->and($this->fixture->defaultRoute->refresh()->domain)->toBe('acme.test');
+    });
 });
+
+/**
+ * Binds the native slug projection with Node-facing fakes. `writes` lists the Route domain of each
+ * environment file write, and `urls` each Laravel URL that Route convergence configures.
+ *
+ * @param  (Closure(string): void)|null  $configureUrl
+ * @return ArrayObject<string, list<string>>
+ */
+function slug_fix_native_projection(?Closure $configureUrl = null): ArrayObject
+{
+    $log = new ArrayObject(['writes' => [], 'urls' => []]);
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+    app()->instance(DevelopmentRouteProjector::class, Mockery::mock(DevelopmentRouteProjector::class)->shouldIgnoreMissing());
+    app()->instance(DevelopmentProjectionOperationLock::class, Mockery::mock(DevelopmentProjectionOperationLock::class)
+        ->shouldReceive('run')->andReturnUsing(fn (Closure $operation): mixed => $operation())->getMock());
+    app()->instance(InstanceEnvironmentOperationLock::class, Mockery::mock(InstanceEnvironmentOperationLock::class)
+        ->shouldReceive('run')->andReturnUsing(fn (array $ids, Closure $operation): mixed => $operation())->getMock());
+    app()->instance(InstanceOperationPreflight::class, Mockery::mock(InstanceOperationPreflight::class)->shouldIgnoreMissing());
+    app()->instance(InstanceEnvironmentWriter::class, Mockery::mock(InstanceEnvironmentWriter::class)
+        ->shouldReceive('write')->andReturnUsing(
+            function (InstanceEnvironmentContext $context, string $contents) use ($log): InstanceEnvironmentWriteResult {
+                $log['writes'] = [...$log['writes'], (string) $context->routeDomain];
+
+                return InstanceEnvironmentWriteResult::changed();
+            },
+        )->getMock());
+    $configurator = Mockery::mock(DevelopmentInstanceConfigurator::class)->shouldIgnoreMissing();
+    $configurator->shouldReceive('configureLaravelUrl')->andReturnUsing(
+        function (Instance $instance, string $url) use ($log, $configureUrl): void {
+            $log['urls'] = [...$log['urls'], $url];
+
+            if ($configureUrl instanceof Closure) {
+                $configureUrl($url);
+            }
+        },
+    );
+    app()->instance(DevelopmentInstanceConfigurator::class, $configurator);
+    app()->instance(ProjectUpdateProjectionMutator::class, app(NativeProjectUpdateProjectionMutator::class));
+
+    return $log;
+}

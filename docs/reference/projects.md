@@ -122,7 +122,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -133,6 +133,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 
 | Field | Effect |
 | --- | --- |
+| `name` and `--name` | Applies at once and touches no checkout, Route, or runtime. At most 255 characters. The slug, domains, and code stay. |
 | `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
 | `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout and re-binds each production home. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
@@ -177,11 +178,15 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `reserved` | Records the request and the previous values. |
 | `preflighted` | Checks every affected checkout, worktree, production home, and generated domain. |
 | `prepared` | Switches branches, changes origins, re-binds production homes, and creates replacement Routes. The old values stay in effect. |
-| `publishing` | Publishes the new Project values after projection succeeds. Replaces generated Routes and updates Instance URLs, environments, and runtimes. |
+| `publishing` | Replaces generated Routes and updates Instance URLs, environments, and runtimes, then publishes the new Project values. |
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
-A failure before `publishing` rolls back: Orbit restores origins, production homes, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
+An update is published once a new value is visible: a replacement Route has cut over, or the Project record holds a new value. A failure before that rolls back, also during `publishing`. Orbit withdraws each replacement Route that never activated, renders each environment it synchronized against the old Route again, and restores origins, production homes, branches, and the Project record. The update ends in `rolled_back` and no longer blocks other updates, so a retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after publication stays in place, and an identical retry continues forward.
+
+A different update while one is published but incomplete returns `project.update_in_progress`. An update holds the locks of every Instance of the Project while it runs, so an unpublished incomplete update that another request finds is not running: an update that stopped before this rule, or a rollback that failed. Orbit rolls it back first and then runs the new request. When that rollback fails, the request returns the rollback's error and the old update stays `rolling_back`.
+
+A slug change synchronizes the stored environment of each development Instance that has one, against the replacement Route. An Instance without stored configuration has nothing to synchronize. Orbit skips that step and records `environment: skipped` with the reason `env.configuration_missing` in the update evidence; Route convergence still writes the new `APP_URL` into the `.env` of the [application directory](#application-directory). See [Project update boundary](/reference/environment-variables#project-update-boundary).
 
 When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
 
@@ -227,7 +232,7 @@ The Gateway returns these codes for Project requests.
 | `github.cli_unauthenticated` | A `gh_cli` read found no `gh` on the Gateway, or no `github.com` login for the `orbit` user. |
 | `project.slug_conflict` | Another Project has the slug. |
 | `project.update_required` | The update sends no field. |
-| `project.update_in_progress` | Another update of this Project is incomplete. |
+| `project.update_in_progress` | Another update of this Project is published but incomplete. Repeat that update to finish it. |
 | `project.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
 | `project.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
 | `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
@@ -258,7 +263,9 @@ Creation stays idempotent: a changed value is a conflict, never an update. A slu
 
 ### Recovery goes forward after publication
 
-Before `publishing`, the old values are still in effect, so a rollback is safe. After that point, clients can already see the new domain. Rolling back would change a public name twice. So a failure after publication is retried forward.
+Until a replacement Route cuts over or the Project record changes, the old values are still in effect, so a rollback is safe. After that point, clients can already see the new domain. Rolling back would change a public name twice. So a failure after publication is retried forward. Deciding by status alone was rejected: an update in `publishing` that failed before its first cutover kept the old domain live, yet blocked every other update and left its replacement Route and origin changes behind until someone repeated the exact request.
+
+An unpublished update that stopped is rolled back when a different request arrives, instead of returning `project.update_in_progress`. The Instance locks prove that it is not running, and rolling it back changes nothing that clients see. Refusing would leave the operator with no supported way out when the stopped request can no longer succeed.
 
 ### Type decides capabilities
 

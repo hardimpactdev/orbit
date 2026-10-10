@@ -774,6 +774,19 @@ describe('project:update', function (): void {
         'blank check' => [['--merge-check' => '  '], 'project.merge_check_invalid'],
     ]);
 
+    it('sends the display name only when given', function (array $arguments, array $body): void {
+        $mockClient = MockClient::global([
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', ['project' => '3', ...$arguments])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
+    })->with([
+        'name only' => [['--name' => 'Ofide'], ['name' => 'Ofide']],
+        'name with a slug' => [['--name' => 'Ofide', '--slug' => 'ofide'], ['name' => 'Ofide', 'slug' => 'ofide']],
+    ]);
+
     it('refuses an empty update without gateway IO', function (): void {
         $mockClient = MockClient::global();
 

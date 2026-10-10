@@ -23,6 +23,7 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -111,9 +112,11 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         return ['routes' => $prepared];
     }
 
-    public function publishSlug(Project $project, string $newSlug, array $prepared): void
+    public function publishSlug(Project $project, string $newSlug, array $prepared, ?Closure $record = null): void
     {
-        foreach ($this->rows($prepared['routes'] ?? null) as $row) {
+        $record ??= static function (int $index, array $facts): void {};
+
+        foreach ($this->rows($prepared['routes'] ?? null) as $index => $row) {
             $replacement = Route::query()->with('targets.instance')->find(StoredValue::integer($row['replacement_id'] ?? null));
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
             $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
@@ -137,9 +140,11 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
                 );
             }
 
+            $record($index, ['projection' => 'started']);
+
             try {
                 if ($instance->placementEnvironment() === 'development' && $replacement instanceof Route) {
-                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Candidate);
+                    $this->synchronizeEnvironment($instance, InstanceEnvironmentRouteDomain::Candidate, $index, $record);
                 }
 
                 $this->routes->execute(
@@ -149,7 +154,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
                 );
 
                 if ($instance->placementEnvironment() === 'development' && ! $replacement instanceof Route) {
-                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Authoritative);
+                    $this->synchronizeEnvironment($instance, InstanceEnvironmentRouteDomain::Authoritative, $index, $record);
                 }
             } catch (Throwable $exception) {
                 throw new ResourceOperationException(
@@ -160,6 +165,55 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
                 );
             }
         }
+    }
+
+    public function slugCutOver(array $prepared): bool
+    {
+        foreach ($this->rows($prepared['routes'] ?? null) as $row) {
+            $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
+
+            if (! $current instanceof Route || $current->status === RouteStatus::Retiring) {
+                return true;
+            }
+
+            $replacement = $current->replaced_by_route_id === null
+                ? null
+                : Route::query()->find($current->replaced_by_route_id);
+
+            if ($replacement instanceof Route && $replacement->isAuthoritative()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Synchronizes the stored environment against the Route domain. An Instance without stored
+     * configuration has nothing to render, so the step is skipped and recorded; Route convergence
+     * still writes `APP_URL` into its application directory.
+     *
+     * @param  Closure(int, array<string, string>): void  $record
+     */
+    private function synchronizeEnvironment(
+        Instance $instance,
+        InstanceEnvironmentRouteDomain $domain,
+        int $index,
+        Closure $record,
+    ): void {
+        try {
+            $this->environment->synchronizeRouteDomain($instance, $domain);
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'env.configuration_missing') {
+                throw $exception;
+            }
+
+            $record($index, ['environment' => 'skipped', 'environment_reason' => $exception->errorCode]);
+
+            return;
+        }
+
+        $record($index, ['environment' => 'synchronized']);
     }
 
     /**
@@ -216,19 +270,27 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         });
     }
 
+    /**
+     * Withdraws each replacement that never activated, restores the stored `APP_URL`, and renders
+     * each environment the projection synchronized against the old Route again.
+     */
     public function rollbackSlug(Project $project, array $prepared): void
     {
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->find(StoredValue::integer($row['replacement_id'] ?? null));
-            $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
-
-            if ($current instanceof Route) {
-                $current->update(['replaced_by_route_id' => null]);
-            }
 
             if ($replacement instanceof Route) {
-                $replacement->targets()->delete();
-                $replacement->delete();
+                $this->withdrawReplacement($replacement, ($row['projection'] ?? null) === 'started');
+            }
+
+            // A retry after the prepared replacement was removed reserves a fresh one.
+            $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
+            $newer = $current?->replaced_by_route_id === null ? null : Route::query()->find($current->replaced_by_route_id);
+
+            if ($newer instanceof Route) {
+                $this->withdrawReplacement($newer, projectionStarted: true);
+            } elseif ($current instanceof Route && $current->replaced_by_route_id !== null) {
+                $current->update(['replaced_by_route_id' => null]);
             }
 
             $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
@@ -237,7 +299,42 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             if ($instance instanceof Instance && is_string($previous)) {
                 $this->writeStoredUrl($instance->id, $previous);
             }
+
+            if ($instance instanceof Instance && ($row['environment'] ?? null) === 'synchronized') {
+                $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Authoritative);
+            }
         }
+    }
+
+    /**
+     * A replacement that the projection never touched only needs its records removed. Once the
+     * projection started, Route convergence may have built its sites, so it is withdrawn like
+     * `route:destroy` on the replacement.
+     */
+    private function withdrawReplacement(Route $replacement, bool $projectionStarted): void
+    {
+        if (! $replacement->isUnactivatedReplacement()) {
+            throw new ResourceOperationException(
+                errorCode: 'project.update_failed',
+                message: "Route [{$replacement->id}] has cut over and cannot be rolled back.",
+                status: 409,
+            );
+        }
+
+        if ($projectionStarted || $replacement->replacement_step !== RouteReplacementStep::Reserved || $replacement->failed_step !== null) {
+            $this->routes->withdrawReplacement($replacement);
+
+            return;
+        }
+
+        DB::transaction(function () use ($replacement): void {
+            Route::query()
+                ->whereKey((int) $replacement->replaces_route_id)
+                ->where('replaced_by_route_id', $replacement->id)
+                ->update(['replaced_by_route_id' => null]);
+            $replacement->targets()->delete();
+            $replacement->delete();
+        });
     }
 
     public function preflightRoot(Project $project, string $newRoot): array
