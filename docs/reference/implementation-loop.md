@@ -81,7 +81,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
-| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
+| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
@@ -192,7 +192,7 @@ Run these commands in each changed project directory, such as `apps/gateway` or 
 | `composer format` | Applies Pint's Laravel preset |
 | `composer analyse` | Runs PHPStan. The applications use Larastan. |
 
-In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph separate from the graph that `test:affected` reads. In Gateway, CLI, and E2E, `bin/guidance-check` creates private temporary directories for the graph and Blade views before booting Laravel, then removes them when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
+In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph separate from the graph that `test:affected` reads. In every project, `bin/guidance-check` creates private temporary directories for the graph and Blade views before Pest starts, then removes them when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
 
 TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default. E2E scenario runs use the directory in `ORBIT_SCENARIO_TIA_DIRECTORY` instead, which must be under the primary checkout's `.e2e/scenarios/runs/`.
 
@@ -207,7 +207,7 @@ Intermediate Orbit task handoffs select affected tests from the subtask's start 
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
-2. It runs `bin/project-vocabulary` and `bin/env-docs`.
+2. It runs `bin/project-vocabulary`, `bin/env-docs`, and `bin/tooling-baseline`.
 3. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
 4. It checks each of the five Composer projects in turn, as the next paragraph describes.
 5. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.

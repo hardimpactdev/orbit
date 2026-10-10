@@ -22,7 +22,7 @@ because guidance is missing or incomplete:
 1. Restore the committed guidance inputs and outputs with
    `git restore --source=HEAD -- AGENTS.md .ai .agents/skills .codex/config.toml boost.json config/boost.php composer.json composer.lock`.
 2. Run `composer install` when `vendor/` is absent or incomplete.
-3. Run `composer guidance:generate` to refresh Boost-managed output.
+3. Run `composer guidance:update` to refresh Boost-managed output.
 4. Run `composer guidance:check` again and stop if it still fails.
 
 Do not reconstruct missing rules from memory. Do not silently continue without
@@ -63,7 +63,7 @@ the project rule set.
 
 ## Boost Commands
 
-- Run `composer guidance:generate` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
+- Run `composer guidance:update` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
 - Run `composer guidance:check` to verify the committed guidance and installed skill output.
 - The Boost MCP server is configured in `.codex/config.toml`. Use a Boost MCP tool only when the active client exposes that tool. Use repository commands and files when it does not.
 
