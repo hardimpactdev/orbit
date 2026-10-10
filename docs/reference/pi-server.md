@@ -10,7 +10,7 @@ covers:
 
 # Pi server
 
-The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a Node. The Gateway's `pi` driver creates sessions, starts turns, and reads transcripts through it. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`.
+The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a Node. The Gateway's `pi` driver creates sessions, starts turns, and reads transcripts through it. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`. To install, run, and check it, see [Bun and Rust projects](/reference/bun-and-rust-projects#pi-server).
 
 ## Configure the server
 
@@ -345,7 +345,7 @@ A turn still `working` at the restart fails with the restart error. The next tic
 
 ## Test worker file access
 
-Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
+Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. Many tests call `setfacl` to set up workspaces as a Node does, so they fail without it. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
 
 The test copies the Bun runtime and the tool-output module into its temporary fixture. It invokes the runtime by absolute path with a restricted `PATH` and uses the fixture as its working directory. This keeps the worker independent of sudo's executable search path and of access to the test runner's home or source checkout. Cleanup removes both copies and the checkout; the test does not change home permissions or sudo policy.
 

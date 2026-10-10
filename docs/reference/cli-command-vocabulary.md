@@ -98,7 +98,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `tasks` | `cancel`, `close`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, closes a stale question with `tasks:question:close`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 
-`doctor`, `profile`, and `self-update` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
+`doctor`, `profile`, and `self-update` are one-segment commands. Each family name is the command. Project display names, source defaults, and task settings use `project:update`; create and destroy remain the lifecycle commands.
 
 `tool:scan` reads supported package-manager inventory without creating Tool intent. Its Gateway route is `GET /api/v1/tool-inventory`. `tool:adopt` establishes intent for one existing package without installing it. Both use the [Tool contract](/reference/tools).
 
