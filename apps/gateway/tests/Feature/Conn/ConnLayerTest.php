@@ -77,6 +77,41 @@ function conn_layer_node(string $name, string $address, LifecycleStatus $status 
     ]);
 }
 
+/** @return array<string, mixed> */
+function conn_layer_appearance(array $overrides = []): array
+{
+    return [
+        'schema' => 1,
+        'mode' => 'system',
+        'contrast' => 100,
+        'themes' => [
+            'light' => ['id' => 't3-code', 'source' => 'stock'],
+            'dark' => ['id' => 'dark-ocean', 'name' => 'Dark Ocean', 'source' => 'published', 'appearance' => 'dark', 'colors' => ['background' => '#0b1220', 'accent' => 'rgb(10, 132, 255)', 'border' => 'oklch(30% 0.02 250 / 50%)']],
+        ],
+        'customThemes' => [
+            ['id' => 'mine', 'name' => 'Mine', 'appearance' => 'dark', 'colors' => ['background' => '#101010'], 'variants' => ['light' => ['background' => '#ffffff']]],
+        ],
+        ...$overrides,
+    ];
+}
+
+/** @return array<string, mixed> */
+function conn_layer_device(array $values = []): array
+{
+    return ['schema' => 1, 'values' => ['baseFontSize' => 16, 'codeWordBreak' => false, 'fontFamilySans' => 'Inter', 'fontStack' => ['Inter', 'system-ui'], 'chatWidth' => null, ...$values]];
+}
+
+function conn_layer_profile(array $settings = ['workspaces' => []], ?array $meta = null): ConnProfile
+{
+    return ConnProfile::query()->create(['name' => 'Nick', 'settings' => $settings, 'section_meta' => $meta]);
+}
+
+/** @return array{version: int, value: mixed} */
+function conn_layer_change(mixed $value, int $version = 0): array
+{
+    return ['version' => $version, 'value' => $value];
+}
+
 beforeEach(function (): void {
     $this->phone = conn_layer_node('phone', CONN_LAYER_PHONE);
     $this->laptop = conn_layer_node('laptop', '10.44.0.78');
@@ -183,7 +218,7 @@ describe('profile settings', function (): void {
             ->assertJsonPath('data.settings.workspaces.1.image', 'data:image/png;base64,iVBORw0KGgo=')
             ->assertJsonMissingPath('data.settings.workspaces.1.projectRefs');
         expect(Activity::query()->where('command', 'conn:profile:settings:update')->sole()->properties?->toArray()['input'])
-            ->toBe(['version' => 1]);
+            ->toBe(['version' => 1, 'sections' => ['workspaces']]);
 
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.78'])
             ->getJson("/api/v1/conn/profiles/{$profile->id}/settings")
@@ -213,7 +248,8 @@ describe('profile settings', function (): void {
             ->assertJsonPath('error.code', 'validation.failed')
             ->assertJsonValidationErrors([$field], 'error.details');
     })->with([
-        'unknown top-level key' => [['workspaces' => [], 'theme' => 'dark'], 'settings'],
+        'unknown top-level key' => [['workspaces' => [], 'layout' => 'wide'], 'settings'],
+        'no section' => [[], 'settings'],
         'project ref without environment' => [['workspaces' => [['id' => 'ws-1', 'name' => 'A', 'color' => 'blue', 'icon' => null, 'projectRefs' => ['project-1']]]], 'settings.workspaces.0.projectRefs.0'],
         'unknown workspace key' => [['workspaces' => [['id' => 'ws-1', 'name' => 'A', 'color' => 'blue', 'icon' => null, 'projectRefs' => [], 'secret' => 'x']]], 'settings.workspaces.0'],
         'duplicate workspace id' => [['workspaces' => [
@@ -222,6 +258,341 @@ describe('profile settings', function (): void {
         ]], 'settings.workspaces.0.id'],
         'image that is not a picture' => [['workspaces' => [['id' => 'ws-1', 'name' => 'A', 'color' => 'blue', 'icon' => null, 'image' => 'https://example.com/a.png', 'projectRefs' => []]]], 'settings.workspaces.0.image'],
     ]);
+});
+
+describe('profile sections', function (): void {
+    $workspace = ['id' => 'ws-1', 'name' => 'Orbit', 'color' => 'blue', 'icon' => null, 'projectRefs' => [], 'projectKeys' => ['orbit']];
+
+    it('keeps the sections a replace leaves out', function () use ($workspace): void {
+        $profile = conn_layer_profile();
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => [
+            'appearance' => conn_layer_change(conn_layer_appearance()),
+            'devices.iphone' => conn_layer_change(conn_layer_device()),
+        ]])->assertOk();
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 2, 'settings' => ['workspaces' => [$workspace]]])
+            ->assertOk()
+            ->assertJsonPath('data.version', 3)
+            ->assertJsonPath('data.settings.workspaces.0.id', 'ws-1')
+            ->assertJsonPath('data.settings.appearance.mode', 'system')
+            ->assertJsonPath('data.settings.devices.iphone.values.baseFontSize', 16)
+            ->assertJsonPath('data.sections.workspaces.version', 1)
+            ->assertJsonPath('data.sections.appearance.version', 1)
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 1);
+    });
+
+    it('replaces appearance and every device type when a replace sends them', function (): void {
+        $profile = conn_layer_profile();
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => [
+            'devices.desktop' => conn_layer_change(conn_layer_device()),
+            'devices.iphone' => conn_layer_change(conn_layer_device()),
+        ]])->assertOk();
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 2, 'settings' => [
+            'appearance' => conn_layer_appearance(['mode' => 'dark']),
+            'devices' => ['desktop' => conn_layer_device(['baseFontSize' => 18])],
+        ]])
+            ->assertOk()
+            ->assertJsonPath('data.settings.appearance.mode', 'dark')
+            ->assertJsonPath('data.settings.devices.desktop.values.baseFontSize', 18)
+            ->assertJsonMissingPath('data.settings.devices.iphone')
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.desktop']['version'] === 2)
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 2)
+            ->assertJsonPath('data.sections.appearance.version', 1)
+            ->assertJsonMissingPath('data.sections.workspaces');
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 3, 'settings' => ['devices' => []]])
+            ->assertOk()
+            ->assertJsonMissingPath('data.settings.devices');
+        expect($profile->refresh()->settings)->toHaveKeys(['workspaces', 'appearance'])->not->toHaveKey('devices');
+    });
+
+    it('patches every kind of section and reports who wrote it', function () use ($workspace): void {
+        $profile = conn_layer_profile();
+        $appearance = conn_layer_appearance();
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => [
+            'workspaces' => conn_layer_change([$workspace]),
+            'appearance' => conn_layer_change($appearance),
+            'devices.desktop' => conn_layer_change(conn_layer_device(['glassOpacity' => 85.5])),
+            'devices.iphone' => conn_layer_change(conn_layer_device()),
+        ]])
+            ->assertOk()
+            ->assertJsonPath('data.version', 2)
+            ->assertJsonPath('data.settings.workspaces.0.name', 'Orbit')
+            ->assertJsonPath('data.settings.appearance', $appearance)
+            ->assertJsonPath('data.settings.devices.desktop.values.glassOpacity', 85.5)
+            ->assertJsonPath('data.settings.devices.desktop.values.chatWidth', null)
+            ->assertJsonPath('data.settings.devices.iphone.values.fontStack', ['Inter', 'system-ui'])
+            ->assertJsonPath('data.sections.appearance.version', 1)
+            ->assertJsonPath('data.sections.appearance.updated_by', 'phone')
+            ->assertJsonPath('data.sections.workspaces.version', 1)
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 1);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.78'])
+            ->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(['mode' => 'light']), 1)]])
+            ->assertOk()
+            ->assertJsonPath('data.version', 3)
+            ->assertJsonPath('data.sections.appearance.version', 2)
+            ->assertJsonPath('data.sections.appearance.updated_by', 'laptop')
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.desktop']['updated_by'] === 'phone');
+    });
+
+    it('refuses a stale section and leaves the other sections free', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance())]])->assertOk();
+
+        $this->patchJson($url, ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(['mode' => 'dark']))]])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'conn.settings_version_conflict')
+            ->assertJsonPath('error.details.current_version', 2)
+            ->assertJsonPath('error.details.sections', ['appearance' => 1]);
+        expect($profile->refresh()->settings['appearance']['mode'])->toBe('system');
+
+        $this->patchJson($url, ['sections' => ['devices.iphone' => conn_layer_change(conn_layer_device())]])
+            ->assertOk()
+            ->assertJsonPath('data.version', 3)
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 1)
+            ->assertJsonPath('data.sections.appearance.version', 1);
+    });
+
+    it('writes none of the sections when one is stale', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => ['devices.desktop' => conn_layer_change(conn_layer_device())]])->assertOk();
+
+        $this->patchJson($url, ['sections' => [
+            'appearance' => conn_layer_change(conn_layer_appearance()),
+            'devices.desktop' => conn_layer_change(conn_layer_device(['baseFontSize' => 20])),
+        ]])
+            ->assertStatus(409)
+            ->assertJsonPath('error.details.sections', ['appearance' => 0, 'devices.desktop' => 1]);
+
+        $profile->refresh();
+        expect($profile->settings)->not->toHaveKey('appearance')
+            ->and($profile->settings['devices']['desktop']['values']['baseFontSize'])->toBe(16)
+            ->and($profile->settings_version)->toBe(2)
+            ->and(array_keys($profile->section_meta ?? []))->toBe(['devices.desktop']);
+    });
+
+    it('clears a section with null and keeps its version moving', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => [
+            'appearance' => conn_layer_change(conn_layer_appearance()),
+            'devices.iphone' => conn_layer_change(conn_layer_device()),
+        ]])->assertOk();
+
+        $this->patchJson($url, ['sections' => [
+            'appearance' => conn_layer_change(null, 1),
+            'devices.iphone' => conn_layer_change(null, 1),
+        ]])
+            ->assertOk()
+            ->assertJsonMissingPath('data.settings.appearance')
+            ->assertJsonMissingPath('data.settings.devices')
+            ->assertJsonPath('data.sections.appearance.version', 2)
+            ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 2);
+
+        $this->patchJson($url, ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(), 1)]])->assertStatus(409);
+        $this->patchJson($url, ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(), 2)]])->assertOk()
+            ->assertJsonPath('data.sections.appearance.version', 3);
+        $this->patchJson($url, ['sections' => ['workspaces' => conn_layer_change(null)]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sections.workspaces.value'], 'error.details');
+    });
+
+    it('treats a legacy row without section metadata as version 0', function () use ($workspace): void {
+        $profile = conn_layer_profile(['workspaces' => [$workspace]]);
+        expect(DB::table('conn_profiles')->value('section_meta'))->toBeNull();
+
+        $response = $this->getJson("/api/v1/conn/profiles/{$profile->id}/settings")->assertOk();
+        expect($response->getContent())->toContain('"sections":{}');
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['workspaces' => conn_layer_change([], 0)]])
+            ->assertOk()
+            ->assertJsonPath('data.sections.workspaces.version', 1)
+            ->assertJsonPath('data.settings.workspaces', []);
+    });
+
+    it('moves the profile version that /me reports on every patch', function (): void {
+        $profile = conn_layer_profile();
+        $this->putJson('/api/v1/conn/me/profile', ['profile_id' => $profile->id])->assertOk();
+        $this->getJson('/api/v1/conn/me')->assertJsonPath('data.profile.settings_version', 1);
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['devices.iphone' => conn_layer_change(conn_layer_device())]])->assertOk();
+        $this->getJson('/api/v1/conn/me')->assertJsonPath('data.profile.settings_version', 2);
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['devices.iphone' => conn_layer_change(null, 1)]])->assertOk();
+        $this->getJson('/api/v1/conn/me')->assertJsonPath('data.profile.settings_version', 3);
+    });
+
+    it('reads a section that has a value but no metadata as version 0', function (): void {
+        $profile = conn_layer_profile(['workspaces' => [], 'appearance' => conn_layer_appearance()]);
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(['mode' => 'dark']), 1)]])
+            ->assertStatus(409)
+            ->assertJsonPath('error.details.sections', ['appearance' => 0]);
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance(['mode' => 'dark']), 0)]])
+            ->assertOk()
+            ->assertJsonPath('data.settings.appearance.mode', 'dark')
+            ->assertJsonPath('data.sections.appearance.version', 1);
+    });
+
+    it('lists the sections with their versions on a read', function (): void {
+        $profile = conn_layer_profile();
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => ['appearance' => conn_layer_change(conn_layer_appearance())]])->assertOk();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.78'])
+            ->getJson("/api/v1/conn/profiles/{$profile->id}/settings")
+            ->assertOk()
+            ->assertJsonPath('data.sections.appearance.version', 1)
+            ->assertJsonPath('data.sections.appearance.updated_by', 'phone')
+            ->assertJsonStructure(['data' => ['sections' => ['appearance' => ['version', 'updated_at', 'updated_by']]]]);
+    });
+
+    it('records section names and versions in Activity, never their content', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => [
+            'appearance' => conn_layer_change(conn_layer_appearance()),
+            'devices.iphone' => conn_layer_change(conn_layer_device()),
+        ]])->assertOk();
+        $this->putJson($url, ['version' => 2, 'settings' => ['appearance' => conn_layer_appearance(['mode' => 'light']), 'devices' => ['iphone' => conn_layer_device()]]])->assertOk();
+
+        $patch = Activity::query()->where('command', 'conn:profile:settings:patch')->sole();
+        $update = Activity::query()->where('command', 'conn:profile:settings:update')->sole();
+        expect($patch->properties?->toArray()['input'])->toBe(['sections' => ['appearance' => 0, 'devices.iphone' => 0]])
+            ->and($update->properties?->toArray()['input'])->toBe(['version' => 2, 'sections' => ['appearance', 'devices']]);
+        foreach ([$patch, $update] as $activity) {
+            expect(json_encode($activity->properties))->not->toContain('dark-ocean')->not->toContain('#0b1220')->not->toContain('Inter');
+        }
+    });
+
+    it('refuses sections outside the contract', function (array $sections, string $field): void {
+        $profile = conn_layer_profile();
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => $sections])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonValidationErrors([$field], 'error.details');
+        expect($profile->refresh()->settings_version)->toBe(1);
+    })->with([
+        'unknown section' => [['theme' => conn_layer_change(['mode' => 'dark'])], 'sections'],
+        'bare devices section' => [['devices' => conn_layer_change(['desktop' => conn_layer_device()])], 'sections'],
+        'device type with capitals' => [['devices.Phone' => conn_layer_change(conn_layer_device())], 'sections'],
+        'device type that is too short' => [['devices.x' => conn_layer_change(conn_layer_device())], 'sections'],
+        'no sections' => [[], 'sections'],
+        'missing version' => [['appearance' => ['value' => conn_layer_appearance()]], 'sections.appearance.version'],
+        'negative version' => [['appearance' => conn_layer_change(conn_layer_appearance(), -1)], 'sections.appearance.version'],
+        'missing value' => [['appearance' => ['version' => 0]], 'sections.appearance.value'],
+        'unknown change key' => [['appearance' => [...conn_layer_change(conn_layer_appearance()), 'force' => true]], 'sections.appearance'],
+        'mode outside the list' => [['appearance' => conn_layer_change(conn_layer_appearance(['mode' => 'sepia']))], 'sections.appearance.value.mode'],
+        'contrast too low' => [['appearance' => conn_layer_change(conn_layer_appearance(['contrast' => 49]))], 'sections.appearance.value.contrast'],
+        'contrast too high' => [['appearance' => conn_layer_change(conn_layer_appearance(['contrast' => 201]))], 'sections.appearance.value.contrast'],
+        'contrast that is not an integer' => [['appearance' => conn_layer_change(conn_layer_appearance(['contrast' => '100']))], 'sections.appearance.value.contrast'],
+        'unknown appearance key' => [['appearance' => conn_layer_change(conn_layer_appearance(['accent' => 'blue']))], 'sections.appearance.value'],
+        'theme source outside the list' => [['appearance' => conn_layer_change(conn_layer_appearance(['themes' => ['light' => ['id' => 'x', 'source' => 'remote']]]))], 'sections.appearance.value.themes.light.source'],
+        'theme slot without id' => [['appearance' => conn_layer_change(conn_layer_appearance(['themes' => ['dark' => ['source' => 'stock']]]))], 'sections.appearance.value.themes.dark.id'],
+        'theme slot for another appearance' => [['appearance' => conn_layer_change(conn_layer_appearance(['themes' => ['sepia' => ['id' => 'x', 'source' => 'stock']]]))], 'sections.appearance.value.themes'],
+        'color value with a url' => [['appearance' => conn_layer_change(conn_layer_appearance(['themes' => ['dark' => ['id' => 'x', 'source' => 'custom', 'colors' => ['background' => 'url(https://example.com/a.png)']]]]))], 'sections.appearance.value.themes.dark.colors.background'],
+        'color value with markup' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => ['background' => '<script>']]]]))], 'sections.appearance.value.customThemes.0.colors.background'],
+        'color value that is too long' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => ['background' => str_repeat('a', 65)]]]]))], 'sections.appearance.value.customThemes.0.colors.background'],
+        'color role with a dash' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => ['background-color' => '#fff']]]]))], 'sections.appearance.value.customThemes.0.colors'],
+        'too many colors' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => array_fill_keys(array_map(static fn (int $i): string => "role{$i}", range(1, 81)), '#fff')]]]))], 'sections.appearance.value.customThemes.0.colors'],
+        'empty colors map' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => []]]]))], 'sections.appearance.value.customThemes.0.colors'],
+        'duplicate custom theme id' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => [
+            ['id' => 'a', 'name' => 'A', 'appearance' => 'dark', 'colors' => ['background' => '#000']],
+            ['id' => 'a', 'name' => 'B', 'appearance' => 'light', 'colors' => ['background' => '#fff']],
+        ]]))], 'sections.appearance.value.customThemes.0.id'],
+        'too many custom themes' => [['appearance' => conn_layer_change(conn_layer_appearance(['customThemes' => array_map(static fn (int $i): array => ['id' => "t{$i}", 'name' => 'T', 'appearance' => 'dark', 'colors' => ['background' => '#000']], range(1, 51))]))], 'sections.appearance.value.customThemes'],
+        'device schema missing' => [['devices.desktop' => conn_layer_change(['values' => ['a' => 1]])], 'sections.devices.desktop.value.schema'],
+        'device without values' => [['devices.desktop' => conn_layer_change(['schema' => 1])], 'sections.devices.desktop.value.values'],
+        'device with an empty values map' => [['devices.desktop' => conn_layer_change(['schema' => 1, 'values' => []])], 'sections.devices.desktop.value.values'],
+        'device value key in snake case' => [['devices.desktop' => conn_layer_change(conn_layer_device(['font_size' => 12]))], 'sections.devices.desktop.value.values'],
+        'device value that is an object' => [['devices.desktop' => conn_layer_change(conn_layer_device(['chat' => ['width' => 1]]))], 'sections.devices.desktop.value.values.chat'],
+        'device value that is a list of lists' => [['devices.desktop' => conn_layer_change(conn_layer_device(['chat' => [[1]]]))], 'sections.devices.desktop.value.values.chat'],
+        'device value that is a long string' => [['devices.desktop' => conn_layer_change(conn_layer_device(['note' => str_repeat('a', 513)]))], 'sections.devices.desktop.value.values.note'],
+        'device value list that is too long' => [['devices.desktop' => conn_layer_change(conn_layer_device(['fonts' => range(1, 33)]))], 'sections.devices.desktop.value.values.fonts'],
+        'too many device values' => [['devices.desktop' => conn_layer_change(['schema' => 1, 'values' => array_fill_keys(array_map(static fn (int $i): string => "key{$i}", range(1, 129)), 1)])], 'sections.devices.desktop.value.values'],
+        'workspaces that are not a list' => [['workspaces' => conn_layer_change(['id' => 'ws-1'])], 'sections.workspaces.value'],
+        'duplicate workspace id' => [['workspaces' => conn_layer_change([
+            ['id' => 'ws-1', 'name' => 'A', 'color' => 'blue', 'icon' => null],
+            ['id' => 'ws-1', 'name' => 'B', 'color' => 'blue', 'icon' => null],
+        ])], 'sections.workspaces.value.0.id'],
+    ]);
+
+    it('refuses a section that is larger than its limit', function (string $section, array $value, string $field): void {
+        $profile = conn_layer_profile();
+
+        $this->patchJson("/api/v1/conn/profiles/{$profile->id}/settings", ['sections' => [$section => conn_layer_change($value)]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([$field], 'error.details');
+        expect($profile->refresh()->settings_version)->toBe(1);
+    })->with([
+        'appearance over 512 KB' => ['appearance', conn_layer_appearance(['customThemes' => array_map(static fn (int $i): array => [
+            'id' => "theme{$i}", 'name' => 'Theme', 'appearance' => 'dark',
+            'colors' => array_fill_keys(array_map(static fn (int $c): string => 'role'.str_repeat('a', 50).$c, range(1, 80)), str_repeat('a', 64)),
+            'variants' => ['light' => array_fill_keys(array_map(static fn (int $c): string => 'role'.str_repeat('a', 50).$c, range(1, 80)), str_repeat('a', 64))],
+        ], range(1, 40))]), 'sections.appearance.value'],
+        'device section over 64 KB' => ['devices.desktop', conn_layer_device(array_fill_keys(array_map(static fn (int $i): string => "list{$i}", range(1, 6)), array_fill(0, 32, str_repeat('a', 512)))), 'sections.devices.desktop.value'],
+    ]);
+
+    it('refuses a ninth device type', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $sections = [];
+        foreach (range(1, 8) as $i) {
+            $sections["devices.type-{$i}"] = conn_layer_change(conn_layer_device());
+        }
+        $this->patchJson($url, ['sections' => $sections])->assertOk();
+
+        $this->patchJson($url, ['sections' => ['devices.type-9' => conn_layer_change(conn_layer_device())]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings'], 'error.details');
+        $this->patchJson($url, ['sections' => [...$sections, 'devices.type-9' => conn_layer_change(conn_layer_device())]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sections'], 'error.details');
+        $this->putJson($url, ['version' => 2, 'settings' => ['devices' => array_combine(
+            array_map(static fn (int $i): string => "type-{$i}", range(1, 9)),
+            array_fill(0, 9, conn_layer_device()),
+        )]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.devices'], 'error.details');
+
+        $this->patchJson($url, ['sections' => ['devices.type-1' => conn_layer_change(null, 1)]])->assertOk();
+        $this->patchJson($url, ['sections' => ['devices.type-9' => conn_layer_change(conn_layer_device())]])->assertOk();
+        expect($profile->refresh()->settings['devices'])->toHaveCount(8);
+    });
+
+    it('refuses a document that grows past 4 MB', function (): void {
+        $profile = conn_layer_profile();
+        $picture = 'data:image/png;base64,'.str_repeat('A', 200_000 - 22);
+        $workspaces = array_map(static fn (int $i): array => ['id' => "ws-{$i}", 'name' => 'W', 'color' => 'blue', 'icon' => null, 'image' => $picture], range(1, 25));
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['workspaces' => $workspaces]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings'], 'error.details');
+        expect($profile->refresh()->settings_version)->toBe(1);
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['workspaces' => array_slice($workspaces, 0, 15)]])->assertOk();
+    });
+
+    it('applies the same appearance rules to a replace', function (): void {
+        $profile = conn_layer_profile();
+
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['appearance' => conn_layer_appearance(['contrast' => 300])]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.appearance.contrast'], 'error.details');
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['appearance' => null]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.appearance'], 'error.details');
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['devices' => ['Desktop' => conn_layer_device()]]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.devices'], 'error.details');
+        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 1, 'settings' => ['devices' => ['desktop' => conn_layer_device(['note' => ['a' => 1]])]]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.devices.desktop.values.note'], 'error.details');
+    });
 });
 
 describe('environment registration', function (): void {

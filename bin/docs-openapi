@@ -640,7 +640,7 @@ SUMMARIES = {
     'extension:list': 'List extensions', 'extension:enable': 'Enable an extension', 'extension:disable': 'Disable an extension',
     'conn:me': 'Show the calling Node', 'conn:me:profile': 'Bind the calling Node to a profile',
     'conn:profile:list': 'List Conn profiles', 'conn:profile:create': 'Create a Conn profile',
-    'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings',
+    'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings sections', 'conn:profile:settings:patch': 'Patch profile settings sections',
     'conn:environment:list': 'List T3 servers', 'conn:environment:register': 'Register a T3 server',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
     'proxycli:setup': 'Set up proxycli', 'proxycli:teardown': 'Tear down proxycli', 'proxycli:status': 'Show proxycli status', 'proxycli:list': 'List proxycli providers', 'proxycli:show': 'Show a proxycli provider', 'proxycli:update': 'Update a proxycli account', 'proxycli:models': 'List proxycli models',
@@ -731,8 +731,9 @@ DESCRIPTIONS = {
     'conn:me:profile': 'Binds the calling Node to one profile, replacing an earlier binding. Returns the Node and its profile.',
     'conn:profile:list': 'Lists every Conn profile. Every Node sees every profile.',
     'conn:profile:create': 'Creates a profile with an empty settings document at version 1. A taken name returns `validation.failed` (422).',
-    'conn:profile:settings:show': 'Returns the profile settings document, its version, and when it last changed.',
-    'conn:profile:settings:update': 'Replaces the whole settings document. Send the version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.',
+    'conn:profile:settings:show': 'Returns the profile settings document, its version, and when it last changed. `sections` lists the sections that were written (`workspaces`, `appearance`, `devices.<type>`) with their version, the time of the last write, and the name of the Node that wrote it. A section that is not listed is at version 0.',
+    'conn:profile:settings:update': 'Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.',
+    'conn:profile:settings:patch': 'Changes sections of the settings document, each with the version the client last read: `{"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). Version 0 means never written; a null value removes `appearance` or a device section. The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.',
     'conn:environment:list': 'Lists registered T3 servers with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again.',
     'conn:environment:register': 'Called from a T3 server\'s host on startup with an admin session from `t3 auth session issue --label "Orbit Gateway"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `conn.environment_mismatch` or `conn.admin_scope_missing` (422), and `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused`, or `conn.response_invalid` (502).',
     'conn:pairing:list': 'Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
@@ -1394,6 +1395,75 @@ ACTIVITY_LIST_EXAMPLES = {
 }
 
 
+def conn_settings_body(name):
+    """The request body of the two Conn settings writes.
+
+    ConnProfileSettingsRules builds its rules from the sections a request holds, so the rule parser cannot read
+    them. This schema states the same limits, and a test of the Gateway enforces them.
+    """
+    def color_map(extra=None):
+        schema = {'type': 'object', 'minProperties': 1, 'maxProperties': 80, 'propertyNames': {'pattern': '^[a-zA-Z][a-zA-Z0-9]{0,63}$'}, 'additionalProperties': {'type': 'string', 'maxLength': 64, 'pattern': '^[#A-Za-z0-9(),.%/ -]+$'}}
+        schema.update(extra or {})
+        return schema
+
+    def slot():
+        return {'type': 'object', 'additionalProperties': False, 'required': ['id', 'source'], 'properties': {
+            'id': {'type': 'string', 'maxLength': 100},
+            'source': {'type': 'string', 'enum': ['stock', 'builtin', 'custom', 'published']},
+            'name': {'type': 'string', 'maxLength': 100},
+            'appearance': {'type': 'string', 'enum': ['light', 'dark']},
+            'colors': color_map(),
+        }}
+
+    workspaces = {'type': 'array', 'maxItems': 200, 'items': {'type': 'object', 'additionalProperties': False, 'required': ['id', 'name', 'color', 'icon'], 'properties': {
+        'id': {'type': 'string', 'maxLength': 100},
+        'name': {'type': 'string', 'maxLength': 100},
+        'color': {'type': 'string', 'maxLength': 32},
+        'icon': {'type': ['string', 'null'], 'maxLength': 64},
+        'image': {'type': ['string', 'null'], 'maxLength': 200000, 'pattern': '^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/]+=*$(?![\\s\\S])'},
+        'projectRefs': {'type': 'array', 'maxItems': 500, 'items': {'type': 'string', 'maxLength': 512, 'pattern': '^[^:\\s]+:\\S+$(?![\\s\\S])'}},
+        'projectKeys': {'type': 'array', 'maxItems': 500, 'items': {'type': 'string', 'maxLength': 512}},
+    }}}
+    appearance = {'type': 'object', 'additionalProperties': False, 'required': ['schema', 'mode', 'contrast'], 'description': 'Serialized at most 512 KB.', 'properties': {
+        'schema': {'type': 'integer', 'minimum': 1, 'maximum': 1000},
+        'mode': {'type': 'string', 'enum': ['light', 'dark', 'system']},
+        'contrast': {'type': 'integer', 'minimum': 50, 'maximum': 200},
+        'themes': {'type': 'object', 'additionalProperties': False, 'minProperties': 1, 'properties': {'light': slot(), 'dark': slot()}},
+        'customThemes': {'type': 'array', 'maxItems': 50, 'items': {'type': 'object', 'additionalProperties': False, 'required': ['id', 'name', 'appearance', 'colors'], 'properties': {
+            'id': {'type': 'string', 'maxLength': 100, 'description': 'Unique in the list.'},
+            'name': {'type': 'string', 'maxLength': 100},
+            'appearance': {'type': 'string', 'enum': ['light', 'dark']},
+            'colors': color_map(),
+            'variants': {'type': 'object', 'additionalProperties': False, 'minProperties': 1, 'properties': {'light': color_map(), 'dark': color_map()}},
+        }}},
+    }}
+    scalar = {'type': ['string', 'number', 'boolean', 'null'], 'maxLength': 512}
+    device = {'type': 'object', 'additionalProperties': False, 'required': ['schema', 'values'], 'description': 'Serialized at most 64 KB. The Gateway checks the envelope and the value types; each client checks its own keys.', 'properties': {
+        'schema': {'type': 'integer', 'minimum': 1, 'maximum': 1000},
+        'values': {'type': 'object', 'minProperties': 1, 'maxProperties': 128, 'propertyNames': {'pattern': '^[a-zA-Z][a-zA-Z0-9]{0,63}$'}, 'additionalProperties': {'oneOf': [scalar, {'type': 'array', 'maxItems': 32, 'items': {'type': ['string', 'number', 'boolean'], 'maxLength': 512}}]}},
+    }}
+    device_type = '^[a-z][a-z0-9-]{1,23}$'
+    if name == 'conn:profile:settings:update':
+        return {'type': 'object', 'required': ['version', 'settings'], 'properties': {
+            'version': {'type': 'integer', 'minimum': 1, 'description': 'The document version the client last read.'},
+            'settings': {'type': 'object', 'additionalProperties': False, 'minProperties': 1, 'description': 'The sections to replace; the others stay. The whole document is at most 4 MB.', 'properties': {
+                'workspaces': workspaces,
+                'appearance': appearance,
+                'devices': {'type': 'object', 'maxProperties': 8, 'propertyNames': {'pattern': device_type}, 'additionalProperties': device, 'description': 'Replaces every device type.'},
+            }},
+        }}
+    change = lambda value, null: {'type': 'object', 'additionalProperties': False, 'required': ['version', 'value'], 'properties': {
+        'version': {'type': 'integer', 'minimum': 0, 'description': 'The section version the client last read; 0 means never written.'},
+        'value': {'oneOf': [value, {'type': 'null'}]} if null else value,
+    }}
+    return {'type': 'object', 'required': ['sections'], 'properties': {
+        'sections': {'type': 'object', 'minProperties': 1, 'additionalProperties': False, 'description': 'The sections to change by name. At most 8 device types may exist after the change, and the whole document is at most 4 MB.', 'properties': {
+            'workspaces': change(workspaces, False),
+            'appearance': change(appearance, True),
+        }, 'patternProperties': {'^devices\\.[a-z][a-z0-9-]{1,23}$': change(device, True)}},
+    }}
+
+
 def correct_task_definition_body(schema):
     """The Laravel array rule is a list. These three fields are JSON objects."""
     properties = schema.get('properties') or {}
@@ -1670,6 +1740,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         keys = re.findall(r"'([a-z_]+)'\s*=>", sdkreq['body'])
         if keys:
             body_schema = {'type': 'object', 'properties': {k: {'type': 'boolean' if k in BOOLEAN_FIELDS else 'string'} for k in keys}}
+    if route['name'] in ('conn:profile:settings:update', 'conn:profile:settings:patch'):
+        body_schema, body_required = conn_settings_body(route['name']), True
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False
