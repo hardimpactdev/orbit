@@ -126,6 +126,16 @@ final class TaskVmLifecycleProvider implements TaskVmProvider
         return TVM_LIFE_FINGERPRINT;
     }
 
+    public function start(TaskVm $vm): void
+    {
+        $this->calls[] = 'start';
+    }
+
+    public function stop(TaskVm $vm): void
+    {
+        $this->calls[] = 'stop';
+    }
+
     public function destroy(TaskVm $vm): void
     {
         $this->calls[] = 'destroy';
@@ -297,11 +307,11 @@ describe('allocation', function (): void {
             ->and(TaskVm::query()->live()->where('host_node_id', $shark->id)->count())->toBe(3);
     });
 
-    it('counts failed task VMs against a host, and frees the slot only once a VM is destroyed', function (): void {
+    it('counts parked and failed task VMs against a host, and frees the slot only once a VM is destroyed', function (): void {
         Queue::fake();
         $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
         tvm_life_hosts([[$this->host->id, 1], [$shark->id, 1]]);
-        $parked = tvm_life_vm(tvm_life_group(TaskGroupStatus::WaitingForReview), TaskVmState::Ready);
+        $parked = tvm_life_vm(tvm_life_group(TaskGroupStatus::WaitingForReview), TaskVmState::Parked);
         TaskVm::query()->create([
             'group_id' => tvm_life_group()->id, 'host_node_id' => $shark->id, 'provider' => 'incus', 'name' => 'tvm-failed',
             'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140', 'pi_token' => str_repeat('p', 64),

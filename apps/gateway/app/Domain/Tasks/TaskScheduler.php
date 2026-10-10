@@ -12,6 +12,7 @@ use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Compute\SandboxState;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\GitHubReviewState;
@@ -2999,6 +3000,10 @@ final readonly class TaskScheduler
             if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
                 continue;
             }
+            // A parked task VM starts first. The removal waits for it without a failure or a backoff.
+            if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
+                continue;
+            }
 
             try {
                 $this->pushCancelledApproval($group, $instance);
@@ -3068,6 +3073,10 @@ final readonly class TaskScheduler
         $backoff = is_string($backoffKey) ? $this->readBackoff($backoffKey, 'workspace removal') : null;
 
         if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
+            return;
+        }
+        // A parked task VM starts first. The merge cleanup waits for it without a failure or a backoff.
+        if ($instance instanceof Instance && ! app(WakeTaskVmAction::class)->forInstance($instance)) {
             return;
         }
 

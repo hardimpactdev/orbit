@@ -12,6 +12,8 @@ return [
     'dev_cluster_id' => env('ORBIT_TASK_VMS_DEV_CLUSTER_ID'),
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',
     'model_proxy_origin' => env('ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN'),
+    // Minutes a group waits for review before its task VM stops. Its next work starts the VM again.
+    'park_after_minutes' => env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES') ?: 30,
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),
         'artifact_sha256' => env('ORBIT_TASK_VMS_PI_ARTIFACT_SHA256'),

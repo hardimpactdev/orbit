@@ -17,6 +17,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Compute\HttpSandboxModelKeys;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\Pi\PiConnection;
@@ -24,6 +25,7 @@ use App\Models\Node;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 use Throwable;
 
@@ -116,6 +118,27 @@ final readonly class TaskVmRuntime
             ));
         } catch (Throwable $exception) {
             throw new TaskVmException('task_vm.runtime_failed', "Pi could not be prepared on task VM [{$vm->name}].", 502, $exception);
+        }
+    }
+
+    /**
+     * Whether a started VM can take work again: its Node answers SSH over WireGuard, its agent unit is active,
+     * and Pi answers `GET /capabilities` with the VM's token. Any failure reads as not yet.
+     */
+    public function responds(TaskVm $vm): bool
+    {
+        $node = $vm->node;
+        if (! $node instanceof Node) {
+            return false;
+        }
+
+        try {
+            $this->ssh->execute($node, new RemoteCommand(['systemctl', 'is-active', '--quiet', NodeAgentFootprint::Service.'.service'], timeout: 15), 'task-vm-agent', 'task_vm.resume_timeout', 15, 'Task VM resume');
+
+            return Http::connectTimeout(3)->timeout(5)->withToken($this->pi->token($node))
+                ->get($this->pi->baseUrl($node).'/capabilities')->successful();
+        } catch (Throwable) {
+            return false;
         }
     }
 

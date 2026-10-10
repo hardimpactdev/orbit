@@ -133,6 +133,7 @@ final class TaskGroupData extends Data
         if ($vm instanceof TaskVm) {
             return match ($vm->state) {
                 TaskVmState::Ready => SandboxPower::Running,
+                TaskVmState::Parked => SandboxPower::Stopped,
                 TaskVmState::Destroyed => SandboxPower::Destroyed,
                 default => null,
             };
