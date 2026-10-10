@@ -474,7 +474,7 @@ export interface paths {
         get: operations["conn-profile-settings-show"];
         /**
          * Replace profile settings sections
-         * @description Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.
+         * @description Replaces the sections of the settings document that the body holds (`workspaces`, `appearance`, `devices`; at least one) and keeps the others. `devices` replaces every device type and must hold at least one; a patch removes one type. Send the document version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. Prefer `conn:profile:settings:patch`, which versions each section. An empty object is refused, a document over 4 MB returns `validation.failed` (422), and the document keys keep Conn camelCase.
          */
         put: operations["conn-profile-settings-update"];
         post?: never;
@@ -483,7 +483,7 @@ export interface paths {
         head?: never;
         /**
          * Patch profile settings sections
-         * @description Changes sections of the settings document, each with the version the client last read: `{"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). Version 0 means never written; a null value removes `appearance` or a device section. The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.
+         * @description Changes sections of the settings document, each with the version the client last read: `{"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`. A section is `workspaces`, `appearance`, or `devices.<type>`; an unknown name returns `validation.failed` (422). A section with no recorded version reads as 0, including one written before sections had versions. A null value removes `appearance` or a device section; an empty string returns `validation.failed` (422). The request is all or nothing: if any section is at another version it returns `conn.settings_version_conflict` (409) with `details.current_version` and `details.sections`, the current version of each section sent, and writes nothing. A write adds 1 to each section version and to the document version.
          */
         patch: operations["conn-profile-settings-patch"];
         trace?: never;
@@ -6630,7 +6630,7 @@ export interface operations {
                                 };
                             }[];
                         };
-                        /** @description Replaces every device type. */
+                        /** @description Replaces every device type. At least one; a patch removes one type. */
                         devices?: {
                             [key: string]: {
                                 schema: number;
@@ -6709,7 +6709,7 @@ export interface operations {
                     /** @description The sections to change by name. At most 8 device types may exist after the change, and the whole document is at most 4 MB. */
                     sections: {
                         workspaces?: {
-                            /** @description The section version the client last read; 0 means never written. */
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
                             version: number;
                             value: {
                                 id: string;
@@ -6722,7 +6722,7 @@ export interface operations {
                             }[];
                         };
                         appearance?: {
-                            /** @description The section version the client last read; 0 means never written. */
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
                             version: number;
                             value: {
                                 schema: number;
@@ -6775,7 +6775,7 @@ export interface operations {
                         };
                     } & {
                         [key: string]: {
-                            /** @description The section version the client last read; 0 means never written. */
+                            /** @description The section version the client last read. A section with no recorded version reads as 0, including one written before sections had versions. */
                             version: number;
                             value: {
                                 schema: number;
