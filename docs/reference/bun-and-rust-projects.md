@@ -14,7 +14,7 @@ Four of Orbit's nine projects are not Composer projects. This page shows how to 
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
 
-`bin/bootstrap` and `bin/test` handle only the Composer projects. Install and check these four projects from their own directories. Root `composer check` runs the web app and Pi server checks when a change touches them. It does not check the Node agent or the desktop app.
+`bin/bootstrap` and `bin/test` handle only the Composer projects. Install and check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
 
 ## Prerequisites
 
@@ -65,7 +65,7 @@ bun run build
 
 `bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` and `aarch64` Linux binaries that Nodes run.
 
-Run the tests on Linux with the `acl` package and passwordless `sudo -n -u nobody`. Many tests call `setfacl` to set up workspaces as a Node does, and they fail without it. [Test worker file access](/reference/pi-server#test-worker-file-access) describes the worker test.
+Run the tests on Linux. [Test worker file access](/reference/pi-server#test-worker-file-access) lists the tools they need.
 
 To try the server without a provider sign-in, serve it with a scripted model:
 
@@ -111,12 +111,4 @@ bun run dev
 
 ## CI
 
-Every pull request runs these jobs. `Required checks` passes only when each of them passes.
-
-| Job | Project | Steps |
-| --- | --- | --- |
-| `Web` | `apps/web` | Generated API types match `docs/openapi.json`, `bun run check`, `bun run test`, `bun run build` |
-| `Pi server` | `apps/pi-server` | `bun run check`, `bun run test`, `bun run build` |
-| `Rust agent` | `apps/agent` | `cargo fmt`, `cargo clippy`, `cargo test`, musl release builds |
-
-`.github/workflows/ci.yml` defines the jobs. A push to `main` also publishes the web app build that the next Gateway release installs.
+The `Web`, `Pi server`, and `Rust agent` jobs check these projects on every pull request. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI does not build the desktop app.

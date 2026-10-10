@@ -18,11 +18,7 @@ Gateway, so the shell needs no extra setup in development.
 
 ## Production
 
-The release build loads the web app served by the Gateway itself
-(`frontendDist` is a URL, not bundled assets). The Gateway already serves the
-built app, and keeping `/api` same-origin avoids duplicating its proxying,
-identity, and trust behavior inside the shell. Revisit bundling only if the
-shell needs to work without a reachable Gateway.
+The release build loads the web app that the Gateway serves instead of bundling it. [Load the Gateway's build](../../docs/reference/desktop-app.md#load-the-gateways-build) explains why.
 
 ## More
 

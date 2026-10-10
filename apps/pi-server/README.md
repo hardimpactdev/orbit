@@ -33,6 +33,6 @@ bun run test
 bun run build
 ```
 
-Run the tests on Linux with the `acl` package and passwordless `sudo -n -u nobody`. Many tests call `setfacl`, and they fail without it.
+Run the tests on Linux. [Test worker file access](../../docs/reference/pi-server.md#test-worker-file-access) lists the tools they need.
 
 `bun run build` writes `dist/pi-server` for this machine. `bun run build:linux` writes the `x86_64` and `aarch64` Linux binaries that Nodes run.
