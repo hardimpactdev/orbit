@@ -27,7 +27,7 @@ Install the tools for the projects that you change.
 | Playwright Chromium and WebKit | the version the web app locks | Web app browser tests |
 | [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) | for your operating system | Desktop app |
 
-Vite+ is a dev dependency of the web app and the Pi server, so the `bun run` scripts find its `vp` command without a global install. Bun waits three days before it takes a new release, as [Dependencies](/contributor-guide#dependencies) explains.
+Vite+ is a dev dependency of the web app and the Pi server, so the `bun run` scripts find its `vp` command without a global install. When Bun resolves a version, it takes only releases that are at least three days old, as [Dependencies](/contributor-guide#dependencies) explains.
 
 ## Web app
 
