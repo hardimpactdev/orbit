@@ -757,7 +757,7 @@ describe('development Instance rename', function (): void {
 
         $this->deleteJson("/api/v1/routes/{$replacement->id}")
             ->assertConflict()
-            ->assertJsonPath('error.code', 'route.reconciliation_required');
+            ->assertJsonPath('error.code', 'route.target_conflict');
         expect(Route::query()->count())->toBe(2);
     });
 

@@ -1308,9 +1308,14 @@ final readonly class ConvergeRouteAction
     {
         $old = Route::query()->find((int) $replacement->replaces_route_id);
 
+        // A replacement abandoned without a failed step records the withdrawal as its step.
         Route::query()
             ->whereKey($replacement->id)
-            ->update(['status' => RouteStatus::Failed->value]);
+            ->update([
+                'status' => RouteStatus::Failed->value,
+                'failed_step' => $replacement->failed_step ?? 'withdrawal',
+                'error_code' => $replacement->error_code ?? 'route.replacement_withdrawn',
+            ]);
 
         foreach ($targets as $instance) {
             $this->projection->rollbackCaddy($instance, $replacement);

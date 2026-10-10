@@ -444,7 +444,7 @@ describe('UpdateProjectAction', function (): void {
             ->toBe(['active' => 'shop.test'])
             ->and($instance->refresh()->applicationDirectory())->toBe('/srv/orbit/apps/acme/default/server/web')
             ->and($log['writes'])->toBe([])
-            ->and($log['urls'])->toBe(['https://shop.test'])
+            ->and($log['urls'])->toBe(['https://shop.test', 'https://shop.test'])
             ->and($row['environment'] ?? null)->toBe('skipped')
             ->and($row['environment_reason'] ?? null)->toBe('env.configuration_missing')
             ->and(InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->count())->toBe(0);

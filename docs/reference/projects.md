@@ -182,7 +182,9 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
-An update is published once a new value is visible: a replacement Route has cut over, or the Project record holds a new value. A failure before that rolls back, also during `publishing`. Orbit withdraws each replacement Route that never activated, renders each environment it synchronized against the old Route again, and restores origins, production homes, branches, and the Project record. The update ends in `rolled_back` and no longer blocks other updates, so a retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after publication stays in place, and an identical retry continues forward.
+An update is published once a new value is visible: a replacement Route has cut over, or the Project record holds a new value. A failure before that rolls back, also during `publishing`. Orbit withdraws each replacement Route that never activated, renders each environment it synchronized against the old Route again, and restores origins, production homes, branches, and the Project record.
+
+The update then ends in `rolled_back`, and other updates can run. A retry after a fix starts again. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after publication stays in place, and an identical retry continues forward.
 
 A different update while one is published but incomplete returns `project.update_in_progress`. An update holds the locks of every Instance of the Project while it runs, so an unpublished incomplete update that another request finds is not running: an update that stopped before this rule, or a rollback that failed. Orbit rolls it back first and then runs the new request. When that rollback fails, the request returns the rollback's error and the old update stays `rolling_back`.
 
@@ -265,7 +267,7 @@ Creation stays idempotent: a changed value is a conflict, never an update. A slu
 
 Until a replacement Route cuts over or the Project record changes, the old values are still in effect, so a rollback is safe. After that point, clients can already see the new domain. Rolling back would change a public name twice. So a failure after publication is retried forward. Deciding by status alone was rejected: an update in `publishing` that failed before its first cutover kept the old domain live, yet blocked every other update and left its replacement Route and origin changes behind until someone repeated the exact request.
 
-An unpublished update that stopped is rolled back when a different request arrives, instead of returning `project.update_in_progress`. The Instance locks prove that it is not running, and rolling it back changes nothing that clients see. Refusing would leave the operator with no supported way out when the stopped request can no longer succeed.
+An unpublished update that stopped is rolled back when a different request arrives, instead of returning `project.update_in_progress`. The Instance locks prove that it is not running, and rolling it back changes nothing that clients see. Refusing would leave the operator with no supported way out when the stopped request keeps failing.
 
 ### Type decides capabilities
 

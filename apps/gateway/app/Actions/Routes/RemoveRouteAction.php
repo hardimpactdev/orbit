@@ -101,6 +101,7 @@ final readonly class RemoveRouteAction
             ->values()
             ->all();
         $expectedTargetIds = array_values($expectedTargetIds);
+
         return $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
