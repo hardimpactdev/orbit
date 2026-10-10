@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Annotations\AnnotationStoreAction;
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
-use App\Actions\Processes\RemoveProcessAction;
-use App\Actions\Schedules\AddScheduleAction;
+use App\Actions\Processes\DestroyProcessAction;
+use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Annotations\AnnotationInput;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -70,14 +70,14 @@ beforeEach(function (): void {
     $this->orb131ProcessLock = new Orb131CoordinatorProcessAdmissionLock;
     $this->orb131ProcessRuntime = new Orb131CoordinatorProcessRuntimeManager;
     $this->orb183Content = new Orb183CoordinatorContentRetention;
-    $this->orb181Coordinator = new RemoveInstanceAction(
+    $this->orb181Coordinator = new DestroyInstanceAction(
         $this->orb181Inspector,
         $this->orb181Finalizer,
         $this->orb181Projector,
         new ManagedCheckoutOverlap,
         $this->orb212EnvironmentLock,
         $this->orb131ProcessLock,
-        new CascadeInstanceProcessesAction(new RemoveProcessAction(
+        new CascadeInstanceProcessesAction(new DestroyProcessAction(
             $this->orb131ProcessRuntime,
             new ProcessTargetResolver,
         )),
@@ -286,7 +286,7 @@ it('blocks new Schedules for every member after forced removal accepts its fixed
         ->toThrow(InstanceRemovalException::class);
 
     $runtime = new FakeScheduleRuntimeManager;
-    $addSchedule = new AddScheduleAction(
+    $addSchedule = new CreateScheduleAction(
         new ScheduleSpecificationValidator,
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
         $runtime,

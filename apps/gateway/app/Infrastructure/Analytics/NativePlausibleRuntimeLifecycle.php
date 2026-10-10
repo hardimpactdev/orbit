@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Analytics;
 
-use App\Actions\Processes\AddProcessAction;
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
@@ -22,8 +22,8 @@ use SensitiveParameter;
 final readonly class NativePlausibleRuntimeLifecycle implements PlausibleRuntimeLifecycle
 {
     public function __construct(
-        private AddProcessAction $add,
-        private RemoveProcessAction $remove,
+        private CreateProcessAction $add,
+        private DestroyProcessAction $remove,
     ) {}
 
     public function converge(

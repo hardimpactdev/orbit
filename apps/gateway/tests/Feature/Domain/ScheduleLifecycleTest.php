@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Schedules\ActivateScheduleAction;
-use App\Actions\Schedules\AddScheduleAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Actions\Schedules\CompleteScheduleAction;
-use App\Actions\Schedules\RemoveScheduleAction;
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\DestroyScheduleAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\DesiredTimerState;
@@ -30,7 +30,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 beforeEach(function (): void {
     $this->runtime = new FakeScheduleRuntimeManager;
     $this->targets = new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver);
-    $this->addSchedule = new AddScheduleAction(
+    $this->addSchedule = new CreateScheduleAction(
         new ScheduleSpecificationValidator,
         $this->targets,
         $this->runtime,
@@ -162,7 +162,7 @@ it('does not update or recreate state for removing and deleted completion callba
 it('keeps standalone removal resumable while a service is active', function (): void {
     $schedule = $this->addSchedule->execute(lifecycle_schedule_data($this->instance))['schedule'];
     $this->runtime->removalComplete = false;
-    $remove = new RemoveScheduleAction($this->runtime);
+    $remove = new DestroyScheduleAction($this->runtime);
 
     $remove->execute($schedule);
     expect($schedule->refresh()->status)->toBe(LifecycleStatus::Removing);
@@ -193,7 +193,7 @@ it('cascades only the selected Instance schedules and blocks Node removal while 
     expect(fn () => new ScheduleTargetUseGuard()->assertNodeRemovable($this->node))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_in_use');
 
-    new CascadeInstanceSchedulesAction(new RemoveScheduleAction($this->runtime))->execute($this->instance->id);
+    new CascadeInstanceSchedulesAction(new DestroyScheduleAction($this->runtime))->execute($this->instance->id);
 
     expect(Schedule::query()->whereKey($owned->id)->exists())->toBeFalse()
         ->and(Schedule::query()->whereKey($nodeSchedule->id)->exists())->toBeTrue()

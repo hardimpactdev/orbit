@@ -9,7 +9,7 @@ use App\Models\Schedule;
 
 final readonly class CascadeInstanceSchedulesAction
 {
-    public function __construct(private RemoveScheduleAction $remove) {}
+    public function __construct(private DestroyScheduleAction $remove) {}
 
     public function execute(int $instanceId): void
     {

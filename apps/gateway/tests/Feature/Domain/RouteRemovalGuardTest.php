@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Clusters\ClearClusterRouterAction;
-use App\Actions\Clusters\RemoveClusterAction;
+use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
-use App\Actions\Projects\RemoveProjectAction;
+use App\Actions\Projects\DestroyProjectAction;
 use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
@@ -87,9 +87,9 @@ it('runs ownership and scope guards through destructive action entry points', fu
         'publication' => RoutePublication::Private,
     ]);
 
-    expect(fn () => app(RemoveProjectAction::class)->execute($this->orbitApp))
+    expect(fn () => app(DestroyProjectAction::class)->execute($this->orbitApp))
         ->toThrow(ResourceOperationException::class, 'still has Instances')
-        ->and(fn () => app(RemoveProjectAction::class)->execute($routed))
+        ->and(fn () => app(DestroyProjectAction::class)->execute($routed))
         ->toThrow(ResourceOperationException::class, 'still owns Routes')
         ->and(fn () => app(RemoveNodeAction::class)->execute($this->node, $caller, offline: true, force: true))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
@@ -97,7 +97,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
     $cluster = Cluster::query()->create(['name' => 'destructive', 'state' => 'active', 'tld' => null]);
     $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
 
-    expect(fn () => app(RemoveClusterAction::class)->execute($cluster))
+    expect(fn () => app(DestroyClusterAction::class)->execute($cluster))
         ->toThrow(ResourceOperationException::class, 'still scopes Routes')
         ->and(fn () => app(ClearClusterRouterAction::class)->execute($cluster))
         ->toThrow(ResourceOperationException::class, 'require its Router');
@@ -133,7 +133,7 @@ it('returns App and Cluster ownership refusals for an active Route and retains N
 it('refuses owned Instances and member Nodes before Route ownership through removal actions for an active Route', function (): void {
     $this->route->update(['status' => RouteStatus::Active]);
 
-    expect(fn () => app(RemoveProjectAction::class)->execute($this->orbitApp))
+    expect(fn () => app(DestroyProjectAction::class)->execute($this->orbitApp))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('project.has_instances');
         });
@@ -142,14 +142,14 @@ it('refuses owned Instances and member Nodes before Route ownership through remo
     $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
     $this->node->update(['cluster_id' => $cluster->id]);
 
-    expect(fn () => app(RemoveClusterAction::class)->execute($cluster))
+    expect(fn () => app(DestroyClusterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('cluster.not_empty');
         });
 
     $this->node->update(['cluster_id' => null]);
 
-    expect(fn () => app(RemoveClusterAction::class)->execute($cluster))
+    expect(fn () => app(DestroyClusterAction::class)->execute($cluster))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('cluster.has_routes');
         });
@@ -215,7 +215,7 @@ it('eligible Route removal deletes only owned target rows and releases unrelated
     app()->instance(RouteRemovalProjector::class, $projector);
 
     $this->instance->update(['status' => InstanceState::Reserved]);
-    app(RemoveRouteAction::class)->execute($this->route);
+    app(DestroyRouteAction::class)->execute($this->route);
 
     expect(Route::query()->count())
         ->toBe(0)

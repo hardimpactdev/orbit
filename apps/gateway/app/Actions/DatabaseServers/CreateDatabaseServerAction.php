@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseServers;
 
-use App\Actions\Processes\AddProcessAction;
+use App\Actions\Processes\CreateProcessAction;
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
@@ -39,7 +39,7 @@ final readonly class CreateDatabaseServerAction
 
     public function __construct(
         private ProcessTargetResolver $targets,
-        private AddProcessAction $processes,
+        private CreateProcessAction $processes,
         private ProcessRuntimeLease $lease,
         private ProcessRuntimeManager $runtime,
         private DatabaseServerAdmin $admin,

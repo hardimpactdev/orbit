@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\AddProcessAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
@@ -88,7 +88,7 @@ it('refuses a stale add when removal accepts after initial resolution and before
     $lock = new Orb131RemovalAcceptingProcessAdmissionLock(
         fn () => orb131_accept_process_removal($instance),
     );
-    $action = new AddProcessAction(new ProcessTargetResolver, $runtime, $lock);
+    $action = new CreateProcessAction(new ProcessTargetResolver, $runtime, $lock);
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $instance->id,
@@ -143,7 +143,7 @@ it('finishes an admitted Process before removal acceptance includes it in cleanu
         start: false,
     );
 
-    $result = new AddProcessAction(new ProcessTargetResolver, $runtime, $lock)->execute($data);
+    $result = new CreateProcessAction(new ProcessTargetResolver, $runtime, $lock)->execute($data);
 
     expect($result['process']->status)
         ->toBe(LifecycleStatus::Active)
@@ -151,7 +151,7 @@ it('finishes an admitted Process before removal acceptance includes it in cleanu
         ->toBe(InstanceState::Removing);
     $this->assertDatabaseHas('processes', ['id' => $result['process']->id]);
 
-    new CascadeInstanceProcessesAction(new RemoveProcessAction($runtime, new ProcessTargetResolver))->execute(
+    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver))->execute(
         $instance->id,
     );
 

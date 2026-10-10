@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Projects\CreateProjectAction;
-use App\Actions\Projects\RemoveProjectAction;
+use App\Actions\Projects\DestroyProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Projects\UpdateProjectData;
@@ -105,7 +105,7 @@ describe('Project record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        app(RemoveProjectAction::class)->execute($project);
+        app(DestroyProjectAction::class)->execute($project);
 
         Event::assertDispatched(
             RecordBroadcast::class,

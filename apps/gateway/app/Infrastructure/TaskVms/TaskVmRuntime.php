@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Actions\Processes\AddProcessAction;
+use App\Actions\Processes\CreateProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
@@ -70,7 +70,7 @@ final readonly class TaskVmRuntime
         private HttpSandboxModelKeys $keys,
         private ProxyCliState $proxy,
         private SettingRepository $gatewaySettings,
-        private AddProcessAction $processes,
+        private CreateProcessAction $processes,
         private PiConnection $pi,
     ) {}
 

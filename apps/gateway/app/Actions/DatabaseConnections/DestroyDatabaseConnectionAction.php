@@ -9,7 +9,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 
-final readonly class RemoveDatabaseConnectionAction
+final readonly class DestroyDatabaseConnectionAction
 {
     public function __construct(
         private DropServerDatabaseAction $drops,

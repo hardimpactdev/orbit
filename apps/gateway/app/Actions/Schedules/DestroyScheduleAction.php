@@ -14,7 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Schedule;
 use SensitiveParameter;
 
-final readonly class RemoveScheduleAction
+final readonly class DestroyScheduleAction
 {
     public function __construct(
         private ScheduleRuntimeManager $runtime,

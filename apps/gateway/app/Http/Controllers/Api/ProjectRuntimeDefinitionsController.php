@@ -6,10 +6,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\ProjectDefinitions\CreateProcessDefinitionAction;
 use App\Actions\ProjectDefinitions\CreateScheduleDefinitionAction;
+use App\Actions\ProjectDefinitions\DestroyProcessDefinitionAction;
+use App\Actions\ProjectDefinitions\DestroyScheduleDefinitionAction;
 use App\Actions\ProjectDefinitions\ListProcessDefinitionsAction;
 use App\Actions\ProjectDefinitions\ListScheduleDefinitionsAction;
-use App\Actions\ProjectDefinitions\RemoveProcessDefinitionAction;
-use App\Actions\ProjectDefinitions\RemoveScheduleDefinitionAction;
 use App\Actions\ProjectDefinitions\ReplaceProcessDefinitionAction;
 use App\Actions\ProjectDefinitions\ReplaceScheduleDefinitionAction;
 use App\Actions\ProjectDefinitions\ShowProcessDefinitionAction;
@@ -92,7 +92,7 @@ final class ProjectRuntimeDefinitionsController extends Controller
         Request $request,
         Project $project,
         ProcessDefinition $processDefinition,
-        RemoveProcessDefinitionAction $action,
+        DestroyProcessDefinitionAction $action,
     ): JsonResponse {
         $data = ProjectRuntimeDefinitionData::fromModel($processDefinition)->toArray();
         $action->execute($processDefinition);
@@ -167,7 +167,7 @@ final class ProjectRuntimeDefinitionsController extends Controller
         Request $request,
         Project $project,
         ScheduleDefinition $scheduleDefinition,
-        RemoveScheduleDefinitionAction $action,
+        DestroyScheduleDefinitionAction $action,
     ): JsonResponse {
         $data = ProjectRuntimeDefinitionData::fromModel($scheduleDefinition)->toArray();
         $action->execute($scheduleDefinition);

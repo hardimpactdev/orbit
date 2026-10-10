@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseServers;
 
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseServer;
 use App\Models\Process;
@@ -13,9 +13,9 @@ use App\Models\Process;
  * Removes a Database server that no connection uses: first its Process, through the ordinary
  * Process removal, then the record. Docker keeps the named data volume.
  */
-final readonly class RemoveDatabaseServerAction
+final readonly class DestroyDatabaseServerAction
 {
-    public function __construct(private RemoveProcessAction $processes) {}
+    public function __construct(private DestroyProcessAction $processes) {}
 
     public function execute(DatabaseServer $server): void
     {

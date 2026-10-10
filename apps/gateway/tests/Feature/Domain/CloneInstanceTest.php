@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Instances\CloneInstanceAction;
 use App\Actions\Instances\CloneInstanceEnvironmentAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
-use App\Actions\Instances\RemoveInstanceAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -694,7 +694,7 @@ it('refuses candidate removal while an incomplete clone retains its source depen
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    expect(fn () => app(RemoveInstanceAction::class)->execute($this->candidate, false))
+    expect(fn () => app(DestroyInstanceAction::class)->execute($this->candidate, false))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.clone_in_progress');
         });

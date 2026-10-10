@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -241,7 +241,7 @@ describe('route web root', function (): void {
         $source->shouldReceive('inspect')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The checkout has uncommitted changes.', 409));
         app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance, force: false))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance, force: false))
             ->toThrow(ResourceOperationException::class, 'The checkout has uncommitted changes.');
         expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
             ->and($removal->routeIds)->toBe([])
@@ -278,7 +278,7 @@ describe('route web root', function (): void {
         });
         app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance, force: false, runTeardown: false))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance, force: false, runTeardown: false))
             ->toThrow(InstanceRemovalException::class, 'Instance removal was accepted but remains incomplete.');
         expect(Route::query()->find($docs->id))->toBeNull()
             ->and(Route::query()->find($own->id))->not->toBeNull()
@@ -473,7 +473,7 @@ describe('route web root', function (): void {
         $content->shouldReceive('inventory')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The production home changed.', 409));
         app()->instance(ProductionInstanceContentRetention::class, $content);
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: false))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
             ->toThrow(ResourceOperationException::class, 'The production home changed.');
         expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
             ->and($removal->routeIds)->toBe([])
@@ -507,7 +507,7 @@ describe('route web root', function (): void {
         });
         app()->instance(ProductionInstanceContentRetention::class, $content);
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: false))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
             ->toThrow(InstanceRemovalException::class);
         expect(Route::query()->find($docs->id))->toBeNull()
             ->and(Route::query()->find($own->id))->not->toBeNull()

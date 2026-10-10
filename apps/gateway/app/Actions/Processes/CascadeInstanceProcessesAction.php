@@ -10,7 +10,7 @@ use App\Models\Process;
 final readonly class CascadeInstanceProcessesAction
 {
     public function __construct(
-        private RemoveProcessAction $remove,
+        private DestroyProcessAction $remove,
     ) {}
 
     public function execute(int $instanceId): void

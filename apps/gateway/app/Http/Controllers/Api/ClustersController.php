@@ -7,9 +7,9 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Clusters\AttachClusterNodeAction;
 use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\CreateClusterAction;
+use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Clusters\DetachClusterNodeAction;
 use App\Actions\Clusters\ListClustersAction;
-use App\Actions\Clusters\RemoveClusterAction;
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\ShowClusterAction;
 use App\Actions\Clusters\UpdateClusterAction;
@@ -76,7 +76,7 @@ final class ClustersController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ClusterOwning)]
-    public function destroy(Request $request, Cluster $cluster, RemoveClusterAction $action): JsonResponse
+    public function destroy(Request $request, Cluster $cluster, DestroyClusterAction $action): JsonResponse
     {
         return response()->json([
             'data' => ClusterData::fromModel($action->execute($cluster))->toArray(),

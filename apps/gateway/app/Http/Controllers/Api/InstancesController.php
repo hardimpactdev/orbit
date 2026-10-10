@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Instances\CreateInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
-use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\ShowInstanceAction;
@@ -124,7 +124,7 @@ final class InstancesController extends Controller
     public function destroy(
         RemoveInstanceRequest $request,
         Instance $instance,
-        RemoveInstanceAction $action,
+        DestroyInstanceAction $action,
     ): JsonResponse {
         return response()->json([
             'data' => InstanceRemovalData::fromModel($action->execute($instance, $request->force()))->toArray(),
