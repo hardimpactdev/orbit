@@ -28,6 +28,29 @@ beforeEach(function (): void {
 });
 
 describe('app updates', function (): void {
+    it('changes the display name alone or with a slug change and records it', function (): void {
+        $this->patchJson('/api/v1/projects/'.$this->fixture->project->id, ['name' => 'Acme Shop'])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Acme Shop')
+            ->assertJsonPath('data.slug', 'acme');
+
+        expect(Activity::query()->latest('id')->first()?->properties['input'] ?? null)->toBe(['name' => 'Acme Shop'])
+            ->and($this->fixture->sources->originMutations)->toBe([]);
+
+        $this->patchJson('/api/v1/projects/'.$this->fixture->project->id, ['name' => 'Shop', 'slug' => 'shop'])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Shop')
+            ->assertJsonPath('data.slug', 'shop');
+    });
+
+    it('refuses an empty or oversized display name', function (mixed $name): void {
+        $this->patchJson('/api/v1/projects/'.$this->fixture->project->id, ['name' => $name])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed');
+
+        expect($this->fixture->project->refresh()->name)->toBe('Acme');
+    })->with(['empty' => '', 'null' => null, 'too long' => str_repeat('a', 256), 'number' => 7]);
+
     it('sets and clears the task check as a visible Project setting', function (): void {
         $command = 'vp run check --filter=api';
 

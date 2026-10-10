@@ -130,6 +130,16 @@ final class Route extends Model
     }
 
     /**
+     * A replacement Route of a domain change that has not cut over. Cutover makes it `activating`,
+     * so a `pending` or `failed` replacement never served, and the Route it replaces still does.
+     */
+    public function isUnactivatedReplacement(): bool
+    {
+        return $this->replaces_route_id !== null
+            && in_array($this->status, [RouteStatus::Pending, RouteStatus::Failed], true);
+    }
+
+    /**
      * Sets the publication record before the first build that renders the Route's sites, once
      * the certificates those sites name exist. It writes only that column, so it never races other
      * Route state. Removal and a failed creation clear the record together with their status.

@@ -13,6 +13,7 @@ use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Project;
 use App\Models\Route;
+use Closure;
 
 final class FakeProjectUpdateProjectionMutator implements ProjectUpdateProjectionMutator
 {
@@ -131,7 +132,24 @@ final class FakeProjectUpdateProjectionMutator implements ProjectUpdateProjectio
         return ['routes' => $prepared];
     }
 
-    public function publishSlug(Project $project, string $newSlug, array $prepared): void
+    public function slugCutOver(array $prepared): bool
+    {
+        foreach ($prepared['routes'] ?? [] as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $current = Route::query()->find((int) ($row['route_id'] ?? 0));
+
+            if (! $current instanceof Route || $current->status === RouteStatus::Retiring) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function publishSlug(Project $project, string $newSlug, array $prepared, ?Closure $record = null): void
     {
         foreach ($prepared['routes'] ?? [] as $row) {
             if (! is_array($row)) {
