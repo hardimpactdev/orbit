@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property array<string, mixed> $settings
  * @property int $settings_version
+ * @property array<string, array{version: int, updated_at: string, updated_by_node_id: int|null}>|null $section_meta
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Collection<int, ConnProfileBinding> $bindings
@@ -24,7 +25,7 @@ final class ConnProfile extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'settings', 'settings_version'];
+    protected $fillable = ['name', 'settings', 'settings_version', 'section_meta'];
 
     /** @return HasMany<ConnProfileBinding, $this> */
     public function bindings(): HasMany
@@ -38,6 +39,7 @@ final class ConnProfile extends Model
         return [
             'settings' => 'array',
             'settings_version' => 'integer',
+            'section_meta' => 'array',
         ];
     }
 }
