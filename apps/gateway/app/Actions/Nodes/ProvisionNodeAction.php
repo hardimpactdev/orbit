@@ -53,6 +53,7 @@ use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
@@ -383,6 +384,7 @@ final readonly class ProvisionNodeAction
             );
         }
 
+        $clock = app(TaskVmStepClock::class);
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
                 $this->converger->convergeRecoverably(
@@ -404,10 +406,13 @@ final readonly class ProvisionNodeAction
                     $data->expectedSshHostFingerprint,
                     $rolelessOperator,
                 );
+                $clock->step('node-converge');
                 $this->recordArchitecture($node, $data, $observation);
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
+                $clock->step('apt-tool-manager');
                 $this->convergeRoles($node, $data);
+                $clock->step('roles');
             }
         } catch (NodeProvisioningException $exception) {
             $this->handleFailure($node, $exception, $priorActiveState);
@@ -460,12 +465,14 @@ final readonly class ProvisionNodeAction
         } catch (Throwable $exception) {
             $this->failRouterLanIngress($node, $exception, $priorActiveState, $lanClusterIds);
         }
+        $clock->step('router-lan-ingress');
 
         try {
             $this->expandDnsSelection($node, $lanClusterIds);
         } catch (Throwable $exception) {
             $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
         }
+        $clock->step('dns-selection');
 
         try {
             DB::transaction(function () use ($node, $managedUser): void {
@@ -490,6 +497,7 @@ final readonly class ProvisionNodeAction
 
         $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+        $clock->step('activate');
 
         if ($data->settingsProvided) {
             try {
@@ -558,6 +566,7 @@ final readonly class ProvisionNodeAction
                 throw $failure;
             }
 
+            $clock->step('agent');
             // The Orbit CLI on a Node of the rollout set (ADR 0202). Best effort: the fleet catch-up retries it.
             app(NodeCliConvergence::class)->converge($node);
         }

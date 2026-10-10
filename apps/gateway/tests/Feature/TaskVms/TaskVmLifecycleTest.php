@@ -70,6 +70,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -425,6 +426,25 @@ describe(EnrollTaskVm::class, function (): void {
         $job->assertNotReleased();
         Sleep::assertSleptTimes(2);
         expect($vm->fresh()?->node_id)->not->toBeNull();
+    });
+
+    it('enrolls without a fleet Metrics reconcile and logs each step', function (): void {
+        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldNotReceive('reconcile')->getMock());
+        Log::spy();
+        $vm = tvm_life_vm(tvm_life_group());
+
+        app()->call([new EnrollTaskVm($vm->id, now()->subSeconds(14)->getTimestamp()), 'handle']);
+
+        $steps = [];
+        Log::shouldHaveReceived('info')->withArgs(function (string $message, array $context) use (&$steps, $vm): bool {
+            if ($message === 'Task VM step done.' && $context['task_vm'] === $vm->name) {
+                $steps[] = $context['step'];
+            }
+
+            return true;
+        });
+        expect($vm->fresh()?->node_id)->not->toBeNull()
+            ->and($steps)->toBe(['boot', 'node-converge', 'apt-tool-manager', 'roles', 'router-lan-ingress', 'dns-selection', 'activate', 'enrolled']);
     });
 
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {

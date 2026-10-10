@@ -87,6 +87,7 @@ final readonly class TaskVmRuntime
         private SettingRepository $gatewaySettings,
         private AddProcessAction $processes,
         private PiConnection $pi,
+        private TaskVmStepClock $clock,
     ) {}
 
     public function prepare(TaskVm $vm): void
@@ -105,6 +106,7 @@ final readonly class TaskVmRuntime
             throw $this->invalidConfig('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
         }
         $key = $this->ensureModelKey($vm, $origin);
+        $this->clock->step('model-key');
 
         try {
             $home = '/home/'.$node->user;
@@ -112,9 +114,13 @@ final readonly class TaskVmRuntime
             $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', 60)->stdout;
             if (trim($installed) !== 'current') {
                 $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
+                $this->clock->step('pi-upload');
+            } else {
+                $this->clock->step('pi-current');
             }
             $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', 60);
             $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($vm->pi_token), 'task-vm-pi-token', 60);
+            $this->clock->step('pi-files');
             $this->processes->execute(new AddProcessData(
                 targetType: ProcessTargetType::Node,
                 targetId: $node->id,
@@ -133,6 +139,7 @@ final readonly class TaskVmRuntime
                 start: true,
                 keepAlive: true,
             ));
+            $this->clock->step('pi-server');
         } catch (Throwable $exception) {
             throw new TaskVmException('task_vm.runtime_failed', "Pi could not be prepared on task VM [{$vm->name}].", 502, $exception);
         }

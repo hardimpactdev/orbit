@@ -6,12 +6,12 @@ use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmState;
 use Illuminate\Support\Facades\DB;
 
 it('projects active nodes from prospective roles and explicit preferences once', function (): void {

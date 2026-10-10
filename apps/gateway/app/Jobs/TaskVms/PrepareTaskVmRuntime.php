@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,7 +24,7 @@ final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
-    public function handle(TaskVmRuntime $runtime): void
+    public function handle(TaskVmRuntime $runtime, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -33,7 +34,14 @@ final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
             throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no active Node.");
         }
 
+        $clock->start($vm);
         $runtime->prepare($vm);
         $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
+        $created = $vm->created_at?->getTimestamp();
+        if ($created !== null) {
+            $clock->start($vm, $created);
+            $clock->step('claim-to-ready');
+        }
+        $clock->stop();
     }
 }

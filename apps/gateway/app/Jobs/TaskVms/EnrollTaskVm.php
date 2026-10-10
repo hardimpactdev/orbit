@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,7 +57,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings): void
+    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -88,6 +89,9 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // The first step covers the boot from launch: the guest kernel, the Incus agent, and cloud-init.
+        $clock->start($vm, $this->launchedAt);
+        $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
         $vm->update(['address' => $address]);
         $nodes->execute(new ProvisionNodeData(
@@ -103,6 +107,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             sshJumpNodeId: $vm->host_node_id,
             taskVmId: $vm->id,
         ));
+        $clock->step('enrolled');
+        $clock->stop();
         PrepareTaskVmRuntime::dispatch($vm->id);
     }
 
