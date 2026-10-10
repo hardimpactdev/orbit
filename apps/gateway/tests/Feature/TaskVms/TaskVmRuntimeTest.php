@@ -115,9 +115,13 @@ describe('prepare', function (): void {
         expect($key)->toMatch('/\A[a-f0-9]{64}\z/')
             ->and($keys->getArrayCopy())->toHaveCount(2)->toContain($key);
 
-        [$install, $models, $token] = $this->transport->commands;
+        [$check, $install, $models, $token] = $this->transport->commands;
         expect(array_map(static fn ($connection): array => [$connection->host, $connection->user], $this->transport->connections))
-            ->toBe(array_fill(0, 3, ['10.44.0.130', 'orbit']))
+            ->toBe(array_fill(0, 4, ['10.44.0.130', 'orbit']))
+            ->and([$check->arguments[0], $check->arguments[1], ...array_slice($check->arguments, 3)])
+            ->toBe(['bash', '-ceu', '--', hash_file('sha256', $this->artifact)])
+            ->and($check->arguments[2])->toContain('"$HOME/.local/bin/pi-server" | sha256sum --check --status')
+            ->and($check->protectedInput)->toBeNull()
             ->and([$install->arguments[0], $install->arguments[1], ...array_slice($install->arguments, 3)])
             ->toBe(['bash', '-ceu', '--', hash_file('sha256', $this->artifact)])
             ->and($install->arguments[2])->toContain('sha256sum --check --status', 'mv -f -- "$staged" "$bin/pi-server"')
@@ -158,7 +162,21 @@ describe('prepare', function (): void {
         expect($vm->fresh()?->model_key)->toBe($key)
             ->and($keys->getArrayCopy())->toHaveCount(2)
             ->and(Process::query()->count())->toBe(1)
-            ->and($this->transport->commands)->toHaveCount(6);
+            ->and($this->transport->commands)->toHaveCount(8);
+    });
+
+    it('skips the upload when the VM already has the pinned Pi executable from its base image', function (): void {
+        tvm_runtime_cliproxy();
+        $this->transport = new AppDevFakeSshExecutor([new CommandResult(0, 'current', '', 1, false)]);
+        app()->instance(SshExecutor::class, $this->transport);
+
+        app(TaskVmRuntime::class)->prepare(tvm_runtime_vm());
+
+        expect(array_map(static fn ($command): ?string => $command->arguments[4] ?? null, $this->transport->commands))
+            ->toBe([hash_file('sha256', $this->artifact), 'models.json', 'orbit-token'])
+            ->and(array_filter($this->transport->commands, static fn ($command): bool => $command->protectedInput !== null
+                && stream_get_contents($command->protectedInput->stream()) === 'pi-server executable'))->toBe([])
+            ->and(Process::query()->sole()->name)->toBe('pi-server');
     });
 
     it('refuses before any change without a Node or the Pi settings', function (string $missing, string $code): void {

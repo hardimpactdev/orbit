@@ -9,10 +9,12 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -25,10 +27,10 @@ use Throwable;
 /**
  * Builds a host's task VM base image. A builder VM boots the stock image with the builder user-data, runs
  * the programs that enrollment runs on an `app-dev` Node through `incus exec`, installs the pinned agent
- * binary, and removes its identity with `base-image-clean.sh`. Incus publishes its disk as
- * `orbit-task-base-<time>`. A smoke VM boots the new image, which also creates its volume on the ZFS pool.
- * Then the alias `orbit-task-base` moves to it in one request, and older base images that no VM uses go.
- * A failed build keeps the current image and leaves no builder, smoke VM or unused new image behind.
+ * binary and the pinned Pi executable, and removes its identity with `base-image-clean.sh`. Incus publishes its disk as `orbit-task-base-<time>`. A smoke VM boots the new
+ * image, which also creates its volume on the ZFS pool. Then the alias `orbit-task-base` moves to it in one
+ * request, and older base images that no VM uses go. A failed build keeps the current image and leaves no
+ * builder, smoke VM or unused new image behind.
  */
 final readonly class IncusTaskVmImageBuilder
 {
@@ -61,6 +63,7 @@ final readonly class IncusTaskVmImageBuilder
         private SshKeyProvider $keys,
         private NodeBootstrapCommandFactory $bootstrap,
         private NodeRolePrerequisiteCommandFactory $roles,
+        private TaskVmSettings $settings,
     ) {}
 
     /** Whether the host's project has a base image. */
@@ -100,6 +103,9 @@ final readonly class IncusTaskVmImageBuilder
                 $this->stage($node, $name, $progress, fn () => $this->runProgram($host, $node, $builder, $name, $program));
             }
             $this->stage($node, 'agent-binary', $progress, fn () => $this->installAgent($host, $node, $builder));
+            if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
+                $this->stage($node, 'pi-artifact', $progress, fn () => $this->installPi($host, $node, $builder, (string) $this->settings->piArtifactPath, (string) $this->settings->piArtifactSha256));
+            }
             $this->stage($node, 'clean', $progress, fn () => $this->clean($host, $node, $builder));
             $unused = $published = $this->stage($node, 'publish', $progress, fn (): string => $this->publish($host, $node, $builder, $alias));
             $this->stage($node, 'delete-builder', $progress, fn () => $this->delete($host, $node, $builder));
@@ -259,6 +265,18 @@ final readonly class IncusTaskVmImageBuilder
         $this->checked($host, $node, $name, 'exec agent-binary', $this->exec($host, $node, $name, [
             'bash', '-ceu', self::InstallAgent, '--', NodeAgentFootprint::downloadUrl($architecture), NodeAgentFootprint::checksum($architecture),
         ]));
+    }
+
+    /**
+     * Installs the Gateway's pinned Pi executable for `orbit`, with the script that prepares Pi on a task VM.
+     * A VM from the image then skips the upload while the pin is the same.
+     */
+    private function installPi(TaskVmHost $host, Node $node, string $name, string $artifact, string $digest): void
+    {
+        $this->checked($host, $node, $name, 'exec pi-artifact', $this->incus->run($host, $node, [
+            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit',
+            '--', $name, 'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi, '--', $digest,
+        ], ProtectedInput::fromFile($artifact, '', TaskVmRuntime::ArtifactMaxBytes)));
     }
 
     private function clean(TaskVmHost $host, Node $node, string $name): void

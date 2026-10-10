@@ -107,8 +107,8 @@ On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and st
 The proxycli CLIProxyAPI URL must be `task_vms.model_proxy_origin`. Otherwise the job fails with `task_vm.invalid_config` before it creates a key.
 
 1. The Gateway creates a CLIProxyAPI key for the group. It stores the key and the origin on the task VM row first. Then it registers the key with the management key of the [proxycli extension](/reference/proxycli).
-2. It sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input.
-3. The VM checks the SHA-256 digest against `task_vms.pi.artifact_sha256` and installs the executable as `~orbit/.local/bin/pi-server`.
+2. It checks whether `~orbit/.local/bin/pi-server` already has the SHA-256 digest `task_vms.pi.artifact_sha256`. A VM from a [base image](/reference/compute-drivers#build-the-base-image) built with the same pin has it, so the Gateway skips the next step.
+3. Otherwise it sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input. The VM checks the digest and installs the executable as `~orbit/.local/bin/pi-server`.
 4. It writes `~orbit/.pi/agent/models.json` with the origin in `task_vms.model_proxy_origin`, the models in `task_vms.pi.models`, and the group's key.
 5. It writes the task VM's own Pi token to `~orbit/.pi/agent/orbit-token`. Both files have mode `0600`.
 6. It creates the normal `pi-server` Process: a systemd service as `orbit` on the VM's WireGuard address and `ORBIT_PI_PORT`, with `--allow-provider=orbit-task-vm`, restart policy `always`, and keep-alive.
