@@ -35,13 +35,13 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     public int $timeout = 1500;
 
     /**
-     * A VM from the base image is done with cloud-init about 20 seconds after launch. The job checks it every
-     * 2 seconds for up to 2 minutes in one run, because a released job waits for the worker's next start,
-     * up to a minute later: the worker stops as soon as no job is due.
+     * A VM from the base image is done with cloud-init about 12 seconds after launch. The job checks it every
+     * second for up to 2 minutes in one run, because a released job waits for the worker's next start: the
+     * worker stops as soon as no job is due.
      */
-    private const int InlinePollSeconds = 2;
+    private const int InlinePollSeconds = 1;
 
-    private const int InlinePolls = 60;
+    private const int InlinePolls = 120;
 
     private const int PollSeconds = 15;
 
