@@ -110,14 +110,15 @@ final class ConnProfileSettingsRules
     }
 
     /**
-     * The `devices` map of a replace: device types with at most eight entries. The sections inside use
+     * The `devices` map of a replace: one to eight device types. An empty map is refused, so a client bug
+     * cannot remove every device type; a patch removes a type with a null value. The sections inside use
      * {@see self::deviceSection()} at their own path.
      *
      * @return array<string, list<mixed>>
      */
     public static function devices(string $path): array
     {
-        return [$path => ['present', 'array', 'max:'.ConnProfileSections::MaxDeviceTypes, self::keysMatch(ConnProfileSections::DeviceTypePattern, 'device types of 2 to 24 lowercase letters, digits, and hyphens')]];
+        return [$path => ['present', 'array', 'min:1', 'max:'.ConnProfileSections::MaxDeviceTypes, self::keysMatch(ConnProfileSections::DeviceTypePattern, 'device types of 2 to 24 lowercase letters, digits, and hyphens')]];
     }
 
     /**

@@ -11,9 +11,9 @@ use Illuminate\Validation\Validator;
 
 /**
  * The sections of a settings document to replace: any of `workspaces`, `appearance`, and `devices`, at
- * least one. Sections the request leaves out stay as they are. `devices` replaces every device type.
- * `version` is the version the client last read; a stale one is refused. The rules of each section are
- * in {@see ConnProfileSettingsRules}.
+ * least one. Sections the request leaves out stay as they are. `devices` replaces every device type and
+ * must hold at least one. `version` is the version the client last read; a stale one is refused. The
+ * rules of each section are in {@see ConnProfileSettingsRules}.
  */
 final class ReplaceConnProfileSettingsRequest extends FormRequest
 {

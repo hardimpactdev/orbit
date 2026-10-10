@@ -300,11 +300,19 @@ describe('profile sections', function (): void {
             ->assertJsonPath('data.sections', static fn (array $sections): bool => $sections['devices.iphone']['version'] === 2)
             ->assertJsonPath('data.sections.appearance.version', 1)
             ->assertJsonMissingPath('data.sections.workspaces');
+    });
 
-        $this->putJson("/api/v1/conn/profiles/{$profile->id}/settings", ['version' => 3, 'settings' => ['devices' => []]])
-            ->assertOk()
-            ->assertJsonMissingPath('data.settings.devices');
-        expect($profile->refresh()->settings)->toHaveKeys(['workspaces', 'appearance'])->not->toHaveKey('devices');
+    it('refuses an empty devices map in a replace and keeps every device type', function (): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => ['devices.iphone' => conn_layer_change(conn_layer_device())]])->assertOk();
+
+        $this->putJson($url, ['version' => 2, 'settings' => ['devices' => []]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonValidationErrors(['settings.devices'], 'error.details');
+        expect($profile->refresh()->settings)->toHaveKey('devices.iphone')
+            ->and($profile->settings_version)->toBe(2);
     });
 
     it('patches every kind of section and reports who wrote it', function () use ($workspace): void {
@@ -401,6 +409,27 @@ describe('profile sections', function (): void {
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['sections.workspaces.value'], 'error.details');
     });
+
+    it('refuses an empty string value and keeps the section', function (string $section, mixed $value, string $field): void {
+        $profile = conn_layer_profile();
+        $url = "/api/v1/conn/profiles/{$profile->id}/settings";
+        $this->patchJson($url, ['sections' => [$section => conn_layer_change($value)]])->assertOk();
+
+        $this->patchJson($url, ['sections' => [$section => conn_layer_change('', 1)]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonValidationErrors([$field], 'error.details');
+        $this->patchJson($url, ['sections' => [$section => conn_layer_change('   ', 1)]])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([$field], 'error.details');
+
+        expect($profile->refresh()->settings_version)->toBe(2)
+            ->and(data_get($profile->settings, $section))->toBe($value);
+    })->with([
+        'appearance' => ['appearance', conn_layer_appearance(), 'sections.appearance.value'],
+        'device' => ['devices.iphone', conn_layer_device(), 'sections.devices.iphone.value'],
+        'workspaces' => ['workspaces', [], 'sections.workspaces.value'],
+    ]);
 
     it('treats a legacy row without section metadata as version 0', function () use ($workspace): void {
         $profile = conn_layer_profile(['workspaces' => [$workspace]]);

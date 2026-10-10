@@ -13,7 +13,8 @@ use stdClass;
 
 /**
  * The profile's settings document as Conn wrote it; its own keys keep Conn's camelCase. `sections` says
- * which Node last wrote each section and when. A section that is not listed was never written: version 0.
+ * which Node last wrote each section and when. A section that is not listed, including one written
+ * before sections had versions, is at version 0.
  */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ConnProfileSettingsData extends Data
