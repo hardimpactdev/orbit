@@ -1,6 +1,6 @@
 # Orbit Monorepo
 
-Orbit contains five separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
+Orbit contains nine projects. Five are separate Composer projects: CLI, Gateway, Docs, PHP SDK, and the Incus E2E harness. The web app, Pi server, Node agent, and desktop app use Bun or Cargo; [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) shows how to run and check them. Read the nearest nested `AGENTS.md` before changing a project. Maintained documentation lives under root `docs/`; `apps/docs` contains its tooling.
 
 ## Feature contributions
 

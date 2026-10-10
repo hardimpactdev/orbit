@@ -23,3 +23,7 @@ The release build loads the web app served by the Gateway itself
 built app, and keeping `/api` same-origin avoids duplicating its proxying,
 identity, and trust behavior inside the shell. Revisit bundling only if the
 shell needs to work without a reachable Gateway.
+
+## More
+
+The [desktop app reference](../../docs/reference/desktop-app.md) lists the window settings, the build output, and the current limits. The app has no tests and no CI job yet.

@@ -103,6 +103,7 @@
             "pages": [
               "reference/gateway-trust",
               "reference/web-app",
+              "reference/desktop-app",
               "reference/browser-access",
               "reference/gateway-recovery",
               "reference/node-provisioning",
@@ -133,6 +134,7 @@
             "group": "Contributing",
             "pages": [
               "contributor-guide",
+              "reference/bun-and-rust-projects",
               "reference/implementation-loop",
               "reference/delivery-line",
               "reference/incus-topologies",
