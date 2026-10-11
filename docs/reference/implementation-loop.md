@@ -80,13 +80,17 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
+| Gateway plan | Pull requests only: lists the Gateway tests that TIA selects and chooses one Gateway test job or up to three shards |
+| Gateway shards (2), Gateway shards (3) | Pull requests with a large Gateway selection only: every Gateway test shard after the first |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Desktop app | `bun install --frozen-lockfile`, then `cargo fmt` and `cargo clippy` on the Tauri shell with the WebKitGTK libraries installed. A pull request that changes neither `apps/desktop` nor `ci.yml` skips these steps |
-| Required checks | Passes only when every other job passes; expects Docs (merge ref) to succeed on pull requests and to be skipped on pushes and manual runs |
+| Required checks | Passes only when every other job passes, as described below |
+
+`Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest`, `ComposerConfigurationTest`, and `DocsMergeRefWorkflowTest`, because TIA does not link a workflow file to the tests that read it. They also include `CommandSurfaceTest`, which checks every CLI command against its section in `docs/cli`, so a pull request that changes only docs runs it too.
 
@@ -151,9 +155,37 @@ The separate `Docs (merge ref)` job logs the merge commit and checks the tree th
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
 
+### Gateway shards
+
+A pull request that changes Gateway boot files, such as providers, `bootstrap/app.php`, routes, or migrations, selects nearly the whole Gateway suite: about 760 test classes and 12 minutes on Sabre. So the Gateway tests of a large selection run in up to three shards on separate runners.
+
+The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests`, so the plan holds exactly Pest's selection.
+
+With 200 classes or fewer, the Gateway job runs its tests with `--tia`, as before. 200 classes take about 3 minutes, so the job already ends about when the slowest other job does.
+
+With more than 200 classes, the plan splits them into three shards. It balances the shards by the time that the `main` graph records for each class. It adds about 0.2 seconds per test for the application boot. A class that the graph does not know counts as the median class. The first shard starts with 210 process seconds, the time of the architecture tests. When the selection is small, that head start can leave the first shard without classes. The plan then drops the empty shard, because an empty filter finds no tests and fails.
+
+`bin/ci-tia shards` fails when a listed test does not parse as `Class::test`, so no test can silently drop out of every shard.
+
+The Gateway job runs the first shard, and the `Gateway shards` job runs the others, each on its own runner. Each shard runs `pest --no-tia --filter` with a regular expression that names its classes. PHPUnit matches it against `Class::test`, so every selected test runs in exactly one shard. The Gateway job still runs the quality checks, the classification-fakes check, and the architecture tests, once. The subprocess group stays in the Gateway subprocess job.
+
+The plan job also uploads the plan as the artifact `gateway-plan` and keeps it for 30 days, as long as GitHub allows re-runs. The Gateway job does not wait for the plan job, so the other project jobs start at once. After its quality checks, the Gateway job polls the run's jobs through the Actions API until the plan job ends, then downloads the plan. It retries a failed API call every 5 seconds, for up to a minute.
+
+The Gateway job fails when the plan job fails, or when the plan does not end within 10 minutes. The plan job and the Gateway job both check out `refs/pull/N/merge`, so the Gateway job also fails when the plan names another commit. The shard jobs check out the commit that the plan names.
+
+"Re-run failed jobs" copies the finished plan job and keeps its artifact, so a re-run of the Gateway job or a shard reads the same plan. A re-run of the Gateway job checks out `refs/pull/N/merge` again. When `main` moved since the first attempt, the merge ref names a new commit, and the job fails with an error that asks for "Re-run all jobs". A full re-run plans again and replaces the artifact.
+
+All Sabre runners share one host with 6 cores. A sharded pull request holds three of its runners for about 5 to 6 minutes, and its shards compete for the CPU: the three shards sum to about 880 seconds of tests, against 714 seconds in one job. Other runs, including `main` pushes, wait for a free runner meanwhile, and shards wait the same way behind them.
+
+On this pull request's own runs, the shards waited 4 to 5 minutes for a runner, and the Gateway tests ended after about 11 minutes instead of 13.5. With free runners they end after about 6.5 minutes. Shard runners on other hosts would remove both costs.
+
+Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
+
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway subprocess and Gateway privileged jobs always run on GitHub-hosted runners, so each run takes one Sabre runner. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards use the same runners as the Gateway job. The Gateway plan, Gateway subprocess, and Gateway privileged jobs always run on GitHub-hosted runners. So a run takes one Sabre runner, or three when the Gateway tests run in shards.
+
+Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
 On Sabre the job skips the PHP setup, Homebrew, and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
 
@@ -462,6 +494,14 @@ Some misses remain:
 - The contract does not treat `vendor/bin/pest` as a marker, because most tests name it as data in a command.
 
 The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
+
+### Large Gateway selections run in shards
+
+A pull request that changes a Gateway boot file selects nearly every Gateway test, and that one job took about 13 minutes while every other job ended within 4. Three runners on Sabre can run three shards at once, but they share one 6-core host, so the gain under load is about 2.5 minutes.
+
+Pest's own `--shard` option is a rejected alternative: it adds a `--filter`, and Pest turns TIA off for a filtered run, so each shard would run a third of the whole suite. Splitting the files of the selection in each shard job is also rejected, because each job restores the graph at another moment and could select other tests. One plan job lists the selection once, and every shard runs a part of that list.
+
+Making every project job wait for the plan is rejected, because it would delay each pull request's other jobs by the plan's half minute. Sharding on `main` is rejected for now: Pest writes the graph in one run, and three partial graphs would need a merge that Pest does not offer.
 
 ### CI caches stay separate
 
