@@ -59,8 +59,8 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                     Log::warning('Deleted an orphaned task VM.', ['node_id' => $node->id, 'name' => $name]);
                 }
                 $missing = array_map(static fn (TaskVm $vm): int => $vm->id, $found['missing']);
-                foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotIn('id', $missing)->pluck('id') as $id) {
-                    Cache::forget(self::missingKey($id));
+                foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotIn('id', $missing)->get(['id']) as $present) {
+                    Cache::forget(self::missingKey($present->id));
                 }
                 foreach ($found['missing'] as $vm) {
                     if (Cache::has(self::missingKey($vm->id))) {
