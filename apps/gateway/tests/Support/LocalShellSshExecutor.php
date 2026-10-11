@@ -19,6 +19,7 @@ final class LocalShellSshExecutor implements SshExecutor
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $input = $command->protectedInput instanceof ProtectedInput ? stream_get_contents($command->protectedInput->stream()) : $command->input;
+        HostPathGuardedProcessRunner::assertSafe($command->arguments, is_string($input) ? $input : null);
         $process = new Process($command->arguments, null, null, $input);
         $process->run();
 
