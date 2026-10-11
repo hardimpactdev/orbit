@@ -51,9 +51,11 @@ The [image build](#build-the-base-image) runs the programs that enrollment runs 
 
 Every other program runs, with the warning `Task VM image did not run this program; enrollment runs it.` and its reason. That happens when the Gateway's code or its SSH key changed the program since the build.
 
-An image without a manifest, such as one built before manifests, or with a manifest the Gateway cannot read, makes enrollment run every program, with the warning `Task VM image has no usable manifest; enrollment runs every program.` So an older image is never wrong, only slower. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
+An image without a manifest, such as one built before manifests, or with a manifest the Gateway cannot read, makes enrollment run every program, with the warning `Task VM image has no usable manifest; enrollment runs every program.` So an older image is never wrong, only slower.
 
-Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, named after the jump host and the target, as commands to a Node over WireGuard do.
+A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
+
+Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, as commands to a Node over WireGuard do. Its name hashes the jump host, the target address, and the target's pinned host key. So the next VM at a reused address never gets the old VM's connection.
 
 Measured on beast in a throwaway project, from the same code (11 October 2026), with the Gateway on the same host:
 
@@ -176,13 +178,13 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every second:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job on that queue is due, the Gateway scheduler starts this worker every second:
 
 ```text
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
 ```
 
-The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds. Without task VMs nothing is queued, so the worker never starts. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds. A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
 | Job | Retries |
 | --- | --- |
@@ -293,9 +295,11 @@ The `lean-boot` stage keeps work off the boot. A VM from the image reaches cloud
 - The task bridge has no IPv6. The wait for an IPv6 link-local address cost about a second of each boot.
 - `systemd-networkd-wait-online` waits for one routable IPv4 link with DNS, through a drop-in that replaces netplan's command.
 - It masks `systemd-firstboot.service`, `apt-daily.timer`, `apt-daily-upgrade.timer`, `motd-news.timer`, and `unattended-upgrades.service`.
-- A task VM lives for one group. The apt jobs could hold the dpkg lock during a task.
+- The apt jobs could hold the dpkg lock during a task.
+- So a task VM gets no unattended security updates. Its packages are those of the last nightly build. A parked VM can live for days at that state.
 - Systemd applies its preset policy on a first boot. The policy enables a disabled unit again, but it keeps a masked unit masked.
-- Docker and containerd start on first use through `docker.socket`. The preset file `/etc/systemd/system-preset/10-orbit-task-vm.preset` keeps both services disabled.
+
+Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It also starts the containers with a restart policy again after a [resume](#park-and-resume). The smoke check requires Docker active.
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
