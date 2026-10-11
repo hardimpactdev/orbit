@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Actions\TaskVms\ParkIdleTaskVmsAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Instances\InstanceRemover;
@@ -10,8 +12,12 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExecutionMode;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestHealth;
+use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
@@ -37,6 +43,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
@@ -52,6 +59,8 @@ final class TaskVmParkProvider implements TaskVmProvider
 
     public ?Throwable $startError = null;
 
+    public bool $running = false;
+
     public function create(TaskVm $vm, string $userData): void
     {
         $this->calls[] = 'create';
@@ -61,7 +70,7 @@ final class TaskVmParkProvider implements TaskVmProvider
     {
         $this->calls[] = 'observe';
 
-        return new VmObservation(false, null);
+        return new VmObservation($this->running, null);
     }
 
     public function bootstrapReady(TaskVm $vm): bool
@@ -131,8 +140,10 @@ function tvm_park_waiting(int $minutesAgo = 31, array $group = [], string $wireg
         'name' => 'tvm-pending-'.$task->id, 'state' => TaskVmState::Ready, 'wireguard_ip' => $wireguardIp, 'pi_token' => str_repeat('p', 64),
     ]);
     $vm->update(['name' => 'tvm-'.$vm->id]);
+    // The VM has been ready as long as the group waited.
+    TaskVm::query()->whereKey($vm->id)->update(['updated_at' => now()->subMinutes($minutesAgo + 10)]);
 
-    return [$task->fresh() ?? $task, $vm];
+    return [$task->fresh() ?? $task, $vm->fresh() ?? $vm];
 }
 
 function tvm_park_workspace(Task $group, TaskVm $vm): Instance
@@ -184,6 +195,36 @@ describe('park', function (): void {
             expect($vm->fresh()?->state)->toBe(TaskVmState::Ready);
         }
         Queue::assertNotPushed(ParkTaskVm::class);
+    });
+
+    it('never parks a group whose workspace removal or merge cleanup failed, so destroy and park do not loop', function (string $prefix): void {
+        Queue::fake();
+        Sleep::fake();
+        $this->provider->running = true;
+        [$group, $vm] = tvm_park_waiting(group: ['assistance_requested' => true, 'assistance_reason' => $prefix.'disk full']);
+        tvm_park_workspace($group, $vm);
+
+        foreach ([1, 2, 3] as $tick) {
+            app(DestroyEndedTaskVmsAction::class)->execute();
+            expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
+            app()->call([new DestroyTaskVm($vm->id), 'handle']);
+            expect($vm->fresh()?->state)->toBe(TaskVmState::Ready);
+        }
+        Queue::assertNotPushed(ParkTaskVm::class);
+        Queue::assertNotPushed(ResumeTaskVm::class);
+    })->with([RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix, RemoveTaskWorkspaceAction::RemovalFailedPrefix]);
+
+    it('keeps a VM that was started again running for park_after_minutes before it parks again', function (): void {
+        Queue::fake();
+        [, $vm] = tvm_park_waiting(minutesAgo: 120);
+        $vm->update(['state' => TaskVmState::Parked]);
+        $vm->update(['state' => TaskVmState::Ready]);
+
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(0);
+
+        $this->travel(31)->minutes();
+        expect(app(ParkIdleTaskVmsAction::class)->execute())->toBe(1)
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
     });
 
     it('honours park_after_minutes', function (): void {
@@ -347,6 +388,38 @@ describe('wake', function (): void {
         Queue::assertPushed(ResumeTaskVm::class);
     });
 
+    it('removes the workspace on completion under the group admission lock that parking takes', function (): void {
+        app(TaskExtensionState::class)->enable();
+        // The remover's own failures are swallowed by a manual complete, so record what it saw.
+        mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturnUsing(function (): void {
+            $this->lockedDuringRemoval = $this->locked;
+        });
+        $this->locked = [];
+        $this->lockedDuringRemoval = null;
+        $lock = new class($this) implements TaskExecutionLock
+        {
+            public function __construct(private object $test) {}
+
+            public function synchronized(int $groupId, Closure $operation): mixed
+            {
+                $this->test->locked[] = $groupId;
+                try {
+                    return $operation();
+                } finally {
+                    array_pop($this->test->locked);
+                }
+            }
+        };
+        app()->instance(TaskExecutionLock::class, $lock);
+        [$this->group, $vm] = tvm_park_waiting();
+        tvm_park_workspace($this->group, $vm);
+
+        app(CompleteTaskGroupAction::class)->execute($this->group);
+
+        expect($this->group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
+            ->and($this->lockedDuringRemoval)->toBe([$this->group->id]);
+    });
+
     it('lets the ended-group sweep wait for a parked VM without a failure', function (): void {
         Queue::fake();
         mock(InstanceRemover::class)->shouldReceive('execute')->never();
@@ -372,5 +445,41 @@ describe('wake', function (): void {
         expect($this->provider->calls)->toBe([])
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Parked);
         Queue::assertPushed(ResumeTaskVm::class);
+    });
+});
+
+describe('tick', function (): void {
+    beforeEach(function (): void {
+        Queue::fake();
+        app(TaskExtensionState::class)->enable();
+        Http::fake(['*' => Http::response([], 200)]);
+    });
+
+    it('parks idle task VMs on tasks:tick', function (): void {
+        $watcher = Mockery::mock(TaskPullRequestWatcher::class);
+        $watcher->shouldReceive('health')->andReturnNull();
+        app()->instance(TaskPullRequestWatcher::class, $watcher);
+        [, $vm] = tvm_park_waiting();
+
+        Artisan::call('tasks:tick');
+
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Parked);
+        Queue::assertPushed(ParkTaskVm::class, fn (ParkTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('starts a parked VM before the merged-group cleanup and records no cleanup failure', function (): void {
+        mock(InstanceRemover::class)->shouldReceive('execute')->never();
+        $watcher = Mockery::mock(TaskPullRequestWatcher::class);
+        $watcher->shouldReceive('health')->andReturn(new TaskPullRequestHealth('merged'));
+        app()->instance(TaskPullRequestWatcher::class, $watcher);
+        [$group, $vm] = tvm_park_waiting();
+        $workspace = tvm_park_workspace($group, $vm);
+        $vm->update(['state' => TaskVmState::Parked]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect(Instance::query()->whereKey($workspace->id)->exists())->toBeTrue()
+            ->and($group->fresh())->status->toBe(TaskGroupStatus::WaitingForReview)->assistance_reason->toBeNull();
+        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
 });
