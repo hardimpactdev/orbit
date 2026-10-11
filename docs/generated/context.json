@@ -793,6 +793,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -1875,6 +1876,7 @@
                 "Process",
                 "Role",
                 "Route",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": []

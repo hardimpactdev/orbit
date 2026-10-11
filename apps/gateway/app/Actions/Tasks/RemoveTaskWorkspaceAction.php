@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Tasks\AssistanceKind;
@@ -12,6 +13,7 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Domain\TaskVms\TaskVmException;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -91,10 +93,16 @@ final readonly class RemoveTaskWorkspaceAction
         return $instance;
     }
 
-    /** Runs Project teardown through the generic Instance remover. The source and row stay when removal refuses. */
-    /** Releases the group's topology first; a failed release keeps the workspace for a retry. */
+    /**
+     * Runs Project teardown through the generic Instance remover. The source and row stay when removal refuses.
+     * Releases the group's topology first; a failed release keeps the workspace for a retry. A workspace on a
+     * parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
+     */
     public function remove(Instance $instance, ?Task $expectedGroup = null): void
     {
+        if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
+            throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
+        }
         if ($instance->task_sandbox_id !== null) {
             app(RemoveTaskSandboxAction::class)->workspace($instance, $expectedGroup);
 

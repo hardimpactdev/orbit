@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Actions\Doctor;
 
+use App\Data\Doctor\DoctorFamilyReportData;
+use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorInspectionScope;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
+use App\Models\TaskVm;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -92,7 +98,9 @@ final readonly class RunDoctorAction
             $familyReports = [];
 
             foreach ($this->families($families) as $family) {
-                $familyReports[] = $this->probe($family)->inspect($context);
+                $familyReports[] = $this->parked($context->node)
+                    ? $this->parkedReport($family, $context->node)
+                    : $this->probe($family)->inspect($context);
             }
 
             $nodeReports[] = DoctorNodeReportData::fromFamilies(
@@ -127,8 +135,30 @@ final readonly class RunDoctorAction
         return $nodes;
     }
 
+    /**
+     * A parked task VM is stopped on purpose, so SSH cannot reach it. Doctor does not inspect it: the `node`
+     * family reports one informational `node.task_vm_parked`, and the other families check nothing.
+     */
+    private function parked(Node $node): bool
+    {
+        return TaskVm::query()->where('node_id', $node->id)->where('state', TaskVmState::Parked)->exists();
+    }
+
+    private function parkedReport(DoctorFamily $family, Node $node): DoctorFamilyReportData
+    {
+        return $family !== DoctorFamily::Node
+            ? DoctorFamilyReportData::fromIssues($family, 0, [])
+            : DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, [new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmParked, DoctorIssueKind::Informational, 'node', $node->id, $node->name,
+                'The Node is a parked task VM. Orbit starts it for its group\'s next work.', expected: null, observed: 'parked',
+            )]);
+    }
+
     private function context(Node $node): DoctorNodeContext
     {
+        if ($this->parked($node)) {
+            return new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null));
+        }
         try {
             return new DoctorNodeContext($node, $this->nodeInspector->inspect($node));
         } catch (DoctorInspectionException) {

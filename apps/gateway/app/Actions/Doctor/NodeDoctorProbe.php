@@ -19,7 +19,10 @@ use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\NodeCliState;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
 use App\Models\RouteRemovalResidue;
 use Throwable;
@@ -31,6 +34,7 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         private ?AgentStateView $view = null,
         private ?WebSocketCredentialManager $websocket = null,
         private ?FleetReleaseLag $releaseLag = null,
+        private ?TaskVmHostAudit $taskVms = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -271,8 +275,53 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 );
             }
         }
+        array_push($issues, ...$this->taskVmIssues($node));
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
+    }
+
+    /**
+     * On a reachable task VM host: `tvm-<number>` instances in its project without a live row, and `ready` or
+     * `parked` rows whose VM is gone. Doctor only reports them; the sweep job cleans them up. A Node that is not
+     * a configured host, or a task VM config that does not parse, reports nothing here.
+     *
+     * @return list<DoctorIssueData>
+     */
+    private function taskVmIssues(Node $node): array
+    {
+        $nodeId = $node->getKey();
+        if (! is_int($nodeId)) {
+            return [];
+        }
+        try {
+            $host = app(TaskVmSettings::class)->host($nodeId);
+        } catch (TaskVmException) {
+            return [];
+        }
+        try {
+            $found = ($this->taskVms ?? app(TaskVmHostAudit::class))->audit($host, $node);
+        } catch (Throwable $exception) {
+            return [new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmInspectionFailed, DoctorIssueKind::Unverifiable, 'node', $node->id, $node->name,
+                "The task VMs in Incus project [{$host->project}] could not be listed.", expected: null, observed: TaskVmException::codeOf($exception),
+            )];
+        }
+
+        $issues = [];
+        foreach ($found['orphaned'] as $name) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmOrphaned, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                "Task VM [{$name}] runs in Incus project [{$host->project}] without a live task VM record.", expected: 'absent', observed: $name,
+            );
+        }
+        foreach ($found['missing'] as $vm) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::TaskVmMissing, DoctorIssueKind::Drift, 'node', $node->id, $node->name,
+                "Task VM [{$vm->name}] is {$vm->state->value} but gone from Incus project [{$host->project}].", expected: $vm->name, observed: 'absent',
+            );
+        }
+
+        return $issues;
     }
 
     private function diskIsLow(NodeDiskFilesystemData $filesystem): bool

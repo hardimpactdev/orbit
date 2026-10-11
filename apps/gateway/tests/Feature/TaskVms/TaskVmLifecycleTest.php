@@ -68,8 +68,10 @@ use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -123,6 +125,16 @@ final class TaskVmLifecycleProvider implements TaskVmProvider
         $this->calls[] = 'fingerprint';
 
         return TVM_LIFE_FINGERPRINT;
+    }
+
+    public function start(TaskVm $vm): void
+    {
+        $this->calls[] = 'start';
+    }
+
+    public function stop(TaskVm $vm): void
+    {
+        $this->calls[] = 'stop';
     }
 
     public function destroy(TaskVm $vm): void
@@ -212,6 +224,17 @@ function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterI
     ));
 }
 
+/** @param list<array{0: int, 1: int}> $hosts node id and max_vms, in config order */
+function tvm_life_hosts(array $hosts): void
+{
+    $cidrs = ['10.251.77.0/24', '10.251.78.0/24', '10.251.79.0/24'];
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(
+        enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
+        hosts: array_map(static fn (array $host, int $index): TaskVmHost => new TaskVmHost($host[0], 'orbit-tasks', 'orbittask0', $cidrs[$index], $host[1], 2, '4GiB', '20GiB'), $hosts, array_keys($hosts)),
+        modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
+    ));
+}
+
 function tvm_life_group(TaskGroupStatus $status = TaskGroupStatus::Reserved): Task
 {
     return Task::topLevel()->create([
@@ -265,10 +288,67 @@ describe('allocation', function (): void {
 
         expect($second->wireguard_ip)->toBe('10.44.0.130')
             ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
-            ->toThrow(TaskCapacityException::class, 'Task VM: no host has room for another task VM.');
+            ->toThrow(TaskCapacityException::class, 'Task VM: no capacity.');
 
         $first->update(['state' => TaskVmState::Destroyed]);
         expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->wireguard_ip)->toBe('10.44.0.129');
+    });
+
+    it('places each new task VM on the active host with the most free slots, and never more than max_vms', function (): void {
+        Queue::fake();
+        $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
+        tvm_life_hosts([[$this->host->id, 2], [$shark->id, 3]]);
+        $place = fn (): int => app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id;
+
+        // shark 3 free, beast 2 free -> shark; then 2/2: the tie keeps config order -> beast; then 1/2 -> shark; 1/1 -> beast; 0/1 -> shark.
+        expect([$place(), $place(), $place(), $place(), $place()])
+            ->toBe([$shark->id, $this->host->id, $shark->id, $this->host->id, $shark->id])
+            ->and(fn () => $place())->toThrow(TaskCapacityException::class, 'Task VM: no capacity.')
+            ->and(TaskVm::query()->live()->where('host_node_id', $this->host->id)->count())->toBe(2)
+            ->and(TaskVm::query()->live()->where('host_node_id', $shark->id)->count())->toBe(3);
+    });
+
+    it('counts parked and failed task VMs against a host, and frees the slot only once a VM is destroyed', function (): void {
+        Queue::fake();
+        $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
+        tvm_life_hosts([[$this->host->id, 1], [$shark->id, 1]]);
+        $parked = tvm_life_vm(tvm_life_group(TaskGroupStatus::WaitingForReview), TaskVmState::Parked);
+        TaskVm::query()->create([
+            'group_id' => tvm_life_group()->id, 'host_node_id' => $shark->id, 'provider' => 'incus', 'name' => 'tvm-failed',
+            'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140', 'pi_token' => str_repeat('p', 64),
+        ]);
+
+        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.');
+
+        $parked->update(['state' => TaskVmState::Destroyed]);
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($this->host->id);
+    });
+
+    it('gives a host whose max_vms dropped below its VMs no new VM and removes none', function (): void {
+        Queue::fake();
+        $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
+        tvm_life_vm(tvm_life_group(TaskGroupStatus::Running), TaskVmState::Ready, wireguardIp: '10.44.0.129');
+        tvm_life_vm(tvm_life_group(TaskGroupStatus::Running), TaskVmState::Ready, wireguardIp: '10.44.0.130');
+        tvm_life_hosts([[$this->host->id, 1], [$shark->id, 1]]);
+
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($shark->id)
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.')
+            ->and(TaskVm::query()->live()->where('host_node_id', $this->host->id)->count())->toBe(2);
+    });
+
+    it('waits while another placement holds the lock and records nothing', function (): void {
+        Queue::fake();
+        Sleep::fake(syncWithCarbon: true);
+        $lock = Cache::lock('task-vms:placement', 30);
+        expect($lock->get())->toBeTrue();
+
+        try {
+            expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
+                ->toThrow(TaskCapacityException::class, 'Task VM: another placement is running.')
+                ->and(TaskVm::query()->count())->toBe(0);
+        } finally {
+            $lock->release();
+        }
     });
 
     it('skips an inactive host', function (): void {
@@ -411,8 +491,8 @@ describe(EnrollTaskVm::class, function (): void {
 
         $job->assertReleased(15);
         expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
-            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(61);
-        Sleep::assertSleptTimes(60);
+            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(121);
+        Sleep::assertSleptTimes(120);
     });
 
     it('enrolls in the same run when cloud-init finishes during its polls', function (): void {
@@ -425,6 +505,25 @@ describe(EnrollTaskVm::class, function (): void {
         $job->assertNotReleased();
         Sleep::assertSleptTimes(2);
         expect($vm->fresh()?->node_id)->not->toBeNull();
+    });
+
+    it('enrolls without a fleet Metrics reconcile and logs each step', function (): void {
+        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldNotReceive('reconcile')->getMock());
+        Log::spy();
+        $vm = tvm_life_vm(tvm_life_group());
+
+        app()->call([new EnrollTaskVm($vm->id, now()->subSeconds(14)->getTimestamp()), 'handle']);
+
+        $steps = [];
+        Log::shouldHaveReceived('info')->withArgs(function (string $message, array $context) use (&$steps, $vm): bool {
+            if ($message === 'Task VM step done.' && $context['task_vm'] === $vm->name) {
+                $steps[] = $context['step'];
+            }
+
+            return true;
+        });
+        expect($vm->fresh()?->node_id)->not->toBeNull()
+            ->and($steps)->toBe(['boot', 'node-converge', 'apt-tool-manager', 'roles', 'router-lan-ingress', 'dns-selection', 'activate', 'enrolled']);
     });
 
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
@@ -827,10 +926,10 @@ describe('worker', function (): void {
         $worker = collect($events)->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
 
         expect($worker)->not->toBeNull()
-            ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500")
+            ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
             ->and($worker)->toBe(end($events))
             ->and($worker->expression)->toBe('* * * * *')
-            ->and($worker->repeatSeconds)->toBe(10)
+            ->and($worker->repeatSeconds)->toBe(5)
             ->and($worker->withoutOverlapping)->toBeTrue()
             ->and($worker->expiresAt)->toBe(30)
             ->and($worker->runInBackground)->toBeFalse()

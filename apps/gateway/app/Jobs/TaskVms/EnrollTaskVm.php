@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -35,13 +36,13 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     public int $timeout = 1500;
 
     /**
-     * A VM from the base image is done with cloud-init about 20 seconds after launch. The job checks it every
-     * 2 seconds for up to 2 minutes in one run, because a released job waits for the worker's next start,
-     * up to a minute later: the worker stops as soon as no job is due.
+     * A VM from the base image is done with cloud-init about 12 seconds after launch. The job checks it every
+     * second for up to 2 minutes in one run, because a released job waits for the worker's next start: the
+     * worker stops as soon as no job is due.
      */
-    private const int InlinePollSeconds = 2;
+    private const int InlinePollSeconds = 1;
 
-    private const int InlinePolls = 60;
+    private const int InlinePolls = 120;
 
     private const int PollSeconds = 15;
 
@@ -56,7 +57,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings): void
+    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -88,6 +89,9 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // The first step covers the boot from launch: the guest kernel, the Incus agent, and cloud-init.
+        $clock->start($vm, $this->launchedAt);
+        $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
         $vm->update(['address' => $address]);
         $nodes->execute(new ProvisionNodeData(
@@ -103,6 +107,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             sshJumpNodeId: $vm->host_node_id,
             taskVmId: $vm->id,
         ));
+        $clock->step('enrolled');
+        $clock->stop();
         PrepareTaskVmRuntime::dispatch($vm->id);
     }
 
