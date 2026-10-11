@@ -31,6 +31,7 @@ use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -297,7 +298,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->value;
         $script = GitReadScript::for(
             $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
+            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(),
         );
         $this->executeRefusable(
             $instance,
@@ -442,7 +443,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 && ($inventory->sourceIdentity === 'absent'
                     || $instance->registration_request_id === null
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $input = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
+            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript();
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 $input,
@@ -2167,17 +2168,35 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             BASH;
     }
 
-    private static function releaseEmptyGroupingDirectoryFunction(): string
+    /**
+     * Whether removal stops the processes inside the Instance's checkout: only for a task workspace, the
+     * Instance `task-<group id>` of a task group of its Project. Agents and checks leave servers there, such
+     * as Playwright's. A development Instance can be the working directory of the operator's own daemons and
+     * terminals, which removal must leave alone.
+     */
+    private static function stopsCheckoutProcesses(Instance $instance): bool
+    {
+        if (preg_match('/\Atask-([1-9][0-9]*)\z/', $instance->name, $match) !== 1) {
+            return false;
+        }
+
+        return Task::topLevel()->whereKey((int) $match[1])->where('project_id', $instance->project_id)->exists();
+    }
+
+    private static function releaseEmptyGroupingDirectoryFunction(bool $stopProcesses = false): string
     {
         $worker = TaskWorkerUser::name() ?? '';
 
-        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'SHELL'
-            # Stop the caller's own processes whose working directory or executable is inside the tree.
-            # Owned Processes and Schedules are systemd units that runtime cleanup removes after ownership checks.
+        return 'trust_worker='.escapeshellarg($worker)."\n".'stop_processes='.($stopProcesses ? '1' : '0')."\n".<<<'SHELL'
+            # Stop the caller's own processes whose working directory or executable is inside the tree: SIGTERM,
+            # then SIGKILL, each for up to 5 seconds. Owned Processes and Schedules are systemd units that runtime
+            # cleanup removes after ownership checks. A tmux or screen server is the operator's: it hosts sessions
+            # that work elsewhere, so it is left running.
             stop_own_tree_processes() {
-                local tree=$1 signal attempt entry pid target found
+                local tree=$1 signal started entry pid target found
                 for signal in TERM KILL; do
-                    for attempt in $(seq 1 50); do
+                    started=${EPOCHREALTIME//[!0-9]/}
+                    while :; do
                         found=0
                         while IFS= read -r -d '' entry && IFS= read -r -d '' target; do
                             case "$target" in
@@ -2191,12 +2210,18 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                             case "$(cat -- "$entry/cgroup" 2>/dev/null || true)" in
                                 */orbit-process-*.service*|*/orbit-schedule-*.service*) continue ;;
                             esac
+                            case "$(cat -- "$entry/comm" 2>/dev/null || true)" in
+                                'tmux: server'|screen|SCREEN) continue ;;
+                            esac
                             found=1
                             kill -s "$signal" "$pid" 2>/dev/null || true
                         done < <(find -P /proc -mindepth 2 -maxdepth 2 -path '/proc/[0-9]*' \
                             \( -name cwd -o -name exe \) -user "$(id -u)" -printf '%h\0%l\0' 2>/dev/null || true)
                         if [ "$found" = 0 ]; then
                             return 0
+                        fi
+                        if [ $(( ${EPOCHREALTIME//[!0-9]/} - started )) -ge 5000000 ]; then
+                            break
                         fi
                         sleep 0.1
                     done
@@ -2207,6 +2232,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
             stop_tree_processes() {
                 local tree=$1
+                if [ "$stop_processes" != 1 ]; then
+                    return 0
+                fi
                 stop_own_tree_processes "$tree"
                 if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
                     test "$(id -u "$trust_worker")" != 0
