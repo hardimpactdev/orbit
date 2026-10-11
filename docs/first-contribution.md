@@ -100,7 +100,7 @@ CI also runs checks from the repository root that no project check covers. They 
 | A Composer project's scripts, Pint, Rector, PHPStan, or PHPUnit setup | `php bin/tooling-baseline` |
 | A Gateway API route or its data | `bin/docs-openapi --check` |
 | An MCP tool | `bin/mcp-tools --check` |
-| Any text, for retired names | `php bin/project-vocabulary` |
+| Any text, for old names that `bin/project-vocabulary` lists | `php bin/project-vocabulary` |
 
 When `bin/docs-openapi --check` or `bin/mcp-tools --check` reports drift, run the same command without `--check` and commit its output. The other checks name what to fix.
 
