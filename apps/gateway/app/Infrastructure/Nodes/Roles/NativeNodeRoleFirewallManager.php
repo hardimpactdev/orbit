@@ -587,13 +587,11 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
                 recovering: true,
             );
         } catch (FirewallOperationException $recovery) {
-            throw new FirewallOperationException(
-                step: 'host-firewall',
-                errorCode: $prefix === RouterLanIngressPolicy::CommentPrefix ? 'router.lan_ingress_recovery_failed' : 'node.firewall_convergence_failed',
-                message: 'Could not restore the preceding '.self::familyLabel($prefix)." policy on node [{$node->name}].",
-                result: $recovery->result,
-                previous: $recovery,
-            );
+            $message = 'Could not restore the preceding '.self::familyLabel($prefix)." policy on node [{$node->name}].";
+
+            throw $prefix === RouterLanIngressPolicy::CommentPrefix
+                ? new FirewallOperationException(step: 'host-firewall', errorCode: 'router.lan_ingress_recovery_failed', message: $message, result: $recovery->result, previous: $recovery)
+                : new FirewallOperationException(step: 'host-firewall', errorCode: 'node.firewall_convergence_failed', message: $message, result: $recovery->result, previous: $recovery);
         }
 
         throw $exception;
