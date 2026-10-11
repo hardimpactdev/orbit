@@ -45,12 +45,11 @@ READ_ANYWAY = {
 }
 # A pull request whose selection has more test classes than this runs its Gateway tests in shards. The full suite of
 # about 760 classes takes about 12 minutes on Sabre, so 200 classes take about 3 minutes: then the Gateway job already
-# ends about when the slowest other job does, and three more jobs would only take shard runners from other runs.
+# ends about when the slowest other job does, and more jobs would only take shard runners from other runs.
 SHARD_THRESHOLD = 200
 # The Pest processes of each shard. The first shard runs in the Gateway job on Sabre; the others each run on one
 # orbit-shard runner, capped at 4 processes.
 SHARD_PROCESSES = (6, 4, 4, 4)
-SHARDS = len(SHARD_PROCESSES)
 # Pest records each test's own time. Booting the application for it adds about 0.2 seconds in CI.
 TEST_OVERHEAD_SECONDS = 0.2
 # The first shard runs in the Gateway job, which also runs the architecture tests: about 35 seconds on 6 processes.
@@ -253,6 +252,10 @@ def selected_classes(pest):
                             capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise SystemExit(f'Pest cannot list the affected tests:\n{result.stdout}{result.stderr}')
+    # A test that no shard names would run nowhere, so every listed test must parse.
+    unparsed = [line for line in result.stdout.splitlines() if line.startswith(' - ') and not LISTED_TEST.match(line)]
+    if unparsed:
+        raise SystemExit(f'Cannot read the class of {len(unparsed)} listed tests, such as: {unparsed[0]}')
     return sorted(set(LISTED_TEST.findall(result.stdout)))
 
 
@@ -283,30 +286,33 @@ def split(classes, seconds, processes):
         index = ends.index(min(ends))
         shards[index].append(name)
         loads[index] += seconds.get(name, unknown)
-    return [sorted(shard) for shard in shards], loads
+    # The first shard's head start can leave it without classes when the selection is small. An empty filter would
+    # find no tests and fail, so the plan keeps only the shards that have classes.
+    kept = [(sorted(shard), load) for shard, load in zip(shards, loads) if shard]
+    return [shard for shard, _ in kept], [load for _, load in kept]
 
 
 def shard_plan(arguments):
     """Choose whether the Gateway tests of a pull request run in one job or in shards, and write the plan."""
     classes = selected_classes(arguments.pest)
     plan = {'commit': git('rev-parse', 'HEAD'), 'classes': len(classes), 'shards': 1, 'filters': []}
-    if len(classes) <= SHARD_THRESHOLD:
-        print(f'One job: {len(classes)} affected test classes, at most {SHARD_THRESHOLD}.')
+    shards, loads = split(classes, class_seconds(), SHARD_PROCESSES) if len(classes) > SHARD_THRESHOLD else ([classes], [0.0])
+    if len(shards) == 1:
+        print(f'One job: {len(classes)} affected test classes, at most {SHARD_THRESHOLD} or too few to split.')
     else:
-        shards, loads = split(classes, class_seconds(), SHARD_PROCESSES)
         # PHPUnit matches the filter against `Class::test`, so it selects exactly the tests of the shard's classes.
-        plan['shards'] = SHARDS
+        plan['shards'] = len(shards)
         plan['filters'] = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
-        print(f'{SHARDS} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
+        print(f'{len(shards)} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
         for number, (shard, load, processes) in enumerate(zip(shards, loads, SHARD_PROCESSES), 1):
             print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds on {processes} processes.')
     Path(arguments.plan).write_text(json.dumps(plan) + '\n')
     output = os.environ.get('GITHUB_OUTPUT')
     if output:
+        # The Gateway job runs shard 1; the shard jobs run the others, numbered from 2.
         with open(output, 'a') as file:
-            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\n')
-            for number, test_filter in enumerate(plan['filters'], 1):
-                file.write(f'filter-{number}={test_filter}\n')
+            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\nsharded={str(plan["shards"] > 1).lower()}\n'
+                       f'matrix={json.dumps(list(range(2, plan["shards"] + 1)))}\n')
 
 
 def main():

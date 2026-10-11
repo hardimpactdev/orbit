@@ -86,7 +86,7 @@ it('requires the Docs merge result to succeed on PRs while allowing it to be ski
     $environment['DOCS_MERGE_REF_RESULT'] = $result;
     // The Gateway plan runs on pull requests only and chose one Gateway test job, so the shards were skipped.
     $environment['GATEWAY_PLAN_RESULT'] = $event === 'pull_request' ? 'success' : 'skipped';
-    $environment['GATEWAY_SHARDS'] = $event === 'pull_request' ? '1' : '';
+    $environment['GATEWAY_SHARDED'] = $event === 'pull_request' ? 'false' : '';
     $environment['GATEWAY_SHARDS_RESULT'] = 'skipped';
     $process = new Process(['bash', '-e', '-c', $step['run']], env: $environment);
     $process->run();

@@ -306,12 +306,12 @@ class CiTiaTest(unittest.TestCase):
         # Pest reads the graph it wrote back.
         self.assertEqual(('affected', head), self.plan()[:2])
 
-    def shard_plan(self, classes, status=0):
+    def shard_plan(self, classes, status=0, extra=''):
         """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does."""
         listing = self.root / 'listing.txt'
         listing.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
             f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
-            for name in classes))
+            for name in classes) + extra)
         pest = self.root / 'pest'
         pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --exclude-group=privileged --colors=never" ] || exit 9\n'
                         f'cat {listing}\nexit {status}\n')
@@ -328,9 +328,9 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan([f'Tests\\Feature\\Area{index}Test' for index in range(200)])
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual({'commit': head, 'shards': '1'}, outputs)
+        self.assertEqual({'commit': head, 'shards': '1', 'sharded': 'false', 'matrix': '[]'}, outputs)
         self.assertEqual({'commit': head, 'classes': 200, 'shards': 1, 'filters': []}, plan)
-        self.assertIn('One job: 200 affected test classes, at most 200.', result.stdout)
+        self.assertIn('One job: 200 affected test classes, at most 200 or too few to split.', result.stdout)
 
         result, outputs, plan = self.shard_plan([])
         self.assertEqual(('1', 0), (outputs['shards'], plan['classes']))
@@ -347,8 +347,8 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', 4, 300), (outputs['shards'], plan['shards'], plan['classes']))
-        self.assertEqual(plan['filters'], [outputs[f'filter-{number}'] for number in range(1, 5)])
+        self.assertEqual(('4', 'true', '[2, 3, 4]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual((4, 300, 4), (plan['shards'], plan['classes'], len(plan['filters'])))
         self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
         # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes] + ['P\\Tests\\Feature\\Area1Test2::x',
@@ -365,6 +365,29 @@ class CiTiaTest(unittest.TestCase):
         self.assertLess(len(shards[0]), min(len(shard) for shard in shards[1:]))
         self.assertIn('4 shards: 300 affected test classes, more than 200.', result.stdout)
         self.assertIn('Shard 1: 7 classes, about 218 process seconds on 6 processes.', result.stdout)
+
+    def test_never_plans_a_shard_without_classes(self):
+        # 201 fast classes: shards 2 to 4 never pass the first shard's head start, so it would stay empty.
+        classes = [f'Tests\\Unit\\Fast{index}Test' for index in range(201)]
+        self.write_graph(self.base, results={
+            f'P\\{name}::__pest_evaluable_it_works': {'status': 0, 'message': '', 'time': 0.01, 'assertions': 1,
+                                                      'file': 'tests/ExampleTest.php'} for name in classes})
+
+        result, outputs, plan = self.shard_plan(classes)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(('3', 'true', '[2, 3]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
+        shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
+        self.assertTrue(all(shards))
+        self.assertEqual(sorted(tests), sorted(sum(shards, [])))
+
+    def test_fails_when_a_listed_test_cannot_be_read(self):
+        result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], extra=' - P\\Tests\\Ünit\\BadTest::x\n')
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Cannot read the class of 1 listed tests, such as:  - P\\Tests\\Ünit\\BadTest::x', result.stderr)
+        self.assertEqual(({}, None), (outputs, plan))
 
     def test_fails_when_pest_cannot_list_the_selection(self):
         result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], status=2)
