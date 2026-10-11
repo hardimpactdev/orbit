@@ -92,6 +92,39 @@ final readonly class IncusHost
         return $images;
     }
 
+    /**
+     * The names of every instance in the host's project, read as one name per line. Only the project's own
+     * instances: `incus list` without `--all-projects` never reads another project. Incus lists a project that
+     * does not exist as empty, so the project must exist first: otherwise this fails instead of answering "none".
+     *
+     * @return list<string>
+     */
+    public function instanceNames(TaskVmHost $host, Node $node): array
+    {
+        $subject = "the instances of Node [{$node->name}]";
+        $project = $this->run($host, $node, ['project', 'show', '--', $host->project], timeout: 120.0);
+        if (! $project->succeeded()) {
+            throw self::failed("the Incus project [{$host->project}] of Node [{$node->name}]", 'project show', $project);
+        }
+
+        $result = $this->run($host, $node, ['list', '--format', 'csv', '--columns', 'n'], timeout: 120.0);
+        if (! $result->succeeded()) {
+            throw self::failed($subject, 'list', $result);
+        }
+        if ($result->truncated) {
+            throw self::invalid($subject, 'the output is not complete');
+        }
+
+        $names = array_values(array_filter(explode("\n", trim($result->stdout)), static fn (string $line): bool => $line !== ''));
+        foreach ($names as $name) {
+            if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9-]{0,62}\z/D', $name) !== 1) {
+                throw self::invalid($subject, 'an instance name is invalid');
+            }
+        }
+
+        return $names;
+    }
+
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
     public function aliasTarget(TaskVmHost $host, Node $node, string $alias): ?string
     {

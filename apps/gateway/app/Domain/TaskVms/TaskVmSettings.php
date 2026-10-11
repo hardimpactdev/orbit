@@ -51,6 +51,7 @@ final readonly class TaskVmSettings
         public ?string $piArtifactPath,
         public ?string $piArtifactSha256,
         public array $piModels,
+        public int $parkAfterMinutes = 30,
     ) {}
 
     public static function fromConfig(): self
@@ -86,6 +87,7 @@ final readonly class TaskVmSettings
             piArtifactPath: $artifactPath,
             piArtifactSha256: $artifactSha256,
             piModels: self::models(Config::get('task_vms.pi.models')),
+            parkAfterMinutes: self::parkAfterMinutes(Config::get('task_vms.park_after_minutes')),
         );
     }
 
@@ -260,6 +262,18 @@ final readonly class TaskVmSettings
         }
 
         return array_values(array_unique($value));
+    }
+
+    /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */
+    private static function parkAfterMinutes(mixed $value): int
+    {
+        $value = self::filled($value) ?? 30;
+        $minutes = is_int($value) || is_string($value) ? filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 10080]]) : false;
+        if (! is_int($minutes)) {
+            throw self::invalid('park_after_minutes must be a whole number of minutes from 1 to 10080.');
+        }
+
+        return $minutes;
     }
 
     private static function positiveInt(mixed $value, int $maximum, string $key): int

@@ -183,7 +183,8 @@ final readonly class CompleteTaskGroupAction
     private function removeOrFinish(Task $group, bool $finishWhenRemovalFails): bool
     {
         try {
-            $this->removeWorkspace($group);
+            // Under the admission lock, so a tick cannot park the group's task VM while its workspace is removed.
+            $this->execution->synchronized($group->id, fn () => $this->removeWorkspace($group));
         } catch (Throwable $exception) {
             if (! $finishWhenRemovalFails) {
                 throw $exception;

@@ -60,14 +60,47 @@ describe('defaults', function (): void {
         $config = config_without_env('task_vms.php', [
             'ORBIT_TASK_VMS_ENABLED', 'ORBIT_TASK_VMS_DEV_CLUSTER_ID', 'ORBIT_TASK_VMS_WIREGUARD_RANGE', 'ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN',
             'ORBIT_TASK_VMS_PI_ARTIFACT_PATH', 'ORBIT_TASK_VMS_PI_ARTIFACT_SHA256', 'ORBIT_TASK_VMS_PI_MODELS', 'ORBIT_TASK_VMS_INCUS_HOSTS',
+            'ORBIT_TASK_VMS_PARK_AFTER_MINUTES',
         ]);
         config(['task_vms' => $config]);
 
         $settings = TaskVmSettings::fromConfig();
 
         expect($config['enabled'])->toBeFalse()
-            ->and($settings)->toEqual(new TaskVmSettings(false, null, '10.44.0.128/25', [], null, null, null, []));
+            ->and($settings)->toEqual(new TaskVmSettings(false, null, '10.44.0.128/25', [], null, null, null, []))
+            ->and($settings->parkAfterMinutes)->toBe(30);
     });
+
+    it('reads park_after_minutes as a whole number of minutes', function (mixed $value, int $minutes): void {
+        task_vms_off(['park_after_minutes' => $value]);
+
+        expect(TaskVmSettings::fromConfig()->parkAfterMinutes)->toBe($minutes);
+    })->with([
+        'unset' => [null, 30],
+        'empty' => ['', 30],
+        'from the environment' => ['45', 45],
+        'an integer' => [10080, 10080],
+    ]);
+
+    it('passes 0 from the environment through to validation instead of the default', function (): void {
+        putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES=0');
+        $_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = '0';
+        try {
+            $config = require config_path('task_vms.php');
+        } finally {
+            putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES');
+            unset($_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'], $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES']);
+        }
+        task_vms_off(['park_after_minutes' => $config['park_after_minutes']]);
+
+        expect_invalid_task_vm_config('park_after_minutes must be a whole number of minutes from 1 to 10080.');
+    });
+
+    it('refuses an invalid park_after_minutes', function (mixed $value): void {
+        task_vms_off(['park_after_minutes' => $value]);
+
+        expect_invalid_task_vm_config('park_after_minutes must be a whole number of minutes from 1 to 10080.');
+    })->with(['zero' => ['0'], 'too long' => [10081], 'a word' => ['soon'], 'a fraction' => ['1.5']]);
 
     it('stays inert on a fleet whose VPN subnet does not hold the default range', function (): void {
         app(VpnSettings::class)->configure(subnet: '10.43.0.0/24');

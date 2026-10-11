@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Actions\TaskVms\AllocateTaskVmAction;
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -44,9 +46,14 @@ final readonly class TaskVmWorkspace
             return $node;
         }
 
+        if ($vm->state === TaskVmState::Parked) {
+            ResumeTaskVm::dispatch($vm->id);
+        }
+
         throw new TaskCapacityException(false, match ($vm->state) {
             TaskVmState::Failed => "Task VM: failed: {$vm->error_code}: {$vm->error_message}",
             TaskVmState::Destroying => 'Task VM: destroying.',
+            TaskVmState::Parked => WakeTaskVmAction::Resuming,
             default => 'Task VM: provisioning.',
         });
     }

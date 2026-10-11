@@ -274,3 +274,58 @@ it('deletes the VM and accepts an absent one', function (): void {
     ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: busy'), incusList(incusInstance()));
     expect(fn () => $this->provider->destroy($this->vm))->toThrow(TaskVmException::class, '`incus delete` for task VM [tvm-1] failed with exit code [1].');
 });
+
+describe('park and resume', function (): void {
+    it('stops a running VM with a clean shutdown and keeps it', function (): void {
+        ($this->answer)(incusList(incusInstance()), incusResult());
+
+        $this->provider->stop($this->vm);
+
+        expect(($this->argv)())->toBe([
+            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
+            [...INCUS_PREFIX, 'stop', '--timeout', '120', '--', 'tvm-1'],
+        ]);
+    });
+
+    it('stops with force when the guest does not shut down in time', function (): void {
+        ($this->answer)(incusList(incusInstance()), incusResult(exitCode: 1, stderr: 'timed out'), incusList(incusInstance()), incusResult());
+
+        $this->provider->stop($this->vm);
+
+        expect(($this->argv)()[3])->toBe([...INCUS_PREFIX, 'stop', '--force', '--', 'tvm-1']);
+    });
+
+    it('fails when the VM still runs after a forced stop', function (): void {
+        ($this->answer)(incusList(incusInstance()), incusResult(exitCode: 1), incusList(incusInstance()), incusResult(exitCode: 1, stderr: 'busy'), incusList(incusInstance()));
+
+        expect(fn () => $this->provider->stop($this->vm))->toThrow(TaskVmException::class, '`incus stop` for task VM [tvm-1] failed');
+    });
+
+    it('counts a stopped or absent VM as stopped', function (): void {
+        ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusList());
+
+        $this->provider->stop($this->vm);
+        $this->provider->stop($this->vm);
+
+        expect($this->ssh->calls)->toHaveCount(2);
+    });
+
+    it('starts a stopped VM and leaves a running one alone', function (): void {
+        ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(), incusList(incusInstance()));
+
+        $this->provider->start($this->vm);
+        $this->provider->start($this->vm);
+
+        expect(($this->argv)())->toBe([
+            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
+            [...INCUS_PREFIX, 'start', '--', 'tvm-1'],
+            [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
+        ]);
+    });
+
+    it('refuses to start a VM that is gone', function (): void {
+        ($this->answer)(incusList());
+
+        expect(fn () => $this->provider->start($this->vm))->toThrow(TaskVmException::class, 'Task VM [tvm-1] is gone from its host.');
+    });
+});

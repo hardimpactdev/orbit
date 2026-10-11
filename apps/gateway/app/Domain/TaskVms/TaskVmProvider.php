@@ -24,6 +24,12 @@ interface TaskVmProvider
     /** The `SHA256:…` fingerprint of the guest's ed25519 SSH host key, read through the trusted host. */
     public function sshHostFingerprint(TaskVm $vm): string;
 
+    /** Start a stopped VM. A running VM counts as started. */
+    public function start(TaskVm $vm): void;
+
+    /** Stop the VM and keep its disk. A stopped or absent VM counts as stopped. */
+    public function stop(TaskVm $vm): void;
+
     /** Delete the VM. An absent VM counts as success. */
     public function destroy(TaskVm $vm): void;
 }

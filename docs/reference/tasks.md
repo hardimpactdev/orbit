@@ -765,6 +765,8 @@ A group of a Project other than `orbit`, with `task_compute: vm`, runs in its ow
 
 Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. The Gateway fetches and pushes over SSH with the token on standard input, as for a shared group. No GitHub token enters the VM.
 
+A task that waits for review stops its VM after `ORBIT_TASK_VMS_PARK_AFTER_MINUTES`, and its next work starts the VM again with the same workspace. Meanwhile the task shows the reason `Task VM: resuming.` See [Park and resume](/reference/compute-drivers#park-and-resume).
+
 When the task ends, Orbit removes the workspace and then destroys the VM. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
 ### Request a topology

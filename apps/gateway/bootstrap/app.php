@@ -31,6 +31,7 @@ use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
@@ -73,6 +74,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
         // The nightly task VM base image refresh, a job on the task VM queue below.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
+            ->when(static fn (): bool => config('task_vms.enabled') === true);
+        // The task VM host sweep: orphaned VMs and live rows whose VM is gone.
+        $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
             ->when(static fn (): bool => config('task_vms.enabled') === true);
         // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.

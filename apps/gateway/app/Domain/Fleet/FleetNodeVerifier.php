@@ -144,8 +144,9 @@ final readonly class FleetNodeVerifier implements FleetNodeVerification
         $preexisting = [];
 
         foreach ($issues as $key => $issue) {
-            // The lag clears when the rollout records this Node, after the verify.
-            if ($issue['code'] === 'node.release_lag') {
+            // The lag clears when the rollout records this Node, after the verify. Task VMs come and go during a
+            // rollout, and the host sweep owns their findings.
+            if ($issue['code'] === 'node.release_lag' || str_starts_with($issue['code'], 'node.task_vm_')) {
                 continue;
             }
 
