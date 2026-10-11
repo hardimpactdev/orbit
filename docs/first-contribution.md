@@ -19,6 +19,14 @@ Fork [nckrtl/orbit](https://github.com/nckrtl/orbit) on GitHub, then clone your 
 ```bash
 git clone https://github.com/YOUR-ACCOUNT/orbit.git
 cd orbit
+git remote add upstream https://github.com/nckrtl/orbit.git
+```
+
+Before each change, start a branch from the latest `main` of the main repository:
+
+```bash
+git fetch upstream
+git switch -c my-change upstream/main
 ```
 
 Install the tools for the projects that you plan to change.
@@ -42,7 +50,9 @@ From the repository root, run:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. Add `--skip-checks` to install without the checks. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
+`bin/bootstrap` installs the five Composer projects, then runs their tests and quality checks. It also checks the project guidance and seeds the cache that selects affected tests. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+
+Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
 
 ## 3. Pick a project and read its guidance
 
@@ -57,7 +67,7 @@ Update the pages under `docs/` that describe the behavior you change, before you
 To list the pages that a change affects, run this from the repository root, with one `--paths` for each file that you plan to change:
 
 ```bash
-bin/docs-impact --base "$(git merge-base origin/main HEAD)" --paths apps/cli/app/Commands/GatewayCommand.php
+bin/docs-impact --base "$(git merge-base upstream/main HEAD)" --paths apps/cli/app/Commands/GatewayCommand.php
 ```
 
 The command prints a JSON report of the impacted pages. Running it is optional for you.
@@ -81,6 +91,18 @@ composer docs-lint
 ```
 
 Commit `docs/generated/context.json` when `docs-build` changes it. Add a new page to the navigation in `docs/docs.json`, or `composer docs-nav` fails.
+
+CI also runs checks from the repository root that no project check covers. They compare generated files and documentation with the code. Run the ones that match your change:
+
+| When you change | Run from the root |
+| --- | --- |
+| An environment variable | `php bin/env-docs` |
+| A Composer project's scripts, Pint, Rector, PHPStan, or PHPUnit setup | `php bin/tooling-baseline` |
+| A Gateway API route or its data | `bin/docs-openapi --check` |
+| An MCP tool | `bin/mcp-tools --check` |
+| Any text, for old names that `bin/project-vocabulary` lists | `php bin/project-vocabulary` |
+
+When `bin/docs-openapi --check` or `bin/mcp-tools --check` reports drift, run the same command without `--check` and commit its output. The other checks name what to fix.
 
 ## 6. Open a pull request
 
@@ -112,6 +134,6 @@ Orbit's maintainers and Orbit's own agents do the following work. A person who c
 - The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
 - The delegated final review and merge through the maintainer's GitHub CLI profile.
 - The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
-- Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. You can run it, but CI does not.
+- Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI does not run it. The root checks in step 5 still apply to you.
 
 [Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) explains why contributors do not run Incus.
