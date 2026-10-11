@@ -4,35 +4,47 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageSyncResult;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
+use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
+use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Models\Node;
 use Illuminate\Console\Command;
 
-/** Builds the base image of one task VM host and prints each stage with its time. */
+/**
+ * Builds the base image on one task VM host, then syncs it to every other configured host. Prints each stage
+ * with its time, and one line for each host.
+ */
 final class BuildTaskVmImageCommand extends Command
 {
-    #[\Override]
-    protected $signature = 'task-vms:build-image {node : Id or name of the Incus host Node}';
+    use ResolvesTaskVmHostNode;
 
     #[\Override]
-    protected $description = 'Build the task VM base image of an Incus host and point orbit-task-base at it.';
+    protected $signature = 'task-vms:build-image {node : Id or name of the Incus host Node that builds the image}';
 
-    public function handle(IncusTaskVmImageBuilder $builder): int
+    #[\Override]
+    protected $description = 'Build the task VM base image on one Incus host, point orbit-task-base at it, and sync it to every other host.';
+
+    public function handle(IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync, TaskVmBaseImage $image): int
     {
         $started = microtime(true);
         try {
-            $node = $this->node((string) $this->argument('node'));
-            $host = resolve(TaskVmSettings::class)->host($node->id);
+            $node = $this->activeNode((string) $this->argument('node'));
+            $settings = resolve(TaskVmSettings::class);
+            $host = $settings->host($node->id);
             $owner = 'command-'.bin2hex(random_bytes(8));
-            // A stopped command deletes its builder and frees the host for the next build.
-            $this->trap([SIGINT, SIGTERM], function (int $signal) use ($builder, $host, $node, $owner): never {
-                $builder->abandon($host, $node, $owner);
-                $this->error("Stopped by signal [{$signal}]. The builder VM is deleted and the current base image is kept.");
+            // A stopped command deletes its builder and smoke VMs and frees each host for the next build or sync.
+            $this->trap([SIGINT, SIGTERM], function (int $signal) use ($image, $settings, $owner): never {
+                foreach ($settings->hosts as $each) {
+                    $eachNode = Node::query()->find($each->nodeId);
+                    if ($eachNode instanceof Node) {
+                        $image->abandon($each, $eachNode, $owner);
+                    }
+                }
+                $this->error("Stopped by signal [{$signal}]. The builder and smoke VMs are deleted and each host keeps its current base image.");
 
                 exit(self::FAILURE);
             });
@@ -47,19 +59,13 @@ final class BuildTaskVmImageCommand extends Command
 
         $this->info(sprintf('Node [%s] has the base image [%s] (%s) after %.1fs.', $node->name, TaskVmHost::BaseImage, substr($fingerprint, 0, 12), microtime(true) - $started));
 
-        return self::SUCCESS;
-    }
-
-    private function node(string $reference): Node
-    {
-        $node = ctype_digit($reference)
-            ? Node::query()->find((int) $reference)
-            : Node::query()->where('name', $reference)->first();
-
-        if (! $node instanceof Node || $node->status !== LifecycleStatus::Active) {
-            throw new TaskVmException('task_vm.unknown_host', "Node [{$reference}] is not an active Node.");
+        $results = $sync->distribute($host, $node, $fingerprint, function (string $name, string $stage, float $seconds): void {
+            $this->line(sprintf('%-22s %-10s %7.1fs', $name, $stage, $seconds));
+        }, $owner);
+        foreach ($results as $result) {
+            $result->succeeded() ? $this->info($result->summary()) : $this->error($result->summary());
         }
 
-        return $node;
+        return array_all($results, static fn (TaskVmImageSyncResult $result): bool => $result->succeeded()) ? self::SUCCESS : self::FAILURE;
     }
 }

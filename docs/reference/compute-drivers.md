@@ -3,7 +3,7 @@ title: "Compute drivers"
 description: "Task VMs for web Projects, the UpCloud driver, and the Incus sandboxes of the Orbit lane."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute,Infrastructure/Compute,Actions/Compute}/**
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
   - apps/gateway/config/{task_vms,compute,queue}.php
   - apps/gateway/resources/{task-vms,compute}/**
   - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the host's [base image](#build-the-base-image), which holds everything that enrollment installs on an `app-dev` Node. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node. Only Incus hosts run task VMs. UpCloud follows in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
+A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image](#build-the-base-image), which is the same on every host and holds everything that enrollment installs on an `app-dev` Node. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node. Only Incus hosts run task VMs. UpCloud follows in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
 
 ### From claim to workspace
 
@@ -70,7 +70,7 @@ Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroye
 
 The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
-Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. When it removes a host, it also deletes the host's `destroyed` rows.
+Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. It also refuses a host that is still configured, with `node.task_vm_host_configured`, because the other hosts still trust it. [Retire the host](#add-a-task-vm-host) first. When it removes a host, it also deletes the host's `destroyed` rows.
 
 #### A VM that dies before its group ends
 
@@ -179,7 +179,7 @@ When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm
 
 `IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the image alias `orbit-task-base` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. Build the image with [`task-vms:build-image`](#build-the-base-image). Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
+When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Sync the image](#sync-the-base-image) to the host, or [build](#build-the-base-image) it. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
 Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
 
@@ -197,17 +197,54 @@ First it checks the ZFS storage pool that the host's `pool` names. It creates a 
 - ACL egress drops private, link-local, CGNAT, and multicast ranges, and allows the rest.
 - ACL ingress allows TCP 22 from the bridge address and rejects the rest.
 - The project's `default` profile: `eth0` on the bridge with `security.port_isolation=true`, and the root disk on the host's pool.
+- The project restrictions `restricted=true` and `restricted.networks.access=<bridge>`. Task VMs need nothing that they forbid. They keep a [peer host's](#let-hosts-copy-the-image) restricted certificate from root on the host.
 - One host rule: `ufw route allow in on orbittask+ comment 'orbit-task-vms'`.
 
 The command takes these values from the host's entry in `task_vms.incus.hosts`, which `TaskVmSettings` has validated. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
+The restrictions forbid privileged and nested containers, disks outside a storage pool, host devices, low-level config such as `raw.qemu`, backups, snapshots, and every network except the task bridge.
+
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
+
+After the script, the command [lets the hosts copy the image](#let-hosts-copy-the-image) from each other. It prints one line for each host that it set up.
+
+### Let hosts copy the image
+
+Every configured host whose Node is active can copy the base image from every other one. The hosts talk Incus to Incus. The image never passes through the Gateway. `task-vms:prepare-host` sets this up on every host, not only on the one it prepares, so a new host and the existing hosts trust each other. Each run makes the setup exact again, and it changes nothing when the setup is already right.
+
+First it restricts the task VM project on every host, as `incus-host.sh` does, and reads the restrictions back. A host whose project is missing or keeps no restriction fails with `task_vm.host_not_prepared`, and then no host listens or trusts a peer. A peer's certificate is restricted to that project, so the project restrictions are what keep the peer from root on the host. No order of `task-vms:prepare-host` runs leaves a host trusting a peer while its project is unrestricted.
+
+Then it sets up these parts on each host, as root over SSH:
+
+| Part | What Orbit sets |
+| --- | --- |
+| Listen address | `core.https_address` on port 8443 of one address: the LAN address or the WireGuard address, as described below |
+| Client certificate | `client.crt` and `client.key` in `/etc/orbit/task-vms/incus`, which only root reads. Incus makes them once with `incus remote generate-certificate` |
+| Trust | Each peer's client certificate as `orbit-task-image-<peer Node id>`, restricted to the host's project |
+| Remotes | One remote `node-<peer Node id>` for each peer in `/etc/orbit/task-vms/incus/config.yml`, on the peer's listen address, with the peer's server certificate pinned in `servercerts/` |
+| Firewall | The managed rule `orbit:task-vm-image:<peer Node id>`: TCP 8443 from the peer's address to the listen address. Over WireGuard the rule names the interface `orbit` |
+
+A host listens on its LAN address when every other host is in its Cluster and has a LAN address. Otherwise it listens on its WireGuard address. A host without peers does not listen. Incus never listens on every address.
+
+Orbit replaces a trust entry whose certificate changed. It removes every `orbit-task-image-*` entry that no peer needs, and leaves other entries alone. The Gateway reads each peer's server certificate over SSH, so no host trusts a certificate on first use.
+
+Orbit adds and replaces the firewall rules, and deletes the rule of a former peer. They are managed `orbit:` rules. [`firewall:managed:list`](/cli/firewall#read-the-managed-and-live-rules) lists them with the role `task-vms`. Orbit owns `core.https_address` only while it is unset or names the host's own LAN or WireGuard address on port 8443. Any other value fails with `task_vm.incus_address_conflict`, and Orbit changes nothing on that host.
+
+beast and shark are both in Cluster 4 with LAN addresses, so they copy over the LAN. A host in another Cluster makes every host listen on its WireGuard address. That traffic may run through the VPN hub, so a copy then takes longer and loads the hub.
+
+The source rule admits addresses, not hosts. So the client certificate is the real boundary in two cases.
+
+On the WireGuard address, the member trust rule `orbit:wireguard-members` already admits every WireGuard member on every port. Every fleet Node can then reach the Incus API, and only the certificate stops it.
+
+On the LAN, a host masquerades the traffic of its Docker containers and NAT Incus bridges behind its LAN address. An E2E topology on beast is one example. Those guests reach a peer's API from the host's address, and the peer's rule admits them. They have no client certificate, because only root on the host reads it. So they get only what Incus answers without one: server information and public images. Task images are private.
+
+The [hub filter](#limit-fleet-traffic-on-the-hub) keeps task VMs off the port. The task bridge ACL drops their traffic to private addresses, including the host's own LAN and WireGuard addresses. The [hub filter](#limit-fleet-traffic-on-the-hub) keeps task VMs away from the port, and the bridge ACL drops their traffic to private addresses.
 
 ### Build the base image
 
-Run `task-vms:build-image {node}` after `task-vms:prepare-host`, once for each host. It builds the host's base image and prints each stage with its time. It runs these stages on the host over SSH, with `sudo -n incus --project <project> …`:
+Run `task-vms:build-image {node}` to build the base image on one host. It prints each stage with its time. Then it [syncs](#sync-the-base-image) the new image to every other configured host, so every host launches the same image. It runs these stages on the build host over SSH, with `sudo -n incus --project <project> …`:
 
 | Stage | What it does |
 | --- | --- |
@@ -236,21 +273,54 @@ The clean script removes the SSH host keys, the machine ID, every authorized key
 
 It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so enrollment's `apt-get update` fetches only changes. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
-The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build of a host runs at a time. A second one fails with `task_vm.image_build_running`.
+The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image on every host. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build or sync of a host runs at a time. A second one fails with `task_vm.image_build_running`.
 
-A build that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and frees the host. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build deletes every builder and smoke VM that an earlier build left.
+A build or sync that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and smoke VMs and frees each host. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build or sync deletes every builder and smoke VM that an earlier one left.
 
-Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vms` queue. It rebuilds the base image of each configured host that already has one, one host after another. It leaves a host without a base image alone, so the first build is always `task-vms:build-image`. Until then, the job only reads the host's image list. The worker runs one job at a time, so a refresh delays other task VM jobs while it runs. A host that fails keeps its image, and the job fails after the other hosts, so `failed_jobs` records it.
+Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vms` queue. It builds the base image once, on the first host in `task_vms.incus.hosts`, and syncs it to every other configured host, one after another. While the first host has no base image, the job only reads its image list, so the first build is always `task-vms:build-image`. The job fails with `task_vm.unknown_host` when the first host's Node is not active.
+
+A failed build changes no host. A host whose sync fails keeps its image, and the job fails with `task_vm.image_sync_failed` after the other hosts, so `failed_jobs` records it and the log names each host. The worker runs one job at a time, so a refresh delays other task VM jobs while it runs.
+
+### Sync the base image
+
+Run `task-vms:sync-image {node}` to copy the current base image to one host. By default it copies from the first configured host. `--from` names another host. It prints each stage with its time. `task-vms:build-image` and the nightly refresh run the same sync on every other host after a build.
+
+The host that gets the image runs `incus image copy --project <source project> --target-project <project> node-<source id>:<fingerprint> local: --alias <dated alias>` with the client configuration in `/etc/orbit/task-vms/incus`. Its Incus pulls the image from the source's Incus API, on the address that [the hosts set up](#let-hosts-copy-the-image). The copy keeps the source's dated alias `orbit-task-base-<time>`. The Gateway only starts the command, and the source is only read. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN. The copy may take 600 seconds, so a copy and a smoke boot end within the host's 25-minute image lock.
+
+| Stage | What it does |
+| --- | --- |
+| `inspect` | Reads the source image's dated alias and the host's images. A host whose `orbit-task-base` already names the image stops here, and the command says so |
+| `sweep` | Deletes builder and smoke VMs that an interrupted build or sync left |
+| `copy` | Copies the image. A host that has the image already gets only its dated alias |
+| `verify` | Checks that the dated alias names the source's fingerprint. Incus names an image by the SHA-256 of its content, so an equal fingerprint is an equal image |
+| `smoke` | Boots a smoke VM from the copy, with the same checks as the build's smoke boot |
+| `promote` | Points `orbit-task-base` at the copy in one step |
+| `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
+
+A failed sync fails with `task_vm.image_sync_failed`, which names the stage. The host keeps its current base image. Orbit deletes the smoke VM, and the copy when it never became the base image. A sync never changes the source or another host. After a build, each host's result is one line with its time and stages, or its error code. One failed host does not stop the others, and the command then exits with a failure.
+
+Running VMs keep the image they launched from. The prune keeps an image that a VM still uses. A claim that resolved the old alias just before the prune can fail its launch when the prune deletes that image first. `ProvisionTaskVm` then retries once after 30 seconds, from the new image. When the alias move succeeds but its reply is lost, the failed sync keeps the copy, because the alias names it.
+
 
 ### Add a task VM host
 
 A second host needs Incus, ZFS, and ufw, and its managed user needs passwordless `sudo`. Then:
 
 1. Add an entry for the host to `ORBIT_TASK_VMS_INCUS_HOSTS`. Give it its own `cidr` and a new `zfs_dataset`, such as `data/orbit-tasks`. Never name a dataset that exists. Apply the change with [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change).
-2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the project, bridge, ACL, profile, and ufw rule.
-3. Run `task-vms:build-image {node}`.
+2. Run `task-vms:prepare-host {node}`. It creates the pool from the new dataset and sets up the host. Then it lets all hosts [copy the image](#let-hosts-copy-the-image).
+3. Run `task-vms:sync-image {node}`. It copies the base image of the first host. On the first host of a fleet, run `task-vms:build-image {node}` instead.
 
-The new host takes VMs on the next claim. Its bridge network must not overlap another host's. The hub filter and the Caddy guard depend only on the reserved WireGuard range, so `task-vms:prepare-hub` and the Caddy builds need no new run. To retire a host, set its `max_vms` to the number of VMs it still has, or lower, and wait until it has no task VM that is not `destroyed`. Then remove its entry.
+The new host takes VMs on the next claim. Its bridge network must not overlap another host's. The hub filter and the Caddy guard depend only on the reserved WireGuard range, so `task-vms:prepare-hub` and the Caddy builds need no new run. The nightly refresh syncs every configured host, so a host that you prepare and do not sync gets the image the next night.
+
+To retire a host:
+
+1. Set its `max_vms` to the number of VMs it still has, or lower, and wait until it has no task VM that is not `destroyed`.
+2. Remove its entry and apply the change with `gateway:release:configure`.
+3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`.
+
+`task-vms:retire-host` first sets up the remaining hosts again. That removes their trust entry, remote, and firewall rule for the old host. Then it removes the old host's own setup: its listen address, its `orbit-task-image-*` trust entries, `/etc/orbit/task-vms/incus`, and its `orbit:task-vm-image:*` rules. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
+
+The old host's Incus project, images, bridge, ACL, and pool stay. Remove them by hand.
 
 ### Limit fleet traffic on the hub
 
@@ -354,9 +424,13 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
 | `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
-| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
+| `task_vm.base_image_missing` | 409 | The host's project, or the sync source's, has no `orbit-task-base` image. Run `task-vms:sync-image` or `task-vms:build-image` |
 | `task_vm.image_build_failed` | 502 | A base image build failed. The message names the stage |
-| `task_vm.image_build_running` | 409 | A base image build of the host is already running |
+| `task_vm.image_build_running` | 409 | A base image build or sync of the host is already running |
+| `task_vm.image_sync_failed` | 502 | A base image sync failed. The message names the host, the source, and the stage. The nightly refresh uses this code when any host failed |
+| `task_vm.incus_address_conflict` | 409 | Incus on a host listens on an address that Orbit did not set. Unset `core.https_address`, or set it to the address in the message |
+| `task_vm.host_not_prepared` | 409 | A host's task VM project is missing or not restricted, so `task-vms:prepare-host` links no host. Run `task-vms:prepare-host` on that host |
+| `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not answer within 9 minutes of the first start |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
@@ -367,6 +441,10 @@ Task VMs have these known limits.
 
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
 - A base image is only as fresh as its last build. The nightly refresh keeps packages and the `app-dev` software at most a day old. A host without a base image cannot start task VMs.
+- Each sync copies the whole image, about 3 GiB. ZFS send and receive can copy only the changes. That is a possible optimisation for slow copies.
+- A peer's restricted certificate can manage instances, profiles, images, and aliases in the host's task VM project, inside the project restrictions.
+- So root on one host can stop or enter the task VMs of another host. It can also point that host's `orbit-task-base` at another image, which every later task VM there boots.
+- Copies over WireGuard may run through the VPN hub.
 - The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs, including a resume.
 - Doctor can report task VM Nodes while they exist.
 
@@ -389,6 +467,8 @@ Public egress is open on every port. Limiting it to HTTP(S) adds no protection b
 
 The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs. Enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing.
 
+One build serves every host, so a group behaves the same on any host. Builds on each host differed: the same commit gave beast and shark different images, because packages and even the stock image changed between the builds. One build also saves about two minutes of build time for each other host. The hosts copy the image Incus to Incus, so it stays on the LAN when the hosts share one.
+
 Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
 
 Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) aligns the UpCloud template with the same contract. The template is built from the stock image with its identity removed. Its cloud-init installs nothing. A smoke boot passes before use, and the previous image stays while a VM uses it.
@@ -399,7 +479,11 @@ These alternatives were rejected:
 | --- | --- |
 | WireGuard in cloud-init | It bypasses normal enrollment |
 | An Incus proxy device for SSH | Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host |
-| The Incus REST API with a restricted certificate | It needs more host setup, and the Gateway already has root SSH to the host |
+| The Incus REST API with a restricted certificate, from the Gateway | It needs more host setup, and the Gateway already has root SSH to the host. Hosts use the API only to copy images to each other |
+| A build on each host | The same commit gave different images, and each host spent about two minutes on its build |
+| `incus image export` streamed over SSH through the Gateway | Each copy would cross the Gateway twice. The direct copy keeps the image on the LAN when it can |
+| `incus image copy --mode relay` | Into a project that does not exist, it reports success and stores nothing. The default pull mode fails |
+| Trust on first use for a peer's server certificate | The Gateway can read the certificate over SSH, which it already trusts |
 | A hub table for each VM | One static filter on a reserved range does the same work |
 | Installing the `app-dev` software on every VM | It added about 40 seconds of boot and package installs to each VM on beast, and each claim depended on package mirrors |
 | A base image for each Project | Each Project would need its own image, built and kept current. Per-Project dependency caches may follow |

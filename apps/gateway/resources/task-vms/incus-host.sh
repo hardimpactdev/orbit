@@ -70,7 +70,8 @@ main() {
         [ "$source" = "$dataset" ] || fail "storage pool [$pool] uses [$source], expected [$dataset]"
     fi
 
-    # Project: images and profiles are per project; networks and ACLs stay in `default`, named explicitly.
+    # Project: images and profiles are per project; networks and ACLs stay in `default`, named explicitly. The
+    # restrictions follow once the bridge and the profile exist.
     if ! exists incus project show "$project"; then
         incus project create "$project" -c features.images=true -c features.profiles=true -c features.networks=false
     fi
@@ -119,6 +120,11 @@ YAML
         incus profile device add default eth0 nic network="$network" name=eth0 security.port_isolation=true \
             --project "$project"
     fi
+
+    # Restricted project. A peer host's client certificate is limited to this project, and these limits keep it
+    # from root on this host: no privileged or nested containers, no host paths or devices, no low-level config,
+    # and no network other than the task bridge. Task VMs need none of these.
+    incus project set "$project" restricted=true "restricted.networks.access=$network"
 
     # Stock Ubuntu cloud image, copied once.
     if ! exists incus image show "$image" --project "$project"; then
