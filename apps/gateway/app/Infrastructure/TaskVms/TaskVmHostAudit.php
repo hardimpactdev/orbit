@@ -15,7 +15,7 @@ use App\Models\TaskVm;
  *
  * - An orphaned VM is a `tvm-<number>` instance with no live row of that name on the host. Other names,
  *   such as the base image builder `tvm-image-<time>`, are never Orbit's task VMs and stay untouched.
- * - A missing VM is a `ready` or `parked` row whose instance is gone. Other states have jobs that check the VM.
+ * - A missing VM is a `warm`, `ready`, or `parked` row whose instance is gone. Other states have jobs that check the VM.
  */
 final readonly class TaskVmHostAudit
 {
@@ -36,7 +36,7 @@ final readonly class TaskVmHostAudit
                 static fn (string $name): bool => preg_match(self::TaskVmName, $name) === 1 && ! in_array($name, $recorded, true),
             )),
             'missing' => array_values($live->filter(
-                static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
+                static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
             )->all()),
         ];
     }

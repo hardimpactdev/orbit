@@ -12,7 +12,7 @@ use App\Models\TaskVm;
 use SensitiveParameter;
 
 /**
- * Resolves a Node's Pi server address and token. A task VM Node uses its own token. Otherwise Node
+ * Resolves a Node's Pi server address and token. A task VM Node uses its own token, and a warm one has none. Otherwise Node
  * settings under `pi` take precedence; a Node with `pi` settings never falls back to the Gateway-wide token.
  */
 final readonly class PiConnection
@@ -50,7 +50,8 @@ final readonly class PiConnection
         }
         $vm = TaskVmPlacement::forNode($node);
         if ($vm instanceof TaskVm) {
-            return $vm->pi_token;
+            // A warm VM has no token until a claim: it never falls back to Node settings or the Gateway-wide token.
+            return $vm->pi_token ?? throw new AgentDriverException('The task VM has no Pi token, because no task group claimed it yet.');
         }
 
         return $this->settings($node)['token'] ?? throw new AgentDriverException('The Node has no Pi server token configured.');
@@ -68,7 +69,7 @@ final readonly class PiConnection
         }
         $vm = TaskVmPlacement::forNode($node);
         if ($vm instanceof TaskVm) {
-            return array_values(array_filter([$vm->pi_token, $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));
+            return array_values(array_filter([$vm->pi_token ?? '', $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));
         }
 
         return [$this->token($node)];

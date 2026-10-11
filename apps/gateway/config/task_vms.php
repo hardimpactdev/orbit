@@ -23,8 +23,9 @@ return [
         /*
          * A JSON list of hosts: node_id, cidr (the bridge network) and max_vms are required;
          * project (orbit-tasks), network (orbittask0), cpus (2),
-         * memory (4GiB), disk (20GiB), pool (orbit-tasks, a ZFS pool) and zfs_dataset (to create
-         * the pool) are optional. Task VMs launch the base image `orbit-task-base`.
+         * memory (4GiB), disk (20GiB), pool (orbit-tasks, a ZFS pool), zfs_dataset (to create
+         * the pool), and warm_vms (0: how many enrolled VMs without a group the host keeps ready for
+         * claims, within max_vms) are optional. Task VMs launch the base image `orbit-task-base`.
          */
         'hosts' => json_decode((string) (env('ORBIT_TASK_VMS_INCUS_HOSTS') ?: '[]'), true),
     ],

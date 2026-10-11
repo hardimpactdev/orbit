@@ -47,11 +47,12 @@ final readonly class ParkIdleTaskVmsAction
         $cutoff = now()->subMinutes(app(TaskVmSettings::class)->parkAfterMinutes);
         $parked = 0;
         foreach ($candidates as $vm) {
-            $settled = self::settledAt($vm->group);
-            if ($settled === null || $settled->greaterThan($cutoff) || $vm->updated_at === null || $vm->updated_at->greaterThan($cutoff)) {
+            $owner = $vm->group;
+            $settled = $owner instanceof Task ? self::settledAt($owner) : null;
+            if (! $owner instanceof Task || $settled === null || $settled->greaterThan($cutoff) || $vm->updated_at === null || $vm->updated_at->greaterThan($cutoff)) {
                 continue;
             }
-            $parked += $this->execution->synchronized($vm->group_id, static function () use ($vm, $cutoff): int {
+            $parked += $this->execution->synchronized($owner->id, static function () use ($vm, $cutoff): int {
                 $group = self::idle(Task::topLevel()->whereKey($vm->group_id))->first();
                 $settled = $group instanceof Task ? self::settledAt($group) : null;
                 if (! $group instanceof Task || TaskExecutionHold::active($group) || $settled === null || $settled->greaterThan($cutoff)

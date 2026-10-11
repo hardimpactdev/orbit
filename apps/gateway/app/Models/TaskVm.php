@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One disposable VM that serves one task group as a normal `app-dev` Node.
+ * One disposable VM that serves one task group as a normal `app-dev` Node. A pool row has no group: it is
+ * a warm VM of its host, or one that Orbit is creating, failing, or destroying for the pool.
  *
  * @property int $id
- * @property int $group_id
+ * @property int|null $group_id
  * @property int $host_node_id
  * @property int|null $node_id
  * @property string $provider
@@ -23,16 +24,19 @@ use Illuminate\Support\Carbon;
  * @property TaskVmState $state
  * @property string|null $address
  * @property string $wireguard_ip
- * @property string $pi_token
+ * @property string|null $pi_token
  * @property string|null $model_key
  * @property string|null $model_proxy_origin
+ * @property Carbon|null $claimed_at
+ * @property Carbon|null $warmed_at
+ * @property string|null $image_fingerprint
  * @property string|null $error_code
  * @property string|null $error_message
  * @property Carbon|null $ready_at
  * @property Carbon|null $destroyed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Task $group
+ * @property-read Task|null $group
  * @property-read Node $hostNode
  * @property-read Node|null $node
  */
@@ -42,7 +46,8 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'model_proxy_origin', 'error_code', 'error_message', 'ready_at', 'destroyed_at',
+        'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
+        'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
 
     /** @var list<string> */
@@ -57,6 +62,8 @@ final class TaskVm extends Model
             'state' => TaskVmState::class,
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
+            'claimed_at' => 'datetime',
+            'warmed_at' => 'datetime',
             'ready_at' => 'datetime',
             'destroyed_at' => 'datetime',
         ];
@@ -67,6 +74,13 @@ final class TaskVm extends Model
     protected function live(Builder $query): void
     {
         $query->where('state', '!=', TaskVmState::Destroyed);
+    }
+
+    /** @param Builder<self> $query */
+    #[Scope]
+    protected function pool(Builder $query): void
+    {
+        $query->whereNull('group_id');
     }
 
     /** @return BelongsTo<Task, $this> */

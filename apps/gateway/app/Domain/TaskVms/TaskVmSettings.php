@@ -32,9 +32,10 @@ final readonly class TaskVmSettings
         'disk' => '20GiB',
         'pool' => 'orbit-tasks',
         'zfs_dataset' => null,
+        'warm_vms' => 0,
     ];
 
-    private const array HostKeys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset'];
+    private const array HostKeys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset', 'warm_vms'];
 
     private const array PrivateRanges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
 
@@ -217,6 +218,7 @@ final readonly class TaskVmSettings
                 // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
                 zfsDataset: $entry['zfs_dataset'] === null ? null
                     : self::name($entry['zfs_dataset'], '/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D', "incus.hosts.{$index}.zfs_dataset"),
+                warmVms: self::warmVms($entry['warm_vms'], $entry['max_vms'], "incus.hosts.{$index}.warm_vms"),
             );
             if (isset($hosts[$host->nodeId])) {
                 throw self::invalid("incus.hosts.{$index}.node_id is listed twice.");
@@ -285,6 +287,17 @@ final readonly class TaskVmSettings
         }
 
         return $minutes;
+    }
+
+    /** From 0, the default, to the host's `max_vms`: warm VMs take slots too. */
+    private static function warmVms(mixed $value, mixed $maxVms, string $key): int
+    {
+        $maximum = is_int($maxVms) ? $maxVms : 64;
+        if (! is_int($value) || $value < 0 || $value > $maximum) {
+            throw self::invalid("{$key} must be an integer from 0 to the host's max_vms.");
+        }
+
+        return $value;
     }
 
     private static function positiveInt(mixed $value, int $maximum, string $key): int
