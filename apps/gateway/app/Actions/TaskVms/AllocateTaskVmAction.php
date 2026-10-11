@@ -6,47 +6,80 @@ namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
+use App\Infrastructure\TaskVms\IncusHost;
+use App\Jobs\TaskVms\EnsureWarmClaimReady;
+use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
- * Records a group's task VM on the active host with the most free slots, then queues its creation. The
- * row is named `tvm-<row id>`, so a retry after a destroyed VM never reuses a name, and it holds its
- * reserved WireGuard address and Pi token from the start.
+ * Gives a group its task VM. A warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`,
+ * and runs only the group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
+ * `orbit-task-base` names now, read from the host at the claim. Without one, the claim records a new row on
+ * the active host with the most free slots and queues its creation. A new row is named `tvm-<row id>`, so a
+ * retry after a destroyed VM never reuses a name, and it holds its reserved WireGuard address from the start.
  *
- * One placement runs at a time under a cache lock, so two claims never both take a host's last slot.
+ * One placement runs at a time under a cache lock, so two claims never take the same warm VM or both take a
+ * host's last slot. The pool refill takes the same lock.
  */
 final readonly class AllocateTaskVmAction
 {
     public const string NoCapacity = 'Task VM: no capacity.';
 
+    /** Every slot is taken, and at least one of them is a warm VM that is still starting. */
+    public const string WarmStarting = 'Task VM: waiting for a warm VM.';
+
     private const string PlacementLock = 'task-vms:placement';
+
+    /** The image read at a claim runs in the scheduler tick, so it gets a short limit. */
+    private const float ImageReadSeconds = 15.0;
+
+    private const int ImageCacheSeconds = 10;
+
+    private const int ImageFailureSeconds = 60;
 
     public function __construct(
         private TaskVmSettings $settings,
         private WireGuardAddressAllocator $addresses,
+        private IncusHost $incus,
     ) {}
 
-    /** @throws TaskCapacityException when no host has a free slot */
+    /** @throws TaskCapacityException when no warm VM qualifies and no host has a free slot */
     public function execute(Task $group): TaskVm
     {
+        $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
+        if ($existing instanceof TaskVm) {
+            return $existing;
+        }
+        $images = $this->warmImages();
+
         try {
-            $vm = Cache::lock(self::PlacementLock, 30)->block(15, fn (): TaskVm => $this->place($group));
+            [$vm, $warm] = self::locked(fn (): array => $this->place($group, $images));
         } catch (LockTimeoutException) {
             throw new TaskCapacityException(false, 'Task VM: another placement is running.');
         }
-        assert($vm instanceof TaskVm);
 
+        if ($warm) {
+            RefillTaskVmPool::dispatch();
+            $this->prepareNow($vm);
+
+            return $vm->refresh();
+        }
         if ($vm->wasRecentlyCreated) {
             ProvisionTaskVm::dispatch($vm->id);
         }
@@ -54,50 +87,231 @@ final readonly class AllocateTaskVmAction
         return $vm;
     }
 
-    private function place(Task $group): TaskVm
+    /**
+     * Runs the group steps of a warm claim in the claim itself: the model key, the Pi files, and `pi-server`, about
+     * 1.5 seconds, with short limits on each step. A VM without the pinned Pi is left to the queued job. A guard job
+     * queued first finishes the steps when the tick dies during them. So they never wait for the task VM worker, which runs one job at a time and may be in an
+     * enrollment or an image build. The placement lock is released by then, and the claim holds no transaction. A
+     * failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has no retries left.
+     */
+    private function prepareNow(TaskVm $vm): void
     {
-        return DB::transaction(function () use ($group): TaskVm {
-            $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
-            if ($existing instanceof TaskVm) {
-                return $existing;
-            }
-
-            $vm = TaskVm::query()->create([
-                'group_id' => $group->id,
-                'host_node_id' => $this->host(),
-                'provider' => 'incus',
-                'name' => 'tvm-pending-'.Str::uuid(),
-                'state' => TaskVmState::Provisioning,
-                'wireguard_ip' => $this->addresses->nextIn(
-                    $this->settings->wireguardRange,
-                    array_values(TaskVm::query()->live()->get()->map(static fn (TaskVm $vm): string => $vm->wireguard_ip)->all()),
-                ),
-                'pi_token' => bin2hex(random_bytes(32)),
-            ]);
-            $vm->update(['name' => 'tvm-'.$vm->id]);
-
-            return $vm;
-        });
+        // Queued first, so a tick that dies during the steps still leaves a job that finishes them.
+        EnsureWarmClaimReady::dispatch($vm->id)->delay(now()->addSeconds(EnsureWarmClaimReady::DelaySeconds));
+        $job = new PrepareTaskVmRuntime($vm->id);
+        $job->inline = true;
+        try {
+            app()->call($job->handle(...));
+        } catch (Throwable $exception) {
+            Log::warning('The group steps of a warm task VM claim failed; the task VM worker retries them.', ['task_vm' => $vm->name, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);
+            PrepareTaskVmRuntime::dispatch($vm->id);
+        }
     }
 
     /**
-     * The active host with the most free slots. Every live task VM takes a slot, parked and failed ones too.
-     * Hosts with as many free slots keep their config order.
+     * Runs `$placement` under the placement lock, waiting up to 15 seconds for it.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $placement
+     * @return T
+     *
+     * @throws LockTimeoutException
      */
-    private function host(): int
+    public static function locked(Closure $placement): mixed
+    {
+        return Cache::lock(self::PlacementLock, 30)->block(15, $placement);
+    }
+
+    /**
+     * Records a new `provisioning` row on the host: a group's VM, or a pool VM when `$group` is null. A pool row
+     * gets no Pi token; a claim gives it one. Call it under the placement lock, inside a transaction.
+     */
+    public function record(?Task $group, int $hostNodeId): TaskVm
+    {
+        $vm = TaskVm::query()->create([
+            'group_id' => $group?->id,
+            'host_node_id' => $hostNodeId,
+            'provider' => 'incus',
+            'name' => 'tvm-pending-'.Str::uuid(),
+            'state' => TaskVmState::Provisioning,
+            'wireguard_ip' => $this->addresses->nextIn(
+                $this->settings->wireguardRange,
+                array_values(TaskVm::query()->live()->get()->map(static fn (TaskVm $vm): string => $vm->wireguard_ip)->all()),
+            ),
+            'pi_token' => $group instanceof Task ? self::piToken() : null,
+            'claimed_at' => $group instanceof Task ? now() : null,
+        ]);
+        $vm->update(['name' => 'tvm-'.$vm->id]);
+
+        return $vm;
+    }
+
+    /**
+     * The free slots of each configured host that is an active Node, in config order: `max_vms` minus every task VM
+     * on the host that is not destroyed, warm, parked and failed ones too. A host over its budget has 0.
+     *
+     * @return array<int, int> host Node id => free slots
+     */
+    public function freeSlots(): array
     {
         $active = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
             ->where('status', LifecycleStatus::Active)->pluck('id')->all();
         $used = TaskVm::query()->live()->get(['host_node_id'])->countBy('host_node_id')->all();
-        $best = null;
-        $bestFree = 0;
+        $free = [];
         foreach ($this->settings->hosts as $host) {
-            $free = $host->maxVms - ($used[$host->nodeId] ?? 0);
-            if (in_array($host->nodeId, $active, true) && $free > $bestFree) {
-                [$best, $bestFree] = [$host->nodeId, $free];
+            if (in_array($host->nodeId, $active, true)) {
+                $free[$host->nodeId] = max(0, $host->maxVms - ($used[$host->nodeId] ?? 0));
             }
         }
 
-        return $best ?? throw new TaskCapacityException(false, self::NoCapacity);
+        return $free;
+    }
+
+    /**
+     * The fingerprint that `orbit-task-base` names on each active host with a warm VM. A host whose image list
+     * cannot be read is left out, so its warm VMs wait and the claim falls back to a new VM.
+     *
+     * @return array<int, string> host Node id => fingerprint
+     */
+    private function warmImages(): array
+    {
+        $hosts = TaskVm::query()->pool()->where('state', TaskVmState::Warm)->whereNotNull('image_fingerprint')
+            ->distinct()->pluck('host_node_id')->all();
+        $images = [];
+        foreach ($this->settings->hosts as $host) {
+            $node = in_array($host->nodeId, $hosts, true) ? Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first() : null;
+            if (! $node instanceof Node) {
+                continue;
+            }
+            $image = $this->hostImage($host, $node);
+            if ($image !== null) {
+                $images[$host->nodeId] = $image;
+            }
+        }
+
+        return $images;
+    }
+
+    /**
+     * The host's `orbit-task-base`, read over SSH at most every 10 seconds. After a failed read, the host's warm
+     * VMs wait for 60 seconds, so a host that hangs costs one 15-second read a minute, not one per claim. A promote
+     * forgets the reading, so a claim right after a build or sync reads the new image.
+     */
+    private function hostImage(TaskVmHost $host, Node $node): ?string
+    {
+        $key = self::imageKey($node->id);
+        $cached = Cache::get($key);
+        if (is_array($cached)) {
+            return is_string($cached['image'] ?? null) ? $cached['image'] : null;
+        }
+        try {
+            $image = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage, self::ImageReadSeconds);
+        } catch (Throwable $exception) {
+            Log::warning('A claim could not read the base image of a task VM host; its warm VMs wait a minute.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
+            Cache::put($key, ['image' => null], self::ImageFailureSeconds);
+
+            return null;
+        }
+        Cache::put($key, ['image' => $image], self::ImageCacheSeconds);
+
+        return $image;
+    }
+
+    /** Forgets a host's cached image, after its `orbit-task-base` moved. */
+    public static function forgetImage(int $hostNodeId): void
+    {
+        Cache::forget(self::imageKey($hostNodeId));
+    }
+
+    private static function imageKey(int $hostNodeId): string
+    {
+        return 'task-vms:claim-image:'.$hostNodeId;
+    }
+
+    /**
+     * @param  array<int, string>  $images
+     * @return array{TaskVm, bool} the row, and whether it is a warm VM this claim took
+     */
+    private function place(Task $group, array $images): array
+    {
+        return DB::transaction(function () use ($group, $images): array {
+            $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
+            if ($existing instanceof TaskVm) {
+                return [$existing, false];
+            }
+
+            $free = $this->freeSlots();
+            $warm = $this->takeWarm($group, $images, $free);
+            if ($warm instanceof TaskVm) {
+                return [$warm, true];
+            }
+
+            return [$this->record($group, $this->host($free)), false];
+        });
+    }
+
+    /**
+     * Takes the oldest current warm VM on the host with the most free slots among the hosts that have one.
+     *
+     * @param  array<int, string>  $images
+     * @param  array<int, int>  $free
+     */
+    private function takeWarm(Task $group, array $images, array $free): ?TaskVm
+    {
+        $order = array_keys($free);
+        // usort is stable, so hosts with as many free slots keep their config order.
+        usort($order, static fn (int $a, int $b): int => $free[$b] <=> $free[$a]);
+        foreach ($order as $hostId) {
+            if (! isset($images[$hostId])) {
+                continue;
+            }
+            $candidates = TaskVm::query()->pool()->where('state', TaskVmState::Warm)->where('host_node_id', $hostId)
+                ->where('image_fingerprint', $images[$hostId])->whereNotNull('node_id')
+                ->whereHas('node', static fn ($node) => $node->where('status', LifecycleStatus::Active))
+                ->orderBy('id')->get();
+            foreach ($candidates as $vm) {
+                // Only a row that is still warm and unassigned moves, so a destroy or another claim that came first wins.
+                $taken = TaskVm::query()->whereKey($vm->id)->pool()->where('state', TaskVmState::Warm)->update([
+                    'group_id' => $group->id,
+                    'state' => TaskVmState::Provisioning,
+                    'claimed_at' => now(),
+                ]);
+                if ($taken === 1) {
+                    $vm->refresh()->update(['pi_token' => self::piToken()]);
+
+                    return $vm;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The active host with the most free slots. Hosts with as many free slots keep their config order.
+     *
+     * @param  array<int, int>  $free
+     */
+    private function host(array $free): int
+    {
+        $best = null;
+        $bestFree = 0;
+        foreach ($free as $hostId => $slots) {
+            if ($slots > $bestFree) {
+                [$best, $bestFree] = [$hostId, $slots];
+            }
+        }
+        if ($best !== null) {
+            return $best;
+        }
+        $starting = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->whereIn('host_node_id', array_keys($free))->exists();
+
+        throw new TaskCapacityException(false, $starting ? self::WarmStarting : self::NoCapacity);
+    }
+
+    private static function piToken(): string
+    {
+        return bin2hex(random_bytes(32));
     }
 }

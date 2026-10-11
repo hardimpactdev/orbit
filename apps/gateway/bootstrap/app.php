@@ -30,6 +30,7 @@ use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
@@ -78,6 +79,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // The task VM host sweep: orphaned VMs and live rows whose VM is gone.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
             ->when(static fn (): bool => config('task_vms.enabled') === true);
+        // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
+        // host has warm_vms and no pool VM exists.
+        $schedule->job(new RefillTaskVmPool)->everyMinute()
+            ->when(static fn (): bool => RefillTaskVmPool::due());
         // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
         // Every second, so a claim outside the task tick waits at most a second for its VM to start. Only a

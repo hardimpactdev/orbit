@@ -274,6 +274,20 @@ describe('enabled', function (): void {
 });
 
 describe('hosts', function (): void {
+    it('defaults warm_vms to 0 and accepts it up to max_vms', function (): void {
+        enable_task_vms();
+        expect(TaskVmSettings::fromConfig()->hosts[0]->warmVms)->toBe(0);
+
+        enable_task_vms(task_vm_hosts(['warm_vms' => 4]));
+        expect(TaskVmSettings::fromConfig()->hosts[0]->warmVms)->toBe(4);
+    });
+
+    it('refuses warm_vms outside 0 to max_vms', function (mixed $value): void {
+        enable_task_vms(task_vm_hosts(['warm_vms' => $value]));
+
+        expect_invalid_task_vm_config("incus.hosts.0.warm_vms must be an integer from 0 to the host's max_vms.");
+    })->with(['above max_vms' => 5, 'negative' => -1, 'a string' => '1']);
+
     it('treats only non-bridge usable addresses as guest addresses', function (string $address, bool $guest): void {
         $host = new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB');
 

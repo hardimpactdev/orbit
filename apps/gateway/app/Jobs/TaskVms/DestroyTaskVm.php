@@ -71,7 +71,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
         // Normal workspace removal goes first. Only a removal that failed against a VM that is gone lets destroy go on.
-        if ($workspace && $vm->state !== TaskVmState::Destroying && (! self::removalFailed($vm->group) || $this->runs($provider, $vm))) {
+        if ($workspace && $vm->state !== TaskVmState::Destroying && (! $vm->group instanceof Task || ! self::removalFailed($vm->group) || $this->runs($provider, $vm))) {
             return;
         }
 
@@ -81,7 +81,9 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             $provider->destroy($vm);
             if ($workspace) {
                 $workspaces->execute($vm);
-                $removal->clearFailure($vm->group);
+                if ($vm->group instanceof Task) {
+                    $removal->clearFailure($vm->group);
+                }
             }
             $node = $vm->node()->first();
             if ($node instanceof Node) {

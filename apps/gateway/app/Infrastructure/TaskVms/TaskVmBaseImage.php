@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Processes\CommandResult;
@@ -172,11 +173,16 @@ final readonly class TaskVmBaseImage
     /** Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
-        $result = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage) === null
+        try {
+            $result = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage) === null
             ? $this->incus->run($host, $node, ['image', 'alias', 'create', '--', TaskVmHost::BaseImage, $fingerprint])
             : $this->incus->query($host, $node, 'PATCH', '/1.0/images/aliases/'.TaskVmHost::BaseImage, json_encode(['target' => $fingerprint], JSON_THROW_ON_ERROR));
-        if (! $result->succeeded()) {
-            throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
+            if (! $result->succeeded()) {
+                throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
+            }
+        } finally {
+            // A claim reads the alias again, also when the reply to the move was lost.
+            AllocateTaskVmAction::forgetImage($node->id);
         }
     }
 

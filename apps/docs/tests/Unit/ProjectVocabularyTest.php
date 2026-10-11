@@ -79,6 +79,7 @@ it('fails when an App-domain name or a retired Node name is present', function (
     'rule exists apps' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['project_id' => Rule::exists('apps', 'id')];\n", 'apps table'],
     'rule unique apps' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['slug' => Rule::unique('apps')];\n", 'apps table'],
     'worker Node' => ['apps/web/src/example.tsx', "export const title = \"Worker nodes\";\n", 'worker or client Node'],
+    'worker Node in the web feature map' => ['apps/web/feature-map.json', "{ \"purpose\": \"The worker nodes pane.\" }\n", 'worker or client Node'],
     'client Node' => ['docs/reference/example.md', "A client Node only joins the network.\n", 'worker or client Node'],
     'camelCase app instance' => ['apps/web/src/instance.ts', "export const appInstanceId = 4;\n", 'AppInstance'],
     'camelCase app id' => ['apps/web/src/project.ts', "export const appId = 4;\n", 'appId'],

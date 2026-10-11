@@ -571,6 +571,20 @@ describe(EnrollTaskVm::class, function (): void {
             ->and(app(TaskVmBakedPrograms::class)->holds($node, 'bootstrap', new RemoteCommand(['bootstrap'])))->toBeFalse();
     });
 
+    it('skips the baked programs for a warm pool VM too, which enrolls before any claim', function (): void {
+        $vm = TaskVm::query()->create([
+            'group_id' => null, 'host_node_id' => $this->host->id, 'provider' => 'incus', 'name' => 'tvm-pending',
+            'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => null,
+        ]);
+        $vm->update(['name' => 'tvm-'.$vm->id]);
+        $this->provider->manifest = TaskVmBakedPrograms::manifest(['bootstrap' => new RemoteCommand(['bootstrap'])]);
+
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
+
+        expect($this->converged[0]['baked'])->toBeTrue()
+            ->and($vm->fresh()?->group_id)->toBeNull();
+    });
+
     it('enrolls with every program and a warning when the image has no manifest', function (): void {
         Log::spy();
         $vm = tvm_life_vm(tvm_life_group());

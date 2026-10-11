@@ -11,7 +11,8 @@ use App\Domain\WireGuard\Ipv4Subnet;
  *
  * `cidr` is the task bridge network, for example `10.251.77.0/24`. The bridge owns the first
  * usable address. Guests get the other usable addresses. `pool` is a ZFS storage pool; when it is
- * missing, `task-vms:prepare-host` creates it from `zfsDataset`.
+ * missing, `task-vms:prepare-host` creates it from `zfsDataset`. `warmVms` is how many enrolled VMs
+ * without a group the host keeps ready for claims; they take slots of `maxVms` like any other VM.
  */
 final readonly class TaskVmHost
 {
@@ -32,6 +33,7 @@ final readonly class TaskVmHost
         public string $disk,
         public string $pool = 'orbit-tasks',
         public ?string $zfsDataset = null,
+        public int $warmVms = 0,
     ) {}
 
     /** The bridge address: the first usable address of `cidr`. */
