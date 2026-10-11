@@ -84,6 +84,14 @@ final readonly class ClearRouteTargetAction
                 return $locked->load('targets');
             }
 
+            if ($locked->isUnactivatedReplacement()) {
+                throw new ResourceOperationException(
+                    errorCode: 'route.target_conflict',
+                    message: "Route [{$locked->id}] is a replacement that never activated. Remove it with route:destroy; the Route it replaces keeps its target.",
+                    status: 409,
+                );
+            }
+
             $this->associations->assertTargetsDetachable($locked);
             app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
             $locked->targets()->delete();

@@ -146,12 +146,15 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * Stores Project task settings while the caller holds the update's operation lock.
+     * Stores the display name and Project task settings while the caller holds the update's operation lock.
      * Routing does not reconcile sources or Routes.
      */
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
+        if ($data->name !== null) {
+            $changes['name'] = $data->name;
+        }
         if ($data->taskCompute !== null) {
             $changes['task_compute'] = $data->taskCompute;
         }
@@ -178,6 +181,7 @@ final readonly class UpdateProjectAction
 
     private function executeOwned(Project $project, UpdateProjectData $data): Project
     {
+        $this->rollBackAbandoned($project, $data);
         $update = $this->reserve($project, $data);
 
         try {
@@ -187,7 +191,7 @@ final readonly class UpdateProjectAction
         } catch (Throwable $exception) {
             $update->refresh();
 
-            if ($update->status->recoversForward()) {
+            if ($update->status->recoversForward() && $this->published($update)) {
                 throw $exception;
             }
 
@@ -197,6 +201,69 @@ final readonly class UpdateProjectAction
 
             throw $exception;
         }
+    }
+
+    /**
+     * The caller holds the lock of every Instance of the Project, so an incomplete update of
+     * another request is not running. When nothing of it is visible yet, it is rolled back so the
+     * new request can run ([Update lifecycle](/reference/projects#update-lifecycle)).
+     */
+    private function rollBackAbandoned(Project $project, UpdateProjectData $data): void
+    {
+        $incomplete = ProjectUpdate::query()
+            ->where('project_id', $project->id)
+            ->whereNotIn('status', [
+                ProjectUpdateStatus::Complete->value,
+                ProjectUpdateStatus::RolledBack->value,
+            ])
+            ->first();
+
+        if (
+            ! $incomplete instanceof ProjectUpdate
+            || $incomplete->fingerprint === $data->fingerprint()
+            || $this->published($incomplete)
+        ) {
+            return;
+        }
+
+        $incomplete->update(['status' => ProjectUpdateStatus::RollingBack]);
+        $this->rollback($incomplete);
+    }
+
+    /**
+     * An update is published once clients can see a new value: a replacement Route has cut over,
+     * or the Project record holds a requested value.
+     */
+    private function published(ProjectUpdate $update): bool
+    {
+        if (in_array($update->status, [ProjectUpdateStatus::CleaningUp, ProjectUpdateStatus::Complete], true)) {
+            return true;
+        }
+
+        $slugEvidence = $this->storedMap(($update->evidence ?? [])['slug'] ?? null);
+
+        if ($slugEvidence !== null && $this->projections->slugCutOver($slugEvidence)) {
+            return true;
+        }
+
+        $project = Project::query()->find($update->project_id);
+
+        if (! $project instanceof Project) {
+            return false;
+        }
+
+        foreach ([
+            'slug' => [$update->requested_slug, $update->previous_slug],
+            'repository_url' => [$update->requested_repository_url, $update->previous_repository_url],
+            'default_branch' => [$update->requested_default_branch, $update->previous_default_branch],
+            'root' => [$update->requested_root, $update->previous_root],
+        ] as $field => [$requested, $previous]) {
+            if (is_string($requested) && $requested !== $previous && $project->getAttribute($field) === $requested) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function reserve(Project $project, UpdateProjectData $data): ProjectUpdate
@@ -486,7 +553,12 @@ final readonly class UpdateProjectAction
 
         $slugEvidence = $this->storedMap($evidence['slug'] ?? null);
         if ($slugEvidence !== null && is_string($update->requested_slug)) {
-            $this->projections->publishSlug($project, $update->requested_slug, $slugEvidence);
+            $this->projections->publishSlug(
+                $project,
+                $update->requested_slug,
+                $slugEvidence,
+                fn (int $index, array $facts) => $this->recordSlugFacts($update, $index, $facts),
+            );
         }
 
         if ($attributes !== []) {
@@ -501,6 +573,23 @@ final readonly class UpdateProjectAction
 
         $this->assertProductionUnchanged($update);
         $update->update(['status' => ProjectUpdateStatus::CleaningUp]);
+    }
+
+    /**
+     * Stores what the slug projection did for one prepared Route, so a rollback can undo it.
+     *
+     * @param  array<string, string>  $facts
+     */
+    private function recordSlugFacts(ProjectUpdate $update, int $index, array $facts): void
+    {
+        $evidence = $this->storedMap($update->refresh()->evidence) ?? [];
+        $slug = $this->storedMap($evidence['slug'] ?? null) ?? [];
+        $routes = is_array($slug['routes'] ?? null) ? $slug['routes'] : [];
+        $row = is_array($routes[$index] ?? null) ? $routes[$index] : [];
+        $routes[$index] = [...$row, ...$facts];
+        $slug['routes'] = $routes;
+        $evidence['slug'] = $slug;
+        $update->update(['evidence' => $evidence]);
     }
 
     private function cleanup(ProjectUpdate $update): void

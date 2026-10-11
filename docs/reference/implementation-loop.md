@@ -84,7 +84,6 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
-| Agent annotation | Formatting, lint, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes; expects Docs (merge ref) to succeed on pull requests and to be skipped on pushes and manual runs |
 

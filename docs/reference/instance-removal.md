@@ -44,6 +44,8 @@ The Instance must be `active`, a development `source_resolved` workspace with no
 
 An Instance already `removing` resumes its recorded removal. An active Instance first removes its [Routes with a web root](/reference/routes#serve-several-web-roots), each like `route:destroy`; a failure there stops before the Instance changes. An active `laravel-app` or `symfony-app` Instance must then have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
+An interrupted domain change or Project slug update can leave a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated) next to the Instance's own Route. That replacement does not count as a second Route. Once every check passes, removal abandons the change like `route:destroy` on the replacement. Then it removes the Instance with its own Route. A failure there stops before the Instance changes.
+
 The Gateway also refuses these Instances:
 
 | Code | Cause |
@@ -124,7 +126,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, then delete its checkout. Keep production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, then delete its checkout. Keep production content. Remove the checkout's parent directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 

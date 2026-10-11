@@ -27,6 +27,7 @@ final class UpdateProjectRequest extends FormRequest
     {
         return [
             'code' => ['sometimes', 'filled', 'string', 'regex:/\A[A-Z]{3}\z/D'],
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
             'type' => ['sometimes', 'required', 'string', Rule::enum(ProjectType::class)],
             'slug' => ['sometimes', 'required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
@@ -47,7 +48,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -60,6 +61,7 @@ final class UpdateProjectRequest extends FormRequest
         return [function (Validator $validator): void {
             if (
                 ! $this->exists('code')
+                && ! $this->exists('name')
                 && ! $this->exists('type')
                 && ! $this->exists('slug')
                 && ! $this->exists('repository_url')
@@ -134,6 +136,7 @@ final class UpdateProjectRequest extends FormRequest
             reviewAndMerge: ($validated['review_and_merge'] ?? false) === true,
             mergeCheckProvided: array_key_exists('merge_check', $validated),
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
+            name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
         );
     }
 

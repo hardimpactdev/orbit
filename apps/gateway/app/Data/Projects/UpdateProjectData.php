@@ -33,11 +33,13 @@ final readonly class UpdateProjectData
         public bool $reviewAndMerge = false,
         public bool $mergeCheckProvided = false,
         public ?string $mergeCheck = null,
+        public ?string $name = null,
     ) {}
 
     public function hasChanges(): bool
     {
         return $this->code !== null
+            || $this->name !== null
             || $this->typeProvided
             || $this->slugProvided
             || $this->repositoryUrlProvided
@@ -54,7 +56,7 @@ final readonly class UpdateProjectData
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
-        return $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->taskCompute !== null
+        return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->taskCompute !== null
             || $this->reviewAndMergeProvided || $this->mergeCheckProvided;
     }
 
@@ -70,6 +72,7 @@ final readonly class UpdateProjectData
     {
         return hash('sha256', json_encode([
             'code' => $this->code,
+            'name' => $this->name,
             'type' => $this->typeProvided ? $this->type?->value : null,
             'slug' => $this->slugProvided ? $this->slug : null,
             'repository_url' => $this->repositoryUrlProvided ? $this->repositoryUrl : null,

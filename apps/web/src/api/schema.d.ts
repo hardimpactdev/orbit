@@ -14462,6 +14462,8 @@ export interface operations {
             content: {
                 "application/json": {
                     code?: string;
+                    /** @description New display name */
+                    name?: string;
                     /**
                      * @description New Project type
                      * @enum {string}

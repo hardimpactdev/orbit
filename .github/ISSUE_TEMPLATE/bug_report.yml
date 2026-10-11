@@ -1,6 +1,7 @@
 name: Bug report
 description: Report an Orbit problem with steps to reproduce it.
 title: "[Bug]: "
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
