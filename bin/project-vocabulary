@@ -8,7 +8,8 @@ declare(strict_types=1);
  * or when a Node is called a worker or client Node instead of a Node with roles or a roleless Node.
  *
  * Scans Gateway app and database code, the PHP SDK, the CLI, web and Pi server
- * sources, maintained docs, and the root README and AGENTS guides. Monorepo paths under apps/ are allowed. The GitHub App
+ * sources, the web feature map, maintained docs, and the root README and AGENTS
+ * guides. Monorepo paths under apps/ are allowed. The GitHub App
  * credential, the Reverb app id, config/app.php, and the node storage member
  * apps are not this domain. Migrations up to and including the rename migration
  * keep the old names because they are the ordered path that creates that schema
@@ -29,6 +30,7 @@ const PROJECT_VOCABULARY_ROOTS = [
     'apps/cli/config',
     'packages/php-sdk/src',
     'apps/web/src',
+    'apps/web/feature-map.json',
     'apps/pi-server/src',
     'docs',
     'README.md',
