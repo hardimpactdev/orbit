@@ -129,9 +129,22 @@ Under the placement lock, the claim then makes these changes on the row in one u
 | `state` | `provisioning` |
 | `claimed_at` | Now |
 
-Then it gives the row a new random Pi token and queues `RefillTaskVmPool`. The claim itself then runs the steps of `PrepareTaskVmRuntime`, which are only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. They take about 1.5 seconds. The row becomes `ready`, and the same claim creates the workspace, as for a new VM.
+Then it gives the row a new random Pi token. It queues `RefillTaskVmPool`, and the guard job `EnsureWarmClaimReady`, delayed by 330 seconds. The claim itself then runs the steps of `PrepareTaskVmRuntime`, which are only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. They take about 1.5 seconds. The row becomes `ready`, and the same claim creates the workspace, as for a new VM.
 
-The steps run in the claim, not on the `task-vms` queue, because its one worker runs one job at a time. Behind an enrollment, a sync, or the nightly build, a queued job would wait minutes. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction. When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM.
+The steps run in the claim, not on the `task-vms` queue, because its one worker runs one job at a time. Behind an enrollment, a sync, or the nightly build, a queued job would wait minutes. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction.
+
+The claim keeps each step short, well inside the tick lock of 300 seconds:
+
+| Step | Limit in the claim | Limit in the queued job |
+| --- | --- | --- |
+| Wait for another model key operation | 10 seconds | 60 seconds |
+| Each SSH step for the Pi check, `models.json`, and the token | 15 seconds | 60 seconds |
+| Pi upload, when the VM has no current Pi | Not in the claim | 600 seconds |
+| The `pi-server` Process | The normal Process limits | The normal Process limits |
+
+A VM from a current base image has the pinned Pi, so the claim never uploads it. Between a change of the Pi pin and the next image build, a warm VM has an older Pi. Then the claim stops at the Pi check, and the queued job uploads Pi.
+
+When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM. When a release or a crash stops the tick during the steps, `EnsureWarmClaimReady` runs 330 seconds after the claim. It finds the row still `provisioning`, logs the error `A warm task VM claim is not ready after its claim; the task VM worker runs its group steps.`, and queues `PrepareTaskVmRuntime`. The steps are idempotent, so a repeat changes nothing. A row that is `ready` makes the guard do nothing.
 
 A warm claim logs `queue` first, which counts from the claim to the start of the group's steps, near 0 in the claim, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
 
@@ -230,7 +243,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every 5 seconds:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job on that queue is due, the Gateway scheduler starts this worker every 5 seconds. A delayed job, such as the guard of a warm claim, starts no worker before its time:
 
 ```text
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
@@ -248,6 +261,7 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 | `ResumeTaskVm` | Checks for up to 3 minutes in one run, then again 15 seconds later. After the third run, or on an `incus start` error after three tries, the row becomes `failed` |
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
+| `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 
 When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
@@ -532,9 +546,17 @@ Warm VMs have these limits:
 
 - A warm VM uses its host's memory and a little CPU while it waits.
 - Each warm VM takes a slot of `max_vms`. New VMs can use only the other slots.
-- A group waits for the next `tasks:tick`, every 10 seconds, before its claim. The warm claim then takes about 1.5 seconds to `ready`, and creates the workspace.
-- The claim's model key step waits for any other model key operation, up to 60 seconds.
 - A claim never takes a pool VM that still starts. On a full fleet with such a VM, the claim waits with `Task VM: waiting for a warm VM.` for about 35 seconds.
+
+A warm claim takes this long:
+
+- A group waits for the next `tasks:tick`, every 10 seconds, before its claim. The warm claim then takes about 1.5 seconds to `ready`, and creates the workspace.
+- In the worst case, the claim's own steps take about 1.5 minutes, plus the `pi-server` Process steps. See the limits in [Claim a warm VM](#claim-a-warm-vm).
+- A warm VM with an older Pi is `ready` only after the queued job uploads Pi, behind the other jobs on the queue.
+- After a tick that dies during the steps, the group waits 330 seconds for the guard, and then for the queued job.
+
+The claim and the refill also have these limits:
+
 - The claim reads each host's image list over SSH inside the scheduler tick, at most every 10 seconds. It waits up to 15 seconds for a host.
 - A claim also reads an alias that someone moved by hand. The refill then replaces the warm VMs within a minute.
 - The backoff count lives in the Gateway cache. A cleared cache forgets it, and the next refill tries again.
