@@ -14,8 +14,9 @@ parameters:
         maximumNumberOfProcesses: 2
 
     # Larastan checks inherited helpers against every registered subclass, even
-    # when that subclass never calls the helper. Only the callers declare these
-    # inputs; E2E also guards its optional worktree input with hasOption().
+    # when that subclass never calls the helper. ToolCommand::nodeId() reads
+    # --node; tool:remove, tool:show, and tool:update never call it, so they do
+    # not declare that option.
     # Match the exact commands, input names, files, and counts. New findings fail.
     ignoreErrors:
         -

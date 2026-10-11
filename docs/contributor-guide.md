@@ -64,7 +64,7 @@ composer docs-build
 composer docs-lint
 ```
 
-Commit `docs/generated/context.json` when `docs-build` changes it. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
+Commit `docs/generated/context.json` when `docs-build` changes it. A new page also needs a place in the `docs/docs.json` navigation; `composer docs-nav` fails for a page that exists only on disk. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
 
 ## 3. Implement and verify
 
