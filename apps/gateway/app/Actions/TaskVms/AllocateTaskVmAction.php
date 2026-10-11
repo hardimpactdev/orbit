@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
@@ -27,7 +28,7 @@ use Throwable;
 
 /**
  * Gives a group its task VM. A warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`,
- * and queues only the group's steps. A warm VM qualifies only while it launched the image that its host's
+ * and runs only the group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
  * `orbit-task-base` names now, read from the host at the claim. Without one, the claim records a new row on
  * the active host with the most free slots and queues its creation. A new row is named `tvm-<row id>`, so a
  * retry after a destroyed VM never reuses a name, and it holds its reserved WireGuard address from the start.
@@ -46,6 +47,10 @@ final readonly class AllocateTaskVmAction
 
     /** The image read at a claim runs in the scheduler tick, so it gets a short limit. */
     private const float ImageReadSeconds = 15.0;
+
+    private const int ImageCacheSeconds = 10;
+
+    private const int ImageFailureSeconds = 60;
 
     public function __construct(
         private TaskVmSettings $settings,
@@ -69,13 +74,32 @@ final readonly class AllocateTaskVmAction
         }
 
         if ($warm) {
-            PrepareTaskVmRuntime::dispatch($vm->id);
             RefillTaskVmPool::dispatch();
-        } elseif ($vm->wasRecentlyCreated) {
+            $this->prepareNow($vm);
+
+            return $vm->refresh();
+        }
+        if ($vm->wasRecentlyCreated) {
             ProvisionTaskVm::dispatch($vm->id);
         }
 
         return $vm;
+    }
+
+    /**
+     * Runs the group steps of a warm claim in the claim itself: the model key, the Pi files, and `pi-server`, about
+     * 1.5 seconds. So they never wait for the task VM worker, which runs one job at a time and may be in an
+     * enrollment or an image build. The placement lock is released by then, and the claim holds no transaction. A
+     * failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has no retries left.
+     */
+    private function prepareNow(TaskVm $vm): void
+    {
+        try {
+            app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+        } catch (Throwable $exception) {
+            Log::warning('The group steps of a warm task VM claim failed; the task VM worker retries them.', ['task_vm' => $vm->name, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);
+            PrepareTaskVmRuntime::dispatch($vm->id);
+        }
     }
 
     /**
@@ -154,19 +178,49 @@ final readonly class AllocateTaskVmAction
             if (! $node instanceof Node) {
                 continue;
             }
-            try {
-                $image = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage, self::ImageReadSeconds);
-            } catch (Throwable $exception) {
-                Log::warning('A claim could not read the base image of a task VM host; its warm VMs wait.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
-
-                continue;
-            }
+            $image = $this->hostImage($host, $node);
             if ($image !== null) {
                 $images[$host->nodeId] = $image;
             }
         }
 
         return $images;
+    }
+
+    /**
+     * The host's `orbit-task-base`, read over SSH at most every 10 seconds. After a failed read, the host's warm
+     * VMs wait for 60 seconds, so a host that hangs costs one 15-second read a minute, not one per claim. A promote
+     * forgets the reading, so a claim right after a build or sync reads the new image.
+     */
+    private function hostImage(TaskVmHost $host, Node $node): ?string
+    {
+        $key = self::imageKey($node->id);
+        $cached = Cache::get($key);
+        if (is_array($cached)) {
+            return is_string($cached['image'] ?? null) ? $cached['image'] : null;
+        }
+        try {
+            $image = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage, self::ImageReadSeconds);
+        } catch (Throwable $exception) {
+            Log::warning('A claim could not read the base image of a task VM host; its warm VMs wait a minute.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
+            Cache::put($key, ['image' => null], self::ImageFailureSeconds);
+
+            return null;
+        }
+        Cache::put($key, ['image' => $image], self::ImageCacheSeconds);
+
+        return $image;
+    }
+
+    /** Forgets a host's cached image, after its `orbit-task-base` moved. */
+    public static function forgetImage(int $hostNodeId): void
+    {
+        Cache::forget(self::imageKey($hostNodeId));
+    }
+
+    private static function imageKey(int $hostNodeId): string
+    {
+        return 'task-vms:claim-image:'.$hostNodeId;
     }
 
     /**
