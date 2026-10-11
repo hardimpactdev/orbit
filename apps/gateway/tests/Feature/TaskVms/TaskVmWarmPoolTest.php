@@ -399,6 +399,7 @@ describe('warm', function (): void {
     it('makes an enrolled pool VM warm without any group step, and queues the refill', function (): void {
         Queue::fake();
         Log::spy();
+        $this->freezeSecond();
         $vm = tvm_pool_vm(TaskVmState::Provisioning);
         $vm->forceFill(['created_at' => now()->subSeconds(30)])->save();
         $vm->update(['node_id' => tvm_pool_node('tvm-node', '10.44.0.200')->id]);
@@ -414,7 +415,7 @@ describe('warm', function (): void {
             ->and($this->fleet->commands)->toBe([]);
         Queue::assertPushed(RefillTaskVmPool::class);
         Log::shouldHaveReceived('info')->withArgs(fn (string $message, array $context): bool => $message === 'Task VM step done.'
-            && $context['task_vm'] === $vm->name && $context['step'] === 'warm' && $context['seconds'] >= 30.0 && $context['seconds'] < 32.0);
+            && $context['task_vm'] === $vm->name && $context['step'] === 'warm' && $context['seconds'] === 30.0);
     });
 });
 
@@ -643,7 +644,11 @@ describe('a claimed warm VM', function (): void {
     it('gets its model key and Pi in the claim itself, is ready at once, and logs the time from the claim to ready', function (): void {
         Queue::fake();
         Log::spy();
+        // Time stands still from the claim, and the VM warmed an hour before it, so each step logs 0 seconds
+        // only when it counts from the claim.
+        $this->freezeSecond();
         $vm = tvm_pool_vm();
+        $this->travel(1)->hours();
         $group = tvm_pool_group();
 
         $node = app(TaskVmWorkspace::class)->node($group);
@@ -664,8 +669,7 @@ describe('a claimed warm VM', function (): void {
         });
         expect(array_keys($steps))->toBe(['queue', 'model-key', 'pi-current', 'pi-files', 'pi-server', 'warm-claim-to-ready'])
             ->and(array_map(static fn (RemoteCommand $command): ?float => $command->timeout, $this->transport->commands))->each->toBeLessThanOrEqual(15.0)
-            ->and($steps['queue'])->toBeLessThan(1.0)
-            ->and($steps['warm-claim-to-ready'])->toBeGreaterThanOrEqual($steps['queue'])->toBeLessThan(10.0)
+            ->and($steps)->each->toBe(0.0)
             ->and($this->transport->connections)->each(fn ($connection) => $connection->host->toBe('10.44.0.129'))
             ->and(app(PiConnection::class)->token($vm->node))->toBe($vm->pi_token);
         Queue::assertNotPushed(PrepareTaskVmRuntime::class);
