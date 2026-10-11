@@ -59,7 +59,8 @@ The app is a shell only, with these limits.
 - The app registers no Tauri commands.
 - Native work such as installing the Orbit root certificate or setting up local DNS is not built. Use `orbit gateway:trust` and the [`dns`](/cli/dns) commands instead.
 - The app works only while the Gateway is reachable. It has no offline mode.
-- CI checks the Rust shell with `cargo fmt` and `cargo clippy` and installs the locked Bun dependencies, but it does not build a bundle, and no workflow publishes the app.
+- CI checks only the Rust shell's formatting and lint. It builds no bundle.
+- No workflow publishes the app.
 
 ## Why it works this way
 
