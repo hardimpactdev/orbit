@@ -39,6 +39,7 @@ use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
+use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefillTaskVmPool;
@@ -577,15 +578,24 @@ describe('a claimed warm VM', function (): void {
     beforeEach(function (): void {
         $this->transport = new AppDevFakeSshExecutor;
         // The host answers Incus from the fake fleet, and the VM records its Pi commands.
-        app()->instance(SshExecutor::class, new class($this->fleet, $this->transport) implements SshExecutor
+        // The VM has the pinned Pi, as a VM from a current base image does, unless a test sets `pi` to ''.
+        $this->ssh = new class($this->fleet, $this->transport) implements SshExecutor
         {
+            public string $pi = 'current';
+
             public function __construct(private FakeIncusFleet $fleet, private AppDevFakeSshExecutor $vm) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                return $connection->host === '10.44.0.7' ? $this->fleet->execute($connection, $command) : $this->vm->execute($connection, $command);
+                if ($connection->host === '10.44.0.7') {
+                    return $this->fleet->execute($connection, $command);
+                }
+                $result = $this->vm->execute($connection, $command);
+
+                return str_contains(implode(' ', $command->arguments), 'printf current') ? new CommandResult(0, $this->pi, '', 1, false) : $result;
             }
-        });
+        };
+        app()->instance(SshExecutor::class, $this->ssh);
         app()->instance(ProcessRuntimeManager::class, new ProcessesApiFakeRuntimeManager);
         app(ProxyCliState::class)->enable(1, 'cache', TVM_POOL_ORIGIN, 'management-key', 'read-token', 'control-token');
         $this->artifact = tempnam(sys_get_temp_dir(), 'pi-artifact');
@@ -640,13 +650,34 @@ describe('a claimed warm VM', function (): void {
 
             return true;
         });
-        expect(array_keys($steps))->toBe(['queue', 'model-key', 'pi-upload', 'pi-files', 'pi-server', 'warm-claim-to-ready'])
+        expect(array_keys($steps))->toBe(['queue', 'model-key', 'pi-current', 'pi-files', 'pi-server', 'warm-claim-to-ready'])
+            ->and(array_map(static fn (RemoteCommand $command): ?float => $command->timeout, $this->transport->commands))->each->toBeLessThanOrEqual(15.0)
             ->and($steps['queue'])->toBeLessThan(1.0)
             ->and($steps['warm-claim-to-ready'])->toBeGreaterThanOrEqual($steps['queue'])->toBeLessThan(10.0)
             ->and($this->transport->connections)->each(fn ($connection) => $connection->host->toBe('10.44.0.129'))
             ->and(app(PiConnection::class)->token($vm->node))->toBe($vm->pi_token);
         Queue::assertNotPushed(PrepareTaskVmRuntime::class);
         Queue::assertPushed(RefillTaskVmPool::class);
+        Queue::assertPushed(EnsureWarmClaimReady::class, fn (EnsureWarmClaimReady $job): bool => $job->taskVmId === $vm->id
+            && $job->delay instanceof DateTimeInterface && abs($job->delay->getTimestamp() - now()->getTimestamp() - EnsureWarmClaimReady::DelaySeconds) <= 5);
+    });
+
+    it('leaves the Pi upload to the queued job, which makes the VM ready', function (): void {
+        Queue::fake();
+        Log::spy();
+        $this->ssh->pi = '';
+        $vm = tvm_pool_vm();
+
+        expect(fn () => app(TaskVmWorkspace::class)->node(tvm_pool_group()))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.')
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning)
+            ->and($this->transport->commands)->toHaveCount(1);
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them'));
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id && ! $job->inline);
+
+        app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+
+        expect($vm->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and(collect($this->transport->commands)->contains(fn (RemoteCommand $command): bool => $command->protectedInput !== null && $command->timeout === 600.0))->toBeTrue();
     });
 });
 
@@ -744,5 +775,33 @@ describe('schedule', function (): void {
         expect(RefillTaskVmPool::due())->toBeFalse();
         tvm_pool_vm();
         expect(RefillTaskVmPool::due())->toBeTrue();
+    });
+});
+
+describe(EnsureWarmClaimReady::class, function (): void {
+    it('queues the group steps loudly when a warm claim is still provisioning, and leaves other rows alone', function (): void {
+        Queue::fake();
+        Log::spy();
+        $vm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        // A tick that died during the inline steps: the claim is recorded and nothing else happened.
+        TaskVm::query()->whereKey($vm->id)->update(['group_id' => $group->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()->subMinutes(6)]);
+        $ready = tvm_pool_vm();
+        $ready->update(['group_id' => tvm_pool_group()->id, 'state' => TaskVmState::Ready]);
+        $warming = tvm_pool_vm(TaskVmState::Provisioning);
+
+        foreach ([$vm, $ready, $warming] as $row) {
+            app()->call([new EnsureWarmClaimReady($row->id), 'handle']);
+        }
+
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+        Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => str_contains($message, 'is not ready after its claim')
+            && $context['task_vm'] === $vm->name && $context['group_id'] === $group->id);
+    });
+
+    it('waits longer than the tick lock before it acts', function (): void {
+        expect(EnsureWarmClaimReady::DelaySeconds)->toBeGreaterThan(300)
+            ->and((new EnsureWarmClaimReady(1))->queue)->toBe('task-vms');
     });
 });
