@@ -95,6 +95,7 @@ final readonly class TaskVmRuntime
     public function prepare(TaskVm $vm): void
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no Node yet.");
+        $token = $vm->pi_token ?? throw new TaskVmException('task_vm.runtime_failed', "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
         $origin = $this->origin();
         if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
             throw $this->invalidConfig('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
@@ -121,7 +122,7 @@ final readonly class TaskVmRuntime
                 $this->clock->step('pi-current');
             }
             $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', 60);
-            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($vm->pi_token), 'task-vm-pi-token', 60);
+            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($token), 'task-vm-pi-token', 60);
             $this->clock->step('pi-files');
             $this->processes->execute(new AddProcessData(
                 targetType: ProcessTargetType::Node,

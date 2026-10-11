@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
+use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,7 +23,8 @@ use Throwable;
 
 /**
  * Every 10 minutes: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, and fails the
- * `ready` or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. The
+ * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
+ * failed warm VM has no group: the pool refill destroys it. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
  * host's configured project. The worker runs one job at a time, so no task VM job creates or deletes a VM while
  * the sweep runs. A failed host is logged, and the other hosts still run.
@@ -87,15 +89,19 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         return 'task-vms:sweep-missing:'.$taskVmId;
     }
 
-    /** Only a row that is still `ready` or `parked` fails, so a destroy that started meanwhile wins. */
+    /** Only a row that is still `warm`, `ready`, or `parked` fails, so a destroy or a claim that started meanwhile wins. */
     private function fail(TaskVm $vm): void
     {
         $message = "Task VM [{$vm->name}] is gone from its host.";
-        $failed = TaskVm::query()->whereKey($vm->id)->whereIn('state', [TaskVmState::Ready, TaskVmState::Parked])
+        $failed = TaskVm::query()->whereKey($vm->id)
+            ->whereIn('state', [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked])
             ->update(['state' => TaskVmState::Failed, 'error_code' => self::MissingCode, 'error_message' => $message]);
+        $group = $vm->group;
         if ($failed === 1) {
             Log::warning('A task VM is gone from its host.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
-            TaskAssistance::apply($vm->group, AssistanceKind::Failure, null, ProvisionTaskVm::FailedReasonPrefix.self::MissingCode.": {$message} Cancel or complete the group to destroy the VM.", replaceFailure: true);
+        }
+        if ($failed === 1 && $group instanceof Task) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, ProvisionTaskVm::FailedReasonPrefix.self::MissingCode.": {$message} Cancel or complete the group to destroy the VM.", replaceFailure: true);
         }
     }
 }

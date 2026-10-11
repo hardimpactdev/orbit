@@ -65,9 +65,9 @@ final readonly class IncusHost
      *
      * @return array<string, list<string>>
      */
-    public function images(TaskVmHost $host, Node $node): array
+    public function images(TaskVmHost $host, Node $node, float $timeout = 900.0): array
     {
-        $result = $this->run($host, $node, ['image', 'list', '--format', 'json']);
+        $result = $this->run($host, $node, ['image', 'list', '--format', 'json'], timeout: $timeout);
         if (! $result->succeeded()) {
             throw self::failed("the images of Node [{$node->name}]", 'image list', $result);
         }
@@ -126,9 +126,9 @@ final readonly class IncusHost
     }
 
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
-    public function aliasTarget(TaskVmHost $host, Node $node, string $alias): ?string
+    public function aliasTarget(TaskVmHost $host, Node $node, string $alias, float $timeout = 900.0): ?string
     {
-        foreach ($this->images($host, $node) as $fingerprint => $aliases) {
+        foreach ($this->images($host, $node, $timeout) as $fingerprint => $aliases) {
             if (in_array($alias, $aliases, true)) {
                 return $fingerprint;
             }
