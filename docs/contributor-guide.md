@@ -103,6 +103,8 @@ GitHub CI runs quality checks and affected tests for the five Composer projects,
 
 Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five Composer projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
+The five projects share one tooling baseline: the same Composer script names and commands, the same `composer check` steps, and PHPStan level 9. `bin/tooling-baseline` fails when a project drifts from it, or when Pint skips a folder that Rector or PHPStan checks. CI and `bin/review-check` run it. To change a project's tooling on purpose, change the baseline in the same pull request and give the reason for any difference.
+
 ## Audit tests and unused code
 
 Routine test review uses each project's testing guidance and the existing reviewer skill. For a requested suite cleanup or unused-code sweep, use the reviewer's [optional audit procedure](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/references/test-audit.md). It requires evidence for removals, named retained coverage, and checks that repaired assertions catch the intended defect. It does not add a mandatory PR gate. A script that checks test quality remains a proposed follow-up.
