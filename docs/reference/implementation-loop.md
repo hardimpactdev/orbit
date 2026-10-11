@@ -177,7 +177,7 @@ The Gateway job fails when the plan job fails, or when the plan does not end wit
 
 "Re-run failed jobs" copies the finished plan job and keeps its artifact, so a re-run of the Gateway job or a shard reads the same plan. A re-run of the Gateway job checks out `refs/pull/N/merge` again. When `main` moved since the first attempt, the merge ref names a new commit, and the job fails with an error that asks for "Re-run all jobs". A full re-run plans again and replaces the artifact.
 
-A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. So it no longer takes every Sabre runner from other runs, and its shards do not compete for Sabre's CPU.
+A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU.
 
 Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
 
