@@ -25,6 +25,7 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -36,6 +37,7 @@ use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
+use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -50,6 +52,7 @@ use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
@@ -588,6 +591,9 @@ describe('a claimed warm VM', function (): void {
         {
             public string $pi = 'current';
 
+            /** @var list<float> the time each VM command could take under the running command deadline */
+            public array $caps = [];
+
             public function __construct(private FakeIncusFleet $fleet, private AppDevFakeSshExecutor $vm) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -595,6 +601,7 @@ describe('a claimed warm VM', function (): void {
                 if ($connection->host === '10.44.0.7') {
                     return $this->fleet->execute($connection, $command);
                 }
+                $this->caps[] = app(CommandDeadline::class)->cap($command->timeout ?? $connection->commandTimeout);
                 $result = $this->vm->execute($connection, $command);
 
                 return str_contains(implode(' ', $command->arguments), 'printf current') ? new CommandResult(0, $this->pi, '', 1, false) : $result;
@@ -665,6 +672,40 @@ describe('a claimed warm VM', function (): void {
         Queue::assertPushed(RefillTaskVmPool::class);
         Queue::assertPushed(EnsureWarmClaimReady::class, fn (EnsureWarmClaimReady $job): bool => $job->taskVmId === $vm->id
             && $job->delay instanceof DateTimeInterface && abs($job->delay->getTimestamp() - now()->getTimestamp() - EnsureWarmClaimReady::DelaySeconds) <= 5);
+    });
+
+    it('runs every claim step under a deadline well inside the tick lock, and the queued job without it', function (): void {
+        Queue::fake();
+        $vm = tvm_pool_vm();
+
+        app(TaskVmWorkspace::class)->node(tvm_pool_group());
+
+        expect($this->ssh->caps)->not->toBeEmpty()
+            ->and($this->ssh->caps)->each->toBeLessThanOrEqual((float) TaskVmRuntime::InlineSeconds)
+            ->and(TaskVmRuntime::InlineSeconds)->toBeLessThan(300);
+
+        $this->ssh->caps = [];
+        $vm->update(['state' => TaskVmState::Provisioning]);
+        app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+
+        expect($this->ssh->caps)->each->toBe(60.0);
+    });
+
+    it('leaves the steps to the queued job when they run past the claim deadline', function (): void {
+        Queue::fake();
+        Log::spy();
+        // Each read of the clock is 30 seconds later, as on a stalled CLIProxyAPI or VM.
+        $now = 1000.0;
+        app()->instance(CommandDeadline::class, new CommandDeadline(static function () use (&$now): float {
+            return $now += 30.0;
+        }));
+        $vm = tvm_pool_vm();
+
+        expect(fn () => app(TaskVmWorkspace::class)->node(tvm_pool_group()))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.')
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Provisioning);
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them')
+            && $context['error_code'] === 'task_vm.model_key_failed');
+        Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id && ! $job->inline);
     });
 
     it('leaves the Pi upload to the queued job, which makes the VM ready', function (): void {
@@ -803,6 +844,28 @@ describe(EnsureWarmClaimReady::class, function (): void {
         Queue::assertPushed(PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
         Log::shouldHaveReceived('error')->once()->withArgs(fn (string $message, array $context): bool => str_contains($message, 'is not ready after its claim')
             && $context['task_vm'] === $vm->name && $context['group_id'] === $group->id);
+    });
+
+    it('logs no error while the group steps of the claim wait in the queue or run', function (): void {
+        Queue::fake();
+        Log::spy();
+        $vm = tvm_pool_vm();
+        TaskVm::query()->whereKey($vm->id)->update(['group_id' => tvm_pool_group()->id, 'state' => TaskVmState::Provisioning, 'claimed_at' => now()->subMinutes(6)]);
+        // The job that the failed inline run queued holds its unique lock until it ends.
+        PrepareTaskVmRuntime::dispatch($vm->id);
+
+        app()->call([new EnsureWarmClaimReady($vm->id), 'handle']);
+
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 1);
+        Log::shouldNotHaveReceived('error');
+        Log::shouldHaveReceived('info')->withArgs(fn (string $message, array $context): bool => $message === 'A warm task VM claim waits for its queued group steps.' && $context['task_vm'] === $vm->name);
+
+        // Once that job has ended and the row is still provisioning, the guard acts.
+        Cache::lock(UniqueLock::getKey(new PrepareTaskVmRuntime($vm->id)))->forceRelease();
+        app()->call([new EnsureWarmClaimReady($vm->id), 'handle']);
+
+        Queue::assertPushed(PrepareTaskVmRuntime::class, 2);
+        Log::shouldHaveReceived('error')->once();
     });
 
     it('waits longer than the tick lock before it acts', function (): void {
