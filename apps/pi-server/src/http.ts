@@ -20,7 +20,8 @@ export interface HttpOptions {
 /**
  * Serves the Pi server API. Every route requires `Authorization: Bearer <token>`.
  * Errors use the Gateway's envelope, `{ "error": { "code", "message", "details" } }`, with a
- * dotted code such as `session.not_found`. No error has details yet, so `details` is null.
+ * dotted code such as `session.not_found`. No error has details yet, so `details` is an empty
+ * object.
  */
 export function createPiServer(options: HttpOptions): Server {
     const heartbeatMs = options.heartbeatMs ?? 15_000;
@@ -38,7 +39,7 @@ export function createPiServer(options: HttpOptions): Server {
             sendError(
                 response,
                 500,
-                "server.internal_error",
+                "server.unhandled",
                 "The Pi server failed to handle the request.",
             );
         });
@@ -73,7 +74,7 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
         if (parts[0] !== "sessions" || parts.length < 2) {
-            throw new PiServerError(404, "http.not_found", "No route matches this request.");
+            throw new PiServerError(404, "http.404", "No route matches this request.");
         }
 
         const id = parts[1] ?? "";
@@ -101,7 +102,7 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
 
-        throw new PiServerError(404, "http.not_found", "No route matches this request.");
+        throw new PiServerError(404, "http.404", "No route matches this request.");
     }
 
     async function stream(
@@ -159,11 +160,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
     for await (const chunk of request) {
         size += (chunk as Buffer).length;
         if (size > MAX_BODY_BYTES) {
-            throw new PiServerError(
-                413,
-                "request.too_large",
-                "The request body is larger than 1 MiB.",
-            );
+            throw new PiServerError(413, "http.413", "The request body is larger than 1 MiB.");
         }
         chunks.push(chunk as Buffer);
     }
@@ -176,13 +173,13 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
         // Fall through to the shared error.
     }
 
-    throw new PiServerError(422, "request.invalid", "The request body must be a JSON object.");
+    throw new PiServerError(422, "validation.failed", "The request body must be a JSON object.");
 }
 
 function string(body: Record<string, unknown>, field: string): string {
     const value = body[field];
     if (typeof value !== "string") {
-        throw new PiServerError(422, "request.invalid", `The ${field} field must be a string.`);
+        throw new PiServerError(422, "validation.failed", `The ${field} field must be a string.`);
     }
 
     return value;
@@ -193,7 +190,7 @@ function optionalString(body: Record<string, unknown>, field: string): string | 
 }
 
 function sendError(response: ServerResponse, status: number, code: string, message: string): void {
-    sendJson(response, status, { error: { code, message, details: null } });
+    sendJson(response, status, { error: { code, message, details: {} } });
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {

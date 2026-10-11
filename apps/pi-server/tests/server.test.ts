@@ -42,7 +42,7 @@ describe("authentication", () => {
             error: {
                 code: "auth.unauthorized",
                 message: "A valid bearer token is required.",
-                details: null,
+                details: {},
             },
         });
     });
@@ -54,9 +54,43 @@ describe("authentication", () => {
         expect(response.status).toBe(404);
         expect(response.body).toEqual({
             error: {
-                code: "http.not_found",
+                code: "http.404",
                 message: "No route matches this request.",
-                details: null,
+                details: {},
+            },
+        });
+    });
+
+    it("answers a body over 1 MiB with the error envelope", async () => {
+        harness = await startHarness();
+        const response = await harness.request("POST", "/sessions", {
+            id: "thread-1",
+            cwd: "x".repeat(1024 * 1024 + 1),
+        });
+
+        expect(response.status).toBe(413);
+        expect(response.body).toEqual({
+            error: {
+                code: "http.413",
+                message: "The request body is larger than 1 MiB.",
+                details: {},
+            },
+        });
+    });
+
+    it("answers an unexpected failure with the error envelope", async () => {
+        harness = await startHarness();
+        harness.registry.availableModels = async () => {
+            throw new Error("boom");
+        };
+        const response = await harness.request("GET", "/capabilities");
+
+        expect(response.status).toBe(500);
+        expect(response.body).toEqual({
+            error: {
+                code: "server.unhandled",
+                message: "The Pi server failed to handle the request.",
+                details: {},
             },
         });
     });
@@ -100,9 +134,9 @@ describe("create", () => {
     it.each([
         [{ model: "faux/missing" }, "model.unavailable"],
         [{ model: "no-slash" }, "model.unavailable"],
-        [{ id: "../escape" }, "request.invalid"],
-        [{ thinkingLevel: "extreme" }, "request.invalid"],
-        [{ cwd: "/" }, "request.invalid"],
+        [{ id: "../escape" }, "validation.failed"],
+        [{ thinkingLevel: "extreme" }, "validation.failed"],
+        [{ cwd: "/" }, "validation.failed"],
     ])("refuses %j", async (override, code) => {
         harness = await startHarness();
         const response = await harness.request("POST", "/sessions", {
@@ -153,7 +187,7 @@ describe("create", () => {
         expect(response.body.error).toEqual({
             code: "session.not_found",
             message: "Session unknown does not exist.",
-            details: null,
+            details: {},
         });
     });
 });

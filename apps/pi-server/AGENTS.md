@@ -4,7 +4,7 @@
 
 - Keep every setting available as a flag. Orbit's systemd Processes pass only arguments.
 - Read the token only from `--token-file` or the environment, never from a flag value, because arguments are visible to other users.
-- Require the bearer token on every route. Return errors as `{ "error": { "code", "message", "details" } }` with a dotted code, as the Gateway does.
+- Require the bearer token on every route. Return errors as `{ "error": { "code", "message", "details" } }` with a dotted code, as the Gateway does. Reuse the Gateway's code for a failure it also has, and send `details` as an object.
 - Never allow a Claude model or `login anthropic` ([why](../../docs/reference/pi-server.md#claude-is-unavailable-for-task-agents)).
 - Write large tool output to a file inside `.git`, and keep the workspace ACL on it ([why](../../docs/reference/pi-server.md#large-tool-output-goes-to-a-file)).
 - Do not send provider credentials to the Gateway.
