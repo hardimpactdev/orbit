@@ -252,7 +252,9 @@ The `read` and `bash` descriptions tell the model about this limit. They name `.
 
 Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message", "details"}}`, the same envelope as the Gateway. Each code is namespaced by family, such as `session.not_found`. A failure the Gateway also has uses the Gateway's code, such as `http.404` and `validation.failed`. No error has details yet, so `details` is an empty object.
 
-A Pi server binary built before this envelope answers `{"error": {"code", "message"}}` with underscore codes, such as `session_not_found`. A Node keeps that binary until you build and copy a new one. The Gateway only quotes the code in its error message, so both binaries work with it.
+Older Pi server binaries send older error shapes. A binary built before this envelope answers `{"error": {"code", "message"}}` with underscore codes, such as `session_not_found`. A short-lived later build answers `http.not_found` with `"details": null`. The Gateway only quotes the code in its error message, so every binary works with it.
+
+A Node keeps its binary until you build and copy a new one. [Task VMs](/reference/compute-drivers#configure-task-vms) run the artifact the Gateway pins. To roll out a new binary there, update `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`. The Gateway uploads the changed artifact when it prepares a task VM, so the base image does not need a rebuild.
 
 | Route | Result |
 | --- | --- |

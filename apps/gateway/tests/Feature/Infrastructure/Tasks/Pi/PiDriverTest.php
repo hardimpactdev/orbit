@@ -149,7 +149,7 @@ describe('create and send', function (): void {
     });
 
     it('retries a refused send once with the same key', function (): void {
-        Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.internal_error', 'message' => 'x', 'details' => null]], 500)->push(['duplicate' => false], 202)]);
+        Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.unhandled', 'message' => 'x', 'details' => (object) []]], 500)->push(['duplicate' => false], 202)]);
         $node = pi_node();
 
         pi_driver()->send(pi_thread($node), 'Continue');
@@ -159,7 +159,7 @@ describe('create and send', function (): void {
     });
 
     it('posts a supplied key on the first send and on the retry', function (): void {
-        Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.internal_error', 'message' => 'x', 'details' => null]], 500)->push(['duplicate' => false], 202)]);
+        Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.unhandled', 'message' => 'x', 'details' => (object) []]], 500)->push(['duplicate' => false], 202)]);
 
         pi_driver()->send(pi_thread(pi_node()), 'Continue', 'resume-key-1');
 
@@ -168,7 +168,7 @@ describe('create and send', function (): void {
     });
 
     it('names the server error when both attempts fail', function (): void {
-        Http::fake([PI_BASE.'/sessions/*/messages' => Http::response(['error' => ['code' => 'session.turn_active', 'message' => 'Session is already working on a turn.', 'details' => null]], 409)]);
+        Http::fake([PI_BASE.'/sessions/*/messages' => Http::response(['error' => ['code' => 'session.turn_active', 'message' => 'Session is already working on a turn.', 'details' => (object) []]], 409)]);
 
         expect(fn () => pi_driver()->send(pi_thread(pi_node()), 'Continue'))
             ->toThrow(AgentDriverException::class, 'The Pi server refused the request (session.turn_active): Session is already working on a turn.');
