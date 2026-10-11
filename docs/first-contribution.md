@@ -107,7 +107,7 @@ A merge needs passing CI, a successful independent code and Incus review, resolv
 
 Orbit's maintainers and Orbit's own agents do the following work. A person who contributes by hand does not run it:
 
-- Orbit Tasks, task groups, and their docs subtasks. The guide's rule that every Orbit group starts with a docs subtask applies only to that work.
+- Orbit Tasks and their docs subtasks. The rule that each Orbit group starts with a docs subtask applies only there.
 - Docs impact waivers in `.git/orbit/docs-unaffected/`. A reviewer confirms them for Orbit task branches.
 - The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
 - The delegated final review and merge through the maintainer's GitHub CLI profile.
