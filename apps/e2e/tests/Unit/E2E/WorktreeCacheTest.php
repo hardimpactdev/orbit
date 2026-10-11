@@ -12,7 +12,7 @@ function worktreeCacheFixture(): array
     $root = temporaryPath('orbit-cache-', 6);
     mkdir($root.'/bin', 0700, true);
     $run = new ProcessFactory;
-    foreach (['bootstrap', 'worktree-cache'] as $script) {
+    foreach (['bootstrap', 'gateway-app-key', 'worktree-cache'] as $script) {
         copy(dirname(__DIR__, 5).'/bin/'.$script, $root.'/bin/'.$script);
         chmod($root.'/bin/'.$script, 0755);
     }
