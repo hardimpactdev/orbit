@@ -35,7 +35,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         private RepositoryReadAccess $access,
     ) {}
 
-    public function prepare(Instance $instance, bool $allowExisting): void
+    public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
     {
         app(SelectInstanceSeedAction::class)->execute($instance);
         if ($instance->seed_commit !== null) {
@@ -52,6 +52,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     worker_user=$7
                     seed_repository=$8
                     seed_commit=$9
+                    template=${10}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -65,8 +66,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         exit 0
                     fi
 
-                    mkdir -m 0755 -- "$checkout"
-                    if [ -n "$seed_repository" ]; then
+                    # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies.
+                    if [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ]; then
+                        test "$(dirname "$template")" = "$checkout_parent"
+                        test "$(stat -c '%U:%G' "$template")" = "$managed_user:$managed_group"
+                        test "$(git -C "$template" rev-parse --show-toplevel)" = "$template"
+                        test "$(git -C "$template" config --get remote.origin.url)" = "$repository"
+                        mv -T -- "$template" "$checkout"
+                        chmod 0755 -- "$checkout"
+                    else
+                        mkdir -m 0755 -- "$checkout"
+                    fi
+                    if [ -d "$checkout/.git" ]; then
+                        :
+                    elif [ -n "$seed_repository" ]; then
                         test ! -L "$seed_repository"
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
                         git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --detach -- "$checkout" "$seed_commit"
@@ -83,7 +96,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? ''],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
