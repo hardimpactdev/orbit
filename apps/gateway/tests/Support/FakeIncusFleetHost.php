@@ -76,6 +76,8 @@ final class FakeIncusFleetHost
     public function project(array $operation, ?string $input): CommandResult
     {
         return match (true) {
+            $operation[0] === 'project' && $operation[1] === 'show' => $this->answer('project show', static fn (): string => "name: orbit-tasks\n"),
+            $operation === ['list', '--format', 'csv', '--columns', 'n'] => $this->answer('list', fn (): string => implode('', array_map(static fn (string $name): string => $name."\n", array_keys($this->instances)))),
             $operation[0] === 'list' => $this->answer('list', fn (): string => (string) json_encode(array_map(
                 static fn (string $name, ?string $image): array => ['name' => $name, 'config' => $image === null ? [] : ['volatile.base_image' => $image]],
                 array_keys($this->instances),
