@@ -120,7 +120,7 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - A parked VM's Route does not answer, and Doctor does not check its Node, until the next work starts it. `preview` keeps a VM running.
 - A single worker started by the scheduler runs the jobs one at a time. A release that stops the scheduler interrupts a running job, which runs again.
 - Task VM Nodes can appear in doctor while they exist.
-- Warm VMs use host memory while they wait, and take slots that new VMs could use.
+- Warm VMs use host memory while they wait. Each one takes a slot that a new VM then cannot use.
 - A root agent can tamper with the in-sandbox check result. CI on the pushed commit stays the authoritative gate.
 - Nested virtualization is required wherever the Orbit lane adds VMs.
 
