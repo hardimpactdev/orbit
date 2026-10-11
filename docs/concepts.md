@@ -11,7 +11,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 
 - **Gateway**: The service that owns all fleet state. It authorizes every request and applies changes to Nodes. It is Orbit's control plane and runs only on Linux. See [Architecture](/architecture).
 - **Node**: A machine in the fleet. It joins the private WireGuard network. It may have service roles or only managed Tools.
-- **Roleless Node**: A Node with no roles, such as an operator's laptop. It joins the network and may have managed Tools. The web app lists roleless Nodes apart from Nodes with roles.
+- **Roleless Node**: A Node with no roles, such as an operator's laptop. It joins the network and may have managed Tools. The web app lists it apart from Nodes with roles.
 - **Role**: One kind of work a Node does, such as `app-dev` or `ingress`. See [Architecture](/architecture#nodes-and-roles).
 - **Cluster**: An optional group of Nodes that share routing.
 - **Access grant**: A directed permission that lets one Node act on another through the Gateway. See [node](/cli/node).
@@ -22,7 +22,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Project**: One Git repository and the defaults for running it. Its type decides what its Instances can do. See [Projects](/reference/projects).
 - **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Instance**: One running copy of a Project on a Node, for development or production. See [Applications](/domains/applications).
-- **Placement**: Whether an Instance is for development or production. The role of its Node decides it: `app-dev` or `app-prod`. The web app shows it in the Placement column. Environment always means an Instance's environment values, never its placement.
+- **Placement**: Whether an Instance is for development or production. The role of its Node decides it: `app-dev` or `app-prod`. Environment always means an Instance's environment values, never its placement.
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).
