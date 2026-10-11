@@ -37,7 +37,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     public int $timeout = 1500;
 
     /**
-     * A VM from the base image is done with cloud-init about 8 seconds after launch. Once the guest agent
+     * A VM from the base image is done with cloud-init about 10 seconds after launch. Once the guest agent
      * runs, one check waits in the guest until cloud-init is done. Before that the job checks every second,
      * for up to 2 minutes in one run, because a released job waits for the worker's next start: the worker
      * stops as soon as no job is due.

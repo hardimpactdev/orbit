@@ -52,11 +52,11 @@ final readonly class IncusTaskVmImageBuilder
     /**
      * Keeps work off a task VM's boot. The network is online once IPv4 routes: the task bridge has no IPv6,
      * and waiting for the IPv6 link-local address costs a second. So the Ethernet link takes DHCPv4 only, from
-     * a networkd file that sorts before netplan's and otherwise matches it. `systemd-firstboot` runs on every first
-     * boot, and the apt timers and unattended upgrades would hold the dpkg lock while a task runs. Masks hold
-     * through the first-boot preset policy, which would enable a merely disabled unit again. Docker and
-     * containerd start on first use through `docker.socket`, so the boot does not wait for them; the preset
-     * keeps them so. The drop-in sorts after netplan's and replaces its command.
+     * a networkd file that sorts before netplan's and otherwise matches it. The wait-online drop-in sorts after
+     * netplan's and replaces its command. `systemd-firstboot` runs on every first boot, and the apt timers and
+     * unattended upgrades would hold the dpkg lock while a task runs. Masks hold through the first-boot preset
+     * policy, which would enable a merely disabled unit again. Docker stays enabled at boot: Doctor expects it
+     * active on an `app-dev` Node, and it brings back restart-policy containers after a resume.
      */
     private const string LeanBoot = <<<'BASH'
         printf '%s\n' '[Match]' 'Type=ether' 'Name=en*' '' '[Network]' 'DHCP=ipv4' 'LinkLocalAddressing=no' '' '[DHCP]' 'RouteMetric=100' 'UseMTU=true' \
@@ -65,10 +65,6 @@ final readonly class IncusTaskVmImageBuilder
         printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --ipv4 --dns --operational-state=routable' \
             > /etc/systemd/system/systemd-networkd-wait-online.service.d/zz-orbit-ipv4.conf
         systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service
-        install -d -m 0755 /etc/systemd/system-preset
-        printf '%s\n' 'disable docker.service' 'disable containerd.service' > /etc/systemd/system-preset/10-orbit-task-vm.preset
-        systemctl disable docker.service containerd.service
-        systemctl enable docker.socket
         BASH;
 
     private const string InstallAgent = <<<'BASH'
@@ -82,8 +78,7 @@ final readonly class IncusTaskVmImageBuilder
 
     private const string LeanBootCheck = <<<'BASH'
         test "$(systemctl is-enabled systemd-firstboot.service)" = masked
-        test "$(systemctl is-enabled docker.service)" = disabled
-        test "$(systemctl is-enabled docker.socket)" = enabled
+        test "$(systemctl is-active docker.service)" = active
         systemctl cat systemd-networkd-wait-online.service | tail -n 1 | grep -q -- '--ipv4'
         networkctl status --no-pager -- "$(ip -o -4 route show default | awk '{print $5; exit}')" | grep -q '00-orbit-task-vm.network'
         test -s "$1"

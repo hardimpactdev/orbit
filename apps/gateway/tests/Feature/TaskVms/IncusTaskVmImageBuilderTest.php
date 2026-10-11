@@ -335,7 +335,7 @@ describe('a build', function (): void {
             ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
             ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
             ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
-            ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'disable docker.service', 'systemctl enable docker.socket')
+            ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
             ->and($check->arguments[7])->toBe('tvm-image-20261010030000-smoke')
             ->and(Arr::last($check->arguments))->toBe(TaskVmBakedPrograms::ManifestPath);
     });

@@ -25,7 +25,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 {
     private const string FingerprintPattern = '/\A256 (SHA256:[A-Za-z0-9+\/]{43}) .* \(ED25519\)\n?\z/D';
 
-    /** How long one readiness check waits in the guest for cloud-init. A boot from the base image takes about 8 seconds. */
+    /** How long one readiness check waits in the guest for cloud-init. A boot from the base image takes about 10 seconds. */
     private const int CloudInitWaitSeconds = 30;
 
     public function __construct(
