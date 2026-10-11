@@ -35,7 +35,7 @@ use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
-final readonly class AddProcessAction
+final readonly class CreateProcessAction
 {
     private ProcessRuntimeLease $lease;
 

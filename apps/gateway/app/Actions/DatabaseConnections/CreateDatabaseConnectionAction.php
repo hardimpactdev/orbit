@@ -14,7 +14,7 @@ use App\Models\DatabaseConnection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
-final readonly class AddDatabaseConnectionAction
+final readonly class CreateDatabaseConnectionAction
 {
     public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
 

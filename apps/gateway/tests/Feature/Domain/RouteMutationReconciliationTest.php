@@ -10,7 +10,7 @@ use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Clusters\UpdateClusterData;
@@ -189,7 +189,7 @@ it('reports association conflicts before active Route reconciliation refusals', 
     foreach ([
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
         fn () => app(ClearRouteTargetAction::class)->execute($route),
-        fn () => app(RemoveRouteAction::class)->execute($route),
+        fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.target_conflict');
@@ -222,7 +222,7 @@ it('retains reconciliation refusals for active Route changes without association
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
-        fn () => app(RemoveRouteAction::class)->execute($route),
+        fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('route.reconciliation_required');
@@ -246,7 +246,7 @@ it('removes a fully reconciled untargeted Route without route.reconciliation_req
     $removal = new FakeRouteRemovalProjector;
     app()->instance(RouteRemovalProjector::class, $removal);
 
-    $removed = app(RemoveRouteAction::class)->execute($route);
+    $removed = app(DestroyRouteAction::class)->execute($route);
 
     expect($removed->id)
         ->toBe($route->id)

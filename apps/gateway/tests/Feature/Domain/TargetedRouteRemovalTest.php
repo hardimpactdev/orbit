@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -32,7 +32,7 @@ describe('targeted Route removal', function (): void {
         $route = targeted_route_removal_route(InstanceState::SourceResolved);
         $instanceId = $route->targets->sole()->instance_id;
 
-        $removed = app(RemoveRouteAction::class)->execute($route);
+        $removed = app(DestroyRouteAction::class)->execute($route);
 
         expect($removed->id)->toBe($route->id)
             ->and(Route::query()->whereKey($route->id)->exists())->toBeFalse()
@@ -53,7 +53,7 @@ describe('targeted Route removal', function (): void {
         $route = targeted_route_removal_route(InstanceState::SourceResolved);
         $this->projector->failures[$failure] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(DestroyRouteAction::class)->execute($route))
             ->toThrow(ResourceOperationException::class, "Injected {$failure} failure.");
 
         expect($route->refresh()->status)->toBe(RouteStatus::Failed)
@@ -63,7 +63,7 @@ describe('targeted Route removal', function (): void {
             ->and($route->targets()->count())->toBe(1);
 
         $completed = count($this->projector->events);
-        app(RemoveRouteAction::class)->execute($route);
+        app(DestroyRouteAction::class)->execute($route);
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and(array_slice($this->projector->events, $completed))
@@ -79,7 +79,7 @@ describe('targeted Route removal', function (): void {
     it('refuses an active target before it changes or withdraws anything', function (): void {
         $route = targeted_route_removal_route(InstanceState::Active);
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(DestroyRouteAction::class)->execute($route))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.target_conflict');
             });
@@ -93,7 +93,7 @@ describe('targeted Route removal', function (): void {
         $route = targeted_route_removal_route(InstanceState::SourceResolved);
         $route->update(['status' => RouteStatus::Failed, 'failed_step' => 'firewall', 'error_code' => 'route.test_firewall']);
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(DestroyRouteAction::class)->execute($route))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('env.owner_changed');
             });
@@ -110,7 +110,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $this->probe->unreachable = [$node->id];
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->executeForOperator($route, offline: false))
+        expect(fn () => app(DestroyRouteAction::class)->executeForOperator($route, offline: false))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.node_unreachable')
                     ->and($exception->status)->toBe(502)
@@ -134,7 +134,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $this->probe->unreachable = [$node->id];
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(DestroyRouteAction::class)->execute($route))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.test_caddy');
             });
@@ -148,7 +148,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         targeted_route_removal_node_for($route, $this->projector);
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->executeForOperator($route, offline: false))
+        expect(fn () => app(DestroyRouteAction::class)->executeForOperator($route, offline: false))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.test_caddy');
             });
@@ -161,7 +161,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $node = targeted_route_removal_node_for($route, $this->projector);
         $this->probe->unreachable = [$node->id];
 
-        app(RemoveRouteAction::class)->execute($route, offline: true);
+        app(DestroyRouteAction::class)->execute($route, offline: true);
 
         $residue = RouteRemovalResidue::query()->sole();
 
@@ -184,7 +184,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $node = targeted_route_removal_node_for($route, $this->projector);
         $node->update(['status' => LifecycleStatus::Failed]);
 
-        app(RemoveRouteAction::class)->execute($route, offline: true);
+        app(DestroyRouteAction::class)->execute($route, offline: true);
 
         expect($this->probe->probed)->toBe([])
             ->and($this->projector->skipped['caddy'])->toBe([$node->id])
@@ -196,7 +196,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $node = targeted_route_removal_node_for($route, $this->projector);
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route, offline: true))
+        expect(fn () => app(DestroyRouteAction::class)->execute($route, offline: true))
             ->toThrow(ResourceOperationException::class, 'Injected caddy failure.');
 
         expect($this->probe->probed)->toBe([$node->id])
@@ -204,7 +204,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
             ->and($route->refresh()->failed_step)->toBe('targeted:caddy')
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
 
-        app(RemoveRouteAction::class)->execute($route, offline: true);
+        app(DestroyRouteAction::class)->execute($route, offline: true);
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();

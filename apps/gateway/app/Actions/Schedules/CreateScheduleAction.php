@@ -25,7 +25,7 @@ use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
-final readonly class AddScheduleAction
+final readonly class CreateScheduleAction
 {
     public function __construct(
         private ScheduleSpecificationValidator $validator,

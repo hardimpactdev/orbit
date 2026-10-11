@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\ProxyCli;
 
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\ProxyCli\ProxyCliHostnameRoute;
 use App\Domain\ProxyCli\ProxyCliProcess;
@@ -25,7 +25,7 @@ final readonly class ProxyCliRouteTakeover
 {
     public function __construct(
         private DevelopmentProjectionOperationLock $projection,
-        private RemoveRouteAction $removal,
+        private DestroyRouteAction $removal,
         private ProxyCliHostnameRoute $routes = new ProxyCliHostnameRoute,
     ) {}
 

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\CreateInstanceAction;
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -1207,7 +1207,7 @@ it('refuses removal while a receipt-owned create lifecycle lock is still held', 
             $clock += 31.0;
         },
     ));
-    $action = app(RemoveInstanceAction::class);
+    $action = app(DestroyInstanceAction::class);
     $createOwner = new NativeInstanceEnvironmentOperationLock($directory, new CommandDeadline);
 
     $createOwner->run([$instance->id], function () use ($instance, $action, $force): void {
@@ -3683,7 +3683,7 @@ function orb895_native_removal_action(
     AppDevSourceOperationLock $sourceLock,
     string $lockDirectory,
     ?Closure $cleanupRuntime = null,
-): RemoveInstanceAction {
+): DestroyInstanceAction {
     app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
     app()->instance(DevelopmentInstanceSourceFinalizer::class, $source);
     app()->instance(AppDevSourceOperationLock::class, $sourceLock);
@@ -3714,7 +3714,7 @@ function orb895_native_removal_action(
         }
     });
 
-    return app(RemoveInstanceAction::class);
+    return app(DestroyInstanceAction::class);
 }
 
 function orb76_source_instance(

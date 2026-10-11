@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Projects\CreateProjectAction;
+use App\Actions\Projects\DestroyProjectAction;
 use App\Actions\Projects\ListProjectsAction;
-use App\Actions\Projects\RemoveProjectAction;
 use App\Actions\Projects\ShowProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\DevelopmentNodeExclusionData;
@@ -80,7 +80,7 @@ final class ProjectsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ProjectOwning)]
-    public function destroy(Request $request, Project $project, RemoveProjectAction $action): JsonResponse
+    public function destroy(Request $request, Project $project, DestroyProjectAction $action): JsonResponse
     {
         return response()->json([
             'data' => ProjectData::fromModel($action->execute($project))->toArray(),

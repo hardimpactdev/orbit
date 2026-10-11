@@ -29,7 +29,7 @@ use App\Models\RouteRemovalResidue;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-final readonly class RemoveRouteAction
+final readonly class DestroyRouteAction
 {
     public function __construct(
         private InstanceEnvironmentOperationLock $environmentOperations,

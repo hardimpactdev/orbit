@@ -9,7 +9,7 @@ use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
@@ -438,7 +438,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceContentRetention::class => RecordedProductionInstanceContentRetention::class,
-        InstanceRemover::class => RemoveInstanceAction::class,
+        InstanceRemover::class => DestroyInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,

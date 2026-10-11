@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Analytics;
 
+use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Routes\PublishPublicRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Analytics\InstanceAnalyticsData;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Models\Instance;
@@ -16,7 +16,7 @@ final readonly class DisableInstanceAnalyticsAction
     public function __construct(
         private ShowInstanceAnalyticsAction $show,
         private PublishPublicRouteAction $publication,
-        private RemoveRouteAction $remove,
+        private DestroyRouteAction $remove,
         private InstanceEnvironmentOperationLock $operations,
     ) {}
 

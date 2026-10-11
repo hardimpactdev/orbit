@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -24,13 +24,13 @@ beforeEach(function (): void {
 });
 
 describe('legacy reserved worktree orphan without source_prepare_id', function (): void {
-    it('is pre-activation removable via RemoveInstanceAction (LIVE 348/369 shape)', function (bool $force): void {
+    it('is pre-activation removable via DestroyInstanceAction (LIVE 348/369 shape)', function (bool $force): void {
         $instance = legacy_reserved_removal_instance();
         $transport = legacy_reserved_removal_source($instance, $force);
 
         expect(InstanceCreationRecovery::isPreActivation($instance))->toBeTrue();
 
-        $removal = app(RemoveInstanceAction::class)->execute($instance, force: $force);
+        $removal = app(DestroyInstanceAction::class)->execute($instance, force: $force);
 
         expect($removal->status->value)->toBe('completed');
         expect($transport->inputs)->toBe([]);

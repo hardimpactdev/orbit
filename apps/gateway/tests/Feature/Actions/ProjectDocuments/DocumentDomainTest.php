@@ -6,7 +6,7 @@ use App\Actions\ProjectDocuments\DocumentTreeAction;
 use App\Actions\ProjectDocuments\RecoverDocumentUploadsAction;
 use App\Actions\ProjectDocuments\UpdateDocumentStorageAction;
 use App\Actions\ProjectDocuments\WriteDocumentAction;
-use App\Actions\Projects\RemoveProjectAction;
+use App\Actions\Projects\DestroyProjectAction;
 use App\Data\ProjectDocuments\DocumentBody;
 use App\Data\ProjectDocuments\DocumentStorageData;
 use App\Data\ProjectDocuments\UpdateDocumentStorageData;
@@ -496,7 +496,7 @@ describe('removal and recovery', function (): void {
         domain_documents_file($project);
         $provider->fail = true;
 
-        app(RemoveProjectAction::class)->execute($project);
+        app(DestroyProjectAction::class)->execute($project);
 
         $this->assertModelMissing($project);
         expect(ProjectDocumentEntry::query()->count())->toBe(0);
@@ -509,7 +509,7 @@ describe('removal and recovery', function (): void {
         $project = domain_documents_project();
         $provider = domain_documents_provider();
         $provider->afterPut = function () use ($project): void {
-            app(RemoveProjectAction::class)->execute($project);
+            app(DestroyProjectAction::class)->execute($project);
         };
 
         expect(fn () => domain_documents_file($project))->toThrow(ResourceOperationException::class, 'abandoned');

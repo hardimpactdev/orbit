@@ -9,7 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use Illuminate\Support\Facades\DB;
 
-final readonly class RemoveClusterAction
+final readonly class DestroyClusterAction
 {
     public function __construct(
         private ?RouteRemovalGuard $routes = null,

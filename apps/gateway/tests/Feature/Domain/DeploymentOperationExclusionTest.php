@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Instances\CreateInstanceDeployStepAction;
 use App\Actions\Instances\DeployInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\DestroyInstanceDeployStepAction;
 use App\Actions\Instances\ImportInstanceEnvironmentAction;
-use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Instances\RollbackInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Actions\Instances\UpdateInstanceAction;
@@ -20,7 +20,7 @@ it('shares one Instance mutation owner across deployment and every competing ope
     $operations = [
         [DeployInstanceAction::class, 'operations'],
         [RollbackInstanceAction::class, 'operations'],
-        [RemoveInstanceAction::class, 'environmentOperations'],
+        [DestroyInstanceAction::class, 'environmentOperations'],
         [ImportInstanceEnvironmentAction::class, 'operations'],
         [UpdateInstanceEnvironmentAction::class, 'operations'],
         [SynchronizeInstanceEnvironmentAction::class, 'operations'],

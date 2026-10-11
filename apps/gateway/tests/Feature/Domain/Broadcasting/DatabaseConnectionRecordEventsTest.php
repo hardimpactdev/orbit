@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\DatabaseConnections\AddDatabaseConnectionAction;
-use App\Actions\DatabaseConnections\RemoveDatabaseConnectionAction;
+use App\Actions\DatabaseConnections\CreateDatabaseConnectionAction;
+use App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\AddDatabaseConnectionData;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
@@ -29,7 +29,7 @@ describe('DatabaseConnection record events', function (): void {
             password: 'secret',
         );
 
-        $connection = new AddDatabaseConnectionAction()->execute($data);
+        $connection = new CreateDatabaseConnectionAction()->execute($data);
 
         Event::assertDispatched(
             RecordBroadcast::class,
@@ -90,7 +90,7 @@ describe('DatabaseConnection record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        app(RemoveDatabaseConnectionAction::class)->execute($connection);
+        app(DestroyDatabaseConnectionAction::class)->execute($connection);
 
         Event::assertDispatched(
             RecordBroadcast::class,

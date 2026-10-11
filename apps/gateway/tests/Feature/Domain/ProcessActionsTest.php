@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\AddProcessAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
-use App\Actions\Processes\RemoveProcessAction;
 use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
@@ -87,7 +87,7 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         restartPolicy: 'on-failure',
         start: false,
     );
-    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
 
     $first = $action->execute($data);
     $second = $action->execute($data);
@@ -137,7 +137,7 @@ it('preserves the desired state when an existing process is added again', functi
         start: false,
     );
 
-    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
     expect($result['created'])
         ->toBeFalse()
@@ -148,7 +148,7 @@ it('preserves the desired state when an existing process is added again', functi
 });
 
 it('canonicalizes Docker environment maps before persistence and idempotency comparison', function (): void {
-    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -190,7 +190,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
 });
 
 it('canonicalizes systemd environment maps before persistence and idempotency comparison', function (): void {
-    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -262,7 +262,7 @@ it('keeps Docker environment values out of action exception traces', function ()
     );
 
     try {
-        new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     } catch (ProcessOperationException $exception) {
         expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
 
@@ -288,7 +288,7 @@ it('adds and starts one Docker container process with explicit configuration', f
         start: true,
     );
 
-    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     $process = $result['process'];
 
     expect($process->owner)
@@ -334,7 +334,7 @@ it('refuses a new desired-running production process before admission when no re
         start: true,
     );
 
-    expect(fn () => new AddProcessAction(
+    expect(fn () => new CreateProcessAction(
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
@@ -393,7 +393,7 @@ it('refuses an idempotent desired-running production add without changing its re
         start: true,
     );
 
-    expect(fn () => new AddProcessAction(
+    expect(fn () => new CreateProcessAction(
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
@@ -424,7 +424,7 @@ it('retains a failed desired-running process definition and clears recovery stat
         restartPolicy: 'unless-stopped',
         start: true,
     );
-    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $this->runtime->startFailure = new ProcessOperationException(
         step: 'start',
         errorCode: 'process.start_failed',
@@ -457,7 +457,7 @@ it('retains a failed desired-running process definition and clears recovery stat
 });
 
 it('rejects a conflicting process definition with the same owner and name', function (): void {
-    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $initial = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -547,7 +547,7 @@ it('rejects leftover Process owners before runtime removal', function (): void {
         'status' => LifecycleStatus::Active,
     ]);
 
-    expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
+    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
         ->toThrow(ResourceOperationException::class, 'not a supported Instance or Node')
         ->and($this->runtime->removed)
         ->toBeEmpty();
@@ -571,7 +571,7 @@ it('rejects process targets on non-Linux nodes before runtime execution', functi
     );
 
     try {
-        new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
             ->toBe('process.platform_unsupported')
@@ -714,7 +714,7 @@ it('lists runtime status and removes only the selected process', function (): vo
         ProcessTargetType::Instance,
         $this->instance->id,
     );
-    $removed = new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
+    $removed = new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
 
     expect($listed)
         ->toHaveCount(1)
@@ -770,7 +770,7 @@ it('does not persist a start outcome while remove still owns the runtime lease',
         }
     };
 
-    $removed = new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
+    $removed = new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
 
     expect($peerPersisted)
         ->toBeFalse()
@@ -831,7 +831,7 @@ it('leaves a removing process unmarked when remove loses the runtime owner', fun
     expect($lock->get())->toBeTrue();
 
     try {
-        expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
+        expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
             ->toThrow(ProcessOperationException::class);
 
         expect($process->refresh()->getRawOriginal())
@@ -870,7 +870,7 @@ it('refreshes the surviving process identity when an identical add retries under
         start: false,
     );
 
-    $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
     expect($result['created'])
         ->toBeFalse()
@@ -901,7 +901,7 @@ it('does not rewrite an existing process when an identical add loses the runtime
     expect($lock->get())->toBeTrue();
 
     try {
-        expect(fn () => new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
+        expect(fn () => new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
             new AddProcessData(
                 targetType: ProcessTargetType::Instance,
                 targetId: $this->instance->id,
@@ -1002,7 +1002,7 @@ it('retains the process definition when runtime removal fails', function (): voi
         message: 'The owned unit could not be stopped.',
     );
 
-    expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
+    expect(fn () => new DestroyProcessAction($this->runtime, $this->targets)->execute($process))
         ->toThrow(ProcessOperationException::class, 'could not be stopped');
 
     expect($process->refresh())
@@ -1223,7 +1223,7 @@ describe('the analytics role\'s plausible Process', function (): void {
         ($this->assignAnalytics)();
         $process = ['plausible' => $plausible, 'postgres' => $this->storageProcesses['postgres'], 'clickhouse' => $this->storageProcesses['clickhouse']][$which];
 
-        expect(fn () => app(RemoveProcessAction::class)->execute($process))
+        expect(fn () => app(DestroyProcessAction::class)->execute($process))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('process.required_by_analytics')->and($exception->status)->toBe(409));
         expect($this->runtime->removed)->toBe([])
             ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
@@ -1235,7 +1235,7 @@ describe('the analytics role\'s plausible Process', function (): void {
 
         $this->lifecycle->remove($this->node);
         $this->node->roles()->delete();
-        app(RemoveProcessAction::class)->execute($this->storageProcesses['postgres']);
+        app(DestroyProcessAction::class)->execute($this->storageProcesses['postgres']);
 
         expect($this->runtime->removed)->toBe([$plausible->id, $this->storageProcesses['postgres']->id]);
     });

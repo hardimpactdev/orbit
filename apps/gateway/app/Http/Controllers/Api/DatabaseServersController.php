@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\DatabaseServers\CreateDatabaseServerAction;
+use App\Actions\DatabaseServers\DestroyDatabaseServerAction;
 use App\Actions\DatabaseServers\ListDatabaseServersAction;
-use App\Actions\DatabaseServers\RemoveDatabaseServerAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseServers\DatabaseServerData;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -63,7 +63,7 @@ final class DatabaseServersController extends Controller
     public function destroy(
         Request $request,
         DatabaseServer $databaseServer,
-        RemoveDatabaseServerAction $action,
+        DestroyDatabaseServerAction $action,
     ): JsonResponse {
         $data = DatabaseServerData::fromModel($databaseServer)->toArray();
         $action->execute($databaseServer);

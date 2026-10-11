@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Schedules\ActivateScheduleAction;
-use App\Actions\Schedules\AddScheduleAction;
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\DestroyScheduleAction;
 use App\Actions\Schedules\ListSchedulesAction;
-use App\Actions\Schedules\RemoveScheduleAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Schedules\ScheduleData;
@@ -42,7 +42,7 @@ final class SchedulesController extends Controller
     public function store(
         #[SensitiveParameter]
         StoreScheduleRequest $request,
-        AddScheduleAction $action,
+        CreateScheduleAction $action,
     ): JsonResponse {
         $result = $action->execute($request->payload());
         $this->rememberForActivity($request, $result['schedule']);
@@ -103,7 +103,7 @@ final class SchedulesController extends Controller
         EmptyScheduleRequest $request,
         #[SensitiveParameter]
         Schedule $schedule,
-        RemoveScheduleAction $action,
+        DestroyScheduleAction $action,
     ): JsonResponse {
         return $this->scheduleResponse($request, $action->execute($schedule));
     }
