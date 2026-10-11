@@ -1,5 +1,7 @@
 """Exercise bin/ci-tia against disposable Git repositories and the real Pest graph classes."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.machinery
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -306,9 +308,9 @@ class CiTiaTest(unittest.TestCase):
         # Pest reads the graph it wrote back.
         self.assertEqual(('affected', head), self.plan()[:2])
 
-    def shard_plan(self, classes, status=0, extra='', privileged=()):
+    def shard_plan(self, classes, status=0, extra='', privileged=(), privileged_tests=''):
         """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does, and
-        the classes of the privileged group for `pest --no-tia --group=privileged --list-tests`."""
+        the privileged classes and single tests for `pest --no-tia --group=privileged --list-tests`."""
         def write_listing(path, names, tail=''):
             path.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
                 f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
@@ -316,7 +318,7 @@ class CiTiaTest(unittest.TestCase):
         listing = self.root / 'listing.txt'
         write_listing(listing, classes, extra)
         privileged_listing = self.root / 'privileged.txt'
-        write_listing(privileged_listing, privileged)
+        write_listing(privileged_listing, privileged, privileged_tests)
         pest = self.root / 'pest'
         pest.write_text(f'#!/bin/sh\ncase "$*" in\n'
                         f'  "--tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
@@ -384,6 +386,33 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual(200, plan['classes'])
         self.assertEqual(('1', 'false'), (outputs['shards'], outputs['sharded']))
         self.assertIn('One job: 200 affected test classes', result.stdout)
+
+    def test_keeps_the_other_tests_of_a_class_with_some_privileged_tests(self):
+        # A class with only some privileged tests stays in a shard, which leaves out its privileged tests itself.
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(300)]
+
+        result, outputs, plan = self.shard_plan(
+            classes, privileged=classes[1:2],
+            privileged_tests=f' - P\\{classes[0]}::__pest_evaluable_it_fails_loudly\n')
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(('4', 299), (outputs['shards'], plan['classes']))
+        shards = [test_filter for test_filter in plan['filters']
+                  if re.search(test_filter, f'P\\{classes[0]}::__pest_evaluable_it_works', re.I)]
+        self.assertEqual(1, len(shards))
+        self.assertFalse(any(re.search(test_filter, f'P\\{classes[1]}::__pest_evaluable_it_works', re.I)
+                             for test_filter in plan['filters']))
+
+    def test_fails_when_a_selected_test_runs_in_no_shard(self):
+        loader = importlib.machinery.SourceFileLoader('ci_tia', str(HELPER))
+        helper = importlib.util.module_from_spec(importlib.util.spec_from_loader('ci_tia', loader))
+        loader.exec_module(helper)
+        selected = {'P\\Tests\\AreaTest::it_works', 'P\\Tests\\OtherTest::it_works', 'P\\Tests\\RootTest::it_works'}
+
+        helper.require_coverage(selected, {'P\\Tests\\RootTest::it_works'}, [r'^(?:P\\)?(?:Tests\\AreaTest|Tests\\OtherTest)::'])
+        with self.assertRaises(SystemExit) as failure:
+            helper.require_coverage(selected, set(), [r'^(?:P\\)?(?:Tests\\AreaTest|Tests\\OtherTest)::'])
+        self.assertEqual('1 selected tests run in no shard, such as: P\\Tests\\RootTest::it_works', str(failure.exception))
 
     def test_never_plans_a_shard_without_classes(self):
         # 201 fast classes: shards 2 to 4 never pass the first shard's head start, so it would stay empty.

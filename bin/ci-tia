@@ -245,8 +245,8 @@ def subprocess_tests(arguments):
     return False, f'no change since {arguments.base} reaches {project}'
 
 
-def listed_classes(pest, *options):
-    """Return the test classes that Pest lists with these options, without running them."""
+def listed_tests(pest, *options):
+    """Return the tests that Pest lists with these options, as `Class::test`, without running them."""
     result = subprocess.run([pest, *options, '--list-tests', '--colors=never'], capture_output=True, text=True,
                             errors='replace')
     if result.returncode:
@@ -255,14 +255,28 @@ def listed_classes(pest, *options):
     unparsed = [line for line in result.stdout.splitlines() if line.startswith(' - ') and not LISTED_TEST.match(line)]
     if unparsed:
         raise SystemExit(f'Cannot read the class of {len(unparsed)} listed tests, such as: {unparsed[0]}')
-    return set(LISTED_TEST.findall(result.stdout))
+    return {line[3:] for line in result.stdout.splitlines() if line.startswith(' - ')}
 
 
-def selected_classes(pest):
-    """Return the test classes that `pest --tia` would run here, without the `privileged` group: the shards run without
-    sudo, and the Gateway privileged job runs that whole group. A group option would turn TIA off, so the group is
-    listed on its own and left out of the selection."""
-    return sorted(listed_classes(pest, '--tia') - listed_classes(pest, '--no-tia', '--group=privileged'))
+def test_class(test):
+    """Return the class of a listed test."""
+    return LISTED_TEST.match(' - ' + test).group(1)
+
+
+def selected_tests(pest):
+    """Return the tests that `pest --tia` would run here, and those of them in the `privileged` group. A group option
+    would turn TIA off, so the group is listed on its own."""
+    selected = listed_tests(pest, '--tia')
+    return selected, selected & listed_tests(pest, '--no-tia', '--group=privileged')
+
+
+def require_coverage(selected, privileged, filters):
+    """Fail unless every selected test runs in a shard or in the Gateway privileged job. The shards leave out the
+    privileged group, so a class with some privileged tests still runs its other tests in its shard."""
+    patterns = [re.compile(test_filter, re.I) for test_filter in filters]
+    missed = sorted(test for test in selected - privileged if not any(pattern.search(test) for pattern in patterns))
+    if missed:
+        raise SystemExit(f'{len(missed)} selected tests run in no shard, such as: {missed[0]}')
 
 
 def class_seconds():
@@ -300,7 +314,10 @@ def split(classes, seconds, processes):
 
 def shard_plan(arguments):
     """Choose whether the Gateway tests of a pull request run in one job or in shards, and write the plan."""
-    classes = selected_classes(arguments.pest)
+    selected, privileged = selected_tests(arguments.pest)
+    # The shards run without sudo and leave out the privileged group, which the Gateway privileged job runs. A class
+    # stays in the selection while any of its selected tests is not privileged.
+    classes = sorted({test_class(test) for test in selected - privileged})
     plan = {'commit': git('rev-parse', 'HEAD'), 'classes': len(classes), 'shards': 1, 'filters': []}
     shards, loads = split(classes, class_seconds(), SHARD_PROCESSES) if len(classes) > SHARD_THRESHOLD else ([classes], [0.0])
     if len(shards) == 1:
@@ -309,6 +326,7 @@ def shard_plan(arguments):
         # PHPUnit matches the filter against `Class::test`, so it selects exactly the tests of the shard's classes.
         plan['shards'] = len(shards)
         plan['filters'] = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
+        require_coverage(selected, privileged, plan['filters'])
         print(f'{len(shards)} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
         for number, (shard, load, processes) in enumerate(zip(shards, loads, SHARD_PROCESSES), 1):
             print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds on {processes} processes.')
