@@ -24,6 +24,9 @@ interface TaskVmProvider
     /** The `SHA256:…` fingerprint of the guest's ed25519 SSH host key, read through the trusted host. */
     public function sshHostFingerprint(TaskVm $vm): string;
 
+    /** The manifest of the programs the VM's base image ran, read through the trusted host, or null when the image has none. */
+    public function imageManifest(TaskVm $vm): ?string;
+
     /** Start a stopped VM. A running VM counts as started. */
     public function start(TaskVm $vm): void;
 

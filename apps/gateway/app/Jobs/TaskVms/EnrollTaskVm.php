@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -18,9 +19,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Sleep;
 
 /**
- * Waits for cloud-init, reads the guest address and host key from the host, and enrolls the VM as the
- * `app-dev` Node `tvm-<id>` through the host as jump Node. The guest values are read only here, before
- * any code but cloud-init has run in the VM. It never creates the VM again.
+ * Waits for cloud-init, reads the guest address, host key and image manifest from the host, and enrolls
+ * the VM as the `app-dev` Node `tvm-<id>` through the host as jump Node. The guest values are read only
+ * here, before any code but cloud-init has run in the VM. It never creates the VM again.
  */
 final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 {
@@ -36,9 +37,10 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     public int $timeout = 1500;
 
     /**
-     * A VM from the base image is done with cloud-init about 12 seconds after launch. The job checks it every
-     * second for up to 2 minutes in one run, because a released job waits for the worker's next start: the
-     * worker stops as soon as no job is due.
+     * A VM from the base image is done with cloud-init about 8 seconds after launch. Once the guest agent
+     * runs, one check waits in the guest until cloud-init is done. Before that the job checks every second,
+     * for up to 2 minutes in one run, because a released job waits for the worker's next start: the worker
+     * stops as soon as no job is due.
      */
     private const int InlinePollSeconds = 1;
 
@@ -57,7 +59,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock): void
+    public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings, TaskVmStepClock $clock, TaskVmBakedPrograms $baked): void
     {
         $vm = $this->provisioning();
         if (! $vm instanceof TaskVm) {
@@ -93,6 +95,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         $clock->start($vm, $this->launchedAt);
         $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
+        // Enrollment skips the programs that the base image ran as they render now.
+        $baked->load($vm, $provider->imageManifest($vm));
         $vm->update(['address' => $address]);
         $nodes->execute(new ProvisionNodeData(
             name: $vm->name,
@@ -109,6 +113,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         ));
         $clock->step('enrolled');
         $clock->stop();
+        $baked->stop();
         PrepareTaskVmRuntime::dispatch($vm->id);
     }
 
@@ -128,8 +133,13 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         if ($observation?->running !== true) {
             throw new TaskVmException('task_vm.vm_not_running', "Task VM [{$vm->name}] is ".($observation === null ? 'absent' : 'stopped').' on its host.', 502);
         }
-        if ($observation->address !== null && $provider->bootstrapReady($vm)) {
-            return $observation->address;
+        // Cloud-init is done only after the network is online, so the host knows the address by then. The
+        // check waits in the guest, so it runs before the host reports an address, which it does later.
+        if ($provider->bootstrapReady($vm)) {
+            $address = $observation->address ?? $provider->observe($vm)?->address;
+            if ($address !== null) {
+                return $address;
+            }
         }
         if (now()->getTimestamp() - $this->launchedAt > self::BootstrapMinutes * 60) {
             throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on task VM [{$vm->name}] was not done ".self::BootstrapMinutes.' minutes after launch.', 504);

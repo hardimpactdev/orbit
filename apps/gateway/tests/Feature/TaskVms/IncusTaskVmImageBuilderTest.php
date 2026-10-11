@@ -19,12 +19,16 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Node;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
@@ -152,6 +156,7 @@ final class FakeIncusImageHost implements SshExecutor
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),
+            'sh' => $this->answer('lean boot'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
             'bash' => $command[1] === '-s'
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
@@ -244,6 +249,8 @@ describe('a build', function (): void {
             app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit'),
             app(NodeRolePrerequisiteCommandFactory::class)->caddyPackage($node, RoleName::AppDev),
             app(NodeRolePrerequisiteCommandFactory::class)->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit')),
+            app(VpToolManager::class)->materializeCommand($node),
+            app(ComposerToolManager::class)->materializeCommand($node),
         ];
         $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 11) === [
             'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-20261010030000', 'runuser', '-u',
@@ -251,7 +258,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'single-boot', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -310,6 +317,35 @@ describe('a build', function (): void {
             ->and(Yaml::parse((string) $this->incus->metadata['tvm-image-20261010030000'], Yaml::PARSE_OBJECT_FOR_MAP)->templates->{'/etc/hostname'}->properties)->toBeInstanceOf(stdClass::class)
             ->and(array_slice($dropIn->arguments, -2))->toBe(['/dev/stdin', '/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf'])
             ->and($dropIn->input)->toBe("[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n");
+    });
+
+    it('records every program it ran in the image manifest and keeps work off the boot', function (): void {
+        $this->travelTo('2026-10-10 03:00:00');
+
+        ($this->build)();
+
+        $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
+        $manifest = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => Arr::last($command->arguments) === TaskVmBakedPrograms::ManifestPath);
+        $lean = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[9] ?? null) === '-ceu' && str_contains((string) Arr::last($command->arguments), 'systemctl mask'));
+        $check = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh');
+        $programs = json_decode((string) $manifest->input, true);
+
+        expect($programs['schema'])->toBe(1)
+            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager'])
+            ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
+            ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
+            ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
+            ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'disable docker.service', 'systemctl enable docker.socket')
+            ->and($check->arguments[7])->toBe('tvm-image-20261010030000-smoke')
+            ->and(Arr::last($check->arguments))->toBe(TaskVmBakedPrograms::ManifestPath);
+    });
+
+    it('fails the smoke test when a VM from the new image lost the lean boot', function (): void {
+        $this->incus->fail = 'lean boot';
+
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'did not keep the lean boot or the image manifest');
+        expect($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm']])
+            ->and($this->incus->instances)->toBe([]);
     });
 
     it('fails the smoke test when a VM from the new image reboots on its first boot', function (): void {

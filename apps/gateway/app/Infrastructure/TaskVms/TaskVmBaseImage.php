@@ -142,9 +142,12 @@ final readonly class TaskVmBaseImage
     /**
      * Boots a smoke VM `$name` from `$image` with the task VM user-data. It must have a host key, which proves
      * `openssh-server` and a clean first boot, the Gateway's key from its user-data, and one boot only. The boot
-     * also creates the image volume on the host's pool, so the first task VM is a clone too.
+     * also creates the image volume on the host's pool, so the first task VM is a clone too. `$check` runs on the
+     * booted smoke VM before it goes, for checks only a new build can pass.
+     *
+     * @param  (Closure(): void)|null  $check
      */
-    public function smoke(TaskVmHost $host, Node $node, string $name, string $image): void
+    public function smoke(TaskVmHost $host, Node $node, string $name, string $image, ?Closure $check = null): void
     {
         $this->launch($host, $node, $name, $image, $this->cloudInit->render($this->keys->publicKey()));
         $this->awaitCloudInit($host, $node, $name);
@@ -159,6 +162,9 @@ final readonly class TaskVmBaseImage
         $boots = $this->checked($name, 'exec journalctl', $this->exec($host, $node, $name, ['journalctl', '--list-boots', '--no-pager', '--quiet']));
         if (count(array_filter(explode("\n", trim($boots->stdout)), static fn (string $line): bool => trim($line) !== '')) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it rebooted during its first boot');
+        }
+        if ($check instanceof Closure) {
+            $check();
         }
         $this->delete($host, $node, $name);
     }

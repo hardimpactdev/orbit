@@ -17,6 +17,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -44,17 +45,22 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
         $this->dns->converge($node);
+        // A task VM whose base image ran these exact programs skips them.
+        $baked = app(TaskVmBakedPrograms::class);
         $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
-        if ($caddyPackage instanceof RemoteCommand) {
+        if ($caddyPackage instanceof RemoteCommand && ! $baked->holds($node, TaskVmBakedPrograms::CaddyPackage, $caddyPackage)) {
             $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
         }
-        $this->ssh->execute(
-            $node,
-            $this->commands->make($node, RoleName::AppDev, $account),
-            'role-prerequisites',
-            'app-dev.prerequisite_failed',
-            failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
-        );
+        $prerequisites = $this->commands->make($node, RoleName::AppDev, $account);
+        if (! $baked->holds($node, TaskVmBakedPrograms::AppDevPrerequisites, $prerequisites)) {
+            $this->ssh->execute(
+                $node,
+                $prerequisites,
+                'role-prerequisites',
+                'app-dev.prerequisite_failed',
+                failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev),
+            );
+        }
         // Hibernation wake sites log to these directories, and validation opens those logs as `caddy`.
         $this->ssh->execute(
             $node,

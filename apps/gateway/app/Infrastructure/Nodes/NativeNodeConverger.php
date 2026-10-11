@@ -20,6 +20,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
@@ -149,20 +150,21 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             'ssh_host_fingerprint' => $hostKey->fingerprint,
         ]);
 
-        $bootstrap = $this->ssh->execute(
-            $bootstrapConnection,
-            $identity->bootstrapUser === 'root'
-                ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
-                : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator),
-        );
+        $bootstrapCommand = $identity->bootstrapUser === 'root'
+            ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
+            : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator);
+        // A task VM whose base image ran this exact program skips it.
+        if (! app(TaskVmBakedPrograms::class)->holds($node, TaskVmBakedPrograms::Bootstrap, $bootstrapCommand)) {
+            $bootstrap = $this->ssh->execute($bootstrapConnection, $bootstrapCommand);
 
-        if (! $bootstrap->succeeded()) {
-            throw new NodeProvisioningException(
-                'base-host',
-                'node.bootstrap_failed',
-                "Could not bootstrap node [{$node->name}].",
-                result: $bootstrap,
-            );
+            if (! $bootstrap->succeeded()) {
+                throw new NodeProvisioningException(
+                    'base-host',
+                    'node.bootstrap_failed',
+                    "Could not bootstrap node [{$node->name}].",
+                    result: $bootstrap,
+                );
+            }
         }
 
         $managedConnection = $this->connection(
