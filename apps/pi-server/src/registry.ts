@@ -27,7 +27,7 @@ const THINKING_LEVELS: readonly string[] = [
 ];
 const STREAMED_EVENTS = new Set(["message_end", "turn_end", "agent_end", "agent_settled"]);
 
-/** A request the server refuses. `status` and `code` become the HTTP error response. */
+/** A request the server refuses. `status` and the dotted `code` become the HTTP error response. */
 export class PiServerError extends Error {
     readonly status: number;
     readonly code: string;
@@ -178,7 +178,7 @@ export class SessionRegistry {
             if (!sameConfig(existing.config, config)) {
                 throw new PiServerError(
                     409,
-                    "session_exists",
+                    "session.exists",
                     `Session ${request.id} exists with different settings.`,
                 );
             }
@@ -195,7 +195,7 @@ export class SessionRegistry {
     /** Starts a turn. A key that was already accepted returns without starting another turn. */
     async send(id: string, key: string, text: string): Promise<{ duplicate: boolean }> {
         if (key === "" || text === "") {
-            throw new PiServerError(422, "invalid_request", "A send needs a key and text.");
+            throw new PiServerError(422, "request.invalid", "A send needs a key and text.");
         }
         const live = await this.load(id);
         if (live.record.acceptedKeys.includes(key)) {
@@ -204,7 +204,7 @@ export class SessionRegistry {
         if (live.working) {
             throw new PiServerError(
                 409,
-                "turn_active",
+                "session.turn_active",
                 `Session ${id} is already working on a turn.`,
             );
         }
@@ -307,7 +307,7 @@ export class SessionRegistry {
 
     private async load(id: string): Promise<LiveSession> {
         if (!isValidSessionId(id)) {
-            throw new PiServerError(404, "session_not_found", `Session ${id} does not exist.`);
+            throw new PiServerError(404, "session.not_found", `Session ${id} does not exist.`);
         }
         const live = this.live.get(id);
         if (live !== undefined) {
@@ -324,7 +324,7 @@ export class SessionRegistry {
     private async open(id: string): Promise<LiveSession> {
         const record = this.store.read(id);
         if (record === undefined) {
-            throw new PiServerError(404, "session_not_found", `Session ${id} does not exist.`);
+            throw new PiServerError(404, "session.not_found", `Session ${id} does not exist.`);
         }
         const { cwd, model: modelKey, thinkingLevel, appendSystemPrompt } = record.config;
         const model = this.resolveModel(modelKey);
@@ -502,14 +502,14 @@ export class SessionRegistry {
         if (!isValidSessionId(request.id)) {
             throw new PiServerError(
                 422,
-                "invalid_request",
+                "request.invalid",
                 "The session ID must be 1 to 128 letters, digits, hyphens, or underscores.",
             );
         }
         if (!THINKING_LEVELS.includes(request.thinkingLevel)) {
             throw new PiServerError(
                 422,
-                "invalid_request",
+                "request.invalid",
                 `Unknown thinking level ${request.thinkingLevel}.`,
             );
         }
@@ -519,7 +519,7 @@ export class SessionRegistry {
         if (!available.includes(`${model.provider}/${model.id}`)) {
             throw new PiServerError(
                 422,
-                "model_unavailable",
+                "model.unavailable",
                 this.options.allowApiKeys
                     ? `Provider ${model.provider} is not signed in on this Node, or it does not offer ${model.id}.`
                     : `Provider ${model.provider} is not signed in with a subscription or allowed with --allow-provider on this Node, or it does not offer ${model.id}.`,
@@ -538,7 +538,7 @@ export class SessionRegistry {
         if (!cwd.startsWith("/") || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
             throw new PiServerError(
                 422,
-                "invalid_request",
+                "request.invalid",
                 `The workspace ${cwd} is not an existing absolute directory.`,
             );
         }
@@ -550,7 +550,7 @@ export class SessionRegistry {
         ) {
             throw new PiServerError(
                 422,
-                "invalid_request",
+                "request.invalid",
                 `The workspace ${cwd} is outside the allowed roots.`,
             );
         }
@@ -567,7 +567,7 @@ export class SessionRegistry {
         if (model === undefined) {
             throw new PiServerError(
                 422,
-                "model_unavailable",
+                "model.unavailable",
                 `Unknown model ${key}. Use provider/model.`,
             );
         }

@@ -1,3 +1,5 @@
+import type { components } from "./schema";
+
 export class GatewayError extends Error {
     readonly status: number;
     readonly code: string | null;
@@ -16,6 +18,9 @@ export class GatewayError extends Error {
         this.details = details;
     }
 }
+
+/** The generated `Error` schema's `error` object. A failed answer may lack any field, so the client reads it as partial. */
+type GatewayErrorBody = components["schemas"]["Error"]["error"];
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -70,7 +75,7 @@ export async function apiEnvelope<T>(
     const answer = payload as {
         data?: T;
         meta?: { next_cursor?: string | null; request_id?: string };
-        error?: { code?: string; message?: string; details?: unknown };
+        error?: Partial<GatewayErrorBody>;
     } | null;
 
     if (status < 200 || status >= 300 || answer === null) {

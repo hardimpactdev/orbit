@@ -38,7 +38,27 @@ describe("authentication", () => {
         const response = await harness.request("GET", "/capabilities", undefined, "wrong");
 
         expect(response.status).toBe(401);
-        expect(response.body.error.code).toBe("unauthorized");
+        expect(response.body).toEqual({
+            error: {
+                code: "auth.unauthorized",
+                message: "A valid bearer token is required.",
+                details: null,
+            },
+        });
+    });
+
+    it("answers an unknown route with the error envelope", async () => {
+        harness = await startHarness();
+        const response = await harness.request("GET", "/unknown");
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+            error: {
+                code: "http.not_found",
+                message: "No route matches this request.",
+                details: null,
+            },
+        });
     });
 
     it("lists the models this Node can run", async () => {
@@ -74,15 +94,15 @@ describe("create", () => {
         });
 
         expect(conflict.status).toBe(409);
-        expect(conflict.body.error.code).toBe("session_exists");
+        expect(conflict.body.error.code).toBe("session.exists");
     });
 
     it.each([
-        [{ model: "faux/missing" }, "model_unavailable"],
-        [{ model: "no-slash" }, "model_unavailable"],
-        [{ id: "../escape" }, "invalid_request"],
-        [{ thinkingLevel: "extreme" }, "invalid_request"],
-        [{ cwd: "/" }, "invalid_request"],
+        [{ model: "faux/missing" }, "model.unavailable"],
+        [{ model: "no-slash" }, "model.unavailable"],
+        [{ id: "../escape" }, "request.invalid"],
+        [{ thinkingLevel: "extreme" }, "request.invalid"],
+        [{ cwd: "/" }, "request.invalid"],
     ])("refuses %j", async (override, code) => {
         harness = await startHarness();
         const response = await harness.request("POST", "/sessions", {
@@ -127,7 +147,14 @@ describe("create", () => {
     it("returns not found for an unknown session", async () => {
         harness = await startHarness();
 
-        expect((await harness.request("GET", "/sessions/unknown")).status).toBe(404);
+        const response = await harness.request("GET", "/sessions/unknown");
+
+        expect(response.status).toBe(404);
+        expect(response.body.error).toEqual({
+            code: "session.not_found",
+            message: "Session unknown does not exist.",
+            details: null,
+        });
     });
 });
 
@@ -194,7 +221,7 @@ describe("turns", () => {
             text: "more",
         });
         expect(busy.status).toBe(409);
-        expect(busy.body.error.code).toBe("turn_active");
+        expect(busy.body.error.code).toBe("session.turn_active");
 
         expect((await h.request("POST", "/sessions/thread-1/interrupt")).status).toBe(202);
         expect(await settled(h)).toMatchObject({
