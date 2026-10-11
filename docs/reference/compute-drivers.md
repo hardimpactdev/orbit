@@ -170,7 +170,9 @@ The claim keeps each step short, and the whole run ends after 60 seconds, well i
 
 A VM from a current base image has the pinned Pi, so the claim never uploads it. Between a change of the Pi pin and the next image build, a warm VM has an older Pi. Then the claim stops at the Pi check, and the queued job uploads Pi.
 
-When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM. When a release or a crash stops the tick during the steps, `EnsureWarmClaimReady` runs 330 seconds after the claim. It finds the row still `provisioning`, logs the error `A warm task VM claim is not ready after its claim; the task VM worker runs its group steps.`, and queues `PrepareTaskVmRuntime`. The steps are idempotent, so a repeat changes nothing. A row that is `ready` makes the guard do nothing. So does a row whose `PrepareTaskVmRuntime` is still queued or running, for example the job that a failed claim queued behind a busy queue. The guard then logs only `A warm task VM claim waits for its queued group steps.` at info level, and that job ends the claim. The job's unique lock, held until the job ends, tells the guard.
+When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM. When a release or a crash stops the tick during the steps, `EnsureWarmClaimReady` runs 330 seconds after the claim. It finds the row still `provisioning`, logs the error `A warm task VM claim is not ready after its claim; the task VM worker runs its group steps.`, and queues `PrepareTaskVmRuntime`. The steps are idempotent, so a repeat changes nothing. A row that is `ready` makes the guard do nothing.
+
+The guard also does nothing when a `PrepareTaskVmRuntime` for the row is still queued or running. One example is the job that a failed claim queued behind a busy queue. The guard reads the job's unique lock, which the job holds until it ends. It logs only `A warm task VM claim waits for its queued group steps.` at info level, and that job ends the claim.
 
 A warm claim logs `queue` first, which counts from the claim to the start of the group's steps, near 0 in the claim, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
 
@@ -349,7 +351,8 @@ from="192.168.6.20",restrict,command="sudo -n /usr/local/libexec/orbit/task-vm-i
 
 - `from` accepts the key only from the peer's address.
 - `restrict` turns off forwarding and the terminal.
-- `command` is the forced command. sshd runs it whatever command the peer asks for, so the key never gets a shell. The project comes from the line, not from the peer.
+- `command` is the forced command. sshd runs it for any command that the peer asks for. The key never gets a shell.
+- The project comes from the line, not from the peer.
 
 The receiver reads one image on stdin into a staging file in `/var/lib/orbit-task-vm-image/receive`, which only root reads. It hashes the image while it arrives, imports it into the project with `incus image import`, removes the staging file, and prints the SHA-256. That is the image's Incus fingerprint. Empty input is a probe: the receiver prints `ready` and changes nothing. It refuses an image larger than 32 GiB. A staging file that a killed receiver left is removed after two hours.
 
@@ -363,21 +366,27 @@ Two hosts use their LAN addresses when both are in one Cluster and both have a L
 
 The target must admit TCP 22 from the source's address. Orbit adds no firewall rule for it:
 
-- On WireGuard, the member trust rule `orbit:wireguard-members` admits it. That traffic may run through the VPN hub, so a copy then takes longer and loads the hub.
+- On WireGuard, the member trust rule `orbit:wireguard-members` admits it. That traffic may run through the VPN hub. A copy then takes longer and loads the hub.
 - On the LAN, an operator rule must admit it. On beast and shark, the rules for `192.168.6.0/24` do. The probe finds a missing rule.
 
 The source pins the target's Ed25519 host key. The Gateway reads that key from the target over its own SSH connection before each send, so no host trusts a host key on first use.
+
+#### Peer keys
+
+A peer key reaches only the receiver. Root on a host that an attacker controls can therefore import any image into each peer's task VM project, again and again. It cannot move `orbit-task-base`. Only the Gateway moves it, after it checks the fingerprint. So such a host can fill a peer's disk, but cannot change what task VMs boot there.
+
+On the LAN, a host masquerades its Docker containers and NAT Incus bridges behind its LAN address. The `from` restriction admits that address. Those guests still cannot use the key, because only root on the host reads it.
 
 #### Remove the Incus API copy
 
 Hosts once copied the image with `incus image copy`, between their Incus APIs. `task-vms:prepare-host` removes what that left on every host, before it sets up the keys. Each step does nothing when its part is gone:
 
-- `core.https_address`, only when it names the host's own LAN or WireGuard address on port 8443. Orbit set that value. It leaves any other value alone.
+- `core.https_address` with the host's own LAN or WireGuard address on port 8443, which Orbit set. Orbit leaves any other value alone.
 - Every trust entry named `orbit-task-image-*`. Other entries stay.
 - The client directory `/etc/orbit/task-vms/incus`.
 - Every `orbit:task-vm-image:*` firewall rule. A failed delete restores nothing, and the next run deletes the rest.
 
-The project restrictions stay. They no longer stand between a peer and root, but they cost nothing, and they limit what anything in the project can ask Incus for.
+The project restrictions stay. No peer reaches Incus now, so they guard against nothing from a peer. They cost nothing, and they limit what anything in the project can ask Incus for.
 
 ### Build the base image
 
@@ -446,12 +455,14 @@ The export is a file, because `incus image export` writes no stream. The receive
 | --- | --- |
 | `inspect` | Reads the source image's dated alias and the host's images. A host whose `orbit-task-base` already names the image stops here, and the command says so |
 | `sweep` | Deletes builder and smoke VMs that an interrupted build or sync left |
-| `export` | The source runs `incus image export` into `/var/lib/orbit-task-vm-image/export/node-<target id>`, which only root reads. It empties the directory first, and expects one image file. The source removes the directory after the transfer, also when a stage fails. A host that has the image already skips `export` and `transfer` |
+| `export` | The source runs `incus image export` into `/var/lib/orbit-task-vm-image/export/node-<target id>`, which only root reads. It empties the directory first, and expects one image file |
 | `transfer` | The source streams the file to the target's receiver, which imports it. The fingerprint that the receiver prints must be the source's |
-| `verify` | Gives the image the dated alias, and checks that the alias names the source's fingerprint. Incus names an image by the SHA-256 of its content, so an equal fingerprint is an equal image |
+| `verify` | Gives the image the dated alias, and checks that the alias names the source's fingerprint. An equal fingerprint is an equal image |
 | `smoke` | Boots a smoke VM from the copy, with the same checks as the build's smoke boot |
 | `promote` | Points `orbit-task-base` at the copy in one step |
 | `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
+
+A host that has the image already skips `export` and `transfer`. The source removes the export directory after the transfer, also when a stage fails. Incus names an image by the SHA-256 of its content, so `verify` compares content.
 
 The export may take 300 seconds and the transfer 540 seconds. With a smoke boot of up to 600 seconds, a sync ends within the host's 25-minute image lock.
 
@@ -603,9 +614,7 @@ Task VMs have these known limits.
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
 - A base image is only as fresh as its last build. The nightly refresh keeps packages and the `app-dev` software at most a day old. A host without a base image cannot start task VMs.
 - Each sync copies the whole image, about 3 GiB. ZFS send and receive can copy only the changes. That is a possible optimisation for slow copies.
-- A host that an attacker controls can send any image to a peer's task VM project, again and again, up to 32 GiB each time. It cannot move `orbit-task-base`: only the Gateway does that, after it checks the fingerprint. So it can fill the peer's disk, but not change what task VMs boot.
-- On the LAN, a host masquerades its Docker containers and NAT Incus bridges behind its LAN address, so the `from` restriction admits them too. They cannot use the key, which only root on the host reads.
-- So root on one host can stop or enter the task VMs of another host. It can also point that host's `orbit-task-base` at another image, which every later task VM there boots.
+- Root on one host can send any image to a peer's task VM project, up to 32 GiB each time. It can fill the peer's disk. See [Peer keys](#peer-keys).
 - Copies over WireGuard may run through the VPN hub.
 - The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs, including a resume.
 - Doctor can report task VM Nodes while they exist.
@@ -619,7 +628,7 @@ Warm VMs have these limits:
 A warm claim takes this long:
 
 - A group waits for the next `tasks:tick`, every 10 seconds, before its claim. The warm claim then takes about 1.5 seconds to `ready`, and creates the workspace.
-- In the worst case, the claim's own steps take about 1.5 minutes, plus the `pi-server` Process steps. See the limits in [Claim a warm VM](#claim-a-warm-vm).
+- In the worst case, the claim's own steps end after 60 seconds. The queued job does the rest. See [Claim a warm VM](#claim-a-warm-vm).
 - A warm VM with an older Pi is `ready` only after the queued job uploads Pi, behind the other jobs on the queue.
 - After a tick that dies during the steps, the group waits 330 seconds for the guard, and then for the queued job.
 
@@ -667,7 +676,7 @@ These alternatives were rejected:
 | The Incus REST API with a restricted certificate, from the Gateway | It needs more host setup, and the Gateway already has root SSH to the host |
 | A build on each host | The same commit gave different images, and each host spent about two minutes on its build |
 | `incus image export` streamed over SSH through the Gateway | Each copy would cross the Gateway twice. The direct copy keeps the image on the LAN when it can |
-| `incus image copy` between the hosts' Incus APIs | Orbit used it first. It needed Incus listening on the network, client certificate trust, firewall rules, and the project restrictions as the boundary to root. Guests that a host masquerades reached a peer's API. A copy once exited 255 after the image had arrived |
+| `incus image copy` between the hosts' Incus APIs | Orbit used it first. It needed an Incus listener, certificate trust, and firewall rules. Masqueraded guests reached a peer's API, and a copy once failed after the image arrived |
 | rsync over SSH | Its forced command would have to check `rsync --server` arguments. Its resume and delta transfer do not help, because a new image is a new file |
 | `scp` into a staging directory, then a second command that imports | It needs two forced commands, or a key that can write files. One stream into one forced command needs neither |
 | Trust on first use for a peer's host key | The Gateway can read the key over SSH, which it already trusts |
