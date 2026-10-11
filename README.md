@@ -24,6 +24,7 @@ Start with these guides:
 - [Quickstart](https://orbit.nckrtl.com/docs/quickstart)
 - [Update, back up, and recover](docs/reference/gateway-recovery.md)
 - [Report a bug](https://github.com/nckrtl/orbit/issues/new?template=bug_report.yml)
+- [Make your first contribution](docs/first-contribution.md)
 - [Contribute](CONTRIBUTING.md)
 
 Maintained documentation lives in `docs/`, with Mintlify navigation in `docs/docs.json`.
