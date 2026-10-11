@@ -155,13 +155,28 @@ describe('HttpVaultClient', function (): void {
             ->toThrow(fn (VaultException $exception) => expect($exception->errorCode)->toBe('vault.login_failed'));
     });
 
-    it('trusts only the Orbit root CA', function (): void {
+    it('trusts only the Orbit root CA, from a private file it removes', function (): void {
+        $trusted = [];
+        // Registered first and answering nothing, so the account's stubs still respond.
+        Http::fake(function (Request $request, array $options) use (&$trusted): null {
+            $path = $options['verify'] ?? null;
+            $trusted[] = [$path, is_string($path) ? file_get_contents($path) : null];
+
+            return null;
+        });
         vault_account($this->crypto, 'correct horse');
+        $before = glob(sys_get_temp_dir().'/orbit-vault-ca-*') ?: [];
+
         $this->client->open(vault_credentials());
 
-        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $this->root).'.pem';
-        expect(file_get_contents($path))->toBe($this->root);
-        unlink($path);
+        expect($trusted)->toHaveCount(3);
+        foreach ($trusted as [$path, $contents]) {
+            expect($path)->toStartWith(sys_get_temp_dir().'/orbit-vault-ca-')
+                ->and($contents)->toBe($this->root)
+                ->and(file_exists($path))->toBeFalse();
+        }
+        expect(count(array_unique(array_column($trusted, 0))))->toBe(3)
+            ->and(glob(sys_get_temp_dir().'/orbit-vault-ca-*') ?: [])->toBe($before);
     });
 
     it('refuses more than 2,000,000 PBKDF2 iterations', function (): void {

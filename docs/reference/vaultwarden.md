@@ -150,7 +150,7 @@ The Gateway writes the standard Bitwarden format itself instead of driving the B
 
 ### TLS trusts only Orbit
 
-The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
+The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. Each request writes the CA to its own private temporary file and removes it afterwards, so another account on the Gateway host cannot swap the trusted CA. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
 
 ### Removed credentials are deleted
 

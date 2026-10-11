@@ -52,7 +52,7 @@ final readonly class HttpVaultClient implements VaultClient
     public function open(VaultCredentials $credentials): VaultSession
     {
         $url = rtrim($credentials->url, '/');
-        $token = $this->send(fn (): Response => $this->http()->asForm()->post($url.'/identity/connect/token', [
+        $token = $this->send(fn (PendingRequest $http): Response => $http->asForm()->post($url.'/identity/connect/token', [
             'grant_type' => 'client_credentials',
             'scope' => 'api',
             'client_id' => $credentials->clientId,
@@ -68,7 +68,7 @@ final readonly class HttpVaultClient implements VaultClient
             throw $this->loginFailed();
         }
 
-        $sync = $this->send(fn (): Response => $this->http()->withToken($accessToken)->get($url.'/api/sync', ['excludeDomains' => 'true']));
+        $sync = $this->send(fn (PendingRequest $http): Response => $http->withToken($accessToken)->get($url.'/api/sync', ['excludeDomains' => 'true']));
         $profile = $this->array($sync, 'profile') ?? [];
         $email = $this->string($profile, 'email');
         $encryptedUserKey = $this->string($profile, 'key');
@@ -78,7 +78,7 @@ final readonly class HttpVaultClient implements VaultClient
             throw $this->unexpected();
         }
 
-        $prelogin = $this->send(fn (): Response => $this->http()->post($url.'/identity/accounts/prelogin', ['email' => $email]));
+        $prelogin = $this->send(fn (PendingRequest $http): Response => $http->post($url.'/identity/accounts/prelogin', ['email' => $email]));
         $kdf = $this->value($prelogin, 'kdf');
         $iterations = $this->value($prelogin, 'kdfIterations');
 
@@ -164,7 +164,7 @@ final readonly class HttpVaultClient implements VaultClient
         ];
 
         return $this->remoteCipher($this->send(
-            fn (): Response => $this->http()->withToken($session->accessToken)->post($session->url.'/api/ciphers/create', $body),
+            fn (PendingRequest $http): Response => $http->withToken($session->accessToken)->post($session->url.'/api/ciphers/create', $body),
         )) ?? throw $this->unexpected();
     }
 
@@ -173,7 +173,7 @@ final readonly class HttpVaultClient implements VaultClient
         $body = $this->cipherBody($session, $organizationId, $cipher);
 
         return $this->remoteCipher($this->send(
-            fn (): Response => $this->http()->withToken($session->accessToken)->put($session->url.'/api/ciphers/'.rawurlencode($cipherId), $body),
+            fn (PendingRequest $http): Response => $http->withToken($session->accessToken)->put($session->url.'/api/ciphers/'.rawurlencode($cipherId), $body),
             missing: true,
         )) ?? throw $this->unexpected();
     }
@@ -182,7 +182,7 @@ final readonly class HttpVaultClient implements VaultClient
     {
         try {
             $this->send(
-                fn (): Response => $this->http()->withToken($session->accessToken)->delete($session->url.'/api/ciphers/'.rawurlencode($cipherId)),
+                fn (PendingRequest $http): Response => $http->withToken($session->accessToken)->delete($session->url.'/api/ciphers/'.rawurlencode($cipherId)),
                 missing: true,
             );
         } catch (VaultException $exception) {
@@ -278,15 +278,26 @@ final readonly class HttpVaultClient implements VaultClient
     }
 
     /**
-     * @param  callable(): Response  $request
+     * Sends one request that trusts only the Orbit root CA. The CA sits in a private temporary
+     * file made for this request and removed after it, so no other account can swap the trust.
+     *
+     * @param  callable(PendingRequest): Response  $request
      * @return array<array-key, mixed>
      */
     private function send(callable $request, bool $loginFailure = false, bool $missing = false): array
     {
+        $trust = tempnam(sys_get_temp_dir(), 'orbit-vault-ca-');
+
+        if (! is_string($trust) || file_put_contents($trust, $this->certificates->rootCertificate()) === false) {
+            throw new VaultException('vault.unreachable', 'The Gateway could not prepare its Vaultwarden trust.', 502);
+        }
+
         try {
-            $response = $request();
+            $response = $request(Http::timeout(15)->connectTimeout(5)->acceptJson()->withOptions(['verify' => $trust]));
         } catch (ConnectionException $exception) {
             throw new VaultException('vault.unreachable', 'Vaultwarden did not answer.', 502, $exception);
+        } finally {
+            unlink($trust);
         }
 
         if ($missing && ($response->status() === 404 || ($response->status() === 400 && str_contains(strtolower($response->body()), "doesn't exist")))) {
@@ -304,24 +315,6 @@ final readonly class HttpVaultClient implements VaultClient
         $decoded = $response->json();
 
         return is_array($decoded) ? $decoded : [];
-    }
-
-    private function http(): PendingRequest
-    {
-        return Http::timeout(15)->connectTimeout(5)->acceptJson()->withOptions(['verify' => $this->trustFile()]);
-    }
-
-    /** A PEM file with only the Orbit root CA, written once per Gateway process. */
-    private function trustFile(): string
-    {
-        $root = $this->certificates->rootCertificate();
-        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $root).'.pem';
-
-        if (! is_file($path) && file_put_contents($path, $root, LOCK_EX) === false) {
-            throw new VaultException('vault.unreachable', 'The Gateway could not prepare its Vaultwarden trust.', 502);
-        }
-
-        return $path;
     }
 
     /** @param array<array-key, mixed> $data */
