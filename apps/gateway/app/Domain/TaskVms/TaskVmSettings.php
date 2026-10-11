@@ -264,7 +264,7 @@ final readonly class TaskVmSettings
         return array_values(array_unique($value));
     }
 
-    /** Unset means 30. The environment gives a string, so a whole number in a string counts. */
+    /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */
     private static function parkAfterMinutes(mixed $value): int
     {
         $value = self::filled($value) ?? 30;

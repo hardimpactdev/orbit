@@ -82,6 +82,20 @@ describe('defaults', function (): void {
         'an integer' => [10080, 10080],
     ]);
 
+    it('passes 0 from the environment through to validation instead of the default', function (): void {
+        putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES=0');
+        $_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'] = '0';
+        try {
+            $config = require config_path('task_vms.php');
+        } finally {
+            putenv('ORBIT_TASK_VMS_PARK_AFTER_MINUTES');
+            unset($_ENV['ORBIT_TASK_VMS_PARK_AFTER_MINUTES'], $_SERVER['ORBIT_TASK_VMS_PARK_AFTER_MINUTES']);
+        }
+        task_vms_off(['park_after_minutes' => $config['park_after_minutes']]);
+
+        expect_invalid_task_vm_config('park_after_minutes must be a whole number of minutes from 1 to 10080.');
+    });
+
     it('refuses an invalid park_after_minutes', function (mixed $value): void {
         task_vms_off(['park_after_minutes' => $value]);
 

@@ -45,9 +45,7 @@ final readonly class AllocateTaskVmAction
         } catch (LockTimeoutException) {
             throw new TaskCapacityException(false, 'Task VM: another placement is running.');
         }
-        if (! $vm instanceof TaskVm) {
-            throw new TaskCapacityException(false, 'Task VM: another placement is running.');
-        }
+        assert($vm instanceof TaskVm);
 
         if ($vm->wasRecentlyCreated) {
             ProvisionTaskVm::dispatch($vm->id);
