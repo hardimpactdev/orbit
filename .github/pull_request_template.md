@@ -8,5 +8,7 @@
 
 ## Verification
 
+<!-- Bug fix: link the bug issue with "Fixes #N" and name the regression test that failed before this change and passes after it. -->
+
 <!-- List the commands you ran, observed results, and verification limitations.
 Orbit's independent review reproduces the feature on Incus before merge. Request maintainer review only when implementation is complete. -->
