@@ -17,6 +17,8 @@ covers:
 
 Submit a complete feature: its implementation, tests, documentation, and any architecture decisions. Orbit reproduces the feature on Incus during independent review, and the maintainer approves each merge.
 
+New to Orbit? [Your first contribution](/first-contribution) is the short path for a person who works by hand. It also lists the parts of this guide that Orbit's maintainers and agents handle.
+
 The order is always the same: architecture, documentation, implementation, a complete pull request, review, maintainer approval, and merge.
 
 From the repository root, install the project dependencies:
@@ -52,6 +54,8 @@ bin/docs-impact --base <start-commit> --paths <planned-path>
 ```
 
 The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts. The report, not an agent's opinion, is the evidence.
+
+A person who contributes outside Orbit Tasks has no docs subtask. That person can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
 
 At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
 

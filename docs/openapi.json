@@ -102,10 +102,6 @@
       "description": "CLIProxyAPI quota snapshots, provider pools, and account controls."
     },
     {
-      "name": "Workspaces",
-      "description": "Git worktrees owned by legacy Instances."
-    },
-    {
       "name": "Conn",
       "description": "Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node."
     },
