@@ -24,7 +24,7 @@ final class FakeVaultClient implements VaultClient
 
     public const string CollectionId = 'col-1';
 
-    /** @var array<string, array{organization: string, collections: list<string>, revision: int, cipher: VaultCipher}> */
+    /** @var array<string, array{organization: string, collections: list<string>, revision: int, cipher: VaultCipher, deleted?: bool}> */
     public array $items = [];
 
     /** @var list<VaultCollection> */
@@ -35,6 +35,9 @@ final class FakeVaultClient implements VaultClient
     public ?VaultException $failOpen = null;
 
     public ?VaultException $failWrites = null;
+
+    /** Stores the next created item, then fails as a timeout after the commit would. */
+    public bool $timeoutAfterCreate = false;
 
     /** @var list<VaultCredentials> */
     public array $credentials = [];
@@ -65,7 +68,14 @@ final class FakeVaultClient implements VaultClient
         $ciphers = [];
 
         foreach ($this->items as $id => $item) {
-            $ciphers[$id] = new VaultRemoteCipher($id, $item['organization'], $item['collections'], $this->revision($item['revision']));
+            $ciphers[$id] = new VaultRemoteCipher(
+                $id,
+                $item['organization'],
+                $item['collections'],
+                $this->revision($item['revision']),
+                $this->sourceOf($item['cipher']),
+                $item['deleted'] ?? false,
+            );
         }
 
         return new VaultSession(
@@ -84,6 +94,12 @@ final class FakeVaultClient implements VaultClient
         $this->failIfAsked();
         $id = 'cipher-'.$this->next++;
         $this->items[$id] = ['organization' => $organizationId, 'collections' => [$collectionId], 'revision' => 1, 'cipher' => $cipher];
+
+        if ($this->timeoutAfterCreate) {
+            $this->timeoutAfterCreate = false;
+
+            throw new VaultException('vault.unreachable', 'Vaultwarden did not answer.', 502);
+        }
 
         return new VaultRemoteCipher($id, $organizationId, [$collectionId], $this->revision(1));
     }
@@ -106,6 +122,38 @@ final class FakeVaultClient implements VaultClient
     {
         $this->failIfAsked();
         unset($this->items[$cipherId]);
+    }
+
+    /** Adds an item the ledger does not know, as an earlier setup or a person would. */
+    public function plant(VaultCipher $cipher, string $collectionId = self::CollectionId, bool $deleted = false): string
+    {
+        $id = 'cipher-'.$this->next++;
+        $this->items[$id] = ['organization' => self::OrganizationId, 'collections' => [$collectionId], 'revision' => 1, 'cipher' => $cipher, 'deleted' => $deleted];
+
+        return $id;
+    }
+
+    /** @return list<string> names of the live items */
+    public function names(): array
+    {
+        $names = array_values(array_map(
+            static fn (array $item): string => $item['cipher']->name,
+            array_filter($this->items, static fn (array $item): bool => ! ($item['deleted'] ?? false)),
+        ));
+        sort($names);
+
+        return $names;
+    }
+
+    private function sourceOf(VaultCipher $cipher): ?string
+    {
+        foreach ($cipher->fields as $field) {
+            if ($field['name'] === 'orbit.source') {
+                return $field['value'];
+            }
+        }
+
+        return null;
     }
 
     /** Simulates a person editing an item in Vaultwarden. */

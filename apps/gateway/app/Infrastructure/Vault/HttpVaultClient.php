@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Vault;
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Vault\VaultCipher;
 use App\Domain\Vault\VaultClient;
 use App\Domain\Vault\VaultCollection;
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\Http;
 /**
  * Vaultwarden's Bitwarden-compatible API. The Gateway logs in with the account's personal API key,
  * derives the master key with PBKDF2, and unlocks the organization keys from /api/sync. Recent
- * Vaultwarden answers in camelCase and older releases in PascalCase, so reads accept both.
+ * Vaultwarden answers in camelCase and older releases in PascalCase, so reads accept both. TLS
+ * trusts only the Orbit root CA, so credentials reach only a Vaultwarden behind an Orbit Route.
  */
 final readonly class HttpVaultClient implements VaultClient
 {
@@ -37,7 +39,15 @@ final readonly class HttpVaultClient implements VaultClient
     /** Bitwarden's device type for the Linux CLI, the closest match for a server-side client. */
     private const int DeviceType = 25;
 
-    public function __construct(private BitwardenCrypto $crypto) {}
+    /** Bitwarden's own default is 600,000. A higher count only ties up the scheduler. */
+    private const int MaxIterations = 2_000_000;
+
+    private const string SourceField = 'orbit.source';
+
+    public function __construct(
+        private BitwardenCrypto $crypto,
+        private LeafCertificateSigner $certificates,
+    ) {}
 
     public function open(VaultCredentials $credentials): VaultSession
     {
@@ -84,6 +94,14 @@ final readonly class HttpVaultClient implements VaultClient
             throw $this->unexpected();
         }
 
+        if ($iterations > self::MaxIterations) {
+            throw new VaultException(
+                'vault.kdf_unsupported',
+                'The Vaultwarden account uses more than 2,000,000 PBKDF2 iterations.',
+                422,
+            );
+        }
+
         $userKey = $this->crypto->decrypt(
             $encryptedUserKey,
             $this->crypto->masterKey($credentials->masterPassword, $email, $iterations),
@@ -128,9 +146,9 @@ final readonly class HttpVaultClient implements VaultClient
         $ciphers = [];
 
         foreach ($this->list($sync, 'ciphers') as $cipher) {
-            $remote = $this->remoteCipher($cipher);
+            $remote = $this->remoteCipher($cipher, $organizationKeys);
 
-            if ($remote instanceof VaultRemoteCipher && $this->value($cipher, 'deletedDate') === null) {
+            if ($remote instanceof VaultRemoteCipher) {
                 $ciphers[$remote->id] = $remote;
             }
         }
@@ -202,8 +220,11 @@ final readonly class HttpVaultClient implements VaultClient
         ];
     }
 
-    /** @param array<array-key, mixed> $cipher */
-    private function remoteCipher(array $cipher): ?VaultRemoteCipher
+    /**
+     * @param  array<array-key, mixed>  $cipher
+     * @param  array<string, string>  $organizationKeys
+     */
+    private function remoteCipher(array $cipher, array $organizationKeys = []): ?VaultRemoteCipher
     {
         $id = $this->string($cipher, 'id');
 
@@ -215,8 +236,45 @@ final readonly class HttpVaultClient implements VaultClient
             $this->rawList($cipher, 'collectionIds'),
             is_string(...),
         ));
+        $organizationId = $this->string($cipher, 'organizationId');
 
-        return new VaultRemoteCipher($id, $this->string($cipher, 'organizationId'), $collectionIds, $this->string($cipher, 'revisionDate'));
+        return new VaultRemoteCipher(
+            $id,
+            $organizationId,
+            $collectionIds,
+            $this->string($cipher, 'revisionDate'),
+            $organizationId === null || ! isset($organizationKeys[$organizationId])
+                ? null
+                : $this->source($cipher, $organizationKeys[$organizationId]),
+            $this->value($cipher, 'deletedDate') !== null,
+        );
+    }
+
+    /**
+     * The decrypted `orbit.source` field of an organization item, or null. An item with its own key
+     * encrypts its fields with that key, which the organization key wraps.
+     *
+     * @param  array<array-key, mixed>  $cipher
+     */
+    private function source(array $cipher, string $organizationKey): ?string
+    {
+        try {
+            $wrapped = $this->string($cipher, 'key');
+            $key = $wrapped === null ? $organizationKey : $this->crypto->decrypt($wrapped, $organizationKey);
+
+            foreach ($this->list($cipher, 'fields') as $field) {
+                $name = $this->string($field, 'name');
+                $value = $this->string($field, 'value');
+
+                if ($name !== null && $value !== null && $this->crypto->decrypt($name, $key) === self::SourceField) {
+                    return $this->crypto->decrypt($value, $key);
+                }
+            }
+        } catch (VaultException) {
+            return null;
+        }
+
+        return null;
     }
 
     /**
@@ -250,7 +308,20 @@ final readonly class HttpVaultClient implements VaultClient
 
     private function http(): PendingRequest
     {
-        return Http::timeout(15)->connectTimeout(5)->acceptJson();
+        return Http::timeout(15)->connectTimeout(5)->acceptJson()->withOptions(['verify' => $this->trustFile()]);
+    }
+
+    /** A PEM file with only the Orbit root CA, written once per Gateway process. */
+    private function trustFile(): string
+    {
+        $root = $this->certificates->rootCertificate();
+        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $root).'.pem';
+
+        if (! is_file($path) && file_put_contents($path, $root, LOCK_EX) === false) {
+            throw new VaultException('vault.unreachable', 'The Gateway could not prepare its Vaultwarden trust.', 502);
+        }
+
+        return $path;
     }
 
     /** @param array<array-key, mixed> $data */

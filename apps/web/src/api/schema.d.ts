@@ -3889,13 +3889,13 @@ export interface paths {
         get: operations["vault-status"];
         /**
          * Set up Vaultwarden
-         * @description Logs in to Vaultwarden with the account API key, unlocks it with the master password, finds the organization and collection by name or ID, and checks that the account can write to the collection. Only then stores the values, encrypted. Returns `vault.login_failed`, `vault.kdf_unsupported`, `vault.organization_missing`, `vault.collection_missing`, or `vault.collection_read_only` (422), and `vault.items_published` (409) for another organization or collection while items are published. No response returns the client secret or the master password.
+         * @description Logs in to Vaultwarden with the account API key, unlocks it with the master password, finds the organization and collection by name or ID, and checks that the account can write to the collection. Only then stores the values, encrypted. `url` must be an HTTPS origin on a `.orbit` host, and the Gateway trusts only the Orbit root CA; another origin returns `validation.failed` (422). Returns `vault.login_failed`, `vault.kdf_unsupported`, `vault.organization_missing`, `vault.collection_missing`, or `vault.collection_read_only` (422), and `vault.items_published` (409) for another organization or collection while items are published. No response or Activity entry returns the client secret or the master password, but this tool takes them as arguments, so they reach the caller transcript; the CLI reads them from files.
          */
         put: operations["vault-setup"];
         post?: never;
         /**
          * Tear down Vaultwarden
-         * @description Permanently deletes every published Database item, unless `keep_items` is true, then the stored setup. A failed deletion keeps the setup, so the teardown can run again. Returns `vault.not_configured` (409).
+         * @description Permanently deletes every Orbit item in the collection, recorded or not, unless `keep_items` is true, then the stored setup. A failed deletion keeps the setup, so the teardown can run again. Returns `vault.not_configured` (409).
          */
         delete: operations["vault-teardown"];
         options?: never;
@@ -3914,7 +3914,7 @@ export interface paths {
         put?: never;
         /**
          * Sync database credentials to Vaultwarden
-         * @description Runs the Vaultwarden sync now: creates, rewrites, or permanently deletes Database items, and recreates or rewrites items that are gone or were changed in Vaultwarden. A failed item is reported in `last_error` and retried by the next run. Returns `vault.not_configured` or `vault.sync_busy` (409), and `vault.unreachable` (502) when Vaultwarden cannot be reached.
+         * @description Runs the Vaultwarden sync now: creates, rewrites, or permanently deletes Database items; adopts Orbit items with no ledger row; deletes duplicates, trashed copies, and items whose source is gone; and rewrites items changed in Vaultwarden. Returns the status when every change succeeded, and `vault.sync_failed` (502) with `failed` and `first_error` details when any change failed; the next run retries. Returns `vault.not_configured` or `vault.sync_busy` (409), and `vault.unreachable` (502) when Vaultwarden cannot be reached.
          */
         post: operations["vault-sync"];
         delete?: never;

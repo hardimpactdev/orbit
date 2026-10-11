@@ -32,8 +32,13 @@ final class SyncVaultCommand extends VaultCommand
             ['Sync vault', 'Publishing database credentials', 'Synced vault'],
         );
 
-        return $response instanceof VaultStatusResponse
-            ? $this->renderStatus($response, 'Vault sync finished.')
-            : self::FAILURE;
+        if (! $response instanceof VaultStatusResponse) {
+            return self::FAILURE;
+        }
+
+        // The Gateway refuses a sync with failed changes; an error still recorded fails the run too.
+        $exit = $this->renderStatus($response, 'Vault sync finished.');
+
+        return $response->lastError === null ? $exit : self::FAILURE;
     }
 }

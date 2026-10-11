@@ -11,6 +11,7 @@ use App\Domain\Vault\VaultClient;
 use App\Domain\Vault\VaultCollection;
 use App\Domain\Vault\VaultException;
 use App\Domain\Vault\VaultSettings;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
 use App\Models\Node;
@@ -111,8 +112,31 @@ describe('vault:setup', function (): void {
         'read only' => [['collection' => 'Read only'], 'vault.collection_read_only'],
     ]);
 
-    it('refuses a URL that is not HTTPS', function (): void {
-        vault_setup(['url' => 'http://vault.orbit'])->assertStatus(422);
+    it('accepts only an HTTPS origin on a .orbit host', function (string $url): void {
+        vault_setup(['url' => $url])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+
+        expect($this->vault->opens)->toBe(0);
+    })->with([
+        'plain HTTP' => ['http://vault.orbit'],
+        'public host' => ['https://vault.example.com'],
+        'look-alike host' => ['https://vault.orbit.example.com'],
+        'user info' => ['https://user@vault.orbit'],
+        'path' => ['https://vault.orbit/api'],
+        'query' => ['https://vault.orbit/?next=1'],
+    ]);
+
+    it('never writes the client secret or master password to the Activity log', function (): void {
+        $ok = vault_setup()->assertOk();
+        $failed = vault_setup(['master_password' => 'wrong-'.FakeVaultClient::MasterPassword])->assertStatus(422);
+
+        foreach ([$ok, $failed] as $response) {
+            $activity = Activity::query()->where('request_id', $response->headers->get('X-Orbit-Request-Id'))->sole();
+            $logged = json_encode($activity->toArray(), JSON_THROW_ON_ERROR);
+
+            expect($activity->command)->toBe('vault:setup')
+                ->and($logged)->not->toContain(FakeVaultClient::ClientSecret)
+                ->not->toContain(FakeVaultClient::MasterPassword);
+        }
     });
 
     it('refuses to move to another collection while items are published', function (): void {
@@ -261,17 +285,58 @@ describe('vault:sync', function (): void {
             ->and(VaultItem::query()->value('cipher_id'))->not->toBe($first);
     });
 
-    it('keeps the published state when a write fails and reports the error', function (): void {
+    it('fails the sync and keeps the published state when a write fails', function (): void {
         $this->vault->failWrites = new VaultException('vault.unreachable', 'Vaultwarden answered with HTTP 500.', 502);
 
         $this->postJson('/api/v1/vault/sync')
-            ->assertOk()
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'vault.sync_failed')
+            ->assertJsonPath('error.details', ['failed' => 1, 'first_error' => 'vault.unreachable']);
+
+        $this->getJson('/api/v1/vault')
             ->assertJsonPath('data.items', 0)
             ->assertJsonPath('data.pending', 1)
             ->assertJsonPath('data.last_error', ['code' => 'vault.unreachable', 'message' => 'Vaultwarden answered with HTTP 500.']);
 
         $this->vault->failWrites = null;
         $this->postJson('/api/v1/vault/sync')->assertOk()->assertJsonPath('data.last_error', null)->assertJsonPath('data.items', 1);
+    });
+
+    it('adopts an item whose create timed out after Vaultwarden stored it', function (): void {
+        $this->vault->timeoutAfterCreate = true;
+
+        $this->postJson('/api/v1/vault/sync')->assertStatus(502);
+        expect(VaultItem::query()->exists())->toBeFalse()
+            ->and($this->vault->names())->toBe(['ohdear']);
+
+        $this->connection->update(['password' => 'rotated']);
+        $this->postJson('/api/v1/vault/sync')->assertOk()->assertJsonPath('data.items', 1);
+
+        $cipherId = (string) VaultItem::query()->value('cipher_id');
+        expect($this->vault->names())->toBe(['ohdear'])
+            ->and($this->vault->fields($cipherId)['password'])->toBe('rotated');
+    });
+
+    it('takes over items kept by an earlier setup and deletes duplicates, trashed copies, and orphans', function (): void {
+        $this->postJson('/api/v1/vault/sync')->assertOk();
+        $this->deleteJson('/api/v1/vault', ['keep_items' => true])->assertOk();
+        $kept = (string) array_key_first($this->vault->items);
+        $source = 'database-connection:'.$this->connection->id;
+        $orbitNote = fn (string $name, string $itemSource): VaultCipher => new VaultCipher($name, 'notes', [
+            ['name' => 'orbit.source', 'value' => $itemSource, 'hidden' => false],
+        ]);
+        $this->vault->plant($orbitNote('ohdear copy', $source));
+        $this->vault->plant($orbitNote('ohdear trashed', $source), deleted: true);
+        $this->vault->plant($orbitNote('gone', 'database-connection:999'));
+        $this->vault->plant(new VaultCipher('someone else', 'notes', []));
+        $this->vault->plant($orbitNote('other collection', 'database-connection:998'), 'col-2');
+
+        vault_setup()->assertOk();
+        $this->postJson('/api/v1/vault/sync')->assertOk()->assertJsonPath('data.items', 1);
+
+        expect(VaultItem::query()->sole()->cipher_id)->toBe($kept)
+            ->and(array_keys($this->vault->items))->toHaveCount(3)
+            ->and($this->vault->names())->toBe(['ohdear', 'other collection', 'someone else']);
     });
 
     it('returns a login failure and records it', function (): void {
@@ -353,6 +418,15 @@ describe('vault:teardown', function (): void {
         expect($this->vault->items)->toBe([])
             ->and(VaultItem::query()->exists())->toBeFalse()
             ->and(Setting::query()->where('key', 'like', 'vault.%')->exists())->toBeFalse();
+    });
+
+    it('also deletes Orbit items the ledger does not know, and leaves other items', function (): void {
+        $this->vault->plant(new VaultCipher('stray', 'notes', [['name' => 'orbit.source', 'value' => 'database-connection:999', 'hidden' => false]]));
+        $this->vault->plant(new VaultCipher('someone else', 'notes', []));
+
+        $this->deleteJson('/api/v1/vault')->assertOk();
+
+        expect($this->vault->names())->toBe(['someone else']);
     });
 
     it('keeps the items when asked', function (): void {

@@ -214,7 +214,7 @@ describe('vault:status and vault:sync', function (): void {
             ->and($output)->not->toContain('SOURCE');
     });
 
-    it('renders the last error', function (): void {
+    it('renders the last error and fails the sync', function (): void {
         MockClient::global([SyncVaultRequest::class => vault_cli_status_response([
             ...vault_cli_status_payload(),
             'last_error' => ['code' => 'vault.unreachable', 'message' => 'Vaultwarden did not answer.'],
@@ -222,7 +222,7 @@ describe('vault:status and vault:sync', function (): void {
 
         [$exit, $output] = vault_cli_display('vault:sync');
 
-        expect($exit)->toBe(0)
+        expect($exit)->toBe(1)
             ->and($output)->toContain('vault.unreachable: Vaultwarden did not answer.');
     });
 
@@ -237,6 +237,23 @@ describe('vault:status and vault:sync', function (): void {
 
         expect($exit)->toBe(1)
             ->and(json_decode($output, true)['error']['code'])->toBe('vault.not_configured');
+    });
+
+    it('fails with vault.sync_failed when a change failed', function (): void {
+        MockClient::global([SyncVaultRequest::class => MockResponse::make([
+            'status' => 502,
+            'error' => [
+                'code' => 'vault.sync_failed',
+                'message' => '1 Vaultwarden change(s) failed. First: Vaultwarden answered with HTTP 403.',
+                'details' => ['failed' => 1, 'first_error' => 'vault.unreachable'],
+            ],
+            'meta' => ['request_id' => vault_cli_request_id()],
+        ], 502, ['X-Orbit-Request-Id' => vault_cli_request_id()])]);
+
+        [$exit, $output] = vault_cli_display('vault:sync', ['--json' => true]);
+
+        expect($exit)->toBe(1)
+            ->and(json_decode($output, true)['error']['code'])->toBe('vault.sync_failed');
     });
 });
 

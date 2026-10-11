@@ -21,9 +21,15 @@ Do these steps in Vaultwarden first:
 3. Invite the Gateway account to the organization and give it **Can manage** on the collection. Confirm the membership.
 4. Sign in as the Gateway account and copy its personal API key: `client_id` and `client_secret`.
 
+Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Every request trusts only the Orbit root CA, so the Gateway sends credentials only to a server with a certificate that Orbit issued.
+
 Then run [`vault:setup`](/cli/vault#orbit-vaultsetup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway logs in, unlocks the account, and checks that it can write to the collection. Only then does it store the values, encrypted. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
 
-No response returns the API key or the master password.
+No response or Activity entry returns the API key or the master password. The MCP `vault-setup` tool takes them as arguments, so they reach the agent's transcript. Run setup with the CLI, which reads them from files, when that matters.
+
+### Who can redirect the credentials
+
+Setup, sync, and teardown need access to the Gateway. A caller with that access chooses where the Gateway publishes every MySQL and PostgreSQL password, within the hosts that Orbit routes. Grant Gateway access only to Nodes you trust with those passwords.
 
 ## Items
 
@@ -65,11 +71,21 @@ The scheduler runs `orbit:vault-sync` every minute while Vaultwarden is set up. 
 | Present, content unchanged | Present | Nothing. |
 | None | Present | Delete it permanently. |
 
-A run that finds nothing to do does not contact Vaultwarden. Once an hour, a run also reads the collection. It recreates a published item that is gone and rewrites one that someone changed in Vaultwarden.
+A run that finds nothing to do does not contact Vaultwarden, except once an hour. A run that contacts Vaultwarden also reads the collection and recognizes Orbit's items by their `orbit.source` field:
 
-One failed item does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy.
+| Found in the collection | Action |
+| --- | --- |
+| A published item that is gone or in the trash | Forget it, so the run creates the item again. |
+| A published item that someone changed | Rewrite it. |
+| An Orbit item for a wanted source, with no record of publishing it | Adopt it and rewrite it. This covers a create that timed out after Vaultwarden stored the item, and items left by `vault:teardown --keep-items`. |
+| A second Orbit item for the same source, a trashed copy, or an item whose source is gone from Orbit | Delete it permanently. |
+| An item without `orbit.source` | Leave it. |
 
-[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check, and returns the status. Only one run happens at a time.
+The collection belongs to Orbit. Do not add items with an `orbit.source` field by hand.
+
+One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with a failure while a run records an error.
+
+[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns the status when every change succeeded. When a change failed, it returns `vault.sync_failed` (502) with `failed`, the number of failed changes, and `first_error`, the code of the first failure. Only one run happens at a time.
 
 ## Status
 
@@ -89,7 +105,7 @@ One failed item does not stop the others. The run records its error, keeps that 
 
 ## Tear down
 
-[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes every item Orbit published, then deletes the stored values and the record of published items. With `--keep-items`, it leaves the items in Vaultwarden. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes every Orbit item in the collection, recorded or not, then deletes the stored values and the record of published items. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 
 ## API
 
@@ -107,8 +123,10 @@ All operations need access to the Gateway.
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
+| `validation.failed` | 422 | The `url` is not an HTTPS origin on a `.orbit` host. |
+| `vault.sync_failed` | 502 | `vault:sync` could not make at least one change. `details` holds `failed` and `first_error`. |
 | `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |
-| `vault.kdf_unsupported` | 422 | The account uses Argon2id. |
+| `vault.kdf_unsupported` | 422 | The account uses Argon2id, or more than 2,000,000 PBKDF2 iterations. |
 | `vault.organization_missing` | 422 | The account is not a confirmed member of the organization. |
 | `vault.collection_missing` | 422 | The organization has no such collection that the account can reach. |
 | `vault.collection_read_only` | 422 | The account cannot write to the collection. |
@@ -129,6 +147,10 @@ The sync runs from the scheduler instead of inside each database write. When Vau
 ### The Gateway encrypts items itself
 
 The Gateway writes the standard Bitwarden format itself instead of driving the Bitwarden CLI. That avoids Node.js on the Gateway and an unlocked session that outlives a run.
+
+### TLS trusts only Orbit
+
+The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
 
 ### Removed credentials are deleted
 

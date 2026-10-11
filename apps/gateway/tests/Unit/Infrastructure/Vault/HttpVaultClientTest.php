@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Vault\VaultCipher;
 use App\Domain\Vault\VaultCredentials;
 use App\Domain\Vault\VaultException;
@@ -19,7 +20,7 @@ uses(TestCase::class);
  *
  * @return array{sync: array<string, mixed>, organizationKey: string}
  */
-function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0): array
+function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0, int $iterations = 5000): array
 {
     $email = 'Gateway@Example.test';
     $userKey = random_bytes(64);
@@ -28,12 +29,18 @@ function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0):
     openssl_pkey_export($rsa, $pem);
     $der = base64_decode(preg_replace('/-----[^-]+-----|\s/', '', $pem));
     openssl_public_encrypt($organizationKey, $wrapped, openssl_pkey_get_details($rsa)['key'], OPENSSL_PKCS1_OAEP_PADDING);
+    $itemKey = random_bytes(64);
+    $source = fn (string $value, string $key): array => [[
+        'type' => 0,
+        'name' => $crypto->encrypt('orbit.source', $key),
+        'value' => $crypto->encrypt($value, $key),
+    ]];
 
     Http::fake([
         'https://vault.test/identity/connect/token' => static fn (Request $request) => $request['client_secret'] === 'secret'
             ? Http::response(['access_token' => 'access-token', 'token_type' => 'Bearer'])
             : Http::response(['error' => 'invalid_client'], 400),
-        'https://vault.test/identity/accounts/prelogin' => Http::response(['kdf' => $kdf, 'kdfIterations' => 5000]),
+        'https://vault.test/identity/accounts/prelogin' => Http::response(['kdf' => $kdf, 'kdfIterations' => $iterations]),
         'https://vault.test/api/sync*' => Http::response([
             'profile' => [
                 'email' => $email,
@@ -48,8 +55,14 @@ function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0):
                 ['id' => 'col-1', 'organizationId' => 'org-1', 'name' => $crypto->encrypt('Databases', $organizationKey), 'readOnly' => false],
             ],
             'ciphers' => [
-                ['id' => 'c-1', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r1', 'deletedDate' => null],
-                ['id' => 'c-2', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r1', 'deletedDate' => '2026-10-11'],
+                ['id' => 'c-1', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r1', 'deletedDate' => null,
+                    'fields' => $source('database-connection:5', $organizationKey)],
+                ['id' => 'c-2', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r1', 'deletedDate' => '2026-10-11',
+                    'fields' => $source('database-connection:5', $organizationKey)],
+                ['id' => 'c-3', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r1', 'deletedDate' => null,
+                    'key' => $crypto->encrypt($itemKey, $organizationKey), 'fields' => $source('database-user:7', $itemKey)],
+                ['id' => 'c-4', 'organizationId' => null, 'collectionIds' => [], 'revisionDate' => 'r1', 'deletedDate' => null,
+                    'fields' => [['type' => 0, 'name' => '2.bad|bad|bad', 'value' => '2.bad|bad|bad']]],
             ],
         ]),
         'https://vault.test/api/ciphers/create' => Http::response(['id' => 'c-new', 'organizationId' => 'org-1', 'collectionIds' => ['col-1'], 'revisionDate' => 'r2']),
@@ -70,7 +83,21 @@ function vault_credentials(string $secret = 'secret', string $password = 'correc
 beforeEach(function (): void {
     Http::preventStrayRequests();
     $this->crypto = new BitwardenCrypto;
-    $this->client = new HttpVaultClient($this->crypto);
+    $this->root = "-----BEGIN CERTIFICATE-----\nORBIT-ROOT-".bin2hex(random_bytes(8))."\n-----END CERTIFICATE-----\n";
+    $this->client = new HttpVaultClient($this->crypto, new class($this->root) implements LeafCertificateSigner
+    {
+        public function __construct(private string $root) {}
+
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            return '';
+        }
+
+        public function rootCertificate(): string
+        {
+            return $this->root;
+        }
+    });
 });
 
 describe('BitwardenCrypto', function (): void {
@@ -107,7 +134,13 @@ describe('HttpVaultClient', function (): void {
             ->and($session->organizationKeys['org-1'])->toBe($account['organizationKey'])
             ->and($session->collections[0]->name)->toBe('Databases')
             ->and($session->collections[0]->readOnly)->toBeFalse()
-            ->and(array_keys($session->ciphers))->toBe(['c-1']);
+            ->and(array_keys($session->ciphers))->toBe(['c-1', 'c-2', 'c-3', 'c-4'])
+            ->and(array_map(fn ($cipher) => [$cipher->source, $cipher->deleted], $session->ciphers))->toBe([
+                'c-1' => ['database-connection:5', false],
+                'c-2' => ['database-connection:5', true],
+                'c-3' => ['database-user:7', false],
+                'c-4' => [null, false],
+            ]);
 
         Http::assertSent(fn (Request $request): bool => $request->url() === 'https://vault.test/identity/connect/token'
             && $request['grant_type'] === 'client_credentials'
@@ -120,6 +153,22 @@ describe('HttpVaultClient', function (): void {
             ->toThrow(fn (VaultException $exception) => expect($exception->errorCode)->toBe('vault.login_failed'));
         expect(fn () => $this->client->open(vault_credentials(password: 'wrong')))
             ->toThrow(fn (VaultException $exception) => expect($exception->errorCode)->toBe('vault.login_failed'));
+    });
+
+    it('trusts only the Orbit root CA', function (): void {
+        vault_account($this->crypto, 'correct horse');
+        $this->client->open(vault_credentials());
+
+        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $this->root).'.pem';
+        expect(file_get_contents($path))->toBe($this->root);
+        unlink($path);
+    });
+
+    it('refuses more than 2,000,000 PBKDF2 iterations', function (): void {
+        vault_account($this->crypto, 'correct horse', iterations: 2_000_001);
+
+        expect(fn () => $this->client->open(vault_credentials()))
+            ->toThrow(fn (VaultException $exception) => expect($exception->errorCode)->toBe('vault.kdf_unsupported'));
     });
 
     it('refuses an Argon2id account', function (): void {

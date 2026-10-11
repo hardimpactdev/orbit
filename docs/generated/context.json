@@ -2419,8 +2419,11 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
-                "Node"
+                "Node",
+                "Route",
+                "Tool"
             ],
             "governing_adrs": []
         },

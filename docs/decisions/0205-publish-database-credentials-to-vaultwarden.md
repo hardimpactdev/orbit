@@ -32,6 +32,8 @@ The Gateway owns the copy. Vaultwarden holds only what the Gateway publishes, an
 
 `orbit vault:setup` stores the Vaultwarden origin, the API key and master password of one Vaultwarden account for the Gateway, and one organization and collection. The operator creates the account, the organization, and the collection in Vaultwarden, and gives the account **Can manage** on the collection. The Gateway logs in and checks every value before it stores them encrypted. It refuses an account that uses Argon2id, because PHP cannot derive Bitwarden's Argon2id keys. `vault:status` shows the result. `vault:teardown` deletes Orbit's items and the stored values.
 
+The origin must be HTTPS on a `.orbit` host, and every request trusts only the Orbit root CA. A caller with Gateway access chooses where the passwords go, so that choice stays within servers that Orbit routes and issues certificates for.
+
 ### Items
 
 The Gateway publishes one Secure Note for each of these, into the configured collection:
@@ -45,7 +47,9 @@ Item fields follow Vault's Database schema version 1: `vault.schema`, `type`, `d
 
 ### Sync
 
-`orbit:vault-sync` runs every minute from the Gateway scheduler. It compares the wanted items with a ledger of published items. It creates an item that is missing, rewrites an item whose content changed, and permanently deletes an item whose source is gone. It contacts Vaultwarden only when something changed, and once an hour to repair items that someone changed or deleted in Vaultwarden. `vault:sync` runs the same reconcile at once, with the repair check. A failure keeps the ledger as it was, so the next run retries. Database operations never wait for Vaultwarden.
+`orbit:vault-sync` runs every minute from the Gateway scheduler. It compares the wanted items with a ledger of published items. It creates an item that is missing, rewrites an item whose content changed, and permanently deletes an item whose source is gone. It contacts Vaultwarden only when something changed, and once an hour to repair items that someone changed or deleted in Vaultwarden. `vault:sync` runs the same reconcile at once, with the repair check, and fails with `vault.sync_failed` when any change failed. A failure keeps the ledger as it was, so the next run retries. Database operations never wait for Vaultwarden.
+
+Every run that contacts Vaultwarden matches the collection to the ledger by each item's `orbit.source` field. It adopts an Orbit item that has no ledger row, such as one whose create timed out after Vaultwarden stored it, and permanently deletes duplicates, trashed copies, and items whose source is gone. Teardown deletes every Orbit item in the collection, recorded or not.
 
 The Gateway encrypts items itself with the organization key, in the standard Bitwarden format. It needs no Bitwarden CLI and no Node.js.
 
@@ -56,6 +60,8 @@ The Gateway encrypts items itself with the organization key, in the standard Bit
 - Write items with the Bitwarden CLI: it needs Node.js on the Gateway and a long-lived unlocked session.
 - Sync inside each database write: a Vaultwarden outage would fail database operations, and the Gateway has no general queue.
 - Move removed items to the trash: Orbit is the source of truth, so a removed credential must not stay readable.
+- Trust the system certificate store and any HTTPS URL: a caller with Gateway access then sends every password to a server it controls.
+- Record an item before creating it: Vaultwarden assigns the item ID, so a create that times out still leaves an unknown item. Matching by `orbit.source` finds it.
 
 ## Consequences
 

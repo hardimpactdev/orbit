@@ -12,6 +12,7 @@ use App\Domain\Vault\VaultConfiguration;
 use App\Domain\Vault\VaultException;
 use App\Domain\Vault\VaultLock;
 use App\Domain\Vault\VaultPlan;
+use App\Domain\Vault\VaultRemoteCipher;
 use App\Domain\Vault\VaultSession;
 use App\Domain\Vault\VaultSettings;
 use App\Models\VaultItem;
@@ -20,8 +21,10 @@ use Illuminate\Support\Facades\Config;
 
 /**
  * Makes the Vaultwarden collection match the Gateway's MySQL and PostgreSQL credentials. A run that
- * finds nothing to change does not contact Vaultwarden, except for the hourly check that recreates
- * items that are gone and rewrites items someone changed.
+ * finds nothing to change does not contact Vaultwarden, except for the hourly check. Every run that
+ * does contact it also reconciles the collection: it adopts an item it published without recording
+ * it, recreates items that are gone, rewrites items someone changed, and deletes duplicates and
+ * items whose source is gone. Items are recognized by their `orbit.source` field.
  */
 final readonly class SyncVaultAction
 {
@@ -35,11 +38,19 @@ final readonly class SyncVaultAction
         private ShowVaultStatusAction $status,
     ) {}
 
-    /** Runs a sync with the check now, for `vault:sync`. */
+    /** Runs a sync with the check now, for `vault:sync`. A failed change fails the request. */
     public function execute(): VaultStatusData
     {
-        $configuration = $this->configured();
-        $this->lock->run(fn () => $this->reconcile($configuration, true));
+        $errors = $this->lock->run(fn (): array => $this->reconcile($this->configured(), true));
+
+        if ($errors !== []) {
+            throw new VaultException(
+                'vault.sync_failed',
+                count($errors).' Vaultwarden change(s) failed. First: '.$errors[0]->getMessage(),
+                502,
+                details: ['failed' => count($errors), 'first_error' => $errors[0]->errorCode],
+            );
+        }
 
         return $this->status->execute();
     }
@@ -52,14 +63,19 @@ final readonly class SyncVaultAction
      */
     public function scheduled(): ?array
     {
-        $configuration = $this->settings->configuration();
-
-        if ($configuration === null) {
+        if ($this->settings->configuration() === null) {
             return null;
         }
 
         try {
-            $this->lock->run(fn () => $this->reconcile($configuration, false));
+            $this->lock->run(function (): void {
+                // Read again inside the lock, so a setup or teardown that just finished wins.
+                $configuration = $this->settings->configuration();
+
+                if ($configuration instanceof VaultConfiguration) {
+                    $this->reconcile($configuration, false);
+                }
+            });
         } catch (VaultException $exception) {
             if ($exception->errorCode === 'vault.sync_busy') {
                 return null;
@@ -69,7 +85,8 @@ final readonly class SyncVaultAction
         return $this->settings->lastError();
     }
 
-    private function reconcile(VaultConfiguration $configuration, bool $verify): void
+    /** @return list<VaultException> the changes that failed */
+    private function reconcile(VaultConfiguration $configuration, bool $verify): array
     {
         $now = CarbonImmutable::now();
         $lastVerified = $this->settings->lastVerifiedAt();
@@ -81,7 +98,7 @@ final readonly class SyncVaultAction
         if (! $verify && $plan->pending() === 0) {
             $this->settings->recordSuccess($now);
 
-            return;
+            return [];
         }
 
         try {
@@ -100,12 +117,13 @@ final readonly class SyncVaultAction
             throw $exception;
         }
 
-        if ($verify) {
-            $changed = $this->check($configuration, $session);
-            $plan = VaultPlan::for($configuration, $wanted, VaultItem::query()->get(), $key, $changed);
-        }
-
+        ['changed' => $changed, 'orphans' => $orphans] = $this->check($configuration, $session, $wanted);
+        $plan = VaultPlan::for($configuration, $wanted, VaultItem::query()->get(), $key, $changed);
         $errors = [];
+
+        foreach ($orphans as $cipherId) {
+            $this->attempt($errors, fn () => $this->client->delete($session, $cipherId));
+        }
 
         foreach ($plan->creates as $item) {
             $this->attempt($errors, fn () => $this->create($configuration, $session, $item, $plan->fingerprints[$item->source]));
@@ -122,46 +140,79 @@ final readonly class SyncVaultAction
             });
         }
 
-        if ($verify) {
-            $this->settings->recordVerified($now);
-        }
+        $this->settings->recordVerified($now);
 
         if ($errors === []) {
             $this->settings->recordSuccess($now);
 
-            return;
+            return [];
         }
 
         $this->settings->recordError($errors[0]->errorCode, $errors[0]->getMessage());
+
+        return $errors;
     }
 
     /**
-     * Forgets published items that are gone from the collection, so the plan creates them again,
-     * and returns the sources of items that someone changed in Vaultwarden.
+     * Compares the ledger with the collection. It forgets a published item that is gone or in the
+     * trash, so the plan creates it again, and adopts an item that carries a wanted source but has
+     * no ledger row, such as one whose create timed out after Vaultwarden stored it. It returns the
+     * sources of items someone changed, and the items to delete: duplicates of a source, trashed
+     * copies, and items whose source Orbit no longer has.
      *
-     * @return list<string>
+     * @param  array<string, DatabaseCredentialItem>  $wanted
+     * @return array{changed: list<string>, orphans: list<string>}
      */
-    private function check(VaultConfiguration $configuration, VaultSession $session): array
+    private function check(VaultConfiguration $configuration, VaultSession $session, array $wanted): array
     {
+        $inCollection = array_filter(
+            $session->ciphers,
+            static fn (VaultRemoteCipher $remote): bool => $remote->organizationId === $configuration->organizationId
+                && in_array($configuration->collectionId, $remote->collectionIds, true),
+        );
         $changed = [];
+        $kept = [];
 
         foreach (VaultItem::query()->get() as $published) {
-            $remote = $session->ciphers[$published->cipher_id] ?? null;
+            $remote = $inCollection[$published->cipher_id] ?? null;
 
-            if ($remote === null
-                || $remote->organizationId !== $configuration->organizationId
-                || ! in_array($configuration->collectionId, $remote->collectionIds, true)) {
+            if ($remote === null || $remote->deleted) {
                 $published->delete();
 
                 continue;
             }
+
+            $kept[$published->source] = $published->cipher_id;
 
             if ($remote->revisionDate !== $published->revision_date) {
                 $changed[] = $published->source;
             }
         }
 
-        return $changed;
+        $orphans = [];
+
+        foreach ($inCollection as $remote) {
+            if ($remote->source === null || ($kept[$remote->source] ?? null) === $remote->id) {
+                continue;
+            }
+
+            if (! $remote->deleted && ! isset($kept[$remote->source]) && isset($wanted[$remote->source])) {
+                // An empty fingerprint makes the plan rewrite the adopted item.
+                VaultItem::query()->create([
+                    'source' => $remote->source,
+                    'cipher_id' => $remote->id,
+                    'fingerprint' => '',
+                    'revision_date' => $remote->revisionDate,
+                ]);
+                $kept[$remote->source] = $remote->id;
+
+                continue;
+            }
+
+            $orphans[] = $remote->id;
+        }
+
+        return ['changed' => $changed, 'orphans' => $orphans];
     }
 
     private function create(VaultConfiguration $configuration, VaultSession $session, DatabaseCredentialItem $item, string $fingerprint): void

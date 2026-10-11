@@ -8,12 +8,15 @@ use App\Data\Vault\VaultStatusData;
 use App\Domain\Vault\VaultClient;
 use App\Domain\Vault\VaultException;
 use App\Domain\Vault\VaultLock;
+use App\Domain\Vault\VaultRemoteCipher;
 use App\Domain\Vault\VaultSettings;
 use App\Models\VaultItem;
 
 /**
- * Permanently deletes the published items, unless asked to keep them, then the stored setup. A
- * failed deletion keeps the setup and the items not yet deleted, so teardown can run again.
+ * Permanently deletes every Orbit item in the collection, unless asked to keep them, then the stored
+ * setup. That covers items in the ledger and items that only carry an `orbit.source` field, such as
+ * one whose create timed out. A failed deletion keeps the setup and the items not yet deleted, so
+ * teardown can run again.
  */
 final readonly class TeardownVaultAction
 {
@@ -26,19 +29,29 @@ final readonly class TeardownVaultAction
 
     public function execute(bool $keepItems): VaultStatusData
     {
-        $configuration = $this->settings->configuration() ?? throw new VaultException(
-            'vault.not_configured',
-            'Vaultwarden is not set up.',
-            409,
-        );
+        $this->lock->run(function () use ($keepItems): void {
+            $configuration = $this->settings->configuration() ?? throw new VaultException(
+                'vault.not_configured',
+                'Vaultwarden is not set up.',
+                409,
+            );
 
-        $this->lock->run(function () use ($configuration, $keepItems): void {
-            if (! $keepItems && VaultItem::query()->exists()) {
+            if (! $keepItems) {
                 $session = $this->client->open($configuration->credentials);
+                $orbitItems = array_keys(array_filter(
+                    $session->ciphers,
+                    static fn (VaultRemoteCipher $remote): bool => $remote->source !== null
+                        && $remote->organizationId === $configuration->organizationId
+                        && in_array($configuration->collectionId, $remote->collectionIds, true),
+                ));
 
                 foreach (VaultItem::query()->get() as $published) {
                     $this->client->delete($session, $published->cipher_id);
                     $published->delete();
+                }
+
+                foreach ($orbitItems as $cipherId) {
+                    $this->client->delete($session, $cipherId);
                 }
             }
 

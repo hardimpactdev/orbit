@@ -29,7 +29,7 @@ orbit vault:setup --url=<origin> --client-id=<id> --client-secret-file=<path> --
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--url` | yes | Vaultwarden origin, for example `https://vault.orbit`. Must use HTTPS. |
+| `--url` | yes | Vaultwarden origin on a `.orbit` host, for example `https://vault.orbit`. Must use HTTPS. |
 | `--client-id` | yes | The `client_id` of the Gateway account's personal API key, such as `user.<uuid>`. |
 | `--client-secret-file` | yes | File that contains only the API key's `client_secret`. |
 | `--master-password-file` | yes | File that contains only the account's master password. |
@@ -62,11 +62,11 @@ Publish changes now. The run also recreates published items that are gone from V
 orbit vault:sync [--json]
 ```
 
-The output is the [status](#orbit-vaultstatus). The scheduler runs the same reconcile every minute, so this command is needed only to see the result at once.
+The output is the [status](#orbit-vaultstatus). The scheduler runs the same reconcile every minute, so this command is needed only to see the result at once. When a change failed, the Gateway returns `vault.sync_failed` and the command exits with a failure.
 
 ## orbit vault:teardown
 
-Permanently delete every item Orbit published, then delete the stored account, organization, and collection.
+Permanently delete every Orbit item in the collection, then delete the stored account, organization, and collection.
 
 ```bash
 orbit vault:teardown [--keep-items] [--yes] [--json]
@@ -88,7 +88,8 @@ In a terminal the command asks a default-No question. Without `--yes`, a noninte
 | `input.invalid` | `vault:setup` has no `--client-id`, `--organization`, or `--collection`. |
 | `vault.secret_required` | `vault:setup` has no `--client-secret-file` or `--master-password-file`. |
 | `vault.secret_invalid` | A secret file is unreadable or empty. |
-| `vault.url_invalid` | `--url` is not an HTTPS origin. |
+| `vault.url_invalid` | `--url` is not an HTTPS origin. The Gateway also refuses a host outside `.orbit`. |
+| `vault.sync_failed` | `vault:sync` could not make at least one change. |
 
 [Vaultwarden errors](/reference/vaultwarden#api) lists the Gateway errors.
 
