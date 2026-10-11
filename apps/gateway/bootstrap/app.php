@@ -57,7 +57,7 @@ if (
     throw new RuntimeException('PHP must omit arguments from exception traces.');
 }
 
-return Application::configure(basePath: dirname(__DIR__, 1))
+return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         api: __DIR__.'/../routes/api.php',
         health: '/up',
