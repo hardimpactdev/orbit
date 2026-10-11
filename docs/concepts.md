@@ -22,7 +22,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Project**: One Git repository and the defaults for running it. Its type decides what its Instances can do. See [Projects](/reference/projects).
 - **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Instance**: One running copy of a Project on a Node, for development or production. See [Applications](/domains/applications).
-- **Placement**: Whether an Instance is for development or production. The role of its Node decides it: `app-dev` or `app-prod`. Environment always means an Instance's environment values, never its placement.
+- **Placement**: Where an Instance runs: its Node. The role of that Node, `app-dev` or `app-prod`, makes the Instance a development or a production Instance. The web app shows this kind as Placement. Process and Schedule definitions name it `environments`.
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).

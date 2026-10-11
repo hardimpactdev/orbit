@@ -10,8 +10,8 @@
                 "testid": "nav-dashboard",
                 "purpose": "Dashboard in the main nav, after the phone menu is opened when the nav is collapsed."
             },
-            { "testid": "dashboard-workers", "purpose": "The worker nodes pane." },
-            { "testid": "dashboard-clients", "purpose": "The client nodes pane." },
+            { "testid": "dashboard-workers", "purpose": "The Nodes with roles pane." },
+            { "testid": "dashboard-clients", "purpose": "The Roleless Nodes pane." },
             { "testid": "dashboard-projects", "purpose": "The projects pane." },
             { "testid": "dashboard-instances", "purpose": "The instances pane." },
             { "testid": "dashboard-processes", "purpose": "The processes pane." },
