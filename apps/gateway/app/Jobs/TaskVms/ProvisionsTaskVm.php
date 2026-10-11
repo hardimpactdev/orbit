@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Actions\TaskVms\RefillTaskVmPoolAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
@@ -40,7 +41,7 @@ trait ProvisionsTaskVm
         return (string) $this->taskVmId;
     }
 
-    /** The row becomes `failed`, and its group asks for assistance, so the failure shows in `tasks:status`. */
+    /** The row becomes `failed`, and its group asks for assistance, so the failure shows in `tasks:status`. A pool row has no group. */
     public function failed(Throwable $exception): void
     {
         $code = TaskVmException::codeOf($exception);
@@ -50,7 +51,14 @@ trait ProvisionsTaskVm
             'error_code' => $code,
             'error_message' => $message,
         ]);
-        $group = TaskVm::query()->find($this->taskVmId)?->group;
+        $vm = TaskVm::query()->find($this->taskVmId);
+        if ($failed === 1 && $vm instanceof TaskVm && $vm->group_id === null) {
+            // A pool VM has no group to ask: its host waits before the next one, and the refill destroys it.
+            RefillTaskVmPoolAction::failed($vm, $code, $message);
+
+            return;
+        }
+        $group = $vm?->group;
         if ($failed === 1 && $group instanceof Task) {
             TaskAssistance::apply($group, AssistanceKind::Failure, null, self::FailedReasonPrefix."{$code}: {$message} Cancel the group to destroy the VM.", replaceFailure: true);
         }

@@ -14,6 +14,8 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Models\Node;
 
 final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
@@ -244,6 +246,24 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             return;
         }
 
+        $command = $this->materializeCommand($node);
+        // A task VM whose base image ran this exact program skips it.
+        if (app(TaskVmBakedPrograms::class)->holds($node, TaskVmBakedPrograms::VpManager, $command)) {
+            return;
+        }
+
+        $result = $this->commands->execute($node, $command->arguments, $command->input);
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'materialize',
+            message: 'The VP manager could not be materialized.',
+        );
+    }
+
+    /** The Linux program that materializes the Vite+ manager for the Node's managed user. The task VM base image runs it too. */
+    public function materializeCommand(Node $node): RemoteCommand
+    {
         $program = <<<'BASH'
             managed_user=$1
             passwd_entry=$(getent passwd -- "$managed_user")
@@ -374,13 +394,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             trap - EXIT
             BASH;
 
-        $result = $this->commands->execute($node, ['sudo', 'bash', '-seu', '--', $node->user], $program);
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'materialize',
-            message: 'The VP manager could not be materialized.',
-        );
+        return new RemoteCommand(['sudo', 'bash', '-seu', '--', $node->user], $program);
     }
 
     public function managerVersion(Node $node): string

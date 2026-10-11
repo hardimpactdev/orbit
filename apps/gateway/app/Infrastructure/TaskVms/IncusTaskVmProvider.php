@@ -25,6 +25,9 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 {
     private const string FingerprintPattern = '/\A256 (SHA256:[A-Za-z0-9+\/]{43}) .* \(ED25519\)\n?\z/D';
 
+    /** How long one readiness check waits in the guest for cloud-init. A boot from the base image takes about 10 seconds. */
+    private const int CloudInitWaitSeconds = 30;
+
     public function __construct(
         private IncusHost $incus,
         private TaskVmSettings $settings,
@@ -85,7 +88,8 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     public function bootstrapReady(TaskVm $vm): bool
     {
-        $result = $this->incus($vm, ['exec', '--', $vm->name, 'cloud-init', 'status', '--format=json']);
+        // Waits in the guest until cloud-init is done, so the caller hears it at once instead of on its next poll.
+        $result = $this->incus($vm, ['exec', '--', $vm->name, 'timeout', (string) self::CloudInitWaitSeconds, 'cloud-init', 'status', '--wait', '--format=json']);
         // Until the guest agent runs, `incus exec` fails and prints nothing on stdout.
         if (! $result->succeeded() && trim($result->stdout) === '') {
             return false;
@@ -115,6 +119,16 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         return $match[1];
+    }
+
+    public function imageManifest(TaskVm $vm): ?string
+    {
+        $result = $this->incus($vm, ['exec', '--', $vm->name, 'sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', TaskVmBakedPrograms::ManifestPath]);
+        if (! $result->succeeded() || $result->truncated) {
+            throw $this->failed($vm, 'exec cat image manifest', $result);
+        }
+
+        return $result->stdout === 'absent' ? null : $result->stdout;
     }
 
     public function start(TaskVm $vm): void

@@ -30,6 +30,7 @@ use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
+use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
@@ -79,11 +80,25 @@ return Application::configure(basePath: dirname(__DIR__))
         // The task VM host sweep: orphaned VMs and live rows whose VM is gone.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
             ->when(static fn (): bool => config('task_vms.enabled') === true);
+        // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
+        // host has warm_vms and no pool VM exists.
+        $schedule->job(new RefillTaskVmPool)->everyMinute()
+            ->when(static fn (): bool => RefillTaskVmPool::due());
         // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
+        // Every second, so a claim outside the task tick waits at most a second for its VM to start. Only a
+        // job that a worker would take now starts one: a delayed retry or release waits for its time, as the
+        // queue does, and a reserved job waits until its reservation expires.
         $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500')
-            ->everyFiveSeconds()->withoutOverlapping(30)
-            ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->exists());
+            ->everySecond()->withoutOverlapping(30)
+            ->when(static function (): bool {
+                $now = now()->getTimestamp();
+
+                return DB::table('jobs')->where('queue', 'task-vms')->where('available_at', '<=', $now)
+                    ->where(static fn ($query) => $query->whereNull('reserved_at')
+                        ->orWhere('reserved_at', '<=', $now - (int) config('queue.connections.task-vms.retry_after')))
+                    ->exists();
+            });
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

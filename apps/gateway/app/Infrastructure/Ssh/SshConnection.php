@@ -21,10 +21,16 @@ final readonly class SshConnection
          */
         public bool $shareConnection = true,
         /**
-         * The connection to the jump host that this connection goes through. A connection with a
-         * jump host never shares a connection, because hosts behind different jump hosts can have
-         * the same private address.
+         * The connection to the jump host that this connection goes through. Its shared connection
+         * is named after the jump host and the target, because hosts behind different jump hosts
+         * can have the same private address.
          */
         public ?SshConnection $proxyJump = null,
+        /**
+         * What identifies the host behind the address, such as its pinned host key fingerprint. A connection
+         * through a jump host shares a connection only when it has one, and the name includes it, so a new
+         * host at a reused address never gets the old host's connection.
+         */
+        public ?string $hostIdentity = null,
     ) {}
 }

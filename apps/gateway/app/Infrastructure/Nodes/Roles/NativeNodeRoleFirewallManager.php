@@ -355,6 +355,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             proxyJump: $publicConnection
                 ? NodeSshJump::connection($node, $this->keys->privateKeyPath(), $this->knownHosts->path())
                 : null,
+            hostIdentity: $node->ssh_host_fingerprint,
         );
     }
 

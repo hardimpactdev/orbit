@@ -20,6 +20,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
@@ -148,21 +149,24 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             'ssh_host_key' => $hostKey->value,
             'ssh_host_fingerprint' => $hostKey->fingerprint,
         ]);
+        // Named after the pinned host key now, so a connection through the jump host can be shared.
+        $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
 
-        $bootstrap = $this->ssh->execute(
-            $bootstrapConnection,
-            $identity->bootstrapUser === 'root'
-                ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
-                : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator),
-        );
+        $bootstrapCommand = $identity->bootstrapUser === 'root'
+            ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
+            : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser, $rolelessOperator);
+        // A task VM whose base image ran this exact program skips it.
+        if (! app(TaskVmBakedPrograms::class)->holds($node, TaskVmBakedPrograms::Bootstrap, $bootstrapCommand)) {
+            $bootstrap = $this->ssh->execute($bootstrapConnection, $bootstrapCommand);
 
-        if (! $bootstrap->succeeded()) {
-            throw new NodeProvisioningException(
-                'base-host',
-                'node.bootstrap_failed',
-                "Could not bootstrap node [{$node->name}].",
-                result: $bootstrap,
-            );
+            if (! $bootstrap->succeeded()) {
+                throw new NodeProvisioningException(
+                    'base-host',
+                    'node.bootstrap_failed',
+                    "Could not bootstrap node [{$node->name}].",
+                    result: $bootstrap,
+                );
+            }
         }
 
         $managedConnection = $this->connection(
@@ -289,6 +293,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 identityFile: $this->sshKeys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
                 proxyJump: $this->jump($node, $host, $port),
+                hostIdentity: $node->ssh_host_fingerprint,
             );
         }
 
@@ -301,6 +306,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             identityFile: $this->sshKeys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
             proxyJump: $this->jump($node, $host ?? $defaultHost, $port ?? $defaultPort),
+            hostIdentity: $node->ssh_host_fingerprint,
         );
     }
 

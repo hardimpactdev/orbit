@@ -42,6 +42,11 @@ final readonly class TaskVmRuntime
 
     public const int ArtifactMaxBytes = 268435456;
 
+    /** The limits of a run inside a warm claim, see {@see prepare()}. */
+    public const int InlineStepSeconds = 15;
+
+    public const int InlineLockSeconds = 10;
+
     /** Shared with the Orbit lane, so one anchor key guards each CLIProxyAPI. */
     private const string ModelKeyLock = 'orbit:compute:model-keys';
 
@@ -92,9 +97,15 @@ final readonly class TaskVmRuntime
         private TaskVmStepClock $clock,
     ) {}
 
-    public function prepare(TaskVm $vm): void
+    /**
+     * `$inline` is the run inside a warm claim, in `tasks:tick`: each SSH step may take 15 seconds instead of 60, the
+     * model key lock is awaited 10 seconds instead of 60, and a VM without the pinned Pi fails at once instead of
+     * uploading it for up to 600 seconds. The queued job then does the upload.
+     */
+    public function prepare(TaskVm $vm, bool $inline = false): void
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no Node yet.");
+        $token = $vm->pi_token ?? throw new TaskVmException('task_vm.runtime_failed', "Task VM [{$vm->name}] has no Pi token: no task group claimed it.", 409);
         $origin = $this->origin();
         if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
             throw $this->invalidConfig('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
@@ -107,21 +118,25 @@ final readonly class TaskVmRuntime
         if ($artifact === null || $digest === null || $this->settings->piModels === []) {
             throw $this->invalidConfig('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
         }
-        $key = $this->ensureModelKey($vm, $origin);
+        $key = $this->ensureModelKey($vm, $origin, $inline ? self::InlineLockSeconds : 60);
+        $timeout = $inline ? self::InlineStepSeconds : 60;
         $this->clock->step('model-key');
 
         try {
             $home = '/home/'.$node->user;
             // A VM from a current base image has the pinned executable, so only an older image needs the upload.
-            $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', 60)->stdout;
+            $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', $timeout)->stdout;
             if (trim($installed) !== 'current') {
+                if ($inline) {
+                    throw new TaskVmException('task_vm.runtime_failed', "Task VM [{$vm->name}] has no current Pi, so the queued job uploads it.");
+                }
                 $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
                 $this->clock->step('pi-upload');
             } else {
                 $this->clock->step('pi-current');
             }
-            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', 60);
-            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($vm->pi_token), 'task-vm-pi-token', 60);
+            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', $timeout);
+            $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($token), 'task-vm-pi-token', $timeout);
             $this->clock->step('pi-files');
             $this->processes->execute(new AddProcessData(
                 targetType: ProcessTargetType::Node,
@@ -175,7 +190,7 @@ final readonly class TaskVmRuntime
             return;
         }
         $origin = $vm->model_proxy_origin ?? $this->origin();
-        $this->withModelKeyLock(function () use ($vm, $origin): void {
+        $this->withModelKeyLock(60, function () use ($vm, $origin): void {
             $vm->refresh();
             if ($vm->model_key !== null) {
                 $this->keys->revoke($origin, $this->managementKey(), $this->anchor($origin), $vm->model_key);
@@ -185,9 +200,9 @@ final readonly class TaskVmRuntime
     }
 
     /** The key and its origin are stored before CLIProxyAPI learns the key, so a retry registers the same key there. */
-    private function ensureModelKey(TaskVm $vm, string $origin): string
+    private function ensureModelKey(TaskVm $vm, string $origin, int $wait = 60): string
     {
-        return $this->withModelKeyLock(function () use ($vm, $origin): string {
+        return $this->withModelKeyLock($wait, function () use ($vm, $origin): string {
             $vm->refresh();
             if ($vm->model_key === null) {
                 $vm->update(['model_key' => bin2hex(random_bytes(32)), 'model_proxy_origin' => $origin]);
@@ -205,10 +220,10 @@ final readonly class TaskVmRuntime
      * @param  callable(): T  $operation
      * @return T
      */
-    private function withModelKeyLock(callable $operation): mixed
+    private function withModelKeyLock(int $wait, callable $operation): mixed
     {
         try {
-            return Cache::lock(self::ModelKeyLock, 600)->block(60, $operation);
+            return Cache::lock(self::ModelKeyLock, 600)->block($wait, $operation);
         } catch (TaskVmException $exception) {
             throw $exception;
         } catch (LockTimeoutException $exception) {

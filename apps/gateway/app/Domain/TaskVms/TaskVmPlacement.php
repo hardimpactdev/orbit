@@ -78,7 +78,7 @@ final class TaskVmPlacement
         }
     }
 
-    /** An Instance on a task VM Node must be that group's `task-<group id>` workspace in the group's Project. */
+    /** An Instance on a task VM Node must be that group's `task-<group id>` workspace in the group's Project. A pool VM serves none. */
     public static function assertInstance(Instance $instance): void
     {
         $vm = self::forNodeId($instance->node_id);
@@ -87,6 +87,9 @@ final class TaskVmPlacement
         }
 
         $group = $vm->group;
+        if (! $group instanceof Task) {
+            throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a warm task VM. It serves no Instance until a task group claims it.");
+        }
         if ($instance->project_id !== $group->project_id || $instance->name !== TaskWorkspaceName::for($group)) {
             throw new TaskVmException('task_vm.foreign_instance', "Node [{$instance->node_id}] is a task VM and serves only the workspace of task group [{$group->id}].");
         }

@@ -21,9 +21,11 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
+use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -770,6 +772,36 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
         ->toBe($expected->arguments)
         ->and($ssh->calls[0]['command']->input)
         ->toBe($expected->input);
+});
+
+it('skips the bootstrap that a task VM image ran as it renders now', function (bool $same): void {
+    $node = base_provisionable_node();
+    $node->update(['user' => 'orbit']);
+    $factory = new NodeBootstrapCommandFactory(base_test_keys());
+    app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'base-node']), TaskVmBakedPrograms::manifest([
+        TaskVmBakedPrograms::Bootstrap => $same ? $factory->makeWithPasswordlessSudo($node, 'orbit') : $factory->makeWithPasswordlessSudo($node, 'nckrtl'),
+    ]));
+    $ssh = new BaseNodeSshExecutor;
+
+    base_node_converger($ssh)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
+
+    $bootstraps = array_filter($ssh->calls, static fn (array $call): bool => in_array('bash', $call['command']->arguments, true));
+    expect($bootstraps)->toHaveCount($same ? 0 : 1)
+        ->and($ssh->calls[0]['command']->arguments)->toBe($same ? ['true'] : $factory->makeWithPasswordlessSudo($node, 'orbit')->arguments);
+})->with(['same program' => true, 'changed program' => false]);
+
+it('runs the bootstrap on any other Node while a task VM image is loaded', function (): void {
+    $node = base_provisionable_node();
+    $node->update(['user' => 'orbit']);
+    $factory = new NodeBootstrapCommandFactory(base_test_keys());
+    app(TaskVmBakedPrograms::class)->load(new TaskVm(['name' => 'tvm-7']), TaskVmBakedPrograms::manifest([
+        TaskVmBakedPrograms::Bootstrap => $factory->makeWithPasswordlessSudo($node, 'orbit'),
+    ]));
+    $ssh = new BaseNodeSshExecutor;
+
+    base_node_converger($ssh)->converge($node, new NodeProvisioningIdentity('orbit', 'orbit'), 'SHA256:pinned');
+
+    expect($ssh->calls[0]['command']->input)->toBe($factory->makeWithPasswordlessSudo($node, 'orbit')->input);
 });
 
 it('reports a bounded base bootstrap failure before later convergence', function (): void {

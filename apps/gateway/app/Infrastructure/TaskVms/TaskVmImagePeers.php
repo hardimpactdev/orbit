@@ -14,6 +14,7 @@ use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
+use App\Models\TaskVm;
 use Closure;
 use OpenSSLCertificate;
 
@@ -202,6 +203,10 @@ final readonly class TaskVmImagePeers
     {
         if ($this->settings->hasHost($nodeId)) {
             throw new TaskVmException('task_vm.host_configured', "Node [{$nodeId}] is still in task_vms.incus.hosts. Remove its entry first.");
+        }
+        $live = TaskVm::query()->live()->where('host_node_id', $nodeId)->count();
+        if ($live > 0) {
+            throw new TaskVmException('task_vm.host_in_use', "Node [{$nodeId}] still has {$live} task VMs that are not destroyed, warm ones included. Destroy needs its entry: put it back with warm_vms 0, wait until they are destroyed, then remove it.", 409);
         }
         $this->converge();
         $node = Node::query()->find($nodeId);

@@ -114,6 +114,8 @@ A UI change attaches two files for each route it changes. One uses `iphone-15` a
 | `reach` | How a person gets there from the main nav. |
 | `controls` | At least one control on that page. |
 
+`bin/project-vocabulary` checks the map's text, so each `purpose` uses Orbit's current names, such as Nodes with roles and roleless Nodes.
+
 Each control is an object with `testid` and `purpose`. `testid` is the `data-testid` value, matching `[a-z0-9]+(-[a-z0-9]+)*`. It is not a CSS selector.
 
 A pattern such as `/$section` is one entry. It is not one entry per section name. The `purpose` names the sections that pattern serves. A static path such as `/tasks` is its own entry, even though a dynamic pattern also fits that URL.
