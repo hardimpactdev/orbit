@@ -229,11 +229,13 @@ Each host keeps one template for each Project whose groups run on task VMs. Orbi
 
 When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
 
-1. It lists the storage volumes of the host's project. It takes the newest template of the Project that is marked ready and was cloned from the Project's current `repository_url`. After the Project's repository changes, no template matches until the next build.
+1. It lists the storage volumes of the host's project. It takes the newest ready template of the Project that was cloned from the Project's current `repository_url`.
 2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
 3. It attaches the clone to the running VM as the disk `workspace`.
-4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory. It never mounts over a directory with content. Only after the mount succeeds does it add the mount to `/etc/fstab`, so a failed mount never comes back at a later boot over a fresh clone. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
+4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory. It never mounts over a directory with content. Then it adds the mount to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
 5. Source preparation checks the owner and the origin of `.orbit-workspace-template`. Then it renames that directory to the checkout `task-<id>`. The rename keeps the files and their inode. Preparation writes its receipt as for a clone.
+
+After the Project's repository changes, no template matches until the next build. The fstab line follows a successful mount only, so a failed mount never comes back at a later boot over a fresh clone.
 
 Then the workspace fetches and checks out the group's branch, as usual. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
 
@@ -257,7 +259,7 @@ The workspace starts from a fresh clone, as before, in these cases:
 - The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
 - A step fails, for example the copy or the mount. Orbit logs the warning `Task VM workspace template could not be attached; the workspace starts from a fresh clone.` with the error.
 - The volume holds no template checkout. Orbit logs `Task VM workspace volume holds no template checkout; it starts from a fresh clone.`
-- The template checkout fails a check of source preparation: its parent, its owner, its repository root, or its origin. Preparation leaves it in place and clones. The Gateway logs `The workspace template failed its source checks; the checkout is a fresh clone.`
+- The template checkout fails a check of source preparation, for example of its origin. Preparation then clones and logs `The workspace template failed its source checks; the checkout is a fresh clone.`
 
 The group never fails or waits because of a template. When the mount succeeded, the fresh clone goes to the volume. Otherwise it goes to the root disk.
 
@@ -279,18 +281,24 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
 | `clone` | Clones the default branch into `.orbit-workspace-template`, with the Project's repository access, as `orbit` |
 | `php` | Installs the `app-dev` PHP packages of the PHP version that the Project's `composer.json` selects, with the same program that the Instance runs on a task VM |
-| `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set, as the baseline check does. The `@orbit/tia-baseline` step becomes the same installer as in the check. A builder has no Instance, so no SSR port is set. Each step gets its timeout, but at most what the build's budget has left |
+| `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set, as the baseline check does. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
 | `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
-A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock. A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build of the mealou template took 92 seconds. The PHP packages took 37 seconds of that, and the setup steps 36 seconds.
+The `@orbit/tia-baseline` step becomes the same installer as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
+
+A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock.
+
+A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build of the mealou template took 92 seconds. The PHP packages took 37 seconds of that, and the setup steps 36 seconds.
 
 #### Template failures
 
-A build that fails before `publish` deletes its builder VM and its volume, and the Project keeps its current template. After `publish` the new template is ready: a failed `delete-builder` or `prune` only logs the warning `Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.` It fails with `task_vm.workspace_template_failed`, which names the stage. The job logs the error `Task VM workspace template build failed; workspaces of the Project start from a fresh clone.`, and claims queue no new build of that Project on that host for 6 hours. The next nightly refresh tries again. A build stopped with SIGINT or SIGTERM, or past its job timeout, deletes its builder and frees the host. A build killed with SIGKILL holds the host for at most 25 minutes, and the next build sweeps what it left.
+A build that fails before `publish` deletes its builder VM and its volume, and the Project keeps its current template. After `publish` the new template is ready. A failed `delete-builder` or `prune` then only logs the warning `Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.`
+
+ It fails with `task_vm.workspace_template_failed`, which names the stage. The job logs the error `Task VM workspace template build failed; workspaces of the Project start from a fresh clone.`, and claims queue no new build of that Project on that host for 6 hours. The next nightly refresh tries again. A build stopped with SIGINT or SIGTERM, or past its job timeout, deletes its builder and frees the host. A build killed with SIGKILL holds the host for at most 25 minutes, and the next build sweeps what it left.
 
 #### Disk use and pruning
 
@@ -743,9 +751,13 @@ The claim and the refill also have these limits:
 Workspace templates have these limits:
 
 - A template is as fresh as its last build. A claim fetches the rest, and the setup steps install what changed.
-- An ignored file that no setup step rewrites keeps its state from the template's commit, up to a day old. Examples are a SQLite database from a migration, a `.env` that a step copies only when it is missing, or a config cache. Such a file can make a check pass in the workspace that fails from scratch. Orbit does not remove ignored files, because `vendor` and `node_modules` are ignored files too. A Project with such a step should make the step rewrite its file. No current `vm` Project has one.
 - The builder installs the PHP packages of the version that `composer.json` selects. A setup step that needs more than the image and those packages fails the build, and the Project's workspaces start from a fresh clone.
 - A template build occupies the `task-vms` worker for a few minutes, so cold enrollments wait behind it.
+
+An ignored file that no setup step rewrites keeps its state from the template's commit, up to a day old. Examples are a SQLite database from a migration, a config cache, or a `.env` that a step copies only while it is missing. Such a file can make a check pass in the workspace that fails from scratch. Orbit does not remove ignored files, because `vendor` and `node_modules` are ignored files too. A step that creates such a file should rewrite it. No current `vm` Project has one.
+
+The template also leaves the step before the baseline check as it is:
+
 - The template shortens the baseline check, not the step before it.
 - In group 1428 the step before the baseline check took 44 seconds.
 - The Instance's PHP package install takes about 25 seconds on a fresh VM. Source preparation and the route took the rest. The `workspace-*` step lines show the split.

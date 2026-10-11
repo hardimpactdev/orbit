@@ -298,7 +298,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     {
         $seconds = (int) min((int) $step->timeout_seconds, floor($deadline - microtime(true)));
         if ($seconds < 1) {
-            throw new TaskVmException(self::ErrorCode, "The workspace template build ran out of its ".self::BudgetSeconds.'-second budget before setup step ['.$step->name.'].', 504);
+            throw new TaskVmException(self::ErrorCode, 'The workspace template build ran out of its '.self::BudgetSeconds.'-second budget before setup step ['.$step->name.'].', 504);
         }
         $command = (string) $step->command;
         if ($command === LifecycleStep::RestoreTiaBaseline) {
