@@ -54,7 +54,7 @@ The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
 ## Node and Instance lists
 
-The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
+The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. On the dashboard, these are the Nodes with roles pane and the roleless Nodes pane. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
 
 ## Node detail pages
 
