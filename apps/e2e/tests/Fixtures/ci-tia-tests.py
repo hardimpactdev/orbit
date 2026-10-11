@@ -396,7 +396,7 @@ class CiTiaTest(unittest.TestCase):
             privileged_tests=f' - P\\{classes[0]}::__pest_evaluable_it_fails_loudly\n')
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('4', 299), (outputs['shards'], plan['classes']))
+        self.assertEqual(('true', 299), (outputs['sharded'], plan['classes']))
         shards = [test_filter for test_filter in plan['filters']
                   if re.search(test_filter, f'P\\{classes[0]}::__pest_evaluable_it_works', re.I)]
         self.assertEqual(1, len(shards))

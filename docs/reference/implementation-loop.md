@@ -159,7 +159,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 A pull request that changes Gateway boot files, such as providers, `bootstrap/app.php`, routes, or migrations, selects nearly the whole Gateway suite: about 760 test classes and 12 minutes on Sabre. So the Gateway tests of a large selection run in up to four shards on separate runners.
 
-The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests`, so the plan holds exactly Pest's selection. It leaves out the `privileged` group: the shard runners have no `sudo`, and the Gateway privileged job runs that whole group on every run. Pest turns TIA off for a group option, so the command lists the group on its own, with `pest --no-tia --group=privileged --list-tests`, and subtracts it.
+The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests`, so the plan holds exactly Pest's selection. It leaves out the `privileged` group: the shard runners have no `sudo`, and the Gateway privileged job runs that whole group on every run. Pest turns TIA off for a group option, so the command lists the group on its own, with `pest --no-tia --group=privileged --list-tests`, and subtracts it test by test. A class stays in the plan while any of its selected tests is not privileged, because some classes tag only some of their tests. Each shard runs with `--exclude-group=privileged`, so it leaves out the privileged tests of such a class.
 
 With 200 classes or fewer, the Gateway job runs its tests with `--tia`, as before. 200 classes take about 3 minutes, so the job already ends about when the slowest other job does.
 
@@ -167,7 +167,7 @@ With more than 200 classes, the plan splits them into four shards. It balances t
 
 The shards run different numbers of Pest processes: 6 for the first shard on Sabre, 4 for each of the others. So the plan gives each class, longest first, to the shard that would end first: its process seconds divided by its processes.
 
-`bin/ci-tia shards` fails when a listed test does not parse as `Class::test`, so no test can silently drop out of every shard.
+`bin/ci-tia shards` fails when a listed test does not parse as `Class::test`. It also fails when a selected test that is not privileged matches no shard filter. So every selected test runs in a shard or in the Gateway privileged job, and none can silently drop out.
 
 The Gateway job runs the first shard, and the `Gateway shards` job runs the others, each on its own runner. Each shard runs `pest --no-tia --filter` with a regular expression that names its classes. PHPUnit matches it against `Class::test`, so every selected test runs in exactly one shard. The Gateway job still runs the quality checks, the classification-fakes check, and the architecture tests, once. The subprocess group stays in the Gateway subprocess job.
 
