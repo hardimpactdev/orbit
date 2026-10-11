@@ -87,7 +87,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
         $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500')
             ->everyFiveSeconds()->withoutOverlapping(30)
-            ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->exists());
+            ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->where('available_at', '<=', now()->getTimestamp())->exists());
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

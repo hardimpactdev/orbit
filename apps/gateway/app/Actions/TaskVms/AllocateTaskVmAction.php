@@ -12,6 +12,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Jobs\TaskVms\RefillTaskVmPool;
@@ -88,14 +89,19 @@ final readonly class AllocateTaskVmAction
 
     /**
      * Runs the group steps of a warm claim in the claim itself: the model key, the Pi files, and `pi-server`, about
-     * 1.5 seconds. So they never wait for the task VM worker, which runs one job at a time and may be in an
+     * 1.5 seconds, with short limits on each step. A VM without the pinned Pi is left to the queued job. A guard job
+     * queued first finishes the steps when the tick dies during them. So they never wait for the task VM worker, which runs one job at a time and may be in an
      * enrollment or an image build. The placement lock is released by then, and the claim holds no transaction. A
      * failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has no retries left.
      */
     private function prepareNow(TaskVm $vm): void
     {
+        // Queued first, so a tick that dies during the steps still leaves a job that finishes them.
+        EnsureWarmClaimReady::dispatch($vm->id)->delay(now()->addSeconds(EnsureWarmClaimReady::DelaySeconds));
+        $job = new PrepareTaskVmRuntime($vm->id);
+        $job->inline = true;
         try {
-            app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+            app()->call($job->handle(...));
         } catch (Throwable $exception) {
             Log::warning('The group steps of a warm task VM claim failed; the task VM worker retries them.', ['task_vm' => $vm->name, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);
             PrepareTaskVmRuntime::dispatch($vm->id);
