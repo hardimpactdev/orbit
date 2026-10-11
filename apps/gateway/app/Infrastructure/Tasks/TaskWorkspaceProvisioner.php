@@ -107,7 +107,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
 
         $vm = $taskVmNode instanceof Node ? $this->taskVms->vm($group) : null;
-        $started = microtime(true);
+        // The step clock reads the app clock.
+        $started = now()->getPreciseTimestamp() / 1_000_000;
         if ($vm instanceof TaskVm) {
             $this->clock->start($vm, $started);
         }
