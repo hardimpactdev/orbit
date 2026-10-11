@@ -256,12 +256,13 @@ jobs:
         if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '4'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
-      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
+      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it. The plan leaves out
+      # the privileged group, which the Gateway privileged job runs.
       - name: Run Gateway shard 1 of 4
         if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '4'
         env:
           FILTER: ${{ steps.gateway-plan.outputs.filter }}
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --exclude-group=privileged --compact --filter "$FILTER"
 
       # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
       # that graph is unusable, the changes include files that Pest cannot link to tests, or the newest nightly or manual
@@ -521,11 +522,12 @@ jobs:
           composer install --no-interaction --prefer-dist
 
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
-      # Each orbit-shard runner shares its host, so a shard runs at most 4 Pest processes, as on a hosted runner.
+      # Each orbit-shard runner shares its host, so a shard runs at most 4 Pest processes, as on a hosted runner. The
+      # runner user has no sudo, so the shard never runs the privileged group.
       - name: Run Gateway shard ${{ matrix.shard }} of 4
         env:
           FILTER: ${{ needs.gateway-plan.outputs[format('filter-{0}', matrix.shard)] }}
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --compact --filter "$FILTER"
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --compact --filter "$FILTER"
 
   privileged:
     name: Gateway privileged

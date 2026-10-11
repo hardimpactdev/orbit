@@ -313,7 +313,7 @@ class CiTiaTest(unittest.TestCase):
             f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
             for name in classes))
         pest = self.root / 'pest'
-        pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --colors=never" ] || exit 9\n'
+        pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --exclude-group=privileged --colors=never" ] || exit 9\n'
                         f'cat {listing}\nexit {status}\n')
         pest.chmod(0o755)
         self.output.write_text('')

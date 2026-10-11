@@ -461,7 +461,7 @@ describe('Composer configuration', function (): void {
             ->toMatchArray([
                 'if' => "matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '4'",
                 'env' => ['FILTER' => '${{ steps.gateway-plan.outputs.filter }}'],
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact --filter "$FILTER"',
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --exclude-group=privileged --compact --filter "$FILTER"',
             ]);
         $order = array_flip(array_keys($projectSteps));
         expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Read the Gateway test plan'])
@@ -477,7 +477,7 @@ describe('Composer configuration', function (): void {
                 'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => [2, 3, 4]]],
             ])
             ->and($jobs['gateway-shards']['runs-on'])
-            ->toBe("${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('[\"self-hosted\", \"orbit-shard\"]') || 'ubuntu-26.04' }}")
+            ->toBe('${{ vars.ORBIT_SABRE_RUNNER == \'true\' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON(\'["self-hosted", "orbit-shard"]\') || \'ubuntu-26.04\' }}')
             ->and($jobs['gateway-plan']['outputs'])->toHaveKeys(['filter-2', 'filter-3', 'filter-4'])
             ->and($shardSteps['Check out repository']['with']['ref'])->toBe('${{ needs.gateway-plan.outputs.commit }}')
             ->and($shardSteps['Keep exception arguments in traces']['if'])->toBe("runner.environment == 'self-hosted'")
@@ -485,8 +485,8 @@ describe('Composer configuration', function (): void {
             ->toContain('zend.exception_ignore_args=0', 'PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php')
             ->and($shardSteps['Run Gateway shard ${{ matrix.shard }} of 4'])
             ->toMatchArray([
-                'env' => ['FILTER' => "${{ needs.gateway-plan.outputs[format('filter-{0}', matrix.shard)] }}"],
-                'run' => 'vendor/bin/pest --parallel --processes=4 --no-tia --compact --filter "$FILTER"',
+                'env' => ['FILTER' => '${{ needs.gateway-plan.outputs[format(\'filter-{0}\', matrix.shard)] }}'],
+                'run' => 'vendor/bin/pest --parallel --processes=4 --no-tia --exclude-group=privileged --compact --filter "$FILTER"',
             ]);
 
         // Required checks fails when the plan fails, when a shard fails, and when the shards ran or skipped against the plan.
