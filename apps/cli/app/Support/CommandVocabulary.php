@@ -55,6 +55,7 @@ final readonly class CommandVocabulary
         'self-update' => ['self-update'],
         'tasks' => ['cancel', 'close', 'complete', 'status'],
         'tool' => ['adopt', 'scan'],
+        'vault' => ['setup', 'status', 'sync', 'teardown'],
     ];
 
     /** @var list<string> */

@@ -3875,6 +3875,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the Vaultwarden status
+         * @description Returns the Vaultwarden setup and the state of the published Database items from the Gateway records. It never contacts Vaultwarden and never returns a secret.
+         */
+        get: operations["vault-status"];
+        /**
+         * Set up Vaultwarden
+         * @description Logs in to Vaultwarden with the account API key, unlocks it with the master password, finds the organization and collection by name or ID, and checks that the account can write to the collection. Only then stores the values, encrypted. `url` must be an HTTPS origin on a `.orbit` host, and the Gateway trusts only the Orbit root CA; another origin returns `validation.failed` (422). Returns `vault.login_failed`, `vault.kdf_unsupported`, `vault.organization_missing`, `vault.collection_missing`, or `vault.collection_read_only` (422), and `vault.items_published` (409) for another organization or collection while items are published. No response or Activity entry returns the client secret or the master password, but this tool takes them as arguments, so they reach the caller transcript; the CLI reads them from files.
+         */
+        put: operations["vault-setup"];
+        post?: never;
+        /**
+         * Tear down Vaultwarden
+         * @description Permanently deletes every Orbit item in the collection, recorded or not, unless `keep_items` is true, then the stored setup. A failed deletion keeps the setup, so the teardown can run again. Returns `vault.not_configured` (409).
+         */
+        delete: operations["vault-teardown"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vault/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync database credentials to Vaultwarden
+         * @description Runs the Vaultwarden sync now: creates, rewrites, or permanently deletes Database items; adopts Orbit items with no ledger row; deletes duplicates, trashed copies, and items whose source is gone; and rewrites items changed in Vaultwarden. Returns the status when every change succeeded, and `vault.sync_failed` (502) with `failed` and `first_error` details when any change failed; the next run retries. Returns `vault.not_configured` or `vault.sync_busy` (409), and `vault.unreachable` (502) when Vaultwarden cannot be reached.
+         */
+        post: operations["vault-sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -20582,6 +20630,324 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "vault-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while Vaultwarden is set up. */
+                            configured: boolean;
+                            url: string | null;
+                            /** @description Email of the Gateway account. */
+                            email: string | null;
+                            organization: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            collection: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            /** @description Published items. */
+                            items: number;
+                            /** @description Wanted items that are not published or not current. */
+                            pending: number;
+                            skipped: {
+                                source?: string;
+                                slug?: string;
+                                username?: string | null;
+                                /** @enum {string} */
+                                reason?: "incomplete" | "password_unknown";
+                            }[];
+                            last_synced_at: string | null;
+                            last_error: {
+                                code?: string;
+                                message?: string;
+                            } | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "vault-setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uri
+                     * @description Vaultwarden origin, for example https://vault.orbit
+                     */
+                    url: string;
+                    /** @description The client_id of the Gateway account personal API key */
+                    client_id: string;
+                    client_secret: string;
+                    master_password: string;
+                    /** @description Organization name or ID */
+                    organization: string;
+                    /** @description Collection name or ID in that organization */
+                    collection: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while Vaultwarden is set up. */
+                            configured: boolean;
+                            url: string | null;
+                            /** @description Email of the Gateway account. */
+                            email: string | null;
+                            organization: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            collection: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            /** @description Published items. */
+                            items: number;
+                            /** @description Wanted items that are not published or not current. */
+                            pending: number;
+                            skipped: {
+                                source?: string;
+                                slug?: string;
+                                username?: string | null;
+                                /** @enum {string} */
+                                reason?: "incomplete" | "password_unknown";
+                            }[];
+                            last_synced_at: string | null;
+                            last_error: {
+                                code?: string;
+                                message?: string;
+                            } | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "vault-teardown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Leave the published items in Vaultwarden */
+                    keep_items?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while Vaultwarden is set up. */
+                            configured: boolean;
+                            url: string | null;
+                            /** @description Email of the Gateway account. */
+                            email: string | null;
+                            organization: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            collection: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            /** @description Published items. */
+                            items: number;
+                            /** @description Wanted items that are not published or not current. */
+                            pending: number;
+                            skipped: {
+                                source?: string;
+                                slug?: string;
+                                username?: string | null;
+                                /** @enum {string} */
+                                reason?: "incomplete" | "password_unknown";
+                            }[];
+                            last_synced_at: string | null;
+                            last_error: {
+                                code?: string;
+                                message?: string;
+                            } | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "vault-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while Vaultwarden is set up. */
+                            configured: boolean;
+                            url: string | null;
+                            /** @description Email of the Gateway account. */
+                            email: string | null;
+                            organization: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            collection: {
+                                id?: string;
+                                name?: string;
+                            } | null;
+                            /** @description Published items. */
+                            items: number;
+                            /** @description Wanted items that are not published or not current. */
+                            pending: number;
+                            skipped: {
+                                source?: string;
+                                slug?: string;
+                                username?: string | null;
+                                /** @enum {string} */
+                                reason?: "incomplete" | "password_unknown";
+                            }[];
+                            last_synced_at: string | null;
+                            last_error: {
+                                code?: string;
+                                message?: string;
+                            } | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

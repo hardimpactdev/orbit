@@ -231,6 +231,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:scan',
         'tool:show',
         'tool:update',
+        'vault:setup',
+        'vault:status',
+        'vault:sync',
+        'vault:teardown',
     ]);
 });
 
@@ -1012,6 +1016,18 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
+        'vault:setup' => [[], [
+            'url' => null,
+            'client-id' => null,
+            'client-secret-file' => null,
+            'master-password-file' => null,
+            'organization' => null,
+            'collection' => null,
+            'json' => false,
+        ]],
+        'vault:status' => [[], ['json' => false]],
+        'vault:sync' => [[], ['json' => false]],
+        'vault:teardown' => [[], ['keep-items' => false, 'yes' => false, 'json' => false]],
     ];
     $globalOptions = [
         'help',
@@ -1391,6 +1407,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:scan' => [['--node' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
+        'vault:setup' => [[], ...$profileMissing],
+        'vault:status' => [[], ...$profileMissing],
+        'vault:sync' => [[], ...$profileMissing],
+        'vault:teardown' => [['--yes' => true], ...$profileMissing],
     ];
     $visibleCommandNames = ExtensionCommandVisibility::duringListing(static fn (): array => collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())

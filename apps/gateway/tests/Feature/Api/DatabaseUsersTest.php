@@ -9,6 +9,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Node;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeDatabaseServerAdmin;
 
 const DATABASE_USER_SECRET = 'db-user-secret-71ae';
@@ -79,9 +80,16 @@ describe('database:user:create', function (): void {
         expect($activity->command)->toBe('database:user:create')
             ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))->not->toContain(DATABASE_USER_SECRET);
 
+        $user = DatabaseUser::query()->sole();
+        $stored = DB::table('database_users')->where('id', $user->id)->value('password');
+
+        expect($user->password)->toBe(DATABASE_USER_SECRET)
+            ->and($stored)->toBeString()->not->toContain(DATABASE_USER_SECRET);
+
         $this->getJson('/api/v1/database-connections/dlf-leden/users')
             ->assertOk()
-            ->assertJsonPath('data.0.username', 'reporting');
+            ->assertJsonPath('data.0.username', 'reporting')
+            ->assertJsonMissingPath('data.0.password');
         $this->getJson('/api/v1/database-connections/dlf-leden')
             ->assertOk()
             ->assertJsonPath('data.users_count', 1);
@@ -101,7 +109,8 @@ describe('database:user:create', function (): void {
             'read_only' => true,
         ])->assertOk()->assertJsonPath('data.privileges', 'SELECT ON `dlf_leden`.*');
 
-        expect(DatabaseUser::query()->count())->toBe(1);
+        expect(DatabaseUser::query()->count())->toBe(1)
+            ->and(DatabaseUser::query()->sole()->password)->toBe('rotated-'.DATABASE_USER_SECRET);
     });
 
     it('requires a connection on a server', function (): void {

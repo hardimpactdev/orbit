@@ -299,6 +299,10 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tool:scan' => ServingNode::ToolOwning,
         'tool:show' => ServingNode::ToolOwning,
         'tool:update' => ServingNode::ToolOwning,
+        'vault:setup' => ServingNode::Gateway,
+        'vault:status' => ServingNode::Gateway,
+        'vault:sync' => ServingNode::Gateway,
+        'vault:teardown' => ServingNode::Gateway,
     ];
 
     expect($actualScopes)->toBe($expectedScopes);

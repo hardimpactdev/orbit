@@ -76,6 +76,7 @@
               "reference/gateway-environment",
               "reference/database-connections",
               "reference/database-servers",
+              "reference/vaultwarden",
               "reference/processes-and-schedules",
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
@@ -193,6 +194,7 @@
               "cli/route",
               "cli/env",
               "cli/database",
+              "cli/vault",
               "cli/process",
               "cli/schedule"
             ]
@@ -588,6 +590,16 @@
             ]
           },
           {
+            "group": "Vaultwarden",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/vault",
+              "GET /api/v1/vault",
+              "PUT /api/v1/vault",
+              "POST /api/v1/vault/sync"
+            ]
+          },
+          {
             "group": "Conn",
             "openapi": "/openapi.json",
             "pages": [
@@ -647,7 +659,8 @@
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
               "decisions/0196-derive-application-directory-from-web-root",
               "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
-              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm"
+              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
+              "decisions/0205-publish-database-credentials-to-vaultwarden"
             ]
           }
         ]

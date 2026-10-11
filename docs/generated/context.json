@@ -610,6 +610,19 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/vault.mdx",
+            "title": "vault",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/concepts.md",
             "title": "Concepts",
             "kind": "product",
@@ -827,6 +840,28 @@
             ],
             "governing_adrs": [
                 "0200"
+            ]
+        },
+        {
+            "path": "docs/decisions/0205-publish-database-credentials-to-vaultwarden.md",
+            "title": "ADR 0205: Publish database credentials to Vaultwarden",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database server",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0205"
             ]
         },
         {
@@ -2374,6 +2409,22 @@
                 "Schedule",
                 "Task",
                 "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/vaultwarden.md",
+            "title": "Vaultwarden",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Node",
+                "Route",
+                "Tool"
             ],
             "governing_adrs": []
         },

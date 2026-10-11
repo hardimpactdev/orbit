@@ -72,7 +72,7 @@ With `--instance`, Orbit also creates the test database `<name>_test`, attaches 
 orbit database:user:create dlf-leden --username=reporting --password=SECRET --read-only
 ```
 
-A read-only user gets `SELECT` on the database. Any other user gets all privileges on it. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses.
+A read-only user gets `SELECT` on the database. Any other user gets all privileges on it. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
 ## How Orbit runs admin commands
 

@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 210 public Gateway operations. It preserves typed
+The SDK exposes exactly 214 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -80,6 +80,10 @@ The SDK exposes typed list, show, add, update, remove, attach, detach, query, ta
 ## proxycli
 
 The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, provider list, and model list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
+
+## Vault
+
+The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden. Setup sends the Vaultwarden URL, client ID, client secret, master password, organization, and collection. Teardown sends the `keep_items` flag. Status and sync are bodyless. Every request returns the same status, which omits the client secret and the master password. The Gateway owns login, encryption, reconciliation, and item deletion.
 
 ## Tasks
 

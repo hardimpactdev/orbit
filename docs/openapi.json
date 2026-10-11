@@ -102,6 +102,10 @@
       "description": "CLIProxyAPI quota snapshots, provider pools, and account controls."
     },
     {
+      "name": "Vaultwarden",
+      "description": "The copy of database credentials into a Vaultwarden collection."
+    },
+    {
       "name": "Conn",
       "description": "Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node."
     },
@@ -29879,6 +29883,799 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\UpdateToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateToolRequest(toolId: 41))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/vault": {
+      "delete": {
+        "operationId": "vault-teardown",
+        "summary": "Tear down Vaultwarden",
+        "tags": [
+          "Vaultwarden"
+        ],
+        "description": "Permanently deletes every Orbit item in the collection, recorded or not, unless `keep_items` is true, then the stored setup. A failed deletion keeps the setup, so the teardown can run again. Returns `vault.not_configured` (409).",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keep_items": {
+                    "type": "boolean",
+                    "description": "Leave the published items in Vaultwarden"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "configured",
+                        "url",
+                        "email",
+                        "organization",
+                        "collection",
+                        "items",
+                        "pending",
+                        "skipped",
+                        "last_synced_at",
+                        "last_error"
+                      ],
+                      "properties": {
+                        "configured": {
+                          "type": "boolean",
+                          "description": "True while Vaultwarden is set up."
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Email of the Gateway account."
+                        },
+                        "organization": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "collection": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "items": {
+                          "type": "integer",
+                          "description": "Published items."
+                        },
+                        "pending": {
+                          "type": "integer",
+                          "description": "Wanted items that are not published or not current."
+                        },
+                        "skipped": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "incomplete",
+                                  "password_unknown"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "last_synced_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "last_error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/vault\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"keep_items\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Vault\\TeardownVaultRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new TeardownVaultRequest())->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "vault-status",
+        "summary": "Show the Vaultwarden status",
+        "tags": [
+          "Vaultwarden"
+        ],
+        "description": "Returns the Vaultwarden setup and the state of the published Database items from the Gateway records. It never contacts Vaultwarden and never returns a secret.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "configured",
+                        "url",
+                        "email",
+                        "organization",
+                        "collection",
+                        "items",
+                        "pending",
+                        "skipped",
+                        "last_synced_at",
+                        "last_error"
+                      ],
+                      "properties": {
+                        "configured": {
+                          "type": "boolean",
+                          "description": "True while Vaultwarden is set up."
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Email of the Gateway account."
+                        },
+                        "organization": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "collection": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "items": {
+                          "type": "integer",
+                          "description": "Published items."
+                        },
+                        "pending": {
+                          "type": "integer",
+                          "description": "Wanted items that are not published or not current."
+                        },
+                        "skipped": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "incomplete",
+                                  "password_unknown"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "last_synced_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "last_error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/vault\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Vault\\ShowVaultStatusRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowVaultStatusRequest())->dto();\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "vault-setup",
+        "summary": "Set up Vaultwarden",
+        "tags": [
+          "Vaultwarden"
+        ],
+        "description": "Logs in to Vaultwarden with the account API key, unlocks it with the master password, finds the organization and collection by name or ID, and checks that the account can write to the collection. Only then stores the values, encrypted. `url` must be an HTTPS origin on a `.orbit` host, and the Gateway trusts only the Orbit root CA; another origin returns `validation.failed` (422). Returns `vault.login_failed`, `vault.kdf_unsupported`, `vault.organization_missing`, `vault.collection_missing`, or `vault.collection_read_only` (422), and `vault.items_published` (409) for another organization or collection while items are published. No response or Activity entry returns the client secret or the master password, but this tool takes them as arguments, so they reach the caller transcript; the CLI reads them from files.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048,
+                    "description": "Vaultwarden origin, for example https://vault.orbit"
+                  },
+                  "client_id": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "The client_id of the Gateway account personal API key"
+                  },
+                  "client_secret": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "master_password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "organization": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Organization name or ID"
+                  },
+                  "collection": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Collection name or ID in that organization"
+                  }
+                },
+                "required": [
+                  "url",
+                  "client_id",
+                  "client_secret",
+                  "master_password",
+                  "organization",
+                  "collection"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "configured",
+                        "url",
+                        "email",
+                        "organization",
+                        "collection",
+                        "items",
+                        "pending",
+                        "skipped",
+                        "last_synced_at",
+                        "last_error"
+                      ],
+                      "properties": {
+                        "configured": {
+                          "type": "boolean",
+                          "description": "True while Vaultwarden is set up."
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Email of the Gateway account."
+                        },
+                        "organization": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "collection": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "items": {
+                          "type": "integer",
+                          "description": "Published items."
+                        },
+                        "pending": {
+                          "type": "integer",
+                          "description": "Wanted items that are not published or not current."
+                        },
+                        "skipped": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "incomplete",
+                                  "password_unknown"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "last_synced_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "last_error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/vault\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"url\": \"example\", \"client_id\": \"example\", \"client_secret\": \"example\", \"master_password\": \"example\", \"organization\": \"example\", \"collection\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Vault\\SetupVaultRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SetupVaultRequest(\n    url: 'value',\n    clientId: 'value',\n    clientSecret: 'value',\n    masterPassword: 'value',\n    organization: 'value',\n    collection: 'value',\n))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/vault/sync": {
+      "post": {
+        "operationId": "vault-sync",
+        "summary": "Sync database credentials to Vaultwarden",
+        "tags": [
+          "Vaultwarden"
+        ],
+        "description": "Runs the Vaultwarden sync now: creates, rewrites, or permanently deletes Database items; adopts Orbit items with no ledger row; deletes duplicates, trashed copies, and items whose source is gone; and rewrites items changed in Vaultwarden. Returns the status when every change succeeded, and `vault.sync_failed` (502) with `failed` and `first_error` details when any change failed; the next run retries. Returns `vault.not_configured` or `vault.sync_busy` (409), and `vault.unreachable` (502) when Vaultwarden cannot be reached.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "configured",
+                        "url",
+                        "email",
+                        "organization",
+                        "collection",
+                        "items",
+                        "pending",
+                        "skipped",
+                        "last_synced_at",
+                        "last_error"
+                      ],
+                      "properties": {
+                        "configured": {
+                          "type": "boolean",
+                          "description": "True while Vaultwarden is set up."
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Email of the Gateway account."
+                        },
+                        "organization": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "collection": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "items": {
+                          "type": "integer",
+                          "description": "Published items."
+                        },
+                        "pending": {
+                          "type": "integer",
+                          "description": "Wanted items that are not published or not current."
+                        },
+                        "skipped": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "username": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "incomplete",
+                                  "password_unknown"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        "last_synced_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "last_error": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/vault/sync\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Vault\\SyncVaultRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SyncVaultRequest())->dto();\n"
           }
         ]
       }

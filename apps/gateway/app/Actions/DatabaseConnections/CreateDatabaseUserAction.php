@@ -63,6 +63,7 @@ final readonly class CreateDatabaseUserAction
                 'username' => $data->username,
             ],
             [
+                'password' => $data->password,
                 'privileges' => $this->statements->privilegeText($connection->database, $data->readOnly),
                 'created_by' => $createdBy,
             ],

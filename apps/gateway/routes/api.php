@@ -75,6 +75,7 @@ use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
+use App\Http\Controllers\Api\VaultController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -637,6 +638,10 @@ Route::prefix('v1')->group(function (): void {
         Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
             ->where('account', '[A-Za-z0-9._-]+')
             ->name('proxycli:update');
+        Route::get('vault', [VaultController::class, 'status'])->name('vault:status');
+        Route::put('vault', [VaultController::class, 'setup'])->name('vault:setup');
+        Route::post('vault/sync', [VaultController::class, 'sync'])->name('vault:sync');
+        Route::delete('vault', [VaultController::class, 'teardown'])->name('vault:teardown');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');
