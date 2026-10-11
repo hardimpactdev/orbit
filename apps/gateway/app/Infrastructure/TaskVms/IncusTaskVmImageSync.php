@@ -24,8 +24,11 @@ use Throwable;
  */
 final readonly class IncusTaskVmImageSync
 {
-    /** An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN. */
-    private const float CopySeconds = 1800.0;
+    /**
+     * An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN. The copy and a smoke boot of up to
+     * 600 seconds stay within the host's 1500-second image lock.
+     */
+    private const float CopySeconds = 600.0;
 
     public function __construct(
         private IncusHost $incus,

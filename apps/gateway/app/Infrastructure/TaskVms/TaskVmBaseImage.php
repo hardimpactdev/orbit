@@ -218,7 +218,17 @@ final readonly class TaskVmBaseImage
         foreach ($names as $name) {
             $this->incus->run($host, $node, ['delete', '--force', '--', $name]);
         }
-        if ($image !== null) {
+        if ($image === null) {
+            return;
+        }
+        // A promote whose reply was lost may have moved the alias already: the image it names stays, and so does
+        // an image whose alias cannot be read.
+        try {
+            $base = $this->incus->aliasTarget($host, $node, TaskVmHost::BaseImage);
+        } catch (TaskVmException) {
+            return;
+        }
+        if ($base !== $image) {
             $this->incus->run($host, $node, ['image', 'delete', '--', $image]);
         }
     }
