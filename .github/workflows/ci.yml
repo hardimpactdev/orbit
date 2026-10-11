@@ -29,7 +29,8 @@ jobs:
       contents: read
     # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true. Its subprocess group
     # runs on a GitHub-hosted runner, so each Gateway run takes one Sabre runner.
-    # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
+    # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre. A pull request
+    # with a large Gateway selection also runs two Gateway shards, each on its own runner.
     runs-on: ${{ matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
@@ -69,10 +70,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          # A pull request tests its merge ref, the tree that would land on main. Its commit descends from the main
+          # A pull request tests its merge commit, the tree that would land on main. Its commit descends from the main
           # commit that the restored main graph records, so TIA selects only the tests that the pull request affects.
-          # Pest reads the graph on that detached HEAD and does not write it.
-          ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
+          # Pest reads the graph on that detached HEAD and does not write it. The run's own merge commit stays fixed when
+          # refs/pull/N/merge moves, so the Gateway plan and shards test the same tree as this job.
+          ref: ${{ github.event_name == 'pull_request' && github.sha || github.ref_name }}
           repository: ${{ github.repository }}
 
       # The checkout above names the branch, and a later push can move it before this job starts. A running main run
@@ -220,9 +222,47 @@ jobs:
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
             ${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}
 
+      # The Gateway plan job lists the Gateway tests of a pull request at the same time as this job's quality checks.
+      # This job reads the plan when it needs it, so the other projects do not wait for the plan.
+      - name: Read the Gateway test plan
+        id: gateway-plan
+        if: matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 120); do
+            job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | select(.name == "Gateway plan") | "\(.status) \(.conclusion) \(.run_attempt)"')
+            read -r status conclusion attempt <<< "$job" || true
+            if [ "$status" = completed ]; then
+              if [ "$conclusion" != success ]; then
+                echo "::error::The Gateway plan job ended with $conclusion."
+                exit 1
+              fi
+              gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "gateway-plan-$attempt" -D "$RUNNER_TEMP/gateway-plan"
+              plan="$RUNNER_TEMP/gateway-plan/gateway-plan.json"
+              if [ "$(jq -r .commit "$plan")" != "$(git rev-parse HEAD)" ]; then
+                echo "::error::The Gateway plan describes $(jq -r .commit "$plan"), not $(git rev-parse HEAD)."
+                exit 1
+              fi
+              printf 'shards=%s\nfilter=%s\n' "$(jq -r .shards "$plan")" "$(jq -r '.filters[0] // ""' "$plan")" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo '::error::The Gateway plan job did not finish within 10 minutes.'
+          exit 1
+
       - name: Run affected tests
-        if: matrix.part != 'subprocess' && github.event_name == 'pull_request'
+        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '3'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
+
+      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
+      - name: Run Gateway shard 1 of 3
+        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '3'
+        env:
+          FILTER: ${{ steps.gateway-plan.outputs.filter }}
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
 
       # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
       # that graph is unusable, the changes include files that Pest cannot link to tests, or the newest nightly or manual
@@ -341,6 +381,138 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+
+  # A pull request lists its Gateway test selection here. When it has more than 200 test classes, the Gateway job
+  # runs the first of three shards and the Gateway shards job runs the other two, each on its own runner. Runs on main
+  # keep one Gateway job, because the full run there writes the whole Pest TIA graph.
+  gateway-plan:
+    name: Gateway plan
+    if: github.event_name == 'pull_request'
+    # A hosted runner keeps every Sabre runner for tests. Pest's graph fingerprint holds only the PHP minor version.
+    runs-on: ubuntu-26.04
+    outputs:
+      commit: ${{ steps.plan.outputs.commit }}
+      shards: ${{ steps.plan.outputs.shards }}
+      filter-2: ${{ steps.plan.outputs.filter-2 }}
+      filter-3: ${{ steps.plan.outputs.filter-3 }}
+    env:
+      ORBIT_TIA_DIRECTORY: .orbit-tia
+    defaults:
+      run:
+        working-directory: apps/gateway
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      # Without a coverage driver, Pest selects the full suite for a PHP change.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: pcov
+          tools: composer:v2
+          ini-values: zend.exception_ignore_args=0
+
+      - name: Install dependencies
+        run: |
+          cp .env.example .env
+          composer install --no-interaction --prefer-dist
+
+      - name: Compute Pest TIA cache prefix
+        id: orbit-tia-key
+        working-directory: .
+        run: |
+          printf 'prefix=%s\n' "orbit-tia-php8.5-apps/gateway-${{ hashFiles('apps/gateway/composer.lock', 'apps/gateway/tests/Pest.php', 'apps/gateway/phpunit.xml', 'apps/gateway/phpunit.xml.dist') }}" >> "$GITHUB_OUTPUT"
+
+      # The same main graph that the Gateway job restores for a pull request.
+      - name: Restore Pest TIA graph
+        uses: actions/cache/restore@v6
+        with:
+          path: apps/gateway/.orbit-tia
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) }}
+            ${{ steps.orbit-tia-key.outputs.prefix }}-main-
+
+      - name: Choose one Gateway test job or shards
+        id: plan
+        run: ../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"
+
+      - name: Publish the Gateway test plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: gateway-plan-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gateway-plan.json
+          if-no-files-found: error
+          retention-days: 1
+
+  gateway-shards:
+    name: Gateway shard ${{ matrix.shard }}/3
+    needs: gateway-plan
+    if: needs.gateway-plan.outputs.shards == '3'
+    # The same runners as the Gateway job: Sabre for this repository's pull requests, a hosted runner for forks.
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [2, 3]
+    defaults:
+      run:
+        working-directory: apps/gateway
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.gateway-plan.outputs.commit }}
+
+      - name: Set up PHP
+        if: runner.environment == 'github-hosted'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: pcov
+          tools: composer:v2
+          ini-values: zend.exception_ignore_args=0
+
+      - name: Set up Node
+        if: runner.environment == 'self-hosted'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Set up Homebrew
+        if: runner.environment == 'github-hosted'
+        uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
+
+      - name: Install Gateway system dependencies
+        if: runner.environment == 'github-hosted'
+        timeout-minutes: 10
+        env:
+          APT_OPTIONS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
+          sudo apt-get $APT_OPTIONS update
+          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools
+          brew install caddy openssl@3
+          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: |
+          cp .env.example .env
+          composer install --no-interaction --prefer-dist
+
+      # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
+      - name: Run Gateway shard ${{ matrix.shard }} of 3
+        env:
+          FILTER: ${{ matrix.shard == 2 && needs.gateway-plan.outputs.filter-2 || needs.gateway-plan.outputs.filter-3 }}
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
 
   privileged:
     name: Gateway privileged
@@ -667,7 +839,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, privileged, docs-merge-ref, api-reference, web, pi-server, agent, desktop]
+    needs: [project, gateway-plan, gateway-shards, privileged, docs-merge-ref, api-reference, web, pi-server, agent, desktop]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
@@ -675,6 +847,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
+          GATEWAY_PLAN_RESULT: ${{ needs.gateway-plan.result }}
+          GATEWAY_SHARDS: ${{ needs.gateway-plan.outputs.shards }}
+          GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
@@ -684,8 +859,15 @@ jobs:
         run: |
           test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && test "$DESKTOP_RESULT" = success && {
             if [ "$EVENT" = pull_request ]; then
-              test "$DOCS_MERGE_REF_RESULT" = success
+              test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && {
+                # The shards run exactly when the plan chose them.
+                if [ "$GATEWAY_SHARDS" = 3 ]; then
+                  test "$GATEWAY_SHARDS_RESULT" = success
+                else
+                  test "$GATEWAY_SHARDS" = 1 && test "$GATEWAY_SHARDS_RESULT" = skipped
+                fi
+              }
             else
-              test "$DOCS_MERGE_REF_RESULT" = skipped
+              test "$DOCS_MERGE_REF_RESULT" = skipped && test "$GATEWAY_PLAN_RESULT" = skipped && test "$GATEWAY_SHARDS_RESULT" = skipped
             fi
           }
