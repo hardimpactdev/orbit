@@ -306,15 +306,22 @@ class CiTiaTest(unittest.TestCase):
         # Pest reads the graph it wrote back.
         self.assertEqual(('affected', head), self.plan()[:2])
 
-    def shard_plan(self, classes, status=0, extra=''):
-        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does."""
+    def shard_plan(self, classes, status=0, extra='', privileged=()):
+        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does, and
+        the classes of the privileged group for `pest --no-tia --group=privileged --list-tests`."""
+        def write_listing(path, names, tail=''):
+            path.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
+                f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
+                for name in names) + tail)
         listing = self.root / 'listing.txt'
-        listing.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
-            f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
-            for name in classes) + extra)
+        write_listing(listing, classes, extra)
+        privileged_listing = self.root / 'privileged.txt'
+        write_listing(privileged_listing, privileged)
         pest = self.root / 'pest'
-        pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --exclude-group=privileged --colors=never" ] || exit 9\n'
-                        f'cat {listing}\nexit {status}\n')
+        pest.write_text(f'#!/bin/sh\ncase "$*" in\n'
+                        f'  "--tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
+                        f'  "--no-tia --group=privileged --list-tests --colors=never") cat {privileged_listing} ;;\n'
+                        f'  *) exit 9 ;;\nesac\n')
         pest.chmod(0o755)
         self.output.write_text('')
         plan = self.root / 'plan.json'
@@ -365,6 +372,18 @@ class CiTiaTest(unittest.TestCase):
         self.assertLess(len(shards[0]), min(len(shard) for shard in shards[1:]))
         self.assertIn('4 shards: 300 affected test classes, more than 200.', result.stdout)
         self.assertIn('Shard 1: 7 classes, about 218 process seconds on 6 processes.', result.stdout)
+
+    def test_leaves_the_privileged_group_out_of_the_shards(self):
+        # Pest turns TIA off for a group option, so the plan lists the privileged group on its own and subtracts it.
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(203)]
+        privileged = classes[:3] + ['Tests\\Feature\\UnselectedPrivilegedTest']
+
+        result, outputs, plan = self.shard_plan(classes, privileged=privileged)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(200, plan['classes'])
+        self.assertEqual(('1', 'false'), (outputs['shards'], outputs['sharded']))
+        self.assertIn('One job: 200 affected test classes', result.stdout)
 
     def test_never_plans_a_shard_without_classes(self):
         # 201 fast classes: shards 2 to 4 never pass the first shard's head start, so it would stay empty.

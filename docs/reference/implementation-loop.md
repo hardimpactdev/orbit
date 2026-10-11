@@ -159,7 +159,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 A pull request that changes Gateway boot files, such as providers, `bootstrap/app.php`, routes, or migrations, selects nearly the whole Gateway suite: about 760 test classes and 12 minutes on Sabre. So the Gateway tests of a large selection run in up to four shards on separate runners.
 
-The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests --exclude-group=privileged`, so the plan holds exactly Pest's selection. It leaves out the `privileged` group: the shard runners have no `sudo`, and the Gateway privileged job runs that whole group on every run.
+The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests`, so the plan holds exactly Pest's selection. It leaves out the `privileged` group: the shard runners have no `sudo`, and the Gateway privileged job runs that whole group on every run. Pest turns TIA off for a group option, so the command lists the group on its own, with `pest --no-tia --group=privileged --list-tests`, and subtracts it.
 
 With 200 classes or fewer, the Gateway job runs its tests with `--tia`, as before. 200 classes take about 3 minutes, so the job already ends about when the slowest other job does.
 

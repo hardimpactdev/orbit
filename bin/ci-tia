@@ -245,18 +245,24 @@ def subprocess_tests(arguments):
     return False, f'no change since {arguments.base} reaches {project}'
 
 
-def selected_classes(pest):
-    """Return the test classes that `pest --tia` would run here, as Pest lists them without running them. The shards
-    leave out the `privileged` group: they run without sudo, and the Gateway privileged job runs that whole group."""
-    result = subprocess.run([pest, '--tia', '--list-tests', '--exclude-group=privileged', '--colors=never'],
-                            capture_output=True, text=True, errors='replace')
+def listed_classes(pest, *options):
+    """Return the test classes that Pest lists with these options, without running them."""
+    result = subprocess.run([pest, *options, '--list-tests', '--colors=never'], capture_output=True, text=True,
+                            errors='replace')
     if result.returncode:
         raise SystemExit(f'Pest cannot list the affected tests:\n{result.stdout}{result.stderr}')
     # A test that no shard names would run nowhere, so every listed test must parse.
     unparsed = [line for line in result.stdout.splitlines() if line.startswith(' - ') and not LISTED_TEST.match(line)]
     if unparsed:
         raise SystemExit(f'Cannot read the class of {len(unparsed)} listed tests, such as: {unparsed[0]}')
-    return sorted(set(LISTED_TEST.findall(result.stdout)))
+    return set(LISTED_TEST.findall(result.stdout))
+
+
+def selected_classes(pest):
+    """Return the test classes that `pest --tia` would run here, without the `privileged` group: the shards run without
+    sudo, and the Gateway privileged job runs that whole group. A group option would turn TIA off, so the group is
+    listed on its own and left out of the selection."""
+    return sorted(listed_classes(pest, '--tia') - listed_classes(pest, '--no-tia', '--group=privileged'))
 
 
 def class_seconds():
