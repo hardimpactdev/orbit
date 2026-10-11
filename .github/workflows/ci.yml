@@ -70,11 +70,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          # A pull request tests its merge commit, the tree that would land on main. Its commit descends from the main
+          # A pull request tests its merge ref, the tree that would land on main. Its commit descends from the main
           # commit that the restored main graph records, so TIA selects only the tests that the pull request affects.
-          # Pest reads the graph on that detached HEAD and does not write it. The run's own merge commit stays fixed when
-          # refs/pull/N/merge moves, so the Gateway plan and shards test the same tree as this job.
-          ref: ${{ github.event_name == 'pull_request' && github.sha || github.ref_name }}
+          # Pest reads the graph on that detached HEAD and does not write it.
+          ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
           repository: ${{ github.repository }}
 
       # The checkout above names the branch, and a later push can move it before this job starts. A running main run
@@ -401,12 +400,14 @@ jobs:
       run:
         working-directory: apps/gateway
     steps:
+      # The Gateway job checks out the same merge ref and refuses a plan for another commit.
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: ${{ github.ref }}
+          repository: ${{ github.repository }}
 
       # Without a coverage driver, Pest selects the full suite for a PHP change.
       - name: Set up PHP
@@ -451,7 +452,7 @@ jobs:
           retention-days: 1
 
   gateway-shards:
-    name: Gateway shard ${{ matrix.shard }}/3
+    name: Gateway shards
     needs: gateway-plan
     if: needs.gateway-plan.outputs.shards == '3'
     # The same runners as the Gateway job: Sabre for this repository's pull requests, a hosted runner for forks.

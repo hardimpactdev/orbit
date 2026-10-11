@@ -81,7 +81,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Gateway plan | Pull requests only: lists the Gateway tests that TIA selects and chooses one Gateway test job or three shards |
-| Gateway shard 2/3, Gateway shard 3/3 | Pull requests with a large Gateway selection only: two of the three Gateway test shards |
+| Gateway shards (2), Gateway shards (3) | Pull requests with a large Gateway selection only: two of the three Gateway test shards |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -135,7 +135,7 @@ A new push to a pull request cancels that pull request's older run. Pushes to `m
 
 Nothing goes untested. A push run selects each project's tests affected since the commit its restored `main` graph describes. That is the newest commit whose run of that project passed, so a project that failed keeps the older graph and tests those changes again. So the newest run covers every change in between. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful `Required checks` result and skip commits without one, so the release includes the skipped commits. Scheduled and manual full runs have a group per commit, so a push never cancels one.
 
-On `main`, the project jobs check out the branch by name, then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for. On a pull request, they check out the run's merge commit, the commit that the base repository's `refs/pull/N/merge` named when the run started. That commit stays fixed when the merge ref moves, so the Gateway plan, the Gateway job, and the Gateway shards test the same tree.
+On `main`, the project jobs check out the branch by name, then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for. On a pull request, they check out the base repository's `refs/pull/N/merge`.
 
 On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full 40-character commit SHA, and keeps it for 14 days. A manual dispatch and the nightly run on `main` upload it too, so every successful `Required checks` run on `main` comes with the web build of its commit. Automatic releases install only the build of a push or a manual run. The artifact holds the contents of `dist` at its root, so `index.html` and `version.json` are at the top level. The Web job fails when the build lacks either file; open pages read `version.json` to find a newer release ([Updates to open pages](/reference/web-app#updates-to-open-pages)).
 
@@ -167,7 +167,9 @@ With more than 200 classes, the plan splits them into three shards. It balances 
 
 The Gateway job runs the first shard, and the `Gateway shards` job runs the other two, each on its own runner. Each shard runs `pest --no-tia --filter` with a regular expression that names its classes. PHPUnit matches it against `Class::test`, so every selected test runs in exactly one shard. The Gateway job still runs the quality checks, the classification-fakes check, and the architecture tests, once. The subprocess group stays in the Gateway subprocess job.
 
-The plan job also uploads the plan as the artifact `gateway-plan-<attempt>`. The Gateway job does not wait for the plan job, so the other project jobs start at once. After its quality checks, the Gateway job polls the run's jobs through the Actions API until the plan job ends, then downloads the plan. It fails when the plan job fails, when the plan does not end within 10 minutes, or when the plan describes another commit. The shard jobs check out the commit the plan names.
+The plan job also uploads the plan as the artifact `gateway-plan-<attempt>`. The Gateway job does not wait for the plan job, so the other project jobs start at once. After its quality checks, the Gateway job polls the run's jobs through the Actions API until the plan job ends, then downloads the plan.
+
+The Gateway job fails when the plan job fails, or when the plan does not end within 10 minutes. The plan job and the Gateway job both check out `refs/pull/N/merge`, so the Gateway job also fails when the plan names another commit: the merge ref moved between the two checkouts, and the run must start again. The shard jobs check out the commit that the plan names.
 
 Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
 

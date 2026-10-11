@@ -330,9 +330,8 @@ describe('Composer configuration', function (): void {
         expect($workflow)
             ->toBeString()
             ->toContain('fetch-depth: 0')
-            // The merge commit descends from the main graph's commit, so TIA can diff against it. The run's own merge
-            // commit stays fixed, so the Gateway plan, the Gateway job, and the Gateway shards test the same tree.
-            ->toContain("ref: \${{ github.event_name == 'pull_request' && github.sha || github.ref_name }}")
+            // The merge commit descends from the main graph's commit, so TIA can diff against it.
+            ->toContain("ref: \${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
             ->toContain('repository: ${{ github.repository }}')
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
             ->toContain('actions/cache/restore@v6')
@@ -446,7 +445,8 @@ describe('Composer configuration', function (): void {
             ->and($planSteps['Choose one Gateway test job or shards']['run'])
             ->toBe('../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"')
             ->and($planSteps['Publish the Gateway test plan']['with']['name'])->toBe('gateway-plan-${{ github.run_attempt }}');
-        // The plan restores the same main graph as the Gateway job of a pull request.
+        // The plan checks out the same merge ref and restores the same main graph as the Gateway job of a pull request.
+        expect($planSteps['Check out repository']['with']['ref'])->toBe('${{ github.ref }}');
         expect($planSteps['Restore Pest TIA graph']['with']['restore-keys'])
             ->toContain("format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha)")
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-');
@@ -625,7 +625,7 @@ it('tests exactly the run commit on main even when the branch moved before the j
     $checkout = array_search('Check out repository', $names, true);
 
     // The checkout names the branch, so a later push would otherwise be tested under this run's commit.
-    expect($steps[$checkout]['with']['ref'])->toBe("\${{ github.event_name == 'pull_request' && github.sha || github.ref_name }}")
+    expect($steps[$checkout]['with']['ref'])->toBe("\${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
         ->and($steps[$checkout + 1])->toBe([
             'name' => "Pin the run's commit",
             'if' => "github.event_name != 'pull_request'",
