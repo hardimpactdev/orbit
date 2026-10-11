@@ -50,13 +50,17 @@ final readonly class TaskVmWorkspaceTemplates
 
     public const string CommitKey = 'user.orbit.commit';
 
+    /** The repository URL the template was cloned from. A claim takes a template only while it is the Project's. */
+    public const string RepositoryKey = 'user.orbit.repository';
+
     /** How long a host waits before a claim asks for another build of a Project whose build failed. */
     public const int FailureBackoffSeconds = 21600;
 
     /**
-     * Mounts the attached disk at the Project's apps directory and keeps the mount in `/etc/fstab`, so a resumed
-     * VM mounts it again before its services start. It never mounts over content. It points the caches at the
-     * volume and prints `template` when the template checkout is there.
+     * Mounts the attached disk at the Project's apps directory, and only after the mount succeeded keeps it in
+     * `/etc/fstab`, so a resumed VM mounts it again before its services start. A failed mount leaves no fstab line,
+     * so a later boot never mounts the disk over a fresh clone. It never mounts over content. It points the caches at
+     * the volume and prints `template` when the template checkout is there.
      */
     public const string MountScript = <<<'BASH'
         device=/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_incus_$1
@@ -79,10 +83,11 @@ final readonly class TaskVmWorkspaceTemplates
                 test -z "$(ls -A -- "$directory")"
             fi
             sudo -n install -d -o "$user" -g "$group" -m 0755 -- "$directory"
-            line="$device $directory ext4 noatime,nofail,x-systemd.device-timeout=10s,x-systemd.before=multi-user.target 0 2"
-            grep -qxF -- "$line" /etc/fstab || printf '%s\n' "$line" | sudo -n tee -a /etc/fstab >/dev/null
-            sudo -n mount -- "$directory"
+            sudo -n mount -o noatime -- "$device" "$directory"
         fi
+        test "$(findmnt -n -o SOURCE --target "$directory")" = "$(readlink -f -- "$device")"
+        line="$device $directory ext4 noatime,nofail,x-systemd.device-timeout=10s,x-systemd.before=multi-user.target 0 2"
+        grep -qxF -- "$line" /etc/fstab || printf '%s\n' "$line" | sudo -n tee -a /etc/fstab >/dev/null
         test "$(stat -c '%U:%G' -- "$directory")" = "$user:$group"
         install -d -m 0755 -- "$HOME/.cache"
         for name in "$@"; do
@@ -137,7 +142,7 @@ final readonly class TaskVmWorkspaceTemplates
         $clone = self::cloneName($vm);
         $volumes = $this->volumes($host, $hostNode);
         if (! array_key_exists($clone, $volumes)) {
-            $template = self::current($volumes, $project->id);
+            $template = self::current($volumes, $project->id, $project->repository_url);
             if ($template === null) {
                 $this->requestBuild($host, $project);
                 Log::warning('Task VM workspace has no template; it starts from a fresh clone.', ['task_vm' => $vm->name, 'project_id' => $project->id, 'host_node_id' => $host->nodeId]);
@@ -219,12 +224,6 @@ final readonly class TaskVmWorkspaceTemplates
         return $deleted;
     }
 
-    /** The newest ready template of the Project on the host, or null. */
-    public function currentTemplate(TaskVmHost $host, Node $hostNode, int $projectId): ?string
-    {
-        return self::current($this->volumes($host, $hostNode), $projectId);
-    }
-
     /**
      * The custom volumes of the host's project, as name => config.
      *
@@ -283,12 +282,19 @@ final readonly class TaskVmWorkspaceTemplates
         return preg_match('/\A'.preg_quote(self::VolumePrefix, '/').'([1-9][0-9]*)-[0-9]{14}\z/D', $name, $match) === 1 ? (int) $match[1] : null;
     }
 
-    /** @param  array<string, array<string, string>>  $volumes */
-    private static function current(array $volumes, int $projectId): ?string
+    /**
+     * The newest ready template of the Project that was cloned from `$repository`. After the Project's repository
+     * changes, no template matches, so the claim asks for a build and starts from a fresh clone.
+     *
+     * @param  array<string, array<string, string>>  $volumes
+     */
+    private static function current(array $volumes, int $projectId, string $repository): ?string
     {
         $ready = array_filter(
             array_keys($volumes),
-            static fn (string $name): bool => self::projectOf($name) === $projectId && ($volumes[$name][self::Ready] ?? null) === 'true',
+            static fn (string $name): bool => self::projectOf($name) === $projectId
+                && ($volumes[$name][self::Ready] ?? null) === 'true'
+                && ($volumes[$name][self::RepositoryKey] ?? null) === $repository,
         );
         rsort($ready, SORT_STRING);
 

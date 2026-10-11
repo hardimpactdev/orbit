@@ -61,6 +61,7 @@ use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -261,7 +262,8 @@ it('starts a task VM workspace from the template checkout next to it, with its i
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
 });
 
-it('clones when the template is gone, and never takes a template of another repository', function (): void {
+it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
+    Log::spy();
     config()->set('orbit.tasks.worker_user', null);
     $template = $this->appsRoot.'/acme/.orbit-workspace-template';
     $gone = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
@@ -274,8 +276,15 @@ it('clones when the template is gone, and never takes a template of another repo
     $foreign = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-9', 'task-9');
     $foreign->update(['source_prepare_id' => (string) Str::uuid()]);
 
-    expect(fn () => $this->source->prepare($foreign, false, $template))->toThrow(RuntimeConvergenceException::class);
-    expect(is_dir($template))->toBeTrue()->and(file_exists($foreign->checkout_path))->toBeFalse();
+    $this->source->prepare($foreign, false, $template);
+    $resolved = $this->source->resolve($foreign);
+    $this->source->inspectPrepared($foreign);
+
+    expect(is_dir($template))->toBeTrue()
+        ->and(trim(orb76_run(['git', '-C', $template, 'config', '--get', 'remote.origin.url'])->stdout))->toBe($this->sandbox.'/other.git')
+        ->and(is_dir($foreign->checkout_path.'/.git'))->toBeTrue()
+        ->and($resolved->branch)->toBe('task-9');
+    Log::shouldHaveReceived('warning')->once()->with('The workspace template failed its source checks; the checkout is a fresh clone.', Mockery::any());
 });
 
 it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {

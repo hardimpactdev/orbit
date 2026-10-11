@@ -10,6 +10,8 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -27,6 +29,7 @@ use Closure;
 use Illuminate\Cache\Lock;
 use Illuminate\Contracts\Cache\Lock as CacheLock;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -46,7 +49,14 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     private const string ErrorCode = 'task_vm.workspace_template_failed';
 
-    private const int LockSeconds = 1500;
+    /**
+     * The whole build runs within this budget. Each setup step gets its own timeout, but at most what the budget has
+     * left. The queued job's timeout and the host lock outlast it, and both stay below the queue's `retry_after` of
+     * 1800 seconds, so no second worker takes a running build.
+     */
+    public const int BudgetSeconds = 1500;
+
+    private const int LockSeconds = 1740;
 
     private const string ManagedUser = 'orbit';
 
@@ -89,6 +99,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         private RemotePhpPackageManager $php,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
+        private TiaBaselineSetup $tia,
     ) {}
 
     /**
@@ -108,6 +119,8 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         $directory = $this->directory($project);
         $checkout = $directory.'/'.TaskVmWorkspaceTemplates::TemplateDirectory;
 
+        $deadline = microtime(true) + self::BudgetSeconds;
+        $published = false;
         try {
             $steps = $this->stage($node, $progress, 'render', fn (): array => $this->setupSteps($project));
             $this->stage($node, $progress, 'sweep', fn () => $this->sweep($host, $node));
@@ -118,7 +131,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $commit = $this->stage($node, $progress, 'clone', fn (): string => $this->cloneDefaultBranch($host, $node, $builder, $project, $checkout));
             $this->stage($node, $progress, 'php', fn () => $this->installPhp($host, $node, $builder, $project, $checkout));
             foreach ($steps as $step) {
-                $this->stage($node, $progress, 'setup:'.$step->name, fn () => $this->runStep($host, $node, $builder, $checkout, $step));
+                $this->stage($node, $progress, 'setup:'.$step->name, fn () => $this->runStep($host, $node, $builder, $project, $checkout, $step, $deadline));
             }
             $this->stage($node, $progress, 'verify', fn () => $this->verify($host, $node, $builder, $checkout));
             $this->stage($node, $progress, 'detach', fn () => $this->detach($host, $node, $builder, $directory));
@@ -126,16 +139,27 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 'storage', 'volume', 'set', '--', $host->pool, $volume,
                 TaskVmWorkspaceTemplates::ProjectKey.'='.$project->id,
                 TaskVmWorkspaceTemplates::CommitKey.'='.$commit,
+                TaskVmWorkspaceTemplates::RepositoryKey.'='.$project->repository_url,
                 TaskVmWorkspaceTemplates::Ready.'=true',
             ])));
-            $this->stage($node, $progress, 'delete-builder', fn () => $this->image->delete($host, $node, $builder));
-            $this->stage($node, $progress, 'prune', fn (): array => $this->templates->prune($host, $node, $project->id, $volume));
+            $published = true;
+            // The template is ready now. A failure to tidy up after it only warns: the next build sweeps the builder
+            // and prunes the older templates.
+            foreach (['delete-builder' => fn () => $this->image->delete($host, $node, $builder), 'prune' => fn (): array => $this->templates->prune($host, $node, $project->id, $volume)] as $name => $work) {
+                try {
+                    $this->stage($node, $progress, $name, $work);
+                } catch (Throwable $exception) {
+                    Log::warning('Task VM workspace template is ready, but a cleanup stage failed; the next build retries it.', ['volume' => $volume, 'stage' => $name, 'error' => mb_substr($exception->getMessage(), 0, 2000)]);
+                }
+            }
 
             return $volume;
         } catch (Throwable $exception) {
             // Best effort, so the build's own error stays the reported one; the next build sweeps what remains.
             $this->incus->run($host, $node, ['delete', '--force', '--', $builder]);
-            $this->incus->run($host, $node, ['storage', 'volume', 'delete', '--', $host->pool, $volume]);
+            if (! $published) {
+                $this->incus->run($host, $node, ['storage', 'volume', 'delete', '--', $host->pool, $volume]);
+            }
 
             throw $exception;
         } finally {
@@ -265,12 +289,26 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         $this->php->installForAppDev(new Node(['name' => $builder, 'platform' => 'linux', 'user' => self::ManagedUser, 'wireguard_ip' => '127.0.0.1']), collect([$version]), $shell);
     }
 
-    /** Runs one setup step as the baseline check does: a login Bash in the checkout, within the step's timeout. */
-    private function runStep(TaskVmHost $host, Node $node, string $builder, string $checkout, ProjectLifecycleStep $step): void
+    /**
+     * Runs one setup step as the baseline check does: a login Bash in the checkout with `VP_HOME` set, within the
+     * step's timeout and the build's budget. The `@orbit/tia-baseline` step becomes the same installer as in the
+     * check. A builder has no Instance, so no SSR port is set.
+     */
+    private function runStep(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout, ProjectLifecycleStep $step, float $deadline): void
     {
-        $seconds = max(1, (int) $step->timeout_seconds);
+        $seconds = (int) min((int) $step->timeout_seconds, floor($deadline - microtime(true)));
+        if ($seconds < 1) {
+            throw new TaskVmException(self::ErrorCode, "The workspace template build ran out of its ".self::BudgetSeconds.'-second budget before setup step ['.$step->name.'].', 504);
+        }
+        $command = (string) $step->command;
+        if ($command === LifecycleStep::RestoreTiaBaseline) {
+            $started = microtime(true);
+            $command = $this->tia->command($project, $seconds);
+            $seconds = max(1, (int) floor($seconds - (microtime(true) - $started)));
+        }
+        $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
         $this->checked($builder, "setup step [{$step->name}]", $this->asManagedUser($host, $node, $builder, $checkout, [
-            'timeout', (string) $seconds, 'bash', '-l', '-c', (string) $step->command,
+            'timeout', (string) $seconds, 'bash', '-l', '-c', $environment.$command,
         ], null, $seconds + 30.0));
     }
 

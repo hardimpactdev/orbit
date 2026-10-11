@@ -30,8 +30,8 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 10;
 
-    /** A launch, the PHP packages, a clone, and the setup steps: a few minutes, within the worker's job limit. */
-    public int $timeout = 1200;
+    /** The build's own budget plus its cleanup, below the queue's `retry_after` of 1800 seconds. */
+    public int $timeout = 1700;
 
     public bool $failOnTimeout = true;
 

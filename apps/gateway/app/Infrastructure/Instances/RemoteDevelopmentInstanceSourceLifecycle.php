@@ -24,6 +24,7 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class RemoteDevelopmentInstanceSourceLifecycle implements DevelopmentInstanceBranchInspector, DevelopmentInstanceSourceLifecycle
@@ -67,14 +68,21 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     fi
 
                     # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies.
-                    if [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ]; then
-                        test "$(dirname "$template")" = "$checkout_parent"
-                        test "$(stat -c '%U:%G' "$template")" = "$managed_user:$managed_group"
-                        test "$(git -C "$template" rev-parse --show-toplevel)" = "$template"
-                        test "$(git -C "$template" config --get remote.origin.url)" = "$repository"
+                    # A template that fails a check is left alone, and the checkout is cloned as without one.
+                    usable_template() {
+                        [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ] \
+                            && [ "$(dirname "$template")" = "$checkout_parent" ] \
+                            && [ "$(stat -c '%U:%G' "$template")" = "$managed_user:$managed_group" ] \
+                            && [ "$(git -C "$template" rev-parse --show-toplevel 2>/dev/null)" = "$template" ] \
+                            && [ "$(git -C "$template" config --get remote.origin.url 2>/dev/null)" = "$repository" ]
+                    }
+                    if usable_template; then
                         mv -T -- "$template" "$checkout"
                         chmod 0755 -- "$checkout"
                     else
+                        if [ -n "$template" ] && { [ -e "$template" ] || [ -L "$template" ]; }; then
+                            printf '%s\n' template-refused
+                        fi
                         mkdir -m 0755 -- "$checkout"
                     fi
                     if [ -d "$checkout/.git" ]; then
@@ -93,7 +101,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     inspect_prepared_repository
                     share_checkout
                     BASH);
-        $this->ssh->execute(
+        $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
                 arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
@@ -103,6 +111,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             step: 'app-instance-source-prepare',
             errorCode: 'instance.clone_failed',
         );
+        if (in_array('template-refused', explode("\n", $result->stdout), true)) {
+            Log::warning('The workspace template failed its source checks; the checkout is a fresh clone.', ['instance_id' => $instance->id, 'template' => $template]);
+        }
     }
 
     public function inspectPrepared(Instance $instance): void
