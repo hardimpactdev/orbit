@@ -153,6 +153,14 @@ describe('image peers', function (): void {
             ->and(array_keys($beast->trust)[1])->toBe(openssl_x509_fingerprint((string) $this->fleet->host('10.44.0.11')->clientCertificate, 'sha256'));
     });
 
+    it('fails loudly when a peer rule cannot be added, and keeps the rules it had', function (): void {
+        $this->fleet->host('10.44.0.11')->fail = 'ufw allow';
+
+        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe('node.firewall_convergence_failed')
+            ->and($e->getMessage())->toContain('[shark]'));
+        expect($this->fleet->host('10.44.0.11')->ufwRules)->toBe([]);
+    });
+
     it('lists the peer rules among the rules Orbit intends on the host', function (): void {
         $rules = app(NodeFirewallDesiredRules::class)->forNode($this->beast);
         $peer = collect($rules)->firstWhere('name', "orbit:task-vm-image:{$this->shark->id}");
