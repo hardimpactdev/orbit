@@ -22,11 +22,11 @@ use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
-    /** The rules that let a peer task VM host reach the host's Incus API: `orbit:task-vm-image:<peer Node id>`. */
+    /**
+     * The rules that let a peer task VM host reach the host's Incus API, `orbit:task-vm-image:<peer Node id>`. Hosts
+     * no longer copy images over the Incus API, so Orbit only deletes these rules.
+     */
     public const string TaskVmImagePrefix = 'orbit:task-vm-image';
-
-    /** The port of the Incus API that task VM hosts copy base images over. */
-    public const string IncusPort = '8443';
 
     public function __construct(
         private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
@@ -269,32 +269,6 @@ final readonly class NodeFirewallRuleCatalog
                 'comment',
                 $comment,
             ],
-        );
-    }
-
-    /**
-     * Allows the task VM host `$peerNodeId` to reach the Incus API on `$destination`, from `$source`. Over
-     * WireGuard the rule names the `orbit` interface; on the LAN it names none.
-     */
-    public function taskVmImagePeer(int $peerNodeId, string $source, string $destination, bool $wireguard): UfwManagedRule
-    {
-        $comment = self::TaskVmImagePrefix.':'.$peerNodeId;
-        $on = $wireguard ? ['on', 'orbit'] : [];
-
-        return new UfwManagedRule(
-            new UfwRuleShape(
-                comment: $comment,
-                action: 'allow',
-                direction: 'in',
-                source: $source,
-                destination: $destination,
-                port: self::IncusPort,
-                protocol: 'tcp',
-                inInterface: $wireguard ? 'orbit' : null,
-                outInterface: null,
-                family: 'v4',
-            ),
-            ['sudo', 'ufw', 'allow', 'in', ...$on, 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', self::IncusPort, 'comment', $comment],
         );
     }
 
