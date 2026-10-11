@@ -70,7 +70,7 @@ Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroye
 
 The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
-Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. When it removes a host, it also deletes the host's `destroyed` rows.
+Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. It also refuses a host that is still configured, with `node.task_vm_host_configured`, because the other hosts still trust it. [Retire the host](#add-a-task-vm-host) first. When it removes a host, it also deletes the host's `destroyed` rows.
 
 #### A VM that dies before its group ends
 
@@ -214,7 +214,9 @@ After the script, the command [lets the hosts copy the image](#let-hosts-copy-th
 
 Every configured host whose Node is active can copy the base image from every other one. The hosts talk Incus to Incus. The image never passes through the Gateway. `task-vms:prepare-host` sets this up on every host, not only on the one it prepares, so a new host and the existing hosts trust each other. Each run makes the setup exact again, and it changes nothing when the setup is already right.
 
-On each host it sets up these parts, as root over SSH:
+First it restricts the task VM project on every host, as `incus-host.sh` does, and reads the restrictions back. A host whose project is missing or keeps no restriction fails with `task_vm.host_not_prepared`, and then no host listens or trusts a peer. A peer's certificate is restricted to that project, so the project restrictions are what keep the peer from root on the host. No order of `task-vms:prepare-host` runs leaves a host trusting a peer while its project is unrestricted.
+
+Then it sets up these parts on each host, as root over SSH:
 
 | Part | What Orbit sets |
 | --- | --- |
@@ -232,7 +234,13 @@ Orbit adds and replaces the firewall rules, and deletes the rule of a former pee
 
 beast and shark are both in Cluster 4 with LAN addresses, so they copy over the LAN. A host in another Cluster makes every host listen on its WireGuard address. That traffic may run through the VPN hub, so a copy then takes longer and loads the hub.
 
-On the WireGuard address, the member trust rule `orbit:wireguard-members` already admits every WireGuard member on every port. The restricted client certificate is then the boundary. The [hub filter](#limit-fleet-traffic-on-the-hub) keeps task VMs away from the port, and the bridge ACL drops their traffic to private addresses.
+The source rule admits addresses, not hosts. So the client certificate is the real boundary in two cases.
+
+On the WireGuard address, the member trust rule `orbit:wireguard-members` already admits every WireGuard member on every port. Every fleet Node can then reach the Incus API, and only the certificate stops it.
+
+On the LAN, a host masquerades the traffic of its Docker containers and NAT Incus bridges behind its LAN address. An E2E topology on beast is one example. Those guests reach a peer's API from the host's address, and the peer's rule admits them. They have no client certificate, because only root on the host reads it. So they get only what Incus answers without one: server information and public images. Task images are private.
+
+The [hub filter](#limit-fleet-traffic-on-the-hub) keeps task VMs off the port. The task bridge ACL drops their traffic to private addresses, including the host's own LAN and WireGuard addresses. The [hub filter](#limit-fleet-traffic-on-the-hub) keeps task VMs away from the port, and the bridge ACL drops their traffic to private addresses.
 
 ### Build the base image
 
@@ -277,7 +285,7 @@ A failed build changes no host. A host whose sync fails keeps its image, and the
 
 Run `task-vms:sync-image {node}` to copy the current base image to one host. By default it copies from the first configured host. `--from` names another host. It prints each stage with its time. `task-vms:build-image` and the nightly refresh run the same sync on every other host after a build.
 
-The host that gets the image runs `incus image copy --project <source project> --target-project <project> node-<source id>:<fingerprint> local: --alias <dated alias>` with the client configuration in `/etc/orbit/task-vms/incus`. Its Incus pulls the image from the source's Incus API, on the address that [the hosts set up](#let-hosts-copy-the-image). The copy keeps the source's dated alias `orbit-task-base-<time>`. The Gateway only starts the command, and the source is only read. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN.
+The host that gets the image runs `incus image copy --project <source project> --target-project <project> node-<source id>:<fingerprint> local: --alias <dated alias>` with the client configuration in `/etc/orbit/task-vms/incus`. Its Incus pulls the image from the source's Incus API, on the address that [the hosts set up](#let-hosts-copy-the-image). The copy keeps the source's dated alias `orbit-task-base-<time>`. The Gateway only starts the command, and the source is only read. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN. The copy may take 600 seconds, so a copy and a smoke boot end within the host's 25-minute image lock.
 
 | Stage | What it does |
 | --- | --- |
@@ -291,7 +299,7 @@ The host that gets the image runs `incus image copy --project <source project> -
 
 A failed sync fails with `task_vm.image_sync_failed`, which names the stage. The host keeps its current base image. Orbit deletes the smoke VM, and the copy when it never became the base image. A sync never changes the source or another host. After a build, each host's result is one line with its time and stages, or its error code. One failed host does not stop the others, and the command then exits with a failure.
 
-Running VMs keep the image they launched from. The prune keeps an image that a VM still uses.
+Running VMs keep the image they launched from. The prune keeps an image that a VM still uses. A claim that resolved the old alias just before the prune can fail its launch when the prune deletes that image first. `ProvisionTaskVm` then retries once after 30 seconds, from the new image. When the alias move succeeds but its reply is lost, the failed sync keeps the copy, because the alias names it.
 
 
 ### Add a task VM host
@@ -310,7 +318,7 @@ To retire a host:
 2. Remove its entry and apply the change with `gateway:release:configure`.
 3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`.
 
-`task-vms:retire-host` first sets up the remaining hosts again. That removes their trust entry, remote, and firewall rule for the old host. Then it removes the old host's own setup: its listen address, its `orbit-task-image-*` trust entries, `/etc/orbit/task-vms/incus`, and its `orbit:task-vm-image:*` rules. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup.
+`task-vms:retire-host` first sets up the remaining hosts again. That removes their trust entry, remote, and firewall rule for the old host. Then it removes the old host's own setup: its listen address, its `orbit-task-image-*` trust entries, `/etc/orbit/task-vms/incus`, and its `orbit:task-vm-image:*` rules. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
 
 The old host's Incus project, images, bridge, ACL, and pool stay. Remove them by hand.
 
@@ -421,6 +429,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.image_build_running` | 409 | A base image build or sync of the host is already running |
 | `task_vm.image_sync_failed` | 502 | A base image sync failed. The message names the host, the source, and the stage. The nightly refresh uses this code when any host failed |
 | `task_vm.incus_address_conflict` | 409 | Incus on a host listens on an address that Orbit did not set. Unset `core.https_address`, or set it to the address in the message |
+| `task_vm.host_not_prepared` | 409 | A host's task VM project is missing or not restricted, so `task-vms:prepare-host` links no host. Run `task-vms:prepare-host` on that host |
 | `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not answer within 9 minutes of the first start |
@@ -433,7 +442,8 @@ Task VMs have these known limits.
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
 - A base image is only as fresh as its last build. The nightly refresh keeps packages and the `app-dev` software at most a day old. A host without a base image cannot start task VMs.
 - Each sync copies the whole image, about 3 GiB. ZFS send and receive can copy only the changes. That is a possible optimisation for slow copies.
-- A peer's restricted certificate can manage instances and profiles in the host's task VM project, inside the project restrictions. Root on one host can therefore stop or enter the task VMs of another host.
+- A peer's restricted certificate can manage instances, profiles, images, and aliases in the host's task VM project, inside the project restrictions.
+- So root on one host can stop or enter the task VMs of another host. It can also point that host's `orbit-task-base` at another image, which every later task VM there boots.
 - Copies over WireGuard may run through the VPN hub.
 - The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs, including a resume.
 - Doctor can report task VM Nodes while they exist.
