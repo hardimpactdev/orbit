@@ -113,6 +113,17 @@ final readonly class TaskVmSettings
         throw new TaskVmException('task_vm.unknown_host', "Node [{$nodeId}] is not a task VM host.");
     }
 
+    public function hasHost(int $nodeId): bool
+    {
+        return array_any($this->hosts, static fn (TaskVmHost $host): bool => $host->nodeId === $nodeId);
+    }
+
+    /** The host that the nightly refresh builds on and syncs from: the first configured host, or null without hosts. */
+    public function sourceHost(): ?TaskVmHost
+    {
+        return $this->hosts[0] ?? null;
+    }
+
     /** Task VMs are enabled, or the Cluster, the origin, or a host is set. Malformed hosts JSON counts as set. */
     private static function configuredInConfig(): bool
     {

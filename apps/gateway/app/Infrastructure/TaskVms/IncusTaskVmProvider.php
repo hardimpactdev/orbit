@@ -47,7 +47,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
             // A missing base image is a setup step, not a launch problem, and the stock image would never enroll.
             if ($this->incus->aliasTarget($host, $vm->hostNode, TaskVmHost::BaseImage) === null) {
-                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Build it with task-vms:build-image.');
+                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Sync it with task-vms:sync-image, or build it with task-vms:build-image.');
             }
 
             throw $this->failed($vm, 'launch', $result);

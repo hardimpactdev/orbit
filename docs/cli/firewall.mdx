@@ -28,7 +28,7 @@ The Gateway serves three read-only lists. The CLI has no command for them. The w
 | Request | Result |
 | --- | --- |
 | `GET /api/v1/firewall-rules` | The operator rules of every Node the caller may address. |
-| `GET /api/v1/nodes/{node}/managed-firewall-rules` | The `orbit:` rules that Orbit intends on one Node: WireGuard member trust, public SSH recovery while the Node has no active role, then each active role's rules and the Metrics rules, with the role named. It uses no SSH. |
+| `GET /api/v1/nodes/{node}/managed-firewall-rules` | The `orbit:` rules that Orbit intends on one Node: WireGuard member trust, public SSH recovery while the Node has no active role, then each active role's rules, the [task VM image peer rules](/reference/compute-drivers#let-hosts-copy-the-image) on a task VM host with the role `task-vms`, and the Metrics rules, with the role named. It uses no SSH. |
 | `GET /api/v1/nodes/{node}/live-firewall-rules` | Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the managed rules and the operator rules. |
 
 The first role convergence removes `orbit:public-ssh-recovery`. So a Node with an active role does not list public port 22 as intended. The managed list comes from the same catalog that convergence applies.

@@ -404,6 +404,7 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | --- | --- |
 | `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules`, `node.has_database_servers` | The Node still owns that state. |
 | `node.has_task_vms` | The Node hosts a [task VM](/reference/compute-drivers#destroy-a-task-vm) that is not `destroyed`. |
+| `node.task_vm_host_configured` | The Node is in `task_vms.incus.hosts`. [Retire the host](/reference/compute-drivers#add-a-task-vm-host) first, so the other hosts stop trusting it. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |

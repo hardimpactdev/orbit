@@ -6,8 +6,11 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmImageSyncResult;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
+use App\Infrastructure\TaskVms\IncusTaskVmImageSync;
+use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Models\Node;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,9 +19,10 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The nightly refresh: rebuilds the base image of every configured host that already has one, one host
- * after another. The first build of a host is always `task-vms:build-image`, so a host without a base
- * image is left alone. A failed host keeps its image; the job fails after the other hosts.
+ * The nightly refresh: builds the base image once, on the first configured host, and syncs it to every other
+ * configured host. The first build is always `task-vms:build-image`, so while the first host has no base image
+ * the job changes nothing. A failed build changes no host. A host whose sync fails keeps its image; the job
+ * fails after the other hosts.
  */
 final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 {
@@ -26,12 +30,12 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 1;
 
-    /** Two hosts of about five minutes each, within the worker's job limit. */
+    /** One build of about two minutes and a sync of about one minute for each other host, within the worker's job limit. */
     public int $timeout = 1500;
 
     public bool $failOnTimeout = true;
 
-    /** The owner of the build locks this job takes, so `failed()` cleans up only its own build. */
+    /** The owner of the image locks this job takes, so `failed()` cleans up only its own work. */
     private const string LockOwner = 'nightly-refresh';
 
     public int $uniqueFor = 3600;
@@ -41,42 +45,45 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmSettings $settings, IncusTaskVmImageBuilder $builder): void
+    public function handle(TaskVmSettings $settings, IncusTaskVmImageBuilder $builder, IncusTaskVmImageSync $sync): void
     {
-        $failures = [];
-        foreach ($settings->hosts as $host) {
-            $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first();
-            if (! $node instanceof Node) {
-                continue;
-            }
-            try {
-                if ($builder->exists($host, $node)) {
-                    $builder->build($host, $node, owner: self::LockOwner);
-                }
-            } catch (Throwable $exception) {
-                Log::error('The task VM base image refresh failed.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
-                $failures[] = "Node [{$node->name}]: ".TaskVmException::codeOf($exception);
-            }
+        $host = $settings->sourceHost();
+        if ($host === null) {
+            return;
+        }
+        $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first()
+            ?? throw new TaskVmException('task_vm.unknown_host', "The first task VM host, Node [{$host->nodeId}], is not an active Node.");
+        if (! $builder->exists($host, $node)) {
+            return;
         }
 
+        $fingerprint = $builder->build($host, $node, owner: self::LockOwner);
+        $results = $sync->distribute($host, $node, $fingerprint, owner: self::LockOwner);
+        foreach ($results as $result) {
+            Log::info('Task VM base image sync.', ['result' => $result->summary()]);
+        }
+
+        $failures = array_filter($results, static fn (TaskVmImageSyncResult $result): bool => ! $result->succeeded());
         if ($failures !== []) {
-            throw new TaskVmException('task_vm.image_build_failed', 'The base image refresh failed on '.implode(', ', $failures).'.', 502);
+            throw new TaskVmException('task_vm.image_sync_failed', 'The base image sync failed on '.implode(', ', array_map(
+                static fn (TaskVmImageSyncResult $result): string => "Node [{$result->nodeName}]: {$result->errorCode}",
+                $failures,
+            )).'.', 502);
         }
     }
 
     /**
-     * After a timeout the worker stops this job in the middle of a build, so the build's own cleanup never
-     * runs. The worker calls this first: it deletes the builder VM and frees the host's build lock. After an
-     * ordinary failure the build has cleaned up already, and this does nothing.
+     * After a timeout the worker stops this job in the middle of a build or sync, so its own cleanup never runs.
+     * The worker calls this first: it deletes the builder and smoke VMs and frees each host's image lock. After
+     * an ordinary failure the build or sync has cleaned up already, and this does nothing.
      */
     public function failed(?Throwable $exception): void
     {
-        $settings = app(TaskVmSettings::class);
-        $builder = app(IncusTaskVmImageBuilder::class);
-        foreach ($settings->hosts as $host) {
+        $image = app(TaskVmBaseImage::class);
+        foreach (app(TaskVmSettings::class)->hosts as $host) {
             $node = Node::query()->find($host->nodeId);
             if ($node instanceof Node) {
-                $builder->abandon($host, $node, self::LockOwner);
+                $image->abandon($host, $node, self::LockOwner);
             }
         }
     }

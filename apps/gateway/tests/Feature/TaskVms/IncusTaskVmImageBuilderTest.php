@@ -19,6 +19,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
+use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Node;
@@ -377,7 +378,7 @@ describe('a failed build', function (): void {
         $lock->get();
         $this->incus->instances = ['tvm-image-20261010030000' => IMAGE_STOCK, 'tvm-5' => IMAGE_OLD];
 
-        app(IncusTaskVmImageBuilder::class)->abandon($host, $this->host, 'command-other');
+        app(TaskVmBaseImage::class)->abandon($host, $this->host, 'command-other');
         expect(array_keys($this->incus->instances))->toBe(['tvm-image-20261010030000', 'tvm-5'])
             ->and(Cache::lock('task-vms:image-build:'.$this->host->id, 10)->get())->toBeFalse();
 
@@ -408,7 +409,7 @@ describe('a failed build', function (): void {
         $lock = Cache::lock('task-vms:image-build:'.$this->host->id, 60);
         $lock->get();
 
-        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'A base image build of Node [beast] is already running.');
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'A base image build or sync of Node [beast] is already running.');
         expect($this->incus->commands)->toBe([]);
         $lock->release();
     });
@@ -441,30 +442,6 @@ describe('task-vms:build-image', function (): void {
 });
 
 describe('the nightly refresh', function (): void {
-    it('rebuilds only the hosts that already have a base image', function (): void {
-        $shark = Node::query()->create(['name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.11', 'user' => 'nckrtl']);
-        $settings = new TaskVmSettings(true, 4, '10.44.0.128/25', [
-            new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 2, 2, '4GiB', '20GiB'),
-            ...$this->settings->hosts,
-        ], 'http://10.44.0.3:8317', null, null, []);
-        app()->instance(TaskVmSettings::class, $settings);
-
-        app()->call([new RefreshTaskVmBaseImages, 'handle']);
-        expect(($this->argv)())->toBe(['image list --format json', 'image list --format json']);
-
-        $this->incus->images += [IMAGE_OLD => ['orbit-task-base-20261009030000', TaskVmHost::BaseImage]];
-        app()->call([new RefreshTaskVmBaseImages, 'handle']);
-        expect($this->incus->images[IMAGE_NEW])->toContain(TaskVmHost::BaseImage);
-    });
-
-    it('fails after the other hosts when a build fails', function (): void {
-        $this->incus->images += [IMAGE_OLD => ['orbit-task-base-20261009030000', TaskVmHost::BaseImage]];
-        $this->incus->fail = 'launch';
-
-        expect(fn () => app()->call([new RefreshTaskVmBaseImages, 'handle']))
-            ->toThrow(TaskVmException::class, 'The base image refresh failed on Node [beast]: task_vm.image_build_failed.');
-    });
-
     it('is queued on the task VM queue every night at 03:00 while task VMs are enabled', function (): void {
         Artisan::call('schedule:list');
         $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmBaseImages::class);

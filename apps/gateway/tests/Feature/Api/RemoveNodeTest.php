@@ -27,6 +27,8 @@ use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
@@ -1124,6 +1126,18 @@ it('refuses a host with a live task VM, and deletes its destroyed task VM rows w
     app(RemoveNodeAction::class)->execute($host, $caller);
 
     expect($host->fresh())->toBeNull()->and(TaskVm::query()->count())->toBe(0);
+});
+
+it('refuses a configured task VM host, so its peers never keep trusting it', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $host = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', [
+        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 2, 2, '4GiB', '20GiB'),
+    ], null, null, null, []));
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($host, $caller))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.task_vm_host_configured');
+    expect($host->refresh()->status)->toBe(LifecycleStatus::Active);
 });
 
 function remove_node_offline_probe(Node $unreachable): void
