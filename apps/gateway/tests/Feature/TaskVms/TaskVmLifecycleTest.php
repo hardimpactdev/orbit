@@ -985,4 +985,25 @@ describe('worker', function (): void {
         expect($worker->filtersPass(app()))->toBeTrue()
             ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
     });
+
+    it('starts only for a task VM job that a worker would take now', function (): void {
+        $this->freezeSecond();
+        Artisan::call('schedule:list');
+        $worker = collect(app(Schedule::class)->events())->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
+        DestroyTaskVm::dispatch(tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed)->id)->delay(now()->addSeconds(60));
+        $job = DB::table('jobs')->sole();
+
+        // A delayed retry or release starts no worker until it is due.
+        expect($worker->filtersPass(app()))->toBeFalse();
+
+        $this->travel(60)->seconds();
+        expect($worker->filtersPass(app()))->toBeTrue();
+
+        // A running worker reserved it; a reservation older than retry_after counts as abandoned.
+        DB::table('jobs')->where('id', $job->id)->update(['reserved_at' => now()->getTimestamp()]);
+        expect($worker->filtersPass(app()))->toBeFalse();
+
+        $this->travel(1800)->seconds();
+        expect($worker->filtersPass(app()))->toBeTrue();
+    });
 });
