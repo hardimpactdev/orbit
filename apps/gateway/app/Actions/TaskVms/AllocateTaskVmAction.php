@@ -11,7 +11,9 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\TaskVms\IncusHost;
+use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Jobs\TaskVms\EnsureWarmClaimReady;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
@@ -89,10 +91,13 @@ final readonly class AllocateTaskVmAction
 
     /**
      * Runs the group steps of a warm claim in the claim itself: the model key, the Pi files, and `pi-server`, about
-     * 1.5 seconds, with short limits on each step. A VM without the pinned Pi is left to the queued job. A guard job
-     * queued first finishes the steps when the tick dies during them. So they never wait for the task VM worker, which runs one job at a time and may be in an
-     * enrollment or an image build. The placement lock is released by then, and the claim holds no transaction. A
-     * failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has no retries left.
+     * 1.5 seconds. Each step has a short limit, and the whole run ends after {@see TaskVmRuntime::InlineSeconds}, well
+     * inside the 300-second tick lock: every SSH command and CLIProxyAPI request stops at that deadline. A VM without
+     * the pinned Pi, and any step that runs out of time, is left to the queued job. A guard job queued first finishes
+     * the steps when the tick dies during them. So they never wait for the task VM worker, which runs one job at a
+     * time and may be in an enrollment or an image build. The placement lock is released by then, and the claim holds
+     * no transaction. A failure queues `PrepareTaskVmRuntime`, which retries the steps and fails the row when it has
+     * no retries left.
      */
     private function prepareNow(TaskVm $vm): void
     {
@@ -101,7 +106,7 @@ final readonly class AllocateTaskVmAction
         $job = new PrepareTaskVmRuntime($vm->id);
         $job->inline = true;
         try {
-            app()->call($job->handle(...));
+            app(CommandDeadline::class)->within(TaskVmRuntime::InlineSeconds, fn () => app()->call($job->handle(...)));
         } catch (Throwable $exception) {
             Log::warning('The group steps of a warm task VM claim failed; the task VM worker retries them.', ['task_vm' => $vm->name, 'error_code' => TaskVmException::codeOf($exception), 'error' => $exception->getMessage()]);
             PrepareTaskVmRuntime::dispatch($vm->id);
