@@ -45,6 +45,7 @@ function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0, 
         'https://vault.test/identity/accounts/prelogin' => Http::response(['kdf' => $kdf, 'kdfIterations' => $iterations]),
         'https://vault.test/api/sync*' => Http::response([
             'profile' => [
+                'id' => 'user-1',
                 'email' => $email,
                 'key' => $crypto->encrypt($userKey, $crypto->masterKey($password, $email, 5000)),
                 'privateKey' => $crypto->encrypt($der, $userKey),
@@ -256,6 +257,8 @@ describe('HttpVaultClient', function (): void {
                 ->and($request['collectionIds'])->toBe(['col-1'])
                 ->and($cipher['type'])->toBe(2)
                 ->and($cipher['organizationId'])->toBe('org-1')
+                ->and($cipher['encryptedFor'])->toBe('user-1')
+                ->and($request->hasHeader('Bitwarden-Client-Version'))->toBeTrue()
                 ->and($cipher['secureNote'])->toBe(['type' => 0])
                 ->and($decrypt($cipher['name']))->toBe('ohdear')
                 ->and($decrypt($cipher['notes']))->toBe('Managed by Orbit.')

@@ -42,7 +42,7 @@ The Gateway publishes one item for each of these:
 
 Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault#orbit-vaultstatus).
 
-Each item is a Secure Note in the configured collection. Its custom fields follow schema version 1 of Vault's Database item:
+Each item is a Secure Note in the configured collection. Every write names the Gateway account as `encryptedFor`, which Vaultwarden 1.37 requires, and sends a Bitwarden client version header. Its custom fields follow schema version 1 of Vault's Database item:
 
 | Field | Value |
 | --- | --- |

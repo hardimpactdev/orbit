@@ -45,6 +45,13 @@ final readonly class HttpVaultClient implements VaultClient
 
     private const string SourceField = 'orbit.source';
 
+    /** Vaultwarden logs requests without a client version as unauthorized clients. */
+    private const array ClientHeaders = [
+        'Bitwarden-Client-Name' => 'cli',
+        'Bitwarden-Client-Version' => '2026.6.0',
+        'Device-Type' => '25',
+    ];
+
     public function __construct(
         private BitwardenCrypto $crypto,
         private LeafCertificateSigner $certificates,
@@ -73,10 +80,11 @@ final readonly class HttpVaultClient implements VaultClient
         $sync = $this->send(fn (): Response => $this->http()->withToken($accessToken)->get($url.'/api/sync', ['excludeDomains' => 'true']));
         $profile = $this->array($sync, 'profile') ?? [];
         $email = $this->string($profile, 'email');
+        $userId = $this->string($profile, 'id');
         $encryptedUserKey = $this->string($profile, 'key');
         $encryptedPrivateKey = $this->string($profile, 'privateKey');
 
-        if ($email === null || $encryptedUserKey === null || $encryptedPrivateKey === null) {
+        if ($email === null || $userId === null || $encryptedUserKey === null || $encryptedPrivateKey === null) {
             throw $this->unexpected();
         }
 
@@ -155,7 +163,7 @@ final readonly class HttpVaultClient implements VaultClient
             }
         }
 
-        return new VaultSession($url, $accessToken, $email, $organizations, $collections, $ciphers, $organizationKeys);
+        return new VaultSession($url, $accessToken, $email, $userId, $organizations, $collections, $ciphers, $organizationKeys);
     }
 
     public function create(VaultSession $session, string $organizationId, string $collectionId, VaultCipher $cipher): VaultRemoteCipher
@@ -219,6 +227,8 @@ final readonly class HttpVaultClient implements VaultClient
                 'linkedId' => null,
             ], $cipher->fields),
             'lastKnownRevisionDate' => null,
+            // Vaultwarden 1.37 refuses a write that does not name the account that encrypted it.
+            'encryptedFor' => $session->userId,
         ];
     }
 
@@ -317,6 +327,7 @@ final readonly class HttpVaultClient implements VaultClient
         return Http::setHandler(new StreamHandler)
             ->timeout(15)
             ->acceptJson()
+            ->withHeaders(self::ClientHeaders)
             ->withOptions(['verify' => $this->trustFile()]);
     }
 
