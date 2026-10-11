@@ -367,7 +367,10 @@ Two hosts use their LAN addresses when both are in one Cluster and both have a L
 The target must admit TCP 22 from the source's address. Orbit adds no firewall rule for it:
 
 - On WireGuard, the member trust rule `orbit:wireguard-members` admits it. That traffic may run through the VPN hub. A copy then takes longer and loads the hub.
-- On the LAN, an operator rule must admit it. On beast and shark, the rules for `192.168.6.0/24` do. The probe finds a missing rule.
+- On the LAN, an operator ufw rule must admit it. On beast and shark, the rules for `192.168.6.0/24` do.
+- On the LAN, sshd must also listen on the LAN address. beast and shark do.
+
+The probe finds a missing rule or listener.
 
 The source pins the target's Ed25519 host key. The Gateway reads that key from the target over its own SSH connection before each send, so no host trusts a host key on first use.
 
