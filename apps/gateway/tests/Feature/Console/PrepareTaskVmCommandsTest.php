@@ -46,9 +46,9 @@ describe('task-vms:prepare-host', function (): void {
                 'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-e2e', 'ubuntu-26.04-vm',
             ])
             ->and($input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')))
-            // A lone host listens nowhere and trusts no peer.
-            ->and($fleet->host('10.44.0.7')->httpsAddress)->toBe('')
-            ->and($fleet->host('10.44.0.7')->clientCertificate)->toBeNull();
+            // A lone host has no peer key and accepts none.
+            ->and($fleet->host('10.44.0.7')->transferKey)->toBeNull()
+            ->and($fleet->host('10.44.0.7')->authorizedKeys)->toBe([]);
     });
 
     it('lets the new host and every other host sync base images', function (): void {
@@ -64,15 +64,23 @@ describe('task-vms:prepare-host', function (): void {
             ['node_id' => $shark->id, 'cidr' => '10.252.1.0/24', 'max_vms' => 4],
         ]);
 
+        $fleet->host('10.44.0.7')->lan = '192.168.6.20';
+        $fleet->host('10.44.0.11')->lan = '192.168.6.40';
+        $fleet->host('10.44.0.11')->httpsAddress = '192.168.6.40:8443';
+        $fleet->host('10.44.0.11')->ufwRules = ["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$beast->id}"];
+
         $this->artisan('task-vms:prepare-host', ['node' => 'shark'])
-            ->expectsOutputToContain('Node [beast] can sync base images with the other hosts.')
-            ->expectsOutputToContain('Node [shark] can sync base images with the other hosts.')
+            ->expectsOutputToContain('Node [beast] accepts base images from 1 other hosts.')
+            ->expectsOutputToContain('Node [shark] accepts base images from 1 other hosts.')
+            ->expectsOutputToContain('Node [beast] reaches Node [shark] on 192.168.6.40.')
+            ->expectsOutputToContain('Node [shark] reaches Node [beast] on 192.168.6.20.')
             ->assertSuccessful();
 
         expect($fleet->commands[0][0])->toBe('10.44.0.11')
-            ->and($fleet->host('10.44.0.7')->httpsAddress)->toBe('192.168.6.20:8443')
-            ->and(array_column($fleet->host('10.44.0.7')->trust, 'name'))->toBe(["orbit-task-image-{$shark->id}"])
-            ->and($fleet->host('10.44.0.11')->ufwRules)->toBe(["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$beast->id}"]);
+            ->and($fleet->host('10.44.0.7')->authorizedKeys)->toHaveCount(1)
+            ->and($fleet->host('10.44.0.7')->authorizedKeys[0])->toEndWith("orbit-task-image-{$shark->id}")
+            ->and($fleet->host('10.44.0.11')->httpsAddress)->toBe('')
+            ->and($fleet->host('10.44.0.11')->ufwRules)->toBe([]);
     });
 
     it('passes the ZFS dataset that creates a missing pool', function (): void {

@@ -121,9 +121,9 @@ YAML
             --project "$project"
     fi
 
-    # Restricted project. A peer host's client certificate is limited to this project, and these limits keep it
-    # from root on this host: no privileged or nested containers, no host paths or devices, no low-level config,
-    # and no network other than the task bridge. Task VMs need none of these.
+    # Restricted project: no privileged or nested containers, no host paths or devices, no low-level config, and no
+    # network other than the task bridge. Task VMs need none of these, so whatever runs in the project cannot ask
+    # for them either.
     incus project set "$project" restricted=true "restricted.networks.access=$network"
 
     # Stock Ubuntu cloud image, copied once.
