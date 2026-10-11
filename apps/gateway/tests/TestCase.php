@@ -8,6 +8,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Contracts\Console\Kernel;
@@ -16,6 +18,7 @@ use Illuminate\Foundation\Testing\CachedState;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
+use Tests\Support\HostPathGuardedProcessRunner;
 use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
@@ -42,6 +45,12 @@ abstract class TestCase extends BaseTestCase
 
         TestDatabaseGuard::register($app);
         $app->make(Kernel::class)->bootstrap();
+        // No test may change the host's systemd units, dnsmasq fragments, or Orbit state through real sudo.
+        // The guard wraps the native runner, so the container's ProcessRunner keeps its own class.
+        $app->extend(
+            NativeProcessRunner::class,
+            static fn (ProcessRunner $runner): ProcessRunner => new HostPathGuardedProcessRunner($runner),
+        );
 
         return $app;
     }

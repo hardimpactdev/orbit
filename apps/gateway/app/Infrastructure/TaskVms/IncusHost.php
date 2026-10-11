@@ -7,6 +7,7 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -28,8 +29,11 @@ final readonly class IncusHost
         private KnownHostsStore $knownHosts,
     ) {}
 
-    /** @param  list<string>  $arguments  the arguments after `incus --project <project>` */
-    public function run(TaskVmHost $host, Node $node, array $arguments, ?string $input = null, float $timeout = 900.0): CommandResult
+    /**
+     * @param  list<string>  $arguments  the arguments after `incus --project <project>`
+     * @param  string|ProtectedInput|null  $input  stdin; a file goes as `ProtectedInput`, so it is streamed
+     */
+    public function run(TaskVmHost $host, Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 900.0): CommandResult
     {
         return $this->execute($node, ['incus', '--project', $host->project, ...$arguments], $input, $timeout);
     }
@@ -162,7 +166,7 @@ final readonly class IncusHost
     }
 
     /** @param  list<string>  $arguments */
-    private function execute(Node $node, array $arguments, ?string $input, float $timeout): CommandResult
+    private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
     {
         return $this->ssh->execute(
             new SshConnection(
@@ -173,7 +177,12 @@ final readonly class IncusHost
                 knownHostsFile: $this->knownHosts->path(),
                 commandTimeout: $timeout,
             ),
-            new RemoteCommand(['sudo', '-n', ...$arguments], $input, maxOutputBytes: 1_048_576),
+            new RemoteCommand(
+                ['sudo', '-n', ...$arguments],
+                is_string($input) ? $input : null,
+                $input instanceof ProtectedInput ? $input : null,
+                maxOutputBytes: 1_048_576,
+            ),
         );
     }
 }

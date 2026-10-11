@@ -71,6 +71,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -490,8 +491,8 @@ describe(EnrollTaskVm::class, function (): void {
 
         $job->assertReleased(15);
         expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
-            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(61);
-        Sleep::assertSleptTimes(60);
+            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(121);
+        Sleep::assertSleptTimes(120);
     });
 
     it('enrolls in the same run when cloud-init finishes during its polls', function (): void {
@@ -504,6 +505,25 @@ describe(EnrollTaskVm::class, function (): void {
         $job->assertNotReleased();
         Sleep::assertSleptTimes(2);
         expect($vm->fresh()?->node_id)->not->toBeNull();
+    });
+
+    it('enrolls without a fleet Metrics reconcile and logs each step', function (): void {
+        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldNotReceive('reconcile')->getMock());
+        Log::spy();
+        $vm = tvm_life_vm(tvm_life_group());
+
+        app()->call([new EnrollTaskVm($vm->id, now()->subSeconds(14)->getTimestamp()), 'handle']);
+
+        $steps = [];
+        Log::shouldHaveReceived('info')->withArgs(function (string $message, array $context) use (&$steps, $vm): bool {
+            if ($message === 'Task VM step done.' && $context['task_vm'] === $vm->name) {
+                $steps[] = $context['step'];
+            }
+
+            return true;
+        });
+        expect($vm->fresh()?->node_id)->not->toBeNull()
+            ->and($steps)->toBe(['boot', 'node-converge', 'apt-tool-manager', 'roles', 'router-lan-ingress', 'dns-selection', 'activate', 'enrolled']);
     });
 
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
@@ -906,10 +926,10 @@ describe('worker', function (): void {
         $worker = collect($events)->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
 
         expect($worker)->not->toBeNull()
-            ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500")
+            ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
             ->and($worker)->toBe(end($events))
             ->and($worker->expression)->toBe('* * * * *')
-            ->and($worker->repeatSeconds)->toBe(10)
+            ->and($worker->repeatSeconds)->toBe(5)
             ->and($worker->withoutOverlapping)->toBeTrue()
             ->and($worker->expiresAt)->toBe(30)
             ->and($worker->runInBackground)->toBeFalse()

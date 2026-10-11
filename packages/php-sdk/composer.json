@@ -43,7 +43,7 @@
         ],
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
-        "guidance:check": "ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",
+        "guidance:check": "../../bin/guidance-check",
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never"

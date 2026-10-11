@@ -9,7 +9,7 @@ covers:
 
 The desktop app is a native window around the [web app](/reference/web-app). It is built with Tauri 2, and its source lives in `apps/desktop`. It adds no screens and no behavior of its own. Everything you see in the window is the web app.
 
-The app is an early shell. It has no native commands, no tests, no CI job, and no release. Use the web app in a browser for day-to-day work.
+The app is an early shell. It has no native commands, no tests, and no release. CI checks its formatting and lint. Use the web app in a browser for day-to-day work.
 
 ## Run it in development
 
@@ -59,7 +59,8 @@ The app is a shell only, with these limits.
 - The app registers no Tauri commands.
 - Native work such as installing the Orbit root certificate or setting up local DNS is not built. Use `orbit gateway:trust` and the [`dns`](/cli/dns) commands instead.
 - The app works only while the Gateway is reachable. It has no offline mode.
-- CI does not build or check the app, and no workflow publishes it.
+- CI checks only the Rust shell's formatting and lint. It builds no bundle.
+- No workflow publishes the app.
 
 ## Why it works this way
 

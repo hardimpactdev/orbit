@@ -1,0 +1,310 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Fail when the tooling of the five Composer projects drifts from the declared baseline.
+ *
+ * Run from any directory:
+ *
+ *     bin/tooling-baseline
+ *
+ * The script reads each project's composer.json scripts, pint.json, rector.php paths, phpstan.neon level and
+ * paths, and PHPUnit file name. Every project must match TOOLING_BASELINE_SCRIPTS, TOOLING_BASELINE_CHECK, and
+ * PHPStan level 9. TOOLING_BASELINE_PROJECTS declares each project's paths and every allowed difference, with a
+ * one-line reason. Every folder that Rector or PHPStan checks must also be formatted by Pint.
+ *
+ * Some differences stay on purpose. The PHPUnit file is phpunit.xml or phpunit.xml.dist, and CI and bin/tia-cache
+ * hash both names, so renaming one only resets that project's test graph. Dependency ranges and E2E's manual
+ * test:fresh script are not checked here.
+ *
+ * To change the tooling on purpose, change the projects and this baseline in the same commit.
+ */
+
+const TOOLING_BASELINE_SCRIPTS = [
+    'analyse' => 'vendor/bin/phpstan analyse --no-progress --memory-limit=1G',
+    'format' => 'vendor/bin/pint',
+    'format:check' => 'vendor/bin/pint --test',
+    'guidance:check' => '../../bin/guidance-check',
+    'lint' => '@format:check',
+    'rector' => 'vendor/bin/rector process --dry-run --no-progress-bar',
+    'test' => '../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never',
+    'test:affected' => '../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never',
+];
+
+/** The steps of composer check. The guidance check runs first. */
+const TOOLING_BASELINE_CHECK = ['@guidance:check', '@rector', '@format:check', '@analyse'];
+
+const TOOLING_BASELINE_PHPSTAN_LEVEL = 9;
+
+const TOOLING_BASELINE_BOOST_UPDATE = [
+    '@guidance:check',
+    '@php artisan boost:update --no-discover --no-interaction',
+    '@guidance:check',
+];
+
+/**
+ * Paths are relative to the project. Rector and PHPStan list the paths they check. Pint lists the top-level
+ * folders its notPath pattern keeps. Scripts and check steps add to or replace the shared baseline.
+ */
+const TOOLING_BASELINE_PROJECTS = [
+    'apps/cli' => [
+        'phpunit' => 'phpunit.xml.dist',
+        // design holds the PHP replay flows for CLI output design, so every tool checks it.
+        'rector' => ['app', 'config', 'design'],
+        'phpstan' => ['app', 'design', '../../tools/phpstan'],
+        'pint' => ['app', 'bootstrap', 'config', 'design', 'tests'],
+        'scripts' => [
+            'guidance:update' => [
+                '@php orbit boost:update --no-discover --no-interaction',
+                'The CLI runs Boost through its Laravel Zero binary, without the surrounding guidance checks.',
+            ],
+        ],
+        'check' => [],
+    ],
+    'apps/gateway' => [
+        'phpunit' => 'phpunit.xml',
+        'rector' => ['app'],
+        // Routes and migrations are Gateway runtime code.
+        'phpstan' => ['app', 'routes', 'database/migrations', '../../tools/phpstan'],
+        'pint' => ['app', 'bootstrap', 'config', 'database', 'routes', 'tests'],
+        'scripts' => [
+            'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'The Gateway generates its guidance with Boost.'],
+            'test:affected' => [
+                '../../bin/pest-plain vendor/bin/pest --parallel --processes=4 --tia --compact --colors=never',
+                'The Gateway has the largest suite.',
+            ],
+        ],
+        'check' => [
+            '@annotator:check' => 'The Gateway serves the built annotator bundle.',
+            '@compute-guests:check' => 'The Gateway ships the compute guest build inputs.',
+        ],
+    ],
+    'apps/docs' => [
+        'phpunit' => 'phpunit.xml',
+        // The Docs project is small enough for Rector to check its bootstrap, config, and tests too.
+        'rector' => ['app', 'bootstrap/app.php', 'bootstrap/providers.php', 'config', 'tests'],
+        'phpstan' => ['app', 'config', '../../tools/phpstan'],
+        'pint' => ['app', 'bootstrap', 'config', 'tests'],
+        'scripts' => [],
+        'check' => [
+            '@docs:lint' => 'The Docs project owns the documentation lint.',
+            '@fixtures:check' => 'The Docs project owns the API fixtures.',
+        ],
+    ],
+    'apps/e2e' => [
+        'phpunit' => 'phpunit.xml',
+        'rector' => ['app'],
+        'phpstan' => ['app', '../../tools/phpstan'],
+        'pint' => ['app', 'bootstrap', 'config', 'tests'],
+        'scripts' => [
+            'guidance:update' => [TOOLING_BASELINE_BOOST_UPDATE, 'E2E generates its guidance with Boost.'],
+        ],
+        'check' => [],
+    ],
+    'packages/php-sdk' => [
+        'phpunit' => 'phpunit.xml.dist',
+        // The package keeps its code in src.
+        'rector' => ['src'],
+        'phpstan' => ['src', '../../tools/phpstan'],
+        'pint' => ['src', 'tests'],
+        'scripts' => [],
+        'check' => [],
+    ],
+];
+
+/**
+ * @return list<string>
+ */
+function tooling_baseline_rector_paths(string $source): array
+{
+    if (preg_match('/->withPaths\(\s*\[(.*?)\]\s*\)/s', $source, $block) !== 1) {
+        return [];
+    }
+    preg_match_all('/__DIR__\s*\.\s*[\'"]\/([^\'"]+)[\'"]/', $block[1], $paths);
+
+    return $paths[1];
+}
+
+/**
+ * @return array{level: int|null, paths: list<string>}
+ */
+function tooling_baseline_phpstan(string $source): array
+{
+    $level = preg_match('/^\s{4}level:\s*(\d+)\s*$/m', $source, $match) === 1 ? (int) $match[1] : null;
+    $paths = [];
+    if (preg_match('/^\s{4}paths:\s*\n((?:\s{8}-\s*.+\n)+)/m', $source, $block) === 1) {
+        preg_match_all('/^\s{8}-\s*(\S+)/m', $block[1], $entries);
+        $paths = $entries[1];
+    }
+
+    return ['level' => $level, 'paths' => $paths];
+}
+
+/**
+ * @return list<string>|null
+ */
+function tooling_baseline_pint(string $source): ?array
+{
+    $pint = json_decode($source, true);
+    if (! is_array($pint) || ($pint['preset'] ?? null) !== 'laravel' || ($pint['cache-file'] ?? null) !== 'vendor/pint.cache') {
+        return null;
+    }
+    $pattern = $pint['notPath'][0] ?? '';
+    if (! is_string($pattern) || preg_match('/^#\^\(\?!\(\?:([\w|]+)\)\/\)#$/', $pattern, $match) !== 1) {
+        return null;
+    }
+
+    return explode('|', $match[1]);
+}
+
+function tooling_baseline_show(mixed $value): string
+{
+    return json_encode($value, JSON_UNESCAPED_SLASHES) ?: '?';
+}
+
+/**
+ * @param  array<string, mixed>  $declared
+ * @return list<string>
+ */
+function tooling_baseline_project(string $root, string $project, array $declared): array
+{
+    $findings = [];
+    $read = static function (string $file) use ($root, $project, &$findings): ?string {
+        $contents = @file_get_contents($root.'/'.$project.'/'.$file);
+        if ($contents === false) {
+            $findings[] = "{$project}/{$file} is missing.";
+
+            return null;
+        }
+
+        return $contents;
+    };
+
+    $composer = $read('composer.json');
+    $scripts = $composer === null ? null : (json_decode($composer, true)['scripts'] ?? null);
+    if ($composer !== null && ! is_array($scripts)) {
+        $findings[] = "{$project}/composer.json has no scripts.";
+    }
+    if (is_array($scripts)) {
+        $expected = TOOLING_BASELINE_SCRIPTS;
+        foreach ($declared['scripts'] as $name => [$value]) {
+            $expected[$name] = $value;
+        }
+        foreach ($expected as $name => $value) {
+            if (! array_key_exists($name, $scripts)) {
+                $findings[] = "{$project}/composer.json is missing script {$name}.";
+            } elseif ($scripts[$name] !== $value) {
+                $findings[] = "{$project}/composer.json script {$name} is ".tooling_baseline_show($scripts[$name]).', expected '.tooling_baseline_show($value).'.';
+            }
+        }
+
+        $check = is_array($scripts['check'] ?? null) ? $scripts['check'] : [];
+        $steps = array_merge(TOOLING_BASELINE_CHECK, array_keys($declared['check']));
+        if (($check[0] ?? null) !== '@guidance:check') {
+            $findings[] = "{$project}/composer.json check must run @guidance:check first.";
+        }
+        foreach (array_diff($steps, $check) as $step) {
+            $findings[] = "{$project}/composer.json check is missing {$step}.";
+        }
+        foreach (array_diff($check, $steps) as $step) {
+            $findings[] = "{$project}/composer.json check runs undeclared step ".tooling_baseline_show($step).'.';
+        }
+    }
+
+    $pint = null;
+    $source = $read('pint.json');
+    if ($source !== null) {
+        $pint = tooling_baseline_pint($source);
+        if ($pint === null) {
+            $findings[] = "{$project}/pint.json must use the laravel preset, vendor/pint.cache, and one notPath folder pattern.";
+        } elseif ($pint !== $declared['pint']) {
+            $findings[] = "{$project}/pint.json formats ".tooling_baseline_show($pint).', expected '.tooling_baseline_show($declared['pint']).'.';
+        }
+    }
+
+    $checked = [];
+    $source = $read('rector.php');
+    if ($source !== null) {
+        $rector = tooling_baseline_rector_paths($source);
+        $checked = array_merge($checked, $rector);
+        if ($rector !== $declared['rector']) {
+            $findings[] = "{$project}/rector.php checks ".tooling_baseline_show($rector).', expected '.tooling_baseline_show($declared['rector']).'.';
+        }
+    }
+
+    $source = $read('phpstan.neon');
+    if ($source !== null) {
+        $phpstan = tooling_baseline_phpstan($source);
+        $checked = array_merge($checked, $phpstan['paths']);
+        if ($phpstan['level'] !== TOOLING_BASELINE_PHPSTAN_LEVEL) {
+            $findings[] = "{$project}/phpstan.neon level is ".tooling_baseline_show($phpstan['level']).', expected '.TOOLING_BASELINE_PHPSTAN_LEVEL.'.';
+        }
+        if ($phpstan['paths'] !== $declared['phpstan']) {
+            $findings[] = "{$project}/phpstan.neon checks ".tooling_baseline_show($phpstan['paths']).', expected '.tooling_baseline_show($declared['phpstan']).'.';
+        }
+    }
+
+    if ($pint !== null) {
+        foreach (array_unique($checked) as $path) {
+            $folder = explode('/', $path)[0];
+            if ($folder !== '..' && ! in_array($folder, $pint, true)) {
+                $findings[] = "{$project}/pint.json does not format {$folder}, which Rector or PHPStan checks.";
+            }
+        }
+    }
+
+    if (! is_file($root.'/'.$project.'/'.$declared['phpunit'])) {
+        $findings[] = "{$project}/{$declared['phpunit']} is missing.";
+    }
+
+    return $findings;
+}
+
+/**
+ * @param  list<string>  $argv
+ */
+function tooling_baseline_main(array $argv): int
+{
+    $root = dirname(__DIR__);
+
+    for ($index = 1, $count = count($argv); $index < $count; $index++) {
+        $argument = $argv[$index];
+        if ($argument === '--root') {
+            $root = $argv[++$index] ?? '';
+        } elseif (str_starts_with($argument, '--root=')) {
+            $root = substr($argument, strlen('--root='));
+        } else {
+            fwrite(STDERR, "Unknown argument {$argument}.\n");
+
+            return 2;
+        }
+    }
+
+    if ($root === '' || ! is_dir($root)) {
+        fwrite(STDERR, "Tooling root is not a directory.\n");
+
+        return 2;
+    }
+
+    $findings = [];
+    foreach (TOOLING_BASELINE_PROJECTS as $project => $declared) {
+        $findings = array_merge($findings, tooling_baseline_project($root, $project, $declared));
+    }
+
+    if ($findings === []) {
+        return 0;
+    }
+
+    foreach ($findings as $finding) {
+        fwrite(STDOUT, $finding."\n");
+    }
+    fwrite(STDERR, "\nAlign the project with the others, or declare the difference and its reason in bin/tooling-baseline.\n");
+
+    return 1;
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+    exit(tooling_baseline_main($argv));
+}

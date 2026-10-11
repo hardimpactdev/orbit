@@ -32,7 +32,7 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 6 | Update Router LAN access and private DNS for the Node's Cluster. |
 | 7 | Mark the Node `active`. |
 | 8 | Store and prepare the [storage settings](/reference/node-settings). |
-| 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). |
+| 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). A [task VM](/reference/compute-drivers#task-vms) skips this step. |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
 After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
@@ -198,7 +198,7 @@ What a failure leaves depends on the step. A macOS Node uses [enrollment recover
 
 A storage-settings failure returns its `node.settings_*` code, and the request skips steps 9 and 10. Only an unexpected error in step 8 marks the Node `failed` at `node-storage-root`.
 
-Step 9 runs whenever a Metrics role exists. A Metrics reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports the failure as degraded. This applies to exporter, cAdvisor, runtime, and unexpected failures, both when `node:add` provisions a Node and when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported.
+Step 9 runs whenever a Metrics role exists, except for a task VM, which never hosts an exporter. A task VM also holds back the reconcile that each role converge runs. A Metrics reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports the failure as degraded. This applies to exporter, cAdvisor, runtime, and unexpected failures, both when `node:add` provisions a Node and when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported.
 
 ## Orbit CLI
 

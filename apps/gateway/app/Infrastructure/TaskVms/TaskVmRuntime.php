@@ -18,6 +18,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Compute\HttpSandboxModelKeys;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\Pi\PiConnection;
@@ -39,12 +40,19 @@ final readonly class TaskVmRuntime
     /** The only `models.json` provider on a task VM. CLIProxyAPI is the VM's only model route. */
     public const string PiProvider = 'orbit-task-vm';
 
-    private const int ArtifactMaxBytes = 268435456;
+    public const int ArtifactMaxBytes = 268435456;
 
     /** Shared with the Orbit lane, so one anchor key guards each CLIProxyAPI. */
     private const string ModelKeyLock = 'orbit:compute:model-keys';
 
-    private const string InstallPi = <<<'BASH'
+    /** The Pi executable of the managed user. The base image holds the Gateway's pinned build there. */
+    public const string PiPath = '.local/bin/pi-server';
+
+    /**
+     * Installs the Pi executable from stdin when it has the digest in `$1`. The base image build runs it
+     * too, so a VM from a current image already has the pinned executable.
+     */
+    public const string InstallPi = <<<'BASH'
         bin="$HOME/.local/bin"
         install -d -m 0755 -- "$HOME/.local" "$bin"
         staged=$(mktemp "$bin/.pi-server.XXXXXX")
@@ -54,6 +62,13 @@ final readonly class TaskVmRuntime
         chmod 0755 -- "$staged"
         mv -f -- "$staged" "$bin/pi-server"
         trap - EXIT
+        BASH;
+
+    /** Prints `current` when the installed Pi executable has the digest in `$1`. */
+    private const string PiIsCurrent = <<<'BASH'
+        if printf '%s  %s\n' "$1" "$HOME/.local/bin/pi-server" | sha256sum --check --status 2>/dev/null; then
+            printf current
+        fi
         BASH;
 
     private const string WritePrivate = <<<'BASH'
@@ -74,6 +89,7 @@ final readonly class TaskVmRuntime
         private SettingRepository $gatewaySettings,
         private AddProcessAction $processes,
         private PiConnection $pi,
+        private TaskVmStepClock $clock,
     ) {}
 
     public function prepare(TaskVm $vm): void
@@ -92,19 +108,28 @@ final readonly class TaskVmRuntime
             throw $this->invalidConfig('pi.artifact_path, pi.artifact_sha256 and pi.models are required to prepare a task VM.');
         }
         $key = $this->ensureModelKey($vm, $origin);
+        $this->clock->step('model-key');
 
         try {
             $home = '/home/'.$node->user;
-            $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
+            // A VM from a current base image has the pinned executable, so only an older image needs the upload.
+            $installed = $this->run($node, ['bash', '-ceu', self::PiIsCurrent, '--', $digest], null, 'task-vm-pi-artifact-check', 60)->stdout;
+            if (trim($installed) !== 'current') {
+                $this->run($node, ['bash', '-ceu', self::InstallPi, '--', $digest], ProtectedInput::fromFile($artifact, '', self::ArtifactMaxBytes), 'task-vm-pi-artifact', 600);
+                $this->clock->step('pi-upload');
+            } else {
+                $this->clock->step('pi-current');
+            }
             $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'models.json'], ProtectedInput::fromString($this->models($origin, $key)), 'task-vm-pi-models', 60);
             $this->run($node, ['bash', '-ceu', self::WritePrivate, '--', 'orbit-token'], ProtectedInput::fromString($vm->pi_token), 'task-vm-pi-token', 60);
+            $this->clock->step('pi-files');
             $this->processes->execute(new AddProcessData(
                 targetType: ProcessTargetType::Node,
                 targetId: $node->id,
                 name: 'pi-server',
                 runtime: ProcessRuntime::Systemd,
                 command: [
-                    $home.'/.local/bin/pi-server', 'serve', '--host='.$node->wireguard_ip, '--port='.$this->pi->port(),
+                    $home.'/'.self::PiPath, 'serve', '--host='.$node->wireguard_ip, '--port='.$this->pi->port(),
                     '--token-file='.$home.'/.pi/agent/orbit-token', '--allow-provider='.self::PiProvider,
                 ],
                 image: null,
@@ -116,6 +141,7 @@ final readonly class TaskVmRuntime
                 start: true,
                 keepAlive: true,
             ));
+            $this->clock->step('pi-server');
         } catch (Throwable $exception) {
             throw new TaskVmException('task_vm.runtime_failed', "Pi could not be prepared on task VM [{$vm->name}].", 502, $exception);
         }
@@ -203,9 +229,9 @@ final readonly class TaskVmRuntime
     }
 
     /** @param list<string> $arguments */
-    private function run(Node $node, array $arguments, ProtectedInput $input, string $step, float $timeout): void
+    private function run(Node $node, array $arguments, ?ProtectedInput $input, string $step, float $timeout): CommandResult
     {
-        $this->ssh->execute($node, new RemoteCommand($arguments, protectedInput: $input, timeout: $timeout), $step, 'task_vm.runtime_failed', $timeout, 'Task VM runtime');
+        return $this->ssh->execute($node, new RemoteCommand($arguments, protectedInput: $input, timeout: $timeout), $step, 'task_vm.runtime_failed', $timeout, 'Task VM runtime');
     }
 
     private function origin(): string

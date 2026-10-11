@@ -14,7 +14,9 @@ Four of Orbit's nine projects are not Composer projects. This page shows how to 
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
 
-`bin/bootstrap` and `bin/test` handle only the Composer projects. Install and check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
+`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app, the Pi server, and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
+
+`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
 
 ## Prerequisites
 
@@ -107,8 +109,8 @@ cd ../desktop && bun install
 bun run dev
 ```
 
-`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests and no CI job yet. The [desktop app](/reference/desktop-app) page describes the build and its limits.
+`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests yet. Before you submit a change, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`; CI runs the same checks. The [desktop app](/reference/desktop-app) page describes the build and its limits.
 
 ## CI
 
-The `Web`, `Pi server`, and `Rust agent` jobs check these projects on every pull request. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI does not build the desktop app.
+The `Web`, `Pi server`, `Rust agent`, and `Desktop app` jobs check these projects on every pull request. The `Rust agent` and `Desktop app` jobs skip their steps when the pull request does not change their project or the CI workflow. [CI](/reference/implementation-loop#ci) lists the steps of each job. CI checks the desktop app's Rust shell but does not build a bundle.

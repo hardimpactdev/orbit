@@ -19,6 +19,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
+use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Node;
 use Illuminate\Console\Scheduling\CallbackEvent;
@@ -26,6 +27,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
+use Symfony\Component\Yaml\Yaml;
 
 const IMAGE_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway';
 
@@ -36,6 +38,40 @@ const IMAGE_OLD = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const IMAGE_USED = 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
 
 const IMAGE_STOCK = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+
+/** The metadata of a builder VM from the stock image, as `incus config metadata show` prints it. */
+const IMAGE_METADATA = <<<'YAML'
+    architecture: x86_64
+    creation_date: 1791653894
+    properties:
+      os: ubuntu
+      release: resolute
+    templates:
+      /etc/hostname:
+        when:
+        - create
+        - copy
+        create_only: false
+        template: hostname.tpl
+        properties: {}
+      /var/lib/cloud/seed/nocloud-net/meta-data:
+        when:
+        - create
+        - copy
+        create_only: false
+        template: cloud-init-meta-data.tpl
+        properties: {}
+      /var/lib/cloud/seed/nocloud-net/user-data:
+        when:
+        - create
+        - copy
+        create_only: false
+        template: cloud-init-user-data.tpl
+        properties:
+          default: |
+            #cloud-config
+            {}
+    YAML;
 
 /**
  * An Incus host that answers by argv: `$state` holds its images (fingerprint => aliases) and instances
@@ -53,6 +89,12 @@ final class FakeIncusImageHost implements SshExecutor
     public array $instances = [];
 
     public ?string $fail = null;
+
+    /** The image metadata that `config metadata edit` wrote, by instance. */
+    public array $metadata = [];
+
+    /** How many boots the smoke VM's journal lists. */
+    public int $boots = 1;
 
     private int $cloudInitPolls = 0;
 
@@ -78,6 +120,10 @@ final class FakeIncusImageHost implements SshExecutor
             ))),
             $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
             $operation[0] === 'exec' => $this->exec($operation[array_search('--', $operation, true) + 1], array_slice($operation, array_search('--', $operation, true) + 2)),
+            $operation[0] === 'config' && $operation[2] === 'show' => $this->answer('metadata show', static fn (): string => IMAGE_METADATA),
+            $operation[0] === 'config' && $operation[2] === 'edit' => $this->answer('metadata edit', function () use ($operation, $command): void {
+                $this->metadata[end($operation)] = $command->input;
+            }),
             $operation[0] === 'stop' => $this->answer('stop'),
             $operation[0] === 'publish' => $this->answer('publish', fn () => $this->images[IMAGE_NEW] = [$operation[4]]),
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
@@ -103,6 +149,8 @@ final class FakeIncusImageHost implements SshExecutor
                 default => new CommandResult(0, '{"status":"done","errors":[]}', '', 1, false),
             },
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
+            'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
+            'test' => $this->answer('authorized key'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
             'bash' => $command[1] === '-s'
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
@@ -202,7 +250,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'single-boot', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -223,6 +271,52 @@ describe('a build', function (): void {
         $clean = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => array_slice($command->arguments, 8) === ['bash', '-s']);
         expect(array_slice($agent->arguments, -2))->toBe([NodeAgentFootprint::downloadUrl('x86_64'), NodeAgentFootprint::checksum('x86_64')])
             ->and($clean->input)->toBe(file_get_contents(resource_path('task-vms/base-image-clean.sh')));
+    });
+
+    it('installs the pinned Pi executable for orbit when the Gateway pins one', function (): void {
+        $artifact = tempnam(sys_get_temp_dir(), 'pi-server-');
+        file_put_contents($artifact, 'pi-server build');
+        $digest = hash_file('sha256', $artifact);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', $this->settings->hosts, 'http://10.44.0.3:8317', $artifact, $digest, ['gpt-5.6-luna']));
+        $stages = [];
+
+        try {
+            ($this->build)($stages);
+        } finally {
+            unlink($artifact);
+        }
+
+        $pi = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => $command->protectedInput !== null);
+        expect($stages)->toContain('pi-artifact')
+            ->and(array_search('pi-artifact', $stages, true))->toBe(array_search('agent-binary', $stages, true) + 1)
+            ->and(array_slice($pi->arguments, 5, 16))->toBe([
+                'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-'.now()->format('YmdHis'),
+                'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi,
+            ])
+            ->and(array_slice($pi->arguments, -2))->toBe(['--', $digest]);
+    });
+
+    it('drops the seed templates, so a VM from the image boots once and cloud-init reads its user-data from the Incus agent', function (): void {
+        $this->travelTo('2026-10-10 03:00:00');
+
+        ($this->build)();
+
+        $metadata = Yaml::parse((string) $this->incus->metadata['tvm-image-20261010030000']);
+        $dropIn = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => in_array('install', $command->arguments, true));
+        expect(array_keys($metadata['templates']))->toBe(['/etc/hostname'])
+            ->and($metadata['properties'])->toBe(['os' => 'ubuntu', 'release' => 'resolute'])
+            ->and($metadata['creation_date'])->toBe(1791653894)
+            ->and(Yaml::parse((string) $this->incus->metadata['tvm-image-20261010030000'], Yaml::PARSE_OBJECT_FOR_MAP)->templates->{'/etc/hostname'}->properties)->toBeInstanceOf(stdClass::class)
+            ->and(array_slice($dropIn->arguments, -2))->toBe(['/dev/stdin', '/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf'])
+            ->and($dropIn->input)->toBe("[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n");
+    });
+
+    it('fails the smoke test when a VM from the new image reboots on its first boot', function (): void {
+        $this->incus->boots = 2;
+
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'failed at stage [smoke]: Incus returned invalid output for the base image smoke VM [tvm-image-');
+        expect($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm']])
+            ->and($this->incus->instances)->toBe([]);
     });
 
     it('moves the base alias in one request, keeps an image a VM uses and deletes the unused ones', function (): void {
