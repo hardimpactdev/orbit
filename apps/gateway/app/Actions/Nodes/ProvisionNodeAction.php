@@ -22,6 +22,7 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -52,6 +53,7 @@ use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
@@ -382,6 +384,7 @@ final readonly class ProvisionNodeAction
             );
         }
 
+        $clock = app(TaskVmStepClock::class);
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
                 $this->converger->convergeRecoverably(
@@ -392,7 +395,7 @@ final readonly class ProvisionNodeAction
                         $this->recordArchitecture($node, $data, $observation);
                         $node->user = $managedUser;
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
-                        $this->convergeRoles($node, $data->roles);
+                        $this->convergeRoles($node, $data);
                     },
                     $rolelessOperator,
                 );
@@ -403,10 +406,13 @@ final readonly class ProvisionNodeAction
                     $data->expectedSshHostFingerprint,
                     $rolelessOperator,
                 );
+                $clock->step('node-converge');
                 $this->recordArchitecture($node, $data, $observation);
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
-                $this->convergeRoles($node, $data->roles);
+                $clock->step('apt-tool-manager');
+                $this->convergeRoles($node, $data);
+                $clock->step('roles');
             }
         } catch (NodeProvisioningException $exception) {
             $this->handleFailure($node, $exception, $priorActiveState);
@@ -459,12 +465,14 @@ final readonly class ProvisionNodeAction
         } catch (Throwable $exception) {
             $this->failRouterLanIngress($node, $exception, $priorActiveState, $lanClusterIds);
         }
+        $clock->step('router-lan-ingress');
 
         try {
             $this->expandDnsSelection($node, $lanClusterIds);
         } catch (Throwable $exception) {
             $this->failDnsSelection($node, $exception, $priorActiveState, $lanClusterIds);
         }
+        $clock->step('dns-selection');
 
         try {
             DB::transaction(function () use ($node, $managedUser): void {
@@ -489,6 +497,7 @@ final readonly class ProvisionNodeAction
 
         $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
         $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+        $clock->step('activate');
 
         if ($data->settingsProvided) {
             try {
@@ -518,9 +527,13 @@ final readonly class ProvisionNodeAction
         // exporter selection only ever considers active nodes. The node is
         // active here, so every provisioning outcome reconciles: a role-bearing
         // node becomes a selected exporter, and a roleless node picks up an
-        // explicit preference it kept from an earlier registration.
+        // explicit preference it kept from an earlier registration. A task VM
+        // Node never hosts an exporter, so its enrollment changes nothing that
+        // Metrics owns and skips the fleet-wide reconcile.
         try {
-            $this->metrics->reconcile();
+            if ($data->taskVmId === null) {
+                $this->metrics->reconcile();
+            }
         } catch (Throwable $exception) {
             if ($exception instanceof MetricsFleetReconcileException) {
                 if ($exception->component !== MetricsReconcileComponent::Runtime) {
@@ -553,6 +566,7 @@ final readonly class ProvisionNodeAction
                 throw $failure;
             }
 
+            $clock->step('agent');
             // The Orbit CLI on a Node of the rollout set (ADR 0202). Best effort: the fleet catch-up retries it.
             app(NodeCliConvergence::class)->converge($node);
         }
@@ -562,12 +576,24 @@ final readonly class ProvisionNodeAction
         return $wasNew ? $this->announceCreated($result) : $this->announceUpdated($result);
     }
 
-    /** @param list<RoleName> $roles */
-    private function convergeRoles(Node $node, array $roles): void
+    /**
+     * Converges the requested roles. For a task VM Node, the Metrics reconcile that each role converge
+     * runs is held back and dropped: the Node never hosts an exporter, so the reconcile would change
+     * nothing and only cost a pass over every Node of the fleet.
+     */
+    private function convergeRoles(Node $node, ProvisionNodeData $data): void
     {
-        try {
-            foreach ($roles as $role) {
+        $converge = function () use ($node, $data): void {
+            foreach ($data->roles as $role) {
                 $this->roles->executeDuringProvisioning($node, $role);
+            }
+        };
+
+        try {
+            if ($data->taskVmId === null) {
+                $converge();
+            } else {
+                app(MetricsReconcileDeferral::class)->during($converge);
             }
         } catch (NodeRoleOperationException $exception) {
             throw new NodeProvisioningException(

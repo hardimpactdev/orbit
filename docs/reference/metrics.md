@@ -72,7 +72,7 @@ When the target convergence fails, rollback removes the exporters and cAdvisor, 
 
 ## Exporter selection
 
-A Node can host an exporter only when the Gateway manages it. The Node must be active, run Linux, have a WireGuard address, and have a stored SSH host fingerprint. Within that set, the Gateway reads the Node's exporter preference and its active or provisioning roles.
+A Node can host an exporter only when the Gateway manages it. The Node must be active, run Linux, have a WireGuard address, and have a stored SSH host fingerprint. A [task VM](/reference/compute-drivers#task-vms) Node is never eligible, because the hub filter keeps the Metrics Node from reaching it. Within that set, the Gateway reads the Node's exporter preference and its active or provisioning roles.
 
 | Preference | Node | Result |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 
 A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The UFW rule `orbit:metrics-node-exporter` allows the Metrics Node to reach the port.
 
-The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add`, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
+The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add` except the enrollment of a task VM, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
 
 The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
 

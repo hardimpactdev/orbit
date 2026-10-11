@@ -9,10 +9,12 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
@@ -20,15 +22,19 @@ use Closure;
 use Illuminate\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
+use stdClass;
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
 use Throwable;
 
 /**
  * Builds a host's task VM base image. A builder VM boots the stock image with the builder user-data, runs
  * the programs that enrollment runs on an `app-dev` Node through `incus exec`, installs the pinned agent
- * binary, and removes its identity with `base-image-clean.sh`. Incus publishes its disk as
- * `orbit-task-base-<time>`. A smoke VM boots the new image, which also creates its volume on the ZFS pool.
- * Then the alias `orbit-task-base` moves to it in one request, and older base images that no VM uses go.
- * A failed build keeps the current image and leaves no builder, smoke VM or unused new image behind.
+ * binary and the pinned Pi executable, lets a VM from the image boot once, and removes its identity with
+ * `base-image-clean.sh`. Incus publishes its disk as `orbit-task-base-<time>`. A smoke VM boots the new
+ * image, which also creates its volume on the ZFS pool. Then the alias `orbit-task-base` moves to it in one
+ * request, and older base images that no VM uses go. A failed build keeps the current image and leaves no
+ * builder, smoke VM or unused new image behind.
  */
 final readonly class IncusTaskVmImageBuilder
 {
@@ -46,6 +52,14 @@ final readonly class IncusTaskVmImageBuilder
 
     private const int LockSeconds = 1500;
 
+    /** The Incus templates that write the NoCloud seed. Each one makes the Incus agent reboot a new VM. */
+    private const string SeedTemplates = '/var/lib/cloud/seed/';
+
+    /** Orders cloud-init after the Incus agent, whose socket serves the VM's user-data. */
+    private const string CloudInitAfterAgent = "[Unit]\nWants=incus-agent.service\nAfter=incus-agent.service\n";
+
+    private const string CloudInitDropIn = '/etc/systemd/system/cloud-init-main.service.d/orbit-incus-agent.conf';
+
     private const string InstallAgent = <<<'BASH'
         candidate=/usr/local/bin/orbit-agent.orbit-candidate
         curl --fail --location --silent --show-error --connect-timeout 10 --max-time 300 --output "$candidate" -- "$1"
@@ -61,6 +75,7 @@ final readonly class IncusTaskVmImageBuilder
         private SshKeyProvider $keys,
         private NodeBootstrapCommandFactory $bootstrap,
         private NodeRolePrerequisiteCommandFactory $roles,
+        private TaskVmSettings $settings,
     ) {}
 
     /** Whether the host's project has a base image. */
@@ -100,6 +115,10 @@ final readonly class IncusTaskVmImageBuilder
                 $this->stage($node, $name, $progress, fn () => $this->runProgram($host, $node, $builder, $name, $program));
             }
             $this->stage($node, 'agent-binary', $progress, fn () => $this->installAgent($host, $node, $builder));
+            if ($this->settings->piArtifactPath !== null && $this->settings->piArtifactSha256 !== null) {
+                $this->stage($node, 'pi-artifact', $progress, fn () => $this->installPi($host, $node, $builder, (string) $this->settings->piArtifactPath, (string) $this->settings->piArtifactSha256));
+            }
+            $this->stage($node, 'single-boot', $progress, fn () => $this->singleBoot($host, $node, $builder));
             $this->stage($node, 'clean', $progress, fn () => $this->clean($host, $node, $builder));
             $unused = $published = $this->stage($node, 'publish', $progress, fn (): string => $this->publish($host, $node, $builder, $alias));
             $this->stage($node, 'delete-builder', $progress, fn () => $this->delete($host, $node, $builder));
@@ -261,6 +280,50 @@ final readonly class IncusTaskVmImageBuilder
         ]));
     }
 
+    /**
+     * Installs the Gateway's pinned Pi executable for `orbit`, with the script that prepares Pi on a task VM.
+     * A VM from the image then skips the upload while the pin is the same.
+     */
+    private function installPi(TaskVmHost $host, Node $node, string $name, string $artifact, string $digest): void
+    {
+        $this->checked($host, $node, $name, 'exec pi-artifact', $this->incus->run($host, $node, [
+            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit',
+            '--', $name, 'runuser', '-u', 'orbit', '--', 'bash', '-ceu', TaskVmRuntime::InstallPi, '--', $digest,
+        ], ProtectedInput::fromFile($artifact, '', TaskVmRuntime::ArtifactMaxBytes)));
+    }
+
+    /**
+     * Lets a VM from the image boot once. The image's Incus templates write the NoCloud seed, and the Incus
+     * agent reboots a new VM after it writes the seed, because cloud-init has started by then. Without those
+     * templates, cloud-init reads the user-data from the agent's socket through its `LXD` data source, so it
+     * must wait for the agent. The other templates, such as `/etc/hostname`, stay.
+     */
+    private function singleBoot(TaskVmHost $host, Node $node, string $name): void
+    {
+        $this->checked($host, $node, $name, 'exec cloud-init drop-in', $this->exec($host, $node, $name, [
+            'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', self::CloudInitDropIn,
+        ], self::CloudInitAfterAgent));
+
+        $subject = "the base image build VM [{$name}]";
+        $shown = $this->checked($host, $node, $name, 'config metadata show', $this->incus->run($host, $node, ['config', 'metadata', 'show', '--', $name]));
+        // Maps stay objects, so an empty map such as `properties: {}` keeps its type for Incus.
+        try {
+            $metadata = $shown->truncated ? null : Yaml::parse($shown->stdout, Yaml::PARSE_OBJECT_FOR_MAP);
+        } catch (ParseException) {
+            $metadata = null;
+        }
+        $templates = $metadata instanceof stdClass ? $metadata->templates ?? null : null;
+        if (! $templates instanceof stdClass) {
+            throw IncusHost::invalid($subject, 'the image metadata has no templates');
+        }
+        foreach (array_keys(get_object_vars($templates)) as $path) {
+            if (str_starts_with($path, self::SeedTemplates)) {
+                unset($templates->{$path});
+            }
+        }
+        $this->checked($host, $node, $name, 'config metadata edit', $this->incus->run($host, $node, ['config', 'metadata', 'edit', '--', $name], Yaml::dump($metadata, 8, 2, Yaml::DUMP_OBJECT_AS_MAP)));
+    }
+
     private function clean(TaskVmHost $host, Node $node, string $name): void
     {
         $script = file_get_contents(resource_path(self::CleanScript));
@@ -280,7 +343,10 @@ final readonly class IncusTaskVmImageBuilder
             ?? throw IncusHost::invalid("the base image build VM [{$name}]", "the published image has no alias [{$alias}]");
     }
 
-    /** The smoke VM must have a host key, which proves `openssh-server` and a clean first boot. */
+    /**
+     * The smoke VM must have a host key, which proves `openssh-server` and a clean first boot, the Gateway's
+     * key from its user-data, and one boot only.
+     */
     private function smoke(TaskVmHost $host, Node $node, string $name, string $alias): void
     {
         $this->launch($host, $node, $name, $alias, $this->cloudInit->render($this->keys->publicKey()));
@@ -288,6 +354,14 @@ final readonly class IncusTaskVmImageBuilder
         $result = $this->checked($host, $node, $name, 'exec ssh-keygen', $this->exec($host, $node, $name, ['ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']));
         if (preg_match(self::FingerprintPattern, $result->stdout) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it has no ed25519 SSH host key');
+        }
+        // Cloud-init found the user-data without the seed: the Gateway's key is in place.
+        if (! $this->exec($host, $node, $name, ['test', '-s', '/home/orbit/.ssh/authorized_keys'])->succeeded()) {
+            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'cloud-init did not read its user-data, so orbit has no authorized key');
+        }
+        $boots = $this->checked($host, $node, $name, 'exec journalctl', $this->exec($host, $node, $name, ['journalctl', '--list-boots', '--no-pager', '--quiet']));
+        if (count(array_filter(explode("\n", trim($boots->stdout)), static fn (string $line): bool => trim($line) !== '')) !== 1) {
+            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it rebooted during its first boot');
         }
         $this->delete($host, $node, $name);
     }
