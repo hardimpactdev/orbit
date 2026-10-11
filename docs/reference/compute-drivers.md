@@ -184,7 +184,9 @@ The task VM jobs run on the `task-vms` database queue, in the Gateway's own data
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
 ```
 
-The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds. A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+The worker stops when the queue is empty, or takes no new job after 120 seconds. So one worker run takes a VM from launch to `ready`. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds.
+
+A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
 | Job | Retries |
 | --- | --- |
