@@ -33,6 +33,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\Pi\PiConnection;
+use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
@@ -344,6 +345,31 @@ describe('failure and backoff', function (): void {
             && $context['failures'] === 2 && $context['error_code'] === 'task_vm.job_failed' && $context['retry_at'] === '2026-10-11T12:03:01+00:00');
     });
 
+    it('fails a pool row that lost its job an hour ago, logs it, destroys it, and frees the slot', function (): void {
+        Queue::fake();
+        Log::spy();
+        tvm_pool_hosts([[$this->host, 2, 1]]);
+        $stuck = tvm_pool_vm(TaskVmState::Provisioning);
+        $stuck->forceFill(['created_at' => now()->subMinutes(RefillTaskVmPoolAction::StartMinutes + 1)])->save();
+        $young = tvm_pool_vm(TaskVmState::Provisioning);
+        $young->forceFill(['created_at' => now()->subMinutes(RefillTaskVmPoolAction::StartMinutes - 1)])->save();
+
+        tvm_pool_refill();
+
+        expect($stuck->fresh()?->state)->toBe(TaskVmState::Destroying)
+            ->and($stuck->fresh()?->error_code)->toBe(RefillTaskVmPoolAction::StartTimeoutCode)
+            ->and($young->fresh()?->state)->toBe(TaskVmState::Provisioning);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $stuck->id);
+        Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'A warm task VM failed')
+            && $context['task_vm'] === $stuck->name && $context['error_code'] === RefillTaskVmPoolAction::StartTimeoutCode);
+
+        // Once destroyed, its slot is free again for a pool VM after the wait.
+        $stuck->update(['state' => TaskVmState::Destroyed]);
+        $young->update(['state' => TaskVmState::Destroyed]);
+        $this->travel(61)->seconds();
+        expect(tvm_pool_refill()['created'])->toBe(1);
+    });
+
     it('forgets the failures once a pool VM becomes warm', function (): void {
         Queue::fake();
         $failed = tvm_pool_vm(TaskVmState::Provisioning);
@@ -384,8 +410,9 @@ describe('warm', function (): void {
 });
 
 describe('claim', function (): void {
-    it('takes a current warm VM and queues only the group steps', function (): void {
+    it('takes a current warm VM, and queues only the group steps when they fail in the claim', function (): void {
         Queue::fake();
+        Log::spy();
         $vm = tvm_pool_vm();
         $group = tvm_pool_group();
 
@@ -404,6 +431,9 @@ describe('claim', function (): void {
         Queue::assertPushed(RefillTaskVmPool::class);
         Queue::assertNotPushed(ProvisionTaskVm::class);
         Queue::assertNotPushed(EnrollTaskVm::class);
+        // This Gateway pins no Pi, so the steps fail in the claim and go to the task VM worker.
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'the task VM worker retries them')
+            && $context['error_code'] === 'task_vm.invalid_config');
     });
 
     it('waits through the claim until the claimed warm VM is ready', function (): void {
@@ -499,6 +529,41 @@ describe('claim', function (): void {
             ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_pool_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoCapacity);
     });
 
+    it('reads a host image at most every 10 seconds, and waits a minute after a failed read', function (): void {
+        Queue::fake();
+        tvm_pool_hosts([[$this->host, 8, 0]]);
+        tvm_pool_vm();
+        tvm_pool_vm();
+        $reads = fn (): int => count(array_filter($this->fleet->argv('10.44.0.7'), static fn (string $command): bool => str_contains($command, 'image list')));
+
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+        expect($reads())->toBe(1);
+
+        $this->travel(11)->seconds();
+        $this->fleet->host('10.44.0.7')->fail = 'image list';
+        tvm_pool_vm();
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+        expect($reads())->toBe(2);
+
+        $this->travel(61)->seconds();
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+        expect($reads())->toBe(3);
+    });
+
+    it('reads the host image again after a promote, so a claim never takes a VM from the old image', function (): void {
+        Queue::fake();
+        tvm_pool_vm();
+        $second = tvm_pool_vm();
+        app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+
+        app(TaskVmBaseImage::class)->promote(app(TaskVmSettings::class)->host($this->host->id), $this->host, TVM_POOL_OLD);
+        $claimed = app(AllocateTaskVmAction::class)->execute(tvm_pool_group());
+
+        expect($claimed->warmed_at)->toBeNull()->and($second->fresh()?->group_id)->toBeNull();
+    });
+
     it('reads no host image without a warm VM', function (): void {
         Queue::fake();
 
@@ -553,18 +618,17 @@ describe('a claimed warm VM', function (): void {
         @unlink($this->artifact);
     });
 
-    it('gets its model key and Pi only at the claim, and logs the time from the claim to ready', function (): void {
+    it('gets its model key and Pi in the claim itself, is ready at once, and logs the time from the claim to ready', function (): void {
         Queue::fake();
         Log::spy();
         $vm = tvm_pool_vm();
         $group = tvm_pool_group();
-        app(AllocateTaskVmAction::class)->execute($group);
-        $vm->refresh()->forceFill(['claimed_at' => now()->subSeconds(2)])->save();
 
-        app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']);
+        $node = app(TaskVmWorkspace::class)->node($group);
 
         $vm->refresh();
-        expect($vm->state)->toBe(TaskVmState::Ready)
+        expect($node->id)->toBe($vm->node_id)
+            ->and($vm->state)->toBe(TaskVmState::Ready)
             ->and($vm->group_id)->toBe($group->id)
             ->and($vm->model_key)->toMatch('/\A[a-f0-9]{64}\z/')
             ->and($vm->model_proxy_origin)->toBe(TVM_POOL_ORIGIN);
@@ -577,10 +641,12 @@ describe('a claimed warm VM', function (): void {
             return true;
         });
         expect(array_keys($steps))->toBe(['queue', 'model-key', 'pi-upload', 'pi-files', 'pi-server', 'warm-claim-to-ready'])
-            ->and($steps['queue'])->toBeGreaterThanOrEqual(2.0)->toBeLessThan(4.0)
+            ->and($steps['queue'])->toBeLessThan(1.0)
             ->and($steps['warm-claim-to-ready'])->toBeGreaterThanOrEqual($steps['queue'])->toBeLessThan(10.0)
             ->and($this->transport->connections)->each(fn ($connection) => $connection->host->toBe('10.44.0.129'))
             ->and(app(PiConnection::class)->token($vm->node))->toBe($vm->pi_token);
+        Queue::assertNotPushed(PrepareTaskVmRuntime::class);
+        Queue::assertPushed(RefillTaskVmPool::class);
     });
 });
 
