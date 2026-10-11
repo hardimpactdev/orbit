@@ -27,21 +27,39 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image]
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
 1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 12 seconds later.
-3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
+2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
+3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, its ed25519 host key fingerprint, and the [image manifest](#skip-what-the-image-holds) from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the software of the `app-dev` role, the Node agent, and Pi. Enrollment finds that software installed, so its package steps change nothing. The Project's setup steps install the rest, for example its Playwright browsers.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the software of the `app-dev` role, the Node agent, and Pi. Enrollment skips the programs that the image already ran, and finds the rest of that software installed. The Project's setup steps install the rest, for example its Playwright browsers.
 
-`EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
+`EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. Once the Incus agent in the guest runs, one check waits in the guest for up to 30 seconds with `cloud-init status --wait`, so the job hears at once when cloud-init is done. It goes on when cloud-init reports `done` with no errors and the host reports the guest's bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
 Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`.
+
+#### Skip what the image holds
+
+The [image build](#build-the-base-image) runs the programs that enrollment runs on an `app-dev` Node: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It records the fingerprint of each one, the SHA-256 of its exact arguments and input, in `/var/lib/orbit-task-vm/image.json` in the image. `EnrollTaskVm` reads that manifest through the host before enrollment. Enrollment then skips a program when it renders the same fingerprint under the same name, because the image ran that exact program and each program is idempotent. It logs `Task VM program skipped: its image ran it.` for each one.
+
+Every other program runs, with the warning `Task VM image did not run this program; enrollment runs it.` and its reason. That happens when the Gateway's code or its SSH key changed the program since the build. An image without a manifest, such as one built before manifests, or with a manifest the Gateway cannot read, makes enrollment run every program, with the warning `Task VM image has no usable manifest; enrollment runs every program.` So an older image is never wrong, only slower. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
+
+Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, named after the jump host and the target, as commands to a Node over WireGuard do.
+
+Measured on beast in a throwaway project, from the same code (11 October 2026), with the Gateway on the same host:
+
+| Step | Before (seconds) | After (seconds) | What changed |
+| --- | --- | --- | --- |
+| `boot` | 11.2 | 10.3 to 10.5 | IPv4-only network online, cloud-init wait in the guest |
+| `node-converge` | 6.9 | 1.7 to 2.2 | bootstrap skipped, one shared SSH connection through the jump host |
+| `roles` | 5.8 | 1.0 to 1.2 | prerequisites, Vite+ and Composer programs skipped |
+
+On the live Gateway each SSH command crosses WireGuard to the host, so the live steps take longer than these.
 
 Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
 
@@ -154,7 +172,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every 5 seconds:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every second:
 
 ```text
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500
@@ -249,19 +267,28 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | Stage | What it does |
 | --- | --- |
 | `launch`, `cloud-init` | Launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge, and waits for cloud-init |
-| `bootstrap`, `caddy-package`, `app-dev-prerequisites` | Runs the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites as `orbit` through `incus exec` |
+| `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
 | `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
 | `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
 | `single-boot` | Makes a VM from the image boot once, as described below |
+| `lean-boot` | Keeps work off the boot, as described below |
+| `manifest` | Writes the fingerprints of the programs it ran to `/var/lib/orbit-task-vm/image.json`. See [Skip what the image holds](#skip-what-the-image-holds) |
 | `clean` | Runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity |
 | `publish` | Stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>` |
 | `smoke` | Boots a smoke VM from the new image with the task VM user-data |
 | `promote` | Points the alias `orbit-task-base` at the new image in one step |
 | `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
 
-The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only.
+The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, it must also have kept the lean boot through its first boot and hold the manifest. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
 
 A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. The `single-boot` stage drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
+
+The `lean-boot` stage changes four things, so a VM from the image reaches cloud-init's end about a second sooner:
+
+- The Ethernet link takes DHCPv4 only, from `/etc/systemd/network/00-orbit-task-vm.network`, which sorts before the netplan file and otherwise matches it. The task bridge has no IPv6, and the wait for an IPv6 link-local address cost about a second.
+- `systemd-networkd-wait-online` waits for one routable IPv4 link with DNS, through a drop-in that replaces netplan's command.
+- It masks `systemd-firstboot.service`, `apt-daily.timer`, `apt-daily-upgrade.timer`, `motd-news.timer`, and `unattended-upgrades.service`. A task VM lives for one group, and the apt jobs would hold the dpkg lock while a task runs. A mask holds through the preset policy that systemd applies on a first boot, which would enable a merely disabled unit again.
+- Docker and containerd start on first use through `docker.socket`. The preset file `/etc/systemd/system-preset/10-orbit-task-vm.preset` keeps both services disabled.
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
@@ -271,7 +298,7 @@ The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26
 
 The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history.
 
-It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so enrollment's `apt-get update` fetches only changes. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
+It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so an enrollment that runs a program again fetches only changes. The manifest stays too. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
 The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image on every host. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build or sync of a host runs at a time. A second one fails with `task_vm.image_build_running`.
 
