@@ -152,6 +152,8 @@ The Gateway writes the standard Bitwarden format itself instead of driving the B
 
 The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
 
+The Gateway reads the CA from `root.pem` in its state directory, next to the root key, and checks it before each request. It never copies the CA to a shared temporary directory, where another local account could plant its own CA under the expected name.
+
 ### Removed credentials are deleted
 
 When a credential is removed, its item is deleted permanently instead of moved to the trash, so a removed password does not stay readable.
