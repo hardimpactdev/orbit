@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+# Writes the Gateway's application key to ORBIT_HOME/gateway.app-key when that file is absent.
+#
+# The Gateway keeps its encryption key beside its durable state in ORBIT_HOME,
+# so a replaced checkout still decrypts the settings the previous one wrote.
+# `apps/gateway/config/app.php` reads this file when APP_KEY is unset.
+# `bin/bootstrap` and `composer setup` in apps/gateway both call this script.
+
+set -euo pipefail
+
+if [[ $# -ne 0 ]]; then
+    printf 'Usage: bin/gateway-app-key\n' >&2
+    exit 2
+fi
+
+if ! command -v openssl >/dev/null 2>&1; then
+    printf 'OpenSSL is required.\n' >&2
+    exit 2
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+env_file="$repository_root/apps/gateway/.env"
+orbit_home="${ORBIT_HOME:-}"
+
+if [[ -z "$orbit_home" && -f "$env_file" ]]; then
+    orbit_home="$(sed -n 's/^ORBIT_HOME=//p' "$env_file" | tail -n 1)"
+    orbit_home="${orbit_home%\"}"
+    orbit_home="${orbit_home#\"}"
+fi
+
+if [[ -z "$orbit_home" ]]; then
+    orbit_home="$HOME/.orbit"
+fi
+
+key_file="$orbit_home/gateway.app-key"
+
+if [[ -s "$key_file" ]]; then
+    exit 0
+fi
+
+mkdir -p "$orbit_home"
+chmod 0700 "$orbit_home"
+
+candidate="$(mktemp "$orbit_home/gateway.app-key.XXXXXX")"
+chmod 0600 "$candidate"
+key="$(openssl rand -base64 32 | tr -d '\n')"
+printf 'base64:%s\n' "$key" >"$candidate"
+mv -f "$candidate" "$key_file"
+printf '\n[apps/gateway] wrote %s\n' "$key_file"
