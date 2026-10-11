@@ -19,7 +19,8 @@ export interface HttpOptions {
 
 /**
  * Serves the Pi server API. Every route requires `Authorization: Bearer <token>`.
- * Errors use `{ "error": { "code", "message" } }`.
+ * Errors use the Gateway's envelope, `{ "error": { "code", "message", "details" } }`, with a
+ * dotted code such as `session.not_found`. No error has details yet, so `details` is null.
  */
 export function createPiServer(options: HttpOptions): Server {
     const heartbeatMs = options.heartbeatMs ?? 15_000;
@@ -31,23 +32,21 @@ export function createPiServer(options: HttpOptions): Server {
                 return;
             }
             if (error instanceof PiServerError) {
-                sendJson(response, error.status, {
-                    error: { code: error.code, message: error.message },
-                });
+                sendError(response, error.status, error.code, error.message);
                 return;
             }
-            sendJson(response, 500, {
-                error: {
-                    code: "internal_error",
-                    message: "The Pi server failed to handle the request.",
-                },
-            });
+            sendError(
+                response,
+                500,
+                "server.internal_error",
+                "The Pi server failed to handle the request.",
+            );
         });
     });
 
     async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
         if (!authorized(request.headers.authorization, options.token)) {
-            throw new PiServerError(401, "unauthorized", "A valid bearer token is required.");
+            throw new PiServerError(401, "auth.unauthorized", "A valid bearer token is required.");
         }
         const url = new URL(request.url ?? "/", "http://pi-server");
         const parts = url.pathname
@@ -74,7 +73,7 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
         if (parts[0] !== "sessions" || parts.length < 2) {
-            throw new PiServerError(404, "not_found", "No route matches this request.");
+            throw new PiServerError(404, "http.not_found", "No route matches this request.");
         }
 
         const id = parts[1] ?? "";
@@ -102,7 +101,7 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
 
-        throw new PiServerError(404, "not_found", "No route matches this request.");
+        throw new PiServerError(404, "http.not_found", "No route matches this request.");
     }
 
     async function stream(
@@ -162,7 +161,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
         if (size > MAX_BODY_BYTES) {
             throw new PiServerError(
                 413,
-                "request_too_large",
+                "request.too_large",
                 "The request body is larger than 1 MiB.",
             );
         }
@@ -177,13 +176,13 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
         // Fall through to the shared error.
     }
 
-    throw new PiServerError(422, "invalid_request", "The request body must be a JSON object.");
+    throw new PiServerError(422, "request.invalid", "The request body must be a JSON object.");
 }
 
 function string(body: Record<string, unknown>, field: string): string {
     const value = body[field];
     if (typeof value !== "string") {
-        throw new PiServerError(422, "invalid_request", `The ${field} field must be a string.`);
+        throw new PiServerError(422, "request.invalid", `The ${field} field must be a string.`);
     }
 
     return value;
@@ -191,6 +190,10 @@ function string(body: Record<string, unknown>, field: string): string {
 
 function optionalString(body: Record<string, unknown>, field: string): string | null {
     return body[field] === undefined || body[field] === null ? null : string(body, field);
+}
+
+function sendError(response: ServerResponse, status: number, code: string, message: string): void {
+    sendJson(response, status, { error: { code, message, details: null } });
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
