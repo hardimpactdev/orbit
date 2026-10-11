@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
@@ -13,6 +14,7 @@ use App\Models\NodeRole;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeIncusFleet;
 
 beforeEach(function (): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24');
@@ -24,6 +26,8 @@ beforeEach(function (): void {
 
 describe('task-vms:prepare-host', function (): void {
     it('runs the host script as root with arguments from the host settings', function (): void {
+        $fleet = new FakeIncusFleet;
+        app()->instance(SshExecutor::class, $fleet);
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
         config()->set('task_vms.incus.hosts', [[
             'node_id' => $beast->id,
@@ -33,25 +37,53 @@ describe('task-vms:prepare-host', function (): void {
         ]]);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])
-            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0]. Build its base image with task-vms:build-image.')
+            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0]. Sync its base image with task-vms:sync-image, or build one with task-vms:build-image.')
             ->assertSuccessful();
 
-        $command = $this->ssh->commands[0];
-        expect($this->ssh->connections[0]->host)->toBe('10.44.0.7')
-            ->and($this->ssh->connections[0]->user)->toBe('nckrtl')
-            ->and($command->arguments)->toBe([
+        [$host, $arguments, $input] = $fleet->commands[0];
+        expect($host)->toBe('10.44.0.7')
+            ->and($arguments)->toBe([
                 'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-e2e', 'ubuntu-26.04-vm',
             ])
-            ->and($command->input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')));
+            ->and($input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')))
+            // A lone host listens nowhere and trusts no peer.
+            ->and($fleet->host('10.44.0.7')->httpsAddress)->toBe('')
+            ->and($fleet->host('10.44.0.7')->clientCertificate)->toBeNull();
+    });
+
+    it('lets the new host and every other host sync base images', function (): void {
+        $fleet = new FakeIncusFleet;
+        app()->instance(SshExecutor::class, $fleet);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'state' => ClusterState::Active]);
+        $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev], cluster: $cluster);
+        $shark = task_vm_fleet_node('shark', '10.44.0.11', [RoleName::AppDev], cluster: $cluster);
+        $beast->update(['lan_ip' => '192.168.6.20']);
+        $shark->update(['lan_ip' => '192.168.6.40']);
+        config()->set('task_vms.incus.hosts', [
+            ['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4],
+            ['node_id' => $shark->id, 'cidr' => '10.252.1.0/24', 'max_vms' => 4],
+        ]);
+
+        $this->artisan('task-vms:prepare-host', ['node' => 'shark'])
+            ->expectsOutputToContain('Node [beast] can sync base images with the other hosts.')
+            ->expectsOutputToContain('Node [shark] can sync base images with the other hosts.')
+            ->assertSuccessful();
+
+        expect($fleet->commands[0][0])->toBe('10.44.0.11')
+            ->and($fleet->host('10.44.0.7')->httpsAddress)->toBe('192.168.6.20:8443')
+            ->and(array_column($fleet->host('10.44.0.7')->trust, 'name'))->toBe(["orbit-task-image-{$shark->id}"])
+            ->and($fleet->host('10.44.0.11')->ufwRules)->toBe(["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$beast->id}"]);
     });
 
     it('passes the ZFS dataset that creates a missing pool', function (): void {
+        $fleet = new FakeIncusFleet;
+        app()->instance(SshExecutor::class, $fleet);
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
         config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, 'zfs_dataset' => 'fast/orbit-tasks']]);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])->assertSuccessful();
 
-        expect($this->ssh->commands[0]->arguments)->toBe([
+        expect($fleet->commands[0][1])->toBe([
             'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'ubuntu-26.04-vm', 'fast/orbit-tasks',
         ]);
     });
