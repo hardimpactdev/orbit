@@ -281,7 +281,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
-One template build runs on a host at a time, under a cache lock. A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build took about 80 seconds for mealou: about 54 seconds without the PHP packages, which took about 25 seconds on a fresh VM.
+One template build runs on a host at a time, under a cache lock. A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build of the mealou template took 92 seconds. The PHP packages took 37 seconds of that, and the setup steps 36 seconds.
 
 #### Template failures
 
