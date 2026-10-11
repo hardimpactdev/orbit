@@ -26,5 +26,11 @@ final readonly class SshConnection
          * can have the same private address.
          */
         public ?SshConnection $proxyJump = null,
+        /**
+         * What identifies the host behind the address, such as its pinned host key fingerprint. A connection
+         * through a jump host shares a connection only when it has one, and the name includes it, so a new
+         * host at a reused address never gets the old host's connection.
+         */
+        public ?string $hostIdentity = null,
     ) {}
 }

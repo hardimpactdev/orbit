@@ -149,6 +149,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             'ssh_host_key' => $hostKey->value,
             'ssh_host_fingerprint' => $hostKey->fingerprint,
         ]);
+        // Named after the pinned host key now, so a connection through the jump host can be shared.
+        $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
 
         $bootstrapCommand = $identity->bootstrapUser === 'root'
             ? $this->bootstrapCommand->make($node, $identity->managedUser, $rolelessOperator)
@@ -291,6 +293,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 identityFile: $this->sshKeys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
                 proxyJump: $this->jump($node, $host, $port),
+                hostIdentity: $node->ssh_host_fingerprint,
             );
         }
 
@@ -303,6 +306,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             identityFile: $this->sshKeys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
             proxyJump: $this->jump($node, $host ?? $defaultHost, $port ?? $defaultPort),
+            hostIdentity: $node->ssh_host_fingerprint,
         );
     }
 

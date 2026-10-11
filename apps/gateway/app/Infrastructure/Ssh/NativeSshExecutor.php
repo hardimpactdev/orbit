@@ -101,28 +101,30 @@ final readonly class NativeSshExecutor implements SshExecutor
      * Options that run the command as a channel on the Node's shared connection, or none when
      * the socket directory cannot hold a socket, so the command opens its own connection.
      *
-     * A connection through a jump host shares a connection too. Hosts behind different jump
-     * hosts can have the same private address, so its socket name hashes the jump host with
-     * the target, where `%C` hashes the target alone.
+     * A connection through a jump host shares a connection too, when it names the host's
+     * identity. Hosts behind different jump hosts can have the same private address, and a
+     * destroyed VM's address can go to the next VM, so its socket name hashes the jump host,
+     * the target, and the identity, where `%C` hashes the target alone.
      *
      * @return list<string>
      */
     private function multiplexing(SshConnection $connection): array
     {
         $directory = dirname($connection->identityFile).'/mux';
+        $jump = $connection->proxyJump;
 
         if (
             ! $connection->shareConnection
+            || ($jump !== null && ($connection->hostIdentity === null || $connection->hostIdentity === ''))
             || strlen($directory) > self::MaxSocketDirectoryLength
             || ! $this->socketDirectory($directory)
         ) {
             return [];
         }
 
-        $jump = $connection->proxyJump;
         $socket = $jump === null
             ? '%C'
-            : sha1("{$jump->user}@{$jump->host}:{$jump->port}>{$connection->user}@{$connection->host}:{$connection->port}");
+            : sha1("{$jump->user}@{$jump->host}:{$jump->port}>{$connection->user}@{$connection->host}:{$connection->port}#{$connection->hostIdentity}");
 
         return [
             '-o',
