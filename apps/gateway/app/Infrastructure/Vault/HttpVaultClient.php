@@ -47,6 +47,7 @@ final readonly class HttpVaultClient implements VaultClient
     public function __construct(
         private BitwardenCrypto $crypto,
         private LeafCertificateSigner $certificates,
+        private string $rootCertificatePath,
     ) {}
 
     public function open(VaultCredentials $credentials): VaultSession
@@ -311,17 +312,15 @@ final readonly class HttpVaultClient implements VaultClient
         return Http::timeout(15)->connectTimeout(5)->acceptJson()->withOptions(['verify' => $this->trustFile()]);
     }
 
-    /** A PEM file with only the Orbit root CA, written once per Gateway process. */
+    /**
+     * The Orbit root CA in the Gateway state directory, next to its private key. Only the Gateway user
+     * can write there, so no other account can plant a CA. rootCertificate() checks the material first.
+     */
     private function trustFile(): string
     {
-        $root = $this->certificates->rootCertificate();
-        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $root).'.pem';
+        $this->certificates->rootCertificate();
 
-        if (! is_file($path) && file_put_contents($path, $root, LOCK_EX) === false) {
-            throw new VaultException('vault.unreachable', 'The Gateway could not prepare its Vaultwarden trust.', 502);
-        }
-
-        return $path;
+        return $this->rootCertificatePath;
     }
 
     /** @param array<array-key, mixed> $data */
