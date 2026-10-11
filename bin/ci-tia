@@ -5,7 +5,8 @@
 commit the graph describes, or the full suite when the graph is unusable, the changes include files that
 test-impact analysis cannot see, or the newest full run on main failed. `finish` runs after a passing test run and requires the graph to describe the
 tested commit, with a result for every test file it links. `subprocess` decides whether a run that is not full also runs
-the project's `subprocess` group, which TIA cannot select.
+the project's `subprocess` group, which TIA cannot select. `shards` runs in the Gateway plan job of a pull request: it
+lists the test classes that `pest --tia` would run and splits a large selection into shards by their recorded times.
 """
 import argparse
 import json
@@ -42,6 +43,16 @@ READ_ANYWAY = {
     'apps/gateway': ('apps/agent/resources/', 'apps/agent/tests/', 'docs/openapi.json', 'packages/php-sdk/fixtures/',
                      'packages/php-sdk/src/Responses/Tasks/'),
 }
+# A pull request whose selection has more test classes than this runs its Gateway tests in shards. The full suite of
+# about 760 classes takes about 12 minutes on Sabre, so 200 classes take about 3 minutes: then the Gateway job already
+# ends about when the slowest other job does, and two more jobs would only take Sabre runners from other runs.
+SHARD_THRESHOLD = 200
+SHARDS = 3
+# Pest records each test's own time. Booting the application for it adds about 0.2 seconds in CI.
+TEST_OVERHEAD_SECONDS = 0.2
+# The first shard runs in the Gateway job, which also runs the architecture tests: about 35 seconds on 6 processes.
+FIRST_SHARD_HEAD_START = 210.0
+LISTED_TEST = re.compile(r'^ - (?:P\\)?([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::', re.M)
 PHP_GRAPH = r'''
 require 'vendor/autoload.php';
 $current = Pest\Plugins\Tia\Fingerprint::compute(getcwd());
@@ -232,6 +243,66 @@ def subprocess_tests(arguments):
     return False, f'no change since {arguments.base} reaches {project}'
 
 
+def selected_classes(pest):
+    """Return the test classes that `pest --tia` would run here, as Pest lists them without running them."""
+    result = subprocess.run([pest, '--tia', '--list-tests', '--colors=never'], capture_output=True, text=True,
+                            errors='replace')
+    if result.returncode:
+        raise SystemExit(f'Pest cannot list the affected tests:\n{result.stdout}{result.stderr}')
+    return sorted(set(LISTED_TEST.findall(result.stdout)))
+
+
+def class_seconds():
+    """Return the estimated process seconds of each test class from the restored main graph."""
+    try:
+        results = json.loads(GRAPH.read_text())['baselines']['main']['results']
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    seconds = {}
+    for test, result in results.items():
+        name = test.split('::', 1)[0].removeprefix('P\\')
+        time = result.get('time') if isinstance(result, dict) else None
+        if isinstance(time, (int, float)):
+            seconds[name] = seconds.get(name, 0.0) + time + TEST_OVERHEAD_SECONDS
+    return seconds
+
+
+def split(classes, seconds, count):
+    """Split the classes into balanced shards, longest first; the first shard starts with the architecture tests."""
+    known = sorted(seconds[name] for name in classes if name in seconds)
+    unknown = known[len(known) // 2] if known else 1.0
+    loads = [FIRST_SHARD_HEAD_START] + [0.0] * (count - 1)
+    shards = [[] for _ in range(count)]
+    for name in sorted(classes, key=lambda name: (-seconds.get(name, unknown), name)):
+        index = loads.index(min(loads))
+        shards[index].append(name)
+        loads[index] += seconds.get(name, unknown)
+    return [sorted(shard) for shard in shards], loads
+
+
+def shard_plan(arguments):
+    """Choose whether the Gateway tests of a pull request run in one job or in shards, and write the plan."""
+    classes = selected_classes(arguments.pest)
+    plan = {'commit': git('rev-parse', 'HEAD'), 'classes': len(classes), 'shards': 1, 'filters': []}
+    if len(classes) <= SHARD_THRESHOLD:
+        print(f'One job: {len(classes)} affected test classes, at most {SHARD_THRESHOLD}.')
+    else:
+        shards, loads = split(classes, class_seconds(), SHARDS)
+        # PHPUnit matches the filter against `Class::test`, so it selects exactly the tests of the shard's classes.
+        plan['shards'] = SHARDS
+        plan['filters'] = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
+        print(f'{SHARDS} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
+        for number, (shard, load) in enumerate(zip(shards, loads), 1):
+            print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds.')
+    Path(arguments.plan).write_text(json.dumps(plan) + '\n')
+    output = os.environ.get('GITHUB_OUTPUT')
+    if output:
+        with open(output, 'a') as file:
+            file.write(f'commit={plan["commit"]}\nshards={plan["shards"]}\n')
+            for number, test_filter in enumerate(plan['filters'], 1):
+                file.write(f'filter-{number}={test_filter}\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -247,7 +318,14 @@ def main():
     subprocess_command = commands.add_parser('subprocess', help='choose whether to run the subprocess test group')
     subprocess_command.add_argument('--base', default='', help='the commit to compare with: the pull request base, '
                                     'or the commit the restored main graph described')
+    shards_command = commands.add_parser('shards', help='choose one Gateway test job or shards for a pull request')
+    shards_command.add_argument('--plan', required=True, help='the file that receives the plan as JSON')
+    shards_command.add_argument('--pest', default='vendor/bin/pest', help='the Pest binary')
     arguments = parser.parse_args()
+
+    if arguments.command == 'shards':
+        shard_plan(arguments)
+        return
 
     if arguments.command == 'subprocess':
         run, reason = subprocess_tests(arguments)
