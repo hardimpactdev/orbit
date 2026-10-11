@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
   - apps/gateway/config/{task_vms,compute,queue}.php
   - apps/gateway/resources/{task-vms,compute}/**
-  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -24,16 +24,16 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image]
 
 ### From claim to workspace
 
-A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
+A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs). When the host keeps [warm VMs](#keep-warm-vms), the claim takes one, and only step 5 and step 6 run.
 
-1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
+1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` takes a warm VM, or records a `provisioning` row and queues `ProvisionTaskVm`.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 12 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
 
-`AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
+`AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
 Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the software of the `app-dev` role, the Node agent, and Pi. Enrollment finds that software installed, so its package steps change nothing. The Project's setup steps install the rest, for example its Playwright browsers.
 
@@ -41,7 +41,7 @@ Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
-Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`.
+Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. A warm VM logs other first and last lines, as [Keep warm VMs](#keep-warm-vms) describes.
 
 Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
 
@@ -49,6 +49,7 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | --- | --- |
 | `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
 | `Task VM: no capacity.` | Every host is inactive or full. See [Place task VMs](#place-task-vms) |
+| `Task VM: waiting for a warm VM.` | Every host is full, and at least one of its VMs is a [warm VM](#keep-warm-vms) that is still starting. The claim takes it once it is `warm` |
 | `Task VM: another placement is running.` | Another claim held the placement lock for 15 seconds |
 | `Task VM: provisioning.` | The jobs are still running |
 | `Task VM: failed: <code>: <message>` | A job failed. The group also asks for assistance. Cancel the group to destroy the VM |
@@ -86,13 +87,74 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 ### Place task VMs
 
-Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` takes one slot, also a `parked` or `failed` one. The free slots of a host are `max_vms` minus those VMs.
+Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` takes one slot, also a `warm`, `parked`, or `failed` one. The free slots of a host are `max_vms` minus those VMs.
 
-`AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots keep their order in `task_vms.incus.hosts`. A host that is not an active Node, or that has no free slot, gets no VM. When no host has a free slot, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. The group waits until a VM is destroyed or you add a slot.
+A claim first takes a current [warm VM](#keep-warm-vms). It looks at the active hosts that have one, the host with the most free slots first, and takes that host's oldest warm VM. A warm VM already holds its slot, so a claim can take one on a full host. Without a warm VM, `AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots keep their order in `task_vms.incus.hosts`. A host that is not an active Node, or that has no free slot, gets no VM. When no host has a free slot, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. The group waits until a VM is destroyed or you add a slot.
 
-Placement never puts more VMs on a host than its `max_vms`. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
+Placement never puts more VMs on a host than its `max_vms`. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
 
 With one host, placement is the same as before: the host takes VMs until it is full. To add a host, see [Add a task VM host](#add-a-task-vm-host).
+
+### Keep warm VMs
+
+A claim that takes a warm VM gets a ready VM in seconds, instead of about 35 seconds for a new one. A warm VM is a task VM that Orbit created, booted, and enrolled as a Node before any group needed it. Each host keeps `warm_vms` of them. The default is `0`, so a host keeps none until you set it. See [Configure task VMs](#configure-task-vms).
+
+A warm VM is a `tvm-<id>` Node with user `orbit`, role `app-dev`, the dev Cluster, its own WireGuard address in the reserved range, and the Node agent. Its row has no group, no Pi token, no model key, and no `pi-server` Process. A pool row is any task VM row without a group: a warm VM, or one that Orbit is creating, failing, or destroying for the pool.
+
+#### Fill the pool
+
+Every minute, the Gateway scheduler queues the job `RefillTaskVmPool`, while task VMs are enabled and a host sets `warm_vms`, or while a pool row is not `destroyed`. A claim that takes a warm VM queues it too, and so does a VM that becomes `warm`. For each configured host whose Node is active, one run does these steps:
+
+1. It reads the host's `orbit-task-base` image and the image that each instance launched, from `volatile.base_image`. It records that image on each warm VM. A warm VM whose image is not `orbit-task-base` any more, or whose instance is gone, becomes `destroying`.
+2. Under the placement lock, it sets every `failed` pool row to `destroying`. It counts the warm VMs and the pool VMs that are still starting. When they are more than `warm_vms`, it sets the oldest surplus warm VMs to `destroying`. A pool VM that is still starting is never cut off, and a later run destroys it once it is warm.
+3. When they are fewer, it records new pool rows up to `warm_vms`, but never more than the host's free slots.
+4. It queues `DestroyTaskVm` for every pool row that is `destroying`, and `ProvisionTaskVm` for each new row.
+
+A new pool row runs the normal `ProvisionTaskVm` and `EnrollTaskVm`. Then `PrepareTaskVmRuntime` sets it `warm` and records `warmed_at`, and runs no group step. The next refill records its image, so a claim can take it.
+
+#### Claim a warm VM
+
+The claim reads the `orbit-task-base` image of each active host that has a warm VM. It takes a warm VM only when the VM launched that image and its Node is active. A host whose image list cannot be read keeps its warm VMs, and the claim places a new VM instead. Under the placement lock, the claim then makes these changes on the row in one update, and only when the row is still `warm` without a group:
+
+| Field | Value |
+| --- | --- |
+| `group_id` | The claiming group |
+| `state` | `provisioning` |
+| `claimed_at` | Now |
+
+Then it gives the row a new random Pi token, and queues `PrepareTaskVmRuntime` and `RefillTaskVmPool`. `PrepareTaskVmRuntime` runs only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. Then the row becomes `ready`. On the next claim, Orbit creates the workspace, as for a new VM.
+
+A warm claim logs `queue` first, which counts from the claim to the start of the job, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
+
+#### Replace warm VMs
+
+A warm VM is replaced in two ways when a new base image is promoted, by a build or a sync:
+
+- The claim reads the host's image at the claim, so it never takes a warm VM from an older image.
+- The next refill, at most a minute later, destroys the warm VMs from the older image and creates new ones from the new image.
+
+#### Drain the pool
+
+While `task_vms.enabled` is false, the target of every host is `0`, so each refill destroys the warm VMs. Lower a host's `warm_vms` to destroy its surplus warm VMs. A host that is not an active Node keeps its pool, because destroy needs SSH to the host. A pool row on a host that is no longer configured cannot be destroyed, because destroy needs the host's settings. Each refill logs an error for it. So set `warm_vms` to `0`, and wait until the pool is gone, before you remove a host's entry.
+
+#### Warm VM failures
+
+When `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` fails on a pool row, the row becomes `failed` with its error, as for any task VM. No group asks for assistance, because the row has none. The Gateway log gets the error `A warm task VM failed; its host creates no pool VM until the wait ends.`, with the error code, the count of failures in a row, and the time of the next try. The next refill destroys the failed VM.
+
+The host then creates no pool VM for 1 minute. Each further failure doubles the wait, up to 1 hour. Each refill that waits logs a warning. A pool VM that becomes `warm` ends the wait. The failure count lives in the Gateway cache. A claim in the meantime places a new VM, so a broken pool never stops claims.
+
+#### Other parts of Orbit
+
+- A warm VM is never parked. Parking, resume, and the wake gate apply only to a VM with a group.
+- The tick destroys a VM only when its group ended, so a warm VM stays until the refill destroys it.
+- The [sweep](#sweep-task-vm-hosts) and Doctor know warm VMs, so a warm VM is never an orphan. A warm VM whose instance is gone is a missing VM.
+- A warm VM's Node serves no Instance. Any Instance on it fails with `task_vm.foreign_instance`. Shared groups never get a workspace on it.
+- The fleet rollout skips it, and it has no Metrics exporter, as for every task VM Node.
+- Node removal refuses a host with a pool row that is not `destroyed`, with `node.has_task_vms`. `task-vms:retire-host` refuses it with `task_vm.host_in_use`.
+
+#### Security of a warm VM
+
+A warm VM is on the same task bridge as any task VM, behind the same bridge ACL and the same [hub filter](#limit-fleet-traffic-on-the-hub). From enrollment on, it has its Node identity: its SSH host key, its WireGuard key and address, and its Node agent secret. It holds no secret of a group until a claim: no Pi token, no CLIProxyAPI key, no `models.json`, and no workspace. Pi does not run on it. The Gateway connects to Pi on a task VM only with the row's own token, and a warm VM's row has none, so the Gateway's own `ORBIT_PI_TOKEN` never reaches it either. The claim creates the Pi token, and `PrepareTaskVmRuntime` creates the model key and writes both to the VM. When the group ends, the VM is destroyed as usual. No VM serves a second group.
 
 ### Park and resume
 
@@ -125,9 +187,9 @@ When the VM does not answer within 9 minutes, the row becomes `failed` with `tas
 Every 10 minutes, while task VMs are enabled, the Gateway scheduler queues the job `SweepTaskVmHosts`. For each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
-- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
+- A **missing VM** is a `warm`, `ready`, or `parked` task VM row on that host whose instance is gone.
 
-The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
+The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`. A warm VM has no group, and the pool refill destroys it.
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
@@ -139,18 +201,19 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### States
 
-The `TaskVmState` enum has six cases.
+The `TaskVmState` enum has seven cases.
 
 | State | Meaning |
 | --- | --- |
 | `provisioning` | Orbit is creating, enrolling, or preparing the VM |
+| `warm` | A pool VM is enrolled and waits for a claim. It has no group, Pi token, or model key. See [Keep warm VMs](#keep-warm-vms) |
 | `ready` | Pi runs, and Orbit can create the workspace |
 | `parked` | Orbit stopped the VM, or is starting it again. The disk stays. See [Park and resume](#park-and-resume) |
 | `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
 | `destroyed` | The VM, the Node, and the model key are gone. The row stays for audit |
 
-Orbit derives progress inside `provisioning` from facts: the VM exists, the row has a Node, the Node is active, and the Pi Process exists. A group has at most one task VM that is not `destroyed`. `failed` is final for the row. Cancel the group to destroy the VM.
+Orbit derives progress inside `provisioning` from facts: the VM exists, the row has a Node, the Node is active, and the Pi Process exists. A group has at most one task VM that is not `destroyed`. A claim moves a `warm` row back to `provisioning` for its group's steps. `failed` is final for the row. Cancel the group to destroy the VM.
 
 ### Jobs
 
@@ -171,9 +234,10 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 | `ParkTaskVm` | Twice, 30 seconds apart. A failure stays on the row as its error, and the row stays `parked` |
 | `ResumeTaskVm` | Checks for up to 3 minutes in one run, then again 15 seconds later. After the third run, or on an `incus start` error after three tries, the row becomes `failed` |
 | `SweepTaskVmHosts` | Never. It runs again 10 minutes later |
+| `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 
-When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
+When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 
 ### Incus provider
 
@@ -314,9 +378,9 @@ The new host takes VMs on the next claim. Its bridge network must not overlap an
 
 To retire a host:
 
-1. Set its `max_vms` to the number of VMs it still has, or lower, and wait until it has no task VM that is not `destroyed`.
+1. Set its `warm_vms` to `0`, and its `max_vms` to the number of VMs it still has, or lower. Apply the change, and wait until it has no task VM that is not `destroyed`. The pool refill destroys its warm VMs.
 2. Remove its entry and apply the change with `gateway:release:configure`.
-3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`.
+3. Run `task-vms:retire-host {node id}`. It refuses a host that is still configured with `task_vm.host_configured`, and a host that still has a task VM with `task_vm.host_in_use`.
 
 `task-vms:retire-host` first sets up the remaining hosts again. That removes their trust entry, remote, and firewall rule for the old host. Then it removes the old host's own setup: its listen address, its `orbit-task-image-*` trust entries, `/etc/orbit/task-vms/incus`, and its `orbit:task-vm-image:*` rules. When the Node record is gone, it only cleans the remaining hosts. When SSH cannot reach the old host, the command fails after the remaining hosts are clean, and the old host keeps its own setup. Only then can [Node removal](/reference/node-provisioning#remove-a-node) remove the Node, if you want it gone.
 
@@ -392,8 +456,9 @@ Each host is a JSON object with these snake_case keys. Other keys are an error.
 | `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
 | `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
 | `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |
+| `warm_vms` | No | `0` | How many [warm VMs](#keep-warm-vms) the host keeps for claims, from 0 to `max_vms`. They take slots of `max_vms` |
 
-For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4}]'`.
+For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4,"warm_vms":1}]'`.
 
 `TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
 
@@ -431,6 +496,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.incus_address_conflict` | 409 | Incus on a host listens on an address that Orbit did not set. Unset `core.https_address`, or set it to the address in the message |
 | `task_vm.host_not_prepared` | 409 | A host's task VM project is missing or not restricted, so `task-vms:prepare-host` links no host. Run `task-vms:prepare-host` on that host |
 | `task_vm.host_configured` | 409 | `task-vms:retire-host` names a host that is still in `task_vms.incus.hosts` |
+| `task_vm.host_in_use` | 409 | `task-vms:retire-host` names a host that still has a task VM that is not `destroyed`, a warm one included |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not answer within 9 minutes of the first start |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
@@ -448,6 +514,15 @@ Task VMs have these known limits.
 - The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs, including a resume.
 - Doctor can report task VM Nodes while they exist.
 
+Warm VMs have these limits:
+
+- A warm VM uses its host's memory and a little CPU while it waits. It takes a slot of `max_vms`, so `warm_vms` lowers the slots that new VMs can use.
+- A warm claim still waits for the task VM worker, which starts at most every 5 seconds, and then about 1.5 seconds for the group's key and Pi.
+- A claim that finds every slot taken by pool VMs that still start waits with `Task VM: waiting for a warm VM.`, about 35 seconds. It does not take a VM that is still starting.
+- The claim reads each host's image list over SSH, inside the scheduler tick, for up to 15 seconds per host. A slow host delays that claim.
+- An image alias that someone moves by hand, outside a build or a sync, is still read at each claim. The refill replaces the warm VMs within a minute.
+- The backoff count lives in the Gateway cache. A cleared cache forgets it, and the next refill tries again.
+
 Parking has these limits:
 
 - A `parked` VM keeps its slot. Parking frees CPU and memory on the host, not slots.
@@ -461,13 +536,15 @@ The hub filter has these limits:
 
 ### Why task VMs work this way
 
-The VM edge is the security boundary. Inside it, one user runs the agents, Pi, and the check with sudo, so the check sees what CI sees. Enrolling the VM as a normal Node reuses enrollment, Instances, Routes, checks, and publication instead of a second path. Host output is validated once, and Gateway records are trusted after that, so six states and no marker timestamps describe the whole lifecycle. Parking reads the settle times the group already records.
+The VM edge is the security boundary. Inside it, one user runs the agents, Pi, and the check with sudo, so the check sees what CI sees. Enrolling the VM as a normal Node reuses enrollment, Instances, Routes, checks, and publication instead of a second path. Host output is validated once, and Gateway records are trusted after that, so seven states and no marker timestamps describe the whole lifecycle. `claimed_at` and `warmed_at` only time it. Parking reads the settle times the group already records.
 
 Public egress is open on every port. Limiting it to HTTP(S) adds no protection beyond the VM edge and the hub filter, and it broke clock sync, package sources, and key installs. CI on the pushed commit is the gate.
 
 The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs. Enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing.
 
 One build serves every host, so a group behaves the same on any host. Builds on each host differed: the same commit gave beast and shark different images, because packages and even the stock image changed between the builds. One build also saves about two minutes of build time for each other host. The hosts copy the image Incus to Incus, so it stays on the LAN when the hosts share one.
+
+Most of a new VM's 35 seconds go to its boot and its enrollment, and none of that depends on the group. So a warm VM does those steps before the claim, and the claim adds only what belongs to the group: its Pi token, its model key, Pi, and its workspace. A warm VM holds no secret of a group, so it can wait on the task network like any other VM. A VM serves one group only and is destroyed after it, so no state of one group can reach the next. `warm_vms` is a setting of each host, next to its `max_vms`. Hosts differ in size, and setting a host's `warm_vms` to `0` drains only that host, which retiring a host needs. A claim reads the image itself, so a stale warm VM never serves a group, even before the refill replaces it.
 
 Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
 
@@ -493,6 +570,12 @@ These alternatives were rejected:
 | A snapshot before each park | ZFS keeps the stopped disk, and a resume continues it. A snapshot adds a copy that nothing restores |
 | A parked VM frees its slot | A resume could then find its host full, and the group's work would wait behind new groups |
 | Placement in host order only | The first host fills before the second takes any VM |
+| One `warm_vms` for the whole fleet | Orbit would need a rule to spread it across hosts, and one host could not drain alone |
+| Warm VMs outside `max_vms` | A host could then run more VMs than its budget |
+| A warm VM with its Pi token and Pi running | A token without a group has no owner. The claim adds the token, the key, and Pi in about 1.5 seconds |
+| A claim that takes a pool VM that is still starting | The row would need a group step in the middle of enrollment. The claim waits for it to become `warm` instead |
+| A record of the current image on the Gateway | It can drift from the host's alias. The claim reads the alias, which is the fact |
+| Stopped warm VMs, saved with a stateful stop | It may follow as a hot pool. A running warm VM uses little and needs no restore |
 
 ## UpCloud driver
 
