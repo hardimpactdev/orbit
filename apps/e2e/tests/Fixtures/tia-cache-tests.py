@@ -571,6 +571,27 @@ class MainCacheTest(CacheFixture):
                                 capture_output=True, text=True, env=environment)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn('test:affected', calls.read_text())
+        # --with-bun and --with-rust install the Bun and Cargo projects' locked dependencies.
+        for name, command in (('bun', 'install'), ('cargo', 'fetch')):
+            fake = root / 'bin' / name
+            fake.write_text(f'#!/bin/sh\necho "{name} $(basename "$PWD") $*" >> "$TIA_TEST_CALLS"\n')
+            fake.chmod(0o755)
+        for project in ('apps/web', 'apps/pi-server', 'apps/desktop/src-tauri', 'apps/agent'):
+            (root / project).mkdir(parents=True, exist_ok=True)
+        calls.unlink()
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks', '--with-bun', '--with-rust'],
+                                capture_output=True, text=True, env=environment)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(['bun web install --frozen-lockfile', 'bun pi-server install --frozen-lockfile',
+                          'bun desktop install --frozen-lockfile', 'cargo agent fetch --locked',
+                          'cargo src-tauri fetch --locked'],
+                         [line for line in calls.read_text().splitlines() if line.startswith(('bun ', 'cargo '))])
+        self.assertNotIn('test:affected', calls.read_text())
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--with-node'],
+                                capture_output=True, text=True, env=environment)
+        self.assertEqual(2, result.returncode)
+        for name in ('bun', 'cargo'):
+            (root / 'bin' / name).unlink()
         for failure in ('install', 'guidance:check', 'test:affected', 'check'):
             with self.subTest(failure=failure):
                 calls.unlink()

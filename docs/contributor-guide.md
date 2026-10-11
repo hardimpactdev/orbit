@@ -25,7 +25,7 @@ From the repository root, install the project dependencies:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+`bin/bootstrap` installs the five Composer projects. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
 
 ## 1. Check the architecture
 
