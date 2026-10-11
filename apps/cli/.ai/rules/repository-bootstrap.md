@@ -20,7 +20,7 @@ paths:
 
 The committed `.ai` sources, generated `AGENTS.md` block, installed
 `.agents/skills`, Boost configuration, and Composer scripts form one bootstrap
-contract. Run `composer guidance:generate` after a source or Boost configuration
+contract. Run `composer guidance:update` after a source or Boost configuration
 change, then run `composer guidance:check`. Never treat missing required
 guidance as permission to continue.
 

@@ -259,6 +259,37 @@ it('observes only Instance source evidence through the fixed SSH boundary', func
         ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
 });
 
+it('inspects a checkout that keeps its directory after a Project slug change', function (): void {
+    $node = application_inspector_node();
+    $project = application_inspector_app();
+    $instance = application_app_instance($project, $node);
+    $checkout = $instance->checkout_path;
+    $project->update(['slug' => 'renamed-project']);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
+
+    expect($checkout)->not->toContain('renamed-project')
+        ->and($inspection)->toEqual(new InstanceInspectionData(true, true, true, true))
+        ->and($ssh->commands[0]->arguments[4])->toBe($checkout)
+        ->and($ssh->commands[0]->arguments[5])->toBe('/srv/users/nckrtl/apps');
+});
+
+it('fails Instance inspection closed for a checkout path that does not end in the Instance name', function (string $path): void {
+    $node = application_inspector_node();
+    $instance = application_app_instance(application_inspector_app(), $node);
+    $instance->update(['checkout_path' => $path]);
+    $ssh = new AppDevFakeSshExecutor([]);
+
+    expect(fn () => application_instance_inspector($ssh)->inspect($instance->refresh()))
+        ->toThrow(DoctorInspectionException::class)
+        ->and($ssh->commands)->toBe([]);
+})->with([
+    'another name' => '/srv/users/nckrtl/apps/project/main',
+    'too shallow' => '/development',
+    'protected root' => '/srv/users/nckrtl/project/development',
+]);
+
 it('maps each Instance source observation without retaining diagnostics', function (
     string $remote,
     InstanceInspectionData $expected,

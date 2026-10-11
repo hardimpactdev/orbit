@@ -95,11 +95,11 @@ final class UpdateProjectRequest extends FormRequest
                 $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
             }
 
-            $routeApp = $this->route('project');
+            $routeProject = $this->route('project');
             $type = ProjectType::tryFrom($this->string('type')->toString())
-                ?? ($routeApp instanceof Project ? $routeApp->type : ProjectType::LaravelApp);
+                ?? ($routeProject instanceof Project ? $routeProject->type : ProjectType::LaravelApp);
             $sentRoot = $this->input('root');
-            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof Project ? $routeApp->root : null);
+            $root = is_string($sentRoot) ? $sentRoot : ($routeProject instanceof Project ? $routeProject->root : null);
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
                 $validator->errors()->add('root', is_string($sentRoot)

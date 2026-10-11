@@ -2044,6 +2044,25 @@ it('removes an empty App slug parent after forced finalization of the last check
         ->toBeTrue();
 });
 
+it('removes a checkout and its directory named after the slug before a Project slug change', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'renamed');
+    $grouping = dirname($instance->checkout_path);
+    $this->orbitApp->update(['slug' => 'renamed-app']);
+    $instance->refresh();
+    $member = orb180_record_source($this->removal, $instance, true);
+
+    expect(basename($grouping))
+        ->not->toBe('renamed-app')
+        ->and($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse()
+        ->and(is_dir($grouping))
+        ->toBeFalse()
+        ->and(is_dir($this->appsRoot))
+        ->toBeTrue();
+});
+
 it('retains a Project slug parent that still holds another Orbit checkout', function (): void {
     $first = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'one');
     $second = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'two');
