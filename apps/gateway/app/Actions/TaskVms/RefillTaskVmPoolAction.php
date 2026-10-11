@@ -31,11 +31,18 @@ use Throwable;
  *    pool drains. Pool VMs that are still starting are never cut off; a later run destroys any excess.
  * 3. It queues `DestroyTaskVm` for every pool row that is `destroying`, and `ProvisionTaskVm` for each new row.
  *
+ * A pool row still `provisioning` an hour after it was recorded has lost its job. The run fails it loudly, and
+ * destroys it with the failed rows. *
  * A host whose pool VM failed waits before it creates another: 1 minute after the first failure, doubling up to
  * 1 hour. Each failure logs an error, and each skipped refill a warning. A warm VM that becomes `warm` clears it.
  */
 final readonly class RefillTaskVmPoolAction
 {
+    public const string StartTimeoutCode = 'task_vm.pool_start_timeout';
+
+    /** Minutes a pool row may stay `provisioning` before the refill fails it. */
+    public const int StartMinutes = 60;
+
     private const int BackoffSeconds = 60;
 
     private const int MaxBackoffSeconds = 3600;
@@ -158,6 +165,7 @@ final readonly class RefillTaskVmPoolAction
         $free = $this->allocate->freeSlots();
         $created = [];
         foreach ($hosts as [$host, $node]) {
+            $this->failStuck($node);
             $pool = TaskVm::query()->live()->pool()->where('host_node_id', $node->id)->orderBy('id')->get();
             foreach ($pool->where('state', TaskVmState::Failed) as $failed) {
                 TaskVm::query()->whereKey($failed->id)->where('state', TaskVmState::Failed)->update(['state' => TaskVmState::Destroying]);
@@ -187,6 +195,25 @@ final readonly class RefillTaskVmPoolAction
         }
 
         return $created;
+    }
+
+    /**
+     * A pool row still `provisioning` an hour after its row was recorded has lost its job: the boot limit is 10
+     * minutes from launch, and the slowest queue wait is a nightly refresh of 25 minutes. It becomes `failed`,
+     * which logs an error and makes the host wait, and the same run destroys it, so the slot comes back.
+     */
+    private function failStuck(Node $node): void
+    {
+        $stuck = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->where('host_node_id', $node->id)
+            ->where('created_at', '<=', now()->subMinutes(self::StartMinutes))->get();
+        foreach ($stuck as $vm) {
+            $message = "Pool task VM [{$vm->name}] was not warm ".self::StartMinutes.' minutes after its row was recorded.';
+            $failed = TaskVm::query()->whereKey($vm->id)->pool()->where('state', TaskVmState::Provisioning)
+                ->update(['state' => TaskVmState::Failed, 'error_code' => self::StartTimeoutCode, 'error_message' => $message]);
+            if ($failed === 1) {
+                self::failed($vm, self::StartTimeoutCode, $message);
+            }
+        }
     }
 
     /**
