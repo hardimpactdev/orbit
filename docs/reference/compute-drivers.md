@@ -100,7 +100,9 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 
 - The group is `waiting_for_review` and has a pull request.
 - The group has no `todo`, `reserved`, `running`, or `reviewing` subtask, and it is not `preview`.
+- The group's reason does not start with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. Those removals retry on the tick and need the VM.
 - The group and all of its subtasks settled more than `task_vms.park_after_minutes` minutes ago. The default is 30 minutes.
+- The VM has been `ready` for at least as long. So a VM that Orbit started again, for example for a removal retry, runs that long before it can park again.
 
 The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
@@ -110,22 +112,24 @@ Work for the group starts the VM again: a new subtask after a push, a review fix
 2. It checks every 2 seconds until the VM answers over WireGuard, `orbit-agent.service` is active, and Pi answers `GET /capabilities` with the group's Pi token.
 3. It sets the row to `ready`.
 
-The next tick then continues the work, and the reason clears. Orbit never runs a workspace command, an agent turn, a fetch, or a push on a VM that is not `ready`. Those operations fail with `task_vm.parked` while it is `parked`. A merged group's workspace removal and the sweep of ended groups wait without a failure. A manual `tasks:complete` records the reason `Workspace removal failed: ` with that error, and the sweep removes the workspace once the VM is `ready`.
+The next tick then continues the work, and the reason clears. Orbit never runs a workspace command, an agent turn, a fetch, or a push on a VM that is not `ready`. Those operations fail with `task_vm.parked` while it is `parked`. A merged group's workspace removal and the sweep of ended groups wait without a failure. A manual `tasks:complete` records the reason `Workspace removal failed: ` with that error, and the sweep removes the workspace once the VM is `ready`. Completion removes the workspace under the group's admission lock, so a tick cannot park the VM during that removal.
 
 When the VM does not answer within 9 minutes, the row becomes `failed` with `task_vm.resume_timeout`. The group asks for assistance with the reason `Task VM failed:`. A `parked` VM that has no workspace left is deleted without a start. Destroy on merge is otherwise unchanged.
 
 ### Sweep task VM hosts
 
-Every 10 minutes, while task VMs are enabled, the Gateway scheduler queues the job `SweepTaskVmHosts`. For each configured host that is an active Node, the job lists the instances of the host's Incus project and compares them with the task VM rows:
+Every 10 minutes, while task VMs are enabled, the Gateway scheduler queues the job `SweepTaskVmHosts`. For each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
-- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone. The job sets the row to `failed` with `task_vm.vm_missing`, and the group asks for assistance with the reason `Task VM failed:`.
+- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone. The first sweep that misses it only remembers that for an hour. When the next sweep misses it too, the job sets the row to `failed` with `task_vm.vm_missing`, and the group asks for assistance with the reason `Task VM failed:`. A sweep that finds the VM forgets the first miss.
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
 The job reads and changes only the host's configured Incus project, such as `orbit-tasks`. It never touches another project, an instance whose name is not `tvm-<number>`, or the base image builder VMs `tvm-image-<time>`. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
-[Doctor](/cli/doctor) reports the same findings in the `node` family of the host, without changes: `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. A host whose project cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these three codes.
+[Doctor](/cli/doctor) reports the same findings in the `node` family of the host, without changes: `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it is in `task_vms.incus.hosts` and reachable over SSH. The fleet rollout ignores these codes.
+
+Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
 
 ### States
 
@@ -284,7 +288,7 @@ These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway'
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts. Their order breaks ties in [placement](#place-task-vms). Default `[]` |
-| `task_vms.park_after_minutes` | `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` | How many minutes a group waits for review before its VM [parks](#park-and-resume), from 1 to 10080. Default `30` |
+| `task_vms.park_after_minutes` | `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` | How many minutes a group waits for review before its VM [parks](#park-and-resume), from 1 to 10080. Unset or empty means `30`. `0` and other values are an error |
 
 Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
@@ -355,7 +359,7 @@ Parking has these limits:
 
 - A `parked` VM keeps its slot. Parking frees CPU and memory on the host, not slots.
 - A `parked` VM's private Route does not answer. Set `preview` on a group to keep its VM running during review.
-- Doctor reports a `parked` VM's Node as unreachable over SSH.
+- Doctor does not check a `parked` VM's Node until the VM starts again.
 
 The hub filter has these limits:
 
