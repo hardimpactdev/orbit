@@ -271,7 +271,8 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },
