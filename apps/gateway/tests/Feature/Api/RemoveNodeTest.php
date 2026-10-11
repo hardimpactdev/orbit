@@ -37,6 +37,7 @@ use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
@@ -49,6 +50,7 @@ use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -1138,6 +1140,32 @@ it('refuses a configured task VM host, so its peers never keep trusting it', fun
     expect(fn () => app(RemoveNodeAction::class)->execute($host, $caller))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.task_vm_host_configured');
     expect($host->refresh()->status)->toBe(LifecycleStatus::Active);
+});
+
+it('removes the transfer key of a former task VM host from the remaining hosts first', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $beast = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
+    $shark = remove_node_record(name: 'shark', wireguardIp: '10.44.0.11');
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', [
+        new TaskVmHost($beast->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 2, 2, '4GiB', '20GiB'),
+    ], null, null, null, []));
+    $fleet = new FakeIncusFleet;
+    $fleet->host('10.44.0.7')->authorizedKeys = [
+        'ssh-ed25519 AAAAgateway orbit@gateway',
+        "from=\"10.44.0.11\",restrict,command=\"sudo -n /usr/local/libexec/orbit/task-vm-image-receive orbit-tasks\" ssh-ed25519 AAAAshark orbit-task-image-{$shark->id}",
+    ];
+    app()->instance(SshExecutor::class, $fleet);
+
+    $fleet->host('10.44.0.7')->fail = 'authorized_keys';
+    expect(fn () => app(RemoveNodeAction::class)->execute($shark, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.task_vm_image_key_cleanup_failed');
+    expect($shark->refresh()->status)->toBe(LifecycleStatus::Active)->and($this->dns->convergences)->toBe(0);
+
+    $fleet->host('10.44.0.7')->fail = null;
+    app(RemoveNodeAction::class)->execute($shark, $caller);
+
+    expect($shark->fresh())->toBeNull()
+        ->and($fleet->host('10.44.0.7')->authorizedKeys)->toBe(['ssh-ed25519 AAAAgateway orbit@gateway']);
 });
 
 function remove_node_offline_probe(Node $unreachable): void
