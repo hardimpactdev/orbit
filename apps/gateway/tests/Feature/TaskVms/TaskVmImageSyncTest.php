@@ -18,8 +18,8 @@ use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
-use Symfony\Component\Yaml\Yaml;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\FakeIncusFleetHost;
 
@@ -62,6 +62,8 @@ beforeEach(function (): void {
     $this->shark = sync_node('shark', '10.44.0.11', '192.168.6.40', $this->cluster);
     $this->settings = sync_hosts($this->beast, $this->shark);
     $this->fleet = new FakeIncusFleet;
+    $this->fleet->host('10.44.0.7')->lan = '192.168.6.20';
+    $this->fleet->host('10.44.0.11')->lan = '192.168.6.40';
     $this->fleet->host('10.44.0.7')->images = [SYNC_STOCK => [TaskVmHost::SourceImage], SYNC_OLD => ['orbit-task-base-20261010030000', TaskVmHost::BaseImage]];
     $this->fleet->host('10.44.0.11')->images = [SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]];
     app()->instance(SshExecutor::class, $this->fleet);
@@ -90,114 +92,119 @@ beforeEach(function (): void {
 });
 
 describe('image peers', function (): void {
-    it('lets hosts in one Cluster reach each other on the LAN with restricted certificates', function (): void {
-        ($this->link)();
+    it('lets hosts in one Cluster send images to each other on the LAN with restricted keys', function (): void {
+        $lines = [];
+        app(TaskVmImagePeers::class)->converge(function (string $line) use (&$lines): void {
+            $lines[] = $line;
+        });
 
         $beast = $this->fleet->host('10.44.0.7');
         $shark = $this->fleet->host('10.44.0.11');
-        $sharkTrust = array_values($beast->trust);
-        expect($beast->httpsAddress)->toBe('192.168.6.20:8443')
-            ->and($shark->httpsAddress)->toBe('192.168.6.40:8443')
-            ->and(array_keys($beast->trust))->toBe([openssl_x509_fingerprint((string) $shark->clientCertificate, 'sha256')])
-            ->and([$sharkTrust[0]['name'], $sharkTrust[0]['restricted'], $sharkTrust[0]['projects']])->toBe(["orbit-task-image-{$this->shark->id}", true, ['orbit-tasks']])
-            ->and(Yaml::parse((string) $shark->remotes)['remotes']["node-{$this->beast->id}"])->toBe([
-                'addr' => 'https://192.168.6.20:8443', 'auth_type' => 'tls', 'project' => 'orbit-tasks', 'protocol' => 'incus', 'public' => false,
+        $receiver = 'command="sudo -n /usr/local/libexec/orbit/task-vm-image-receive orbit-tasks"';
+        expect($beast->authorizedKeys)->toBe(["from=\"192.168.6.40\",restrict,{$receiver} {$shark->transferKey} orbit-task-image-{$this->shark->id}"])
+            ->and($shark->authorizedKeys)->toBe(["from=\"192.168.6.20\",restrict,{$receiver} {$beast->transferKey} orbit-task-image-{$this->beast->id}"])
+            ->and($beast->receiver)->toBe(file_get_contents(resource_path('task-vms/image-receive.sh')))
+            ->and($shark->receiver)->toBe($beast->receiver)
+            ->and($lines)->toBe([
+                'Node [beast] accepts base images from 1 other hosts.',
+                'Node [shark] accepts base images from 1 other hosts.',
+                'Node [beast] reaches Node [shark] on 192.168.6.40.',
+                'Node [shark] reaches Node [beast] on 192.168.6.20.',
             ])
-            ->and($shark->serverCertificates)->toBe(["node-{$this->beast->id}" => $beast->serverCertificate()])
-            ->and($beast->ufwRules)->toBe(["192.168.6.20 8443/tcp ALLOW IN 192.168.6.40 # orbit:task-vm-image:{$this->shark->id}"])
-            ->and($shark->ufwRules)->toBe(["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$this->beast->id}"]);
+            ->and($this->fleet->argv('10.44.0.7'))->toContain('cat -- /etc/ssh/ssh_host_ed25519_key.pub');
+
+        $keys = [$beast->transferKey, $shark->transferKey, $beast->authorizedKeys, $shark->authorizedKeys];
+        ($this->link)();
+
+        expect([$beast->transferKey, $shark->transferKey, $beast->authorizedKeys, $shark->authorizedKeys])->toBe($keys);
+    });
+
+    it('uses WireGuard addresses for a peer in another Cluster', function (): void {
+        $other = Cluster::query()->create(['name' => 'remote', 'state' => ClusterState::Active]);
+        $far = sync_node('far', '10.44.0.30', '192.168.9.5', $other);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.9.5';
+        sync_hosts($this->beast, $this->shark, $far);
+
+        ($this->link)();
+
+        $lines = $this->fleet->host('10.44.0.7')->authorizedKeys;
+        expect($lines)->toHaveCount(2)
+            ->and($lines[0])->toStartWith('from="192.168.6.40",restrict,')
+            ->and($lines[1])->toStartWith('from="10.44.0.30",restrict,')
+            ->and($this->fleet->host('10.44.0.30')->authorizedKeys[0])->toStartWith('from="10.44.0.7",restrict,')
+            ->and(TaskVmImagePeers::route($this->beast, $far))->toBe(['10.44.0.7', '10.44.0.30'])
+            ->and(TaskVmImagePeers::route($this->beast, $this->shark))->toBe(['192.168.6.20', '192.168.6.40']);
+    });
+
+    it('renders a key line that runs only the receiver, only from the peer address', function (): void {
+        $line = app(TaskVmImagePeers::class)->keyLine($this->shark, $this->beast, 'orbit-tasks', 'ssh-ed25519 AAAAkey');
+
+        expect($line)->toBe("from=\"192.168.6.40\",restrict,command=\"sudo -n /usr/local/libexec/orbit/task-vm-image-receive orbit-tasks\" ssh-ed25519 AAAAkey orbit-task-image-{$this->shark->id}");
+    });
+
+    it('removes what the Incus API copy left, and only that', function (): void {
+        $beast = $this->fleet->host('10.44.0.7');
+        $shark = $this->fleet->host('10.44.0.11');
+        $beast->httpsAddress = '192.168.6.20:8443';
+        $shark->httpsAddress = '0.0.0.0:8443';
+        $beast->clientDirectory = $shark->clientDirectory = true;
+        $beast->trust = [
+            str_repeat('1', 64) => ['name' => "orbit-task-image-{$this->shark->id}", 'type' => 'client', 'restricted' => true, 'projects' => ['orbit-tasks'], 'certificate' => ''],
+            str_repeat('2', 64) => ['name' => 'operator-laptop', 'type' => 'client', 'restricted' => false, 'projects' => [], 'certificate' => ''],
+        ];
+        $beast->ufwRules = [
+            "192.168.6.20 8443/tcp ALLOW IN 192.168.6.40 # orbit:task-vm-image:{$this->shark->id}",
+            '22/tcp ALLOW IN 192.168.1.0/24 # SSH from Main LAN',
+        ];
+        $shark->ufwRules = ["192.168.6.40 8443/tcp ALLOW IN 192.168.6.20 # orbit:task-vm-image:{$this->beast->id}"];
+
+        ($this->link)();
+
+        expect($beast->httpsAddress)->toBe('')
+            ->and($shark->httpsAddress)->toBe('0.0.0.0:8443')
+            ->and(array_column($beast->trust, 'name'))->toBe(['operator-laptop'])
+            ->and([$beast->clientDirectory, $shark->clientDirectory])->toBe([false, false])
+            ->and($beast->ufwRules)->toBe(['22/tcp ALLOW IN 192.168.1.0/24 # SSH from Main LAN'])
+            ->and($shark->ufwRules)->toBe([]);
 
         $commands = count($this->fleet->commands);
         ($this->link)();
 
         $again = array_map(static fn (array $command): string => implode(' ', $command[1]), array_slice($this->fleet->commands, $commands));
-        expect(array_filter($again, static fn (string $command): bool => str_contains($command, 'config set') || str_contains($command, 'add-certificate')
-            || str_contains($command, 'trust remove') || str_contains($command, 'ufw allow') || str_contains($command, 'ufw --force delete')))->toBe([]);
+        expect(array_filter($again, static fn (string $command): bool => str_contains($command, 'config unset') || str_contains($command, 'trust remove')
+            || str_contains($command, 'ufw --force delete')))->toBe([]);
     });
 
-    it('uses WireGuard on the interface orbit when a peer is in another Cluster', function (): void {
-        $other = Cluster::query()->create(['name' => 'remote', 'state' => ClusterState::Active]);
-        $far = sync_node('far', '10.44.0.30', '192.168.9.5', $other);
-        sync_hosts($this->beast, $this->shark, $far);
-
-        ($this->link)();
-
-        expect($this->fleet->host('10.44.0.7')->httpsAddress)->toBe('10.44.0.7:8443')
-            ->and($this->fleet->host('10.44.0.7')->ufwRules)->toBe([
-                "10.44.0.7 8443/tcp on orbit ALLOW IN 10.44.0.11 # orbit:task-vm-image:{$this->shark->id}",
-                "10.44.0.7 8443/tcp on orbit ALLOW IN 10.44.0.30 # orbit:task-vm-image:{$far->id}",
-            ])
-            ->and(Yaml::parse((string) $this->fleet->host('10.44.0.30')->remotes)['remotes']["node-{$this->shark->id}"]['addr'])->toBe('https://10.44.0.11:8443');
-    });
-
-    it('restricts the project of every host before any host listens or trusts a peer', function (): void {
-        ($this->link)();
-
-        $commands = array_map(static fn (array $command): string => $command[0].' '.implode(' ', array_slice($command[1], 2)), $this->fleet->commands);
-        $lastRestriction = max(array_keys(array_filter($commands, static fn (string $command): bool => str_contains($command, 'incus project '))));
-        $firstLink = min(array_keys(array_filter($commands, static fn (string $command): bool => str_contains($command, 'incus config '))));
-        expect($this->fleet->host('10.44.0.7')->projects['orbit-tasks'])->toBe(['restricted' => 'true', 'restricted.networks.access' => 'orbittask0'])
-            ->and($this->fleet->host('10.44.0.11')->projects['orbit-tasks'])->toBe(['restricted' => 'true', 'restricted.networks.access' => 'orbittask0'])
-            ->and($lastRestriction)->toBeLessThan($firstLink)
-            ->and($commands)->toContain('10.44.0.11 incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0');
-    });
-
-    it('trusts no peer and listens nowhere when a host project cannot be restricted', function (): void {
-        $this->fleet->host('10.44.0.11')->fail = 'project set';
-
-        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->status])->toBe(['task_vm.host_not_prepared', 409])
-            ->and($e->getMessage())->toStartWith('The Incus project [orbit-tasks] on Node [shark] is not restricted, so it cannot trust a peer host. Run task-vms:prepare-host on Node [shark].'));
-        foreach (['10.44.0.7', '10.44.0.11'] as $address) {
-            expect($this->fleet->host($address)->httpsAddress)->toBe('')
-                ->and($this->fleet->host($address)->trust)->toBe([])
-                ->and($this->fleet->host($address)->ufwRules)->toBe([]);
-        }
-    });
-
-    it('moves an address it set, and never takes over an address it did not set', function (): void {
-        $this->fleet->host('10.44.0.7')->httpsAddress = '10.44.0.7:8443';
-        $this->fleet->host('10.44.0.11')->httpsAddress = '0.0.0.0:8443';
-
-        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])
-            ->toBe(['task_vm.incus_address_conflict', 'Incus on Node [shark] listens on [0.0.0.0:8443], not on an address of the Node with port 8443. Unset core.https_address or set it to [192.168.6.40:8443].']));
-        expect($this->fleet->host('10.44.0.7')->httpsAddress)->toBe('192.168.6.20:8443')
-            ->and($this->fleet->host('10.44.0.11')->httpsAddress)->toBe('0.0.0.0:8443');
-    });
-
-    it('replaces a peer certificate that changed and removes trust that no peer needs', function (): void {
-        ($this->link)();
+    it('keeps every other authorized key and replaces the line of a former peer', function (): void {
         $beast = $this->fleet->host('10.44.0.7');
-        $stale = openssl_x509_fingerprint(sync_other_certificate(), 'sha256');
-        $beast->trust[$stale] = ['name' => 'orbit-task-image-99', 'type' => 'client', 'restricted' => true, 'projects' => ['orbit-tasks'], 'certificate' => ''];
-        $beast->trust['f'.str_repeat('0', 63)] = ['name' => 'operator-laptop', 'type' => 'client', 'restricted' => false, 'projects' => [], 'certificate' => ''];
-        $this->fleet->host('10.44.0.11')->clientCertificate = null;
+        $beast->authorizedKeys = [
+            'ssh-ed25519 AAAAnick nick@mac',
+            'from="192.168.6.99",restrict,command="sudo -n /usr/local/libexec/orbit/task-vm-image-receive orbit-tasks" ssh-ed25519 AAAAold orbit-task-image-99',
+        ];
 
         ($this->link)();
 
-        expect(array_column($beast->trust, 'name'))->toBe(['operator-laptop', "orbit-task-image-{$this->shark->id}"])
-            ->and(array_keys($beast->trust)[1])->toBe(openssl_x509_fingerprint((string) $this->fleet->host('10.44.0.11')->clientCertificate, 'sha256'));
+        expect($beast->authorizedKeys)->toHaveCount(2)
+            ->and($beast->authorizedKeys[0])->toBe('ssh-ed25519 AAAAnick nick@mac')
+            ->and($beast->authorizedKeys[1])->toEndWith("orbit-task-image-{$this->shark->id}");
     });
 
-    it('fails loudly when a peer rule cannot be added, and keeps the rules it had', function (): void {
-        $this->fleet->host('10.44.0.11')->fail = 'ufw allow';
+    it('fails loudly when a host cannot reach the receiver of a peer', function (): void {
+        $this->fleet->host('10.44.0.11')->fail = 'ssh connect';
 
-        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect($e->errorCode)->toBe('node.firewall_convergence_failed')
-            ->and($e->getMessage())->toContain('[shark]'));
-        expect($this->fleet->host('10.44.0.11')->ufwRules)->toBe([]);
+        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->status])->toBe(['task_vm.host_command_failed', 502])
+            ->and($e->getMessage())->toBe("Node [beast] cannot reach the image receiver of Node [shark] on 192.168.6.40: exit code [255].\nssh: connect to host 192.168.6.40 port 22: Connection refused"));
     });
 
-    it('lists the peer rules among the rules Orbit intends on the host', function (): void {
-        $rules = app(NodeFirewallDesiredRules::class)->forNode($this->beast);
-        $peer = collect($rules)->firstWhere('name', "orbit:task-vm-image:{$this->shark->id}");
+    it('lists no task VM firewall rule among the rules Orbit intends on the host', function (): void {
+        ($this->link)();
 
-        expect($peer->role)->toBe('task-vms')
-            ->and([$peer->shape->source, $peer->shape->destination, $peer->shape->port, $peer->shape->inInterface])->toBe(['192.168.6.40', '192.168.6.20', '8443', null])
-            ->and(collect(app(NodeFirewallDesiredRules::class)->forNode(sync_node('other', '10.44.0.40', null, null)))->pluck('role'))->not->toContain('task-vms');
+        expect(collect(app(NodeFirewallDesiredRules::class)->forNode($this->beast))->pluck('role'))->not->toContain('task-vms');
     });
 });
 
 describe('a sync', function (): void {
-    it('copies the source image, checks its fingerprint, smoke-tests it, promotes it, and prunes the old one', function (): void {
+    it('exports the source image, streams it to the target, checks its fingerprint, smoke-tests it, promotes it, and prunes the old one', function (): void {
         ($this->link)();
         $stages = [];
 
@@ -206,17 +213,40 @@ describe('a sync', function (): void {
         });
 
         $shark = $this->fleet->host('10.44.0.11');
+        $beast = $this->fleet->host('10.44.0.7');
+        $directory = "/var/lib/orbit-task-vm-image/export/node-{$this->shark->id}";
         expect($copied)->toBeTrue()
-            ->and($stages)->toBe(['inspect', 'sweep', 'copy', 'verify', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['inspect', 'sweep', 'export', 'transfer', 'verify', 'smoke', 'promote', 'prune'])
             ->and($shark->images)->toBe([SYNC_OLD => ['orbit-task-base-20261010030000', TaskVmHost::BaseImage]])
+            ->and($shark->received)->toBe([SYNC_OLD])
             ->and($shark->instances)->toBe([])
+            ->and($beast->exports)->toBe([])
+            ->and($this->fleet->argv('10.44.0.7'))->toContain("rm -rf -- {$directory}")
             ->and($this->fleet->argv('10.44.0.11'))->toContain(
-                "env INCUS_CONF=/etc/orbit/task-vms/incus incus image copy --quiet --project orbit-tasks --target-project orbit-tasks node-{$this->beast->id}:".SYNC_OLD.' local: --alias orbit-task-base-20261010030000',
+                'incus --project orbit-tasks image alias create -- orbit-task-base-20261010030000 '.SYNC_OLD,
                 'incus --project orbit-tasks launch --vm --config limits.cpu=2 --config limits.memory=4GiB --device root,size=20GiB --device eth0,network=orbittask0 --device eth0,security.port_isolation=true -- orbit-task-base-20261010030000 tvm-image-20261011030000-sync-smoke',
             )
-            ->and($this->fleet->host('10.44.0.7')->images)->toBe([SYNC_STOCK => [TaskVmHost::SourceImage], SYNC_OLD => ['orbit-task-base-20261010030000', TaskVmHost::BaseImage]]);
+            ->and($beast->images)->toBe([SYNC_STOCK => [TaskVmHost::SourceImage], SYNC_OLD => ['orbit-task-base-20261010030000', TaskVmHost::BaseImage]]);
+        $send = collect($this->fleet->commands)->first(static fn (array $command): bool => str_contains(implode(' ', $command[1]), 'UserKnownHostsFile') && $command[1][6] !== '/dev/null');
+        expect($send[0])->toBe('10.44.0.7')
+            ->and(array_slice($send[1], 6))->toBe(["{$directory}/image.tar", '/etc/orbit/task-vms/image-transfer/id_ed25519', '192.168.6.20', $shark->hostKey, 'nckrtl', '192.168.6.40'])
+            // The Gateway only starts the command: no image passes through it.
+            ->and($send[2])->toBeNull();
 
         expect(app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))->toBeFalse();
+    });
+
+    it('goes on when the transfer reports a failure but the image arrived', function (): void {
+        ($this->link)();
+        $this->fleet->host('10.44.0.11')->fail = 'transfer reply';
+        Log::spy();
+
+        $copied = app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD);
+
+        expect($copied)->toBeTrue()
+            ->and($this->fleet->host('10.44.0.11')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage);
+        Log::shouldHaveReceived('warning')->once()->withArgs(static fn (string $message, array $context): bool => $message === 'The task VM base image transfer failed, but the target has the image.'
+            && $context['exit_code'] === 255 && str_contains($context['stderr'], 'closed by remote host'));
     });
 
     it('fails and keeps the current image', function (Closure $break, string $stage, string $reason): void {
@@ -232,14 +262,16 @@ describe('a sync', function (): void {
         expect($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]])
             ->and($this->fleet->host('10.44.0.11')->instances)->toBe([])
             ->and($this->fleet->host('10.44.0.7')->images)->toBe($source)
-            ->and($this->fleet->argv('10.44.0.7'))->each->not->toMatch('/ (delete|launch|alias|copy|publish) /');
+            ->and($this->fleet->host('10.44.0.7')->exports)->toBe([])
+            ->and($this->fleet->argv('10.44.0.7'))->each->not->toMatch('/ (delete|launch|alias|publish) /');
     })->with([
-        'fingerprint mismatch' => [fn ($shark) => $shark->copyAs = 'f'.str_repeat('1', 63), 'verify', 'names the image [f111'],
+        'export that fails' => [fn ($shark, $beast) => $beast->fail = 'image export', 'export', 'Error: image export failed'],
+        'transfer that breaks' => [fn ($shark) => $shark->fail = 'transfer', 'transfer', "exit code [255].\nclient_loop: send disconnect: Broken pipe"],
+        'fingerprint mismatch' => [fn ($shark) => $shark->copyAs = 'f'.str_repeat('1', 63), 'transfer', 'the receiver imported the image [f111'],
+        'target without the source key' => [fn ($shark) => $shark->authorizedKeys = [], 'transfer', 'Permission denied (publickey)'],
+        'address that presents another host key' => [fn ($shark) => $shark->sshdKey = FakeIncusFleetHost::publicKey(), 'transfer', 'Host key verification failed'],
         'smoke VM without a host key' => [fn ($shark) => $shark->fail = 'ssh-keygen', 'smoke', 'exec ssh-keygen'],
         'smoke VM that rebooted' => [fn ($shark) => $shark->boots = 2, 'smoke', 'it rebooted during its first boot'],
-        'copy without trust' => [fn ($shark, $beast) => $beast->trust = [], 'copy', 'not authorized'],
-        'copy from a source that does not listen' => [fn ($shark, $beast) => $beast->httpsAddress = '', 'copy', 'connection refused'],
-        'pinned server certificate does not match' => [fn ($shark) => $shark->serverCertificates = array_map(static fn (): string => sync_other_certificate(), $shark->serverCertificates), 'copy', 'certificate signed by unknown authority'],
     ]);
 });
 
@@ -279,6 +311,7 @@ describe('a sync that meets other work', function (): void {
 
     it('reports a configured host whose Node is inactive or gone, and still syncs the others', function (): void {
         $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
         $settings = sync_hosts($this->beast, $this->shark, $far);
         ($this->link)();
         $this->shark->update(['status' => LifecycleStatus::Removing]);
@@ -313,13 +346,14 @@ describe('task-vms:build-image', function (): void {
 
     it('reports each host, and one failed host neither stops the others nor touches the source', function (): void {
         $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
         sync_hosts($this->beast, $this->shark, $far);
         $this->fleet->host('10.44.0.30')->images = [SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]];
         ($this->link)();
-        $this->fleet->host('10.44.0.11')->fail = 'image copy';
+        $this->fleet->host('10.44.0.11')->fail = 'transfer';
 
         $this->artisan('task-vms:build-image', ['node' => 'beast'])
-            ->expectsOutputToContain('Node [shark] failed after 0.0s (inspect 0.0s, sweep 0.0s): [task_vm.image_sync_failed] The base image sync of Node [shark] from Node [beast] failed at stage [copy]')
+            ->expectsOutputToContain('Node [shark] failed after 0.0s (inspect 0.0s, sweep 0.0s, export 0.0s): [task_vm.image_sync_failed] The base image sync of Node [shark] from Node [beast] failed at stage [transfer]')
             ->expectsOutputToContain('Node [far] has the base image after')
             ->assertFailed();
 
@@ -334,7 +368,7 @@ describe('task-vms:sync-image', function (): void {
         ($this->link)();
 
         $this->artisan('task-vms:sync-image', ['node' => 'shark'])
-            ->expectsOutputToContain('copy')
+            ->expectsOutputToContain('transfer')
             ->expectsOutputToContain('Node [shark] has the base image [orbit-task-base] (bbbbbbbbbbbb) of Node [beast] after')
             ->assertSuccessful();
         $this->artisan('task-vms:sync-image', ['node' => 'shark'])
@@ -359,8 +393,9 @@ describe('task-vms:sync-image', function (): void {
 });
 
 describe('task-vms:retire-host', function (): void {
-    it('removes the host from every peer and its own setup, only once its entry is gone', function (): void {
+    it('removes the host key from every peer and the host setup, only once its entry is gone', function (): void {
         $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
         sync_hosts($this->beast, $this->shark, $far);
         ($this->link)();
 
@@ -373,16 +408,13 @@ describe('task-vms:retire-host', function (): void {
 
         $shark = $this->fleet->host('10.44.0.11');
         foreach (['10.44.0.7', '10.44.0.30'] as $address) {
-            $peer = $this->fleet->host($address);
-            expect(array_column($peer->trust, 'name'))->not->toContain("orbit-task-image-{$this->shark->id}")
-                ->and(implode("\n", $peer->ufwRules))->not->toContain("orbit:task-vm-image:{$this->shark->id}")
-                ->and(array_keys(Yaml::parse((string) $peer->remotes)['remotes']))->not->toContain("node-{$this->shark->id}");
+            expect(implode("\n", $this->fleet->host($address)->authorizedKeys))->not->toContain("orbit-task-image-{$this->shark->id}")
+                ->and($this->fleet->host($address)->authorizedKeys)->toHaveCount(1);
         }
-        expect($shark->httpsAddress)->toBe('')
-            ->and($shark->trust)->toBe([])
-            ->and($shark->ufwRules)->toBe([])
-            ->and($shark->clientCertificate)->toBeNull()
-            ->and($this->fleet->argv('10.44.0.11'))->toContain('rm -rf -- /etc/orbit/task-vms/incus');
+        expect($shark->authorizedKeys)->toBe([])
+            ->and($shark->transferKey)->toBeNull()
+            ->and($shark->receiver)->toBeNull()
+            ->and($this->fleet->argv('10.44.0.11'))->toContain('rm -rf -- /etc/orbit/task-vms/image-transfer /usr/local/libexec/orbit/task-vm-image-receive /var/lib/orbit-task-vm-image');
     });
 
     it('cleans the peers of a host whose Node is gone', function (): void {
@@ -395,11 +427,24 @@ describe('task-vms:retire-host', function (): void {
 
         $this->artisan('task-vms:retire-host', ['node' => (string) $id])->assertSuccessful();
 
-        $beast = $this->fleet->host('10.44.0.7');
-        expect($beast->trust)->toBe([])
-            ->and($beast->ufwRules)->toBe([])
-            ->and($beast->httpsAddress)->toBe('')
+        expect($this->fleet->host('10.44.0.7')->authorizedKeys)->toBe([])
             ->and($this->fleet->argv('10.44.0.11'))->toHaveCount($sharkCommands);
+    });
+
+    it('forgets the key of one Node on every host and keeps the others', function (): void {
+        $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $this->fleet->host('10.44.0.30')->lan = '192.168.6.50';
+        sync_hosts($this->beast, $this->shark, $far);
+        ($this->link)();
+        sync_hosts($this->beast, $far);
+
+        app(TaskVmImagePeers::class)->forget($this->shark->id);
+
+        foreach (['10.44.0.7', '10.44.0.30'] as $address) {
+            expect(implode("\n", $this->fleet->host($address)->authorizedKeys))->not->toContain("orbit-task-image-{$this->shark->id}")
+                ->and($this->fleet->host($address)->authorizedKeys)->toHaveCount(1);
+        }
+        expect($this->fleet->host('10.44.0.11')->authorizedKeys)->toHaveCount(2);
     });
 });
 
@@ -437,9 +482,3 @@ describe('the nightly refresh', function (): void {
             ->and(count($this->fleet->commands))->toBe($commands + 1);
     });
 });
-
-/** A certificate that no fake host uses. */
-function sync_other_certificate(): string
-{
-    return FakeIncusFleetHost::certificateWithKey('other')[0];
-}

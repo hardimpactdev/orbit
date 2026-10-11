@@ -13,7 +13,7 @@ use Illuminate\Console\Command;
 
 /**
  * Runs `incus-host.sh` on one host with the values that `TaskVmSettings` validated, then lets every configured
- * host copy base images from every other one.
+ * host send base images to every other one over SSH, and removes what the earlier Incus API copy left.
  */
 final class PrepareTaskVmHostCommand extends Command
 {
@@ -23,7 +23,7 @@ final class PrepareTaskVmHostCommand extends Command
     protected $signature = 'task-vms:prepare-host {node : Id or name of the Incus host Node}';
 
     #[\Override]
-    protected $description = 'Prepare an Incus host for task VMs: ZFS pool, project, stock image, bridge, egress ACL, profile, the ufw route rule, and image sync between the hosts.';
+    protected $description = 'Prepare an Incus host for task VMs: ZFS pool, project, stock image, bridge, egress ACL, profile, the ufw route rule, and base image transfer between the hosts.';
 
     public function handle(TaskVmSetupScript $script): int
     {
@@ -34,8 +34,8 @@ final class PrepareTaskVmHostCommand extends Command
                 $host->project, $host->network, $host->cidr, $host->pool, TaskVmHost::SourceImage,
                 ...($host->zfsDataset === null ? [] : [$host->zfsDataset]),
             ]);
-            resolve(TaskVmImagePeers::class)->converge(function (string $name): void {
-                $this->line("Node [{$name}] can sync base images with the other hosts.");
+            resolve(TaskVmImagePeers::class)->converge(function (string $line): void {
+                $this->line($line);
             });
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");

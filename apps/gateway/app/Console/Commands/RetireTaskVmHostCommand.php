@@ -10,9 +10,8 @@ use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use Illuminate\Console\Command;
 
 /**
- * Removes the image sync setup of a host whose entry is gone from `task_vms.incus.hosts`: its Incus listen
- * address, trust entries, client certificate, and firewall rules, and its trust, remote, and firewall rule on
- * every remaining host.
+ * Removes the image transfer setup of a host whose entry is gone from `task_vms.incus.hosts`: its transfer key,
+ * receiver, and peer keys, and its key on every remaining host.
  */
 final class RetireTaskVmHostCommand extends Command
 {
@@ -20,7 +19,7 @@ final class RetireTaskVmHostCommand extends Command
     protected $signature = 'task-vms:retire-host {node : Id of the former Incus host Node}';
 
     #[\Override]
-    protected $description = 'Remove the base image sync setup of a former task VM host from it and from every remaining host.';
+    protected $description = 'Remove the base image transfer setup of a former task VM host from it and from every remaining host.';
 
     public function handle(): int
     {
@@ -36,7 +35,7 @@ final class RetireTaskVmHostCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Node [{$reference}] no longer syncs base images, and no remaining host trusts it.");
+        $this->info("Node [{$reference}] no longer sends or receives base images, and no remaining host accepts its key.");
 
         return self::SUCCESS;
     }
