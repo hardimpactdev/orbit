@@ -250,7 +250,9 @@ The `read` and `bash` descriptions tell the model about this limit. They name `.
 
 ## API
 
-Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message", "details"}}`, the same envelope as the Gateway. Each code is namespaced by family, such as `session.not_found`. No error has details yet, so `details` is `null`.
+Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message", "details"}}`, the same envelope as the Gateway. Each code is namespaced by family, such as `session.not_found`. A failure the Gateway also has uses the Gateway's code, such as `http.404` and `validation.failed`. No error has details yet, so `details` is an empty object.
+
+A Pi server binary built before this envelope answers `{"error": {"code", "message"}}` with underscore codes, such as `session_not_found`. A Node keeps that binary until you build and copy a new one. The Gateway only quotes the code in its error message, so both binaries work with it.
 
 | Route | Result |
 | --- | --- |
@@ -264,14 +266,14 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | Error code | Status | Meaning |
 | --- | --- | --- |
 | `auth.unauthorized` | 401 | Missing or wrong token |
-| `http.not_found` | 404 | No route matches the method and path |
+| `http.404` | 404 | No route matches the method and path |
 | `session.not_found` | 404 | No session has this ID |
-| `request.invalid` | 422 | A field is missing or invalid, or the workspace is outside the allowed roots |
+| `validation.failed` | 422 | A field is missing or invalid, or the workspace is outside the allowed roots |
 | `model.unavailable` | 422 | The model is unknown, or its provider is not signed in with an accepted method |
 | `session.exists` | 409 | A session with this ID has different settings |
 | `session.turn_active` | 409 | The session is already working on a turn |
-| `request.too_large` | 413 | The request body is larger than 1 MiB |
-| `server.internal_error` | 500 | The server failed to handle the request |
+| `http.413` | 413 | The request body is larger than 1 MiB |
+| `server.unhandled` | 500 | The server failed to handle the request |
 
 The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
 

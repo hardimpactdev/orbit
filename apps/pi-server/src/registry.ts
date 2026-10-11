@@ -195,7 +195,7 @@ export class SessionRegistry {
     /** Starts a turn. A key that was already accepted returns without starting another turn. */
     async send(id: string, key: string, text: string): Promise<{ duplicate: boolean }> {
         if (key === "" || text === "") {
-            throw new PiServerError(422, "request.invalid", "A send needs a key and text.");
+            throw new PiServerError(422, "validation.failed", "A send needs a key and text.");
         }
         const live = await this.load(id);
         if (live.record.acceptedKeys.includes(key)) {
@@ -502,14 +502,14 @@ export class SessionRegistry {
         if (!isValidSessionId(request.id)) {
             throw new PiServerError(
                 422,
-                "request.invalid",
+                "validation.failed",
                 "The session ID must be 1 to 128 letters, digits, hyphens, or underscores.",
             );
         }
         if (!THINKING_LEVELS.includes(request.thinkingLevel)) {
             throw new PiServerError(
                 422,
-                "request.invalid",
+                "validation.failed",
                 `Unknown thinking level ${request.thinkingLevel}.`,
             );
         }
@@ -538,7 +538,7 @@ export class SessionRegistry {
         if (!cwd.startsWith("/") || !existsSync(cwd) || !statSync(cwd).isDirectory()) {
             throw new PiServerError(
                 422,
-                "request.invalid",
+                "validation.failed",
                 `The workspace ${cwd} is not an existing absolute directory.`,
             );
         }
@@ -550,7 +550,7 @@ export class SessionRegistry {
         ) {
             throw new PiServerError(
                 422,
-                "request.invalid",
+                "validation.failed",
                 `The workspace ${cwd} is outside the allowed roots.`,
             );
         }
