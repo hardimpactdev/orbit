@@ -58,8 +58,9 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             return;
         }
 
-        $this->reconcileRouterLanIngress(
+        $this->reconcileFamily(
             $node,
+            RouterLanIngressPolicy::CommentPrefix,
             $this->catalog->routerLanIngress($node),
             $managedUser,
             expand: true,
@@ -77,7 +78,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         }
 
         if ($role === RoleName::Router) {
-            $this->reconcileRouterLanIngress($node, [], $managedUser, expand: false, prune: true, recovering: false);
+            $this->reconcileFamily($node, RouterLanIngressPolicy::CommentPrefix, [], $managedUser, expand: false, prune: true, recovering: false);
         }
     }
 
@@ -87,12 +88,23 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             return;
         }
 
-        $this->reconcileRouterLanIngress($router, $desired, $managedUser, expand: true, prune: false, recovering: false);
+        $this->reconcileFamily($router, RouterLanIngressPolicy::CommentPrefix, $desired, $managedUser, expand: true, prune: false, recovering: false);
     }
 
     public function pruneRouterLanIngress(Node $router, array $desired, string $managedUser): void
     {
-        $this->reconcileRouterLanIngress($router, $desired, $managedUser, expand: false, prune: true, recovering: false);
+        $this->reconcileFamily($router, RouterLanIngressPolicy::CommentPrefix, $desired, $managedUser, expand: false, prune: true, recovering: false);
+    }
+
+    /**
+     * Makes the task VM image peer rules on a host exactly `$desired`: adds and replaces them, and deletes every
+     * other rule of the family, such as the rule of a retired peer.
+     *
+     * @param  list<UfwManagedRule>  $desired
+     */
+    public function reconcileTaskVmImagePeers(Node $host, array $desired, string $managedUser): void
+    {
+        $this->reconcileFamily($host, NodeFirewallRuleCatalog::TaskVmImagePrefix, $desired, $managedUser, expand: true, prune: true, recovering: false);
     }
 
     public function trustWireGuardMembers(Node $node, string $managedUser): void
@@ -384,8 +396,9 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     /**
      * @param  list<UfwManagedRule>  $desired
      */
-    private function reconcileRouterLanIngress(
+    private function reconcileFamily(
         Node $node,
+        string $prefix,
         array $desired,
         string $managedUser,
         bool $expand,
@@ -399,10 +412,10 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
 
         if ($inactive) {
-            $this->fail($node, 'UFW is inactive during Router LAN ingress reconciliation.', $status);
+            $this->fail($node, 'UFW is inactive during '.self::familyLabel($prefix).' reconciliation.', $status);
         }
 
-        $snapshot = $this->familyRules($status->stdout);
+        $snapshot = $this->familyRules($status->stdout, $prefix);
         $desiredByComment = [];
 
         foreach ($desired as $rule) {
@@ -467,13 +480,13 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
                 );
             }
 
-            $this->assertFamily($node, $desired, $expand, $prune, $managedUser);
+            $this->assertFamily($node, $prefix, $desired, $expand, $prune, $managedUser);
         } catch (FirewallOperationException $exception) {
             if ($recovering) {
                 throw $exception;
             }
 
-            $this->restoreFamily($node, $snapshot, $managedUser, $exception);
+            $this->restoreFamily($node, $prefix, $snapshot, $managedUser, $exception);
         }
     }
 
@@ -483,7 +496,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
 
         if ($inactive) {
-            $this->fail($node, 'UFW is inactive during Router LAN ingress removal.', $status);
+            $this->fail($node, 'UFW is inactive during managed rule removal.', $status);
         }
 
         $numbers = [];
@@ -513,6 +526,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
      */
     private function assertFamily(
         Node $node,
+        string $prefix,
         array $desired,
         bool $expand,
         bool $prune,
@@ -521,7 +535,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
 
         if ($inactive) {
-            $this->fail($node, 'UFW became inactive after Router LAN ingress reconciliation.', $verification);
+            $this->fail($node, 'UFW became inactive after '.self::familyLabel($prefix).' reconciliation.', $verification);
         }
 
         if ($expand) {
@@ -543,7 +557,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             $desired,
         );
 
-        foreach ($this->familyRules($verification->stdout) as $observed) {
+        foreach ($this->familyRules($verification->stdout, $prefix) as $observed) {
             if (in_array($observed->shape->comment, $desiredComments, strict: true)) {
                 continue;
             }
@@ -557,13 +571,15 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
      */
     private function restoreFamily(
         Node $node,
+        string $prefix,
         array $snapshot,
         string $managedUser,
         FirewallOperationException $exception,
     ): never {
         try {
-            $this->reconcileRouterLanIngress(
+            $this->reconcileFamily(
                 $node,
+                $prefix,
                 $snapshot,
                 $managedUser,
                 expand: true,
@@ -573,8 +589,8 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         } catch (FirewallOperationException $recovery) {
             throw new FirewallOperationException(
                 step: 'host-firewall',
-                errorCode: 'router.lan_ingress_recovery_failed',
-                message: "Could not restore the preceding Router LAN ingress policy on node [{$node->name}].",
+                errorCode: $prefix === RouterLanIngressPolicy::CommentPrefix ? 'router.lan_ingress_recovery_failed' : 'node.firewall_convergence_failed',
+                message: 'Could not restore the preceding '.self::familyLabel($prefix)." policy on node [{$node->name}].",
                 result: $recovery->result,
                 previous: $recovery,
             );
@@ -584,26 +600,33 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     }
 
     /** @return list<UfwManagedRule> */
-    private function familyRules(string $output): array
+    private function familyRules(string $output, string $prefix): array
     {
         $rules = [];
 
-        foreach ($this->statusParser->familyShapes($output, RouterLanIngressPolicy::CommentPrefix) as $shape) {
-            $sourceNodeId = $this->sourceNodeId($shape->comment);
+        foreach ($this->statusParser->familyShapes($output, $prefix) as $shape) {
+            $sourceNodeId = $this->sourceNodeId($shape->comment, $prefix);
 
             if ($sourceNodeId === null) {
                 continue;
             }
 
-            $rules[] = $this->catalog->routerLanIngressRule($shape->source, $shape->destination, $sourceNodeId);
+            $rules[] = $prefix === RouterLanIngressPolicy::CommentPrefix
+                ? $this->catalog->routerLanIngressRule($shape->source, $shape->destination, $sourceNodeId)
+                : $this->catalog->taskVmImagePeer($sourceNodeId, $shape->source, $shape->destination, $shape->inInterface !== null);
         }
 
         return $rules;
     }
 
-    private function sourceNodeId(string $comment): ?int
+    private static function familyLabel(string $prefix): string
     {
-        $prefix = RouterLanIngressPolicy::CommentPrefix.':';
+        return $prefix === RouterLanIngressPolicy::CommentPrefix ? 'Router LAN ingress' : 'task VM image peer';
+    }
+
+    private function sourceNodeId(string $comment, string $prefix): ?int
+    {
+        $prefix .= ':';
 
         if (! str_starts_with($comment, $prefix)) {
             return null;
