@@ -61,6 +61,7 @@ use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -237,6 +238,53 @@ it('starts a linked workspace from the deployed commit of the default instead of
         ->and($workspace->source_layout)->toBe('worktree')
         ->and(is_file($workspace->checkout_path.'/.git'))->toBeTrue()
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout))->toBe($seed->checkout_path.'/.git');
+});
+
+it('starts a task VM workspace from the template checkout next to it, with its ignored files', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
+    $this->files->makeDirectory(dirname($template), 0o755, true);
+    // The transport maps the Project origin to this local repository, as it does for a clone.
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
+    file_put_contents($template.'/.git/info/exclude', "vendor/\n");
+    $this->files->makeDirectory($template.'/vendor');
+    file_put_contents($template.'/vendor/autoload.php', "<?php\n");
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
+    $workspace->update(['source_prepare_id' => (string) Str::uuid()]);
+
+    $this->source->prepare($workspace, false, $template);
+    $resolved = $this->source->resolve($workspace);
+    $this->source->inspectPrepared($workspace);
+
+    expect(is_dir($template))->toBeFalse()
+        ->and(file_get_contents($workspace->checkout_path.'/vendor/autoload.php'))->toBe("<?php\n")
+        ->and($resolved->branch)->toBe('task-7')
+        ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
+});
+
+it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
+    Log::spy();
+    config()->set('orbit.tasks.worker_user', null);
+    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
+    $gone = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
+    $gone->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($gone, false, $template);
+    expect(is_dir($gone->checkout_path.'/.git'))->toBeTrue();
+
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
+    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
+    $foreign = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-9', 'task-9');
+    $foreign->update(['source_prepare_id' => (string) Str::uuid()]);
+
+    $this->source->prepare($foreign, false, $template);
+    $resolved = $this->source->resolve($foreign);
+    $this->source->inspectPrepared($foreign);
+
+    expect(is_dir($template))->toBeTrue()
+        ->and(trim(orb76_run(['git', '-C', $template, 'config', '--get', 'remote.origin.url'])->stdout))->toBe($this->sandbox.'/other.git')
+        ->and(is_dir($foreign->checkout_path.'/.git'))->toBeTrue()
+        ->and($resolved->branch)->toBe('task-9');
+    Log::shouldHaveReceived('warning')->once()->with('The workspace template failed its source checks; the checkout is a fresh clone.', Mockery::any());
 });
 
 it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {

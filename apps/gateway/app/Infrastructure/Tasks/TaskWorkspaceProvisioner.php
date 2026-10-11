@@ -32,6 +32,7 @@ use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
 use App\Models\Node;
@@ -57,6 +58,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private AgentDriverRegistry $drivers,
         private SandboxWorkspaceProvisioner $sandboxes,
         private TaskVmWorkspace $taskVms,
+        private TaskVmStepClock $clock,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
@@ -104,16 +106,32 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return $node;
         }
 
+        $vm = $taskVmNode instanceof Node ? $this->taskVms->vm($group) : null;
+        // The step clock reads the app clock.
+        $started = now()->getPreciseTimestamp() / 1_000_000;
+        if ($vm instanceof TaskVm) {
+            $this->clock->start($vm, $started);
+        }
         try {
-            return $this->createWorkspace($group, $node, $visitable);
+            return $this->createWorkspace($group, $node, $visitable, $vm);
         } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
             report($exception);
 
             return InstanceProvisionFailure::fromException($exception);
+        } finally {
+            if ($vm instanceof TaskVm) {
+                $this->clock->start($vm, $started);
+                $this->clock->step('workspace');
+                $this->clock->stop();
+            }
         }
     }
 
-    private function createWorkspace(Task $group, Node $node, bool $visitable): Instance
+    /**
+     * `$vm` is the group's task VM. A new workspace there starts from the Project's workspace template, and each part
+     * of the creation logs its seconds as a task VM step.
+     */
+    private function createWorkspace(Task $group, Node $node, bool $visitable, ?TaskVm $vm = null): Instance
     {
         $name = TaskWorkspaceName::for($group);
         $existing = Instance::query()
@@ -141,6 +159,9 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
             $instance = $existing;
             $visitable = $this->recordedRouting($instance, $visitable);
+            // A claim that stopped before source preparation finished attaches the template again.
+            $reserved = StoragePath::tryParse((string) $instance->checkout_path);
+            $template = $instance->status === InstanceState::Reserved && $reserved instanceof StoragePath ? $this->template($vm, $group, $reserved) : null;
         } else {
             $account = $this->accounts->resolve($node);
             $roots = $this->storageRoots->resolveApps(
@@ -150,6 +171,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             $checkout = $roots->append($group->project->slug, $name);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
+            $template = $this->template($vm, $group, $checkout);
 
             $instance = Instance::query()->create([
                 'project_id' => $group->project_id,
@@ -167,17 +189,20 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable, $existing): Instance {
-                $resolved = $this->prepareSource($instance, $existing instanceof Instance);
+            function () use ($instance, $visitable, $existing, $template): Instance {
+                $resolved = $this->prepareSource($instance, $existing instanceof Instance, $template);
                 $this->source->inspectPrepared($resolved);
+                $this->clock->step('workspace-source');
 
                 if (! $visitable) {
                     return $resolved;
                 }
 
                 $this->development->reserve($resolved, null);
+                $completed = $this->development->complete($resolved, null);
+                $this->clock->step('workspace-route');
 
-                return $this->development->complete($resolved, null);
+                return $completed;
             },
         );
     }
@@ -217,7 +242,23 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return $selected;
     }
 
-    private function prepareSource(Instance $instance, bool $allowExisting): Instance
+    /**
+     * Attaches the workspace template for the checkout `$checkout` on the group's task VM, and logs the step. A group
+     * without a task VM gets none.
+     */
+    private function template(?TaskVm $vm, Task $group, StoragePath $checkout): ?string
+    {
+        if (! $vm instanceof TaskVm) {
+            return null;
+        }
+        $parent = $checkout->parent();
+        $template = $parent instanceof StoragePath ? $this->taskVms->template($vm, $group, $parent->value) : null;
+        $this->clock->step('workspace-template');
+
+        return $template;
+    }
+
+    private function prepareSource(Instance $instance, bool $allowExisting, ?string $template = null): Instance
     {
         while (true) {
             $instance->refresh()->loadMissing(['project', 'node']);
@@ -225,7 +266,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             if ($instance->status === InstanceState::Reserved) {
                 // Reclaim may follow a completed prepare whose state transition never persisted.
                 // The source lifecycle still verifies identity before accepting an existing checkout.
-                $this->source->prepare($instance, $allowExisting);
+                $this->source->prepare($instance, $allowExisting, $template);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);

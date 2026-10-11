@@ -11,6 +11,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -22,7 +23,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Every 10 minutes: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, and fails the
+ * Every 10 minutes: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the workspace
+ * clones `tvm-<number>-workspace` that no live row owns, and fails the
  * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
  * failed warm VM has no group: the pool refill destroys it. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
@@ -46,7 +48,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit): void
+    public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates): void
     {
         $failures = [];
         foreach ($settings->hosts as $host) {
@@ -59,6 +61,9 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                 foreach ($found['orphaned'] as $name) {
                     $audit->deleteOrphan($host, $node, $name);
                     Log::warning('Deleted an orphaned task VM.', ['node_id' => $node->id, 'name' => $name]);
+                }
+                foreach ($templates->sweepClones($host, $node) as $name) {
+                    Log::warning('Deleted an orphaned task VM workspace clone.', ['node_id' => $node->id, 'volume' => $name]);
                 }
                 $missing = array_map(static fn (TaskVm $vm): int => $vm->id, $found['missing']);
                 foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotIn('id', $missing)->get(['id']) as $present) {

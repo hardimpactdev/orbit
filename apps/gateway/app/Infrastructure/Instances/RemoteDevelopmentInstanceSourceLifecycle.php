@@ -24,6 +24,7 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class RemoteDevelopmentInstanceSourceLifecycle implements DevelopmentInstanceBranchInspector, DevelopmentInstanceSourceLifecycle
@@ -35,7 +36,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         private RepositoryReadAccess $access,
     ) {}
 
-    public function prepare(Instance $instance, bool $allowExisting): void
+    public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
     {
         app(SelectInstanceSeedAction::class)->execute($instance);
         if ($instance->seed_commit !== null) {
@@ -52,6 +53,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     worker_user=$7
                     seed_repository=$8
                     seed_commit=$9
+                    template=${10}
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -65,8 +67,27 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         exit 0
                     fi
 
-                    mkdir -m 0755 -- "$checkout"
-                    if [ -n "$seed_repository" ]; then
+                    # A template on the checkout's filesystem becomes the checkout in one rename, with its dependencies.
+                    # A template that fails a check is left alone, and the checkout is cloned as without one.
+                    usable_template() {
+                        [ -n "$template" ] && [ -d "$template" ] && [ ! -L "$template" ] \
+                            && [ "$(dirname "$template")" = "$checkout_parent" ] \
+                            && [ "$(stat -c '%U:%G' "$template")" = "$managed_user:$managed_group" ] \
+                            && [ "$(git -C "$template" rev-parse --show-toplevel 2>/dev/null)" = "$template" ] \
+                            && [ "$(git -C "$template" config --get remote.origin.url 2>/dev/null)" = "$repository" ]
+                    }
+                    if usable_template; then
+                        mv -T -- "$template" "$checkout"
+                        chmod 0755 -- "$checkout"
+                    else
+                        if [ -n "$template" ] && { [ -e "$template" ] || [ -L "$template" ]; }; then
+                            printf '%s\n' template-refused
+                        fi
+                        mkdir -m 0755 -- "$checkout"
+                    fi
+                    if [ -d "$checkout/.git" ]; then
+                        :
+                    elif [ -n "$seed_repository" ]; then
                         test ! -L "$seed_repository"
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
                         git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --detach -- "$checkout" "$seed_commit"
@@ -80,16 +101,19 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     inspect_prepared_repository
                     share_checkout
                     BASH);
-        $this->ssh->execute(
+        $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? ''],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-prepare',
             errorCode: 'instance.clone_failed',
         );
+        if (in_array('template-refused', explode("\n", $result->stdout), true)) {
+            Log::warning('The workspace template failed its source checks; the checkout is a fresh clone.', ['instance_id' => $instance->id, 'template' => $template]);
+        }
     }
 
     public function inspectPrepared(Instance $instance): void

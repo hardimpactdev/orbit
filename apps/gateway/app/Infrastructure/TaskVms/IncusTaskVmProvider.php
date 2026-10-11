@@ -31,6 +31,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     public function __construct(
         private IncusHost $incus,
         private TaskVmSettings $settings,
+        private TaskVmWorkspaceTemplates $templates,
     ) {}
 
     public function create(TaskVm $vm, string $userData): void
@@ -154,6 +155,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
     }
 
+    /** Deletes the VM, then its workspace clone, which Incus keeps when it deletes the VM. */
     public function destroy(TaskVm $vm): void
     {
         $result = $this->incus($vm, ['delete', '--force', '--', $vm->name]);
@@ -161,6 +163,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         if (! $result->succeeded() && $this->observe($vm) instanceof VmObservation) {
             throw $this->failed($vm, 'delete', $result);
         }
+        $this->templates->release($this->settings->host($vm->host_node_id), $vm->hostNode, $vm);
     }
 
     private function startObserved(TaskVm $vm, VmObservation $observation): void
