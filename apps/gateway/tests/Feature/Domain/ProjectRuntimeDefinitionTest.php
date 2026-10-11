@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\ProjectDefinitions\CreateProcessDefinitionAction;
 use App\Actions\ProjectDefinitions\CreateScheduleDefinitionAction;
-use App\Actions\ProjectDefinitions\RemoveProcessDefinitionAction;
+use App\Actions\ProjectDefinitions\DestroyProcessDefinitionAction;
 use App\Actions\ProjectDefinitions\ReplaceProcessDefinitionAction;
-use App\Actions\Projects\RemoveProjectAction;
+use App\Actions\Projects\DestroyProjectAction;
 use App\Data\ProjectDefinitions\ProjectDefinitionInputData;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\ScheduleRuntimeManager;
@@ -264,7 +264,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
             'command' => ['/usr/bin/php', 'artisan'],
         ]),
     );
-    app(RemoveProcessDefinitionAction::class)->execute($processDefinition);
+    app(DestroyProcessDefinitionAction::class)->execute($processDefinition);
 
     expect($instance->fresh()->toArray())
         ->toBe($runtimeBefore['instance'])
@@ -315,7 +315,7 @@ it('cascades both definition kinds when an otherwise removable App is deleted', 
         'spec' => ['command' => 'php artisan report', 'calendar' => 'daily', 'timeout_seconds' => 60],
     ]);
 
-    app(RemoveProjectAction::class)->execute($this->orbitApp);
+    app(DestroyProjectAction::class)->execute($this->orbitApp);
 
     expect($processDefinition->fresh())
         ->toBeNull()

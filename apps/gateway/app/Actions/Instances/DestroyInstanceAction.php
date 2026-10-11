@@ -8,7 +8,7 @@ use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -55,7 +55,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class RemoveInstanceAction implements InstanceRemover
+final readonly class DestroyInstanceAction implements InstanceRemover
 {
     public function __construct(
         private DevelopmentInstanceSourceRemoval $sourceInspector,
@@ -160,7 +160,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             ->get();
 
         foreach ($routes as $route) {
-            app(RemoveRouteAction::class)->execute($route);
+            app(DestroyRouteAction::class)->execute($route);
         }
 
         if ($routes->isNotEmpty()) {

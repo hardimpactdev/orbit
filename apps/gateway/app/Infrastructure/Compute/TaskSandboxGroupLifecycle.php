@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Compute;
 
+use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskCompute;
@@ -48,11 +49,14 @@ final readonly class TaskSandboxGroupLifecycle
         });
     }
 
-    /** A failed restore never admits a fetch, an implementer, or a reviewer. */
+    /**
+     * A failed restore never admits a fetch, an implementer, or a reviewer. A web-lane task VM that is parked
+     * starts again first, and the work waits for a later tick.
+     */
     public function resume(Task $group): bool
     {
         if (! self::orbitLane($group)) {
-            return true;
+            return $group->task_compute !== TaskCompute::Vm || app(WakeTaskVmAction::class)->forGroup($group);
         }
 
         return $this->execution->synchronized($group->id, function () use ($group): bool {
@@ -78,7 +82,7 @@ final readonly class TaskSandboxGroupLifecycle
         });
     }
 
-    /** Only Orbit-lane sandboxes park and resume. A task VM stays up until its group ends. */
+    /** Orbit-lane sandboxes park here. A web-lane task VM parks through `ParkIdleTaskVmsAction`. */
     private static function orbitLane(Task $group): bool
     {
         return $group->task_compute === TaskCompute::Vm && $group->project->slug === 'orbit';

@@ -33,6 +33,7 @@ final class TaskVmPlacement
     /**
      * A `vm` group's workspace must be its `task-<group id>` Instance in the group's Project, on
      * the Node of its Ready task VM. Any other group's workspace must not be on a task VM Node.
+     * A parked VM fails with `task_vm.parked`: no command reaches a VM that is stopped or starting.
      */
     public static function assertWorkspace(Task $group, Instance $workspace): void
     {
@@ -45,6 +46,9 @@ final class TaskVmPlacement
         }
 
         $vm = self::forGroup($group);
+        if ($vm?->state === TaskVmState::Parked) {
+            throw new TaskVmException('task_vm.parked', "The task VM [{$vm->name}] of task group [{$group->id}] is parked. Orbit starts it for the group's next work.");
+        }
         if (! $vm instanceof TaskVm || $vm->state !== TaskVmState::Ready || $vm->node_id === null
             || $workspace->node_id !== $vm->node_id || $workspace->project_id !== $group->project_id
             || $workspace->name !== TaskWorkspaceName::for($group)) {

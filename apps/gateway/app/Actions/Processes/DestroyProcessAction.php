@@ -26,7 +26,7 @@ use App\Models\Process;
 use App\Models\RouteCustomProxy;
 use SensitiveParameter;
 
-final readonly class RemoveProcessAction
+final readonly class DestroyProcessAction
 {
     use MarksProcessRuntimeFailures;
 

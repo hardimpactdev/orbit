@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
@@ -104,7 +104,7 @@ describe('Route record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        app(RemoveRouteAction::class)->execute($route);
+        app(DestroyRouteAction::class)->execute($route);
 
         Event::assertDispatched(
             RecordBroadcast::class,

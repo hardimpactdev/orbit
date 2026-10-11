@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -511,7 +511,7 @@ function cancel_real_remover(Instance $workspace, bool $refused = false): void
         public function cleanupRuntime(InstanceRemovalMember $member): void {}
     };
     app()->instance(InstanceRemovalProjector::class, $projector);
-    app()->instance(InstanceRemover::class, app(RemoveInstanceAction::class));
+    app()->instance(InstanceRemover::class, app(DestroyInstanceAction::class));
 }
 
 function cancel_pending_route(Instance $workspace): Route

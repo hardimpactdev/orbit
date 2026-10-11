@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Schedules\ActivateScheduleAction;
-use App\Actions\Schedules\AddScheduleAction;
 use App\Actions\Schedules\CompleteScheduleAction;
-use App\Actions\Schedules\RemoveScheduleAction;
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Actions\Schedules\DestroyScheduleAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
@@ -52,7 +52,7 @@ describe('Schedule record events', function (): void {
             command: 'backup.sh',
         );
 
-        $result = new AddScheduleAction(
+        $result = new CreateScheduleAction(
             new ScheduleSpecificationValidator,
             new ScheduleTargetResolver(app(ScheduleRuntimeAccountResolver::class)),
             $this->runtime,
@@ -134,7 +134,7 @@ describe('Schedule record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new RemoveScheduleAction($this->runtime)->execute($schedule);
+        new DestroyScheduleAction($this->runtime)->execute($schedule);
 
         Event::assertDispatched(
             RecordBroadcast::class,
@@ -160,7 +160,7 @@ describe('Schedule record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new RemoveScheduleAction($this->runtime)->execute($schedule);
+        new DestroyScheduleAction($this->runtime)->execute($schedule);
 
         Event::assertDispatched(
             RecordBroadcast::class,

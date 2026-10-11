@@ -6,7 +6,7 @@ namespace App\Actions\ProjectDefinitions;
 
 use App\Models\ProcessDefinition;
 
-final readonly class RemoveProcessDefinitionAction
+final readonly class DestroyProcessDefinitionAction
 {
     public function execute(ProcessDefinition $definition): ProcessDefinition
     {

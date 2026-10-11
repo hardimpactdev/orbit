@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Processes\AddProcessAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
-use App\Actions\Processes\RemoveProcessAction;
 use App\Actions\Processes\RestartProcessAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
@@ -42,7 +42,7 @@ final class ProcessesController extends Controller
     public function store(
         #[SensitiveParameter]
         StoreProcessRequest $request,
-        AddProcessAction $action,
+        CreateProcessAction $action,
         ProcessRuntimeManager $runtime,
     ): JsonResponse {
         $result = $action->execute($request->payload());
@@ -112,7 +112,7 @@ final class ProcessesController extends Controller
         Request $request,
         #[SensitiveParameter]
         Process $process,
-        RemoveProcessAction $action,
+        DestroyProcessAction $action,
     ): JsonResponse {
         $data = ProcessData::fromModel($process, 'absent')->toArray();
         $action->execute($process);

@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\AddProcessAction;
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
@@ -99,7 +99,7 @@ describe('Process record events', function (): void {
             start: false,
         );
 
-        $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
+        $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
             ->execute($data);
 
         expect($result['created'])->toBeTrue();
@@ -126,11 +126,11 @@ describe('Process record events', function (): void {
             restartPolicy: 'on-failure',
             start: false,
         );
-        new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
         Event::fake([RecordBroadcast::class]);
 
-        $result = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
+        $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
             ->execute($data);
 
         expect($result['created'])->toBeFalse();
@@ -201,7 +201,7 @@ describe('Process record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
+        new DestroyProcessAction($this->runtime, $this->targets)->execute($process);
 
         Event::assertDispatched(
             RecordBroadcast::class,

@@ -7,8 +7,8 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Actions\Routes\CreateRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Routes\ListRoutesAction;
-use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Actions\Routes\ShowRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
@@ -104,7 +104,7 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function destroy(RemoveRouteRequest $request, Route $route, RemoveRouteAction $action): JsonResponse
+    public function destroy(RemoveRouteRequest $request, Route $route, DestroyRouteAction $action): JsonResponse
     {
         return response()->json([
             'data' => RemovedRouteData::fromRemoval($action->executeForOperator($route, $request->offline()))->toArray(),

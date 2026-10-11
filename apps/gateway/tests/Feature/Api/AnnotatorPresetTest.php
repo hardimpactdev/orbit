@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\Processes\ProcessEnvironmentProjection;
@@ -49,7 +49,7 @@ describe('annotator preset', function (): void {
             expect($configuration)->not->toContain('/__orbit/annotator');
             throw $crash ? new RuntimeException('Simulated crash after withdrawal before acknowledgement') : new ResourceOperationException('test.projection_failed', 'Caddy withdrawal failed.', 409);
         };
-        expect(fn () => app(RemoveProcessAction::class)->execute(Process::query()->findOrFail($id)))
+        expect(fn () => app(DestroyProcessAction::class)->execute(Process::query()->findOrFail($id)))
             ->toThrow($crash ? RuntimeException::class : ResourceOperationException::class);
         $pending = Process::query()->findOrFail($id);
         expect($pending->endpoint_withdrawal_started_at)->not->toBeNull()->and($pending->endpoint_withdrawn_at)->toBeNull()

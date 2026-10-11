@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceCreationRecovery;
@@ -36,7 +36,7 @@ describe('reserved worktree removable', function (): void {
         $instance = reserved_removal_instance();
         $transport = reserved_removal_source($instance, $force);
 
-        $removal = app(RemoveInstanceAction::class)->execute($instance, force: $force);
+        $removal = app(DestroyInstanceAction::class)->execute($instance, force: $force);
 
         expect($removal->status->value)->toBe('completed');
         expect($transport->inputs)->toBe([]);
@@ -72,7 +72,7 @@ describe('reserved worktree removable', function (): void {
         $instance->update(['status' => InstanceState::Active]);
 
         expect(InstanceCreationRecovery::isPreActivation($instance))->toBeFalse();
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true, requirePreActivation: true))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: true, requirePreActivation: true))
             ->toThrow(ResourceOperationException::class, 'Failed-create cleanup cannot remove an activated Instance.');
         expect(Instance::query()->find($instance->id))->not->toBeNull();
         expect(InstanceRemoval::query()->count())->toBe(0);
@@ -83,7 +83,7 @@ describe('reserved worktree removable', function (): void {
         $instance->update($attributes);
 
         expect(InstanceCreationRecovery::isPreActivation($instance))->toBeFalse();
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: true))
             ->toThrow(ResourceOperationException::class);
         expect(Instance::query()->find($instance->id))->not->toBeNull();
         expect(InstanceRemoval::query()->count())->toBe(0);
@@ -108,7 +108,7 @@ describe('PHP-FPM pool withdrawal', function (): void {
         $steps = new ArrayObject;
         reserved_removal_source($instance, true, $steps);
 
-        app(RemoveInstanceAction::class)->execute($instance, force: true);
+        app(DestroyInstanceAction::class)->execute($instance, force: true);
 
         expect($steps->getArrayCopy())->toBe(['pool-withdrawn', 'source-deleted']);
     });
@@ -122,7 +122,7 @@ describe('PHP-FPM pool withdrawal', function (): void {
             message: 'PHP-FPM configuration failed.',
         ));
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: true))
             ->toThrow(InstanceRemovalException::class);
 
         $removal = InstanceRemoval::query()->sole();

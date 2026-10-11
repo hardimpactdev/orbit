@@ -74,7 +74,7 @@ final readonly class CreateInstanceAction
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
         private ?ProjectLifecycleRunner $lifecycle = null,
-        private ?RemoveInstanceAction $remover = null,
+        private ?DestroyInstanceAction $remover = null,
         private ?InstanceEnvironmentOperationLock $environmentOperations = null,
         private ?CommandDeadline $deadline = null,
         private ?InstanceDatabaseClonePlanner $clonePlanner = null,
@@ -245,7 +245,7 @@ final readonly class CreateInstanceAction
      */
     private function removeFailedCreate(Instance $instance): void
     {
-        $remover = $this->remover ?? app(RemoveInstanceAction::class);
+        $remover = $this->remover ?? app(DestroyInstanceAction::class);
         try {
             $remover->execute($instance, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
         } catch (Throwable $exception) {
@@ -362,7 +362,7 @@ final readonly class CreateInstanceAction
             }
 
             try {
-                ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
+                ($this->remover ?? app(DestroyInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     errorCode: $failure->errorCode,
@@ -459,7 +459,7 @@ final readonly class CreateInstanceAction
             }
 
             try {
-                ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
+                ($this->remover ?? app(DestroyInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     errorCode: $code,

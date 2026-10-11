@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -511,7 +511,7 @@ describe('guards around a tracking host', function (): void {
     it('refuses to remove a Project instance that still publishes a tracking host', function (): void {
         $this->postJson($this->url)->assertOk();
 
-        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance->refresh(), force: true))
+        expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance->refresh(), force: true))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('analytics.tracking_hosts_exist');
             });

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\DatabaseConnections\AddDatabaseConnectionAction;
+use App\Actions\DatabaseConnections\CreateDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\CreateDatabaseUserAction;
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DescribeDatabaseTableAction;
+use App\Actions\DatabaseConnections\DestroyDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\ListDatabaseConnectionsAction;
 use App\Actions\DatabaseConnections\ListDatabaseTablesAction;
 use App\Actions\DatabaseConnections\ListDatabaseUsersAction;
 use App\Actions\DatabaseConnections\QueryDatabaseConnectionAction;
-use App\Actions\DatabaseConnections\RemoveDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\ShowDatabaseSchemaAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
@@ -50,7 +50,7 @@ final class DatabaseConnectionsController extends Controller
 
     public function store(
         StoreDatabaseConnectionRequest $request,
-        AddDatabaseConnectionAction $register,
+        CreateDatabaseConnectionAction $register,
         CreateServerDatabaseAction $create,
     ): JsonResponse {
         $connection = $request->createsOnServer()
@@ -117,7 +117,7 @@ final class DatabaseConnectionsController extends Controller
     public function destroy(
         Request $request,
         DatabaseConnection $databaseConnection,
-        RemoveDatabaseConnectionAction $action,
+        DestroyDatabaseConnectionAction $action,
     ): JsonResponse {
         $data = DatabaseConnectionData::fromModel($databaseConnection)->toArray();
         $action->execute($databaseConnection);

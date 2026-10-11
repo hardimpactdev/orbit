@@ -271,7 +271,8 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -793,6 +794,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -884,6 +886,24 @@
                 "Project",
                 "Role",
                 "Route",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/first-contribution.md",
+            "title": "Your first contribution",
+            "kind": "product",
+            "components": [
+                "apps/cli"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Project",
+                "Subtask",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": []

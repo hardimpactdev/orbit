@@ -35,7 +35,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         $observation = $this->observe($vm);
         if ($observation instanceof VmObservation) {
             // A stopped VM is one whose launch created it but did not start it.
-            $this->start($vm, $observation);
+            $this->startObserved($vm, $observation);
 
             return;
         }
@@ -47,7 +47,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
             // A missing base image is a setup step, not a launch problem, and the stock image would never enroll.
             if ($this->incus->aliasTarget($host, $vm->hostNode, TaskVmHost::BaseImage) === null) {
-                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Build it with task-vms:build-image.');
+                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Sync it with task-vms:sync-image, or build it with task-vms:build-image.');
             }
 
             throw $this->failed($vm, 'launch', $result);
@@ -117,6 +117,29 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         return $match[1];
     }
 
+    public function start(TaskVm $vm): void
+    {
+        $observation = $this->observe($vm) ?? throw new TaskVmException('task_vm.vm_missing', "Task VM [{$vm->name}] is gone from its host.", 502);
+        $this->startObserved($vm, $observation);
+    }
+
+    /** A clean shutdown first, then `--force` once the guest has not stopped within 120 seconds. */
+    public function stop(TaskVm $vm): void
+    {
+        $runs = fn (): bool => $this->observe($vm)?->running === true;
+        if (! $runs()) {
+            return;
+        }
+
+        $result = $this->incus($vm, ['stop', '--timeout', '120', '--', $vm->name]);
+        if (! $result->succeeded() && $runs()) {
+            $result = $this->incus($vm, ['stop', '--force', '--', $vm->name]);
+            if (! $result->succeeded() && $runs()) {
+                throw $this->failed($vm, 'stop', $result);
+            }
+        }
+    }
+
     public function destroy(TaskVm $vm): void
     {
         $result = $this->incus($vm, ['delete', '--force', '--', $vm->name]);
@@ -126,7 +149,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
     }
 
-    private function start(TaskVm $vm, VmObservation $observation): void
+    private function startObserved(TaskVm $vm, VmObservation $observation): void
     {
         if ($observation->running) {
             return;

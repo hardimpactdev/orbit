@@ -12,7 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
-final readonly class RemoveProjectAction
+final readonly class DestroyProjectAction
 {
     public function __construct(
         private ?RouteRemovalGuard $routes = null,

@@ -6,7 +6,7 @@ namespace App\Actions\ProjectDefinitions;
 
 use App\Models\ScheduleDefinition;
 
-final readonly class RemoveScheduleDefinitionAction
+final readonly class DestroyScheduleDefinitionAction
 {
     public function execute(ScheduleDefinition $definition): ScheduleDefinition
     {

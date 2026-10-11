@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
@@ -303,7 +303,7 @@ function task_teardown_harness(): TaskTeardownHarness
     $harness->transport = new LifecycleSshExecutor(result: fn (): int => $harness->exit);
     $harness->source = new TaskTeardownSource;
     $harness->routes = new TaskTeardownRoutes;
-    app()->instance(InstanceRemover::class, new RemoveInstanceAction(
+    app()->instance(InstanceRemover::class, new DestroyInstanceAction(
         $harness->source,
         $harness->source,
         $harness->routes,

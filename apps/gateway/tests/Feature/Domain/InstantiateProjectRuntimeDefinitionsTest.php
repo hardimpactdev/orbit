@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
-use App\Actions\Processes\RemoveProcessAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
-use App\Actions\Schedules\RemoveScheduleAction;
+use App\Actions\Schedules\DestroyScheduleAction;
 use App\Data\Schedules\ScheduleLogsData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -313,10 +313,10 @@ it('refuses record and artifact conflicts without adoption and removes only targ
     $this->scheduleRuntime->failName = null;
     $this->action->execute($this->target->refresh());
     new CascadeInstanceProcessesAction(
-        new RemoveProcessAction($this->processRuntime, new ProcessTargetResolver),
+        new DestroyProcessAction($this->processRuntime, new ProcessTargetResolver),
     )->execute($this->target->id);
     new CascadeInstanceSchedulesAction(
-        new RemoveScheduleAction($this->scheduleRuntime),
+        new DestroyScheduleAction($this->scheduleRuntime),
     )->execute($this->target->id);
     $this->target->delete();
 

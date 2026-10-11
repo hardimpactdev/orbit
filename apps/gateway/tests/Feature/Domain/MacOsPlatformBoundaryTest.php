@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Actions\Nodes\AddNodeRoleAction;
-use App\Actions\Processes\AddProcessAction;
-use App\Actions\Schedules\AddScheduleAction;
+use App\Actions\Processes\CreateProcessAction;
+use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Firewall\StoreFirewallRuleData;
 use App\Data\Processes\AddProcessData;
 use App\Data\Schedules\AddScheduleData;
@@ -69,7 +69,7 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(AddProcessAction::class)->execute(new AddProcessData(
+    expect(fn () => app(CreateProcessAction::class)->execute(new AddProcessData(
         targetType: ProcessTargetType::Node,
         targetId: $node->id,
         name: 'queue',
@@ -86,7 +86,7 @@ it('refuses macOS role, Metrics, Process, Schedule, and firewall changes before 
         expect($exception->errorCode)->toBe('process.platform_unsupported')
             ->and($exception->status)->toBe(422);
     });
-    expect(fn () => app(AddScheduleAction::class)->execute(new AddScheduleData(
+    expect(fn () => app(CreateScheduleAction::class)->execute(new AddScheduleData(
         ScheduleTargetType::Node,
         $node->id,
         'daily-backup',

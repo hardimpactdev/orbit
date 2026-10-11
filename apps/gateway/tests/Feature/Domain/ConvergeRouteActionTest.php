@@ -7,7 +7,7 @@ use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Actions\Routes\CreateRouteAction;
-use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\DestroyRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\RouteTargetDispositionData;
@@ -1268,7 +1268,7 @@ it('retains failed_step evidence at each untargeted removal boundary and resumes
     $projector->failures[$failure] = 1;
     app()->instance(RouteRemovalProjector::class, $projector);
 
-    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+    expect(fn () => app(DestroyRouteAction::class)->execute($route))
         ->toThrow(ResourceOperationException::class, "Injected {$failure} failure.");
 
     expect($route->refresh()->status)
@@ -1283,7 +1283,7 @@ it('retains failed_step evidence at each untargeted removal boundary and resumes
         ->toContain($failure);
 
     $completed = count($projector->events);
-    $retried = app(RemoveRouteAction::class)->execute($route);
+    $retried = app(DestroyRouteAction::class)->execute($route);
 
     expect(Route::query()->whereKey($route->id)->exists())
         ->toBeFalse()
@@ -1306,12 +1306,12 @@ it('records the earliest revalidation failure on untargeted removal retry', func
     $projector->failures['firewall'] = 1;
     app()->instance(RouteRemovalProjector::class, $projector);
 
-    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+    expect(fn () => app(DestroyRouteAction::class)->execute($route))
         ->toThrow(ResourceOperationException::class, 'Injected firewall failure.');
 
     $projector->failures['dns'] = 1;
 
-    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+    expect(fn () => app(DestroyRouteAction::class)->execute($route))
         ->toThrow(ResourceOperationException::class, 'Injected dns failure.');
 
     expect($route->refresh()->status)
@@ -1334,7 +1334,7 @@ it('records record-deletion failure and refuses a conflicting mutation on untarg
         END
         SQL);
 
-    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+    expect(fn () => app(DestroyRouteAction::class)->execute($route))
         ->toThrow(QueryException::class);
 
     expect($route->refresh()->status)
@@ -1355,7 +1355,7 @@ it('records record-deletion failure and refuses a conflicting mutation on untarg
     ]);
     $route->targets()->create(['instance_id' => $conflict->id, 'position' => 0]);
 
-    expect(fn () => app(RemoveRouteAction::class)->execute($route))
+    expect(fn () => app(DestroyRouteAction::class)->execute($route))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('env.owner_changed');
         });
