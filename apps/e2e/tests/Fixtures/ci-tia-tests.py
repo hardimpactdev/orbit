@@ -3,6 +3,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -304,6 +305,93 @@ class CiTiaTest(unittest.TestCase):
         self.assertIn(f'The graph describes {head}.', result.stdout)
         # Pest reads the graph it wrote back.
         self.assertEqual(('affected', head), self.plan()[:2])
+
+    def shard_plan(self, classes, status=0, extra=''):
+        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does."""
+        listing = self.root / 'listing.txt'
+        listing.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
+            f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
+            for name in classes) + extra)
+        pest = self.root / 'pest'
+        pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --colors=never" ] || exit 9\n'
+                        f'cat {listing}\nexit {status}\n')
+        pest.chmod(0o755)
+        self.output.write_text('')
+        plan = self.root / 'plan.json'
+        result = self.run_helper('shards', '--plan', str(plan), '--pest', str(pest))
+        outputs = dict(line.split('=', 1) for line in self.output.read_text().splitlines())
+        return result, outputs, json.loads(plan.read_text()) if plan.exists() else None
+
+    def test_keeps_a_narrow_pull_request_selection_in_one_job(self):
+        head = self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
+
+        result, outputs, plan = self.shard_plan([f'Tests\\Feature\\Area{index}Test' for index in range(200)])
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({'commit': head, 'shards': '1', 'sharded': 'false', 'matrix': '[]'}, outputs)
+        self.assertEqual({'commit': head, 'classes': 200, 'shards': 1, 'filters': []}, plan)
+        self.assertIn('One job: 200 affected test classes, at most 200 or too few to split.', result.stdout)
+
+        result, outputs, plan = self.shard_plan([])
+        self.assertEqual(('1', 0), (outputs['shards'], plan['classes']))
+
+    def test_splits_a_large_pull_request_selection_into_balanced_shards(self):
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(300)]
+        # The graph records the slow classes; a class it does not know counts as the median one.
+        self.write_graph(self.base, results={
+            f'P\\{name}::__pest_evaluable_it_works': {'status': 0, 'message': '', 'time': 30.0 if index < 3 else 1.0,
+                                                      'assertions': 1, 'file': 'tests/ExampleTest.php'}
+            for index, name in enumerate(classes[:250])
+        })
+
+        result, outputs, plan = self.shard_plan(classes)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(('3', 'true', '[2, 3]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual((3, 300, 3), (plan['shards'], plan['classes'], len(plan['filters'])))
+        self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
+        # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
+        tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes] + ['P\\Tests\\Feature\\Area1Test2::x',
+                                                                                  'P\\Other\\Tests\\Feature\\Area1Test::x']
+        shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
+        self.assertEqual(sorted(tests[:300]), sorted(sum(shards, [])))
+        # The first shard runs in the Gateway job beside the architecture tests, so it starts with their time and gets
+        # none of the slow classes. The other shards share them.
+        slow = [next(index for index, shard in enumerate(shards) if f'P\\{name}::__pest_evaluable_it_works' in shard)
+                for name in classes[:3]]
+        self.assertEqual([1, 1, 2], sorted(slow))
+        self.assertLess(len(shards[0]), min(len(shards[1]), len(shards[2])))
+        self.assertIn('3 shards: 300 affected test classes, more than 200.', result.stdout)
+
+    def test_never_plans_a_shard_without_classes(self):
+        # 201 fast classes: shards 2 and 3 never pass the first shard's head start, so it would stay empty.
+        classes = [f'Tests\\Unit\\Fast{index}Test' for index in range(201)]
+        self.write_graph(self.base, results={
+            f'P\\{name}::__pest_evaluable_it_works': {'status': 0, 'message': '', 'time': 0.01, 'assertions': 1,
+                                                      'file': 'tests/ExampleTest.php'} for name in classes})
+
+        result, outputs, plan = self.shard_plan(classes)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(('2', 'true', '[2]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
+        shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
+        self.assertTrue(all(shards))
+        self.assertEqual(sorted(tests), sorted(sum(shards, [])))
+
+    def test_fails_when_a_listed_test_cannot_be_read(self):
+        result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], extra=' - P\\Tests\\Ünit\\BadTest::x\n')
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Cannot read the class of 1 listed tests, such as:  - P\\Tests\\Ünit\\BadTest::x', result.stderr)
+        self.assertEqual(({}, None), (outputs, plan))
+
+    def test_fails_when_pest_cannot_list_the_selection(self):
+        result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], status=2)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Pest cannot list the affected tests:', result.stderr)
+        self.assertEqual(({}, None), (outputs, plan))
 
     def test_refuses_a_graph_that_does_not_describe_the_tested_commit(self):
         head = self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
