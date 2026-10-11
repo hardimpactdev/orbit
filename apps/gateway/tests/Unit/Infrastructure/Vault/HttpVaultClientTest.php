@@ -8,6 +8,8 @@ use App\Domain\Vault\VaultCredentials;
 use App\Domain\Vault\VaultException;
 use App\Infrastructure\Vault\BitwardenCrypto;
 use App\Infrastructure\Vault\HttpVaultClient;
+use GuzzleHttp\Handler\StreamHandler;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -169,6 +171,12 @@ describe('HttpVaultClient', function (): void {
 
         expect($verify)->not->toBeEmpty()
             ->and(array_unique($verify))->toBe([$this->rootPath]);
+    });
+
+    it('sends through the stream handler, because cURL keeps the system CA directory beside the CA file', function (): void {
+        $request = (fn (): PendingRequest => $this->http())->call($this->client);
+
+        expect((fn (): mixed => $this->handler)->call($request))->toBeInstanceOf(StreamHandler::class);
     });
 
     it('never trusts a CA file another account planted in the temporary directory', function (): void {
