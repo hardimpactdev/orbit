@@ -8,6 +8,11 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Models\Instance;
 
+/**
+ * A development checkout lives at ROOT/DIRECTORY/NAME. The directory is the Project slug when
+ * the checkout was created; a later slug change keeps the checkout, so the boundary reads the
+ * directory from the stored path and never from the current slug.
+ */
 final readonly class CheckoutRemovalBoundary
 {
     public function __construct(
@@ -16,27 +21,28 @@ final readonly class CheckoutRemovalBoundary
 
     public function instanceRoot(Instance $instance, ManagedUserAccount $account): StoragePath
     {
-        $checkout = StoragePath::tryParse($instance->checkout_path);
+        $root = $this->instanceGroupingDirectory($instance)->parent();
 
-        if (
-            ! $checkout instanceof StoragePath
-            || ! $checkout->hasSuffix($instance->project->slug, $instance->name)
-        ) {
-            $this->unsafeInstance($instance);
-        }
-
-        $root = $checkout->stripSuffix($instance->project->slug, $instance->name);
-
-        if ($this->catalog->isProtected($root, $account) || ! $checkout->isInside($root)) {
+        if (! $root instanceof StoragePath || $this->catalog->isProtected($root, $account)) {
             $this->unsafeInstance($instance);
         }
 
         return $root;
     }
 
-    public function instanceGroupingDirectory(Instance $instance, StoragePath $root): StoragePath
+    public function instanceGroupingDirectory(Instance $instance): StoragePath
     {
-        return $root->append($instance->project->slug);
+        $checkout = StoragePath::tryParse($instance->checkout_path);
+        $directory = $checkout?->parent();
+
+        if (
+            ! $directory instanceof StoragePath
+            || $checkout->value !== $directory->value.'/'.$instance->name
+        ) {
+            $this->unsafeInstance($instance);
+        }
+
+        return $directory;
     }
 
     private function unsafeInstance(Instance $instance): never
