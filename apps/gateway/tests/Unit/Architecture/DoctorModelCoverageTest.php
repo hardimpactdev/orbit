@@ -69,6 +69,7 @@ use App\Models\TaskSandbox;
 use App\Models\TaskVm;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use App\Models\VaultItem;
 
 it('partitions every persisted model across doctor dispositions', function (): void {
     $familyModels = [
@@ -128,6 +129,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         ProjectUpdate::class,
         ProblemFingerprint::class,
         ProblemCollectorState::class,
+        VaultItem::class,
         DatabaseUser::class,
         DatabaseServer::class,
         Task::class,
