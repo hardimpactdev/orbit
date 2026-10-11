@@ -239,6 +239,45 @@ it('starts a linked workspace from the deployed commit of the default instead of
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout))->toBe($seed->checkout_path.'/.git');
 });
 
+it('starts a task VM workspace from the template checkout next to it, with its ignored files', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
+    $this->files->makeDirectory(dirname($template), 0o755, true);
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
+    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
+    file_put_contents($template.'/.git/info/exclude', "vendor/\n");
+    $this->files->makeDirectory($template.'/vendor');
+    file_put_contents($template.'/vendor/autoload.php', "<?php\n");
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
+    $workspace->update(['source_prepare_id' => (string) Str::uuid()]);
+
+    $this->source->prepare($workspace, false, $template);
+    $resolved = $this->source->resolve($workspace);
+    $this->source->inspectPrepared($workspace);
+
+    expect(is_dir($template))->toBeFalse()
+        ->and(file_get_contents($workspace->checkout_path.'/vendor/autoload.php'))->toBe("<?php\n")
+        ->and($resolved->branch)->toBe('task-7')
+        ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
+});
+
+it('clones when the template is gone, and never takes a template of another repository', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $template = $this->appsRoot.'/acme/.orbit-workspace-template';
+    $gone = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
+    $gone->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($gone, false, $template);
+    expect(is_dir($gone->checkout_path.'/.git'))->toBeTrue();
+
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
+    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', 'ssh://git@example.test/acme/other.git']);
+    $foreign = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-9', 'task-9');
+    $foreign->update(['source_prepare_id' => (string) Str::uuid()]);
+
+    expect(fn () => $this->source->prepare($foreign, false, $template))->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($template))->toBeTrue()->and(file_exists($foreign->checkout_path))->toBeFalse();
+});
+
 it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'owned');
     $instance->update(['source_prepare_id' => (string) Str::uuid(), 'failed_step' => $failureRecord ? 'source-prepare' : null, 'error_code' => $failureRecord ? 'instance.clone_failed' : null]);

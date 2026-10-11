@@ -34,8 +34,13 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -45,6 +50,8 @@ use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -134,9 +141,13 @@ function bind_task_workspace_fakes(): object
 
         public ?Closure $onPrepare = null;
 
-        public function prepare(Instance $instance, bool $allowExisting): void
+        /** @var list<?string> */
+        public array $templates = [];
+
+        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void
         {
             $this->calls[] = 'prepare';
+            $this->templates[] = $template;
             if ($this->onPrepare !== null) {
                 ($this->onPrepare)($instance, $allowExisting);
             }
@@ -893,4 +904,39 @@ describe('task VMs', function (): void {
             ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/'.TaskWorkspaceName::for($group))
             ->and($fakes->development->completes)->toBe(1);
     });
+
+    it('starts the workspace of a vm group from its template and logs each part as a task VM step', function (bool $ready): void {
+        Log::spy();
+        Queue::fake();
+        $project = provisioner_app('dlf');
+        $host = provisioner_node('beast', '10.44.0.7');
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $group = provisioner_group($project);
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
+            new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB'),
+        ], 'http://10.44.0.3:8317', null, null, []));
+        $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => ['user.orbit.ready' => 'true']]] : [];
+        app()->instance(SshExecutor::class, new class($volumes) implements SshExecutor
+        {
+            public function __construct(private readonly array $volumes) {}
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $list = array_slice($command->arguments, 5, 3) === ['storage', 'volume', 'list'];
+
+                return new CommandResult(0, $list ? json_encode($this->volumes) : 'template', '', 1, false);
+            }
+        });
+        $fakes = bind_task_workspace_fakes();
+
+        app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+
+        expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/.orbit-workspace-template' : null]);
+        foreach (['workspace-template', 'workspace-source', 'workspace-route', 'workspace'] as $step) {
+            Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === 'tvm-1' && $context['step'] === $step));
+        }
+    })->with(['a template' => true, 'no template' => false]);
 });
