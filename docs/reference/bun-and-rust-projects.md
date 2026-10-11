@@ -14,7 +14,9 @@ Four of Orbit's nine projects are not Composer projects. This page shows how to 
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
 
-`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app, the Pi server, and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves, and it does not check these projects. `bin/test` runs only the Composer projects. Check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
+`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app, the Pi server, and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
+
+`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these four projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
 
 ## Prerequisites
 
