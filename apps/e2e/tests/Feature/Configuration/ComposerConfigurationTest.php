@@ -487,7 +487,7 @@ describe('Composer configuration', function (): void {
             ->and($shardSteps['Download the Gateway test plan']['with']['name'])->toBe('gateway-plan')
             ->and($shardSteps['Run Gateway shard ${{ matrix.shard }}']['run'])
             ->toContain('test "$(jq -r .commit "$plan")" = "$(git rev-parse HEAD)"')
-            ->toContain(".filters[\$shard - 1]")
+            ->toContain('.filters[$shard - 1]')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact --filter "$filter"');
 
         // Required checks fails when the plan fails, when a shard fails, and when the shards ran or skipped against the plan.
