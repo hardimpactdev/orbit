@@ -22,4 +22,4 @@ The release build loads the web app that the Gateway serves instead of bundling 
 
 ## More
 
-The [desktop app reference](../../docs/reference/desktop-app.md) lists the window settings, the build output, and the current limits. The app has no tests and no CI job yet.
+The [desktop app reference](../../docs/reference/desktop-app.md) lists the window settings, the build output, and the current limits. The app has no tests. CI installs its dependencies and runs `cargo fmt` and `cargo clippy` on the Tauri shell; see [CI](../../docs/reference/implementation-loop.md#ci).
