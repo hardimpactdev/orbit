@@ -101,6 +101,10 @@ final readonly class NativeSshExecutor implements SshExecutor
      * Options that run the command as a channel on the Node's shared connection, or none when
      * the socket directory cannot hold a socket, so the command opens its own connection.
      *
+     * A connection through a jump host shares a connection too. Hosts behind different jump
+     * hosts can have the same private address, so its socket name hashes the jump host with
+     * the target, where `%C` hashes the target alone.
+     *
      * @return list<string>
      */
     private function multiplexing(SshConnection $connection): array
@@ -109,18 +113,22 @@ final readonly class NativeSshExecutor implements SshExecutor
 
         if (
             ! $connection->shareConnection
-            || $connection->proxyJump !== null
             || strlen($directory) > self::MaxSocketDirectoryLength
             || ! $this->socketDirectory($directory)
         ) {
             return [];
         }
 
+        $jump = $connection->proxyJump;
+        $socket = $jump === null
+            ? '%C'
+            : sha1("{$jump->user}@{$jump->host}:{$jump->port}>{$connection->user}@{$connection->host}:{$connection->port}");
+
         return [
             '-o',
             'ControlMaster=auto',
             '-o',
-            "ControlPath={$directory}/%C",
+            "ControlPath={$directory}/{$socket}",
             '-o',
             'ControlPersist='.self::ControlPersist,
         ];
