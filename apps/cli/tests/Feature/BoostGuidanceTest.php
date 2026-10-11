@@ -297,7 +297,7 @@ it('requires guidance bootstrap before repository edits', function (): void {
         ->toContain(
             'git restore --source=HEAD -- AGENTS.md .ai .agents/skills .codex/config.toml boost.json config/boost.php composer.json composer.lock',
         )
-        ->toContain('Run `composer guidance:generate` to refresh Boost-managed output.')
+        ->toContain('Run `composer guidance:update` to refresh Boost-managed output.')
         ->toContain('Run `composer guidance:check` again and stop if it still fails.')
         ->toContain('Do not silently continue without the project rule set.');
 });
@@ -317,7 +317,7 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
 
     expect($composer['require-dev']['laravel/boost'] ?? null)
         ->toBeString()
-        ->and($composer['scripts']['guidance:generate'] ?? null)
+        ->and($composer['scripts']['guidance:update'] ?? null)
         ->toBe('@php orbit boost:update --no-discover --no-interaction')
         ->and($composer['scripts']['guidance:check'] ?? null)
         ->toBe('../../bin/guidance-check')
