@@ -192,7 +192,7 @@ Create saves the row before it installs the unit. When that install fails, the r
 
 When that list shows the replacement `active` and `user` is `orbit-worker`, set `ORBIT_PI_TOKEN` to the token in `/home/orbit-worker/.pi/agent/orbit-token`, then start the new Process. Any other status uses the rollback below, and the Gateway token stays unchanged.
 
-Do not start the scheduler yet. `GET /sessions/{external_id}` for every id checked above returns the session, not `session_not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
+Do not start the scheduler yet. `GET /sessions/{external_id}` for every id checked above returns the session, not `session.not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
 
 After the old Process has been destroyed, start does not bring it back. Stop a running replacement. This list is the authority, not the create response. When `pi-server` is present, in any status, destroy that `id`. That includes `failed` and `provisioning`. A create of the saved name while that record exists returns `process.name_taken` and changes nothing. List again and confirm the name is absent before creating the saved spec.
 
@@ -250,7 +250,7 @@ The `read` and `bash` descriptions tell the model about this limit. They name `.
 
 ## API
 
-Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message"}}`.
+Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {"code", "message", "details"}}`, the same envelope as the Gateway. Each code is namespaced by family, such as `session.not_found`. No error has details yet, so `details` is `null`.
 
 | Route | Result |
 | --- | --- |
@@ -263,13 +263,15 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 
 | Error code | Status | Meaning |
 | --- | --- | --- |
-| `unauthorized` | 401 | Missing or wrong token |
-| `not_found` | 404 | No route matches the method and path |
-| `session_not_found` | 404 | No session has this ID |
-| `invalid_request` | 422 | A field is missing or invalid, or the workspace is outside the allowed roots |
-| `model_unavailable` | 422 | The model is unknown, or its provider is not signed in with an accepted method |
-| `session_exists` | 409 | A session with this ID has different settings |
-| `turn_active` | 409 | The session is already working on a turn |
+| `auth.unauthorized` | 401 | Missing or wrong token |
+| `http.not_found` | 404 | No route matches the method and path |
+| `session.not_found` | 404 | No session has this ID |
+| `request.invalid` | 422 | A field is missing or invalid, or the workspace is outside the allowed roots |
+| `model.unavailable` | 422 | The model is unknown, or its provider is not signed in with an accepted method |
+| `session.exists` | 409 | A session with this ID has different settings |
+| `session.turn_active` | 409 | The session is already working on a turn |
+| `request.too_large` | 413 | The request body is larger than 1 MiB |
+| `server.internal_error` | 500 | The server failed to handle the request |
 
 The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
 
