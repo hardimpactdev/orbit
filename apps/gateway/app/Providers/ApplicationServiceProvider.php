@@ -181,6 +181,7 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
+use App\Domain\Vault\VaultClient;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
@@ -386,6 +387,7 @@ use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
+use App\Infrastructure\Vault\HttpVaultClient;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
@@ -553,6 +555,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
         ProxyCliAccountControlClient::class => HttpProxyCliAccountControlClient::class,
+        VaultClient::class => HttpVaultClient::class,
     ];
 
     public function register(): void

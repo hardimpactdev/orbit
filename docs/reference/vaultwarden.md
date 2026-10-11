@@ -1,0 +1,135 @@
+---
+title: "Vaultwarden"
+description: "How the Gateway publishes database credentials into a Vaultwarden collection as Database items, keeps them current, and deletes them when their source is gone."
+covers:
+  - apps/gateway/app/{Actions,Data,Domain,Infrastructure,Http/Requests}/Vault/**
+  - apps/gateway/app/Http/Controllers/Api/VaultController.php
+  - apps/gateway/app/Console/Commands/VaultSyncCommand.php
+  - apps/gateway/app/Models/VaultItem.php
+---
+
+# Vaultwarden
+
+The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes one **Database item**. The Vault app and Conn read those items, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes the items. [`vault`](/cli/vault) lists the commands.
+
+## Set up
+
+Do these steps in Vaultwarden first:
+
+1. Create an account for the Gateway. Keep the default KDF, PBKDF2-SHA256. The Gateway refuses an account that uses Argon2id.
+2. Create an organization, for example `Orbit`, and a collection in it, for example `Databases`.
+3. Invite the Gateway account to the organization and give it **Can manage** on the collection. Confirm the membership.
+4. Sign in as the Gateway account and copy its personal API key: `client_id` and `client_secret`.
+
+Then run [`vault:setup`](/cli/vault#orbit-vaultsetup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway logs in, unlocks the account, and checks that it can write to the collection. Only then does it store the values, encrypted. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
+
+No response returns the API key or the master password.
+
+## Items
+
+The Gateway publishes one item for each of these:
+
+| Source | Item name | Credentials |
+| --- | --- | --- |
+| A `mysql` or `pgsql` [Database connection](/reference/database-connections) with a host, port, database, username, and password | The connection slug | The connection's own |
+| A [Database user](/reference/database-servers#add-a-user) whose password Orbit stores | `<slug> (<username>)` | The user's, with the connection's host, port, and database |
+
+Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault#orbit-vaultstatus).
+
+Each item is a Secure Note in the configured collection. Its custom fields follow schema version 1 of Vault's Database item:
+
+| Field | Value |
+| --- | --- |
+| `vault.schema` | `1` |
+| `type` | `database` |
+| `driver` | `mysql`, or `postgresql` for a `pgsql` connection |
+| `host`, `port`, `database`, `username` | From the source |
+| `password` | From the source, as a hidden field |
+| `tls` | `disabled` |
+| `orbit.source` | `database-connection:<id>` or `database-user:<id>` |
+
+The note says that Orbit manages the item. Orbit overwrites changes made in Vaultwarden.
+
+### Database user passwords
+
+[`database:user:create`](/cli/database#orbit-databaseusercreate) stores the user's password encrypted on the Database user record. No response returns it. A user created before Orbit stored passwords has no item until `database:user:create` sets the password again.
+
+## Sync
+
+The scheduler runs `orbit:vault-sync` every minute while Vaultwarden is set up. The command builds the wanted items from the database records and compares them with the published items it recorded:
+
+| Wanted item | Published item | Action |
+| --- | --- | --- |
+| Present | None | Create it in the collection. |
+| Present, content changed | Present | Rewrite it. |
+| Present, content unchanged | Present | Nothing. |
+| None | Present | Delete it permanently. |
+
+A run that finds nothing to do does not contact Vaultwarden. Once an hour, a run also reads the collection. It recreates a published item that is gone and rewrites one that someone changed in Vaultwarden.
+
+One failed item does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy.
+
+[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check, and returns the status. Only one run happens at a time.
+
+## Status
+
+`vault:status` returns:
+
+| Field | Meaning |
+| --- | --- |
+| `configured` | Whether Vaultwarden is set up. The other fields are null or empty when it is not. |
+| `url` | The Vaultwarden origin. |
+| `email` | The Gateway account's email. |
+| `organization`, `collection` | Each an object with `id` and `name`. |
+| `items` | The number of published items. |
+| `pending` | The number of wanted items that are not published or not current. |
+| `skipped` | Each source that gets no item: `source`, `slug`, `username`, and `reason` (`incomplete` or `password_unknown`). |
+| `last_synced_at` | When a run last finished without an error, or null. |
+| `last_error` | The `code` and `message` of the last failed run or item, or null. |
+
+## Tear down
+
+[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes every item Orbit published, then deletes the stored values and the record of published items. With `--keep-items`, it leaves the items in Vaultwarden. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+
+## API
+
+All operations need access to the Gateway.
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/api/v1/vault` | Show the status. |
+| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns the status. |
+| `POST` | `/api/v1/vault/sync` | Run a sync now. Returns the status. |
+| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns the status. |
+
+| Error | Status | When |
+| --- | --- | --- |
+| `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
+| `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
+| `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
+| `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |
+| `vault.kdf_unsupported` | 422 | The account uses Argon2id. |
+| `vault.organization_missing` | 422 | The account is not a confirmed member of the organization. |
+| `vault.collection_missing` | 422 | The organization has no such collection that the account can reach. |
+| `vault.collection_read_only` | 422 | The account cannot write to the collection. |
+| `vault.unreachable` | 502 | Vaultwarden did not answer, or answered with an error. |
+
+## Why it works this way
+
+The Gateway already holds every database password, and the API never returns one. Vaultwarden gives people a reader they already trust, with sharing and history, without a new way to read passwords from Orbit.
+
+### Orbit keeps its own copy
+
+Orbit stays the source of truth. If the secrets lived only in Vaultwarden, the Gateway would still need the organization key to use them, so they would not be hidden from it. Deploys and recovery would also depend on Vaultwarden, which runs on an Orbit Node.
+
+### The scheduler runs the sync
+
+The sync runs from the scheduler instead of inside each database write. When Vaultwarden is down, database operations still succeed, and the Gateway needs no general job queue.
+
+### The Gateway encrypts items itself
+
+The Gateway writes the standard Bitwarden format itself instead of driving the Bitwarden CLI. That avoids Node.js on the Gateway and an unlocked session that outlives a run.
+
+### Removed credentials are deleted
+
+When a credential is removed, its item is deleted permanently instead of moved to the trash, so a removed password does not stay readable.

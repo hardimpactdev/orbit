@@ -72,6 +72,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
+        $schedule->command('orbit:vault-sync')->everyMinute()->withoutOverlapping(15);
         // The nightly task VM base image refresh, a job on the task VM queue below.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
             ->when(static fn (): bool => config('task_vms.enabled') === true);

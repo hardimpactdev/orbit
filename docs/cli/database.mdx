@@ -196,7 +196,7 @@ orbit database:user:create <slug> --username=USER --password=SECRET [--read-only
 orbit database:user:create dlf-leden --username=reporting --password=secret --read-only
 ```
 
-A connection without a server returns `database.server_required`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password and privileges.
+A connection without a server returns `database.server_required`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password and privileges. The Gateway stores the password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
 ## orbit database:user:list
 

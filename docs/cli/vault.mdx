@@ -1,0 +1,98 @@
+---
+title: "vault"
+description: "Set up, check, run, and tear down the copy of database credentials into a Vaultwarden collection."
+covers:
+  - apps/cli/app/Commands/Vault/**
+  - packages/php-sdk/src/{Requests,Responses}/Vault/**
+---
+
+The Gateway publishes its MySQL and PostgreSQL credentials into one Vaultwarden collection and keeps them current. See [Vaultwarden](/reference/vaultwarden).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`vault:setup`](#orbit-vaultsetup) | Store the Vaultwarden account, organization, and collection. |
+| [`vault:status`](#orbit-vaultstatus) | Show the setup and the state of the published items. |
+| [`vault:sync`](#orbit-vaultsync) | Publish changes now and repair changed or missing items. |
+| [`vault:teardown`](#orbit-vaultteardown) | Delete the published items and the stored account. |
+
+Every command accepts `--json`.
+
+## orbit vault:setup
+
+Check and store the Gateway's Vaultwarden account, organization, and collection.
+
+```bash
+orbit vault:setup --url=<origin> --client-id=<id> --client-secret-file=<path> --master-password-file=<path> --organization=<name-or-id> --collection=<name-or-id> [--json]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--url` | yes | Vaultwarden origin, for example `https://vault.orbit`. Must use HTTPS. |
+| `--client-id` | yes | The `client_id` of the Gateway account's personal API key, such as `user.<uuid>`. |
+| `--client-secret-file` | yes | File that contains only the API key's `client_secret`. |
+| `--master-password-file` | yes | File that contains only the account's master password. |
+| `--organization` | yes | Organization name or ID. |
+| `--collection` | yes | Collection name or ID in that organization. |
+
+The CLI never accepts the client secret or the master password as an argument. Setup can run again with a new API key or master password. Another organization or collection needs [`vault:teardown`](#orbit-vaultteardown) first. The output is the [status](#orbit-vaultstatus).
+
+```bash
+orbit vault:setup --url=https://vault.orbit --client-id=user.3f0c… \
+  --client-secret-file=./client-secret --master-password-file=./master-password \
+  --organization=Orbit --collection=Databases
+```
+
+## orbit vault:status
+
+Show the setup and the state of the published items.
+
+```bash
+orbit vault:status [--json]
+```
+
+The output shows `configured`, `url`, `email`, `organization`, `collection`, `items`, `pending`, `skipped`, `last_synced_at`, and `last_error`. See [Status](/reference/vaultwarden#status).
+
+## orbit vault:sync
+
+Publish changes now. The run also recreates published items that are gone from Vaultwarden and rewrites ones that someone changed there.
+
+```bash
+orbit vault:sync [--json]
+```
+
+The output is the [status](#orbit-vaultstatus). The scheduler runs the same reconcile every minute, so this command is needed only to see the result at once.
+
+## orbit vault:teardown
+
+Permanently delete every item Orbit published, then delete the stored account, organization, and collection.
+
+```bash
+orbit vault:teardown [--keep-items] [--yes] [--json]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--keep-items` | no | Leave the published items in Vaultwarden. |
+| `--yes` | in noninteractive and JSON modes | Confirm the teardown without a prompt. |
+
+In a terminal the command asks a default-No question. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `input.confirmation_required` | `vault:teardown` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `vault:teardown` question. |
+| `input.invalid` | `vault:setup` has no `--client-id`, `--organization`, or `--collection`. |
+| `vault.secret_required` | `vault:setup` has no `--client-secret-file` or `--master-password-file`. |
+| `vault.secret_invalid` | A secret file is unreadable or empty. |
+| `vault.url_invalid` | `--url` is not an HTTPS origin. |
+
+[Vaultwarden errors](/reference/vaultwarden#api) lists the Gateway errors.
+
+## Related
+
+- [Vaultwarden](/reference/vaultwarden)
+- [`database`](/cli/database)

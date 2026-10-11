@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 210 concrete public Gateway API operations:
+The SDK models exactly 214 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -24,6 +24,7 @@ The SDK models exactly 210 concrete public Gateway API operations:
 - GitHub App: install, show, and destroy.
 - Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
+- Vault: status, setup, sync, and teardown.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list and close, agent thread list, and task definition list, show, create, update, and destroy.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -109,6 +110,11 @@ operations. Keep the public API typed and small.
   identity plus disabled flag on update. Status, disable, provider list, and model list are
   bodyless. Item and collection responses omit tokens and the management key.
   The Gateway owns Valkey placement, collection, publication, and pooling.
+- Keep Vault transport limited to the Vaultwarden URL, client ID, client
+  secret, master password, organization, and collection on setup, and the
+  `keep_items` flag on teardown. Status and sync are bodyless. Responses omit
+  the client secret and the master password. The Gateway owns login,
+  encryption, reconciliation, and item deletion.
 - Keep Tasks transport limited to numeric task group and subtask IDs, the
   optional Project ID and status list filters, the question list filters
   (Project ID, cause, status, and since), the group title, brief, status,

@@ -21,6 +21,8 @@ While task VMs are enabled, the Gateway queues the [task VM base image refresh](
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 
+The Gateway runs `orbit:vault-sync` every minute without overlap. It does nothing until [Vaultwarden](/reference/vaultwarden#sync) is set up, and it contacts Vaultwarden only when a credential changed or the hourly check is due.
+
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
 ## Fields
