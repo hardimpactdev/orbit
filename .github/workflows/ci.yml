@@ -30,7 +30,7 @@ jobs:
     # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true. Its subprocess group
     # runs on a GitHub-hosted runner, so each Gateway run takes one Sabre runner.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre. A pull request
-    # with a large Gateway selection also runs two Gateway shards, each on its own runner.
+    # with a large Gateway selection also runs three Gateway shards, each on its own orbit-shard runner.
     runs-on: ${{ matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
@@ -253,12 +253,12 @@ jobs:
           exit 1
 
       - name: Run affected tests
-        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '3'
+        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '4'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
-      - name: Run Gateway shard 1 of 3
-        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '3'
+      - name: Run Gateway shard 1 of 4
+        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '4'
         env:
           FILTER: ${{ steps.gateway-plan.outputs.filter }}
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
@@ -382,7 +382,7 @@ jobs:
           retention-days: 14
 
   # A pull request lists its Gateway test selection here. When it has more than 200 test classes, the Gateway job
-  # runs the first of three shards and the Gateway shards job runs the other two, each on its own runner. Runs on main
+  # runs the first of four shards and the Gateway shards job runs the other three, each on its own runner. Runs on main
   # keep one Gateway job, because the full run there writes the whole Pest TIA graph.
   gateway-plan:
     name: Gateway plan
@@ -394,6 +394,7 @@ jobs:
       shards: ${{ steps.plan.outputs.shards }}
       filter-2: ${{ steps.plan.outputs.filter-2 }}
       filter-3: ${{ steps.plan.outputs.filter-3 }}
+      filter-4: ${{ steps.plan.outputs.filter-4 }}
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
     defaults:
@@ -454,13 +455,14 @@ jobs:
   gateway-shards:
     name: Gateway shards
     needs: gateway-plan
-    if: needs.gateway-plan.outputs.shards == '3'
-    # The same runners as the Gateway job: Sabre for this repository's pull requests, a hosted runner for forks.
-    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    if: needs.gateway-plan.outputs.shards == '4'
+    # The orbit-shard runners on Beast and Shark serve this repository's pull requests under the same condition as the
+    # Gateway job on Sabre. A fork's pull request uses a hosted runner.
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [2, 3]
+        shard: [2, 3, 4]
     defaults:
       run:
         working-directory: apps/gateway
@@ -487,6 +489,15 @@ jobs:
         with:
           node-version: '24'
 
+      # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. Beast and Shark
+      # serve Instances with their own PHP CLI, so the job sets it only for its own processes and Pest's workers.
+      - name: Keep exception arguments in traces
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p "$RUNNER_TEMP/php"
+          echo 'zend.exception_ignore_args=0' > "$RUNNER_TEMP/php/99-orbit-ci.ini"
+          echo "PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php" >> "$GITHUB_ENV"
+
       - name: Set up Homebrew
         if: runner.environment == 'github-hosted'
         uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
@@ -510,10 +521,11 @@ jobs:
           composer install --no-interaction --prefer-dist
 
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
-      - name: Run Gateway shard ${{ matrix.shard }} of 3
+      # Each orbit-shard runner shares its host, so a shard runs at most 4 Pest processes, as on a hosted runner.
+      - name: Run Gateway shard ${{ matrix.shard }} of 4
         env:
-          FILTER: ${{ matrix.shard == 2 && needs.gateway-plan.outputs.filter-2 || needs.gateway-plan.outputs.filter-3 }}
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
+          FILTER: ${{ needs.gateway-plan.outputs[format('filter-{0}', matrix.shard)] }}
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --compact --filter "$FILTER"
 
   privileged:
     name: Gateway privileged
@@ -862,7 +874,7 @@ jobs:
             if [ "$EVENT" = pull_request ]; then
               test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && {
                 # The shards run exactly when the plan chose them.
-                if [ "$GATEWAY_SHARDS" = 3 ]; then
+                if [ "$GATEWAY_SHARDS" = 4 ]; then
                   test "$GATEWAY_SHARDS_RESULT" = success
                 else
                   test "$GATEWAY_SHARDS" = 1 && test "$GATEWAY_SHARDS_RESULT" = skipped

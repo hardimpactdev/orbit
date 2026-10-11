@@ -217,7 +217,7 @@ describe('Composer configuration', function (): void {
         // A pull request whose Gateway plan chose shards runs the Gateway job's shard instead of the TIA selection.
         expect($steps['Run affected tests'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '3'",
+                'if' => "matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '4'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact',
             ]);
         // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
@@ -457,30 +457,37 @@ describe('Composer configuration', function (): void {
             ->toBe("matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && github.event_name == 'pull_request'")
             ->and($projectSteps['Read the Gateway test plan']['run'])
             ->toContain('select(.name == "Gateway plan")', 'gateway-plan-$attempt', 'git rev-parse HEAD');
-        expect($projectSteps['Run Gateway shard 1 of 3'])
+        expect($projectSteps['Run Gateway shard 1 of 4'])
             ->toMatchArray([
-                'if' => "matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '3'",
+                'if' => "matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '4'",
                 'env' => ['FILTER' => '${{ steps.gateway-plan.outputs.filter }}'],
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact --filter "$FILTER"',
             ]);
         $order = array_flip(array_keys($projectSteps));
         expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Read the Gateway test plan'])
             ->and($order['Read the Gateway test plan'])->toBeLessThan($order['Run affected tests'])
-            ->and($order['Run Gateway shard 1 of 3'])->toBeLessThan($order['Run architecture tests']);
+            ->and($order['Run Gateway shard 1 of 4'])->toBeLessThan($order['Run architecture tests']);
 
-        // The other two shards run only when the plan chose shards, on the commit it planned.
+        // The other three shards run only when the plan chose shards, on the commit it planned, on the orbit-shard
+        // runners under the Gateway job's own condition, with at most 4 Pest processes.
         expect($jobs['gateway-shards'])
             ->toMatchArray([
                 'needs' => 'gateway-plan',
-                'if' => "needs.gateway-plan.outputs.shards == '3'",
-                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => [2, 3]]],
+                'if' => "needs.gateway-plan.outputs.shards == '4'",
+                'strategy' => ['fail-fast' => false, 'matrix' => ['shard' => [2, 3, 4]]],
             ])
             ->and($jobs['gateway-shards']['runs-on'])
-            ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
-            ->toContain('github.event.pull_request.head.repo.full_name == github.repository')
+            ->toBe("${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('[\"self-hosted\", \"orbit-shard\"]') || 'ubuntu-26.04' }}")
+            ->and($jobs['gateway-plan']['outputs'])->toHaveKeys(['filter-2', 'filter-3', 'filter-4'])
             ->and($shardSteps['Check out repository']['with']['ref'])->toBe('${{ needs.gateway-plan.outputs.commit }}')
-            ->and($shardSteps['Run Gateway shard ${{ matrix.shard }} of 3']['run'])
-            ->toBe('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --compact --filter "$FILTER"');
+            ->and($shardSteps['Keep exception arguments in traces']['if'])->toBe("runner.environment == 'self-hosted'")
+            ->and($shardSteps['Keep exception arguments in traces']['run'])
+            ->toContain('zend.exception_ignore_args=0', 'PHP_INI_SCAN_DIR=:$RUNNER_TEMP/php')
+            ->and($shardSteps['Run Gateway shard ${{ matrix.shard }} of 4'])
+            ->toMatchArray([
+                'env' => ['FILTER' => "${{ needs.gateway-plan.outputs[format('filter-{0}', matrix.shard)] }}"],
+                'run' => 'vendor/bin/pest --parallel --processes=4 --no-tia --compact --filter "$FILTER"',
+            ]);
 
         // Required checks fails when the plan fails, when a shard fails, and when the shards ran or skipped against the plan.
         expect($jobs['required']['needs'])->toContain('gateway-plan', 'gateway-shards')
@@ -504,14 +511,14 @@ describe('Composer configuration', function (): void {
         ];
 
         expect($verdict($plan('success', '1', 'skipped')))->toBeTrue()
-            ->and($verdict($plan('success', '3', 'success')))->toBeTrue()
-            ->and($verdict($plan('success', '3', 'failure')))->toBeFalse()
-            ->and($verdict($plan('success', '3', 'skipped')))->toBeFalse()
+            ->and($verdict($plan('success', '4', 'success')))->toBeTrue()
+            ->and($verdict($plan('success', '4', 'failure')))->toBeFalse()
+            ->and($verdict($plan('success', '4', 'skipped')))->toBeFalse()
             ->and($verdict($plan('success', '1', 'success')))->toBeFalse()
             ->and($verdict($plan('success', '', 'skipped')))->toBeFalse()
             ->and($verdict($plan('failure', '', 'skipped')))->toBeFalse()
             ->and($verdict(['EVENT' => 'push', 'DOCS_MERGE_REF_RESULT' => 'skipped'] + $plan('skipped', '', 'skipped')))->toBeTrue()
-            ->and($verdict(['EVENT' => 'push', 'DOCS_MERGE_REF_RESULT' => 'skipped'] + $plan('success', '3', 'success')))->toBeFalse();
+            ->and($verdict(['EVENT' => 'push', 'DOCS_MERGE_REF_RESULT' => 'skipped'] + $plan('success', '4', 'success')))->toBeFalse();
     });
 
     it('runs the Gateway and E2E subprocess groups in their own jobs beside the rest of the suite', function (): void {
