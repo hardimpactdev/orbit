@@ -1193,7 +1193,7 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
-        for name in ('project-vocabulary', 'env-docs'):
+        for name in ('project-vocabulary', 'env-docs', 'docs-nav'):
             check = self.root / 'bin' / name
             check.write_text('#!/bin/sh\nexit 0\n')
             check.chmod(0o755)
@@ -1261,7 +1261,8 @@ fi
         self.assertEqual(self.commit, report['base'])
         expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
                     ('repository', ['bin/project-vocabulary']),
-                    ('repository', ['bin/env-docs'])]
+                    ('repository', ['bin/env-docs']),
+                    ('repository', ['bin/docs-nav'])]
         for project in cache.PROJECTS:
             expected.extend((project, command) for command in [
                 ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
