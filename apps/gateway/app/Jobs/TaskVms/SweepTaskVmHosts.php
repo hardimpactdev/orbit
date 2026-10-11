@@ -16,12 +16,14 @@ use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Every 10 minutes: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, and fails the
- * `ready` or `parked` rows whose VM is gone, so their groups ask for assistance. It reads and changes only the
+ * `ready` or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. The
+ * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
  * host's configured project. The worker runs one job at a time, so no task VM job creates or deletes a VM while
  * the sweep runs. A failed host is logged, and the other hosts still run.
  */
@@ -56,8 +58,18 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                     $audit->deleteOrphan($host, $node, $name);
                     Log::warning('Deleted an orphaned task VM.', ['node_id' => $node->id, 'name' => $name]);
                 }
+                $missing = array_map(static fn (TaskVm $vm): int => $vm->id, $found['missing']);
+                foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotIn('id', $missing)->pluck('id') as $id) {
+                    Cache::forget(self::missingKey($id));
+                }
                 foreach ($found['missing'] as $vm) {
-                    $this->fail($vm);
+                    if (Cache::has(self::missingKey($vm->id))) {
+                        $this->fail($vm);
+                        Cache::forget(self::missingKey($vm->id));
+                    } else {
+                        Cache::put(self::missingKey($vm->id), now()->getTimestamp(), 3600);
+                        Log::warning('A task VM was not found on its host; the next sweep fails it if it is still gone.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
+                    }
                 }
             } catch (Throwable $exception) {
                 Log::error('The task VM host sweep failed.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
@@ -68,6 +80,11 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         if ($failures !== []) {
             throw new TaskVmException('task_vm.host_command_failed', 'The task VM host sweep failed on '.implode(', ', $failures).'.', 502);
         }
+    }
+
+    private static function missingKey(int $taskVmId): string
+    {
+        return 'task-vms:sweep-missing:'.$taskVmId;
     }
 
     /** Only a row that is still `ready` or `parked` fails, so a destroy that started meanwhile wins. */

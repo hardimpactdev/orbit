@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\NodeDoctorProbe;
+use App\Actions\Doctor\RunDoctorAction;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -28,6 +31,8 @@ use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 
+use function Pest\Laravel\mock;
+
 /** Answers `incus list` with the scripted instances and deletes from them, per host address. */
 final class TaskVmSweepIncus implements SshExecutor
 {
@@ -39,14 +44,22 @@ final class TaskVmSweepIncus implements SshExecutor
 
     public bool $failList = false;
 
+    public bool $projectMissing = false;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments];
         $arguments = array_slice($command->arguments, 5);
-        if ($arguments === ['list', '--format', 'json']) {
-            return $this->failList
-                ? new CommandResult(1, '', 'Error: not found', 1, false)
-                : new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'type' => 'virtual-machine', 'status' => 'Stopped'], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
+        if ($arguments === ['project', 'show', '--', 'orbit-tasks']) {
+            // Incus answers `list` for a missing project with an empty list, so only this call tells.
+            return $this->projectMissing ? new CommandResult(1, '', 'Error: Project not found', 1, false) : new CommandResult(0, "name: orbit-tasks\n", '', 1, false);
+        }
+        if ($arguments === ['list', '--format', 'csv', '--columns', 'n']) {
+            if ($this->failList) {
+                return new CommandResult(1, '', 'Error: not found', 1, false);
+            }
+
+            return new CommandResult(0, $this->projectMissing ? '' : implode("\n", $this->instances[$connection->host] ?? []).($this->instances[$connection->host] ?? [] ? "\n" : ''), '', 1, false);
         }
         if (($arguments[0] ?? null) === 'delete') {
             $name = end($arguments);
@@ -135,12 +148,16 @@ describe(SweepTaskVmHosts::class, function (): void {
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('fails a ready or parked row whose VM is gone and asks its group for assistance', function (): void {
+    it('fails a ready or parked row whose VM is gone on two sweeps in a row and asks its group for assistance', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
         $parked = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.130');
         $provisioning = tvm_sweep_vm($this->beast, TaskVmState::Provisioning, '10.44.0.131');
         $destroying = tvm_sweep_vm($this->beast, TaskVmState::Destroying, '10.44.0.132');
         $this->incus->instances = ['10.44.0.7' => [$parked->name]];
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+        expect($ready->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and($ready->group->fresh()?->assistance_requested)->toBeFalse();
 
         app()->call([new SweepTaskVmHosts, 'handle']);
 
@@ -150,6 +167,33 @@ describe(SweepTaskVmHosts::class, function (): void {
             ->and($parked->fresh()?->state)->toBe(TaskVmState::Parked)
             ->and($provisioning->fresh()?->state)->toBe(TaskVmState::Provisioning)
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying);
+    });
+
+    it('forgets a miss when the next sweep finds the VM again', function (): void {
+        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+        $this->incus->instances = ['10.44.0.7' => [$ready->name]];
+        app()->call([new SweepTaskVmHosts, 'handle']);
+        $this->incus->instances = [];
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        expect($ready->fresh()?->state)->toBe(TaskVmState::Ready);
+    });
+
+    it('fails closed and changes nothing when the host project does not exist', function (): void {
+        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
+        $parked = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.130');
+        $this->incus->projectMissing = true;
+
+        foreach ([1, 2, 3] as $sweep) {
+            expect(fn () => app()->call([new SweepTaskVmHosts, 'handle']))
+                ->toThrow(TaskVmException::class, 'Node [beast]: task_vm.host_command_failed');
+        }
+
+        expect($ready->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and($parked->fresh()?->state)->toBe(TaskVmState::Parked)
+            ->and(collect($this->incus->calls)->contains(static fn (array $call): bool => in_array('delete', $call[1], true)))->toBeFalse();
     });
 
     it('sweeps the other hosts when one fails, then fails', function (): void {
@@ -202,6 +246,31 @@ describe('Doctor', function (): void {
         expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent']])
             ->and($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999', 'tvm-image-20261010030000'])
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
+    });
+
+    it('reports a missing host project as unverifiable, not every VM as missing', function (): void {
+        tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
+        $this->incus->projectMissing = true;
+
+        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_inspection_failed', 'task_vm.host_command_failed']]);
+    });
+
+    it('does not inspect the Node of a parked task VM and reports it as informational only', function (): void {
+        $vm = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.129');
+        $node = tvm_sweep_node('tvm-node', '10.44.0.129');
+        $vm->update(['node_id' => $node->id]);
+        mock(NodeStateInspector::class)->shouldReceive('inspect')->never();
+
+        $report = app(RunDoctorAction::class)->executeForNode($node);
+        $issues = collect($report->nodes[0]->families)->flatMap(static fn ($family): array => $family->issues);
+
+        expect($issues->map(static fn ($issue): array => [$issue->code, $issue->kind])->all())
+            ->toBe([['node.task_vm_parked', DoctorIssueKind::Informational]]);
+
+        $vm->update(['state' => TaskVmState::Ready]);
+        mock(NodeStateInspector::class)->shouldReceive('inspect')->once()->andReturn(new NodeInspectionData(false, null, null, null));
+        $codes = collect(app(RunDoctorAction::class)->executeForNode($node)->nodes[0]->families)->flatMap(static fn ($family): array => $family->issues)->pluck('code');
+        expect($codes)->toContain('node.ssh_unreachable');
     });
 
     it('reports an unlisted host as unverifiable', function (): void {
