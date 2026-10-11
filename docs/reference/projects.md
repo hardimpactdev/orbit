@@ -147,6 +147,8 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
+A slug change does not move a development checkout. Orbit creates it at `APPS_ROOT/SLUG/NAME` and stores that path. Deployment, source resolution, removal, and Doctor read the checkout's directory from the stored path, not from the current slug. So a checkout created under the old slug keeps working after the change.
+
 ### Change source access
 
 The Gateway first resolves the remote default branch with the new `source_access` value. When that read fails, nothing changes. A `default_branch` or `repository_url` sent in the same request is checked with the new value.
