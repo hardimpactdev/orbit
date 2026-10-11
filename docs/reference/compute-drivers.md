@@ -102,7 +102,9 @@ Each `tasks:tick` parks the `ready` task VM of a group when all of these are tru
 - The group has no `todo`, `reserved`, `running`, or `reviewing` subtask, and it is not `preview`.
 - The group's reason does not start with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. Those removals retry on the tick and need the VM.
 - The group and all of its subtasks settled more than `task_vms.park_after_minutes` minutes ago. The default is 30 minutes.
-- The VM has been `ready` for at least as long. So a VM that Orbit started again, for example for a removal retry, runs that long before it can park again.
+- The VM has been `ready` for at least as long.
+
+The last rule keeps a VM that Orbit started again, for example for a removal retry, running that long before it can park again.
 
 The tick sets the row to `parked` and queues `ParkTaskVm`, which stops the VM with `incus stop`. A `parked` VM still takes its slot on the host, so a resume never needs a free slot.
 
@@ -121,7 +123,9 @@ When the VM does not answer within 9 minutes, the row becomes `failed` with `tas
 Every 10 minutes, while task VMs are enabled, the Gateway scheduler queues the job `SweepTaskVmHosts`. For each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
-- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone. The first sweep that misses it only remembers that for an hour. When the next sweep misses it too, the job sets the row to `failed` with `task_vm.vm_missing`, and the group asks for assistance with the reason `Task VM failed:`. A sweep that finds the VM forgets the first miss.
+- A **missing VM** is a `ready` or `parked` task VM row on that host whose instance is gone.
+
+The job fails a missing VM only when two sweeps in a row miss it. The first miss is kept for an hour, and a sweep that finds the VM forgets it. On the second miss, the job sets the row to `failed` with `task_vm.vm_missing`. The group asks for assistance with the reason `Task VM failed:`.
 
 Cancel or complete the group of a missing VM to destroy its Node, as for [a VM that dies before its group ends](#a-vm-that-dies-before-its-group-ends).
 
