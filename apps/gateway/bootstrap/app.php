@@ -80,8 +80,9 @@ return Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => config('task_vms.enabled') === true);
         // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
+        // Every second, so a claim outside the task tick waits at most a second for its VM to start.
         $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500')
-            ->everyFiveSeconds()->withoutOverlapping(30)
+            ->everySecond()->withoutOverlapping(30)
             ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->exists());
     })
     ->withCommands()
