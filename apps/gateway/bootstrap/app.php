@@ -108,15 +108,21 @@ return Application::configure(basePath: dirname(__DIR__))
                 return GatewayExceptionStatus::for($exception, request()->is('api/*')) >= 500;
             });
 
-            $exceptions->render(function (InstanceRemovalException $exception, Request $request): JsonResponse {
-                $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $removal = InstanceRemovalData::fromModel($exception->removal)->toArray();
-                $request->attributes->set('orbit.instance_removal', $removal);
+            /** The request ID that EnsureRequestId assigned, or the one the client sent when the middleware did not run. */
+            $requestIdFor = static function (Request $request): string {
                 $requestId = $request->attributes->get('orbit.request_id');
 
                 if (! is_string($requestId) || $requestId === '') {
                     $requestId = $request->header('X-Orbit-Request-Id', '');
                 }
+
+                return is_string($requestId) ? $requestId : '';
+            };
+
+            $exceptions->render(function (InstanceRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {
+                $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $removal = InstanceRemovalData::fromModel($exception->removal)->toArray();
+                $request->attributes->set('orbit.instance_removal', $removal);
 
                 return response()
                     ->json([
@@ -126,16 +132,10 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['removal' => $removal],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
 
-            $notFound = static function (Request $request): JsonResponse {
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
-
+            $notFound = static function (Request $request) use ($requestIdFor): JsonResponse {
                 return response()
                     ->json([
                         'error' => [
@@ -144,16 +144,10 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => [],
                         ],
                     ], 404)
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             };
 
-            $exceptions->render(function (ValidationException $exception, Request $request): JsonResponse {
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
-
+            $exceptions->render(function (ValidationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 return response()
                     ->json([
                         'error' => [
@@ -162,15 +156,10 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => $exception->errors(),
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (NodeRoleValidationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (NodeRoleValidationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', 'validation.failed');
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -180,17 +169,12 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => $exception->details,
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (NodeRoleOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (NodeRoleOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.error_message', $exception->getMessage());
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -200,16 +184,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (NodeProvisioningException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (NodeProvisioningException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -219,16 +198,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception), ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (NodeRemovalException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (NodeRemovalException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -238,16 +212,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step, ...NodeRoleOperationException::detailsIn($exception)],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (RuntimeConvergenceException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (RuntimeConvergenceException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -257,16 +226,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step, ...NodeCaddyBuildException::detailsIn($exception)],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (ProcessOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (ProcessOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -276,15 +240,10 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (ScheduleOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (ScheduleOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 $status = GatewayExceptionStatus::for($exception);
 
@@ -296,16 +255,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step],
                         ],
                     ], $status)
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (FirewallOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (FirewallOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.command_result', $exception->result);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -315,16 +269,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => ['step' => $exception->step],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (ToolOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (ToolOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.tool_exception', $exception);
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 $details = [
                     'step' => $exception->step,
@@ -347,16 +296,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => $details,
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (TaskDefinitionInvalid $exception, Request $request): JsonResponse {
+            $exceptions->render(function (TaskDefinitionInvalid $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', TaskDefinitionInvalid::CODE);
                 $request->attributes->set('orbit.error_message', $exception->getMessage());
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -371,16 +315,11 @@ return Application::configure(basePath: dirname(__DIR__))
                             ],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (ResourceOperationException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (ResourceOperationException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
                 $request->attributes->set('orbit.error_message', $exception->getMessage());
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -390,15 +329,9 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => [...NodeCaddyBuildException::detailsIn($exception), ...$exception->details],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
-            $exceptions->render(function (RoleAssignmentException $exception, Request $request): JsonResponse {
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
-
+            $exceptions->render(function (RoleAssignmentException $exception, Request $request) use ($requestIdFor): JsonResponse {
                 return response()
                     ->json([
                         'error' => [
@@ -407,7 +340,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => [],
                         ],
                     ], GatewayExceptionStatus::for($exception))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
             $exceptions->render(
                 fn (ModelNotFoundException $exception, Request $request): JsonResponse => $notFound($request),
@@ -415,17 +348,12 @@ return Application::configure(basePath: dirname(__DIR__))
             $exceptions->render(
                 fn (NotFoundHttpException $exception, Request $request): JsonResponse => $notFound($request),
             );
-            $exceptions->render(function (Throwable $exception, Request $request): ?JsonResponse {
+            $exceptions->render(function (Throwable $exception, Request $request) use ($requestIdFor): ?JsonResponse {
                 if (! $request->is('api/*')) {
                     return null;
                 }
 
                 $request->attributes->set('orbit.error_code', 'gateway.unhandled');
-                $requestId = $request->attributes->get('orbit.request_id');
-
-                if (! is_string($requestId) || $requestId === '') {
-                    $requestId = $request->header('X-Orbit-Request-Id', '');
-                }
 
                 return response()
                     ->json([
@@ -435,7 +363,7 @@ return Application::configure(basePath: dirname(__DIR__))
                             'details' => [],
                         ],
                     ], GatewayExceptionStatus::for($exception, $request->is('api/*')))
-                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+                    ->header('X-Orbit-Request-Id', $requestIdFor($request));
             });
             $exceptions->shouldRenderJsonWhen(
                 fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
