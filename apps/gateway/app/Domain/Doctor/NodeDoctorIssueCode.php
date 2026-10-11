@@ -23,6 +23,7 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case TaskVmOrphaned = 'node.task_vm_orphaned';
     case TaskVmMissing = 'node.task_vm_missing';
     case TaskVmInspectionFailed = 'node.task_vm_inspection_failed';
+    case TaskVmParked = 'node.task_vm_parked';
     case InspectionFailed = 'node.inspection_failed';
 
     public function code(): string

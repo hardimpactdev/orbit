@@ -243,6 +243,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.task_vm_orphaned',
             'node.task_vm_missing',
             'node.task_vm_inspection_failed',
+            'node.task_vm_parked',
             'node.inspection_failed',
         ],
         'role' => [
