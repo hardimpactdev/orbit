@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\Task;
 
 /**
- * Starts agent conversations on the Node that owns the group's App instance.
+ * Starts agent conversations on the Node that owns the group's Instance.
  *
  * A no-op implementation returns null. A spawner implementation starts a fresh
  * implementer per subtask and a fresh reviewer for that subtask's first review,

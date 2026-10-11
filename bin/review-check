@@ -262,7 +262,7 @@ def main():
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED ({log})', flush=True)
         print(log.read_text(), flush=True)
-    for check_name in ('project-vocabulary', 'env-docs'):
+    for check_name in ('project-vocabulary', 'env-docs', 'docs-nav'):
         log = directory / f'{check_name}.log'
         started = time.monotonic()
         with log.open('w') as output:

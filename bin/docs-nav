@@ -1,0 +1,149 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Fail when a maintained docs page is missing from the site navigation in docs/docs.json.
+ *
+ * Run from any directory:
+ *
+ *     bin/docs-nav
+ *
+ * Every Markdown page under docs/ must be listed in a navigation `pages` list, or in DOCS_NAV_OUTSIDE below with
+ * the reason it stays out of the site. A page that exists only on disk is hard to find, and nothing else notices it.
+ */
+
+/**
+ * Pages that stay out of the site navigation on purpose, keyed by their path under docs/ without the extension.
+ */
+const DOCS_NAV_OUTSIDE = [
+    'README' => 'Map of the docs folder for contributors, read on GitHub.',
+    'decisions/README' => 'Folder index read on GitHub; the site lists the decisions overview instead.',
+    'domains/README' => 'Folder index read on GitHub; the site lists each domain page directly.',
+    'solutions/README' => 'Folder index read on GitHub; the site lists each solution page directly.',
+];
+
+/**
+ * @return list<string>
+ */
+function docs_nav_pages(mixed $node): array
+{
+    if (! is_array($node)) {
+        return [];
+    }
+
+    $pages = [];
+    foreach ($node as $key => $value) {
+        if ($key === 'pages' && is_array($value)) {
+            foreach ($value as $page) {
+                if (is_string($page)) {
+                    $pages[] = ltrim($page, '/');
+                }
+            }
+        }
+        array_push($pages, ...docs_nav_pages($value));
+    }
+
+    return $pages;
+}
+
+/**
+ * @return list<string>
+ */
+function docs_nav_findings(string $root): array
+{
+    $docs = rtrim($root, '/').'/docs';
+    $contents = @file_get_contents($docs.'/docs.json');
+    if ($contents === false) {
+        return ['docs/docs.json: file is missing'];
+    }
+
+    try {
+        $configuration = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+    } catch (JsonException $exception) {
+        return ['docs/docs.json: '.$exception->getMessage()];
+    }
+
+    $navigation = is_array($configuration) ? ($configuration['navigation'] ?? null) : null;
+    if (! is_array($navigation)) {
+        return ['docs/docs.json: navigation is missing'];
+    }
+
+    $listed = array_fill_keys(docs_nav_pages($navigation), true);
+    $findings = [];
+    $onDisk = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($docs, FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+        if (! $file instanceof SplFileInfo || ! $file->isFile()) {
+            continue;
+        }
+
+        $extension = strtolower($file->getExtension());
+        if ($extension !== 'md' && $extension !== 'mdx') {
+            continue;
+        }
+
+        $relative = ltrim(substr($file->getPathname(), strlen($docs)), '/');
+        $page = substr($relative, 0, -strlen($extension) - 1);
+        $onDisk[$page] = true;
+        if (! isset($listed[$page]) && ! isset(DOCS_NAV_OUTSIDE[$page])) {
+            $findings[] = "docs/{$relative}: page is not in the docs.json navigation";
+        }
+    }
+
+    foreach (array_keys(DOCS_NAV_OUTSIDE) as $page) {
+        if (! isset($onDisk[$page])) {
+            $findings[] = "bin/docs-nav: {$page} is allowed outside the navigation but has no page";
+        } elseif (isset($listed[$page])) {
+            $findings[] = "bin/docs-nav: {$page} is in the navigation, so remove it from the allowed list";
+        }
+    }
+
+    sort($findings);
+
+    return $findings;
+}
+
+/**
+ * @param  list<string>  $argv
+ */
+function docs_nav_main(array $argv): int
+{
+    $root = dirname(__DIR__);
+
+    for ($index = 1, $count = count($argv); $index < $count; $index++) {
+        $argument = $argv[$index];
+        if ($argument === '--root') {
+            $root = $argv[++$index] ?? '';
+        } elseif (str_starts_with($argument, '--root=')) {
+            $root = substr($argument, strlen('--root='));
+        } else {
+            fwrite(STDERR, "Unknown argument {$argument}.\n");
+
+            return 2;
+        }
+    }
+
+    if ($root === '' || ! is_dir($root.'/docs')) {
+        fwrite(STDERR, "Docs root has no docs folder.\n");
+
+        return 2;
+    }
+
+    $findings = docs_nav_findings($root);
+    if ($findings === []) {
+        return 0;
+    }
+
+    foreach ($findings as $finding) {
+        fwrite(STDOUT, $finding."\n");
+    }
+    fwrite(STDOUT, "Add each page to a navigation group in docs/docs.json, or list it in DOCS_NAV_OUTSIDE in bin/docs-nav with the reason.\n");
+
+    return 1;
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+    exit(docs_nav_main($argv));
+}

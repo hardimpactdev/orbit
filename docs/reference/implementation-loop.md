@@ -81,7 +81,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
-| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
+| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
@@ -208,7 +208,7 @@ Intermediate Orbit task handoffs select affected tests from the subtask's start 
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
-2. It runs `bin/project-vocabulary` and `bin/env-docs`.
+2. It runs `bin/project-vocabulary`, `bin/env-docs`, and `bin/docs-nav`.
 3. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
 4. It checks each of the five Composer projects in turn, as the next paragraph describes.
 5. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.

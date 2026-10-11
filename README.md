@@ -2,7 +2,7 @@
 
 Orbit connects application development, hosting, and machine maintenance. Use its command-line interface yourself or through an AI agent. A self-hosted Gateway coordinates your Linux machines over SSH and WireGuard.
 
-Register a Git repository, create a development App instance, and get a private HTTPS URL:
+Register a Git repository, create a development Instance, and get a private HTTPS URL:
 
 ```bash
 orbit project:create hello laravel-app https://github.com/YOUR-ACCOUNT/hello.git --root=public
