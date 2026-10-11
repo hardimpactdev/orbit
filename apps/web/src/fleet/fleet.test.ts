@@ -5,7 +5,7 @@ import { demoFleet } from "../demo/fleet";
 import {
     attentionRows,
     counts,
-    instanceEnvironment,
+    instancePlacement,
     listRows,
     processCpu,
     processHealthy,
@@ -82,18 +82,18 @@ describe("process health", () => {
     });
 });
 
-describe("Instance environment", () => {
+describe("Instance placement", () => {
     it("uses the owning Node role", () => {
         const instance = fleet.instances[0]!;
         const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id)!;
 
         expect(
-            instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: ["app-dev"] }] }, instance),
+            instancePlacement({ ...fleet, nodes: [{ ...node, roles: ["app-dev"] }] }, instance),
         ).toBe("development");
         expect(
-            instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: ["app-prod"] }] }, instance),
+            instancePlacement({ ...fleet, nodes: [{ ...node, roles: ["app-prod"] }] }, instance),
         ).toBe("production");
-        expect(instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: [] }] }, instance)).toBe(
+        expect(instancePlacement({ ...fleet, nodes: [{ ...node, roles: [] }] }, instance)).toBe(
             "—",
         );
     });

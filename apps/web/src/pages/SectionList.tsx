@@ -14,7 +14,7 @@ import type {
 } from "../api/types";
 import {
     firewallHealthy,
-    instanceEnvironment,
+    instancePlacement,
     instanceHealthy,
     instancesForProject,
     listRows,
@@ -57,7 +57,7 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
             { header: "Project", width: 18, value: (i) => i.project.slug },
             { header: "Name", width: 14, value: (i) => i.name },
             { header: "Node", width: 12, value: (i) => i.node.name },
-            { header: "Environment", width: 16, value: (i) => instanceEnvironment(fleet, i) },
+            { header: "Placement", width: 16, value: (i) => instancePlacement(fleet, i) },
             { header: "Domain", width: 24, value: (i) => i.domain ?? "—" },
             {
                 header: "Status",

@@ -31,7 +31,7 @@ import type {
 import {
     deploymentHealthy,
     firewallHealthy,
-    instanceEnvironment,
+    instancePlacement,
     instanceHealthy,
     instanceName,
     instanceNodeName,
@@ -269,7 +269,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                             value: instance.node.name,
                             onOpen: node === undefined ? undefined : () => go.record("nodes", node),
                         },
-                        { name: "Environment", value: instanceEnvironment(fleet, instance) },
+                        { name: "Placement", value: instancePlacement(fleet, instance) },
                         {
                             name: "Domain",
                             value: instance.domain,

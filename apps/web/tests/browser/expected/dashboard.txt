@@ -7,14 +7,14 @@
 │  Activity │
 ╰─
 
-╭─ Worker nodes
+╭─ Nodes with roles
 │  Name │ CPU │ Mem │ Disk │ Uptime
 │› ●gateway │ 19% │ 40% │ 8% │ 12:04:43
 │  ●beast │ 33% │ 55% │ 82% │ 12:04:43
 │  ●app-prod │ — │ — │ — │ — !
 ╰─
 
-╭─ Client nodes
+╭─ Roleless Nodes
 │  Name │ Status │ WireGuard IP
 │› studio │ active │ 10.44.0.4
 ╰─
