@@ -21,6 +21,9 @@ final class FakeIncusFleetHost
 
     public string $httpsAddress = '';
 
+    /** @var array<string, array<string, string>> project => config */
+    public array $projects = [];
+
     /** @var array<string, array{name: string, type: string, restricted: bool, projects: list<string>, certificate: string}> */
     public array $trust = [];
 

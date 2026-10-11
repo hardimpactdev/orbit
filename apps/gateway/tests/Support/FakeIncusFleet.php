@@ -73,6 +73,13 @@ final class FakeIncusFleet implements SshExecutor
         $host = $this->host($address);
 
         return match (true) {
+            $argv[0] === 'project' && $argv[1] === 'set' => $host->answer('project set', function () use ($host, $argv): void {
+                foreach (array_slice($argv, 3) as $setting) {
+                    [$key, $value] = explode('=', $setting, 2);
+                    $host->projects[$argv[2]][$key] = $value;
+                }
+            }),
+            $argv[0] === 'project' && $argv[1] === 'get' => $host->answer('project get', fn (): string => ($host->projects[$argv[2]][$argv[3]] ?? '')."\n"),
             $argv === ['config', 'get', 'core.https_address'] => $host->answer('config get', fn (): string => $host->httpsAddress."\n"),
             $argv[0] === 'config' && $argv[1] === 'set' => $host->answer('config set', function () use ($host, $argv): void {
                 $host->httpsAddress = $argv[3];
@@ -89,6 +96,11 @@ final class FakeIncusFleet implements SshExecutor
                 unset($host->trust[$argv[3]]);
             }),
             $argv === ['query', '/1.0'] => $host->answer('query /1.0', fn (): string => (string) json_encode(['environment' => ['certificate' => $host->serverCertificate()]])),
+            $argv[0] === 'query' && $host->fail === 'query reply' => (function () use ($host, $argv): CommandResult {
+                $host->retarget(json_decode($argv[4], true)['target']);
+
+                return new CommandResult(255, '', "Connection reset by peer\n", 1, false);
+            })(),
             $argv[0] === 'query' => $host->answer('query', fn () => $host->retarget(json_decode($argv[4], true)['target'])),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $argv)),
         };

@@ -163,6 +163,11 @@ final readonly class TaskVmImagePeers
     public function converge(?Closure $progress = null): void
     {
         $members = $this->members();
+        // A peer's certificate is restricted to the project, so the project's own restrictions keep the peer from
+        // root on the host. Every member's project is restricted before any host listens or trusts a peer.
+        foreach ($members as [$host, $node]) {
+            $this->restrict($host, $node);
+        }
         $addresses = [];
         $projects = [];
         $identities = [];
@@ -205,6 +210,25 @@ final readonly class TaskVmImagePeers
             $this->trust($node, '', []);
             $this->checked($node, 'remove the client directory', $this->incus->root($node, ['rm', '-rf', '--', self::ClientDirectory]));
             $this->reconcileFirewall($node, []);
+        }
+    }
+
+    /**
+     * Restricts the host's task VM project to what task VMs need, as `incus-host.sh` does, and reads the
+     * restrictions back.
+     *
+     * @throws TaskVmException `task_vm.host_not_prepared` when the project is missing or keeps no restriction
+     */
+    private function restrict(TaskVmHost $host, Node $node): void
+    {
+        $restrictions = ['restricted' => 'true', 'restricted.networks.access' => $host->network];
+        $set = $this->incus->root($node, ['incus', 'project', 'set', $host->project, 'restricted=true', "restricted.networks.access={$host->network}"]);
+        foreach ($restrictions as $key => $value) {
+            $read = $set->succeeded() ? $this->incus->root($node, ['incus', 'project', 'get', $host->project, $key]) : $set;
+            if (! $read->succeeded() || trim($read->stdout) !== $value) {
+                $detail = trim(implode("\n", array_slice(explode("\n", trim($read->stderr)), -3)));
+                throw new TaskVmException('task_vm.host_not_prepared', "The Incus project [{$host->project}] on Node [{$node->name}] is not restricted, so it cannot trust a peer host. Run task-vms:prepare-host on Node [{$node->name}].".($detail === '' ? '' : "\n{$detail}"));
+            }
         }
     }
 

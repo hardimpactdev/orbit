@@ -272,6 +272,39 @@ describe('task VM setup scripts', function (): void {
         }
     })->with(['existing dataset' => true, 'new dataset' => false]);
 
+    it('restricts the task VM project once the bridge and profile exist', function (): void {
+        // Stubs: an existing ZFS pool, project, bridge, and stock image; every call is logged.
+        $bin = sys_get_temp_dir().'/orbit-task-vm-restrict-'.bin2hex(random_bytes(4));
+        mkdir($bin);
+        $log = $bin.'/calls.log';
+        file_put_contents($bin.'/incus', <<<SH
+            #!/bin/sh
+            echo "incus \$*" >> {$log}
+            case "\$1 \$2" in
+              'storage show') echo 'driver: zfs' ;;
+              'network get') echo '10.252.0.1/24' ;;
+              'project get') echo 'false' ;;
+            esac
+            exit 0
+            SH);
+        file_put_contents($bin.'/ufw', "#!/bin/sh\necho \"ufw \$*\" >> {$log}\nexit 0\n");
+        array_map(static fn (string $stub): bool => chmod($bin.'/'.$stub, 0755), ['incus', 'ufw']);
+        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
+        $process = new Process([$bash, '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img']);
+        $process->setInput(file_get_contents(resource_path('task-vms/incus-host.sh')));
+        $process->setEnv(['PATH' => $bin.':'.getenv('PATH')]);
+        $process->run();
+        $calls = explode("\n", trim((string) file_get_contents($log)));
+        array_map(unlink(...), glob($bin.'/*') ?: []);
+        rmdir($bin);
+
+        $restrict = array_search('incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0', $calls, true);
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toBe("{\"ok\":true}\n")
+            ->and($restrict)->toBeInt()
+            ->and($restrict)->toBeGreaterThan(array_search('incus profile device set default eth0 network=orbittask0 security.port_isolation=true --project orbit-tasks', $calls, true));
+    });
+
     it('reject invalid arguments before they change anything', function (string $script, array $arguments, string $message): void {
         $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
         $process = new Process([$bash, '-s', '--', ...$arguments]);

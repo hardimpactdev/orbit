@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Support\FakeIncusFleet;
@@ -129,6 +130,30 @@ describe('image peers', function (): void {
             ->and(Yaml::parse((string) $this->fleet->host('10.44.0.30')->remotes)['remotes']["node-{$this->shark->id}"]['addr'])->toBe('https://10.44.0.11:8443');
     });
 
+    it('restricts the project of every host before any host listens or trusts a peer', function (): void {
+        ($this->link)();
+
+        $commands = array_map(static fn (array $command): string => $command[0].' '.implode(' ', array_slice($command[1], 2)), $this->fleet->commands);
+        $lastRestriction = max(array_keys(array_filter($commands, static fn (string $command): bool => str_contains($command, 'incus project '))));
+        $firstLink = min(array_keys(array_filter($commands, static fn (string $command): bool => str_contains($command, 'incus config '))));
+        expect($this->fleet->host('10.44.0.7')->projects['orbit-tasks'])->toBe(['restricted' => 'true', 'restricted.networks.access' => 'orbittask0'])
+            ->and($this->fleet->host('10.44.0.11')->projects['orbit-tasks'])->toBe(['restricted' => 'true', 'restricted.networks.access' => 'orbittask0'])
+            ->and($lastRestriction)->toBeLessThan($firstLink)
+            ->and($commands)->toContain('10.44.0.11 incus project set orbit-tasks restricted=true restricted.networks.access=orbittask0');
+    });
+
+    it('trusts no peer and listens nowhere when a host project cannot be restricted', function (): void {
+        $this->fleet->host('10.44.0.11')->fail = 'project set';
+
+        expect(fn () => ($this->link)())->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->status])->toBe(['task_vm.host_not_prepared', 409])
+            ->and($e->getMessage())->toStartWith('The Incus project [orbit-tasks] on Node [shark] is not restricted, so it cannot trust a peer host. Run task-vms:prepare-host on Node [shark].'));
+        foreach (['10.44.0.7', '10.44.0.11'] as $address) {
+            expect($this->fleet->host($address)->httpsAddress)->toBe('')
+                ->and($this->fleet->host($address)->trust)->toBe([])
+                ->and($this->fleet->host($address)->ufwRules)->toBe([]);
+        }
+    });
+
     it('moves an address it set, and never takes over an address it did not set', function (): void {
         $this->fleet->host('10.44.0.7')->httpsAddress = '10.44.0.7:8443';
         $this->fleet->host('10.44.0.11')->httpsAddress = '0.0.0.0:8443';
@@ -216,6 +241,60 @@ describe('a sync', function (): void {
         'copy from a source that does not listen' => [fn ($shark, $beast) => $beast->httpsAddress = '', 'copy', 'connection refused'],
         'pinned server certificate does not match' => [fn ($shark) => $shark->serverCertificates = array_map(static fn (): string => sync_other_certificate(), $shark->serverCertificates), 'copy', 'certificate signed by unknown authority'],
     ]);
+});
+
+describe('a sync that meets other work', function (): void {
+    it('refuses a host whose build or sync is running', function (): void {
+        ($this->link)();
+        $lock = Cache::lock('task-vms:image-build:'.$this->shark->id, 60);
+        $lock->get();
+        $commands = count($this->fleet->argv('10.44.0.11'));
+
+        expect(fn () => app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))
+            ->toThrow(TaskVmException::class, 'A base image build or sync of Node [shark] is already running.');
+        expect($this->fleet->argv('10.44.0.11'))->toHaveCount($commands);
+        $lock->release();
+    });
+
+    it('keeps the old image while a task VM on the host uses it', function (): void {
+        ($this->link)();
+        $this->fleet->host('10.44.0.11')->instances = ['tvm-7' => SYNC_SHARK];
+
+        app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD);
+
+        expect($this->fleet->host('10.44.0.11')->images)->toBe([
+            SYNC_SHARK => ['orbit-task-base-20261010030500'],
+            SYNC_OLD => ['orbit-task-base-20261010030000', TaskVmHost::BaseImage],
+        ])->and($this->fleet->host('10.44.0.11')->instances)->toBe(['tvm-7' => SYNC_SHARK]);
+    });
+
+    it('keeps the copy when the alias moved but the reply was lost', function (): void {
+        ($this->link)();
+        $this->fleet->host('10.44.0.11')->fail = 'query reply';
+
+        expect(fn () => app(IncusTaskVmImageSync::class)->sync($this->settings->host($this->beast->id), $this->beast, $this->settings->host($this->shark->id), $this->shark, SYNC_OLD))
+            ->toThrow(TaskVmException::class, 'failed at stage [promote]');
+        expect($this->fleet->host('10.44.0.11')->images[SYNC_OLD])->toContain(TaskVmHost::BaseImage);
+    });
+
+    it('reports a configured host whose Node is inactive or gone, and still syncs the others', function (): void {
+        $far = sync_node('far', '10.44.0.30', '192.168.6.50', $this->cluster);
+        $settings = sync_hosts($this->beast, $this->shark, $far);
+        ($this->link)();
+        $this->shark->update(['status' => LifecycleStatus::Removing]);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
+            ...$settings->hosts,
+            new TaskVmHost(999999, 'orbit-tasks', 'orbittask0', '10.251.90.0/24', 2, 2, '4GiB', '20GiB'),
+        ], 'http://10.44.0.3:8317', null, null, []));
+
+        $results = app(IncusTaskVmImageSync::class)->distribute($settings->host($this->beast->id), $this->beast, SYNC_OLD);
+
+        expect(array_map(static fn ($result): array => [$result->nodeName, $result->errorCode], $results))->toBe([
+            ['shark', 'task_vm.unknown_host'],
+            ['far', null],
+            ['999999', 'task_vm.unknown_host'],
+        ])->and($this->fleet->host('10.44.0.11')->images)->toBe([SYNC_SHARK => ['orbit-task-base-20261010030500', TaskVmHost::BaseImage]]);
+    });
 });
 
 describe('task-vms:build-image', function (): void {
