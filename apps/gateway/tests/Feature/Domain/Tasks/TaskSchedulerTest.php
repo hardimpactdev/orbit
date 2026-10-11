@@ -1007,7 +1007,7 @@ it('advances a claimed unrouted group to running when the real provisioner and a
     });
     app()->instance(DevelopmentInstanceSourceLifecycle::class, new class implements DevelopmentInstanceSourceLifecycle
     {
-        public function prepare(Instance $instance, bool $allowExisting): void {}
+        public function prepare(Instance $instance, bool $allowExisting, ?string $template = null): void {}
 
         public function inspectPrepared(Instance $instance): void {}
 
