@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
@@ -10,6 +11,7 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -20,8 +22,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;

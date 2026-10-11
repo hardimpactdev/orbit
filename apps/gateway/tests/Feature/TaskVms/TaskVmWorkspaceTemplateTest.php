@@ -322,6 +322,7 @@ describe('volumes', function (): void {
     });
 
     it('schedules the template refresh nightly after the base image refresh while task VMs are enabled', function (): void {
+        Artisan::call('schedule:list');
         $event = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmWorkspaceTemplates::class);
 
         config()->set('task_vms.enabled', false);
@@ -422,7 +423,7 @@ describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
 
     it('builds through the command and prints each stage', function (): void {
         expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(0)
-            ->and(Artisan::output())->toContain('setup:composer-install')->toContain('has the workspace template [tvm-template-'.$this->project->id.'-');
+            ->and(Artisan::output())->toContain('clone')->toContain('prune')->toContain('has the workspace template [tvm-template-'.$this->project->id.'-');
 
         $this->project->update(['task_compute' => TaskCompute::Shared]);
         expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(1)

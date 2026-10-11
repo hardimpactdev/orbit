@@ -38,13 +38,14 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUnique, ShouldQue
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates): void
     {
         $projects = Project::query()->orderBy('id')->get()->filter(TaskVmWorkspaceTemplates::serves(...))->values();
+        $ids = array_values($projects->map(static fn (Project $project): int => $project->id)->all());
         foreach ($settings->hosts as $host) {
             $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first();
             if (! $node instanceof Node) {
                 continue;
             }
             try {
-                $deleted = $templates->prune($host, $node, projects: $projects->pluck('id')->all());
+                $deleted = $templates->prune($host, $node, projects: $ids);
                 if ($deleted !== []) {
                     Log::info('Deleted the workspace templates of Projects without task VMs.', ['host_node_id' => $node->id, 'volumes' => $deleted]);
                 }

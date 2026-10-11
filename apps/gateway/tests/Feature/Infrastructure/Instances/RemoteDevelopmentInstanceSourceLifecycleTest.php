@@ -243,8 +243,8 @@ it('starts a task VM workspace from the template checkout next to it, with its i
     config()->set('orbit.tasks.worker_user', null);
     $template = $this->appsRoot.'/acme/.orbit-workspace-template';
     $this->files->makeDirectory(dirname($template), 0o755, true);
+    // The transport maps the Project origin to this local repository, as it does for a clone.
     orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
-    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
     file_put_contents($template.'/.git/info/exclude', "vendor/\n");
     $this->files->makeDirectory($template.'/vendor');
     file_put_contents($template.'/vendor/autoload.php', "<?php\n");
@@ -270,7 +270,7 @@ it('clones when the template is gone, and never takes a template of another repo
     expect(is_dir($gone->checkout_path.'/.git'))->toBeTrue();
 
     orb76_run(['git', 'clone', '--quiet', $this->repository, $template]);
-    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', 'ssh://git@example.test/acme/other.git']);
+    orb76_run(['git', '-C', $template, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
     $foreign = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-9', 'task-9');
     $foreign->update(['source_prepare_id' => (string) Str::uuid()]);
 
