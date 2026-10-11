@@ -294,7 +294,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         }
 
         $groupingDirectory = $this->boundaries
-            ->instanceGroupingDirectory($instance, $context['root'])
+            ->instanceGroupingDirectory($instance)
             ->value;
         $script = GitReadScript::for(
             $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
@@ -781,7 +781,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $context['user'],
             $context['group'],
             $context['root'],
-            $this->boundaries->instanceGroupingDirectory($instance, $context['root'])->value,
+            $this->boundaries->instanceGroupingDirectory($instance)->value,
         ];
     }
 
