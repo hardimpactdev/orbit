@@ -25,6 +25,8 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -370,6 +372,13 @@ final readonly class RemoveNodeAction
             );
         }
 
+        if ($this->isTaskVmHost($node)) {
+            throw $this->conflict(
+                'node.task_vm_host_configured',
+                "Node [{$node->name}] is still a task VM host. Remove its entry from task_vms.incus.hosts and run task-vms:retire-host first.",
+            );
+        }
+
         if ($node->is($caller)) {
             throw $this->conflict('node.self_removal_forbidden', 'A node cannot remove itself.');
         }
@@ -513,5 +522,15 @@ final readonly class RemoveNodeAction
         $result = $previous instanceof NodeProvisioningException ? $previous->result : null;
 
         return new NodeRemovalException($step, $errorCode, $message, $result, $previous);
+    }
+
+    /** Peer hosts trust a configured task VM host; `task-vms:retire-host` removes that trust first. */
+    private function isTaskVmHost(Node $node): bool
+    {
+        try {
+            return resolve(TaskVmSettings::class)->hasHost($node->id);
+        } catch (TaskVmException) {
+            return false;
+        }
     }
 }

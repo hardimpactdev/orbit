@@ -133,6 +133,7 @@
           {
             "group": "Contributing",
             "pages": [
+              "first-contribution",
               "contributor-guide",
               "reference/bun-and-rust-projects",
               "reference/implementation-loop",
