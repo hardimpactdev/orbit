@@ -28,6 +28,9 @@ final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
+    /** Set for the run inside a warm claim, which keeps every step short. See {@see TaskVmRuntime::prepare()}. */
+    public bool $inline = false;
+
     public function handle(TaskVmRuntime $runtime, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
@@ -50,7 +53,7 @@ final class PrepareTaskVmRuntime implements ShouldBeUnique, ShouldQueue
         if ($warm) {
             $clock->step('queue');
         }
-        $runtime->prepare($vm);
+        $runtime->prepare($vm, $this->inline);
         $vm->update(['state' => TaskVmState::Ready, 'ready_at' => now(), 'error_code' => null, 'error_message' => null]);
         $claimed = ($vm->claimed_at ?? $vm->created_at)?->getTimestamp();
         if ($claimed !== null) {
