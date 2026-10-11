@@ -404,10 +404,12 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | --- | --- |
 | `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules`, `node.has_database_servers` | The Node still owns that state. |
 | `node.has_task_vms` | The Node hosts a [task VM](/reference/compute-drivers#destroy-a-task-vm) that is not `destroyed`. |
-| `node.task_vm_host_configured` | The Node is in `task_vms.incus.hosts`. [Retire the host](/reference/compute-drivers#add-a-task-vm-host) first, so the other hosts stop trusting it. |
+| `node.task_vm_host_configured` | The Node is in `task_vms.incus.hosts`. [Retire the host](/reference/compute-drivers#add-a-task-vm-host) first, so the other hosts stop accepting its key. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |
+
+When task VM hosts are configured, the Gateway then removes the Node's base image [transfer key](/reference/compute-drivers#let-hosts-copy-the-image) from each of them, also for an offline removal, and also when `task-vms:retire-host` did not run. It skips the Node of a task VM. This changes only the hosts, and a repeat finds nothing to remove. When it fails, the removal fails with the step `task-vm-image-keys` and the code `node.task_vm_image_key_cleanup_failed`, and nothing else has changed.
 
 Online removal runs these steps in order.
 
