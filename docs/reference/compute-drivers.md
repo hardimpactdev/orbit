@@ -24,7 +24,7 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image]
 
 ### From claim to workspace
 
-A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs). When the host keeps [warm VMs](#keep-warm-vms), the claim takes one, and only step 5 and step 6 run.
+A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs). When the host keeps [warm VMs](#keep-warm-vms), the claim takes one and runs step 5 itself, and step 6 follows in the same claim.
 
 1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` takes a warm VM, or records a `provisioning` row and queues `ProvisionTaskVm`.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 12 seconds later.
@@ -119,7 +119,9 @@ A new pool row runs the normal `ProvisionTaskVm` and `EnrollTaskVm`. Then `Prepa
 
 #### Claim a warm VM
 
-The claim reads the `orbit-task-base` image of each active host that has a warm VM. It takes a warm VM only when the VM launched that image and its Node is active. A host whose image list cannot be read keeps its warm VMs, and the claim places a new VM instead. Under the placement lock, the claim then makes these changes on the row in one update, and only when the row is still `warm` without a group:
+The claim reads the `orbit-task-base` image of each active host that has a warm VM. It takes a warm VM only when the VM launched that image and its Node is active. The claim reads a host's image over SSH at most every 10 seconds. A build or sync that moves the alias makes the next claim read it again. A host whose image list cannot be read keeps its warm VMs for a minute, and the claims place new VMs instead.
+
+Under the placement lock, the claim then makes these changes on the row in one update, and only when the row is still `warm` without a group:
 
 | Field | Value |
 | --- | --- |
@@ -127,9 +129,11 @@ The claim reads the `orbit-task-base` image of each active host that has a warm 
 | `state` | `provisioning` |
 | `claimed_at` | Now |
 
-Then it gives the row a new random Pi token, and queues `PrepareTaskVmRuntime` and `RefillTaskVmPool`. `PrepareTaskVmRuntime` runs only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. Then the row becomes `ready`. On the next claim, Orbit creates the workspace, as for a new VM.
+Then it gives the row a new random Pi token and queues `RefillTaskVmPool`. The claim itself then runs the steps of `PrepareTaskVmRuntime`, which are only the group's steps: the CLIProxyAPI key, the Pi files, and the `pi-server` Process. They take about 1.5 seconds. The row becomes `ready`, and the same claim creates the workspace, as for a new VM.
 
-A warm claim logs `queue` first, which counts from the claim to the start of the job, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
+The steps run in the claim, not on the `task-vms` queue, because its one worker runs one job at a time. Behind an enrollment, a sync, or the nightly build, a queued job would wait minutes. The claim runs in `tasks:tick` after the placement lock is released, and holds no transaction. When a step fails, the claim logs a warning and queues `PrepareTaskVmRuntime`, which retries the steps as for a new VM.
+
+A warm claim logs `queue` first, which counts from the claim to the start of the group's steps, near 0 in the claim, and `warm-claim-to-ready` last, with the seconds from the claim to `ready`. A VM that becomes warm logs `warm`, with the seconds from its row to `warm`.
 
 #### Replace warm VMs
 
@@ -147,6 +151,8 @@ While `task_vms.enabled` is false, the target of every host is `0`, so each refi
 When `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` fails on a pool row, the row becomes `failed` with its error, as for any task VM. No group asks for assistance, because the row has none. The Gateway log gets the error `A warm task VM failed; its host creates no pool VM until the wait ends.`, with the error code, the count of failures in a row, and the time of the next try. The next refill destroys the failed VM.
 
 The host then creates no pool VM for 1 minute. Each further failure doubles the wait, up to 1 hour. Each refill that waits logs a warning. A pool VM that becomes `warm` ends the wait. The failure count lives in the Gateway cache. A claim in the meantime places a new VM, so a broken pool never stops claims.
+
+A pool row that is still `provisioning` an hour after the refill recorded it has lost its job, for example when a release stopped the worker. Every refill checks for such rows. It sets each one to `failed` with `task_vm.pool_start_timeout` and logs the same error, so the host waits as above. The same run destroys the row, and its slot comes back.
 
 #### Other parts of Orbit
 
@@ -506,7 +512,8 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.host_in_use` | 409 | `task-vms:retire-host` names a host that still has a task VM that is not `destroyed`, a warm one included |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
 | `task_vm.resume_timeout` | 504 | A `parked` VM did not answer within 9 minutes of the first start |
-| `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
+| `task_vm.vm_missing` | 502 | The sweep found a `warm`, `ready`, or `parked` task VM gone from its host |
+| `task_vm.pool_start_timeout` | 504 | A pool VM was still `provisioning` an hour after the refill recorded it |
 
 ### Limits
 
@@ -525,9 +532,10 @@ Warm VMs have these limits:
 
 - A warm VM uses its host's memory and a little CPU while it waits.
 - Each warm VM takes a slot of `max_vms`. New VMs can use only the other slots.
-- A warm claim still waits up to 5 seconds for the task VM worker to start. The group's key and Pi then take about 1.5 seconds.
-- A claim that finds every slot taken by pool VMs that still start waits with `Task VM: waiting for a warm VM.`, about 35 seconds. It does not take a VM that is still starting.
-- The claim reads each host's image list over SSH inside the scheduler tick. It waits up to 15 seconds for each host.
+- A group waits for the next `tasks:tick`, every 10 seconds, before its claim. The warm claim then takes about 1.5 seconds to `ready`, and creates the workspace.
+- The claim's model key step waits for any other model key operation, up to 60 seconds.
+- A claim never takes a pool VM that still starts. On a full fleet with such a VM, the claim waits with `Task VM: waiting for a warm VM.` for about 35 seconds.
+- The claim reads each host's image list over SSH inside the scheduler tick, at most every 10 seconds. It waits up to 15 seconds for a host.
 - A claim also reads an alias that someone moved by hand. The refill then replaces the warm VMs within a minute.
 - The backoff count lives in the Gateway cache. A cleared cache forgets it, and the next refill tries again.
 
