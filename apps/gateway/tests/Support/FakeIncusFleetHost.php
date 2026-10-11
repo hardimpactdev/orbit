@@ -19,30 +19,46 @@ final class FakeIncusFleetHost
     /** @var array<string, ?string> name => base image */
     public array $instances = [];
 
+    /** What the earlier Incus API copy left: the listen address, trust entries, and the client directory. */
     public string $httpsAddress = '';
-
-    /** @var array<string, array<string, string>> project => config */
-    public array $projects = [];
 
     /** @var array<string, array{name: string, type: string, restricted: bool, projects: list<string>, certificate: string}> */
     public array $trust = [];
 
-    public ?string $clientCertificate = null;
+    public bool $clientDirectory = false;
 
-    public ?string $clientKey = null;
+    public ?string $lan = null;
 
-    public ?string $remotes = null;
+    public string $user = 'nckrtl';
 
-    /** @var array<string, string> remote => PEM */
-    public array $serverCertificates = [];
+    /** The SSH host key, `ssh-ed25519 <base64>`. */
+    public string $hostKey;
+
+    /** A host key that sshd on the address presents instead, as a host in the middle of the LAN would. */
+    public ?string $sshdKey = null;
+
+    /** The transfer public key, `ssh-ed25519 <base64>`. */
+    public ?string $transferKey = null;
+
+    /** The installed receiver script. */
+    public ?string $receiver = null;
+
+    /** @var list<string> the managed user's `authorized_keys` lines */
+    public array $authorizedKeys = [];
+
+    /** @var array<string, string> fingerprint => export file */
+    public array $exports = [];
+
+    /** @var list<string> each fingerprint the receiver imported */
+    public array $received = [];
 
     /** @var list<string> each `ufw status numbered` rule line */
     public array $ufwRules = [];
 
-    /** An operation that fails, such as `image copy`, `launch`, or `ssh-keygen`. */
+    /** An operation that fails, such as `transfer`, `launch`, or `ssh-keygen`. */
     public ?string $fail = null;
 
-    /** The fingerprint an image copy produces instead of the source's. */
+    /** The fingerprint the receiver imports instead of the source's. */
     public ?string $copyAs = null;
 
     public int $boots = 1;
@@ -50,13 +66,17 @@ final class FakeIncusFleetHost
     /** The fingerprint a build publishes. */
     public string $publishAs = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-    private ?string $server = null;
-
     private int $cloudInitPolls = 0;
 
-    public function serverCertificate(): string
+    public function __construct(public string $address = '')
     {
-        return $this->server ??= self::certificateWithKey('server')[0];
+        $this->hostKey = self::publicKey();
+    }
+
+    /** A random `ssh-ed25519` public key without a comment. */
+    public static function publicKey(): string
+    {
+        return 'ssh-ed25519 '.base64_encode("\0\0\0\x0bssh-ed25519\0\0\0\x20".random_bytes(32));
     }
 
     /** @return array{string, string} a self-signed PEM certificate and its key */
@@ -67,9 +87,8 @@ final class FakeIncusFleetHost
         $csr = openssl_csr_new(['commonName' => $name.'-'.bin2hex(random_bytes(4))], $key, ['digest_alg' => 'sha256']);
         $certificate = openssl_csr_sign($csr, null, $key, 365, ['digest_alg' => 'sha256']);
         openssl_x509_export($certificate, $pem);
-        openssl_pkey_export($key, $privateKey);
 
-        return [$pem, $privateKey];
+        return [$pem, ''];
     }
 
     /** @param  list<string>  $operation  the arguments after `incus --project <project>` */
@@ -102,6 +121,9 @@ final class FakeIncusFleetHost
                 unset($this->instances[end($operation)]);
             }),
             $operation[0] === 'image' && $operation[1] === 'alias' => $this->answer('image alias', function () use ($operation): void {
+                if (! isset($this->images[$operation[5]])) {
+                    throw new RuntimeException('Error: Image not found');
+                }
                 $this->images[$operation[5]][] = $operation[4];
             }),
             $operation[0] === 'image' && $operation[1] === 'delete' => $this->answer('image delete', function () use ($operation): void {
@@ -144,7 +166,11 @@ final class FakeIncusFleetHost
         if ($this->fail === $operation) {
             return new CommandResult(1, '', "Error: {$operation} failed\n", 1, false);
         }
-        $output = $effect instanceof Closure ? $effect() : null;
+        try {
+            $output = $effect instanceof Closure ? $effect() : null;
+        } catch (RuntimeException $exception) {
+            return new CommandResult(1, '', $exception->getMessage()."\n", 1, false);
+        }
 
         return new CommandResult(0, is_string($output) ? $output : '', '', 1, false);
     }

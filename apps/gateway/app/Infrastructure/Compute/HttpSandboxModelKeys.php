@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Compute;
 
 use App\Domain\Compute\ComputeException;
+use App\Infrastructure\Processes\CommandDeadline;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -14,6 +15,11 @@ use Throwable;
 /** Management credentials and group keys only travel in headers or JSON bodies. */
 final readonly class HttpSandboxModelKeys
 {
+    /** A running command deadline, such as the inline run of a warm task VM claim, also ends each request. */
+    public function __construct(
+        private CommandDeadline $deadline = new CommandDeadline,
+    ) {}
+
     public function ensure(string $origin, #[SensitiveParameter] string $management, #[SensitiveParameter] string $anchor, #[SensitiveParameter] string $key): void
     {
         $this->validateKeys($anchor, $key);
@@ -94,7 +100,8 @@ final readonly class HttpSandboxModelKeys
     private function request(string $url, string $method, #[SensitiveParameter] string $token, #[SensitiveParameter] ?array $body = null): Response
     {
         try {
-            $request = Http::timeout(5)->connectTimeout(3)->withoutRedirecting()->acceptJson();
+            $timeout = $this->deadline->cap(5.0);
+            $request = Http::timeout($timeout)->connectTimeout(min(3.0, $timeout))->withoutRedirecting()->acceptJson();
             if ($token !== '') {
                 $request = $request->withToken($token);
             }

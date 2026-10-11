@@ -387,6 +387,7 @@ use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
+use App\Infrastructure\Vault\BitwardenCrypto;
 use App\Infrastructure\Vault\HttpVaultClient;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
@@ -555,7 +556,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
         ProxyCliAccountControlClient::class => HttpProxyCliAccountControlClient::class,
-        VaultClient::class => HttpVaultClient::class,
     ];
 
     public function register(): void
@@ -818,6 +818,14 @@ final class ApplicationServiceProvider extends ServiceProvider
             static fn (): LeafCertificateSigner => new OpenSslLeafCertificateSigner(
                 processes: app(ProcessRunner::class),
                 orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
+            ),
+        );
+        $this->app->bind(
+            VaultClient::class,
+            static fn (): VaultClient => new HttpVaultClient(
+                crypto: app(BitwardenCrypto::class),
+                certificates: app(LeafCertificateSigner::class),
+                rootCertificatePath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
             ),
         );
         $this->app->singleton(

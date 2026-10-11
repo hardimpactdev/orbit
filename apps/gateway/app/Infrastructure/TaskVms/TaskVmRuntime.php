@@ -45,6 +45,9 @@ final readonly class TaskVmRuntime
     /** The limits of a run inside a warm claim, see {@see prepare()}. */
     public const int InlineStepSeconds = 15;
 
+    /** The whole inline run of a warm claim, every SSH command and CLIProxyAPI request included. */
+    public const int InlineSeconds = 60;
+
     public const int InlineLockSeconds = 10;
 
     /** Shared with the Orbit lane, so one anchor key guards each CLIProxyAPI. */

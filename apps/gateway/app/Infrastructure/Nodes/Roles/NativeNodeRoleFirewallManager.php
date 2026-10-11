@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
+use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
@@ -97,14 +98,25 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     }
 
     /**
-     * Makes the task VM image peer rules on a host exactly `$desired`: adds and replaces them, and deletes every
-     * other rule of the family, such as the rule of a retired peer.
-     *
-     * @param  list<UfwManagedRule>  $desired
+     * Deletes every task VM image peer rule on a host. Hosts no longer reach each other's Incus API, so a failed
+     * delete restores nothing: the next run deletes what is left.
      */
-    public function reconcileTaskVmImagePeers(Node $host, array $desired, string $managedUser): void
+    public function removeTaskVmImagePeers(Node $host, string $managedUser): void
     {
-        $this->reconcileFamily($host, NodeFirewallRuleCatalog::TaskVmImagePrefix, $desired, $managedUser, expand: true, prune: true, recovering: false);
+        [$status, $inactive] = $this->status($host, publicConnection: false, managedUser: $managedUser);
+
+        if ($inactive) {
+            $this->fail($host, 'UFW is inactive during task VM image peer rule removal.', $status);
+        }
+
+        $comments = array_values(array_unique(array_map(
+            static fn (UfwRuleShape $shape): string => $shape->comment,
+            $this->statusParser->familyShapes($status->stdout, NodeFirewallRuleCatalog::TaskVmImagePrefix),
+        )));
+
+        if ($comments !== []) {
+            $this->deleteOwnedComments($host, $comments, $managedUser);
+        }
     }
 
     public function trustWireGuardMembers(Node $node, string $managedUser): void
@@ -590,9 +602,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         } catch (FirewallOperationException $recovery) {
             $message = 'Could not restore the preceding '.self::familyLabel($prefix)." policy on node [{$node->name}].";
 
-            throw $prefix === RouterLanIngressPolicy::CommentPrefix
-                ? new FirewallOperationException(step: 'host-firewall', errorCode: 'router.lan_ingress_recovery_failed', message: $message, result: $recovery->result, previous: $recovery)
-                : new FirewallOperationException(step: 'host-firewall', errorCode: 'node.firewall_convergence_failed', message: $message, result: $recovery->result, previous: $recovery);
+            throw new FirewallOperationException(step: 'host-firewall', errorCode: 'router.lan_ingress_recovery_failed', message: $message, result: $recovery->result, previous: $recovery);
         }
 
         throw $exception;
@@ -610,9 +620,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
                 continue;
             }
 
-            $rules[] = $prefix === RouterLanIngressPolicy::CommentPrefix
-                ? $this->catalog->routerLanIngressRule($shape->source, $shape->destination, $sourceNodeId)
-                : $this->catalog->taskVmImagePeer($sourceNodeId, $shape->source, $shape->destination, $shape->inInterface !== null);
+            $rules[] = $this->catalog->routerLanIngressRule($shape->source, $shape->destination, $sourceNodeId);
         }
 
         return $rules;
@@ -620,7 +628,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     private static function familyLabel(string $prefix): string
     {
-        return $prefix === RouterLanIngressPolicy::CommentPrefix ? 'Router LAN ingress' : 'task VM image peer';
+        return $prefix === RouterLanIngressPolicy::CommentPrefix ? 'Router LAN ingress' : $prefix;
     }
 
     private function sourceNodeId(string $comment, string $prefix): ?int

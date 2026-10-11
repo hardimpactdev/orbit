@@ -84,6 +84,7 @@ beforeEach(function (): void {
     Http::preventStrayRequests();
     $this->crypto = new BitwardenCrypto;
     $this->root = "-----BEGIN CERTIFICATE-----\nORBIT-ROOT-".bin2hex(random_bytes(8))."\n-----END CERTIFICATE-----\n";
+    $this->rootPath = '/var/lib/orbit/ca/root.pem';
     $this->client = new HttpVaultClient($this->crypto, new class($this->root) implements LeafCertificateSigner
     {
         public function __construct(private string $root) {}
@@ -97,7 +98,7 @@ beforeEach(function (): void {
         {
             return $this->root;
         }
-    });
+    }, $this->rootPath);
 });
 
 describe('BitwardenCrypto', function (): void {
@@ -155,13 +156,59 @@ describe('HttpVaultClient', function (): void {
             ->toThrow(fn (VaultException $exception) => expect($exception->errorCode)->toBe('vault.login_failed'));
     });
 
-    it('trusts only the Orbit root CA', function (): void {
+    it('trusts only the Orbit root CA file in the Gateway state directory', function (): void {
         vault_account($this->crypto, 'correct horse');
+        $verify = [];
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify[] = $options['verify'] ?? null;
+
+            return null;
+        });
+
         $this->client->open(vault_credentials());
 
-        $path = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $this->root).'.pem';
-        expect(file_get_contents($path))->toBe($this->root);
-        unlink($path);
+        expect($verify)->not->toBeEmpty()
+            ->and(array_unique($verify))->toBe([$this->rootPath]);
+    });
+
+    it('never trusts a CA file another account planted in the temporary directory', function (): void {
+        $planted = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $this->root).'.pem';
+        file_put_contents($planted, "-----BEGIN CERTIFICATE-----\nATTACKER\n-----END CERTIFICATE-----\n");
+        vault_account($this->crypto, 'correct horse');
+        $verify = [];
+        Http::fake(function (Request $request, array $options) use (&$verify) {
+            $verify[] = $options['verify'] ?? null;
+
+            return null;
+        });
+
+        try {
+            $this->client->open(vault_credentials());
+        } finally {
+            unlink($planted);
+        }
+
+        expect($verify)->not->toContain($planted)
+            ->and(array_unique($verify))->toBe([$this->rootPath]);
+    });
+
+    it('sends nothing when the Orbit root CA does not validate', function (): void {
+        vault_account($this->crypto, 'correct horse');
+        $client = new HttpVaultClient($this->crypto, new class implements LeafCertificateSigner
+        {
+            public function sign(string $hostname, string $certificateRequest): string
+            {
+                return '';
+            }
+
+            public function rootCertificate(): string
+            {
+                throw new RuntimeException('Orbit root CA material is invalid.');
+            }
+        }, $this->rootPath);
+
+        expect(fn () => $client->open(vault_credentials()))->toThrow(RuntimeException::class, 'Orbit root CA material is invalid.');
+        Http::assertNothingSent();
     });
 
     it('refuses more than 2,000,000 PBKDF2 iterations', function (): void {
