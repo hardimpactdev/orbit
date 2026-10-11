@@ -146,10 +146,12 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 
 Agents and checks can leave processes behind in a task workspace, such as a Playwright server that a browser test started. A task workspace is the Instance `task-<group id>` of a task group of the same Project. Before removal moves its checkout to the removal quarantine and deletes it, removal stops every process of the managed user and of the configured task worker whose working directory or executable is inside the checkout. It sends `SIGTERM` and waits up to 5 seconds, then sends `SIGKILL` and waits up to 5 seconds more. A process that still runs then fails the step, and the checkout stays for retry.
 
+The processes inside a tmux or screen session are normal processes. Removal stops those that work inside the task workspace.
+
 Removal leaves these processes running:
 
-- Every process of a development Instance, such as `default` or a named Instance. The managed user can be the operator's own account, whose daemons and terminals may work in such a checkout.
-- A tmux or screen server, even in a task workspace. It hosts sessions that can work elsewhere. A process in one of its sessions whose working directory is inside the task workspace is still stopped.
+- Every process of a development Instance, such as `default` or a named Instance. The managed user can be the operator's own account. Its daemons and terminals may work in such a checkout.
+- A tmux or screen server, even in a task workspace. It hosts sessions that can work elsewhere.
 - Processes of other users. Each account stops only its own processes.
 - Processes outside the checkout, including the processes of other Instances.
 - Owned [Processes and Schedules](#processes-and-schedules). `runtime_cleanup` checks their ownership before it removes them.
