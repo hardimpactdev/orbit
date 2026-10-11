@@ -165,6 +165,17 @@ final readonly class IncusHost
         return new TaskVmException('task_vm.host_command_failed', "`incus {$operation}` for {$subject} failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
     }
 
+    /**
+     * Runs `sudo -n <arguments>` on the host without a project: the host-wide Incus settings, its trust store,
+     * and the image copy, which names its own projects.
+     *
+     * @param  list<string>  $arguments
+     */
+    public function root(Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 120.0): CommandResult
+    {
+        return $this->execute($node, $arguments, $input, $timeout);
+    }
+
     /** @param  list<string>  $arguments */
     private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
     {

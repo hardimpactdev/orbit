@@ -8,6 +8,9 @@ container, a background agent, or a queue worker.
 
 ## Requirements
 
+The Gateway runs only on Linux. The [Quickstart](https://orbit.nckrtl.com/docs/quickstart)
+uses Ubuntu 26.04.
+
 - PHP 8.5
 - Composer 2
 - SQLite
@@ -71,9 +74,10 @@ Use a host that peers can reach. Omit `--private-interface` unless you have a
 separate private underlay; inspect `ip -brief address` and use that machine's
 actual interface name. The [Quickstart](https://orbit.nckrtl.com/docs/quickstart)
 covers prerequisites, the monorepo checkout path, first connection, and trust.
-Use `composer setup` only for a fresh development installation: it generates
-an application key. For an existing Gateway, follow the
-[update and recovery guide](../../docs/reference/gateway-recovery.md).
+Use `composer setup` only for a fresh development installation. Like
+`bin/bootstrap`, it runs `bin/gateway-app-key`, which writes the application key
+to `ORBIT_HOME/gateway.app-key` and keeps a key that already exists. For an
+existing Gateway, follow the [update and recovery guide](../../docs/reference/gateway-recovery.md).
 
 The bootstrap command creates the
 gateway SSH key, WireGuard key, root CA, gateway node, roles, and VPN settings

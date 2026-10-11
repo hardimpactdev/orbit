@@ -2146,7 +2146,7 @@ export interface paths {
         };
         /**
          * List Orbit's own firewall rules
-         * @description Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.
+         * @description Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role, the task VM image peers on a task VM host, and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.
          */
         get: operations["firewall-managed-list"];
         put?: never;

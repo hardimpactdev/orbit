@@ -542,6 +542,8 @@ class MainCacheTest(CacheFixture):
         root = Path(self.temporary.name) / 'bootstrap'
         (root / 'bin').mkdir(parents=True)
         (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
+        (root / 'bin/gateway-app-key').write_bytes(Path(cache.__file__).with_name('gateway-app-key').read_bytes())
+        (root / 'bin/gateway-app-key').chmod(0o755)
         for project in cache.PROJECTS:
             (root / project).mkdir(parents=True)
         calls = root / 'calls'

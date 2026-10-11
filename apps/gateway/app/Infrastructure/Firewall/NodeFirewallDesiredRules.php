@@ -9,6 +9,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\TaskVms\TaskVmImagePeers;
 use App\Models\Node;
 
 final readonly class NodeFirewallDesiredRules
@@ -19,7 +20,8 @@ final readonly class NodeFirewallDesiredRules
     ) {}
 
     /**
-     * The rules role and Metrics converge keep on the Node: baseline, each active role, then Metrics.
+     * The rules role and Metrics converge keep on the Node: baseline, each active role, the task VM image
+     * peers that `task-vms:prepare-host` keeps, then Metrics.
      *
      * @return list<DesiredFirewallRule>
      */
@@ -52,6 +54,15 @@ final readonly class NodeFirewallDesiredRules
             } catch (FirewallOperationException) {
                 continue;
             }
+        }
+
+        try {
+            // Resolved here, so an invalid task VM config hides only these rules.
+            foreach (resolve(TaskVmImagePeers::class)->firewallRules($node) as $rule) {
+                $rows[] = new DesiredFirewallRule($rule->shape->comment, 'task-vms', $rule->shape);
+            }
+        } catch (ResourceOperationException) {
+            // Not a task VM host with peers, or no addresses yet.
         }
 
         try {
