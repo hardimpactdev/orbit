@@ -347,8 +347,8 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('3', 3, 300), (outputs['shards'], plan['shards'], plan['classes']))
-        self.assertEqual(plan['filters'], [outputs['filter-1'], outputs['filter-2'], outputs['filter-3']])
+        self.assertEqual(('4', 4, 300), (outputs['shards'], plan['shards'], plan['classes']))
+        self.assertEqual(plan['filters'], [outputs[f'filter-{number}'] for number in range(1, 5)])
         self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
         # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes] + ['P\\Tests\\Feature\\Area1Test2::x',
@@ -356,12 +356,15 @@ class CiTiaTest(unittest.TestCase):
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertEqual(sorted(tests[:300]), sorted(sum(shards, [])))
         # The first shard runs in the Gateway job beside the architecture tests, so it starts with their time and gets
-        # none of the slow classes. The other shards share them.
+        # none of the slow classes. The other shards get one each.
         slow = [next(index for index, shard in enumerate(shards) if f'P\\{name}::__pest_evaluable_it_works' in shard)
                 for name in classes[:3]]
-        self.assertEqual([1, 1, 2], sorted(slow))
-        self.assertLess(len(shards[0]), min(len(shards[1]), len(shards[2])))
-        self.assertIn('3 shards: 300 affected test classes, more than 200.', result.stdout)
+        self.assertEqual([1, 2, 3], sorted(slow))
+        # Each class goes to the shard that would end first, by its process seconds over its Pest processes: 6 for the
+        # first shard, 4 for the others. The first shard's head start still gives it the fewest classes.
+        self.assertLess(len(shards[0]), min(len(shard) for shard in shards[1:]))
+        self.assertIn('4 shards: 300 affected test classes, more than 200.', result.stdout)
+        self.assertIn('Shard 1: 7 classes, about 218 process seconds on 6 processes.', result.stdout)
 
     def test_fails_when_pest_cannot_list_the_selection(self):
         result, outputs, plan = self.shard_plan(['Tests\\Feature\\AreaTest'], status=2)

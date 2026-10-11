@@ -45,9 +45,12 @@ READ_ANYWAY = {
 }
 # A pull request whose selection has more test classes than this runs its Gateway tests in shards. The full suite of
 # about 760 classes takes about 12 minutes on Sabre, so 200 classes take about 3 minutes: then the Gateway job already
-# ends about when the slowest other job does, and two more jobs would only take Sabre runners from other runs.
+# ends about when the slowest other job does, and three more jobs would only take shard runners from other runs.
 SHARD_THRESHOLD = 200
-SHARDS = 3
+# The Pest processes of each shard. The first shard runs in the Gateway job on Sabre; the others each run on one
+# orbit-shard runner, capped at 4 processes.
+SHARD_PROCESSES = (6, 4, 4, 4)
+SHARDS = len(SHARD_PROCESSES)
 # Pest records each test's own time. Booting the application for it adds about 0.2 seconds in CI.
 TEST_OVERHEAD_SECONDS = 0.2
 # The first shard runs in the Gateway job, which also runs the architecture tests: about 35 seconds on 6 processes.
@@ -267,14 +270,16 @@ def class_seconds():
     return seconds
 
 
-def split(classes, seconds, count):
-    """Split the classes into balanced shards, longest first; the first shard starts with the architecture tests."""
+def split(classes, seconds, processes):
+    """Split the classes into shards that end together, longest first: each class goes to the shard that would end
+    first, by its process seconds over its processes. The first shard starts with the architecture tests."""
     known = sorted(seconds[name] for name in classes if name in seconds)
     unknown = known[len(known) // 2] if known else 1.0
-    loads = [FIRST_SHARD_HEAD_START] + [0.0] * (count - 1)
-    shards = [[] for _ in range(count)]
+    loads = [FIRST_SHARD_HEAD_START] + [0.0] * (len(processes) - 1)
+    shards = [[] for _ in processes]
     for name in sorted(classes, key=lambda name: (-seconds.get(name, unknown), name)):
-        index = loads.index(min(loads))
+        ends = [load / count for load, count in zip(loads, processes)]
+        index = ends.index(min(ends))
         shards[index].append(name)
         loads[index] += seconds.get(name, unknown)
     return [sorted(shard) for shard in shards], loads
@@ -287,13 +292,13 @@ def shard_plan(arguments):
     if len(classes) <= SHARD_THRESHOLD:
         print(f'One job: {len(classes)} affected test classes, at most {SHARD_THRESHOLD}.')
     else:
-        shards, loads = split(classes, class_seconds(), SHARDS)
+        shards, loads = split(classes, class_seconds(), SHARD_PROCESSES)
         # PHPUnit matches the filter against `Class::test`, so it selects exactly the tests of the shard's classes.
         plan['shards'] = SHARDS
         plan['filters'] = [r'^(?:P\\)?(?:' + '|'.join(re.escape(name) for name in shard) + ')::' for shard in shards]
         print(f'{SHARDS} shards: {len(classes)} affected test classes, more than {SHARD_THRESHOLD}.')
-        for number, (shard, load) in enumerate(zip(shards, loads), 1):
-            print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds.')
+        for number, (shard, load, processes) in enumerate(zip(shards, loads, SHARD_PROCESSES), 1):
+            print(f'Shard {number}: {len(shard)} classes, about {load:.0f} process seconds on {processes} processes.')
     Path(arguments.plan).write_text(json.dumps(plan) + '\n')
     output = os.environ.get('GITHUB_OUTPUT')
     if output:
