@@ -40,7 +40,7 @@ final class LaravelZeroGuidelineComposer extends GuidelineComposer
 
             ## Boost Commands
 
-            - Run `composer guidance:generate` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
+            - Run `composer guidance:update` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
             - Run `composer guidance:check` to verify the committed guidance and installed skill output.
             - The Boost MCP server is configured in `.codex/config.toml`. Use a Boost MCP tool only when the active client exposes that tool. Use repository commands and files when it does not.
             MARKDOWN;

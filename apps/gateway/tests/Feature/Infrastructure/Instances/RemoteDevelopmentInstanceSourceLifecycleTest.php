@@ -62,6 +62,7 @@ use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -718,6 +719,78 @@ describe('TaskWorkspaceAcl', function (): void {
     });
 });
 
+describe('CheckoutProcesses', function (): void {
+    it('stops the processes inside a task workspace before deleting it and leaves every other process alone', function (string $operation): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Orphans', 'brief' => 'Brief.', 'status' => TaskGroupStatus::Running]);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id);
+        $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-'.$group->id.'0');
+        $checkout = (string) $instance->checkout_path;
+        // A copy of bash keeps its own behaviour under any name; a multi-call coreutils `sleep` does not.
+        copy((string) new ExecutableFinder()->find('bash'), $checkout.'/orbit-test-shell');
+        chmod($checkout.'/orbit-test-shell', 0o755);
+        // A tmux server started in the workspace hosts sessions that work elsewhere: its name is all that tells it apart.
+        copy((string) new ExecutableFinder()->find('bash'), $this->sandbox.'/tmux: server');
+        chmod($this->sandbox.'/tmux: server', 0o755);
+        $stopped = [
+            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'worker cwd' => orb_checkout_process_spawn($checkout, 'sleep', 'nobody'),
+            'own executable' => orb_checkout_process_spawn($this->sandbox, $checkout.'/orbit-test-shell'),
+        ];
+        $kept = [
+            'own tmux server' => orb_checkout_process_spawn($checkout, $this->sandbox.'/tmux: server'),
+            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep'),
+            'worker sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep', 'nobody'),
+            'own outside' => orb_checkout_process_spawn($this->sandbox, 'sleep'),
+        ];
+
+        try {
+            if ($operation === 'finalize') {
+                $this->removal->finalize(orb180_record_source($this->removal, $instance, true));
+            } else {
+                orb178_remove_source($this->removal, $instance, true);
+            }
+
+            expect(file_exists($checkout))->toBeFalse();
+            foreach ($stopped as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeFalse("{$label} process {$pid} still runs");
+            }
+            foreach ($kept as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
+            }
+        } finally {
+            foreach ([...$stopped, ...$kept] as $label => $pid) {
+                $user = str_starts_with($label, 'worker') ? ['sudo', '-n', '-u', 'nobody', '--'] : [];
+                orb178_run_allow_failure([...$user, 'kill', '-KILL', (string) $pid]);
+            }
+        }
+    })->with(['finalize', 'remove']);
+
+    it('leaves the processes inside a development Instance running', function (string $name): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, $name);
+        $checkout = (string) $instance->checkout_path;
+        $kept = [
+            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'worker cwd' => orb_checkout_process_spawn($checkout, 'sleep', 'nobody'),
+        ];
+
+        try {
+            orb178_remove_source($this->removal, $instance, true);
+
+            expect(file_exists($checkout))->toBeFalse();
+            foreach ($kept as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
+            }
+        } finally {
+            foreach ($kept as $label => $pid) {
+                $user = str_starts_with($label, 'worker') ? ['sudo', '-n', '-u', 'nobody', '--'] : [];
+                orb178_run_allow_failure([...$user, 'kill', '-KILL', (string) $pid]);
+            }
+        }
+    })->with(['named' => 'feature-processes', 'task name without a group' => 'task-999999']);
+});
+
 it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {
     $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'unrelated');
     $before = orb866_source_bytes($sibling->checkout_path);
@@ -1338,6 +1411,24 @@ it('checks local HEAD before rename without contacting origin or changing Git so
     foreach ($this->transport->commands as $command) {
         expect($command->input)->not->toContain('git_read', ' fetch ', ' checkout ', ' reset ');
     }
+});
+
+it('reports a held checkout lifecycle lock before rename without leaving a lock file', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $checkout = (string) $instance->checkout_path;
+    $legacyLock = '/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $checkout).'.lock';
+    $held = fopen($checkout, 'r');
+    expect($held !== false && flock($held, LOCK_EX | LOCK_NB))->toBeTrue();
+
+    try {
+        expect(fn () => $this->source->assertBranchCheckedOut($instance, 'main'))
+            ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('instance.lifecycle_busy'));
+    } finally {
+        fclose($held);
+    }
+
+    $this->source->assertBranchCheckedOut($instance, (string) $instance->branch);
+    expect(file_exists($legacyLock))->toBeFalse();
 });
 
 it('inspects unresolved prepared repositories and absent reserved paths without force', function (string $sourceState): void {
@@ -3672,6 +3763,37 @@ function orb76_run(array $arguments, ?string $input = null): CommandResult
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;
+}
+
+/**
+ * Start a detached process in $directory, optionally as $user, and return its PID. `sleep` sleeps 300 seconds;
+ * any other executable is a copy of bash that waits up to 300 seconds on a FIFO without a child process.
+ */
+function orb_checkout_process_spawn(string $directory, string $executable, ?string $user = null): int
+{
+    $script = <<<'BASH'
+        cd -- "$1"
+        if [ "$2" = sleep ]; then
+            nohup sleep 300 >/dev/null 2>&1 </dev/null &
+        else
+            fifo=$(mktemp -u)
+            mkfifo -m 0600 -- "$fifo"
+            nohup "$2" -c 'exec 9<>"$0"; rm -f -- "$0"; read -t 300 -u 9 || true' "$fifo" >/dev/null 2>&1 </dev/null &
+        fi
+        printf %s "$!"
+        BASH;
+    $prefix = $user === null ? [] : ['sudo', '-n', '-u', $user, '--'];
+    $pid = (int) orb76_run([...$prefix, 'bash', '-c', $script, '_', $directory, $executable])->stdout;
+    expect(orb_checkout_process_running($pid))->toBeTrue();
+
+    return $pid;
+}
+
+function orb_checkout_process_running(int $pid): bool
+{
+    $stat = @file_get_contents("/proc/{$pid}/stat");
+
+    return is_string($stat) && preg_match('/\) Z /', $stat) !== 1;
 }
 
 /** @param non-empty-list<string> $arguments */

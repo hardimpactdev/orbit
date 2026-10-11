@@ -1,6 +1,6 @@
 <?php
 
-// Read-only report of a Laravel Horizon queue, run by the Gateway in an App instance's checkout.
+// Read-only report of a Laravel Horizon queue, run by the Gateway in an Instance's checkout.
 // Arguments: the job state (pending, completed, failed) and the number of jobs to list.
 // It prints one JSON document after a marker line, and never a job payload.
 

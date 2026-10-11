@@ -464,7 +464,12 @@ describe('Composer configuration', function (): void {
 
     it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
         $source = base_path('../../apps/docs');
-        $project = temporaryPath('orbit-guidance-check-', 6);
+        // composer guidance:check runs ../../bin/guidance-check, so the copy keeps the monorepo layout.
+        $root = temporaryPath('orbit-guidance-check-', 6);
+        $project = $root.'/apps/docs';
+        mkdir($root.'/bin', 0o700, true);
+        copy(base_path('../../bin/guidance-check'), $root.'/bin/guidance-check');
+        chmod($root.'/bin/guidance-check', 0o700);
 
         mkdir($project.'/app', 0o700, true);
         mkdir($project.'/tests/Unit', 0o700, true);

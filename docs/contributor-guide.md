@@ -25,7 +25,7 @@ From the repository root, install the project dependencies:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+`bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
 
 ## 1. Check the architecture
 
@@ -64,7 +64,7 @@ composer docs-build
 composer docs-lint
 ```
 
-Commit `docs/generated/context.json` when `docs-build` changes it. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
+Commit `docs/generated/context.json` when `docs-build` changes it. A new page also needs a place in the `docs/docs.json` navigation; `composer docs-nav` fails for a page that exists only on disk. For Mintlify page or navigation changes, also run `npx mint validate` and `npx mint broken-links` from `docs/`.
 
 ## 3. Implement and verify
 
@@ -101,9 +101,11 @@ Add regression tests for behavior changes and their important failure modes. A b
 
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
-GitHub CI runs quality checks and affected tests for the five Composer projects, including documentation lint. It also checks and tests the web app, the Pi server, and the Rust agent, as [CI](/reference/implementation-loop#ci) lists. CI does not build the desktop app.
+GitHub CI runs quality checks and affected tests for the five Composer projects, including documentation lint. It also checks and tests the web app, the Pi server, and the Rust agent, and lints the desktop app, as [CI](/reference/implementation-loop#ci) lists.
 
 Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five Composer projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+
+The five projects share one tooling baseline: the same Composer script names and commands, the same `composer check` steps, and PHPStan level 9. `bin/tooling-baseline` fails when a project drifts from it, or when Pint skips a folder that Rector or PHPStan checks. CI and `bin/review-check` run it. To change a project's tooling on purpose, change the baseline in the same pull request and give the reason for any difference.
 
 ## Audit tests and unused code
 

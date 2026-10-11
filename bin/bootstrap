@@ -3,12 +3,19 @@
 set -euo pipefail
 
 run_checks=1
-if [[ $# -eq 1 && "$1" == --skip-checks ]]; then
-    run_checks=0
-elif [[ $# -ne 0 ]]; then
-    printf 'Usage: bin/bootstrap [--skip-checks]\n' >&2
-    exit 2
-fi
+with_bun=0
+with_rust=0
+for argument in "$@"; do
+    case "$argument" in
+        --skip-checks) run_checks=0 ;;
+        --with-bun) with_bun=1 ;;
+        --with-rust) with_rust=1 ;;
+        *)
+            printf 'Usage: bin/bootstrap [--skip-checks] [--with-bun] [--with-rust]\n' >&2
+            exit 2
+            ;;
+    esac
+done
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
@@ -27,6 +34,21 @@ fi
 
 if ! command -v openssl >/dev/null 2>&1; then
     printf 'OpenSSL is required.\n' >&2
+    exit 2
+fi
+
+# The web app, the Pi server, and the desktop app use Bun; the Node agent and the desktop shell use Cargo.
+# docs/reference/bun-and-rust-projects.md lists the versions and how to check each project.
+bun_projects=("apps/web" "apps/pi-server" "apps/desktop")
+cargo_projects=("apps/agent" "apps/desktop/src-tauri")
+
+if ((with_bun)) && ! command -v bun >/dev/null 2>&1; then
+    printf 'Bun is required for --with-bun. See https://bun.sh.\n' >&2
+    exit 2
+fi
+
+if ((with_rust)) && ! command -v cargo >/dev/null 2>&1; then
+    printf 'Cargo is required for --with-rust. See https://rustup.rs.\n' >&2
     exit 2
 fi
 
@@ -70,6 +92,20 @@ done
 
 if ((failed != 0)); then
     exit "$failed"
+fi
+
+if ((with_bun)); then
+    for project in "${bun_projects[@]}"; do
+        printf '\n[%s] bun install\n' "$project"
+        (cd "$repository_root/$project" && bun install --frozen-lockfile)
+    done
+fi
+
+if ((with_rust)); then
+    for project in "${cargo_projects[@]}"; do
+        printf '\n[%s] cargo fetch\n' "$project"
+        (cd "$repository_root/$project" && cargo fetch --locked)
+    done
 fi
 
 "$repository_root/bin/worktree-cache"

@@ -7,6 +7,7 @@ namespace App\Jobs\TaskVms;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmCloudInit;
+use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,7 +26,7 @@ final class ProvisionTaskVm implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 300;
 
-    public function handle(TaskVmProvider $provider, TaskVmCloudInit $cloudInit, SshKeyProvider $keys): void
+    public function handle(TaskVmProvider $provider, TaskVmCloudInit $cloudInit, SshKeyProvider $keys, TaskVmStepClock $clock): void
     {
         $vm = $this->provisioning();
         // An enrolled VM is never created again: create() could start it in the middle of a guest reboot.
@@ -33,7 +34,10 @@ final class ProvisionTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // From the claim that recorded the row, so the step includes the wait for the worker.
+        $clock->start($vm, $vm->created_at?->getTimestamp());
         $provider->create($vm, $cloudInit->render($keys->publicKey()));
+        $clock->step('create');
         EnrollTaskVm::dispatch($vm->id, now()->getTimestamp());
     }
 }
