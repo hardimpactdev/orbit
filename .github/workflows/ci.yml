@@ -222,29 +222,45 @@ jobs:
             ${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}
 
       # The Gateway plan job lists the Gateway tests of a pull request at the same time as this job's quality checks.
-      # This job reads the plan when it needs it, so the other projects do not wait for the plan.
+      # This job reads the plan when it needs it, so the other projects do not wait for the plan. A partial re-run
+      # copies the finished plan job and its artifact, so it reads the same plan. API errors are retried for a minute.
       - name: Read the Gateway test plan
         id: gateway-plan
         if: matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          errors=0
           for _ in $(seq 120); do
-            job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
-              --jq '.jobs[] | select(.name == "Gateway plan") | "\(.status) \(.conclusion) \(.run_attempt)"')
-            read -r status conclusion attempt <<< "$job" || true
+            if ! job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | select(.name == "Gateway plan") | "\(.status) \(.conclusion)"'); then
+              errors=$((errors + 1))
+              if [ "$errors" -ge 12 ]; then
+                echo '::error::The Actions API did not answer 12 times in a row.'
+                exit 1
+              fi
+              sleep 5
+              continue
+            fi
+            errors=0
+            read -r status conclusion <<< "$job" || true
             if [ "$status" = completed ]; then
               if [ "$conclusion" != success ]; then
                 echo "::error::The Gateway plan job ended with $conclusion."
                 exit 1
               fi
-              gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n "gateway-plan-$attempt" -D "$RUNNER_TEMP/gateway-plan"
+              for attempt in 1 2 3; do
+                rm -rf "$RUNNER_TEMP/gateway-plan"
+                gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -n gateway-plan -D "$RUNNER_TEMP/gateway-plan" && break
+                [ "$attempt" = 3 ] && exit 1
+                sleep 5
+              done
               plan="$RUNNER_TEMP/gateway-plan/gateway-plan.json"
               if [ "$(jq -r .commit "$plan")" != "$(git rev-parse HEAD)" ]; then
-                echo "::error::The Gateway plan describes $(jq -r .commit "$plan"), not $(git rev-parse HEAD)."
+                echo "::error::The Gateway plan describes $(jq -r .commit "$plan"), not $(git rev-parse HEAD): refs/pull/N/merge moved since the plan ran. Re-run all jobs, not only the failed ones."
                 exit 1
               fi
-              printf 'shards=%s\nfilter=%s\n' "$(jq -r .shards "$plan")" "$(jq -r '.filters[0] // ""' "$plan")" >> "$GITHUB_OUTPUT"
+              printf 'sharded=%s\nfilter=%s\n' "$(jq -r '.shards > 1' "$plan")" "$(jq -r '.filters[0] // ""' "$plan")" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             sleep 5
@@ -253,12 +269,12 @@ jobs:
           exit 1
 
       - name: Run affected tests
-        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.shards != '3'
+        if: matrix.part != 'subprocess' && github.event_name == 'pull_request' && steps.gateway-plan.outputs.sharded != 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
-      - name: Run Gateway shard 1 of 3
-        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.shards == '3'
+      - name: Run Gateway shard 1
+        if: matrix.part != 'subprocess' && steps.gateway-plan.outputs.sharded == 'true'
         env:
           FILTER: ${{ steps.gateway-plan.outputs.filter }}
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
@@ -382,7 +398,7 @@ jobs:
           retention-days: 14
 
   # A pull request lists its Gateway test selection here. When it has more than 200 test classes, the Gateway job
-  # runs the first of three shards and the Gateway shards job runs the other two, each on its own runner. Runs on main
+  # runs the first of up to three shards and the Gateway shards job runs the others, each on its own runner. Runs on main
   # keep one Gateway job, because the full run there writes the whole Pest TIA graph.
   gateway-plan:
     name: Gateway plan
@@ -392,8 +408,8 @@ jobs:
     outputs:
       commit: ${{ steps.plan.outputs.commit }}
       shards: ${{ steps.plan.outputs.shards }}
-      filter-2: ${{ steps.plan.outputs.filter-2 }}
-      filter-3: ${{ steps.plan.outputs.filter-3 }}
+      sharded: ${{ steps.plan.outputs.sharded }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
     defaults:
@@ -443,24 +459,27 @@ jobs:
         id: plan
         run: ../../bin/ci-tia shards --plan "$RUNNER_TEMP/gateway-plan.json"
 
+      # One name for every attempt: a partial re-run copies this job and reads its artifact, and a full re-run replaces
+      # it. GitHub allows re-runs for 30 days.
       - name: Publish the Gateway test plan
         uses: actions/upload-artifact@v7
         with:
-          name: gateway-plan-${{ github.run_attempt }}
+          name: gateway-plan
           path: ${{ runner.temp }}/gateway-plan.json
           if-no-files-found: error
-          retention-days: 1
+          overwrite: true
+          retention-days: 30
 
   gateway-shards:
     name: Gateway shards
     needs: gateway-plan
-    if: needs.gateway-plan.outputs.shards == '3'
+    if: needs.gateway-plan.outputs.sharded == 'true'
     # The same runners as the Gateway job: Sabre for this repository's pull requests, a hosted runner for forks.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [2, 3]
+        shard: ${{ fromJSON(needs.gateway-plan.outputs.matrix || '[2]') }}
     defaults:
       run:
         working-directory: apps/gateway
@@ -509,11 +528,21 @@ jobs:
           cp .env.example .env
           composer install --no-interaction --prefer-dist
 
+      - name: Download the Gateway test plan
+        uses: actions/download-artifact@v8
+        with:
+          name: gateway-plan
+          path: ${{ runner.temp }}/gateway-plan
+
       # A filter turns TIA off, so the shard runs exactly the test classes that the plan gave it.
-      - name: Run Gateway shard ${{ matrix.shard }} of 3
+      - name: Run Gateway shard ${{ matrix.shard }}
         env:
-          FILTER: ${{ matrix.shard == 2 && needs.gateway-plan.outputs.filter-2 || needs.gateway-plan.outputs.filter-3 }}
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$FILTER"
+          SHARD: ${{ matrix.shard }}
+        run: |
+          plan="$RUNNER_TEMP/gateway-plan/gateway-plan.json"
+          test "$(jq -r .commit "$plan")" = "$(git rev-parse HEAD)"
+          filter=$(jq -r --argjson shard "$SHARD" '.filters[$shard - 1]' "$plan")
+          vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact --filter "$filter"
 
   privileged:
     name: Gateway privileged
@@ -849,7 +878,7 @@ jobs:
           DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
           GATEWAY_PLAN_RESULT: ${{ needs.gateway-plan.result }}
-          GATEWAY_SHARDS: ${{ needs.gateway-plan.outputs.shards }}
+          GATEWAY_SHARDED: ${{ needs.gateway-plan.outputs.sharded }}
           GATEWAY_SHARDS_RESULT: ${{ needs.gateway-shards.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
@@ -862,10 +891,10 @@ jobs:
             if [ "$EVENT" = pull_request ]; then
               test "$DOCS_MERGE_REF_RESULT" = success && test "$GATEWAY_PLAN_RESULT" = success && {
                 # The shards run exactly when the plan chose them.
-                if [ "$GATEWAY_SHARDS" = 3 ]; then
+                if [ "$GATEWAY_SHARDED" = true ]; then
                   test "$GATEWAY_SHARDS_RESULT" = success
                 else
-                  test "$GATEWAY_SHARDS" = 1 && test "$GATEWAY_SHARDS_RESULT" = skipped
+                  test "$GATEWAY_SHARDED" = false && test "$GATEWAY_SHARDS_RESULT" = skipped
                 fi
               }
             else
