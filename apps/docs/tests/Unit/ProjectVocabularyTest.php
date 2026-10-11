@@ -80,6 +80,9 @@ it('fails when an App-domain name is present', function (string $relative, strin
     'rule unique apps' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['slug' => Rule::unique('apps')];\n", 'apps table'],
     'camelCase app instance' => ['apps/web/src/instance.ts', "export const appInstanceId = 4;\n", 'AppInstance'],
     'camelCase app id' => ['apps/web/src/project.ts', "export const appId = 4;\n", 'appId'],
+    'App instance prose' => ['apps/gateway/app/Example.php', "<?php\n// Runs in the group's App instance.\n", 'App instance'],
+    'App instance in the root README' => ['README.md', "Create a development App instance.\n", 'App instance'],
+    'Pi server source' => ['apps/pi-server/src/example.ts', "export const appInstanceId = 4;\n", 'AppInstance'],
     'covers glob' => ['docs/reference/example.md', "apps/gateway/app/Actions/AppInstances/CreateAppInstanceAction.php\n", 'AppInstance'],
 ]);
 

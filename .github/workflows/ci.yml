@@ -460,6 +460,8 @@ jobs:
 
       - name: Check that the projects share their tooling baseline
         run: php bin/tooling-baseline
+      - name: Check that every docs page is in the site navigation
+        run: php bin/docs-nav
 
       - name: Install Gateway and CLI dependencies
         run: |

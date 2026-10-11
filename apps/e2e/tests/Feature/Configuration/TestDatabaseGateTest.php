@@ -27,6 +27,7 @@ function orb247_gate_fixture(): array
     file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/tooling-baseline', "#!/usr/bin/env sh\nexit 0\n");
+    file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
     copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);
@@ -34,6 +35,7 @@ function orb247_gate_fixture(): array
     chmod($root.'/bin/project-vocabulary', 0o700);
     chmod($root.'/bin/env-docs', 0o700);
     chmod($root.'/bin/tooling-baseline', 0o700);
+    chmod($root.'/bin/docs-nav', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 

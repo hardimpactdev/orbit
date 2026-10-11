@@ -92,6 +92,7 @@ SH);
     file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
     file_put_contents($root.'/bin/tooling-baseline', "#!/usr/bin/env sh\nexit 0\n");
+    file_put_contents($root.'/bin/docs-nav', "#!/usr/bin/env sh\nexit 0\n");
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     foreach (['bun', 'vp'] as $tool) {
@@ -124,6 +125,7 @@ SH);
     chmod($root.'/bin/project-vocabulary', 0o700);
     chmod($root.'/bin/env-docs', 0o700);
     chmod($root.'/bin/tooling-baseline', 0o700);
+    chmod($root.'/bin/docs-nav', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 
@@ -340,7 +342,7 @@ describe('Builder gate', function (): void {
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe([$path])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects())
-            ->and(collect($receipt['checks'])->count())->toBe(19);
+            ->and(collect($receipt['checks'])->count())->toBe(20);
     })->with([
         'documentation-only change' => ['docs/reference/example.md'],
         'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php'],
@@ -656,7 +658,7 @@ PHP);
         expect($main['receipt']['candidate'])->toBe($fixture['main']);
         expect($main['receipt']['changed_paths'])->toBe([]);
         expect(collect($main['receipt']['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
-        expect(collect($main['receipt']['checks'])->count())->toBe(19);
+        expect(collect($main['receipt']['checks'])->count())->toBe(20);
         expect(collect($main['receipt']['checks'])->pluck('command')->all())
             ->not->toContain(orb277_full_suite_command());
         expect($main['receipt']['passed'])->toBeTrue();
