@@ -224,9 +224,10 @@ it('reads the cloud-init status', function (CommandResult $result, bool $ready):
     ($this->answer)($result);
 
     expect($this->provider->bootstrapReady($this->vm))->toBe($ready)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'cloud-init', 'status', '--format=json']]);
+        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'timeout', '30', 'cloud-init', 'status', '--wait', '--format=json']]);
 })->with([
     'agent not running' => [incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"), false],
+    'still running after the wait' => [incusResult(exitCode: 124), false],
     'running' => [incusResult('{"status":"running","errors":[]}'), false],
     'done' => [incusResult('{"status":"done","extended_status":"done","errors":[]}'), true],
     'done with warnings' => [incusResult('{"status":"done","errors":[],"recoverable_errors":{"WARNING":["schema"]}}', 2), true],
@@ -250,6 +251,22 @@ it('reads the ed25519 host key fingerprint', function (): void {
 
     expect($this->provider->sshHostFingerprint($this->vm))->toBe($fingerprint)
         ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']]);
+});
+
+it('reads the image manifest, or null for an image without one', function (string $stdout, ?string $manifest): void {
+    ($this->answer)(incusResult($stdout));
+
+    expect($this->provider->imageManifest($this->vm))->toBe($manifest)
+        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'sh', '-c', 'if [ -e "$1" ]; then cat -- "$1"; else printf absent; fi', 'sh', '/var/lib/orbit-task-vm/image.json']]);
+})->with([
+    'manifest' => ['{"schema":1,"programs":{}}'."\n", '{"schema":1,"programs":{}}'."\n"],
+    'none' => ['absent', null],
+]);
+
+it('fails when it cannot read the image manifest', function (): void {
+    ($this->answer)(incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"));
+
+    expect(fn () => $this->provider->imageManifest($this->vm))->toThrow(TaskVmException::class, 'exec cat image manifest');
 });
 
 it('refuses an invalid fingerprint', function (CommandResult $result, string $code): void {

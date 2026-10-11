@@ -296,6 +296,7 @@ it('reaches a host through its jump host with the same strict options on both ho
             identityFile: "{$sshDirectory}/id_ed25519",
             knownHostsFile: "{$sshDirectory}/known_hosts",
         ),
+        hostIdentity: 'SHA256:vm-a',
     );
 
     try {
@@ -320,6 +321,12 @@ it('reaches a host through its jump host with the same strict options on both ho
             '-o',
             'ServerAliveCountMax=2',
             '-o',
+            'ControlMaster=auto',
+            '-o',
+            "ControlPath={$sshDirectory}/mux/".sha1('nckrtl@10.44.0.7:22>orbit@10.251.77.32:22#SHA256:vm-a'),
+            '-o',
+            'ControlPersist=60s',
+            '-o',
             "ProxyCommand='ssh' '-i' '{$sshDirectory}/id_ed25519' '-p' '22' '-o' 'BatchMode=yes'"
                 ." '-o' 'StrictHostKeyChecking=yes' '-o' 'UserKnownHostsFile={$sshDirectory}/known_hosts'"
                 ." '-o' 'ConnectTimeout=10' '-o' 'ServerAliveInterval=5' '-o' 'ServerAliveCountMax=2'"
@@ -327,8 +334,54 @@ it('reaches a host through its jump host with the same strict options on both ho
             '--',
             'orbit@10.251.77.32',
             "'true'",
-        ])->and(is_dir("{$sshDirectory}/mux"))->toBeFalse();
+        ]);
     } finally {
+        @rmdir("{$sshDirectory}/mux");
+        rmdir($sshDirectory);
+    }
+});
+
+it('names the shared connection through a jump host after both hosts and the host identity', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+    $through = static fn (string $jump, ?string $identity): SshConnection => new SshConnection(
+        host: '10.251.77.32',
+        user: 'orbit',
+        port: 22,
+        identityFile: "{$sshDirectory}/id_ed25519",
+        knownHostsFile: "{$sshDirectory}/known_hosts",
+        proxyJump: new SshConnection(
+            host: $jump,
+            user: 'nckrtl',
+            port: 22,
+            identityFile: "{$sshDirectory}/id_ed25519",
+            knownHostsFile: "{$sshDirectory}/known_hosts",
+        ),
+        hostIdentity: $identity,
+    );
+    $socket = static fn (): ?string => collect($runner->invocation?->arguments ?? [])->first(static fn (string $argument): bool => str_starts_with($argument, 'ControlPath='));
+    $run = static function (SshConnection $connection) use ($runner, $socket): ?string {
+        new NativeSshExecutor($runner)->execute($connection, new RemoteCommand(['true']));
+
+        return $socket();
+    };
+
+    try {
+        $beast = $run($through('10.44.0.7', 'SHA256:vm-a'));
+        $shark = $run($through('10.44.0.11', 'SHA256:vm-a'));
+        // The next VM at the same address behind the same host has another host key.
+        $reused = $run($through('10.44.0.7', 'SHA256:vm-b'));
+        $unknown = $run($through('10.44.0.7', null));
+        $direct = $run(ssh_executor_connection($sshDirectory));
+
+        expect($beast)->not->toBe($shark)
+            ->and($reused)->not->toBe($beast)
+            ->and(strlen(basename((string) $beast)))->toBe(40)
+            ->and($unknown)->toBeNull()
+            ->and($direct)->toBe("ControlPath={$sshDirectory}/mux/%C");
+    } finally {
+        @rmdir("{$sshDirectory}/mux");
         rmdir($sshDirectory);
     }
 });

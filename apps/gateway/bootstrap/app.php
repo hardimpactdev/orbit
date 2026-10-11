@@ -85,9 +85,19 @@ return Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => RefillTaskVmPool::due());
         // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
         // One worker run takes a VM from launch to ready, so the next job never waits for the next start.
+        // Every second, so a claim outside the task tick waits at most a second for its VM to start. Only a
+        // job that a worker would take now starts one: a delayed retry or release waits for its time, as the
+        // queue does, and a reserved job waits until its reservation expires.
         $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500')
-            ->everyFiveSeconds()->withoutOverlapping(30)
-            ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->where('available_at', '<=', now()->getTimestamp())->exists());
+            ->everySecond()->withoutOverlapping(30)
+            ->when(static function (): bool {
+                $now = now()->getTimestamp();
+
+                return DB::table('jobs')->where('queue', 'task-vms')->where('available_at', '<=', $now)
+                    ->where(static fn ($query) => $query->whereNull('reserved_at')
+                        ->orWhere('reserved_at', '<=', $now - (int) config('queue.connections.task-vms.retry_after')))
+                    ->exists();
+            });
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

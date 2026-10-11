@@ -44,9 +44,11 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
+use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -97,6 +99,9 @@ final class TaskVmLifecycleProvider implements TaskVmProvider
 
     public ?Closure $onDestroy = null;
 
+    /** The image manifest the VM holds, or null for an image without one. */
+    public ?string $manifest = null;
+
     public function create(TaskVm $vm, string $userData): void
     {
         $this->calls[] = 'create';
@@ -125,6 +130,13 @@ final class TaskVmLifecycleProvider implements TaskVmProvider
         $this->calls[] = 'fingerprint';
 
         return TVM_LIFE_FINGERPRINT;
+    }
+
+    public function imageManifest(TaskVm $vm): ?string
+    {
+        $this->calls[] = 'manifest';
+
+        return $this->manifest;
     }
 
     public function start(TaskVm $vm): void
@@ -461,6 +473,7 @@ describe(EnrollTaskVm::class, function (): void {
                     'host' => $node->public_ssh_host, 'jump' => $node->ssh_jump_node_id, 'wireguard_ip' => $node->wireguard_ip,
                     'user' => $identity->bootstrapUser, 'fingerprint' => $expectedSshHostFingerprint,
                     'linked' => TaskVm::query()->where('node_id', $node->id)->exists(),
+                    'baked' => app(TaskVmBakedPrograms::class)->holds($node, 'bootstrap', new RemoteCommand(['bootstrap'])),
                 ];
 
                 return new NodeObservation('x86_64');
@@ -496,7 +509,8 @@ describe(EnrollTaskVm::class, function (): void {
     });
 
     it('enrolls in the same run when cloud-init finishes during its polls', function (): void {
-        $this->provider->observations = [new VmObservation(true, null), new VmObservation(true, null)];
+        // Each poll reads the VM, then once more after cloud-init is done, until the host reports the address.
+        $this->provider->observations = array_fill(0, 4, new VmObservation(true, null));
         $vm = tvm_life_vm(tvm_life_group());
         $job = (new EnrollTaskVm($vm->id, now()->getTimestamp()))->withFakeQueueInteractions();
 
@@ -534,7 +548,7 @@ describe(EnrollTaskVm::class, function (): void {
         $node = Node::query()->where('name', $vm->name)->sole();
         expect($this->converged)->toBe([[
             'host' => '10.251.77.20', 'jump' => $this->host->id, 'wireguard_ip' => '10.44.0.129',
-            'user' => 'orbit', 'fingerprint' => TVM_LIFE_FINGERPRINT, 'linked' => true,
+            'user' => 'orbit', 'fingerprint' => TVM_LIFE_FINGERPRINT, 'linked' => true, 'baked' => false,
         ]])
             ->and($vm->fresh()?->node_id)->toBe($node->id)
             ->and($vm->fresh()?->address)->toBe('10.251.77.20')
@@ -542,8 +556,53 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
-            ->and($this->provider->calls)->toBe(['observe', 'bootstrapReady', 'fingerprint']);
+            ->and($this->provider->calls)->toBe(['observe', 'bootstrapReady', 'fingerprint', 'manifest']);
         Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('loads the image manifest for the enrollment and drops it afterwards', function (): void {
+        $vm = tvm_life_vm(tvm_life_group());
+        $this->provider->manifest = TaskVmBakedPrograms::manifest(['bootstrap' => new RemoteCommand(['bootstrap'])]);
+
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
+
+        $node = Node::query()->where('name', $vm->name)->sole();
+        expect($this->converged[0]['baked'])->toBeTrue()
+            ->and(app(TaskVmBakedPrograms::class)->holds($node, 'bootstrap', new RemoteCommand(['bootstrap'])))->toBeFalse();
+    });
+
+    it('skips the baked programs for a warm pool VM too, which enrolls before any claim', function (): void {
+        $vm = TaskVm::query()->create([
+            'group_id' => null, 'host_node_id' => $this->host->id, 'provider' => 'incus', 'name' => 'tvm-pending',
+            'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => null,
+        ]);
+        $vm->update(['name' => 'tvm-'.$vm->id]);
+        $this->provider->manifest = TaskVmBakedPrograms::manifest(['bootstrap' => new RemoteCommand(['bootstrap'])]);
+
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
+
+        expect($this->converged[0]['baked'])->toBeTrue()
+            ->and($vm->fresh()?->group_id)->toBeNull();
+    });
+
+    it('enrolls with every program and a warning when the image has no manifest', function (): void {
+        Log::spy();
+        $vm = tvm_life_vm(tvm_life_group());
+
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
+
+        expect($this->converged[0]['baked'])->toBeFalse();
+        Log::shouldHaveReceived('warning')->once()->with('Task VM image has no usable manifest; enrollment runs every program.', ['task_vm' => $vm->name, 'reason' => 'missing']);
+    });
+
+    it('checks cloud-init before the host reports the guest address', function (): void {
+        $this->provider->observations = [new VmObservation(true, null), new VmObservation(true, '10.251.77.20')];
+        $vm = tvm_life_vm(tvm_life_group());
+
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
+
+        expect($vm->fresh()?->address)->toBe('10.251.77.20')
+            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'bootstrapReady', 'observe']);
     });
 
     it('tolerates one stopped reading during a guest reboot', function (): void {
@@ -929,7 +988,7 @@ describe('worker', function (): void {
             ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
             ->and($worker)->toBe(end($events))
             ->and($worker->expression)->toBe('* * * * *')
-            ->and($worker->repeatSeconds)->toBe(5)
+            ->and($worker->repeatSeconds)->toBe(1)
             ->and($worker->withoutOverlapping)->toBeTrue()
             ->and($worker->expiresAt)->toBe(30)
             ->and($worker->runInBackground)->toBeFalse()
@@ -939,5 +998,26 @@ describe('worker', function (): void {
 
         expect($worker->filtersPass(app()))->toBeTrue()
             ->and(DB::table('jobs')->sole()->queue)->toBe('task-vms');
+    });
+
+    it('starts only for a task VM job that a worker would take now', function (): void {
+        $this->freezeSecond();
+        Artisan::call('schedule:list');
+        $worker = collect(app(Schedule::class)->events())->first(fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'));
+        DestroyTaskVm::dispatch(tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed)->id)->delay(now()->addSeconds(60));
+        $job = DB::table('jobs')->sole();
+
+        // A delayed retry or release starts no worker until it is due.
+        expect($worker->filtersPass(app()))->toBeFalse();
+
+        $this->travel(60)->seconds();
+        expect($worker->filtersPass(app()))->toBeTrue();
+
+        // A running worker reserved it; a reservation older than retry_after counts as abandoned.
+        DB::table('jobs')->where('id', $job->id)->update(['reserved_at' => now()->getTimestamp()]);
+        expect($worker->filtersPass(app()))->toBeFalse();
+
+        $this->travel(1800)->seconds();
+        expect($worker->filtersPass(app()))->toBeTrue();
     });
 });

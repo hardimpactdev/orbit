@@ -83,6 +83,11 @@ final class TaskVmParkProvider implements TaskVmProvider
         return 'SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     }
 
+    public function imageManifest(TaskVm $vm): ?string
+    {
+        return null;
+    }
+
     public function start(TaskVm $vm): void
     {
         $this->calls[] = 'start';
