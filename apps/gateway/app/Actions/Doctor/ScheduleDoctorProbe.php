@@ -107,7 +107,7 @@ final readonly class ScheduleDoctorProbe implements DoctorFamilyProbe
     }
 
     /**
-     * The orphan scan needs SSH and passwordless sudo. A Node with no role, such as a client Node,
+     * The orphan scan needs SSH and passwordless sudo. A Node with no role, such as an operator laptop,
      * has no Orbit-managed sudo, so Doctor scans it only while it hosts a Schedule. An unreachable
      * Node without Schedules has nothing this family can report.
      */

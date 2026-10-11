@@ -52,6 +52,10 @@ A path without a file returns the release's `index.html`, and the app's router s
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
+## Node and Instance lists
+
+The dashboard and the Nodes page list Nodes with roles, with their meters, apart from roleless Nodes, which only join the network. Instance lists show each Instance's placement, development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
+
 ## Node detail pages
 
 A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.

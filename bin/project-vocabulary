@@ -4,7 +4,8 @@
 declare(strict_types=1);
 
 /**
- * Fail when an App-domain name returns in the living Project and Instance surface.
+ * Fail when an App-domain name returns in the living Project and Instance surface,
+ * or when a Node is called a worker or client Node instead of a Node with roles or a roleless Node.
  *
  * Scans Gateway app and database code, the PHP SDK, the CLI, web and Pi server
  * sources, maintained docs, and the root README and AGENTS guides. Monorepo paths under apps/ are allowed. The GitHub App
@@ -83,6 +84,8 @@ function project_vocabulary_patterns(): array
         ['apps table', '/\b(?:from|join|into|update|table)\s+[\'"`]?apps(?![\w\/])/'],
         ['apps table', '/\bprotected\s+\$table\s*=\s*[\'"]apps[\'"]/'],
         ['apps table', '/`apps`\s+table|\btables\s+`apps`|\bapps\s+table\b|\btable\s+`apps`/'],
+        // docs/concepts.md names these Nodes with roles and roleless Nodes.
+        ['worker or client Node', '/\b(?:[Ww]orker|[Cc]lient) [Nn]odes?\b/'],
     ];
 }
 
@@ -244,7 +247,7 @@ function project_vocabulary_main(array $argv): int
     }
 
     foreach ($findings as $finding) {
-        fwrite(STDOUT, "{$finding['path']}:{$finding['line']}: App-domain name {$finding['name']}\n");
+        fwrite(STDOUT, "{$finding['path']}:{$finding['line']}: retired name {$finding['name']}\n");
     }
 
     return 1;

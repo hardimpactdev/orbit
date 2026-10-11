@@ -17,7 +17,7 @@ const nodeUpdated = (data: Record<string, unknown>) =>
 it.each(["/nodes", "/"])("draws an updating node on %s as a pulsing blue dot", async (path) => {
     await openApp(path);
 
-    const dot = row("Worker nodes", "beast").getByLabelText(rolloutLabel);
+    const dot = row("Nodes with roles", "beast").getByLabelText(rolloutLabel);
     await expect.element(dot).toBeVisible();
     await expect.element(dot).toHaveAttribute("title", rolloutLabel);
 
@@ -27,18 +27,20 @@ it.each(["/nodes", "/"])("draws an updating node on %s as a pulsing blue dot", a
     expect(style.color).toBe("rgb(97, 175, 239)");
 
     // Nodes that nothing updates keep their dot and do not pulse.
-    const failed = row("Worker nodes", "app-prod").getByLabelText("failed");
+    const failed = row("Nodes with roles", "app-prod").getByLabelText("failed");
     await expect.element(failed).toBeVisible();
     expect(getComputedStyle(failed.element()).animationName).toBe("none");
 });
 
 it("flips the dot when node.updated sets or clears the update", async () => {
     await openApp("/nodes");
-    await expect.element(row("Worker nodes", "beast").getByLabelText(rolloutLabel)).toBeVisible();
+    await expect
+        .element(row("Nodes with roles", "beast").getByLabelText(rolloutLabel))
+        .toBeVisible();
 
     nodeUpdated({ id: 2, updating: null });
     await expect
-        .element(row("Worker nodes", "beast").getByLabelText(/^updating/))
+        .element(row("Nodes with roles", "beast").getByLabelText(/^updating/))
         .not.toBeInTheDocument();
 
     nodeUpdated({
@@ -51,7 +53,7 @@ it("flips the dot when node.updated sets or clears the update", async () => {
         },
     });
     await expect
-        .element(row("Worker nodes", "gateway").getByLabelText("updating — Gateway release"))
+        .element(row("Nodes with roles", "gateway").getByLabelText("updating — Gateway release"))
         .toBeVisible();
 });
 
@@ -67,7 +69,7 @@ it("shows updating in blue where the status is text", async () => {
         },
     });
 
-    const status = row("Client nodes", "studio").getByTitle(rolloutLabel);
+    const status = row("Roleless Nodes", "studio").getByTitle(rolloutLabel);
     await expect.element(status).toBeVisible();
     // The cause is read out to a screen reader and hidden from the eye.
     await expect.element(status).toHaveTextContent(rolloutLabel);

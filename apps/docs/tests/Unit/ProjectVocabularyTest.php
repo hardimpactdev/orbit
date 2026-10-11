@@ -50,7 +50,7 @@ function vocabularyRemove(string $root): void
     rmdir($root);
 }
 
-it('fails when an App-domain name is present', function (string $relative, string $contents, string $name): void {
+it('fails when an App-domain name or a retired Node name is present', function (string $relative, string $contents, string $name): void {
     $root = vocabularyFixture();
     try {
         vocabularyWrite($root, $relative, $contents);
@@ -78,6 +78,8 @@ it('fails when an App-domain name is present', function (string $relative, strin
     'unique apps rule' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['slug' => 'unique:apps'];\n", 'apps table'],
     'rule exists apps' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['project_id' => Rule::exists('apps', 'id')];\n", 'apps table'],
     'rule unique apps' => ['apps/gateway/app/Example.php', "<?php\n\$rules = ['slug' => Rule::unique('apps')];\n", 'apps table'],
+    'worker Node' => ['apps/web/src/example.tsx', "export const title = \"Worker nodes\";\n", 'worker or client Node'],
+    'client Node' => ['docs/reference/example.md', "A client Node only joins the network.\n", 'worker or client Node'],
     'camelCase app instance' => ['apps/web/src/instance.ts', "export const appInstanceId = 4;\n", 'AppInstance'],
     'camelCase app id' => ['apps/web/src/project.ts', "export const appId = 4;\n", 'appId'],
     'App instance prose' => ['apps/gateway/app/Example.php', "<?php\n// Runs in the group's App instance.\n", 'App instance'],

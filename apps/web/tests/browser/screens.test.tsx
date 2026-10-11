@@ -9,7 +9,7 @@ import { screenText } from "./screen";
 it("draws the dashboard", async () => {
     const app = await openApp("/");
     await expect.element(row("Needs attention", /Node\s*app-prod/)).toBeVisible();
-    await expect.element(row("Worker nodes", "beast")).toHaveTextContent("82%");
+    await expect.element(row("Nodes with roles", "beast")).toHaveTextContent("82%");
 
     await expect(screenText()).toMatchFileSnapshot("./expected/dashboard.txt");
     // The Gateway names the Nodes and hands out the Grafana credential once; no metrics request goes out per Node.

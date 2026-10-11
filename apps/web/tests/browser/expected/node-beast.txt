@@ -39,7 +39,7 @@
 ╰─ up 12:04:43
 
 ╭─ Instances on this node
-│  Project │ Name │ Environment │ Domain │ Status
+│  Project │ Name │ Placement │ Domain │ Status
 │› charlie-shop │ dev │ development │ dev.charlie-shop.test │ active
 │  charlie-shop │ staging │ development │ staging.charlie-shop.test │ active
 │  acme │ dev │ development │ dev.acme.test │ active

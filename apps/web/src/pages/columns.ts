@@ -1,7 +1,7 @@
 import type { Fleet } from "../api/queries";
 import type { Instance, Process, Schedule } from "../api/types";
 import {
-    instanceEnvironment,
+    instancePlacement,
     instanceName,
     instanceNodeName,
     processCpu,
@@ -72,7 +72,7 @@ export const instanceColumns = (fleet: Fleet, show: "project" | "node"): Column<
     ...(show === "node"
         ? [{ header: "Node", width: 14, value: (i: Instance) => i.node.name }]
         : []),
-    { header: "Environment", width: 20, value: (i) => instanceEnvironment(fleet, i) },
+    { header: "Placement", width: 20, value: (i) => instancePlacement(fleet, i) },
     { header: "Domain", width: show === "project" ? 24 : 32, value: (i) => i.domain ?? "—" },
 
     { header: "Status", width: 12, value: (i) => i.status },
