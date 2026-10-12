@@ -65,6 +65,16 @@ function updateLockFree(string $dir): bool
     return $status === 0;
 }
 
+/** Waits until the lock reaches the wanted state, or 10 seconds pass; the caller asserts the state. */
+function updateLockWaitUntilFree(string $dir, bool $free): void
+{
+    $until = microtime(true) + 10;
+
+    while (updateLockFree($dir) !== $free && microtime(true) < $until) {
+        usleep(10_000);
+    }
+}
+
 describe('Node update lock script', function (): void {
     it('holds the lock until its unit stops', function (): void {
         $dir = updateLockSandbox();
@@ -76,7 +86,7 @@ describe('Node update lock script', function (): void {
             ->and(updateLockFree($dir))->toBeFalse();
 
         exec('STUB_DIR='.escapeshellarg($dir).' '.escapeshellarg($dir.'/bin/systemctl').' stop orbit-update-lock-test');
-        usleep(300_000);
+        updateLockWaitUntilFree($dir, free: true);
 
         expect(updateLockFree($dir))->toBeTrue();
         exec('rm -rf '.escapeshellarg($dir));
@@ -86,7 +96,8 @@ describe('Node update lock script', function (): void {
         $dir = updateLockSandbox();
         touch($dir.'/update.lock');
         $holder = proc_open(['flock', $dir.'/update.lock', 'sleep', '20'], [], $pipes);
-        usleep(300_000);
+        updateLockWaitUntilFree($dir, free: false);
+        expect(updateLockFree($dir))->toBeFalse();
 
         [$status, $seconds] = updateLockAcquire($dir, 'orbit-update-lock-busy', 1);
 

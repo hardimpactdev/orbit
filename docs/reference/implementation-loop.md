@@ -80,8 +80,8 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
-| Gateway plan | Pull requests only: lists the Gateway tests that TIA selects and chooses one Gateway test job or up to three shards |
-| Gateway shards (2), Gateway shards (3) | Pull requests with a large Gateway selection only: every Gateway test shard after the first |
+| Gateway plan | Pull requests only: lists the Gateway tests that TIA selects and chooses one Gateway test job or up to four shards |
+| Gateway shards (2) to Gateway shards (4) | Pull requests with a large Gateway selection only: every Gateway test shard after the first |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/tooling-baseline`, `bin/docs-nav`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -157,15 +157,19 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 ### Gateway shards
 
-A pull request that changes Gateway boot files, such as providers, `bootstrap/app.php`, routes, or migrations, selects nearly the whole Gateway suite: about 760 test classes and 12 minutes on Sabre. So the Gateway tests of a large selection run in up to three shards on separate runners.
+A pull request that changes Gateway boot files, such as providers, `bootstrap/app.php`, routes, or migrations, selects nearly the whole Gateway suite: about 760 test classes and 12 minutes on Sabre. So the Gateway tests of a large selection run in up to four shards on separate runners.
 
 The `Gateway plan` job runs on a GitHub-hosted runner at the start of each pull request run. It installs the Gateway, restores the same `main` graph as the Gateway job, and runs `bin/ci-tia shards`. That command lists the test classes that `pest --tia` would run, with `pest --tia --list-tests`, so the plan holds exactly Pest's selection.
 
+The plan leaves out the `privileged` group: the shard runners have no `sudo`, and the Gateway privileged job runs that whole group on every run. Pest turns TIA off for a group option, so the command lists the group on its own, with `pest --no-tia --group=privileged --list-tests`, and subtracts it test by test. A class stays in the plan while any of its selected tests is not privileged, because some classes tag only some of their tests. Each shard runs with `--exclude-group=privileged`, so it leaves out the privileged tests of such a class.
+
 With 200 classes or fewer, the Gateway job runs its tests with `--tia`, as before. 200 classes take about 3 minutes, so the job already ends about when the slowest other job does.
 
-With more than 200 classes, the plan splits them into three shards. It balances the shards by the time that the `main` graph records for each class. It adds about 0.2 seconds per test for the application boot. A class that the graph does not know counts as the median class. The first shard starts with 210 process seconds, the time of the architecture tests. When the selection is small, that head start can leave the first shard without classes. The plan then drops the empty shard, because an empty filter finds no tests and fails.
+With more than 200 classes, the plan splits them into four shards. It balances the shards by the time that the `main` graph records for each class. It adds about 0.2 seconds per test for the application boot. A class that the graph does not know counts as the median class. The first shard starts with 210 process seconds, the time of the architecture tests. When the selection is small, that head start can leave the first shard without classes. The plan then drops the empty shard, because an empty filter finds no tests and fails.
 
-`bin/ci-tia shards` fails when a listed test does not parse as `Class::test`, so no test can silently drop out of every shard.
+The shards run different numbers of Pest processes: 6 for the first shard on Sabre, 4 for each of the others. So the plan gives each class, longest first, to the shard that would end first: its process seconds divided by its processes.
+
+`bin/ci-tia shards` fails when a listed test does not parse as `Class::test`. It also fails when a selected test that is not privileged matches no shard filter. So every selected test runs in a shard or in the Gateway privileged job, and none can silently drop out.
 
 The Gateway job runs the first shard, and the `Gateway shards` job runs the others, each on its own runner. Each shard runs `pest --no-tia --filter` with a regular expression that names its classes. PHPUnit matches it against `Class::test`, so every selected test runs in exactly one shard. The Gateway job still runs the quality checks, the classification-fakes check, and the architecture tests, once. The subprocess group stays in the Gateway subprocess job.
 
@@ -175,15 +179,13 @@ The Gateway job fails when the plan job fails, or when the plan does not end wit
 
 "Re-run failed jobs" copies the finished plan job and keeps its artifact, so a re-run of the Gateway job or a shard reads the same plan. A re-run of the Gateway job checks out `refs/pull/N/merge` again. When `main` moved since the first attempt, the merge ref names a new commit, and the job fails with an error that asks for "Re-run all jobs". A full re-run plans again and replaces the artifact.
 
-All Sabre runners share one host with 6 cores. A sharded pull request holds three of its runners for about 5 to 6 minutes, and its shards compete for the CPU: the three shards sum to about 880 seconds of tests, against 714 seconds in one job. Other runs, including `main` pushes, wait for a free runner meanwhile, and shards wait the same way behind them.
-
-On this pull request's own runs, the shards waited 4 to 5 minutes for a runner, and the Gateway tests ended after about 11 minutes instead of 13.5. With free runners they end after about 6.5 minutes. Shard runners on other hosts would remove both costs.
+A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. On the pull request that added the shard runners, a touched boot file selected 604 classes. They ran as 201, 135, 134, and 134 classes, and the Gateway tests ended about 3.5 minutes after the Gateway job started. On the shard runner containers, 609 classes took about 4 minutes. One job runs the full suite of about 760 classes in about 13.5 minutes. At that rate, the same 604 classes would take about 11 minutes in one job.
 
 Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards use the same runners as the Gateway job. The Gateway plan, Gateway subprocess, and Gateway privileged jobs always run on GitHub-hosted runners. So a run takes one Sabre runner, or three when the Gateway tests run in shards.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway shards run on the [shard runners](#self-hosted-shard-runners) under the same condition. The Gateway plan, Gateway subprocess, and Gateway privileged jobs always run on GitHub-hosted runners. So a run takes one Sabre runner, and up to three shard runners when the Gateway tests run in shards.
 
 Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
@@ -191,11 +193,58 @@ On Sabre the job skips the PHP setup, Homebrew, and system package steps, becaus
 
 The PHP setup step must not run on Sabre: on a self-hosted runner it makes `/usr/local/bin` world-writable, and the program that configures service metrics refuses a Node with such a directory. Every Instance removal reconciles metrics on all Nodes, so each removal would then fail. Its `/usr/bin/composer` is Composer 2.10, installed over the Ubuntu package with a `dpkg-divert`, because Composer 2.9 rejects the GitHub Actions token that the PHP setup step exports. Pest runs 6 processes there instead of 4.
 
-The job installs Node 24 with the Node setup step on Sabre. Tests that start `/usr/local/bin/node` directly, as Process presets do, use Sabre's own `node` shim, which points into the managed user's home. The runner user has traverse-only access to that home (`setfacl -m u:github-runner:x`) so the shim works.
+The job installs Node 24 with the Node setup step on Sabre, and tests run the `node` on PATH. The annotator server test replaces the preset's `/usr/local/bin/node` with it, because a host's own `node` shim can point into a home that the runner user cannot read. On Sabre the runner user has traverse-only access to the managed user's home (`setfacl -m u:github-runner:x`).
 
 Sabre has no Orbit role and serves no Instance. Three runner services, `sabre-1` to `sabre-3`, run as the `github-runner` user, so several pull request runs and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. A command that a job runs with `sudo` runs as root, and the rule does not cover it. So the runner accepts only code from this repository.
+
+### Self-hosted shard runners
+
+Three more runners take the Gateway shards after the first: `ci-beast-1` and `ci-beast-2` on Beast, and `ci-shark-1` on Shark. They have the labels `self-hosted`, `Linux`, `X64`, and `orbit-shard`, and not `sabre`, so no other job lands on them. The workflow selects them by label, not by name.
+
+Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](../../tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
+
+- `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
+- `container NAME` launches the container, sets its `raw.apparmor` line, and installs what is missing.
+- `register NAME [TOKEN]` registers the runner and starts its service.
+- `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
+
+`container` upgrades no installed package. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
+
+The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
+
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
+
+Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
+
+The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast, and reserved IPv4 ranges, and all IPv6. Its default for egress and ingress is reject. So a job reaches the public internet, but not the host's LAN, WireGuard, the Gateway, docker and task bridges, the other container, or the bridge gateway. A container's `127.0.0.1` is its own loopback, so the host's loopback services, such as the Caddy admin API, are out of reach.
+
+Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has PHP 8.5 with PCOV and the Gateway's extensions from the `orbit-php` apt source, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+
+Two limits remain:
+
+- The runners are not ephemeral. A job can leave files or processes in its container for the next job. The container is the boundary, and only approved code from this repository runs there.
+- Incus accepts DNS on port 53 from `orbitci0` to every host address, before the ACL applies. Closing it needs a host firewall rule.
+
+So a job can query each dnsmasq on the host, such as the task bridge's. The answers reveal task names and addresses that the job still cannot reach, and a query changes nothing.
+
+To remove the runners from a host, stop and uninstall each runner service as root in its container, and run `config.sh remove` as `runner` with a remove token. Then delete the containers, the project, the bridge, the ACL, and the ufw rule:
+
+```bash
+token=$(gh api -X POST repos/nckrtl/orbit/actions/runners/remove-token --jq .token)
+for name in ci-beast-1 ci-beast-2; do  # ci-shark-1 on Shark
+  incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- sh -c './svc.sh stop && ./svc.sh uninstall'
+  printf '%s\n' "$token" | incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- \
+    su runner -c 'IFS= read -r token; ./config.sh remove --token "$token"'
+  incus delete --force "$name" --project orbit-ci
+done
+incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci
+incus project delete orbit-ci
+incus network delete orbitci0
+incus network acl delete orbit-ci-egress
+sudo ufw route delete allow in on orbitci0
+```
 
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
@@ -497,11 +546,11 @@ The nightly full run finds such a miss within a day, and its failure switches pu
 
 ### Large Gateway selections run in shards
 
-A pull request that changes a Gateway boot file selects nearly every Gateway test, and that one job took about 13 minutes while every other job ended within 4. Three runners on Sabre can run three shards at once, but they share one 6-core host, so the gain under load is about 2.5 minutes.
+A pull request that changes a Gateway boot file selects nearly every Gateway test, and that one job took about 13 minutes while every other job ended within 4. One Sabre runner and three shard runners on Beast and Shark run four shards at once. Three shards on Sabre's three runners are a rejected alternative: they shared one 6-core host, so the gain under load was about 2.5 minutes, and they took every Sabre runner from other runs.
 
-Pest's own `--shard` option is a rejected alternative: it adds a `--filter`, and Pest turns TIA off for a filtered run, so each shard would run a third of the whole suite. Splitting the files of the selection in each shard job is also rejected, because each job restores the graph at another moment and could select other tests. One plan job lists the selection once, and every shard runs a part of that list.
+Pest's own `--shard` option is a rejected alternative: it adds a `--filter`, and Pest turns TIA off for a filtered run, so each shard would run a part of the whole suite. Splitting the files of the selection in each shard job is also rejected, because each job restores the graph at another moment and could select other tests. One plan job lists the selection once, and every shard runs a part of that list.
 
-Making every project job wait for the plan is rejected, because it would delay each pull request's other jobs by the plan's half minute. Sharding on `main` is rejected for now: Pest writes the graph in one run, and three partial graphs would need a merge that Pest does not offer.
+Making every project job wait for the plan is rejected, because it would delay each pull request's other jobs by the plan's half minute. Sharding on `main` is rejected for now: Pest writes the graph in one run, and partial graphs would need a merge that Pest does not offer.
 
 ### CI caches stay separate
 

@@ -10,6 +10,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Tests\Support\HostBinary;
 
 it('refuses a missing or changed vendored release before publishing an installation command', function (string $change): void {
     $assets = sys_get_temp_dir().'/orbit-annotator-assets-'.bin2hex(random_bytes(8));
@@ -45,6 +46,10 @@ it('serves the installed injection asset and admits only the rendered page and T
     $instance->id = 1;
     $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: $root, instance: $instance, routeDomain: 'site.test');
     $arguments = AnnotatorPreset::forTarget($target);
+    // A Node runs the preset with its own /usr/local/bin/node. The test host's node may live elsewhere, or be a shim
+    // the CI runner user cannot read, so the server runs with the node on PATH.
+    expect($arguments[0])->toBe('/usr/local/bin/node');
+    $arguments[0] = HostBinary::path('node');
     $arguments[1] = $root.'/current/bin/serve.mjs';
     $arguments[array_search('--store', $arguments, true) + 1] = $root.'/store';
     $server = new Process($arguments);

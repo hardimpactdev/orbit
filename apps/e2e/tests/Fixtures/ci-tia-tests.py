@@ -1,5 +1,7 @@
 """Exercise bin/ci-tia against disposable Git repositories and the real Pest graph classes."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.machinery
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -306,15 +308,22 @@ class CiTiaTest(unittest.TestCase):
         # Pest reads the graph it wrote back.
         self.assertEqual(('affected', head), self.plan()[:2])
 
-    def shard_plan(self, classes, status=0, extra=''):
-        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does."""
+    def shard_plan(self, classes, status=0, extra='', privileged=(), privileged_tests=''):
+        """Plan shards with a stand-in Pest that lists two tests of each class, as `pest --tia --list-tests` does, and
+        the privileged classes and single tests for `pest --no-tia --group=privileged --list-tests`."""
+        def write_listing(path, names, tail=''):
+            path.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
+                f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
+                for name in names) + tail)
         listing = self.root / 'listing.txt'
-        listing.write_text('  ─ Experimental TIA mode enabled.\n\n   INFO  Available tests:\n\n' + ''.join(
-            f' - P\\{name}::__pest_evaluable_it_works\n - P\\{name}::__pest_evaluable_it_fails_loudly\n'
-            for name in classes) + extra)
+        write_listing(listing, classes, extra)
+        privileged_listing = self.root / 'privileged.txt'
+        write_listing(privileged_listing, privileged, privileged_tests)
         pest = self.root / 'pest'
-        pest.write_text(f'#!/bin/sh\n[ "$*" = "--tia --list-tests --colors=never" ] || exit 9\n'
-                        f'cat {listing}\nexit {status}\n')
+        pest.write_text(f'#!/bin/sh\ncase "$*" in\n'
+                        f'  "--tia --list-tests --colors=never") cat {listing}; exit {status} ;;\n'
+                        f'  "--no-tia --group=privileged --list-tests --colors=never") cat {privileged_listing} ;;\n'
+                        f'  *) exit 9 ;;\nesac\n')
         pest.chmod(0o755)
         self.output.write_text('')
         plan = self.root / 'plan.json'
@@ -347,8 +356,8 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('3', 'true', '[2, 3]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
-        self.assertEqual((3, 300, 3), (plan['shards'], plan['classes'], len(plan['filters'])))
+        self.assertEqual(('4', 'true', '[2, 3, 4]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual((4, 300, 4), (plan['shards'], plan['classes'], len(plan['filters'])))
         self.assertEqual(self.shard_plan(classes)[2], plan, 'The same selection gives the same plan.')
         # PHPUnit matches each filter against Class::test. Every listed test runs in exactly one shard.
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes] + ['P\\Tests\\Feature\\Area1Test2::x',
@@ -356,15 +365,57 @@ class CiTiaTest(unittest.TestCase):
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertEqual(sorted(tests[:300]), sorted(sum(shards, [])))
         # The first shard runs in the Gateway job beside the architecture tests, so it starts with their time and gets
-        # none of the slow classes. The other shards share them.
+        # none of the slow classes. The other shards get one each.
         slow = [next(index for index, shard in enumerate(shards) if f'P\\{name}::__pest_evaluable_it_works' in shard)
                 for name in classes[:3]]
-        self.assertEqual([1, 1, 2], sorted(slow))
-        self.assertLess(len(shards[0]), min(len(shards[1]), len(shards[2])))
-        self.assertIn('3 shards: 300 affected test classes, more than 200.', result.stdout)
+        self.assertEqual([1, 2, 3], sorted(slow))
+        # Each class goes to the shard that would end first, by its process seconds over its Pest processes: 6 for the
+        # first shard, 4 for the others. The first shard's head start still gives it the fewest classes.
+        self.assertLess(len(shards[0]), min(len(shard) for shard in shards[1:]))
+        self.assertIn('4 shards: 300 affected test classes, more than 200.', result.stdout)
+        self.assertIn('Shard 1: 7 classes, about 218 process seconds on 6 processes.', result.stdout)
+
+    def test_leaves_the_privileged_group_out_of_the_shards(self):
+        # Pest turns TIA off for a group option, so the plan lists the privileged group on its own and subtracts it.
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(203)]
+        privileged = classes[:3] + ['Tests\\Feature\\UnselectedPrivilegedTest']
+
+        result, outputs, plan = self.shard_plan(classes, privileged=privileged)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(200, plan['classes'])
+        self.assertEqual(('1', 'false'), (outputs['shards'], outputs['sharded']))
+        self.assertIn('One job: 200 affected test classes', result.stdout)
+
+    def test_keeps_the_other_tests_of_a_class_with_some_privileged_tests(self):
+        # A class with only some privileged tests stays in a shard, which leaves out its privileged tests itself.
+        classes = [f'Tests\\Feature\\Area{index}Test' for index in range(300)]
+
+        result, outputs, plan = self.shard_plan(
+            classes, privileged=classes[1:2],
+            privileged_tests=f' - P\\{classes[0]}::__pest_evaluable_it_fails_loudly\n')
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(('true', 299), (outputs['sharded'], plan['classes']))
+        shards = [test_filter for test_filter in plan['filters']
+                  if re.search(test_filter, f'P\\{classes[0]}::__pest_evaluable_it_works', re.I)]
+        self.assertEqual(1, len(shards))
+        self.assertFalse(any(re.search(test_filter, f'P\\{classes[1]}::__pest_evaluable_it_works', re.I)
+                             for test_filter in plan['filters']))
+
+    def test_fails_when_a_selected_test_runs_in_no_shard(self):
+        loader = importlib.machinery.SourceFileLoader('ci_tia', str(HELPER))
+        helper = importlib.util.module_from_spec(importlib.util.spec_from_loader('ci_tia', loader))
+        loader.exec_module(helper)
+        selected = {'P\\Tests\\AreaTest::it_works', 'P\\Tests\\OtherTest::it_works', 'P\\Tests\\RootTest::it_works'}
+
+        helper.require_coverage(selected, {'P\\Tests\\RootTest::it_works'}, [r'^(?:P\\)?(?:Tests\\AreaTest|Tests\\OtherTest)::'])
+        with self.assertRaises(SystemExit) as failure:
+            helper.require_coverage(selected, set(), [r'^(?:P\\)?(?:Tests\\AreaTest|Tests\\OtherTest)::'])
+        self.assertEqual('1 selected tests run in no shard, such as: P\\Tests\\RootTest::it_works', str(failure.exception))
 
     def test_never_plans_a_shard_without_classes(self):
-        # 201 fast classes: shards 2 and 3 never pass the first shard's head start, so it would stay empty.
+        # 201 fast classes: shards 2 to 4 never pass the first shard's head start, so it would stay empty.
         classes = [f'Tests\\Unit\\Fast{index}Test' for index in range(201)]
         self.write_graph(self.base, results={
             f'P\\{name}::__pest_evaluable_it_works': {'status': 0, 'message': '', 'time': 0.01, 'assertions': 1,
@@ -373,7 +424,7 @@ class CiTiaTest(unittest.TestCase):
         result, outputs, plan = self.shard_plan(classes)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(('2', 'true', '[2]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
+        self.assertEqual(('3', 'true', '[2, 3]'), (outputs['shards'], outputs['sharded'], outputs['matrix']))
         tests = [f'P\\{name}::__pest_evaluable_it_works' for name in classes]
         shards = [[test for test in tests if re.search(test_filter, test, re.I)] for test_filter in plan['filters']]
         self.assertTrue(all(shards))
