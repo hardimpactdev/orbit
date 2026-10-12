@@ -289,6 +289,34 @@ describe('refill', function (): void {
         Queue::assertPushed(ProvisionTaskVm::class, 1);
     });
 
+    it('queues the new VM before the destroy of the one it replaces, within max_vms', function (): void {
+        Queue::fake();
+        $stale = tvm_pool_vm(image: TVM_POOL_OLD);
+        tvm_pool_hosts([[$this->host, 2, 1]]);
+
+        tvm_pool_refill();
+
+        // The destroying row still holds its slot: one VM starts, and the host stays within its 2 VMs.
+        $pushed = collect(Queue::pushedJobs())->flatten(1)->map(static fn (array $entry): object => $entry['job'])
+            ->filter(static fn (object $job): bool => $job instanceof ProvisionTaskVm || $job instanceof DestroyTaskVm)->values();
+        expect($pushed->map(static fn (object $job): string => $job::class)->all())->toBe([ProvisionTaskVm::class, DestroyTaskVm::class])
+            ->and($pushed[1]->taskVmId)->toBe($stale->id)
+            ->and(TaskVm::query()->live()->where('host_node_id', $this->host->id)->count())->toBe(2);
+
+    });
+
+    it('records no new VM on a host whose only slot a destroying VM still holds', function (): void {
+        Queue::fake();
+        $stale = tvm_pool_vm(image: TVM_POOL_OLD);
+        tvm_pool_hosts([[$this->host, 1, 1]]);
+
+        tvm_pool_refill();
+
+        expect($stale->fresh()?->state)->toBe(TaskVmState::Destroying);
+        Queue::assertNotPushed(ProvisionTaskVm::class);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $stale->id);
+    });
+
     it('replaces warm VMs once a new base image is promoted', function (): void {
         Queue::fake();
         $vm = tvm_pool_vm();

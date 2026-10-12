@@ -299,6 +299,32 @@ it('does not transfer an attempt receipt to a replacement directory even with fo
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([false, true]);
 
+it('refuses to move a checkout across a mount before any copy, and keeps it in place', function (): void {
+    // A task VM workspace volume is mounted at the Project's apps directory, while `.orbit-removals` stays on the
+    // root disk. mv would copy and delete the checkout there, and the identity check would fail after the copy.
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-cross-device');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $checkout = (string) $instance->checkout_path;
+    $bin = $this->sandbox.'/cross-device-bin';
+    $this->files->makeDirectory($bin);
+    // The stat that the guard runs reports the checkout on another device; every other stat is the real one.
+    file_put_contents($bin.'/stat', "#!/bin/bash\nif [ \"\$*\" = ".escapeshellarg("-c %d -- {$checkout}")." ]; then echo 64999; exit 0; fi\nexec /usr/bin/stat \"\$@\"\n");
+    chmod($bin.'/stat', 0755);
+    $this->transport->environment = ['PATH' => $bin.':'.getenv('PATH')];
+
+    expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
+
+    $finalization = collect($this->transport->commands)->last(fn (RemoteCommand $command): bool => str_contains((string) $command->input, 'expected_origin=$6'));
+    expect($finalization)->not->toBeNull()
+        ->and(is_dir($checkout.'/.git'))->toBeTrue()
+        ->and(file_exists(orb180_quarantine_path($member)))->toBeFalse()
+        ->and($member->refresh()->source_finalized_at)->toBeNull();
+
+    $this->transport->environment = [];
+    expect($this->removal->finalize($member))->not->toBeNull()
+        ->and(file_exists($checkout))->toBeFalse();
+});
+
 describe('TaskCheckWorkerUser', function (): void {
     it('keeps removal content filters on the worker while the managed account validates and deletes the tree', function (): void {
         config()->set('orbit.tasks.worker_user', null);

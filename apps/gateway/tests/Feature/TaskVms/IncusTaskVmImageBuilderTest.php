@@ -157,7 +157,7 @@ final class FakeIncusImageHost implements SshExecutor
             'uname' => new CommandResult(0, "x86_64\n", '', 1, false),
             'journalctl' => new CommandResult(0, implode('', array_map(static fn (int $boot): string => "{$boot} 0f1e2d3c4b5a69788796a5b4c3d2e1f0 Sat 2026-10-10 03:01:00 UTC\n", range(1 - $this->boots, 0))), '', 1, false),
             'test' => $this->answer('authorized key'),
-            'sh' => $this->answer('lean boot'),
+            'sh' => $this->answer(str_contains($command[2], 'systemctl') ? 'lean boot' : 'orbit user'),
             'ssh-keygen' => $this->answer('ssh-keygen', static fn (): string => "256 SHA256:tHGyu/bpS80ShKGdwihLDLg9TzFRZCdsWqnuyInfRsg root@smoke (ED25519)\n"),
             'bash' => $command[1] === '-s'
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
@@ -260,7 +260,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -329,7 +329,7 @@ describe('a build', function (): void {
         $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
         $manifest = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => Arr::last($command->arguments) === TaskVmBakedPrograms::ManifestPath);
         $lean = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[9] ?? null) === '-ceu' && str_contains((string) Arr::last($command->arguments), 'systemctl mask'));
-        $check = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh');
+        $check = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh' && str_contains($command->arguments[10], 'systemd-firstboot'));
         $programs = json_decode((string) $manifest->input, true);
 
         expect($programs['schema'])->toBe(1)
@@ -340,13 +340,27 @@ describe('a build', function (): void {
             ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
             ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
             ->and($check->arguments[7])->toBe('tvm-image-20261010030000-smoke')
-            ->and(Arr::last($check->arguments))->toBe(TaskVmBakedPrograms::ManifestPath);
+            ->and(array_slice($check->arguments, -2))->toBe([TaskVmBakedPrograms::ManifestPath, '1000:1000'])
+            ->and($check->arguments[10])->toContain('test "$(id -u orbit):$(id -g orbit)" = "$2"');
+    });
+
+    it('stops right after cloud-init when orbit did not get the pinned uid and gid', function (): void {
+        $this->incus->fail = 'orbit user';
+        $stages = [];
+
+        expect(function () use (&$stages): void {
+            ($this->build)($stages);
+        })->toThrow(TaskVmException::class, 'stage [orbit-user]');
+        expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init'])
+            ->and($this->incus->instances)->toBe([]);
+        $owner = collect($this->incus->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[8] ?? null) === 'sh');
+        expect(array_slice($owner->arguments, 8))->toBe(['sh', '-euc', 'test "$(id -u orbit):$(id -g orbit)" = "$1"', 'sh', '1000:1000']);
     });
 
     it('fails the smoke test when a VM from the new image lost the lean boot', function (): void {
         $this->incus->fail = 'lean boot';
 
-        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'did not keep the lean boot or the image manifest');
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'did not keep the lean boot, the image manifest, or the pinned orbit uid and gid');
         expect($this->incus->images)->toBe([IMAGE_STOCK => ['ubuntu-26.04-vm']])
             ->and($this->incus->instances)->toBe([]);
     });

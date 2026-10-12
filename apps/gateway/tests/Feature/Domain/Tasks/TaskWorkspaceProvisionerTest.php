@@ -993,16 +993,23 @@ describe('task VMs', function (): void {
         app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [
             new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB'),
         ], 'http://10.44.0.3:8317', null, null, []));
-        $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url]]] : [];
+        $volumes = $ready ? [['name' => 'tvm-template-'.$project->id.'-20261011040000', 'type' => 'custom', 'config' => [
+            'user.orbit.ready' => 'true', 'user.orbit.repository' => $project->repository_url, 'user.orbit.image' => 'base-image', 'user.orbit.owner' => '1000:1000',
+        ]]] : [];
         app()->instance(SshExecutor::class, new class($volumes) implements SshExecutor
         {
             public function __construct(private readonly array $volumes) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                $list = array_slice($command->arguments, 5, 3) === ['storage', 'volume', 'list'];
+                $operation = array_slice($command->arguments, 5);
 
-                return new CommandResult(0, $list ? json_encode($this->volumes) : 'template', '', 1, false);
+                return new CommandResult(0, match (true) {
+                    array_slice($operation, 0, 3) === ['storage', 'volume', 'list'] => json_encode($this->volumes),
+                    array_slice($operation, 0, 2) === ['config', 'get'] => "base-image\n",
+                    array_slice($operation, 0, 2) === ['image', 'list'] => json_encode([['fingerprint' => str_repeat('b', 64), 'aliases' => [['name' => 'orbit-task-base']]]]),
+                    default => 'template',
+                }, '', 1, false);
             }
         });
         $fakes = bind_task_workspace_fakes();

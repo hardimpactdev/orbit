@@ -32,7 +32,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
-use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -75,11 +74,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
         $schedule->command('orbit:vault-sync')->everyMinute()->withoutOverlapping(15);
-        // The nightly task VM base image refresh, a job on the task VM queue below.
+        // The nightly task VM base image refresh, a job on the task VM queue below. It queues the workspace template
+        // refresh when it ends, and every base image promote does too, so templates always follow the image.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
-            ->when(static fn (): bool => config('task_vms.enabled') === true);
-        // The nightly workspace templates of task VM Projects, built from the base image of the night.
-        $schedule->job(new RefreshTaskVmWorkspaceTemplates)->dailyAt('04:00')
             ->when(static fn (): bool => config('task_vms.enabled') === true);
         // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()

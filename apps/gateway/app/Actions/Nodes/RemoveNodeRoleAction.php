@@ -58,6 +58,7 @@ final readonly class RemoveNodeRoleAction
         bool $force = false,
         bool $purgeData = false,
         bool $offline = false,
+        bool $deleted = false,
     ): NodeRoleRemovalOutcome {
         $this->routeGuard()->assertRoleRemovable($node, $role);
 
@@ -97,7 +98,12 @@ final readonly class RemoveNodeRoleAction
         // `--offline` states a belief about the node, not a licence to ignore
         // failures. Orbit checks the belief first, and a node that answers
         // takes the ordinary fail-closed path whether or not the flag was set.
-        $degradation = $offline ? $this->reachability->degradation($node) : null;
+        // A caller that deleted the machine itself knows the answer.
+        $degradation = match (true) {
+            $offline && $deleted => ExporterDegradationReason::Unreachable,
+            $offline => $this->reachability->degradation($node),
+            default => null,
+        };
 
         if ($this->isAppRole($role)) {
             return $this->announceUpdated($node, $this->removeAppRole($node, $role, $purgeData, $degradation));

@@ -9,7 +9,8 @@ use App\Domain\TaskVms\TaskVmException;
 /**
  * The cloud-init user-data of task VMs: the `orbit` user with passwordless sudo and the Gateway's
  * SSH key. A task VM boots from the host's base image, which already holds everything else, so its
- * user-data installs nothing. The base image builder gets the same user plus a package upgrade,
+ * user-data installs nothing. The base image builder gets the same user, created with the pinned uid and
+ * gid {@see self::Owner}, plus a package upgrade,
  * `openssh-server`, which the stock linuxcontainers Ubuntu cloud image lacks, and Chromium's system
  * libraries, so a Project's Playwright browser tests run.
  *
@@ -19,6 +20,14 @@ use App\Domain\TaskVms\TaskVmException;
  */
 final readonly class TaskVmCloudInit
 {
+    /**
+     * The uid and gid of `orbit` in the base image. They are pinned, so a workspace template's files belong to `orbit`
+     * on every VM, whatever users a newer stock image or package adds.
+     */
+    public const int Uid = 1000;
+
+    public const string Owner = '1000:1000';
+
     private const string PublicKeyPattern = '/\A(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+\/]+={0,3}(?: [!-~][ -~]*)?\z/D';
 
     /**
@@ -44,8 +53,11 @@ final readonly class TaskVmCloudInit
     /** The user-data of the base image builder, which boots from the stock image. */
     public function renderImageBuilder(string $gatewayPublicKey): string
     {
+        // bootcmd runs before cloud-init creates users, so the group exists with its pinned gid. A taken uid or gid
+        // makes cloud-init fail, and with it the build.
         return self::document([
-            'users' => [$this->user($gatewayPublicKey)],
+            'bootcmd' => [['sh', '-c', 'getent group orbit >/dev/null || groupadd --gid '.self::Uid.' orbit']],
+            'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => 'orbit', 'no_user_group' => true]],
             'package_update' => true,
             'package_upgrade' => true,
             'packages' => ['openssh-server', ...self::ChromiumLibraries],

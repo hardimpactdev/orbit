@@ -9,6 +9,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
 use Closure;
 use Illuminate\Cache\Lock;
@@ -170,7 +171,11 @@ final readonly class TaskVmBaseImage
         $this->delete($host, $node, $name);
     }
 
-    /** Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. */
+    /**
+     * Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. Workspace
+     * templates belong to the image they were built on, so a moved alias queues the template refresh, which runs on
+     * the task VM queue after the build or sync that moved it.
+     */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
         try {
@@ -180,6 +185,7 @@ final readonly class TaskVmBaseImage
             if (! $result->succeeded()) {
                 throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
             }
+            RefreshTaskVmWorkspaceTemplates::dispatch();
         } finally {
             // A claim reads the alias again, also when the reply to the move was lost.
             AllocateTaskVmAction::forgetImage($node->id);

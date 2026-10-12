@@ -84,7 +84,10 @@ final readonly class IncusTaskVmImageBuilder
         systemctl cat systemd-networkd-wait-online.service | tail -n 1 | grep -q -- '--ipv4'
         networkctl status --no-pager -- "$(ip -o -4 route show default | awk '{print $5; exit}')" | grep -q '00-orbit-task-vm.network'
         test -s "$1"
+        test "$(id -u orbit):$(id -g orbit)" = "$2"
         BASH;
+
+    private const string OwnerCheck = 'test "$(id -u orbit):$(id -g orbit)" = "$1"';
 
     public function __construct(
         private IncusHost $incus,
@@ -130,6 +133,7 @@ final readonly class IncusTaskVmImageBuilder
             $this->stage($node, $progress, 'sweep', fn () => $this->image->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
+            $this->stage($node, $progress, 'orbit-user', fn () => $this->image->checked($builder, 'exec orbit-user', $this->image->exec($host, $node, $builder, ['sh', '-euc', self::OwnerCheck, 'sh', TaskVmCloudInit::Owner])));
             foreach ($programs as $name => $program) {
                 $this->stage($node, $progress, $name, fn () => $this->runProgram($host, $node, $builder, $name, $program));
             }
@@ -272,13 +276,13 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * A VM from the new image kept the lean boot through its first boot, when systemd applies the preset
-     * policy, and holds the manifest that enrollment reads.
+     * policy, holds the manifest that enrollment reads, and has `orbit` with the pinned uid and gid.
      */
     private function checkLeanBoot(TaskVmHost $host, Node $node, string $name): void
     {
-        $result = $this->image->exec($host, $node, $name, ['sh', '-euc', self::LeanBootCheck, 'sh', TaskVmBakedPrograms::ManifestPath]);
+        $result = $this->image->exec($host, $node, $name, ['sh', '-euc', self::LeanBootCheck, 'sh', TaskVmBakedPrograms::ManifestPath, TaskVmCloudInit::Owner]);
         if (! $result->succeeded()) {
-            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it did not keep the lean boot or the image manifest');
+            throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it did not keep the lean boot, the image manifest, or the pinned orbit uid and gid');
         }
     }
 

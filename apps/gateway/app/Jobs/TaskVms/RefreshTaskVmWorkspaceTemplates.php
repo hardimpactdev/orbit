@@ -16,7 +16,8 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The nightly template refresh, after the base image refresh: on every configured host whose Node is active, it
+ * The template refresh. Every base image promote queues it, and so does the end of the nightly base image refresh,
+ * so templates follow the image and the default branch. On every configured host whose Node is active, it
  * deletes the templates of Projects that no longer run task VMs, and queues one template build for each Project
  * that does. A host that fails is logged, and the other hosts still run.
  */

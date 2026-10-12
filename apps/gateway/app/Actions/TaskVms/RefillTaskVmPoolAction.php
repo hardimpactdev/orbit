@@ -29,7 +29,9 @@ use Throwable;
  * 2. Under the placement lock, it destroys failed pool VMs and warm VMs over the target, and records new pool
  *    rows up to the target within the host's free slots. The target is 0 while task VMs are disabled, so the
  *    pool drains. Pool VMs that are still starting are never cut off; a later run destroys any excess.
- * 3. It queues `DestroyTaskVm` for every pool row that is `destroying`, and `ProvisionTaskVm` for each new row.
+ * 3. It queues `ProvisionTaskVm` for each new row, and then `DestroyTaskVm` for every pool row that is `destroying`.
+ *    A `destroying` row counts against `max_vms` until it is `destroyed`, so a new row exists only within the
+ *    host's budget, and the new VM can start before the old one goes.
  *
  * A pool row still `provisioning` an hour after it was recorded has lost its job. The run fails it loudly, and
  * destroys it with the failed rows. *
@@ -70,12 +72,14 @@ final readonly class RefillTaskVmPoolAction
         }
         $this->reportUnmanaged(array_map(static fn (array $entry): int => $entry[0]->nodeId, $hosts));
 
+        // New VMs first: the task VM queue runs one job at a time, and a destroy waits on the Node removal. The order
+        // cannot overfill a host, because a `destroying` row holds its slot until it is `destroyed`.
+        foreach ($created as $id) {
+            ProvisionTaskVm::dispatch($id);
+        }
         $destroying = TaskVm::query()->pool()->where('state', TaskVmState::Destroying)->get(['id']);
         foreach ($destroying as $vm) {
             DestroyTaskVm::dispatch($vm->id);
-        }
-        foreach ($created as $id) {
-            ProvisionTaskVm::dispatch($id);
         }
 
         return ['created' => count($created), 'destroying' => $destroying->count()];

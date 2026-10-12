@@ -107,14 +107,25 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
+When the group ends, Orbit removes its workspace with the VM. The checkout can live on the VM's [workspace volume](#start-the-workspace-from-a-template), which goes with the VM, so Orbit deletes no checkout in the guest. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
-Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
+1. While the VM is `ready`, it runs the Project's teardown steps in the guest. A removal that an earlier attempt started has run them already.
+2. It sets the row to `destroying`, revokes the group's model key, and deletes the VM and its workspace clone.
+3. It removes the workspace records offline, as for [a VM that died](#a-vm-that-dies-before-its-group-ends).
+4. It queues `DestroyTaskVm`, which removes the Node.
+
+A step that fails keeps the Instance and records the error on the row. The group asks for assistance with the removal reason, and the next removal attempt continues. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release.
+
+Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. Then it deletes the VM's [workspace clone](#start-the-workspace-from-a-template), because Incus keeps that volume. A VM or a clone that is already gone counts as deleted.
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
+
+Orbit deleted the VM itself, so the Node removal does not probe the Node's address first. It also runs no Metrics pass, because a task VM Node never hosts a Metrics exporter. Before this, each probe of the dead address waited out the 10-second SSH connect timeout, and each of two Metrics passes walked the whole fleet. Node removal took about 145 seconds on the live Gateway.
+
+The removal of other Instances, outside task VMs, moves a checkout into `.orbit-removals` below the apps directory before it deletes it. That move must keep the checkout's device and inode, so it works only on one filesystem. When the checkout is on another filesystem, for example a mounted volume, removal fails before it moves anything, with `cross-device` in the step's error output, and keeps the checkout in place.
 
 The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
@@ -122,7 +133,7 @@ Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destr
 
 #### A VM that dies before its group ends
 
-Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: while the VM runs, cancel removes the workspace normally, and the next tick queues `DestroyTaskVm`.
+Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 
 The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
@@ -160,7 +171,9 @@ Every minute, the Gateway scheduler queues the job `RefillTaskVmPool`, while tas
 4. It counts the warm VMs and the pool VMs that still start. It sets the oldest warm VMs above `warm_vms` to `destroying`.
 5. A pool VM that still starts is never stopped. A later run destroys it once it is warm.
 6. Below `warm_vms`, it records new pool rows, up to the host's free slots.
-7. It queues `DestroyTaskVm` for every pool row that is `destroying`, and `ProvisionTaskVm` for each new row.
+7. It queues `ProvisionTaskVm` for each new row, and then `DestroyTaskVm` for every pool row that is `destroying`.
+
+A `destroying` row holds its slot until it is `destroyed`. So a new row exists only within the host's `max_vms`, and the new VM can start before the old one goes. The task VM queue runs one job at a time, so the order matters. After a base image change, the launch of the new warm VM comes first in the queue, and the old VM's destroy follows. A host whose only free slot a `destroying` VM holds records the new row on a later refill, after the destroy.
 
 A new pool row runs the normal `ProvisionTaskVm` and `EnrollTaskVm`. Then `PrepareTaskVmRuntime` sets it `warm` and records `warmed_at`, and runs no group step. The next refill records its image, so a claim can take it.
 
@@ -250,17 +263,22 @@ Each host keeps one template for each Project whose groups run on task VMs. Orbi
 
 When Orbit creates the workspace on a task VM, it runs these steps before source preparation:
 
-1. It lists the storage volumes of the host's project. It takes the newest ready template of the Project that was cloned from the Project's current `repository_url`.
+1. It lists the storage volumes of the host's project, and reads the base image that the VM booted (`volatile.base_image`). It takes the newest ready template of the Project from the current `repository_url` and that base image.
 2. It clones the template as `tvm-<id>-workspace` with `incus storage volume copy`. On ZFS that is a clone of a snapshot: it took under 0.1 seconds on beast and shares every block with the template.
 3. It attaches the clone to the running VM as the disk `workspace`.
-4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory. It never mounts over a directory with content. Then it adds the mount to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
+4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
+
 5. Source preparation checks the owner and the origin of `.orbit-workspace-template`. Then it renames that directory to the checkout `task-<id>`. The rename keeps the files and their inode. Preparation writes its receipt as for a clone.
 
-After the Project's repository changes, no template matches until the next build. The fstab line follows a successful mount only, so a failed mount never comes back at a later boot over a fresh clone.
+The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `.orbit-workspace-template` belong to that `uid:gid`.
+
+After the Project's repository or the base image changes, no template matches until the next build. The fstab line follows a successful mount and owner check only, so a failed mount never comes back at a later boot over a fresh clone.
+
+When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it removes the cache links into the volume, unmounts it, removes its fstab line, detaches the disk, and deletes the clone. So the fresh clone lands on the VM's own disk, never on a volume with another user's files. When the undo fails too, the claim fails with `task_vm.workspace_template_detach_failed`, and the group asks for assistance.
 
 Then the workspace fetches and checks out the group's branch, as usual. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The `orbit` user has the same UID in the builder and in every task VM, because they boot the same image with the same user-data, and the mount step checks the owner.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner: on 12 October 2026 a template from an older image, where `orbit` was uid 1001, made a claim fail.
 
 Measured on beast in a throwaway project (11 October 2026), mealou on its default branch:
 
@@ -278,17 +296,21 @@ The first run on a new VM reads the volume with a cold page cache. The setup ste
 The workspace starts from a fresh clone, as before, in these cases:
 
 - The host has no ready template for the Project. Orbit logs the warning `Task VM workspace has no template; it starts from a fresh clone.` and queues a build of the template. See [Template failures](#template-failures) for the wait after a failed build.
-- A step fails, for example the copy or the mount. Orbit logs the warning `Task VM workspace template could not be attached; the workspace starts from a fresh clone.` with the error.
+- The Project's templates were built on another base image than the VM's, and the VM runs the host's current `orbit-task-base`. Orbit logs `Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.` and queues a build.
+- The VM runs an older base image than the templates. Orbit logs `Task VM runs an older base image than the workspace templates; it starts from a fresh clone.` A build would not help, because it boots the current image.
+- A step fails, for example the copy, the mount, or an owner check. Orbit undoes the attach and logs the warning `Task VM workspace template could not be attached; the workspace starts from a fresh clone.` with the error.
 - The volume holds no template checkout. Orbit logs `Task VM workspace volume holds no template checkout; it starts from a fresh clone.`
 - The template checkout fails a check of source preparation, for example of its origin. Preparation then clones and logs `The workspace template failed its source checks; the checkout is a fresh clone.`
 
-The group never fails or waits because of a template. When the mount succeeded, the fresh clone goes to the volume. Otherwise it goes to the root disk.
+The group never waits because of a template, and fails only when Orbit cannot undo a failed attach. When the volume mounted and passed its checks but holds no template checkout, the fresh clone goes to the volume. Otherwise it goes to the root disk.
 
 #### Build a template
 
 Run `task-vms:build-workspace-template {node} {project}` to build the template of a Project on one host. It prints each stage with its time.
 
-Every night at 04:00, after the base image refresh, while task VMs are enabled, the Gateway queues `RefreshTaskVmWorkspaceTemplates`. It runs on every configured host whose Node is active. It deletes the templates of Projects whose `task_compute` is not `vm`. It queues one `BuildTaskVmWorkspaceTemplate` for each Project whose `task_compute` is `vm`. A claim without a template queues the same job.
+Templates belong to the base image they were built on, so they follow it. Every promote of a base image, by a build or a sync, queues `RefreshTaskVmWorkspaceTemplates` on the `task-vms` queue. So it runs after the build or sync that moved the alias. The nightly base image refresh at 03:00 also queues it when it ends, also when its build fails, so the templates follow the default branch every night. A refresh that is already queued absorbs a second one.
+
+The refresh runs on every configured host whose Node is active. It deletes the templates of Projects whose `task_compute` is not `vm`. It queues one `BuildTaskVmWorkspaceTemplate` for each Project whose `task_compute` is `vm`. A claim without a template queues the same job.
 
 Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. The nightly build keeps the template at most a day old.
 
@@ -298,6 +320,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | --- | --- |
 | `sweep` | Deletes builder VMs and unfinished templates that an interrupted build left |
 | `launch`, `cloud-init` | Launches a builder VM `tvm-template-<time>` from `orbit-task-base` with the task VM user-data, and waits for cloud-init |
+| `identity` | Reads the base image that the builder booted, and the `uid:gid` of `orbit` |
 | `volume` | Creates the block volume with the host's `disk` size, and attaches it |
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
 | `clone` | Clones the default branch into `.orbit-workspace-template`, with the Project's repository access, as `orbit` |
@@ -305,7 +328,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set, as the baseline check does. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
-| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, and `user.orbit.ready=true` on the volume |
+| `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
@@ -417,8 +440,10 @@ A job is due when its time has come and no worker holds it, or a worker's hold i
 | `RefillTaskVmPool` | Never. It runs again a minute later. A failed pool VM makes its host wait, as [Failures](#warm-vm-failures) describes |
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
-| `RefreshTaskVmWorkspaceTemplates` | Never. The next night runs it again |
+| `RefreshTaskVmWorkspaceTemplates` | Never. The next promote or night queues it again |
 | `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build is not retried; see [Template failures](#template-failures) |
+
+The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
 When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 
@@ -524,6 +549,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | Stage | What it does |
 | --- | --- |
 | `launch`, `cloud-init` | Launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge, and waits for cloud-init |
+| `orbit-user` | Requires `orbit` to have uid and gid 1000 |
 | `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
 | `app-dev-php-source`, `app-dev-php-8-5`, `app-dev-php-8-4` | Adds the pinned Sury PHP source and installs the `app-dev` PHP packages of each PHP version an Instance can select, with the program that installs them for an Instance |
 | `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
@@ -537,7 +563,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | `promote` | Points the alias `orbit-task-base` at the new image in one step |
 | `prune` | Deletes every other `orbit-task-base-<time>` image that no VM in the project uses |
 
-The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, it must also have kept the lean boot through its first boot and hold the manifest. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
+The smoke VM must finish cloud-init without errors. It must have an ed25519 SSH host key and the Gateway's key for `orbit`. Its journal must list one boot only. After a build, it must also have kept the lean boot through its first boot, hold the manifest, and have `orbit` with uid and gid 1000. A [sync](#sync-the-base-image) does not check those two, so it can still copy an image built before them.
 
 A VM from the stock image boots twice. Its Incus templates write the NoCloud seed, but cloud-init starts before the Incus agent writes it, so the agent reboots the VM. That costs about 10 seconds. The `single-boot` stage drops the templates under `/var/lib/cloud/seed/` from the image metadata, and keeps the others, such as `/etc/hostname`. It also orders `cloud-init-main.service` after `incus-agent.service`. Cloud-init then reads the user-data from the Incus agent through its `LXD` data source, and each VM gets its own instance ID from Incus.
 
@@ -555,7 +581,9 @@ Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It 
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
-The builder's user-data adds three things to the task VM user-data: a package upgrade, `openssh-server`, and Chromium's system libraries. Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
+The builder's user-data adds four things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, and Chromium's system libraries. A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
+
+Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
 The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
 
@@ -738,6 +766,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.pool_start_timeout` | 504 | A pool VM was still `provisioning` an hour after the refill recorded it |
 | `task_vm.workspace_template_failed` | 502 | A workspace template build failed, or the mount of a clone failed. The message names the stage |
 | `task_vm.workspace_template_running` | 409 | A workspace template build of the host is already running |
+| `task_vm.workspace_template_detach_failed` | 502 | A claim could not attach a workspace template, and could not unmount and detach the volume after it. The claim stops, so no fresh clone lands on the volume |
 
 ### Limits
 

@@ -70,12 +70,18 @@ final readonly class TaskVmWorkspace
      * Gives the group's task VM a clone of its Project's workspace template, mounted at `$directory`, the Project's
      * apps directory on the VM, and returns the template checkout. Without a template, or when a step fails, it logs a
      * warning and returns null, and the workspace starts from a fresh clone: a template only makes a claim faster.
+     * A volume that could not be detached after a failure stays an error: a fresh clone would land on it.
+     *
+     * @throws TaskVmException `task_vm.workspace_template_detach_failed`
      */
     public function template(TaskVm $vm, Task $group, string $directory): ?string
     {
         try {
             return app(TaskVmWorkspaceTemplates::class)->attach($vm, $group->project, $directory);
         } catch (Throwable $exception) {
+            if (TaskVmException::codeOf($exception) === 'task_vm.workspace_template_detach_failed') {
+                throw $exception;
+            }
             Log::warning('Task VM workspace template could not be attached; the workspace starts from a fresh clone.', [
                 'task_vm' => $vm->name,
                 'project_id' => $group->project_id,

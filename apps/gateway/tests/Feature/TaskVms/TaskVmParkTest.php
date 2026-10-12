@@ -101,9 +101,14 @@ final class TaskVmParkProvider implements TaskVmProvider
         $this->calls[] = 'stop';
     }
 
+    public ?Closure $onDestroy = null;
+
     public function destroy(TaskVm $vm): void
     {
         $this->calls[] = 'destroy';
+        if ($this->onDestroy instanceof Closure) {
+            ($this->onDestroy)();
+        }
     }
 }
 
@@ -395,10 +400,12 @@ describe('wake', function (): void {
 
     it('removes the workspace on completion under the group admission lock that parking takes', function (): void {
         app(TaskExtensionState::class)->enable();
-        // The remover's own failures are swallowed by a manual complete, so record what it saw.
-        mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturnUsing(function (): void {
+        Queue::fake();
+        // A manual complete swallows removal failures, so record what the VM deletion saw.
+        mock(InstanceRemover::class)->shouldReceive('execute')->never();
+        $this->provider->onDestroy = function (): void {
             $this->lockedDuringRemoval = $this->locked;
-        });
+        };
         $this->locked = [];
         $this->lockedDuringRemoval = null;
         $lock = new class($this) implements TaskExecutionLock

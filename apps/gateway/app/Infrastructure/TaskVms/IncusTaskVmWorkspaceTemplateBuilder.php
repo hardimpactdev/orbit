@@ -35,7 +35,8 @@ use Throwable;
 /**
  * Builds the workspace template of one Project on one task VM host ({@see TaskVmWorkspaceTemplates}). A builder VM
  * `tvm-template-<time>` boots the base image with the task VM user-data and gets a new block volume. The volume is
- * mounted at the Project's apps directory with the same script as a claim. The builder clones the default branch,
+ * mounted at the Project's apps directory with the same script as a claim. The template records the base image the
+ * builder booted and the managed user's `uid:gid`, which own its files. The builder clones the default branch,
  * installs the PHP packages that the Project's Instance gets, and runs the Project's setup steps as `orbit`, as the
  * baseline check does. The tree must stay clean. Then the volume is detached and marked ready, the builder goes, and
  * older templates of the Project are deleted. No agent and no group ever ran on the volume.
@@ -126,8 +127,9 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             $this->stage($node, $progress, 'sweep', fn () => $this->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::BaseImage, $this->cloudInit->render($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
+            [$image, $owner] = $this->stage($node, $progress, 'identity', fn (): array => $this->identity($host, $node, $builder));
             $this->stage($node, $progress, 'volume', fn () => $this->createVolume($host, $node, $builder, $volume));
-            $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory));
+            $this->stage($node, $progress, 'mount', fn () => $this->mount($host, $node, $builder, $directory, $owner));
             $commit = $this->stage($node, $progress, 'clone', fn (): string => $this->cloneDefaultBranch($host, $node, $builder, $project, $checkout));
             $this->stage($node, $progress, 'php', fn () => $this->installPhp($host, $node, $builder, $project, $checkout));
             foreach ($steps as $step) {
@@ -140,6 +142,8 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
                 TaskVmWorkspaceTemplates::ProjectKey.'='.$project->id,
                 TaskVmWorkspaceTemplates::CommitKey.'='.$commit,
                 TaskVmWorkspaceTemplates::RepositoryKey.'='.$project->repository_url,
+                TaskVmWorkspaceTemplates::ImageKey.'='.$image,
+                TaskVmWorkspaceTemplates::OwnerKey.'='.$owner,
                 TaskVmWorkspaceTemplates::Ready.'=true',
             ])));
             $published = true;
@@ -244,13 +248,33 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         ]));
     }
 
-    private function mount(TaskVmHost $host, Node $node, string $builder, string $directory): void
+    /**
+     * The base image the builder booted and the managed user's `uid:gid` on it. The template records both, so a claim
+     * takes it only on a VM from the same image, and the mount refuses a VM whose user differs.
+     *
+     * @return array{string, string}
+     */
+    private function identity(TaskVmHost $host, Node $node, string $builder): array
+    {
+        $image = $this->image->instances($host, $node)[$builder] ?? null;
+        if (! is_string($image) || $image === '') {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", 'it records no base image');
+        }
+        $owner = trim($this->checked($builder, 'exec id', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, ['sh', '-c', 'printf "%s:%s" "$(id -u)" "$(id -g)"']))->stdout);
+        if (preg_match('/\A[0-9]+:[0-9]+\z/D', $owner) !== 1) {
+            throw IncusHost::invalid("the workspace template builder [{$builder}]", 'the managed user has no numeric uid and gid');
+        }
+
+        return [$image, $owner];
+    }
+
+    private function mount(TaskVmHost $host, Node $node, string $builder, string $directory, string $owner): void
     {
         $this->checked($builder, 'exec format', $this->image->exec($host, $node, $builder, [
             'bash', '-ceu', self::Format, '--', TaskVmWorkspaceTemplates::Device, self::ManagedUser, self::ManagedUser,
         ]));
         $this->checked($builder, 'exec mount', $this->asManagedUser($host, $node, $builder, '/home/'.self::ManagedUser, [
-            'bash', '-ceu', TaskVmWorkspaceTemplates::MountScript, '--', TaskVmWorkspaceTemplates::Device, $directory, self::ManagedUser, self::ManagedUser,
+            'bash', '-ceu', TaskVmWorkspaceTemplates::MountScript, '--', TaskVmWorkspaceTemplates::Device, $directory, $owner,
             TaskVmWorkspaceTemplates::TemplateDirectory, TaskVmWorkspaceTemplates::CacheDirectory, ...TaskVmWorkspaceTemplates::Caches,
         ]));
     }
