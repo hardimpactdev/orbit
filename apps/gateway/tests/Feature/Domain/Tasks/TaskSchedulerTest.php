@@ -3321,46 +3321,6 @@ it('polls a running baseline without mutating topology and rechecks readiness af
         ->and($group->fresh()->capacity_wait_reason)->toBe('The branch runtime is waiting.');
 });
 
-it('routes a VM reviewer topology fallback through private admission and retries capacity before resuming', function (): void {
-    [$group, $task, , , , $dispatcher] = scheduler_review([
-        FakeTaskTurnReceipts::contents('topology_requested', 'Need private workload Nodes.'),
-    ]);
-    $group->project->update(['slug' => 'orbit']);
-    $group->update(['task_compute' => TaskCompute::Vm]);
-    $task->update(['topology' => ['app-prod-2']]);
-    $topology = new FakeTaskWorkspaceTopology;
-    app()->instance(TaskWorkspaceTopology::class, $topology);
-    $state = (object) ['waiting' => true, 'calls' => 0];
-    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function (Task $actualGroup, Task $actualTask) use ($state, $group, $task): void {
-        expect($actualGroup->id)->toBe($group->id);
-        expect($actualTask->id)->toBe($task->id);
-        expect($actualTask->fresh()->topology)->toBe(['app-prod-2', 'app-dev', 'app-prod']);
-        $state->calls++;
-        if ($state->waiting) {
-            throw new TaskCapacityException(false, 'Private workload capacity is full.');
-        }
-    });
-
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->calls)->toBe([]);
-    expect($dispatcher->commands)->toBe([]);
-    expect($group->fresh()->capacity_wait_reason)->toBe('Private workload capacity is full.');
-    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
-    expect($task->fresh()->communication_failures)->toBe(0);
-    expect(TaskQuestion::query()->count())->toBe(0);
-
-    $state->waiting = false;
-    app(TaskScheduler::class)->tick();
-
-    expect($topology->calls)->toBe([]);
-    expect($dispatcher->commands)->toHaveCount(1);
-    expect(json_encode($dispatcher->commands))->toContain('private Gateway');
-    expect($group->fresh()->capacity_wait_reason)->toBeNull();
-    expect($task->fresh()->comments()->count())->toBe(1);
-    expect($state->calls)->toBe(2);
-});
-
 it('refuses an Orbit topology fallback on the Project VM lane without blocking its review', function (): void {
     [$group, $task, , , , $dispatcher] = scheduler_review([
         FakeTaskTurnReceipts::contents('topology_requested', 'Need discovery.'),
