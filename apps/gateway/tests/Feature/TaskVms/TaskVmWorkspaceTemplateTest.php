@@ -42,6 +42,7 @@ use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -476,18 +477,18 @@ describe('volumes', function (): void {
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('deletes the templates of Projects that no longer run task VMs and queues a build for an active one that does', function (): void {
+    it('deletes the templates of Projects that no longer run task VMs and queues a build for an active one without a current template', function (): void {
         Queue::fake();
         $shared = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
         $this->incus->volumes = [
-            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
+            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(image: TVM_NEW_IMAGE),
             'tvm-template-'.$shared->id.'-20261011040000' => tvm_ready(),
             'tvm-template-'.$shared->id.'-20261011050000' => [],
         ];
 
         app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
 
-        expect(array_keys($this->incus->volumes))->toBe(['tvm-template-'.$this->project->id.'-20261011040000', 'tvm-template-'.$shared->id.'-20261011050000']);
+        expect(array_keys($this->incus->volumes))->toBe(['tvm-template-'.$shared->id.'-20261011050000']);
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, 1);
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, fn (BuildTaskVmWorkspaceTemplate $job): bool => $job->projectId === $this->project->id);
     });
@@ -541,13 +542,14 @@ describe('scale', function (): void {
             'tvm-template-'.$projects[1]->id.'-20261011050000',
             'tvm-template-'.$projects[3]->id.'-20261011060000',
         ]);
-        // Mealou and app-1..app-6 are active; app-5 has no default branch. 6 Projects on 2 hosts.
+        // Mealou and app-1..app-6 are active; app-5 has no default branch, and app-2 is current. 5 Projects on 2 hosts.
         $builds = DB::table('jobs')->where('payload', 'like', '%BuildTaskVmWorkspaceTemplate%')->get();
         $built = $builds->map(static fn (object $job): array => [unserialize(json_decode($job->payload, true)['data']['command'])->hostNodeId, unserialize(json_decode($job->payload, true)['data']['command'])->projectId])->all();
         $expected = [];
         foreach ([$this->hostNode->id, $shark->id] as $host) {
             foreach ([$this->project, ...array_slice($projects, 0, 6)] as $project) {
-                if ($project->default_branch !== null) {
+                // app-2 already has a current template, so it gets no build.
+                if ($project->default_branch !== null && $project->id !== $projects[1]->id) {
                     $expected[] = [$host, $project->id];
                 }
             }
@@ -575,7 +577,7 @@ describe('scale', function (): void {
             ->and($vms->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
             ->and($templates->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700")
             ->and($templates)->toBe(end($events))
-            ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 30, false])
+            ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 32, false])
             // The task VM worker takes the destroy at once, behind no build.
             ->and($vms->filtersPass(app()))->toBeTrue()
             // The template worker starts only in the last two seconds of a minute, so the run it holds ends soon.
@@ -758,5 +760,79 @@ describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
         $this->project->update(['task_compute' => TaskCompute::Shared]);
         expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(1)
             ->and(Artisan::output())->toContain('does not run its groups on task VMs');
+    });
+});
+
+describe('refresh order', function (): void {
+    /** Runs the template worker until its queue is empty, as the scheduler would. */
+    function tvm_template_worker(string $queue = TaskVmWorkspaceTemplates::Queue): void
+    {
+        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => $queue, '--stop-when-empty' => true]);
+    }
+
+    /** @return int the builder VMs that were launched */
+    function tvm_builds(TaskVmTemplateIncus $incus): int
+    {
+        return collect($incus->operations())->filter(static fn (array $operation): bool => $operation[0] === 'launch')->count();
+    }
+
+    it('builds each active template once when a promote lands while the refresh of the first one runs', function (): void {
+        // Builders boot what the alias names after the promote.
+        $this->incus->image = TVM_NEW_IMAGE;
+        tvm_projects(2, active: 2);
+        $promoted = false;
+        // The real order: the first promote queues a refresh, which queues its builds; the next promote lands after it.
+        Queue::after(function (JobProcessed $event) use (&$promoted): void {
+            if (! $promoted && $event->job->resolveName() === RefreshTaskVmWorkspaceTemplates::class) {
+                $promoted = true;
+                app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+            }
+        });
+
+        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        tvm_template_worker();
+
+        // Mealou, app-1 and app-2 are built once. The second refresh finds them current and queues nothing.
+        expect($promoted)->toBeTrue()
+            ->and(tvm_builds($this->incus))->toBe(3)
+            ->and(DB::table('jobs')->count())->toBe(0)
+            ->and(collect($this->incus->volumes)->filter(static fn (array $config): bool => ($config['user.orbit.image'] ?? null) === TVM_NEW_IMAGE)->count())->toBe(3);
+    });
+
+    it('skips a build when the host already has a current template', function (): void {
+        Log::spy();
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => tvm_ready()];
+
+        app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
+
+        expect(tvm_builds($this->incus))->toBe(0);
+        Log::shouldHaveReceived('info')->with('Task VM workspace template is current; no build.', Mockery::any());
+
+        // Another owner or image is not current.
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => [...tvm_ready(), 'user.orbit.owner' => '1001:1001']];
+        app()->call([(new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions(), 'handle']);
+        expect(tvm_builds($this->incus))->toBe(1);
+    });
+
+    it('queues no refresh at a promote during the nightly base image refresh, which queues one at its end', function (): void {
+        Cache::put(TaskVmBaseImage::RefreshDeferredKey, true, 60);
+
+        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        expect(DB::table('jobs')->count())->toBe(0);
+
+        // A nightly job stopped at its timeout queues it from `failed()`.
+        (new RefreshTaskVmBaseImages)->failed(null);
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue])
+            ->and(Cache::has(TaskVmBaseImage::RefreshDeferredKey))->toBeFalse();
+    });
+
+    it('moves template jobs queued on the task VM queue before the split to the template queue', function (): void {
+        Queue::connection('task-vms')->pushOn('task-vms', new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id));
+        Queue::connection('task-vms')->pushOn('task-vms', new RefreshTaskVmWorkspaceTemplates);
+
+        tvm_template_worker('task-vms');
+
+        expect(tvm_builds($this->incus))->toBe(0)
+            ->and(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue, TaskVmWorkspaceTemplates::Queue]);
     });
 });
