@@ -33,6 +33,7 @@ use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\SandboxResidueFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\Fleet\StaticCliRelease;
@@ -83,6 +84,7 @@ final class FleetServiceProvider extends ServiceProvider
                 $app->make(AnnotatorFootprintArtifact::class),
                 $app->make(RouteResidueFootprintArtifact::class),
                 $app->make(TmpfilesFootprintArtifact::class),
+                $app->make(SandboxResidueFootprintArtifact::class),
             ]),
         );
         $this->app->bind(
