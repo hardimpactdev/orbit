@@ -28,6 +28,7 @@ use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
@@ -531,7 +532,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         }
 
         if ($fitting->isNotEmpty()) {
-            throw new TaskCapacityException(fleetFull: ! $this->anyAppDevNodeHasCapacity());
+            throw new TaskCapacityException(TaskWait::Capacity, fleetFull: ! $this->anyAppDevNodeHasCapacity());
         }
 
         if ($nodes->isEmpty()) {

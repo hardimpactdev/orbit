@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -85,7 +86,7 @@ final readonly class AllocateTaskVmAction
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
         // A large VM would hold three slots for a group that cannot start.
         if ($size === TaskVmSize::Large && ! $this->topology->available()) {
-            throw new TaskCapacityException(false, RefusingTopologyAdmission::Unavailable);
+            throw new TaskCapacityException(TaskWait::Topology, RefusingTopologyAdmission::Unavailable);
         }
         // A large VM is always new, so it needs no warm VM image.
         $images = $size === TaskVmSize::Normal ? $this->warmImages() : [];
@@ -93,7 +94,7 @@ final readonly class AllocateTaskVmAction
         try {
             [$vm, $warm] = self::locked(fn (): array => $this->place($group, $images, $size));
         } catch (LockTimeoutException) {
-            throw new TaskCapacityException(false, 'Task VM: another placement is running.');
+            throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: another placement is running.');
         }
 
         if ($warm) {
@@ -176,8 +177,9 @@ final readonly class AllocateTaskVmAction
 
     /**
      * The free slots of each configured host that is an active Node, in config order: `max_vms` minus the slots of
-     * every task VM on the host that is not destroyed, warm, parked and failed ones too. A normal VM takes one slot and
-     * a large VM three. A host over its budget has 0.
+     * every task VM on the host that is not destroyed or failed, warm and parked ones too. A failed VM holds no slot, so
+     * it never blocks placement: its group asks for assistance, and the pool refill destroys a failed pool VM. A normal
+     * VM takes one slot, a medium VM two, and a large VM three. A host over its budget has 0.
      *
      * @return array<int, int> host Node id => free slots
      */
@@ -186,7 +188,7 @@ final readonly class AllocateTaskVmAction
         $active = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
             ->where('status', LifecycleStatus::Active)->pluck('id')->all();
         $used = [];
-        foreach (TaskVm::query()->live()->whereNotNull('host_node_id')->get(['host_node_id', 'size']) as $vm) {
+        foreach (TaskVm::query()->live()->where('state', '!=', TaskVmState::Failed)->whereNotNull('host_node_id')->get(['host_node_id', 'size']) as $vm) {
             $host = (int) $vm->host_node_id;
             $used[$host] = ($used[$host] ?? 0) + $vm->size->slots();
         }
@@ -341,7 +343,7 @@ final readonly class AllocateTaskVmAction
             return $best;
         }
         if ($size !== TaskVmSize::Normal) {
-            throw new TaskCapacityException(false, $size === TaskVmSize::Large ? self::NoLargeCapacity : self::NoMediumCapacity);
+            throw new TaskCapacityException(TaskWait::Capacity, $size === TaskVmSize::Large ? self::NoLargeCapacity : self::NoMediumCapacity);
         }
         $upcloud = $this->settings->upcloud;
         if ($upcloud?->allows($group->project_id) === true
@@ -350,7 +352,7 @@ final readonly class AllocateTaskVmAction
         }
         $starting = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->whereIn('host_node_id', array_keys($free))->exists();
 
-        throw new TaskCapacityException(false, $starting ? self::WarmStarting : self::NoCapacity);
+        throw new TaskCapacityException(TaskWait::Capacity, $starting ? self::WarmStarting : self::NoCapacity);
     }
 
     private static function piToken(): string

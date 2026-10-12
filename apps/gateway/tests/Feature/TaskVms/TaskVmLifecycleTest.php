@@ -29,6 +29,7 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAssistance;
@@ -39,8 +40,10 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopologyAdmission;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -332,7 +335,7 @@ describe('allocation', function (): void {
             ->and(TaskVm::query()->live()->where('host_node_id', $shark->id)->count())->toBe(3);
     });
 
-    it('counts parked and failed task VMs against a host, and frees the slot only once a VM is destroyed', function (): void {
+    it('counts parked task VMs against a host but not failed ones, and frees a slot only once a VM is destroyed', function (): void {
         Queue::fake();
         $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
         tvm_life_hosts([[$this->host->id, 1], [$shark->id, 1]]);
@@ -342,7 +345,9 @@ describe('allocation', function (): void {
             'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140', 'pi_token' => str_repeat('p', 64),
         ]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.');
+        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($shark->id)
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
+            ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::Capacity)->and($wait->getMessage())->toBe('Task VM: no capacity.'));
 
         $parked->update(['state' => TaskVmState::Destroyed]);
         expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($this->host->id);
@@ -461,7 +466,8 @@ describe('claim', function (): void {
         $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
         $admission = app(TaskTopologyAdmission::class);
 
-        expect(fn () => $admission->prepare($group, $subtask))->toThrow(TaskCapacityException::class, RefusingTopologyAdmission::TooSmall);
+        expect(fn () => $admission->prepare($group, $subtask))
+            ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::Topology)->and($wait->getMessage())->toBe(RefusingTopologyAdmission::TooSmall));
 
         $vm->update(['size' => TaskVmSize::Large]);
         expect(fn () => $admission->prepare($group, $subtask))->toThrow(TaskCapacityException::class, RefusingTopologyAdmission::Unavailable);
@@ -471,12 +477,13 @@ describe('claim', function (): void {
         Queue::fake();
         $group = tvm_life_group();
 
-        expect(fn () => app(TaskVmWorkspace::class)->node($group))->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+        expect(fn () => app(TaskVmWorkspace::class)->node($group))
+            ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::TaskVm)->and($wait->getMessage())->toBe('Task VM: provisioning.'));
 
         $vm = TaskVm::query()->sole();
         $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
         expect(fn () => app(TaskVmWorkspace::class)->node($group))
-            ->toThrow(TaskCapacityException::class, 'Task VM: failed: task_vm.bootstrap_failed: Cloud-init failed.');
+            ->toThrow(TaskVmFailedException::class, "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.");
 
         $node = tvm_life_node('tvm-'.$vm->id, '10.44.0.129', role: RoleName::AppDev);
         $vm->update(['state' => TaskVmState::Ready, 'node_id' => $node->id]);
@@ -523,7 +530,7 @@ describe(ProvisionTaskVm::class, function (): void {
         app()->call([new ProvisionTaskVm($vm->id), 'handle']);
 
         expect($this->provider->calls)->toBe([]);
-        Queue::assertNothingPushed();
+        Queue::assertNotPushed(ProvisionTaskVm::class);
     })->with([
         'enrolled' => [TaskVmState::Provisioning, true],
         'failed' => [TaskVmState::Failed, false],
@@ -546,7 +553,7 @@ describe(ProvisionTaskVm::class, function (): void {
             ->and($destroying->fresh()?->error_code)->toBeNull()
             ->and($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
-            ->and($group->fresh()?->assistance_reason)->toBe('Task VM failed: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM.')
+            ->and($group->fresh()?->assistance_reason)->toBe("Task VM failed: {$vm->name}: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM.")
             ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
     });
 
@@ -1070,6 +1077,29 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
 
         expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
         Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('makes a todo group whose task VM failed ask for assistance at once, naming the VM, and gives it no other VM', function (): void {
+        Queue::fake();
+        $group = tvm_life_group(TaskGroupStatus::Todo);
+        $vm = tvm_life_vm($group, TaskVmState::Failed);
+        $vm->update(['error_code' => 'task_vm.bootstrap_failed', 'error_message' => 'Cloud-init failed.']);
+        app(TaskExtensionState::class)->enable();
+        mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once();
+        $reason = "Task VM failed: {$vm->name}: task_vm.bootstrap_failed: Cloud-init failed. Cancel the group to destroy the VM.";
+
+        foreach ([1, 2] as $claim) {
+            expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+            $fresh = $group->fresh();
+            expect($fresh?->status)->toBe(TaskGroupStatus::Todo)
+                ->and($fresh?->reserved_at)->toBeNull()
+                ->and($fresh?->capacity_wait_reason)->toBeNull()
+                ->and($fresh?->assistance_requested)->toBeTrue()
+                ->and($fresh?->assistance_kind)->toBe(AssistanceKind::Failure)
+                ->and($fresh?->assistance_reason)->toBe($reason)
+                ->and(TaskVm::query()->sole()->state)->toBe(TaskVmState::Failed);
+        }
+        Queue::assertNotPushed(ProvisionTaskVm::class);
     });
 
     it('waits for a claim in flight when its group is cancelled, and deletes the VM with the workspace once the claim ends', function (): void {

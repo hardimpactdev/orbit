@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskTopologyAdmission;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -35,6 +36,6 @@ final readonly class RefusingTopologyAdmission implements TaskTopologyAdmission
         }
         $vm = $group->task_compute === TaskCompute::Vm ? TaskVmPlacement::forGroup($group) : null;
 
-        throw new TaskCapacityException(false, $vm instanceof TaskVm && ! $vm->size->holds($task) ? self::TooSmall : self::Unavailable);
+        throw new TaskCapacityException(TaskWait::Topology, $vm instanceof TaskVm && ! $vm->size->holds($task) ? self::TooSmall : self::Unavailable);
     }
 }
