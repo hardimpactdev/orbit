@@ -27,13 +27,14 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Every 10 minutes: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the workspace
+ * Every 10 minutes, while task VMs are enabled: deletes orphaned `tvm-<number>` VMs in each configured host's Incus project, then the workspace
  * clones `tvm-<number>-workspace` that no live row owns, and fails the
  * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
  * failed warm VM has no group: the pool refill destroys it. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
- * host's configured project. While UpCloud is configured, it does the same for the servers with the task VM label
- * there, and deletes base image build servers and unverified templates older than two hours. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
+ * host's configured project. While UpCloud is configured, also with task VMs or the overflow off, it does the same for
+ * the servers with the task VM label there, and deletes base image build servers and unverified templates older than
+ * two hours, except those of a build that is marked as running. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
  * host is logged, and the other hosts still run.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
@@ -56,7 +57,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
     public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
     {
         $failures = [];
-        foreach ($settings->hosts as $host) {
+        foreach ($settings->enabled ? $settings->hosts : [] as $host) {
             $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first();
             if (! $node instanceof Node) {
                 continue;

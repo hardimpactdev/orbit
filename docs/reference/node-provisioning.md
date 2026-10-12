@@ -387,7 +387,7 @@ A Node that the Gateway reaches through a [jump Node](#enroll-through-a-jump-hos
 
 ## Public SSH
 
-The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
+The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. An [UpCloud task VM](/reference/compute-drivers#create-and-reach-an-upcloud-server) boots with both from its template, so the bootstrap finds them in place. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
 
 - A Node without an active role stays reachable over public SSH.
 - A later `node:add` of such a Node connects over public SSH again. It finishes the WireGuard peer over the verified tunnel.

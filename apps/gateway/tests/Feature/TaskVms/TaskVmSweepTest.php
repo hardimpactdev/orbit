@@ -215,11 +215,11 @@ describe(SweepTaskVmHosts::class, function (): void {
         expect($this->incus->instances['10.44.0.8'])->toBe(['tvm-8888']);
     });
 
-    it('is queued on the task VM queue every 10 minutes while task VMs are enabled', function (): void {
+    it('is queued on the task VM queue every 10 minutes while task VMs are enabled or the UpCloud token file is set', function (): void {
         Artisan::call('schedule:list');
         $sweep = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === SweepTaskVmHosts::class);
 
-        config(['task_vms.enabled' => false]);
+        config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => null]);
         expect($sweep)->not->toBeNull()
             ->and($sweep->expression)->toBe('*/10 * * * *')
             ->and($sweep->filtersPass(app()))->toBeFalse()
@@ -227,6 +227,19 @@ describe(SweepTaskVmHosts::class, function (): void {
 
         config(['task_vms.enabled' => true]);
         expect($sweep->filtersPass(app()))->toBeTrue();
+
+        config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => '/home/orbit/upcloud.yaml']);
+        expect($sweep->filtersPass(app()))->toBeTrue();
+    });
+
+    it('leaves the Incus hosts alone while task VMs are off', function (): void {
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', app(TaskVmSettings::class)->hosts, null, null, null, []));
+        $this->incus->instances = ['10.44.0.7' => ['tvm-9999']];
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        expect($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999'])
+            ->and($this->incus->calls)->toBe([]);
     });
 });
 

@@ -7,10 +7,12 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmUpCloud;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -20,17 +22,24 @@ use Throwable;
 /**
  * Builds the UpCloud task VM template with the same recipe as the Incus base image ({@see TaskVmImageRecipe}). A
  * builder server boots the stock Ubuntu template with the builder user-data, runs the enrollment programs, the agent
- * binary, the Pi executable, the masks and the manifest over SSH as `orbit`, and `base-image-clean.sh` removes its
- * identity. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
+ * binary, the Pi executable, the masks and the manifest over SSH as `orbit`, turns ufw on, and `base-image-clean.sh`
+ * removes its identity. A server from the template boots with ufw on and only public SSH open, the exact rule that
+ * enrollment's base firewall opens and its role closes, so no baked service is public before enrollment. Its stopped disk becomes the template `orbit-task-base-<time>-unverified`. A smoke server boots it with
  * the task VM user-data; only then does the title lose `-unverified`, so task VMs clone it. The two newest verified
  * templates stay, older ones go: a cloned server does not need its template. A failed build deletes its servers and
- * its unverified template; the next build sweeps what a killed one left.
+ * its unverified template; the next build sweeps what a killed one left. A build marks its time stamp as running for
+ * two hours, and no sweep touches the servers or template of a marked build.
  */
 final readonly class UpCloudTaskVmImageBuilder
 {
     private const string Lock = 'task-vms:upcloud-image-build';
 
     private const int LockSeconds = 3600;
+
+    /** A build's running mark, followed by its time stamp. It outlasts the lock, so a build past its lock stays marked. */
+    private const string Running = 'task-vms:upcloud-image-build:running:';
+
+    private const int RunningSeconds = 2 * 3600;
 
     private const int StartSeconds = 300;
 
@@ -62,6 +71,7 @@ final readonly class UpCloudTaskVmImageBuilder
             throw new TaskVmException('task_vm.image_build_running', 'An UpCloud task VM template build is already running.');
         }
         $stamp = now()->format('YmdHis');
+        Cache::put(self::Running.$stamp, true, self::RunningSeconds);
         $builder = TaskVmBaseImage::WorkPrefix.$stamp;
         $smoke = $builder.'-smoke';
         $title = TaskVmUpCloud::TemplatePrefix.$stamp;
@@ -85,6 +95,7 @@ final readonly class UpCloudTaskVmImageBuilder
                 $this->stage($progress, 'pi-artifact', fn () => $run(['bash', '-ceu', TaskVmRuntime::InstallPi, '--', (string) $this->settings->piArtifactSha256], protected: ProtectedInput::fromFile((string) $this->settings->piArtifactPath, '', TaskVmRuntime::ArtifactMaxBytes)));
             }
             $this->stage($progress, 'masks', fn () => $run(['sudo', '-n', 'sh', '-c', TaskVmImageRecipe::Masks]));
+            $this->stage($progress, 'firewall', fn () => $this->firewall($run));
             $this->stage($progress, 'manifest', fn () => $run(['sudo', '-n', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath], TaskVmBakedPrograms::manifest($programs)));
             $this->stage($progress, 'clean', fn () => $this->clean($builder, $run));
             $template = $this->stage($progress, 'templatize', fn (): string => $this->templatize($builder, $stamp, $title.TaskVmUpCloud::Unverified));
@@ -101,22 +112,32 @@ final readonly class UpCloudTaskVmImageBuilder
 
             throw $exception;
         } finally {
+            Cache::forget(self::Running.$stamp);
             $lock->release();
         }
     }
 
+    /** Whether a build is marked as running with the time stamp `$stamp`. */
+    public static function running(string $stamp): bool
+    {
+        return Cache::has(self::Running.$stamp);
+    }
+
     /**
-     * Deletes the base image servers and unverified templates that an interrupted build left. With `$olderThan`, only
-     * those whose time stamp is older, so the task VM sweep never touches a build that runs.
+     * Deletes the base image servers and unverified templates that an interrupted build left, except those of a build
+     * that is marked as running. With `$olderThan`, only those whose time stamp is older.
      */
     public function sweep(?int $olderThan = null): void
     {
         $stale = static function (string $name) use ($olderThan): bool {
+            if (preg_match('/([0-9]{14})/', $name, $match) !== 1) {
+                return $olderThan === null;
+            }
+            if (self::running($match[1])) {
+                return false;
+            }
             if ($olderThan === null) {
                 return true;
-            }
-            if (preg_match('/([0-9]{14})/', $name, $match) !== 1) {
-                return false;
             }
             $stamp = Carbon::createFromFormat('YmdHis', $match[1]);
 
@@ -172,6 +193,22 @@ final readonly class UpCloudTaskVmImageBuilder
         }
     }
 
+    /**
+     * Turns ufw on with incoming traffic denied, except the public SSH rule of a new Node on port 22 that enrollment
+     * opens itself. ufw keeps the SSH connection of the build, which that rule allows anyway.
+     *
+     * @param  Closure(list<string>, ?string=, ?ProtectedInput=): CommandResult  $run
+     */
+    private function firewall(Closure $run): void
+    {
+        $run(['sudo', '-n', 'ufw', 'default', 'deny', 'incoming']);
+        $run((new NodeFirewallRuleCatalog)->publicSshRecovery(new Node(['public_ssh_port' => 22]))->arguments);
+        $run(['sudo', '-n', 'ufw', '--force', 'enable']);
+        if (preg_match('/^Status: active$/m', $run(['sudo', '-n', 'ufw', 'status'])->stdout) !== 1) {
+            throw new TaskVmException('task_vm.image_build_failed', 'ufw is not active after it was enabled.', 502);
+        }
+    }
+
     /** @param  Closure(list<string>, ?string=, ?ProtectedInput=): CommandResult  $run */
     private function clean(string $name, Closure $run): void
     {
@@ -193,14 +230,14 @@ final readonly class UpCloudTaskVmImageBuilder
 
     /**
      * Boots a server from the new template with the task VM user-data. Cloud-init must finish, `orbit` must have the
-     * Gateway's key and the pinned uid and gid, and the image manifest must be there.
+     * Gateway's key and the pinned uid and gid, the image manifest must be there, and ufw must be on.
      */
     private function smoke(string $name, string $stamp, string $template): void
     {
         [$address, $hostKey] = $this->launch($name, $stamp, $template, $this->cloudInit->render($this->keys->publicKey()));
         $this->awaitCloudInit($name, $address, $hostKey);
         $this->checked($name, $this->guest->run($address, $hostKey, new RemoteCommand(
-            ['sh', '-euc', TaskVmImageRecipe::OwnerCheck.' && test -s "$2" && test -s /home/orbit/.ssh/authorized_keys', 'sh', TaskVmCloudInit::Owner, TaskVmBakedPrograms::ManifestPath],
+            ['sh', '-euc', TaskVmImageRecipe::OwnerCheck.' && test -s "$2" && test -s /home/orbit/.ssh/authorized_keys && sudo -n ufw status | grep -qx "Status: active"', 'sh', TaskVmCloudInit::Owner, TaskVmBakedPrograms::ManifestPath],
             timeout: 60,
         )));
         $this->servers->delete($name, UpCloudServers::ImageLabel, $stamp, null);

@@ -383,7 +383,7 @@ When the VM does not answer within 9 minutes, the row becomes `failed` with `tas
 
 ### Sweep task VM hosts
 
-Every 10 minutes, while task VMs are enabled, the Gateway scheduler queues the job `SweepTaskVmHosts`. For each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
+Every 10 minutes, while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set, the Gateway scheduler queues the job `SweepTaskVmHosts`. While task VMs are enabled, for each configured host that is an active Node, the job checks that the host's Incus project exists with `incus project show`, then lists the names of its instances and compares them with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
 - An **orphaned VM** is an instance named `tvm-<number>` in the project that has no task VM row on that host which is not `destroyed`. The job deletes it with `incus delete --force`.
 - A **missing VM** is a `warm`, `ready`, or `parked` task VM row on that host whose instance is gone.
@@ -427,7 +427,7 @@ The worker stops when the queue is empty, or takes no new job after 120 seconds.
 
 A job is due when its time has come and no worker holds it, or a worker's hold is older than 1800 seconds. A delayed retry or a released job starts no worker before its time. Without a due job, the scheduler only reads the queue table each second. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
 
-The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, run on the queue `task-vm-templates` in the same table, with a worker of their own:
+The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmWorkspaceTemplate`, and the [nightly UpCloud template refresh](#refresh-the-upcloud-template-every-night) `RefreshUpCloudTaskVmTemplate` run on the queue `task-vm-templates` in the same table, with a worker of their own:
 
 ```text
 queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
@@ -454,6 +454,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 | `EnsureWarmClaimReady` | Never. It queues `PrepareTaskVmRuntime`, which has its own retries |
 | `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 | `RefreshTaskVmWorkspaceTemplates` | Never. The next promote or night queues it again |
+| `RefreshUpCloudTaskVmTemplate` | Never. The next night runs it again |
 | `BuildTaskVmWorkspaceTemplate` | Waits a minute while another template build runs on the host, up to 10 times. A failed build or a Project without a default branch is not retried; see [Template failures](#template-failures) |
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
@@ -888,7 +889,9 @@ Placement first takes a current warm VM, then a new VM on the Incus host with th
 
 The server is named `tvm-<id>` in its title and hostname, and carries the label `orbit-task-vm=<id>`. Orbit records its UUID. A create whose answer was lost is found again by its label, so Orbit never sends a second create. Before each create, Orbit counts the account's servers with the `orbit-task-vm` label and refuses at `max_vms` with `task_vm.upcloud_budget_full`. A server that lost its row counts too.
 
-The server clones the newest verified template, has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too. Enrollment gives the VM the same managed firewall as any public `app-dev` Node.
+The server clones the newest verified template, has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
+
+The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
 UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init and the image manifest over SSH as `orbit` at the public address, and enrollment needs no jump Node.
 
@@ -905,16 +908,25 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 | `cloud-init`, `orbit-user` | Waits for cloud-init over SSH, and checks the pinned `orbit` uid and gid |
 | One stage for each enrollment program | Runs the same enrollment programs as the Incus base image |
 | `agent-binary`, `pi-artifact`, `masks` | Installs the pinned agent binary and Pi executable, and masks the first-boot and apt timers |
+| `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
 | `manifest`, `clean` | Writes the image manifest, and runs `base-image-clean.sh` |
 | `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
-| `smoke` | Boots a server from the template with the task VM user-data. It must finish cloud-init, hold the manifest, and give `orbit` the Gateway's key and the pinned uid and gid |
+| `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, the manifest, ufw, and the key, uid, and gid of `orbit` |
 | `promote`, `prune` | Renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
 
-A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`. No nightly refresh runs yet: run the command again to refresh the template. One build runs at a time.
+A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`.
+
+One build runs at a time. A build marks its time stamp as running for two hours, and no sweep deletes the servers or the template of a marked build.
+
+### Refresh the UpCloud template every night
+
+Every night at 02:00, while the token file is set, the Gateway scheduler queues the job `RefreshUpCloudTaskVmTemplate` on the template queue. It runs the same build as `task-vms:build-upcloud-image`, inside UpCloud, and keeps the two newest verified templates. It also runs with the switch off, so the template stays current. While UpCloud has no verified template, the job changes nothing, so the first build is always the command. A failed build keeps the current template.
+
+The build takes about 20 minutes and holds the template worker, so it runs before the 03:00 base image refresh queues template builds. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
 
 ### Sweep UpCloud
 
-While UpCloud is configured, also with the switch off, the [host sweep](#sweep-task-vm-hosts) lists the servers with the `orbit-task-vm` label. It deletes each server named `tvm-<label value>` without a row that is not `destroyed`. A `warm`, `ready`, or `parked` UpCloud row whose server is gone on two sweeps in a row becomes `failed`, and its group asks for assistance. It also deletes build servers and unverified templates older than two hours, which a killed build leaves. The sweep runs only while task VMs are enabled, so destroy the UpCloud VMs before you turn task VMs off.
+While the token file is set, also with the switch or task VMs off, the [host sweep](#sweep-task-vm-hosts) lists the servers with the `orbit-task-vm` label. So no server that Orbit created keeps costing money. The sweep deletes each server named `tvm-<label value>` without a row that is not `destroyed`. A `warm`, `ready`, or `parked` UpCloud row whose server is gone on two sweeps in a row becomes `failed`, and its group asks for assistance. It also deletes build servers and unverified templates older than two hours, which a killed build leaves, except those of a build that is still marked as running.
 
 ### Configure UpCloud
 
