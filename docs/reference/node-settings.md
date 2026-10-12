@@ -81,9 +81,13 @@ Each entry's access list changes as the entry's owner: the managed user's entrie
 
 No change follows a symlink. Each change opens its path one directory at a time without following a symlink and checks the owner of what it opened. A symlink that the worker swaps in during the walk makes the walk fail instead of redirecting a change.
 
-Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves them in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory, so neither the worker nor Caddy can read or replace the saved lists.
+Caddy's read grant keeps each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy and from the worker even when it lies in the document root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the document root, the publication fails and names it.
 
-When the publication fails, each account restores its own saved entries, and root restores only the root-owned directories it changed. A restore changes access lists only, never an owner. An entry that another entry replaced keeps its new access list. The site keeps the access it had, and the rest of the checkout stays closed to Caddy. When the restore also fails, the saved directory stays and the error names it.
+Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves each entry's device and inode number, owner, mode, and access lists.
+
+The saved lists live in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory. Each owner's entries go in their own mode 0600 file, and the worker reads only its own file, so neither the worker nor Caddy can read or replace the managed user's saved lists.
+
+When the publication fails, each account restores its own saved entries, and root restores only the root-owned directories it changed. A restore changes access lists and modes only, never an owner. It applies a saved entry only to the same file, by device and inode number. An entry that vanished needs nothing. An entry that another file replaced keeps its own access list, and the restore names it and fails. The site keeps the access it had, and the rest of the checkout stays closed to Caddy. When the restore fails, the saved directory stays and the error names it.
 
 ## Failure codes
 
