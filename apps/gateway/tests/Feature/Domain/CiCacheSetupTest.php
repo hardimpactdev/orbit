@@ -37,6 +37,18 @@ function ci_setup_archive(string $project): string
     return $bytes;
 }
 
+/** Runs a rendered command from a script file, as a setup step runs: the payload exceeds the argument limit. */
+function ci_setup_run(string $checkout, string $command): Process
+{
+    $script = $checkout.'/.ci-caches-step.sh';
+    file_put_contents($script, $command);
+    $process = new Process(['bash', $script], $checkout);
+    $process->run();
+    unlink($script);
+
+    return $process;
+}
+
 /** @param  list<string>  $projects */
 function ci_setup_source(array $projects): void
 {
@@ -98,8 +110,7 @@ describe('CI main cache setup', function (): void {
         file_put_contents($this->checkout.'/ci-exit-packages-php-sdk', '3');
         $command = app(CiCacheSetup::class)->command(new Project, 60);
 
-        $process = new Process(['bash', '-c', $command], $this->checkout);
-        $process->run();
+        $process = ci_setup_run($this->checkout, $command);
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
             ->and(file($this->checkout.'/imports.log', FILE_IGNORE_NEW_LINES))->toBe([
@@ -115,8 +126,7 @@ describe('CI main cache setup', function (): void {
         ci_setup_source(['apps/cli', 'packages/php-sdk']);
         $missing ? unlink($this->checkout.'/bin/tia-cache') : file_put_contents($this->checkout.'/ci-exit-apps-cli', '1');
 
-        $process = new Process(['bash', '-c', app(CiCacheSetup::class)->command(new Project, 60)], $this->checkout);
-        $process->run();
+        $process = ci_setup_run($this->checkout, app(CiCacheSetup::class)->command(new Project, 60));
 
         expect($process->getExitCode())->toBe(1)
             ->and(file_exists($this->checkout.'/packages/php-sdk/.orbit-tia/graph.json'))->toBeFalse();
