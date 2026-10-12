@@ -17,7 +17,6 @@ use Illuminate\Support\Carbon;
  * One run of the Project check: the baseline before the first implementer, or the check for one `ready_for_review` receipt.
  *
  * @property int $id
- * @property string|null $task_sandbox_id
  * @property int $task_id
  * @property int|null $task_comment_id
  * @property TaskCheckKind $kind
@@ -41,7 +40,7 @@ final class TaskCheck extends Model
 {
     #[\Override]
     protected $fillable = [
-        'task_id', 'task_sandbox_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
+        'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
         'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'started_at', 'finished_at',
     ];
 

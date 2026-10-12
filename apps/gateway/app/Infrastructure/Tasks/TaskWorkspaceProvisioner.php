@@ -57,7 +57,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
-        private SandboxWorkspaceProvisioner $sandboxes,
         private TaskVmWorkspace $taskVms,
         private TaskVmStepClock $clock,
     ) {}
@@ -73,7 +72,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         $taskVmNode = null;
         if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
             if ($group->project->slug === 'orbit') {
-                return $this->sandboxes->provision($group);
+                return new InstanceProvisionFailure('The Orbit Project has no task VM lane yet. Run its groups in shared mode.');
             }
             $taskVmNode = $this->taskVms->node($group);
         }

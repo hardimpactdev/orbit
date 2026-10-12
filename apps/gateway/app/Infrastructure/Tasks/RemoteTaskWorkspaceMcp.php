@@ -34,9 +34,7 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
             return false;
         }
 
-        $gateway = $instance->task_sandbox_id !== null && $instance->project->slug === 'orbit'
-            ? 'https://gateway.orbit'
-            : rtrim(StoredValue::string(config('app.url')), '/');
+        $gateway = rtrim(StoredValue::string(config('app.url')), '/');
         $config = json_encode(
             ['mcpServers' => ['orbit' => ['type' => 'http', 'url' => $gateway.'/mcp/search']]],
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT,

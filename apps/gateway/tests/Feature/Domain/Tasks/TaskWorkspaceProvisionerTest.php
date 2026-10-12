@@ -893,6 +893,19 @@ describe('task VMs', function (): void {
             ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
     });
 
+    it('refuses a vm group of the Orbit Project, which has no task VM lane', function (): void {
+        provisioner_node('beast', '10.44.0.7');
+        $group = provisioner_group(provisioner_app('orbit', '.', ProjectType::Monorepo));
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        bind_task_workspace_fakes();
+
+        $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false));
+
+        expect($result)->toBeInstanceOf(InstanceProvisionFailure::class)
+            ->and($result->cause)->toBe('The Orbit Project has no task VM lane yet. Run its groups in shared mode.')
+            ->and(Instance::query()->count())->toBe(0);
+    });
+
     it('never places a shared group on a task VM Node', function (): void {
         $project = provisioner_app('shared');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');

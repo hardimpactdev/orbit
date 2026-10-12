@@ -57,7 +57,7 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
         $checkouts = [];
         $instances = $project
             ->instances()
-            ->whereNull('task_sandbox_id')->where('node_id', $node->id)
+            ->where('node_id', $node->id)
             ->where('status', '!=', InstanceState::Removing)
             ->with(['project', 'tasks'])
             ->orderBy('id')

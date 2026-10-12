@@ -46,6 +46,7 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\RefusingTopologyAdmission;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
@@ -53,7 +54,6 @@ use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
-use App\Infrastructure\Tasks\SandboxTopologyAdmission;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\HttpT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -73,7 +73,7 @@ final class TasksServiceProvider extends ServiceProvider
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
-        TaskTopologyAdmission::class => SandboxTopologyAdmission::class,
+        TaskTopologyAdmission::class => RefusingTopologyAdmission::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,

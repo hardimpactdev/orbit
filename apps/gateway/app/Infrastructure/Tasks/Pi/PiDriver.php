@@ -13,6 +13,7 @@ use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
@@ -36,7 +37,6 @@ final readonly class PiDriver implements AgentDriver
         private PiClient $client,
         private PiConnection $connection,
         private PiNodeEligibility $nodes,
-        private SandboxPiConnection $sandboxes,
     ) {}
 
     public function key(): string
@@ -56,12 +56,11 @@ final readonly class PiDriver implements AgentDriver
             throw new AgentDriverException('The workspace has no checkout path.');
         }
         $id = $intent->externalId ?? (string) Str::uuid();
-        $node = $this->sandboxes->endpoint($intent->workspace, $intent->node);
+        $node = $this->workspaceNode($intent->workspace, $intent->node);
         $this->client->create($node, [
             'id' => $id,
             'cwd' => $cwd,
             'model' => match (true) {
-                $node instanceof PiEndpoint => PiModel::forSandbox($intent->model),
                 TaskVmPlacement::forNode($node) instanceof TaskVm => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
                 default => PiModel::forModel($intent->model, $this->configuredProvider()),
             },
@@ -204,7 +203,7 @@ final readonly class PiDriver implements AgentDriver
             : null;
     }
 
-    private function deliver(Node|PiEndpoint $node, string $sessionId, string $message, ?string $key = null): void
+    private function deliver(Node $node, string $sessionId, string $message, ?string $key = null): void
     {
         $key ??= (string) Str::uuid();
         try {
@@ -221,7 +220,7 @@ final readonly class PiDriver implements AgentDriver
     }
 
     /** @param array<string, mixed> $snapshot */
-    private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node|PiEndpoint $node): AgentObservation
+    private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node $node): AgentObservation
     {
         // A tool result replaces its running call in place, so entries are keyed by ID.
         $entries = [];
@@ -284,7 +283,7 @@ final readonly class PiDriver implements AgentDriver
     /** @param array<array-key, mixed> $data
      * @return array<array-key, mixed>
      */
-    private function redact(array $data, Node|PiEndpoint $node): array
+    private function redact(array $data, Node $node): array
     {
         $tokens = $this->connection->secrets($node);
         array_walk_recursive($data, static function (mixed &$value) use ($tokens): void {
@@ -299,7 +298,7 @@ final readonly class PiDriver implements AgentDriver
     /** @param array<array-key, mixed> $data
      * @return array<string, mixed>
      */
-    private function redactObject(array $data, Node|PiEndpoint $node): array
+    private function redactObject(array $data, Node $node): array
     {
         return ValidatedData::object($this->redact($data, $node));
     }
@@ -308,7 +307,7 @@ final readonly class PiDriver implements AgentDriver
      * @param  array<array-key, mixed>  $entries
      * @return list<array{id: string, kind: string, label: string, text: string, at: string}>
      */
-    private function redactEntries(array $entries, Node|PiEndpoint $node): array
+    private function redactEntries(array $entries, Node $node): array
     {
         $redacted = $this->redact($entries, $node);
         $result = [];
@@ -345,7 +344,7 @@ final readonly class PiDriver implements AgentDriver
         return is_string($provider) && $provider !== '' ? $provider : null;
     }
 
-    private function node(AgentThread $thread): Node|PiEndpoint
+    private function node(AgentThread $thread): Node
     {
         $node = $thread->node;
         if ($node === null || $node->status !== LifecycleStatus::Active) {
@@ -353,27 +352,32 @@ final readonly class PiDriver implements AgentDriver
         }
         $group = $thread->parent()->with('taskable')->first();
         $workspace = $group?->taskable;
-        if ($group?->task_compute === TaskCompute::Vm && $workspace instanceof Instance && $workspace->task_sandbox_id === null
-            && ! str_starts_with($thread->runtime_key, 'sandbox:')) {
+        if ($group?->task_compute === TaskCompute::Vm) {
             // A task VM is a normal Node: the thread stays on the Node of the group's ready task VM.
-            if ($thread->runtime_key !== 'node:'.$node->id || ! TaskVmPlacement::allowsWorkspace($group, $workspace)
-                || $workspace->node_id !== $node->id) {
+            if ($thread->runtime_key !== 'node:'.$node->id || ! $workspace instanceof Instance
+                || ! TaskVmPlacement::allowsWorkspace($group, $workspace) || $workspace->node_id !== $node->id) {
                 throw new AgentDriverException('The original task VM Pi server is unavailable.');
             }
 
             return $node;
         }
-        if ($group?->task_compute === TaskCompute::Vm || str_starts_with($thread->runtime_key, 'sandbox:')
-            || ($workspace instanceof Instance && $workspace->task_sandbox_id !== null)) {
-            if (! $workspace instanceof Instance || $workspace->task_sandbox_id === null
-                || $thread->runtime_key !== 'sandbox:'.$workspace->task_sandbox_id) {
-                throw new AgentDriverException('The original sandbox Pi server is unavailable.');
-            }
-
-            return $this->sandboxes->endpoint($workspace, $node);
-        }
         if ($thread->runtime_key !== 'node:'.$node->id) {
             throw new AgentDriverException('The original agent Node is unavailable.');
+        }
+
+        return $node;
+    }
+
+    /** The workspace Node runs the Pi server; a task VM workspace must still be owned by its group. */
+    private function workspaceNode(Instance $workspace, Node $node): Node
+    {
+        if ($workspace->node_id !== $node->id) {
+            throw new AgentDriverException('The original workspace Pi server is unavailable.');
+        }
+        try {
+            TaskVmPlacement::assertOwnedWorkspace($workspace);
+        } catch (TaskVmException) {
+            throw new AgentDriverException('The original workspace Pi server is unavailable.');
         }
 
         return $node;

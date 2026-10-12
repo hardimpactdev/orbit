@@ -915,7 +915,7 @@ describe(DestroyTaskVm::class, function (): void {
         app()->instance(ProjectLifecycleRunner::class, $runner);
         Queue::fake();
 
-        $removal->remove($instance, $group);
+        $removal->remove($instance);
 
         expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
             ->and($this->provider->calls)->toBe(['destroy'])
@@ -927,7 +927,7 @@ describe(DestroyTaskVm::class, function (): void {
         $this->provider->onDestroy = static fn () => throw new TaskVmException('task_vm.delete_failed', 'The VM could not be deleted.', 502);
         Queue::fake();
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance, $group))->toThrow(TaskVmException::class);
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($instance))->toThrow(TaskVmException::class);
 
         expect(Instance::query()->find($instance->id))->not->toBeNull()
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying)

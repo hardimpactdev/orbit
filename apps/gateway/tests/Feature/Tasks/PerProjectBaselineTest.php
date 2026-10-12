@@ -5,12 +5,10 @@ declare(strict_types=1);
 use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
@@ -55,7 +53,7 @@ function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRun
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
+    )), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 beforeEach(function (): void {

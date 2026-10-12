@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
-use App\Actions\Tasks\RemoveTaskSandboxAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
@@ -13,15 +12,12 @@ use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
-use App\Domain\Compute\SandboxState;
 use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Infrastructure\Compute\TaskSandboxGroupLifecycle;
-use App\Infrastructure\Compute\TaskSandboxWarmPool;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -32,8 +28,6 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
-use App\Models\TaskSandbox;
-use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -144,8 +138,6 @@ final readonly class TaskScheduler
         private TaskGitHubReviewFeedback $reviewFeedback,
         private TaskWorkspaceTopology $topology,
         private TaskTopologyAdmission $topologyAdmission,
-        private TaskSandboxGroupLifecycle $sandboxes,
-        private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
         private DeliverablePathChecker $deliverablePaths,
         private ResumeDeliverableCorrectionAction $correctionResume,
@@ -235,7 +227,6 @@ final readonly class TaskScheduler
                     $this->mergeWhenReady($group, $health, $reviews);
                 }
             }
-            $this->sandboxes->review($group);
         }
 
         $decisions = [];
@@ -1624,13 +1615,8 @@ final readonly class TaskScheduler
         if ($role !== TaskThreadRole::Reviewer) {
             return 'Topology request refused. Ask the reviewer through a blocked consult; only the reviewer can request a topology.';
         }
-        if ($group->task_compute === TaskCompute::Vm && $group->project->slug !== 'orbit') {
+        if ($group->task_compute === TaskCompute::Vm) {
             return 'Topology request refused. Project VM groups use their own Project workspace.';
-        }
-        if ($group->task_compute === TaskCompute::Vm || $instance->task_sandbox_id !== null) {
-            $task->update(['topology' => TaskTopology::from(array_values(array_unique([...($task->topology ?? []), 'app-dev', 'app-prod'])))]);
-
-            return 'The sandbox workload topology request is recorded. Orbit verifies its private Gateway before resuming this turn.';
         }
         try {
             return $this->topology->acquire($instance, $group->id)
@@ -2943,7 +2929,7 @@ final readonly class TaskScheduler
         try {
             $leftover = $instance instanceof Instance ? Instance::query()->find($instance->id) : $this->workspaces->find($group);
             if ($leftover instanceof Instance) {
-                $this->workspaces->remove($leftover, $group);
+                $this->workspaces->remove($leftover);
             } else {
                 $this->workspaces->execute($group);
             }
@@ -3054,7 +3040,7 @@ final readonly class TaskScheduler
 
             try {
                 $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance, $group);
+                $this->workspaces->remove($instance);
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
@@ -3066,45 +3052,6 @@ final readonly class TaskScheduler
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
                 $this->workspaces->recordFailure($group, $exception, $prefix);
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
-            }
-        }
-
-        return $removed + $this->removeAbandonedSandboxes($started);
-    }
-
-    /** Recover recorded reservations whose claim ended before it attached a workspace. */
-    private function removeAbandonedSandboxes(CarbonInterface $started): int
-    {
-        $removed = 0;
-        $candidates = TaskSandbox::query()->where('state', '!=', SandboxState::Destroyed)
-            ->whereNotIn('id', Instance::query()->whereNotNull('task_sandbox_id')->select('task_sandbox_id'))
-            ->where(fn ($query) => $query->where('desired_power', 'destroyed')->orWhere(fn ($warm) => $warm->whereNull('group_id')->where('warm_pool', false))->orWhereHas('group', fn ($groups) => $groups
-                ->where('execution_mode', TaskExecutionMode::Managed)->where('task_compute', TaskCompute::Vm)
-                ->where(fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
-                ->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled])))
-            ->orderBy('created_at')->get();
-        foreach ($candidates as $sandbox) {
-            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
-                break;
-            }
-            $key = 'tasks.sandbox-removal.'.$sandbox->id;
-            $backoff = $this->readBackoff($key, 'sandbox removal');
-            if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
-                continue;
-            }
-            try {
-                app(RemoveTaskSandboxAction::class)->unattached($sandbox, endedOnly: true);
-                $this->rememberBackoff($key, null, 'sandbox removal');
-                if ($sandbox->group instanceof Task) {
-                    $this->workspaces->clearFailure($sandbox->group);
-                }
-                $removed++;
-            } catch (Throwable $exception) {
-                report($exception);
-                if ($sandbox->group instanceof Task) {
-                    $this->workspaces->recordFailure($sandbox->group, $exception);
-                }
-                $this->extendBackoff($key, $backoff, 'sandbox removal');
             }
         }
 
@@ -3342,8 +3289,6 @@ final readonly class TaskScheduler
         while ($this->claimNext($skipped) instanceof Task) {
             $started++;
         }
-
-        $this->warmPool->reconcile();
 
         return $started;
     }
@@ -3846,7 +3791,6 @@ final readonly class TaskScheduler
         $group->save();
 
         $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
-        $this->sandboxes->review($settled);
 
         if ($settled->notify_coder && ! $returning) {
             $this->coder->notify($settled);
@@ -4421,7 +4365,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        if (! $this->sandboxes->resume($group)) {
+        if ($group->task_compute === TaskCompute::Vm && ! app(WakeTaskVmAction::class)->forGroup($group)) {
             return;
         }
 
@@ -4702,11 +4646,6 @@ final readonly class TaskScheduler
      */
     private function needsBaseline(Task $task): bool
     {
-        $sandboxId = $task->parent->taskable instanceof Instance ? $task->parent->taskable->task_sandbox_id : null;
-        if ($sandboxId !== null) {
-            return ! TaskCheck::query()->where('task_sandbox_id', $sandboxId)->where('kind', TaskCheckKind::Baseline->value)
-                ->where('status', TaskCheckStatus::Passed->value)->whereHas('task', fn ($query) => $query->where('parent_id', $task->parent_id))->exists();
-        }
         $started = Task::query()->where('parent_id', $task->parent_id)->whereNotNull('implementer_agent_thread_id')->exists()
             || AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
 
@@ -4885,9 +4824,7 @@ final readonly class TaskScheduler
             if (TaskExecutionHold::active($group) || $locked->status !== TaskStatus::Running) {
                 return null;
             }
-            $sandboxId = $group->taskable instanceof Instance ? $group->taskable->task_sandbox_id : null;
-            $running = TaskCheck::query()->where('task_sandbox_id', $sandboxId)
-                ->where('task_id', $locked->id)
+            $running = TaskCheck::query()->where('task_id', $locked->id)
                 ->where('kind', TaskCheckKind::Baseline->value)
                 ->where('status', TaskCheckStatus::Running->value)
                 ->lockForUpdate()
@@ -4898,7 +4835,6 @@ final readonly class TaskScheduler
 
             return TaskCheck::query()->create([
                 'task_id' => $locked->id,
-                'task_sandbox_id' => $sandboxId,
                 'kind' => TaskCheckKind::Baseline,
                 'task_comment_id' => $locked->resolution_delivered_comment_id,
                 'status' => TaskCheckStatus::Running,
@@ -4925,9 +4861,7 @@ final readonly class TaskScheduler
      */
     private function baselineCheck(Task $task): ?TaskCheck
     {
-        $sandboxId = $task->parent->taskable instanceof Instance ? $task->parent->taskable->task_sandbox_id : null;
-        $running = TaskCheck::query()->where('task_sandbox_id', $sandboxId)
-            ->where('task_id', $task->id)
+        $running = TaskCheck::query()->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Running->value)
             ->orderBy('id')
@@ -4936,8 +4870,7 @@ final readonly class TaskScheduler
             return $running;
         }
 
-        return TaskCheck::query()->where('task_sandbox_id', $sandboxId)
-            ->where('task_id', $task->id)
+        return TaskCheck::query()->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
             ->when($task->resolution_delivered_comment_id !== null, static fn ($query) => $query->where('task_comment_id', $task->resolution_delivered_comment_id))
             ->latest('id')
