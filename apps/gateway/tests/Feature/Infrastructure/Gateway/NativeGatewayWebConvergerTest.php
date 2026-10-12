@@ -402,41 +402,38 @@ it('publishes one complete gateway file from distinct candidates under contentio
     $directory = sys_get_temp_dir().'/orbit-protected-writer-'.Str::uuid();
     $path = $directory.'/generated/gateway/Caddyfile';
     $markerDirectory = $directory.'/markers';
-    $startPath = $markerDirectory.'/start';
+    $releasePath = $markerDirectory.'/release';
     $characters = ['A', 'B', 'C', 'D'];
-    $bytes = 16 * 1024 * 1024;
+    $bytes = 1024 * 1024;
     $processes = [];
-    $observedCandidates = [];
 
     mkdir($markerDirectory, permissions: 0o700, recursive: true);
 
     try {
         foreach ($characters as $index => $character) {
-            $readyPath = "{$markerDirectory}/ready-{$index}";
-            $process = protected_file_writer_process($path, $character, $bytes, $readyPath, $startPath);
+            $process = protected_file_writer_process($path, $character, $bytes, "{$markerDirectory}/staged-{$index}", $releasePath);
             $process->start();
             $processes[] = $process;
         }
 
+        // Every writer holds its complete candidate until all of them have one, so the
+        // candidates exist side by side whatever the scheduler does.
         foreach (array_keys($characters) as $index) {
             protected_file_writer_wait_until(
-                static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"),
+                static fn (): bool => is_file("{$markerDirectory}/staged-{$index}"),
                 $processes,
-                static fn (): string => "ready marker {$index}",
+                static fn (): string => "staged marker {$index}",
             );
         }
 
-        file_put_contents($startPath, 'start');
-        protected_file_writer_wait_until(function () use ($path, &$observedCandidates): bool {
-            $observedCandidates = array_values(array_unique([
-                ...$observedCandidates,
-                ...protected_file_writer_candidates($path),
-            ]));
+        $candidates = protected_file_writer_candidates($path);
+        $candidateContents = array_map(static fn (string $candidate): string|false => file_get_contents($candidate), $candidates);
+        sort($candidateContents);
 
-            return count($observedCandidates) >= 2;
-        }, $processes, static function () use (&$observedCandidates): string {
-            return 'observed candidates: '.count($observedCandidates).' (expected at least 2)';
-        });
+        expect($candidates)->toHaveCount(4)
+            ->and($candidateContents)->toBe(array_map(static fn (string $character): string => str_repeat($character, $bytes), $characters));
+
+        file_put_contents($releasePath, 'release');
 
         foreach ($processes as $process) {
             protected_file_writer_wait_for_success($process);
@@ -450,7 +447,6 @@ it('publishes one complete gateway file from distinct candidates under contentio
             throw new RuntimeException('The contended protected file was not published.');
         }
 
-        expect(count($observedCandidates))->toBeGreaterThanOrEqual(2);
         expect(in_array($contents[0], $characters, true))->toBeTrue();
         expect($contents)->toBe(str_repeat($contents[0], $bytes));
         expect(protected_file_writer_candidates($path))->toBe([]);
@@ -766,28 +762,41 @@ it('rejects a checkout outside the configured Orbit home before certificate or s
     }
 });
 
+/**
+ * Starts a writer that holds its written candidate before it installs it: the script shadows
+ * `rename` in the writer's namespace, marks the candidate as staged, and waits for the release.
+ */
 function protected_file_writer_process(
     string $path,
     string $character,
     int $bytes,
-    string $readyPath,
-    string $startPath,
+    string $stagedPath,
+    string $releasePath,
 ): Process {
-    $script = <<<'PHP'
-        require $argv[1].'/vendor/autoload.php';
+    $script = <<<'SCRIPT'
+        namespace App\Infrastructure\Files {
+            function rename(string $from, string $to): bool
+            {
+                file_put_contents($GLOBALS['argv'][5], 'staged');
 
-        file_put_contents($argv[4], 'ready');
+                while (! is_file($GLOBALS['argv'][6])) {
+                    usleep(1_000);
+                }
 
-        while (! is_file($argv[5])) {
-            usleep(1_000);
+                return \rename($from, $to);
+            }
         }
 
-        new App\Infrastructure\Files\ProtectedFileWriter()->put(
-            $argv[2],
-            str_repeat($argv[3], (int) $argv[6]),
-            0o644,
-        );
-        PHP;
+        namespace {
+            require $argv[1].'/vendor/autoload.php';
+
+            new App\Infrastructure\Files\ProtectedFileWriter()->put(
+                $argv[2],
+                str_repeat($argv[3], (int) $argv[4]),
+                0o644,
+            );
+        }
+        SCRIPT;
     $process = new Process([
         PHP_BINARY,
         '-r',
@@ -795,9 +804,9 @@ function protected_file_writer_process(
         base_path(),
         $path,
         $character,
-        $readyPath,
-        $startPath,
         (string) $bytes,
+        $stagedPath,
+        $releasePath,
     ]);
     $process->setTimeout(30);
 
