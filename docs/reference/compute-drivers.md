@@ -339,13 +339,15 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `volume` | Creates the block volume with the host's `disk` size, and attaches it |
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
 | `clone` | Clones the default branch into `.orbit-workspace-template`, with the Project's repository access, as `orbit` |
-| `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them. A monorepo whose task workspaces have no Route, such as `orbit`, skips it, as its Instance does |
+| `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set and stdin closed, as the baseline check does. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
 | `publish` | Sets `user.orbit.project`, `user.orbit.commit`, `user.orbit.repository`, `user.orbit.image`, `user.orbit.owner`, and `user.orbit.ready=true` on the volume |
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
+
+A monorepo whose task workspaces have no Route, such as `orbit`, skips the `php` stage, as its Instance does: the checkout is not one PHP application.
 
 The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
 
