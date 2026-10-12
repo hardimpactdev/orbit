@@ -34,7 +34,6 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
-use App\Models\TaskSandbox;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -141,20 +140,6 @@ it('spawns fresh role threads on the workspace Node with the configured model an
         ->and($dispatcher->commands[1]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
         ->and($dispatcher->commands[1]['effort'])->toBe(config('orbit.tasks.implementer_effort'))
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Implement this subtask', 'The group started at '.str_repeat('b', 40), 'Follow this repository\'s task instructions.');
-});
-
-it('pins new sandbox threads to the reservation instead of the shared host runtime', function (): void {
-    $group = task_spawner_group(TaskCompute::Vm);
-    $sandbox = TaskSandbox::query()->create([
-        'id' => '8b0cb334-dda5-4490-a6ac-c3b3cf4b10d6', 'group_id' => $group->id, 'provider' => 'incus',
-        'name' => 'ot-proof', 'state' => 'running', 'desired_power' => 'running', 'spec' => [],
-    ]);
-    $group->taskable->update(['task_sandbox_id' => $sandbox->id]);
-    [$spawner] = task_spawner_stack();
-
-    $threadId = $spawner->spawnImplementer($group->tasks->sole());
-
-    expect(AgentThread::query()->findOrFail($threadId)->runtime_key)->toBe('sandbox:'.$sandbox->id);
 });
 
 it('does not create a session from a pending reservation belonging to another runtime', function (): void {

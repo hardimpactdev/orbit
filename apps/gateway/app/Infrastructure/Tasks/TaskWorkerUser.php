@@ -22,9 +22,6 @@ final readonly class TaskWorkerUser
 {
     public static function name(?Instance $workspace = null): ?string
     {
-        if ($workspace?->task_sandbox_id !== null) {
-            return null;
-        }
         $worker = self::configured();
         if ($worker === null) {
             return null;
@@ -65,7 +62,7 @@ final readonly class TaskWorkerUser
      */
     public static function forCheckout(Instance $instance): ?string
     {
-        if (self::configured() === null || $instance->task_sandbox_id !== null) {
+        if (self::configured() === null) {
             return null;
         }
         $node = $instance->node;

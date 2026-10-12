@@ -6,14 +6,12 @@ namespace App\Actions\Tasks;
 
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
-use App\Domain\Compute\SandboxState;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
@@ -22,7 +20,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskSandbox;
 use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
@@ -35,7 +32,7 @@ use Throwable;
  * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
  * when the group holds no Instance.
  *
- * Shared workspace removal uses the generic forced Instance remover. Sandbox removal uses its recorded compute ownership.
+ * Shared workspace removal uses the generic forced Instance remover.
  * A workspace on a task VM goes with its VM. The generic remover runs the Project's teardown steps, then deletes the
  * checkout and only then the Instance row. A refused teardown or source check leaves both in place. The
  * caller records assistance and returns the error, so the checkout stays named by a record.
@@ -92,10 +89,6 @@ final readonly class RemoveTaskWorkspaceAction
 
         if ($instance instanceof Instance) {
             $this->remove($instance, $group);
-        } elseif ($group->task_compute === TaskCompute::Vm) {
-            foreach (TaskSandbox::query()->where('group_id', $group->id)->where('state', '!=', SandboxState::Destroyed)->get() as $sandbox) {
-                app(RemoveTaskSandboxAction::class)->unattached($sandbox);
-            }
         }
 
         return $instance;
@@ -106,15 +99,10 @@ final readonly class RemoveTaskWorkspaceAction
      * Releases the group's topology first; a failed release keeps the workspace for a retry. A workspace on a
      * parked task VM stays: the VM is queued to start, and removal fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Instance $instance, ?Task $expectedGroup = null): void
+    public function remove(Instance $instance): void
     {
         if (! app(WakeTaskVmAction::class)->forInstance($instance)) {
             throw new TaskVmException('task_vm.parked', "The task VM of Instance [{$instance->name}] is parked. Orbit starts it and removes the workspace once it is ready.");
-        }
-        if ($instance->task_sandbox_id !== null) {
-            app(RemoveTaskSandboxAction::class)->workspace($instance, $expectedGroup);
-
-            return;
         }
         $group = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
         if ($group instanceof Task) {

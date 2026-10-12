@@ -275,15 +275,10 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
 
     /**
      * Whether the Instance's own Node must be left alone: a workspace on a task VM that is being
-     * destroyed, whose VM is already gone. An Orbit-lane sandbox workspace is removed only with its
-     * sandbox, never through this projector.
+     * destroyed, whose VM is already gone.
      */
     private function sandboxRemoval(Instance $instance): bool
     {
-        if ($instance->task_sandbox_id !== null) {
-            throw new ResourceOperationException('instance.sandbox_managed', 'Remove a sandbox workspace through its task group.', 409);
-        }
-
         return $instance->status === InstanceState::Removing
             && TaskVm::query()->where('node_id', $instance->node_id)->where('state', TaskVmState::Destroying)->exists();
     }

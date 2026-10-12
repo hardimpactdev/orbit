@@ -160,7 +160,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The task workspace has no checkout.');
         }
         $environment = '';
-        if ($withVpHome && $instance->task_sandbox_id === null) {
+        if ($withVpHome) {
             try {
                 $environment = 'export VP_HOME='.escapeshellarg(dirname($this->vp->existingBinary($instance->node), 2))."\n";
             } catch (Throwable $exception) {
@@ -178,7 +178,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             $worker = TaskWorkerUser::name($instance) ?? '';
             // Read the seed now: converting an old default release layout moves it to the checkout, and
             // removes the releases only while no baseline that started earlier still runs.
-            $seed = $instance->task_sandbox_id === null ? Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']) : null;
+            $seed = Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']);
             $prefix = $environment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($seed->seed_path ?? '')."\nseed_commit=".escapeshellarg($seed->seed_commit ?? '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
@@ -191,7 +191,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 input: $prefix.TaskWorkspaceMetadata::bashPreamble().
                     // Start allocates a host TMPDIR for the detached check. The check removes it when it ends. Later SSH calls do not.
                     ($allocateTemporary
-                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir', ['sandbox' => $instance->task_sandbox_id !== null]).')"'."\nexport TMPDIR\n"
+                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
                         : '').
                     $command."\n",
                 maxOutputBytes: self::OutputLimitBytes,

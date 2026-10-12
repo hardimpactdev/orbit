@@ -27,7 +27,6 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
-use App\Infrastructure\Compute\TaskSandboxGroupLifecycle;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -357,12 +356,12 @@ describe('wake', function (): void {
         [$group, $vm] = tvm_park_waiting();
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(app(TaskSandboxGroupLifecycle::class)->resume($group))->toBeFalse()
+        expect(app(WakeTaskVmAction::class)->forGroup($group))->toBeFalse()
             ->and($group->fresh()?->capacity_wait_reason)->toBe(WakeTaskVmAction::Resuming);
         Queue::assertPushedOn('task-vms', ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
 
         $vm->update(['state' => TaskVmState::Ready]);
-        expect(app(TaskSandboxGroupLifecycle::class)->resume($group->fresh() ?? $group))->toBeTrue()
+        expect(app(WakeTaskVmAction::class)->forGroup($group->fresh() ?? $group))->toBeTrue()
             ->and($group->fresh()?->capacity_wait_reason)->toBeNull();
     });
 
@@ -371,8 +370,8 @@ describe('wake', function (): void {
         $shared = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'S', 'brief' => 'S', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Shared]);
         $fresh = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'V', 'brief' => 'V', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm]);
 
-        expect(app(TaskSandboxGroupLifecycle::class)->resume($shared))->toBeTrue()
-            ->and(app(TaskSandboxGroupLifecycle::class)->resume($fresh))->toBeTrue();
+        expect(app(WakeTaskVmAction::class)->forGroup($shared))->toBeTrue()
+            ->and(app(WakeTaskVmAction::class)->forGroup($fresh))->toBeTrue();
         Queue::assertNothingPushed();
     });
 
@@ -392,7 +391,7 @@ describe('wake', function (): void {
         $workspace = tvm_park_workspace($group, $vm);
         $vm->update(['state' => TaskVmState::Parked]);
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace, $group))
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($workspace))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.parked'));
         expect(Instance::query()->whereKey($workspace->id)->exists())->toBeTrue();
         Queue::assertPushed(ResumeTaskVm::class);

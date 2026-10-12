@@ -3,14 +3,12 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
@@ -40,7 +38,7 @@ describe('task workspace Git state', function (): void {
 
             return new CommandResult(0, $process->getOutput(), '', 1, false);
         });
-        $reader = new RemoteTaskWorkspaceStateReader(new TaskWorkspaceExecutor(app(DevelopmentSshExecutor::class), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)));
+        $reader = new RemoteTaskWorkspaceStateReader(new TaskWorkspaceExecutor(app(DevelopmentSshExecutor::class)));
 
         try {
             expect($reader->headCommit($instance))->toBe($head);

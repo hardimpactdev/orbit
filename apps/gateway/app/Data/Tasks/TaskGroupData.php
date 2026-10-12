@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Compute\SandboxPower;
-use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
@@ -13,7 +12,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskSandbox;
 use App\Models\TaskVm;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -138,25 +136,6 @@ final class TaskGroupData extends Data
                 default => null,
             };
         }
-        $workspace = $group->taskable;
-        if (! $workspace instanceof Instance) {
-            if ($group->taskable_id !== null) {
-                return null;
-            }
-            $history = TaskSandbox::query()->where('group_id', $group->id)->get(['state', 'destroyed_at']);
-
-            return $history->isNotEmpty() && $history->every(static fn (TaskSandbox $sandbox): bool => $sandbox->state === SandboxState::Destroyed && $sandbox->destroyed_at !== null)
-                ? SandboxPower::Destroyed : null;
-        }
-        $sandbox = $workspace->taskSandbox;
-        if (! $sandbox instanceof TaskSandbox || $sandbox->group_id !== $group->id || $workspace->project_id !== $group->project_id) {
-            return null;
-        }
-        $expectedNode = $sandbox->provider === 'incus' ? ($sandbox->spec['host_id'] ?? null) : null;
-        if ($expectedNode === null || $workspace->node_id !== $expectedNode || $sandbox->node_id !== null) {
-            return null;
-        }
-
-        return SandboxPower::tryFrom($sandbox->state->value);
+        return null;
     }
 }

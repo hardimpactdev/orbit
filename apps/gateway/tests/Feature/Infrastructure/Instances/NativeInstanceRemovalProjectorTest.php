@@ -48,7 +48,6 @@ use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\TaskSandbox;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\FakePublicRouteEdgeProjector;
@@ -186,19 +185,6 @@ it('withdraws the second placement of a Route that waits for its placement withd
             "app-instance-{$member->instance_id}",
             "app-instance-{$member->instance_id}-hostname-change",
         );
-});
-
-it('refuses an Orbit-lane sandbox workspace before touching its Route or Nodes', function (): void {
-    [$member, $route] = orb181_projector_development_member();
-    [$projector, $ssh] = orb181_removal_projector($this);
-    $sandbox = TaskSandbox::query()->create(['id' => (string) Str::uuid(), 'provider' => 'incus', 'name' => 'ot-removal',
-        'state' => 'running', 'desired_power' => 'running', 'spec' => []]);
-    Instance::query()->whereKey($member->instance_id)->update(['task_sandbox_id' => $sandbox->id]);
-
-    expect(fn () => $projector->clearRouteTarget($member))
-        ->toThrow(ResourceOperationException::class, 'Remove a sandbox workspace through its task group.');
-    expect($ssh->commands)->toBe([])
-        ->and(Route::query()->find($route->id))->not->toBeNull();
 });
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {

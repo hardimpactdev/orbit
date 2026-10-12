@@ -16,11 +16,6 @@ use App\Domain\Tasks\AgentDriverException;
  */
 final readonly class PiModel
 {
-    public static function forSandbox(string $model): string
-    {
-        return self::onlyProvider($model, 'orbit-sandbox');
-    }
-
     /** A Pi server with one provider, such as a task VM's, runs every model through that provider. */
     public static function onlyProvider(string $model, string $provider): string
     {

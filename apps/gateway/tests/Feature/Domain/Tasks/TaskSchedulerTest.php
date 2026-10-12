@@ -77,11 +77,9 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
@@ -2063,7 +2061,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
             $transport,
             app(SshKeyProvider::class),
             app(KnownHostsStore::class),
-        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)),
+        )),
         ResolvedVp::manager(probe: $probe),
         app(TiaBaselineSetup::class),
     ));

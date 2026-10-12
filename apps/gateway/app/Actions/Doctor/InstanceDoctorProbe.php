@@ -50,7 +50,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = Instance::query()->with(['project', 'tasks'])->whereNull('task_sandbox_id')->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
