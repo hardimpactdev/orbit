@@ -8,6 +8,7 @@ use App\Actions\TaskVms\RefillTaskVmPoolAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Task;
 use App\Models\TaskVm;
@@ -59,8 +60,8 @@ trait ProvisionsTaskVm
             return;
         }
         $group = $vm?->group;
-        if ($failed === 1 && $group instanceof Task) {
-            TaskAssistance::apply($group, AssistanceKind::Failure, null, self::FailedReasonPrefix."{$code}: {$message} Cancel the group to destroy the VM.", replaceFailure: true);
+        if ($failed === 1 && $vm instanceof TaskVm && $group instanceof Task) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, TaskVmFailedException::reason($vm->name, $code, $message), replaceFailure: true);
         }
     }
 

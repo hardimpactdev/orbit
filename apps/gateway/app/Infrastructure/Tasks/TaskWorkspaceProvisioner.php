@@ -31,6 +31,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
@@ -531,7 +532,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         }
 
         if ($fitting->isNotEmpty()) {
-            throw new TaskCapacityException(fleetFull: ! $this->anyAppDevNodeHasCapacity());
+            throw new TaskCapacityException(TaskWait::Capacity, fleetFull: ! $this->anyAppDevNodeHasCapacity());
         }
 
         if ($nodes->isEmpty()) {

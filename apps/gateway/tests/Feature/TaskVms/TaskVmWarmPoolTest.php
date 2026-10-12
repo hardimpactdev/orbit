@@ -321,6 +321,16 @@ describe('refill', function (): void {
         Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $stale->id);
     });
 
+    it('records no new VM on a host whose only slot a failed pool VM held until the same refill destroys it', function (): void {
+        Queue::fake();
+        $failed = tvm_pool_vm(TaskVmState::Failed);
+        tvm_pool_hosts([[$this->host, 1, 1]]);
+
+        expect(tvm_pool_refill())->toBe(['created' => 0, 'destroying' => 1])
+            ->and($failed->fresh()?->state)->toBe(TaskVmState::Destroying);
+        Queue::assertNotPushed(ProvisionTaskVm::class);
+    });
+
     it('replaces warm VMs once a new base image is promoted', function (): void {
         Queue::fake();
         $vm = tvm_pool_vm();

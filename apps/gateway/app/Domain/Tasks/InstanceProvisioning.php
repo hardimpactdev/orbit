@@ -16,7 +16,7 @@ use App\Models\Instance;
  * `task-{group id}` instance on its own Node.
  *
  * A typed failure carries the cause; a null result means no cause is available.
- * A capacity wait throws TaskCapacityException instead.
+ * A wait throws TaskCapacityException instead, and a failed task VM throws TaskVmFailedException.
  */
 interface InstanceProvisioning
 {

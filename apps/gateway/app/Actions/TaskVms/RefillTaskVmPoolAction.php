@@ -166,14 +166,15 @@ final readonly class RefillTaskVmPoolAction
      */
     private function balance(array $hosts): array
     {
+        // A failed VM holds no slot, but a destroying one does, so the failed pool VMs move first.
+        foreach ($hosts as [, $node]) {
+            $this->failStuck($node);
+            TaskVm::query()->pool()->where('host_node_id', $node->id)->where('state', TaskVmState::Failed)->update(['state' => TaskVmState::Destroying]);
+        }
         $free = $this->allocate->freeSlots();
         $created = [];
         foreach ($hosts as [$host, $node]) {
-            $this->failStuck($node);
             $pool = TaskVm::query()->live()->pool()->where('host_node_id', $node->id)->orderBy('id')->get();
-            foreach ($pool->where('state', TaskVmState::Failed) as $failed) {
-                TaskVm::query()->whereKey($failed->id)->where('state', TaskVmState::Failed)->update(['state' => TaskVmState::Destroying]);
-            }
 
             $target = $this->settings->enabled ? $host->warmVms : 0;
             $warm = $pool->where('state', TaskVmState::Warm);

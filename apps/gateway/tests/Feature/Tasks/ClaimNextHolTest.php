@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWait;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -133,7 +134,7 @@ it('leaves every group untouched in todo and stops claiming when the fleet is fu
         {
             $this->calls++;
 
-            throw new TaskCapacityException(fleetFull: true);
+            throw new TaskCapacityException(TaskWait::Capacity, fleetFull: true);
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioning);
@@ -162,7 +163,7 @@ it('passes a group whose eligible Nodes are full without a failure reason', func
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             if ($intent->group->id === $this->waitingId) {
-                throw new TaskCapacityException(fleetFull: false);
+                throw new TaskCapacityException(TaskWait::Capacity, fleetFull: false);
             }
 
             return $this->instance;
