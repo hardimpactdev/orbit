@@ -25,7 +25,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
 | [`node:rename`](#orbit-noderename) | Change the name of a Node. |
-| [`node:settings`](#orbit-nodesettings) | Set the apps root of a Node. |
+| [`node:settings`](#orbit-nodesettings) | Set the apps root or the task worker opt-out of a Node. |
 | [`node:role:add`](#orbit-noderoleadd) | Add a role, or converge an existing role. |
 | [`node:role:list`](#orbit-noderolelist) | List the roles of a Node. |
 | [`node:role:relocate`](#orbit-noderolerelocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
@@ -166,13 +166,14 @@ After a rename, callers must use the new name or the numeric ID. The WireGuard h
 
 ## orbit node:settings
 
-Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts.
+Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts, or opt the Node out of the task worker.
 
 ```bash
 orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+orbit node:settings <node> --setting=tasks.worker:none
 ```
 
-The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings) lists the validation rules and failure codes.
+The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. `--setting=tasks.worker:none` sends `{"tasks":{"worker":"none"}}`, and an empty value removes the opt-out. [Node settings](/reference/node-settings#opt-out-of-the-task-worker) explains when the Gateway refuses it, and lists the validation rules and failure codes.
 
 ## orbit node:role:add
 

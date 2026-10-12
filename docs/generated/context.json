@@ -1759,7 +1759,8 @@
                 "Placement",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1911,7 +1912,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2066,8 +2068,10 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },

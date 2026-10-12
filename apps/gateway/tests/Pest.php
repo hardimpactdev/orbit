@@ -160,6 +160,22 @@ function store_deploy_steps(Instance $instance, array $steps): void
     );
 }
 
+/** A Node with an app-dev role uses the task worker unless it opts out. */
+function orbit_test_task_work_host(Node $node): Node
+{
+    orbit_test_set_app_placement_role($node, production: false);
+
+    return $node;
+}
+
+/** Records the explicit opt-out: the Node hosts no task work, so its Gateway Git runs as the managed user. */
+function orbit_test_opt_out_task_worker(Node $node): Node
+{
+    $node->update(['settings' => [...($node->settings ?? []), 'tasks' => ['worker' => 'none']]]);
+
+    return $node->refresh();
+}
+
 /** @return list<array{name: string, phase: string, command: string, timeout_seconds: int}> */
 function orbit_test_set_app_placement_role(Node $node, bool $production): void
 {

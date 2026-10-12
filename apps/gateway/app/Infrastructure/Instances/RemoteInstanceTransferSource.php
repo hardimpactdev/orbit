@@ -210,7 +210,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                     $capture->detached ? '1' : '0',
                     $environmentDirectory.'/.env',
                 ],
-                input: $this->materializeScript(),
+                input: $this->materializeScript(TaskWorkerUser::forNode($destination)),
             ),
             step: 'app-instance-transfer-materialize',
             errorCode: 'instance.transfer_failed',
@@ -358,9 +358,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             BASH;
     }
 
-    private function materializeScript(): string
+    /** Only a destination that hosts shared task work shares the checkout with the worker and runs its Git. */
+    private function materializeScript(?string $worker): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).'transfer_worker='.escapeshellarg(TaskWorkerUser::name() ?? '')."\n".<<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble($worker).'transfer_worker='.escapeshellarg($worker ?? '')."\n".<<<'BASH'
             archive=$1
             destination=$2
             head=$3

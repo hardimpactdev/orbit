@@ -5496,7 +5496,7 @@
       "name": "node-settings",
       "extension": null,
       "title": "Update Node settings",
-      "description": "Update typed storage settings on a node.",
+      "description": "Update typed storage and task worker settings on a node.",
       "method": "PATCH",
       "path": "/api/v1/nodes/{node}/settings",
       "path_inputs": [
@@ -5526,12 +5526,29 @@
                 ]
               }
             }
+          },
+          "tasks": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "worker": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "none"
+                ]
+              }
+            }
           }
         },
         "additionalProperties": false,
         "required": [
-          "node",
-          "apps"
+          "node"
         ]
       }
     },

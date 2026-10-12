@@ -45,8 +45,9 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         $node = $candidate->node;
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
+        $worker = $candidate->placedOnAppDev() ? TaskWorkerUser::forCheckout($candidate) : null;
 
-        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), WorkspaceGit::workerPreamble(TaskWorkerUser::name()).'source_worker='.escapeshellarg(TaskWorkerUser::name() ?? '')."\n".<<<'BASH'
+        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), WorkspaceGit::workerPreamble($worker).'source_worker='.escapeshellarg($worker ?? '')."\n".<<<'BASH'
                         environment=$1
                         base=$2
                         runtime_user=$3
@@ -115,6 +116,11 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                             [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
                             *) refuse instance.clone_candidate_source_invalid ;;
                         esac
+                        if [ "$environment" = development ] && [ -n "$source_worker" ]; then
+                            # A missing account, sudo rule, or ACL is not a dirty checkout. Keep its stderr for the error.
+                            run_source_git rev-parse --git-dir >/dev/null \
+                                || refuse instance.clone_candidate_worker_access
+                        fi
                         content_status=$(run_source_git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) \
                             || refuse instance.clone_candidate_dirty
                         test -z "$content_status" || refuse instance.clone_candidate_dirty
@@ -179,14 +185,21 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
             );
         }
 
-        if (! $result->succeeded() || $result->stderr !== '' || $result->truncated) {
-            throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate source could not be inspected.');
+        $parts = explode("\t", trim($result->stdout));
+        $stderr = self::redacted($result->stderr);
+
+        if (! $result->truncated && count($parts) === 2 && $parts[0] === 'REFUSED' && preg_match('/\Ainstance\.clone_[a-z_]+\z/D', $parts[1]) === 1) {
+            throw $this->conflict(
+                $parts[1],
+                ($parts[1] === 'instance.clone_candidate_worker_access'
+                    ? "The task worker cannot read the candidate checkout on Node [{$node->name}]."
+                    : 'The candidate is not eligible for cloning.').$this->stderrSuffix($stderr),
+                $stderr,
+            );
         }
 
-        $parts = explode("\t", trim($result->stdout));
-
-        if (count($parts) === 2 && $parts[0] === 'REFUSED') {
-            throw $this->conflict($parts[1], 'The candidate is not eligible for cloning.');
+        if (! $result->succeeded() || $stderr !== '' || $result->truncated) {
+            throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate source could not be inspected.'.$this->stderrSuffix($stderr), $stderr);
         }
 
         if (
@@ -276,8 +289,25 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         return [$basePath, $executionUser, $configuredBranch, $expectedSource];
     }
 
-    private function conflict(string $errorCode, string $message): ResourceOperationException
+    private function conflict(string $errorCode, string $message, string $stderr = ''): ResourceOperationException
     {
-        return new ResourceOperationException($errorCode, $message, 409);
+        return new ResourceOperationException($errorCode, $message, 409, details: $stderr === '' ? [] : ['stderr' => $stderr]);
+    }
+
+    /** Keeps the last 1,000 characters, without URL credentials or token-shaped words. */
+    private static function redacted(string $stderr): string
+    {
+        $text = (string) preg_replace(
+            ['#(://)[^/\s@]+@#', '/\b(?:gh[opsur]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[A-Za-z0-9+_-]{40,}={0,2})/'],
+            ['$1[REDACTED]@', '[REDACTED]'],
+            trim($stderr),
+        );
+
+        return mb_substr($text, -1000);
+    }
+
+    private function stderrSuffix(string $stderr): string
+    {
+        return $stderr === '' ? '' : ' '.mb_substr(strtok($stderr, "\n") ?: '', 0, 300);
     }
 }
