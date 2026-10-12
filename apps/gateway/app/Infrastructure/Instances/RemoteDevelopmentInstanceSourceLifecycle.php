@@ -90,7 +90,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     elif [ -n "$seed_repository" ]; then
                         test ! -L "$seed_repository"
                         test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
-                        git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --detach -- "$checkout" "$seed_commit"
+                        # Resolve writes the files. On a shared seed that checkout can start filters, so it runs as the worker.
+                        git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --no-checkout --detach -- "$checkout" "$seed_commit"
                     else
                         git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
                     fi
@@ -146,7 +147,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
+        // The checkout writes the work tree and can start filters. On a checkout shared with the worker it runs as the worker.
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -160,7 +162,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --prune -- origin
+                    isolated_fetch "$checkout" "$common_directory" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
 
                     branch=${branch_override:-$instance_name}
                     if [ -n "$seed_commit" ]; then
@@ -177,7 +179,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
-                    git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
+                    workspace_git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"

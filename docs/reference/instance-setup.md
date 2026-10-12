@@ -76,7 +76,33 @@ The Gateway prepares a development checkout as the Node's managed user. The chec
 
 `ORBIT_TASKS_WORKER_USER`, normally `orbit-worker`, applies to every Node with an `app-dev` role. Configuration decides this, not the state of a Process: a Node uses the worker until its [settings](/reference/node-settings#opt-out-of-the-task-worker) record `tasks.worker: none`. A task VM Node never uses the worker.
 
-On a Node that uses the worker, Gateway Git that can start checkout filters runs as the worker. That covers checkout sharing, registration, candidate inspection for cloning, transfer, and removal checks. The Node must have the account. When it is missing, these operations fail and name it; they never fall back to the managed user.
+On a Node that uses the worker, Gateway Git that can start checkout filters runs as the worker. That covers checkout sharing, the branch checkout when a source resolves, registration, candidate inspection for cloning, transfer, removal checks, and [Project branch switches](/reference/projects#update-a-project). The Node must have the account. When it is missing, these operations fail and name it; they never fall back to the managed user.
+
+A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Every Gateway Git call also sets `core.hooksPath=/dev/null`, so a hook path in `.git/config` never runs.
+
+The development default's deployment also runs `git status` and its checkouts through the worker. Its deploy steps are the Project's own commands and run as the managed user.
+
+The worker owns the files its checkout writes, and nothing changes them back. Root never walks the checkout. The worker can replace any directory in it with a symlink, and a root `chown` that resolves paths by name could then follow one outside the checkout.
+
+The files inherit the checkout's default ACL, which gives the managed user `rwX`. So `.env`, SQLite setup, and deploy steps still work. [Caddy access](/reference/routes#node-scope) changes each entry's ACL as its owner. The worker never rewrites `.git/config`: a branch switch checks out with `--no-track`, and the managed user then records the upstream.
+
+### Credentialed Git
+
+Fetch, `ls-remote`, and push carry a GitHub token. On a shared checkout the worker can write `.git/config`, and keys such as `credential.helper`, `core.sshCommand`, `remote.<name>.uploadpack`, an `ext::` URL rewrite, or an `include.path` that adds them would run a command as the managed user or send the token elsewhere. So no token-bearing Git process reads a configuration file that the worker can write:
+
+- `ls-remote` runs outside the checkout, against the Project repository URL.
+- A fetch runs in a private bare repository from `mktemp -d`. That repository has a fresh configuration and uses the Project repository URL.
+- The private repository borrows the objects of the Instance's Git directory as an alternate. The fetch then downloads only what is missing.
+- The fetch sets `core.alternateRefsCommand=true`, so it starts no Git process in an alternate.
+- A local fetch then copies the refs into the checkout, as the worker on a shared checkout. That step has no token.
+- An ACL gives only the worker read access to the private repository for the local fetch.
+- A push runs from the same kind of private repository.
+
+The Gateway names the Instance's Git directory from its records: `<seed>/.git` for a worktree of a seed, otherwise `<checkout>/.git`. It never asks Git, because Git follows `.git/commondir` and a `.git` file, which the worker can rewrite. The directory and its `objects` must be real directories at exactly that path, owned by the managed user.
+
+By default, a fetch from a repository with alternates starts `git for-each-ref` in each alternate. That child would read the alternate's configuration with the token in its environment. `core.alternateRefsCommand=true` replaces the child with `true`. Objects that an alternate chain names are only read.
+
+Per-key `-c` overrides are not used: they cannot cover an `include.path` or every URL-scoped key. The token stays in the managed user's process; the worker never receives it.
 
 A checkout placed on a Node that uses the worker is marked `worker_shared` from then on. The worker may have written its `.git/config` or planted a filter, and a move does not undo that. So that Git always runs as the worker on a marked checkout, also after a transfer. A transfer of a marked checkout to an opted-out Node is refused with `instance.transfer_worker_shared`. A clone does not copy the candidate checkout: the production Instance deploys from the repository.
 

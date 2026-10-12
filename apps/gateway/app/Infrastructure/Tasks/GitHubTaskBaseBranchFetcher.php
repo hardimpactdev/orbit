@@ -177,7 +177,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             checkout=$1
             sha=$2
             git -C "$checkout" cat-file -e "$sha^{commit}"
-            git -C "$checkout" diff --quiet HEAD --
+            workspace_git -C "$checkout" diff --quiet HEAD --
             workspace_git -C "$checkout" reset --hard --quiet "$sha"
             git -C "$checkout" rev-parse HEAD
             BASH;
@@ -302,13 +302,15 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $instance->loadMissing('node');
         // A missing task branch is not a failure. The full ref avoids a suffix such as archive/task-{id}.
         // The other refs are still fetched, and HEAD stays put.
-        $script = GitReadScript::for($environment, <<<'BASH'
+        $script = GitReadScript::for($environment, WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
             checkout=$1
             default_branch=$2
             task_branch=$3
             pull_base=$4
+            repository=$5
+            common=$6
             status=0
-            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
+            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch" >/dev/null || status=$?
             if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
                 exit "$status"
             fi
@@ -319,14 +321,14 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             if [ -n "$pull_base" ]; then
                 refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
             fi
-            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
+            isolated_fetch "$checkout" "$common" "$repository" 0 "${refspecs[@]}"
             if [ "$status" -eq 2 ]; then
                 git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
             fi
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? ''],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? '', (string) $instance->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-turn-fetch', 'tasks.fetch_failed');
@@ -338,14 +340,16 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
     private function fetchRef(Instance $instance, string $base, #[SensitiveParameter] string $token): void
     {
         $instance->loadMissing('node');
-        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
+        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
             checkout=$1
             base=$2
-            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"
+            repository=$3
+            common=$4
+            isolated_fetch "$checkout" "$common" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $base],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $base, (string) $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-base-fetch', 'tasks.fetch_failed');

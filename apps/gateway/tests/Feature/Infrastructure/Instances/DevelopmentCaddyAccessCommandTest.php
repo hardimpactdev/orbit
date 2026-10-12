@@ -318,12 +318,12 @@ it('treats only a vanished entry as harmless, and fails on any other walk error'
 
     try {
         mkdir("$root/bin");
-        // A recursive walk applies its change and then reports one entry, as a walk that races setup does.
+        // The Web root grant applies its change and then reports one entry, as a walk that races setup does.
         file_put_contents("$root/bin/setfacl", <<<BASH
             #!/bin/bash
             /usr/bin/setfacl "\$@" || exit
             for argument in "\$@"; do
-                if [ "\$argument" = -R ]; then printf 'setfacl: %s/web/site/gone.js: {$error}\\n' "$root/checkout" >&2; exit 1; fi
+                if [ "\$argument" = u:caddy:r-X ]; then printf 'setfacl: %s/web/site/gone.js: {$error}\\n' "$root/checkout" >&2; exit 1; fi
             done
             BASH);
         chmod("$root/bin/setfacl", 0o700);
@@ -345,6 +345,49 @@ it('treats only a vanished entry as harmless, and fails on any other walk error'
     'a vanished entry' => ['No such file or directory', true],
     'a refused entry' => ['Operation not permitted', false],
 ]);
+
+it('changes each entry as its owner on a checkout shared with the task worker', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        $checkout = "$root/checkout";
+        mkdir("$checkout/web/site/assets");
+        file_put_contents("$checkout/web/site/assets/app.js", 'worker asset');
+        file_put_contents("$checkout/web/site/worker.html", 'worker page');
+        file_put_contents("$checkout/worker-source.txt", 'worker source');
+        // The worker's Git wrote these files; it owns them, and only it may change their ACL.
+        new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root])->mustRun();
+        new Process(['sudo', '-n', 'chown', 'nobody', "$checkout/web/site/assets", "$checkout/web/site/assets/app.js", "$checkout/web/site/worker.html", "$checkout/worker-source.txt"])->mustRun();
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
+
+        $process = new Process($command->arguments)->setInput($command->input);
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        foreach (['web/site/index.html' => 'first page', 'web/site/worker.html' => 'worker page', 'web/site/assets/app.js' => 'worker asset'] as $served => $content) {
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$served"])->mustRun()->getOutput())->toBe($content);
+        }
+        foreach (['.env', 'source.txt', 'worker-source.txt'] as $private) {
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
+        }
+        expect(fileowner("$checkout/web/site/worker.html"))->toBe(posix_getpwnam('nobody')['uid']);
+
+        // Without the worker, or for an entry neither account owns, the walk stops instead of skipping it.
+        $managedOnly = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+        $process = new Process($managedOnly->arguments)->setInput($managedOnly->input);
+        expect($process->run())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain('neither');
+        file_put_contents("$checkout/foreign.txt", 'foreign');
+        new Process(['sudo', '-n', 'chown', 'root', "$checkout/foreign.txt"])->mustRun();
+        $process = new Process($command->arguments)->setInput($command->input);
+        expect($process->run())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain("$checkout/foreign.txt");
+    } finally {
+        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
+    }
+});
 
 function development_caddy_access_fixture(): string
 {

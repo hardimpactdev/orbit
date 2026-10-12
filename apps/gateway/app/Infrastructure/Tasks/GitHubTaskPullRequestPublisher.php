@@ -20,6 +20,7 @@ use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
@@ -141,15 +142,17 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
         }
         $instance->loadMissing('node');
-        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
+        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), WorkspaceGit::networkPreamble().<<<'BASH'
             checkout=$1
             branch=$2
             commit=$3
-            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
+            repository=$4
+            common=$5
+            isolated_push "$common" "$repository" "$commit:refs/heads/$branch"
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit, (string) $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-pull-request-push', 'tasks.push_failed');

@@ -21,7 +21,9 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PlantedGitConfig;
 use Tests\Support\TestOrbitHome;
 
 /** @param list<string> $arguments */
@@ -38,6 +40,9 @@ function publisher_group(string $checkout, string $repository = 'git@github.com:
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'reviewing']);
     $group->taskable()->associate($instance);
     $group->save();
+    if (is_dir(dirname($checkout))) {
+        GitRemoteRedirect::global(dirname($checkout).'/origin.git', $repository);
+    }
 
     return $group;
 }
@@ -101,6 +106,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    GitRemoteRedirect::clear();
     TestOrbitHome::clearScratch();
 });
 
@@ -125,6 +131,24 @@ it('pushes the task branch with a pull request token and opens the pull request'
         && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.Task::topLevel()->sole()->id, 'base' => 'main', 'body' => "Adds the export.\n"]
         && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
     Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/requested_reviewers'));
+});
+
+it('never runs a command planted in the checkout config while it pushes with a token', function (): void {
+    $root = TestOrbitHome::scratch('orbit-push-planted');
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $root.'/checkout']))->mustRun();
+    publisher_git($root.'/checkout', ['commit', '--quiet', '--allow-empty', '-m', 'Approved subtask']);
+    publisher_git($root.'/checkout', ['remote', 'add', 'origin', $root.'/origin.git']);
+    $commit = publisher_git($root.'/checkout', ['rev-parse', 'HEAD']);
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $group = publisher_group($root.'/checkout');
+    PlantedGitConfig::plant($root.'/checkout', $root.'/markers', [$root.'/origin.git', 'git@github.com:acme/shop.git']);
+
+    publisher(new LocalShellSshExecutor)->push($group, $commit);
+
+    expect(publisher_git($root.'/origin.git', ['rev-parse', 'refs/heads/task-'.$group->id]))->toBe($commit)
+        ->and(PlantedGitConfig::markers($root.'/markers'))->toBe([]);
 });
 
 it('pushes the task branch without opening a pull request', function (): void {
@@ -155,10 +179,10 @@ it('sends the token only on the standard input of the push', function (): void {
     publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', $commit);
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit, 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_publish'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"')
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_push "$common" "$repository" "$commit:refs/heads/$branch"')
         ->and(stream_get_contents($command->protectedInput?->stream()))->not->toContain('HEAD:refs/heads');
 });
 
@@ -334,7 +358,7 @@ it('pushes a reviewed commit to an incoming pull request branch, never to task-{
 
     publisher($transport)->push($group, $commit);
 
-    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle', $commit]);
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle', $commit, 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git']);
 });
 
 it('refuses an incoming pull request branch that is not a valid branch name', function (): void {

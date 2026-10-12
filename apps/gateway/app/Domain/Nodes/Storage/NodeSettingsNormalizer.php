@@ -39,6 +39,37 @@ final readonly class NodeSettingsNormalizer
         ], static fn (?array $member): bool => $member !== null);
     }
 
+    /**
+     * The stored settings with the members this normalizer manages, `apps.path` and `tasks.worker`, set or cleared.
+     * Every other key stays, such as the `t3` connection that T3 Code registration writes.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function storedOver(mixed $existing, ?NodeSettingsData $settings): ?array
+    {
+        $result = is_array($existing) ? $existing : [];
+        $normalized = $this->normalize($settings);
+        $managed = [
+            'apps' => ['path', $normalized?->appsPath()],
+            'tasks' => ['worker', $normalized?->taskWorker()],
+        ];
+
+        foreach ($managed as $member => [$key, $set]) {
+            $value = is_array($result[$member] ?? null) ? $result[$member] : [];
+            unset($value[$key]);
+            if ($set !== null) {
+                $value[$key] = $set;
+            }
+            if ($value === []) {
+                unset($result[$member]);
+            } else {
+                $result[$member] = $value;
+            }
+        }
+
+        return $result === [] ? null : $result;
+    }
+
     public function fromStored(mixed $value): ?NodeSettingsData
     {
         if (! is_array($value)) {

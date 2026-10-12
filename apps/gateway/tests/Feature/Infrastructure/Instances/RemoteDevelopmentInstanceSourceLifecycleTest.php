@@ -66,6 +66,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\PlantedGitConfig;
 
 pest()->group('privileged');
 
@@ -359,6 +360,46 @@ describe('TaskCheckWorkerUser', function (): void {
         }
     });
 
+    it('checks out a resolved branch as the worker so a planted filter never runs as the managed user', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-resolve');
+        $checkout = $instance->checkout_path;
+        file_put_contents($checkout.'/.gitattributes', "README.md filter=uid\n");
+        file_put_contents($checkout.'/README.md', "filtered\n", FILE_APPEND);
+        orb76_run(['git', '-C', $checkout, 'add', '.gitattributes', 'README.md']);
+        orb76_run(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'filter attributes']);
+        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/filtered']);
+        orb76_run(['git', '-C', $checkout, 'reset', '-q', '--hard', 'HEAD~1']);
+        $users = $this->sandbox.'/worker-users';
+        file_put_contents($users, '');
+        (new Process(['setfacl', '-m', 'u:nobody:rw', $users]))->mustRun();
+        orb76_run(['git', '-C', $checkout, 'config', 'filter.uid.smudge', 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> '.escapeshellarg($users).'; cat']);
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $this->source->inspectPrepared($instance);
+        $instance->update(['branch_override' => 'filtered']);
+
+        expect($this->source->resolve($instance->refresh())->branch)->toBe('filtered');
+        $records = file($users, FILE_IGNORE_NEW_LINES) ?: [];
+        expect($records)->not->toBeEmpty();
+        foreach ($records as $record) {
+            expect($record)->toBe('65534:absent');
+        }
+    });
+
+    it('fetches at resolve without running a command planted in the checkout config', function (?string $worker): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-fetch');
+        $checkout = $instance->checkout_path;
+        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted']);
+        PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', [$this->repository, $this->remoteOrigin]);
+        config()->set('orbit.tasks.worker_user', $worker);
+        $this->source->inspectPrepared($instance);
+        $instance->update(['branch_override' => 'planted']);
+
+        expect($this->source->resolve($instance->refresh())->branch)->toBe('planted')
+            ->and(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
+    })->with(['managed user' => null, 'worker' => 'nobody']);
+
     it('refuses removal content inspection when the configured worker cannot run', function (): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-missing-worker');
@@ -580,12 +621,16 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(is_dir($instance->checkout_path))->toBeFalse();
     })->with(['root', 'worker:rwX', '-R']);
 
-    it('checks out tracked files as the managed user while a worker is configured', function (): void {
+    it('leaves tracked files with the worker that checked them out, writable by the managed user', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-owner');
         clearstatcache();
 
-        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_geteuid());
+        // No root process hands the files back. Their inherited ACL gives the managed user the same access.
+        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_getpwnam('nobody')['uid'])
+            ->and(fileowner($instance->checkout_path))->toBe(posix_geteuid())
+            ->and(fileowner($instance->checkout_path.'/.git'))->toBe(posix_geteuid())
+            ->and(file_put_contents($instance->checkout_path.'/README.md', 'edited'))->toBe(6);
     });
 
     it('grants checkout access and inherited write access without changing the owner', function (): void {

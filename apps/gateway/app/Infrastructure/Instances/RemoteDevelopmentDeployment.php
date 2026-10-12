@@ -24,7 +24,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use Closure;
 
@@ -47,7 +49,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     public function target(Instance $instance): DevelopmentTarget
     {
         $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
-        $script = GitReadScript::for($this->access->for($repository, $instance->project->source_access), DevelopmentCheckoutProgram::target());
+        $script = GitReadScript::for($this->access->for($repository, $instance->project->source_access), WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance->loadMissing('node'))).WorkspaceGit::networkPreamble().DevelopmentCheckoutProgram::target());
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
@@ -155,7 +157,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         try {
             return $this->ssh->execute(
                 $instance->node,
-                new RemoteCommand(arguments: [...$this->arguments($instance), ...$extra], input: $program, output: $output, maxOutputBytes: 8192),
+                new RemoteCommand(arguments: [...$this->arguments($instance), ...$extra], input: WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance->loadMissing('node'))).$program, output: $output, maxOutputBytes: 8192),
                 'development-deployment-'.$step,
                 'deployment.'.$step.'_failed',
             );
