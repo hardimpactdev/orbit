@@ -11,6 +11,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -297,10 +298,15 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
 
     /**
      * Installs the `app-dev` PHP packages of the PHP version that the Project's `composer.json` selects, with the same
-     * program that the workspace's Instance runs on a task VM. A Project without `composer.json` needs none.
+     * program that the workspace's Instance runs on a task VM. A Project without `composer.json` needs none, and nor
+     * does a monorepo whose task workspaces have no Route: its Instance is a source checkout, not one PHP application,
+     * so the Instance installs no PHP packages either.
      */
     private function installPhp(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout): void
     {
+        if ($project->type === ProjectType::Monorepo && ! $project->task_workspace_routed) {
+            return;
+        }
         $composer = $this->checked($builder, 'exec read composer.json', $this->asManagedUser($host, $node, $builder, $checkout, [
             'sh', '-c', 'if [ -f composer.json ]; then cat composer.json; else printf absent; fi',
         ]));

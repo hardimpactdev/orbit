@@ -6,6 +6,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\TiaBaselineFiles;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
@@ -73,6 +74,9 @@ final class TaskVmTemplateIncus implements SshExecutor
 
     /** What the guest mount script prints. */
     public string $mounted = 'template';
+
+    /** The `composer.json` of the builder's checkout, or null for none. */
+    public ?string $composer = null;
 
     /** What `git status --porcelain` prints in the builder. */
     public string $status = '';
@@ -183,7 +187,7 @@ final class TaskVmTemplateIncus implements SshExecutor
             // The step script arrives on stdin. Its command follows the line that sets VP_HOME.
             $user[0] === 'timeout' => $this->answer('setup step ['.$this->step().']'),
             $user[0] === 'git' => $this->answer('git status', fn (): string => $this->status),
-            $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', static fn (): string => 'absent'),
+            $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', fn (): string => $this->composer ?? 'absent'),
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             $user[0] === 'bash' && $user[1] === '-seu' => $this->answer('clone', static fn (): string => str_repeat('a', 40)."\n"),
             default => $this->answer($user[0] === 'bash' && str_contains($user[2], 'mkfs.ext4') ? 'format' : 'exec '.$user[0]),
@@ -736,6 +740,21 @@ describe('build', function (): void {
         expect($this->incus->steps[0])->toContain('export VP_HOME=')->toContain('python3 -c')->not->toContain(LifecycleStep::RestoreTiaBaseline)
             ->and((int) $steps[1][array_search('timeout', $steps[1], true) + 1])->toBeLessThanOrEqual(120);
     });
+
+    it('installs no PHP for a monorepo whose task workspaces have no Route, as its Instance does', function (bool $routed): void {
+        $this->project->update(['type' => ProjectType::Monorepo, 'task_workspace_routed' => $routed]);
+        $this->incus->composer = '{"require":{"php":"^8.5"}}';
+        $build = fn (): string => app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
+        $reads = fn (): int => collect($this->incus->operations())->filter(static fn (array $operation): bool => str_contains(implode(' ', $operation), 'composer.json'))->count();
+
+        if ($routed) {
+            expect($build)->toThrow(fn (TaskVmException $exception) => expect($exception->getMessage())->toContain('stage [php]'));
+            expect($reads())->toBe(1);
+
+            return;
+        }
+        expect($build())->toStartWith('tvm-template-')->and($reads())->toBe(0);
+    })->with(['unrouted' => false, 'routed' => true]);
 
     it('refuses a second build on the host while one runs', function (): void {
         Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 60)->get();
