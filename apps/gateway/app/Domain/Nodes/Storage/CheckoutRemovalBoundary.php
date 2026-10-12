@@ -8,7 +8,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Instance;
-use App\Models\Node;
 use App\Models\TaskVm;
 
 /**
@@ -52,7 +51,7 @@ final readonly class CheckoutRemovalBoundary
     private function isTaskVmWorkspace(Instance $instance, StoragePath $checkout, StoragePath $directory): bool
     {
         return $checkout->value === $directory->value.'/'.TaskVmPlacement::WorkspaceCheckout
-            && $instance->node instanceof Node && TaskVmPlacement::forNode($instance->node) instanceof TaskVm;
+            && TaskVmPlacement::forNode($instance->node) instanceof TaskVm;
     }
 
     private function unsafeInstance(Instance $instance): never
