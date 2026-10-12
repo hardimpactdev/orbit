@@ -683,26 +683,28 @@ it('never widens a private file that reuses the inode number of a saved entry', 
     try {
         $checkout = "$root/checkout";
         development_caddy_access_share($root);
-        // After the snapshot saved index.html, the worker removes it, waits until the managed user writes a mode 0600
-        // file that reuses the freed inode number, moves that file onto the saved name, and fails the walk.
+        // After the snapshot saved index.html, at the first change, the worker removes it, waits until the managed
+        // user writes a mode 0600 file that reuses the freed inode number, and moves that file onto the saved name.
+        // Then the worker fails the walk.
         mkdir("$root/bin");
         file_put_contents("$root/bin/setfacl", <<<BASH
             #!/bin/bash
+            if [ ! -e '$root/attempted' ]; then
+                touch '$root/attempted'
+                inode=\$(stat -c %i -- '$checkout/web/site/index.html')
+                sudo -n -u nobody rm -f -- '$checkout/web/site/index.html'
+                for attempt in \$(seq 1 200); do
+                    printf 'SECRET=value' > '$checkout/secret-'\$attempt
+                    chmod 0600 -- '$checkout/secret-'\$attempt
+                    if [ "\$(stat -c %i -- '$checkout/secret-'\$attempt)" = "\$inode" ]; then
+                        sudo -n -u nobody mv -f -- '$checkout/secret-'\$attempt '$checkout/web/site/index.html'
+                        touch '$root/reused'
+                        break
+                    fi
+                done
+            fi
             for argument in "\$@"; do
-                if [ "\$argument" = u:caddy:r-X ]; then
-                    inode=\$(stat -c %i -- '$checkout/web/site/index.html')
-                    sudo -n -u nobody rm -f -- '$checkout/web/site/index.html'
-                    for attempt in \$(seq 1 200); do
-                        printf 'SECRET=value' > '$checkout/secret-'\$attempt
-                        chmod 0600 -- '$checkout/secret-'\$attempt
-                        if [ "\$(stat -c %i -- '$checkout/secret-'\$attempt)" = "\$inode" ]; then
-                            sudo -n -u nobody mv -f -- '$checkout/secret-'\$attempt '$checkout/web/site/index.html'
-                            touch '$root/reused'
-                            break
-                        fi
-                    done
-                    exit 1
-                fi
+                if [ "\$argument" = u:caddy:r-X ]; then exit 1; fi
             done
             exec /usr/bin/setfacl "\$@"
             BASH);
