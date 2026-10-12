@@ -13,6 +13,7 @@ use App\Domain\Vault\VaultException;
 use App\Domain\Vault\VaultOrganization;
 use App\Domain\Vault\VaultRemoteCipher;
 use App\Domain\Vault\VaultSession;
+use GuzzleHttp\Handler\StreamHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -319,7 +320,15 @@ final readonly class HttpVaultClient implements VaultClient
 
     private function http(): PendingRequest
     {
-        return Http::timeout(15)->connectTimeout(5)->acceptJson()->withHeaders(self::ClientHeaders)->withOptions(['verify' => $this->trustFile()]);
+        // The stream handler gives PHP OpenSSL only the CA file, so the system store stays out. The cURL
+        // handler cannot: Guzzle maps `verify` to CURLOPT_CAINFO, libcurl keeps its compiled-in CA directory
+        // (`/etc/ssl/certs` on Ubuntu) beside it, and Guzzle refuses CURLOPT_CAPATH in the `curl` option.
+        // The stream handler has no connect timeout; the 15-second limit covers connecting too.
+        return Http::setHandler(new StreamHandler)
+            ->timeout(15)
+            ->acceptJson()
+            ->withHeaders(self::ClientHeaders)
+            ->withOptions(['verify' => $this->trustFile()]);
     }
 
     /**
