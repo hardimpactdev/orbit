@@ -76,7 +76,7 @@ Both image pipelines share one clean script. It clears APT archives and removes 
 | Role image | Programs |
 | --- | --- |
 | `gateway` | The Gateway's own prerequisites, then `orbit:node-programs gateway vpn` without its bootstrap program |
-| `app-dev` | `orbit:node-programs app-dev`, the list the task VM base image runs |
+| `app-dev` | `orbit:node-programs app-dev`, the enrollment programs the task VM base image also runs |
 | `app-prod` | `orbit:node-programs app-prod` |
 | `operator` | The operator's web tooling, then `orbit:node-programs` with no role, for a roleless Node |
 
