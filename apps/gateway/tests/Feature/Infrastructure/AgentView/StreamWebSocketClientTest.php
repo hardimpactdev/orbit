@@ -11,6 +11,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentView\AgentViewSubscriber;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Models\Node;
@@ -326,18 +327,78 @@ describe(StreamWebSocketClient::class, function (): void {
         $server = ScriptedWebSocketServer::start('pusher', [$credentials->appSecret, (string) $node->id]);
         $view = app(AgentStateView::class);
 
+        // The subscriber's clock moves only when it sleeps, so its reconnect backoff is exact however loaded the runner is.
+        $now = microtime(true);
+        $socket = new class(static function () use (&$now): float {
+            return $now;
+        }) implements WebSocketClient
+        {
+            /** @var list<float> the subscriber's time at each connect */
+            public array $connectedAt = [];
+
+            /** @var list<float> the subscriber's time when it first saw each connection lost */
+            public array $lostAt = [];
+
+            private StreamWebSocketClient $inner;
+
+            private bool $connected = false;
+
+            /** @param Closure(): float $clock */
+            public function __construct(private readonly Closure $clock)
+            {
+                $this->inner = new StreamWebSocketClient;
+            }
+
+            public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+            {
+                $this->connectedAt[] = ($this->clock)();
+                $this->inner->connect($endpoint, $timeoutSeconds);
+                $this->connected = true;
+            }
+
+            public function send(array $message): void
+            {
+                $this->inner->send($message);
+            }
+
+            public function receive(float $timeoutSeconds): array
+            {
+                return $this->inner->receive($timeoutSeconds);
+            }
+
+            public function close(): void
+            {
+                $this->inner->close();
+            }
+
+            public function isConnected(): bool
+            {
+                $connected = $this->inner->isConnected();
+
+                if ($this->connected && ! $connected) {
+                    $this->lostAt[] = ($this->clock)();
+                }
+                $this->connected = $connected;
+
+                return $connected;
+            }
+        };
+
         try {
             $subscriber = new AgentViewSubscriber(
-                socket: new StreamWebSocketClient,
+                socket: $socket,
                 credentials: app(WebSocketCredentialManager::class),
                 view: app(CacheAgentStateView::class),
                 signer: new PresenceChannelSigner,
                 log: new NullLogger,
                 caPath: $server->caPath,
                 commit: static fn (): ?string => null,
-                clock: static fn (): float => microtime(true),
-                sleep: static function (float $seconds): void {
-                    usleep((int) ($seconds * 1_000_000));
+                clock: static function () use (&$now): float {
+                    return $now;
+                },
+                sleep: static function (float $seconds) use (&$now): void {
+                    $now += $seconds;
+                    usleep(1_000);
                 },
                 reverbPort: $server->port,
             );
@@ -362,13 +423,12 @@ describe(StreamWebSocketClient::class, function (): void {
 
             expect($pass(fn (): bool => ! $view->node($node->id)->isFresh()))->toBeTrue();
 
-            expect($pass(fn (): bool => $view->node($node->id)->isFresh()))->toBeTrue();
-            $server->waitFor('accepted=');
-            $droppedAt = (float) substr($server->waitFor('dropped='), 8);
-            $reconnectedAt = (float) substr($server->waitFor('accepted='), 9);
+            expect($pass(fn (): bool => $view->node($node->id)->isFresh()))->toBeTrue()
+                ->and($socket->connectedAt)->toHaveCount(2)
+                ->and($socket->lostAt)->toHaveCount(1);
 
-            // The first retry waits the one-second backoff plus jitter.
-            expect($reconnectedAt - $droppedAt)->toBeGreaterThanOrEqual(1.0)->toBeLessThan(2.0)
+            // The first retry waits the one-second backoff plus at most 25% jitter, give or take float rounding.
+            expect($socket->connectedAt[1] - $socket->lostAt[0])->toBeGreaterThan(1.0 - 1e-6)->toBeLessThan(1.25 + 1e-6)
                 ->and($server->waitFor('subscribe='))->toBe('subscribe=signed member=gateway.200.2')
                 ->and($view->subscriber()?->connected)->toBeTrue();
         } finally {
