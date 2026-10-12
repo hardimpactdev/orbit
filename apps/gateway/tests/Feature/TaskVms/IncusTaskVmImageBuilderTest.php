@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -251,6 +252,7 @@ describe('a build', function (): void {
             app(NodeRolePrerequisiteCommandFactory::class)->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit')),
             app(VpToolManager::class)->materializeCommand($node),
             app(ComposerToolManager::class)->materializeCommand($node),
+            ...array_values(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])),
         ];
         $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 11) === [
             'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-20261010030000', 'runuser', '-u',
@@ -258,7 +260,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -331,9 +333,10 @@ describe('a build', function (): void {
         $programs = json_decode((string) $manifest->input, true);
 
         expect($programs['schema'])->toBe(1)
-            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager'])
+            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4'])
             ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
             ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
+            ->and($programs['programs']['app-dev-php-8-4'])->toBe(TaskVmBakedPrograms::fingerprint(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])['8.4']))
             ->and(array_slice($manifest->arguments, 5, 4))->toBe(['exec', '--', 'tvm-image-20261010030000', 'install'])
             ->and(Arr::last($lean->arguments))->toContain('systemd-firstboot.service', 'apt-daily.timer', 'LinkLocalAddressing=no', '--ipv4')->not->toContain('docker')
             ->and($check->arguments[7])->toBe('tvm-image-20261010030000-smoke')
