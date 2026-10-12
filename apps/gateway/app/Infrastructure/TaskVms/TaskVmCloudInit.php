@@ -64,6 +64,29 @@ final readonly class TaskVmCloudInit
         ]);
     }
 
+    /**
+     * Adds the ed25519 host key that the Gateway generated for a VM without a trusted host, an UpCloud server, to
+     * user-data that {@see self::document()} rendered. Cloud-init deletes the image's keys and writes this one, so the
+     * Gateway knows the key before the first SSH connection. Root login stays off.
+     *
+     * @param  array{private: string, public: string}  $hostKey
+     */
+    public static function withHostKey(string $userData, array $hostKey): string
+    {
+        $config = str_starts_with($userData, "#cloud-config\n") ? json_decode(substr($userData, 14), true) : null;
+        if (! is_array($config)) {
+            throw new TaskVmException('task_vm.invalid_user_data', 'The task VM user-data is not the cloud-config document Orbit renders.', 500);
+        }
+
+        return self::document([
+            ...$config,
+            'disable_root' => true,
+            'ssh_deletekeys' => true,
+            'ssh_genkeytypes' => [],
+            'ssh_keys' => ['ed25519_private' => $hostKey['private'], 'ed25519_public' => $hostKey['public']],
+        ]);
+    }
+
     /** @return array<string, mixed> */
     private function user(string $gatewayPublicKey): array
     {

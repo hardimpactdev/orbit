@@ -33,7 +33,8 @@ use Throwable;
  * Gives a group its task VM. A warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`,
  * and runs only the group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
  * `orbit-task-base` names now, read from the host at the claim. Without one, the claim records a new row on
- * the active host with the most free slots and queues its creation. A new row is named `tvm-<row id>`, so a
+ * the active host with the most free slots and queues its creation. When no host has a free slot, an opted-in
+ * Project's group may overflow to an UpCloud VM ({@see self::host()}). A new row is named `tvm-<row id>`, so a
  * retry after a destroyed VM never reuses a name, and it holds its reserved WireGuard address from the start.
  *
  * One placement runs at a time under a cache lock, so two claims never take the same warm VM or both take a
@@ -130,14 +131,15 @@ final readonly class AllocateTaskVmAction
 
     /**
      * Records a new `provisioning` row on the host: a group's VM, or a pool VM when `$group` is null. A pool row
-     * gets no Pi token; a claim gives it one. Call it under the placement lock, inside a transaction.
+     * gets no Pi token; a claim gives it one. A row without a host is an UpCloud VM. Call it under the placement
+     * lock, inside a transaction.
      */
-    public function record(?Task $group, int $hostNodeId): TaskVm
+    public function record(?Task $group, ?int $hostNodeId): TaskVm
     {
         $vm = TaskVm::query()->create([
             'group_id' => $group?->id,
             'host_node_id' => $hostNodeId,
-            'provider' => 'incus',
+            'provider' => $hostNodeId === null ? TaskVm::UpCloud : TaskVm::Incus,
             'name' => 'tvm-pending-'.Str::uuid(),
             'state' => TaskVmState::Provisioning,
             'wireguard_ip' => $this->addresses->nextIn(
@@ -252,7 +254,7 @@ final readonly class AllocateTaskVmAction
                 return [$warm, true];
             }
 
-            return [$this->record($group, $this->host($free)), false];
+            return [$this->record($group, $this->host($free, $group)), false];
         });
     }
 
@@ -294,11 +296,13 @@ final readonly class AllocateTaskVmAction
     }
 
     /**
-     * The active host with the most free slots. Hosts with as many free slots keep their config order.
+     * The active host with the most free slots. Hosts with as many free slots keep their config order. With no free
+     * slot, null places the VM at UpCloud: only while the overflow is on, the group's Project is opted in, and fewer
+     * than `max_vms` UpCloud VMs are live, failed and parked ones too.
      *
      * @param  array<int, int>  $free
      */
-    private function host(array $free): int
+    private function host(array $free, Task $group): ?int
     {
         $best = null;
         $bestFree = 0;
@@ -309,6 +313,11 @@ final readonly class AllocateTaskVmAction
         }
         if ($best !== null) {
             return $best;
+        }
+        $upcloud = $this->settings->upcloud;
+        if ($upcloud?->allows($group->project_id) === true
+            && TaskVm::query()->live()->where('provider', TaskVm::UpCloud)->count() < $upcloud->maxVms) {
+            return null;
         }
         $starting = TaskVm::query()->pool()->where('state', TaskVmState::Provisioning)->whereIn('host_node_id', array_keys($free))->exists();
 

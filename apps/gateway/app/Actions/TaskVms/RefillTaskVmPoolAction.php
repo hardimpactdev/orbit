@@ -88,8 +88,8 @@ final readonly class RefillTaskVmPoolAction
     /** A pool VM failed: the host waits before its next pool VM, and the log says why and until when. */
     public static function failed(TaskVm $vm, string $code, string $message): void
     {
-        $key = self::backoffKey($vm->host_node_id);
-        $failures = self::backoff($vm->host_node_id)['failures'] + 1;
+        $key = self::backoffKey((int) $vm->host_node_id);
+        $failures = self::backoff((int) $vm->host_node_id)['failures'] + 1;
         $wait = min(self::MaxBackoffSeconds, self::BackoffSeconds * 2 ** min($failures - 1, 6));
         $until = now()->getTimestamp() + $wait;
         Cache::put($key, ['failures' => $failures, 'until' => $until], self::MaxBackoffSeconds * 2);
@@ -102,7 +102,7 @@ final readonly class RefillTaskVmPoolAction
     /** A pool VM became warm, so its host's failures are forgotten. */
     public static function warmed(TaskVm $vm): void
     {
-        Cache::forget(self::backoffKey($vm->host_node_id));
+        Cache::forget(self::backoffKey((int) $vm->host_node_id));
     }
 
     /** @return list<array{TaskVmHost, Node}> the configured hosts whose Node is active, in config order */
