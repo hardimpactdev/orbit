@@ -197,7 +197,7 @@ The candidate gate is the exception: it runs workspace programs as the managed u
 
 `git checkout` and the approval commit do not carry the token. The approval commit and Git in a task workspace run as `orbit-worker`, so a filter they start runs as `orbit-worker`. Orbit's own checkout of a development Instance, at create and on a branch switch, also runs as `orbit-worker` on a [checkout shared with the worker](/reference/instance-setup#task-work-nodes); root then gives the files it wrote back to the managed user.
 
-Fetch, `git clone --no-checkout`, and push do not check out file contents. Task teardown runs as `orbit-worker` and executes the root-owned helper, not a file from the checkout. Privileged removal deletes the tree as the managed user and runs no checkout program.
+Fetch, `git clone --no-checkout`, and push do not check out file contents. Fetch and push with a token never read a checkout's `.git/config`; see [credentialed Git](/reference/instance-setup#credentialed-git). Task teardown runs as `orbit-worker` and executes the root-owned helper, not a file from the checkout. Privileged removal deletes the tree as the managed user and runs no checkout program.
 
 Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
 

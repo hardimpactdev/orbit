@@ -21,7 +21,9 @@ use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\PlantedGitConfig;
 use Tests\Support\TaskWorkerSshExecutor;
 use Tests\Support\TestOrbitHome;
 
@@ -51,6 +53,9 @@ function fetcher_group(string $checkout): Task
     ]);
     $group->taskable()->associate($instance);
     $group->save();
+    if (is_dir(dirname($checkout))) {
+        GitRemoteRedirect::global(dirname($checkout).'/origin.git', 'git@github.com:acme/shop.git');
+    }
 
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
@@ -97,6 +102,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    GitRemoteRedirect::clear();
     TestOrbitHome::clearScratch();
 });
 
@@ -124,6 +130,7 @@ describe('TaskCheckWorkerUser', function (): void {
             fetcher_git($checkout, ['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
         }
         $transport = TaskWorkerSshExecutor::forCheckout($checkout);
+        GitRemoteRedirect::append($checkout.'/.git/worker-global-config', $root.'/origin.git', 'git@github.com:acme/shop.git');
         (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
 
         try {
@@ -168,6 +175,28 @@ it('fetches the base ref into the remote-tracking ref and leaves the task branch
         ->and(fetcher_git($root.'/checkout', ['rev-parse', 'refs/remotes/origin/main']))->toBe($base);
 });
 
+it('never runs a command planted in the checkout config while it fetches with a token', function (): void {
+    $root = TestOrbitHome::scratch('orbit-fetch-planted');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Base']);
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main', 'HEAD:refs/heads/release']);
+    $base = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    $group = fetcher_group($checkout);
+    PlantedGitConfig::plant($checkout, $root.'/markers', [$root.'/origin.git', 'git@github.com:acme/shop.git']);
+    $fetcher = fetcher(new LocalShellSshExecutor);
+
+    $fetcher->fetchForTurn($group);
+    $fetcher->fetch($group, 'release');
+
+    expect(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/main']))->toBe($base)
+        ->and(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/release']))->toBe($base)
+        ->and(PlantedGitConfig::markers($root.'/markers'))->toBe([]);
+});
+
 it('passes the base ref as one argument and the token only on standard input', function (): void {
     $transport = new AppDevFakeSshExecutor;
     $group = fetcher_group('/srv/orbit/apps/shop/task-7');
@@ -175,10 +204,10 @@ it('passes the base ref as one argument and the token only on standard input', f
     fetcher($transport)->fetch($group, 'feature/main');
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main'])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main', 'git@github.com:acme/shop.git'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_fetch "$checkout" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"');
 });
 
 it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {
@@ -274,13 +303,13 @@ it('fetches the turn refs with explicit refspecs, --no-tags, and the read token 
     $command = $transport->commands[0];
     $script = (string) stream_get_contents($command->protectedInput?->stream());
     expect($transport->commands)->toHaveCount(1)
-        ->and($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, ''])
+        ->and($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, '', 'git@github.com:acme/shop.git'])
         ->and($command->input)->toBeNull()
         ->and(implode(' ', $command->arguments))->not->toContain('ghs_read')
         ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
         ->and($script)->not->toContain('ghs_read')
-        ->and($script)->toContain('ls-remote --exit-code --heads origin "refs/heads/$task_branch"')
-        ->and($script)->toContain('fetch --no-tags --quiet origin')
+        ->and($script)->toContain('-C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch"')
+        ->and($script)->toContain('isolated_fetch "$checkout" "$repository" 0 "${refspecs[@]}"')
         ->and($script)->toContain('+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}')
         ->and($script)->toContain('+refs/heads/${task_branch}:refs/remotes/origin/${task_branch}')
         ->and($script)->not->toContain('merge')
@@ -306,7 +335,7 @@ it('asks for a different pull request base as its own refspec and keeps the writ
 
     $command = $transport->commands[0];
     $script = (string) stream_get_contents($command->protectedInput?->stream());
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, 'develop'])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, 'develop', 'git@github.com:acme/shop.git'])
         ->and($command->input)->toBeNull()
         ->and(implode(' ', $command->arguments))->not->toContain('ghs_')
         ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
@@ -500,7 +529,7 @@ it('fetches and fast-forwards an incoming pull request branch instead of task-{i
     $fetcher->fetchForTurn($group);
     $fetcher->fastForward($group);
 
-    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', ''])
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', '', 'git@github.com:acme/shop.git'])
         ->and($transport->commands[1]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle']);
 });
 

@@ -78,7 +78,21 @@ The Gateway prepares a development checkout as the Node's managed user. The chec
 
 On a Node that uses the worker, Gateway Git that can start checkout filters runs as the worker. That covers checkout sharing, the branch checkout when a source resolves, registration, candidate inspection for cloning, transfer, removal checks, and [Project branch switches](/reference/projects#update-a-project). The Node must have the account. When it is missing, these operations fail and name it; they never fall back to the managed user.
 
-A linked worktree is added without a checkout; the branch checkout at resolve writes its files. After the worker's checkout, root gives the work tree entries it wrote back to the managed user, so the managed user still owns tracked files. Every Gateway Git call also sets `core.hooksPath=/dev/null`, so a hook path in `.git/config` never runs.
+A linked worktree is added without a checkout; the branch checkout at resolve writes its files. Every Gateway Git call also sets `core.hooksPath=/dev/null`, so a hook path in `.git/config` never runs.
+
+After the worker's checkout, root gives the work tree entries it wrote back to the managed user, so the managed user still owns tracked files. The managed user's passwordless sudo runs `find -P <checkout> -mindepth 1 -maxdepth 1 -xdev ! -name .git -exec chown -h -R -P --from=<worker> <managed user>:<group>`. `chown -P -h` walks without following a symlink and changes a symlink itself, never its target, so an entry the worker swaps for a symlink during the walk cannot point root outside the checkout. Only entries the worker owns change, and `.git` keeps the worker's private check directories.
+
+### Credentialed Git
+
+Fetch, `ls-remote`, and push carry a GitHub token. On a shared checkout the worker can write `.git/config`, and keys such as `credential.helper`, `core.sshCommand`, `remote.<name>.uploadpack`, an `ext::` URL rewrite, or an `include.path` that adds them would run a command as the managed user or send the token elsewhere. So these calls never read the checkout's configuration:
+
+- `ls-remote` runs outside the checkout, against the Project repository URL.
+- A fetch runs in a private bare repository from `mktemp -d`. That repository has a fresh configuration and uses the Project repository URL.
+- The private repository borrows the checkout's objects as an alternate, so the fetch downloads only what is missing.
+- A local fetch then copies the refs into the checkout, as the worker on a shared checkout. That step has no token.
+- A push runs from the same kind of private repository.
+
+Per-key `-c` overrides are not used: they cannot cover an `include.path` or every URL-scoped key. The token stays in the managed user's process; the worker never receives it.
 
 A checkout placed on a Node that uses the worker is marked `worker_shared` from then on. The worker may have written its `.git/config` or planted a filter, and a move does not undo that. So that Git always runs as the worker on a marked checkout, also after a transfer. A transfer of a marked checkout to an opted-out Node is refused with `instance.transfer_worker_shared`. A clone does not copy the candidate checkout: the production Instance deploys from the repository.
 

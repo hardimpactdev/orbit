@@ -151,7 +151,7 @@ describe('publish and fetch', function (): void {
         app(GitHubTaskBaseBranchFetcher::class)->fetch($group, 'main');
 
         expect($transport->connections[0]->host)->toBe('10.44.0.130')
-            ->and($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/home/orbit/apps/shop/task-'.$group->id, 'task-'.$group->id, $commit])
+            ->and($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/home/orbit/apps/shop/task-'.$group->id, 'task-'.$group->id, $commit, 'git@github.com:acme/shop.git'])
             ->and(stream_get_contents($transport->commands[0]->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_push'))
             ->and($transport->connections[1]->host)->toBe('10.44.0.130');
     });
