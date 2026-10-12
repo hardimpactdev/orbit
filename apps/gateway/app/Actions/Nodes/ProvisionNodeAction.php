@@ -51,13 +51,11 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
-use App\Models\TaskSandbox;
 use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -83,7 +81,6 @@ final readonly class ProvisionNodeAction
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
         private EnrollMacOsNodeAction $macNodes,
-        private SandboxFleetIdentity $sandboxIdentity,
         private ?RouteMutationReconciler $routes = null,
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
@@ -104,30 +101,6 @@ final readonly class ProvisionNodeAction
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }
-    }
-
-    public function executeSandbox(ProvisionNodeData $data, TaskSandbox $sandbox): Node
-    {
-        return $this->provisioningLock->run($data->name, function () use ($data, $sandbox): Node {
-            $sandbox->refresh();
-            $node = Node::query()->findOrFail($sandbox->node_id);
-            $this->sandboxIdentity->assertActive($sandbox);
-            $this->sandboxIdentity->assertOwned($sandbox, $node);
-            if ($data->name !== $node->name || $data->publicSshHost !== $node->public_ssh_host
-                || $data->roles !== [RoleName::AppDev] || $data->user !== 'orbit' || $data->orbitUser !== 'orbit'
-                || $data->wireguardIp !== $node->wireguard_ip || $data->clusterId !== $node->cluster_id
-                || $data->expectedSshHostFingerprint !== $node->ssh_host_fingerprint
-                || $data->platform !== 'linux' || $data->architecture !== 'x86_64' || $data->publicSshPort !== $node->public_ssh_port
-                || $data->settingsProvided || $data->tldProvided || $data->lanIpProvided
-                || $data->settings !== null || $data->tld !== null || $data->lanIp !== null
-                || $data->wireguardEndpointOverride !== null || $data->dnsServerOverride !== null
-                || ! is_string($node->ssh_host_fingerprint) || ! isset($sandbox->enrollment['hub_confirmed_at'])
-                || $sandbox->network_policy !== 'sealed') {
-                throw new ResourceOperationException('node.sandbox_managed', 'The sandbox Node provisioning intent changed.', 409);
-            }
-
-            return $this->provision($data);
-        });
     }
 
     private function announceCreated(Node $node): Node

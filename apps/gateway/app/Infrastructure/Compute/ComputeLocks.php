@@ -42,21 +42,4 @@ final readonly class ComputeLocks
             $lock->release();
         }
     }
-
-    /** @template T
-     * @param  callable(): T  $operation
-     * @return T
-     */
-    public function upcloud(callable $operation): mixed
-    {
-        $lock = Cache::lock('orbit:compute:upcloud', 180);
-        if (! $lock->get()) {
-            throw new ComputeException('compute.busy', 'Another UpCloud operation is running.');
-        }
-        try {
-            return $operation();
-        } finally {
-            $lock->release();
-        }
-    }
 }

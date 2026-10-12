@@ -136,7 +136,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/compute/guest-workspace-source.py',
         'resources/compute/guest-pair-runtime.py',
         'resources/compute/retarget-vpn.sh',
-        'resources/compute/sandbox-hub-network.py',
         'resources/compute/template-lock.py',
         'resources/compute/unlisted-program.py',
     ];
@@ -166,7 +165,6 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/compute/guest-workspace-source.py' => ['tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php', 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php'],
         'resources/compute/guest-pair-runtime.py' => ['tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php', 'tests/Feature/Infrastructure/Tasks/SandboxTopologyAdmissionTest.php'],
         'resources/compute/retarget-vpn.sh' => ['tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php'],
-        'resources/compute/sandbox-hub-network.py' => ['tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php'],
         'resources/compute/template-lock.py' => ['tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php'],
         'resources/compute/unlisted-program.py' => [],
     ]);
