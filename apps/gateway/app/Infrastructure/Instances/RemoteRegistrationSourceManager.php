@@ -20,10 +20,14 @@ use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use JsonException;
 
 final readonly class RemoteRegistrationSourceManager implements RegistrationSourceManager
 {
+    /** Prefix of the stderr line the read grant prints for each directory of another account that it skips. */
+    private const string SKIPPED_UNREADABLE = 'orbit: skipped unreadable directory ';
+
     public function __construct(
         private DevelopmentSshExecutor $ssh,
         private ManagedUserAccountResolver $accounts,
@@ -50,6 +54,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             errorCode: 'instance.source_invalid',
             commandTimeout: 60,
         );
+        $this->logSkippedDirectories($node, 'registration-source-inspect', $result);
 
         try {
             $rows = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
@@ -413,7 +418,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     /** @param list<array<string, mixed>> $payload */
     private function runRelocation(Node $node, string $operation, array $payload): CommandResult
     {
-        return $this->ssh->execute(
+        $result = $this->ssh->execute(
             $node,
             new RemoteCommand([
                 'python3',
@@ -427,6 +432,33 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             errorCode: 'instance.registration_incomplete',
             commandTimeout: 900,
         );
+        $this->logSkippedDirectories($node, 'registration-source-relocate', $result);
+
+        return $result;
+    }
+
+    /**
+     * The worker read grant skips directories of another account that the managed user cannot open, such as a
+     * worker's private check scratch directory in the shared Git directory. Name them so an operator can find them.
+     */
+    private function logSkippedDirectories(Node $node, string $step, CommandResult $result): void
+    {
+        $paths = [];
+
+        foreach (preg_split('/\R/', $result->stderr) ?: [] as $line) {
+            if (str_starts_with($line, self::SKIPPED_UNREADABLE)) {
+                $paths[] = substr($line, strlen(self::SKIPPED_UNREADABLE));
+            }
+        }
+
+        if ($paths !== []) {
+            Log::warning('Registration skipped directories of another account that the managed user cannot read.', [
+                'node' => $node->name,
+                'step' => $step,
+                'count' => count($paths),
+                'paths' => array_slice($paths, 0, 20),
+            ]);
+        }
     }
 
     public function restoreOriginal(Instance $instance, RegistrationSourceFacts $facts): void
@@ -591,10 +623,11 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
     private static function workerStatusScript(): string
     {
-        return <<<'PYTHON'
+        return str_replace('__SKIPPED__', self::SKIPPED_UNREADABLE, <<<'PYTHON'
             import contextlib, errno, os, pathlib, pwd, stat, struct, subprocess, sys
 
             worker = sys.argv[-1]
+            SKIPPED = '__SKIPPED__'
 
             class ReadGrant:
                 def __init__(self):
@@ -627,7 +660,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         if (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode)): raise SystemExit(42)
                         if stat.S_ISREG(pinned.st_mode) and (pinned.st_size, pinned.st_mtime_ns) != (size, mtime): raise SystemExit(42)
 
-                def add_reads(self, fd, uid, groups):
+                def add_reads(self, fd, uid, groups, path):
                     self.verify()
                     info = os.fstat(fd)
                     if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)): return
@@ -654,11 +687,18 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                             self.verify()
                             os.setxattr(target, 'system.posix_acl_access', value)
                     if stat.S_ISDIR(info.st_mode):
-                        directory = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                        try: directory = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                        except PermissionError:
+                            # Another account's private directory. This user can grant nothing in it, and Git as
+                            # the worker still fails loudly if it needs an entry the worker cannot read.
+                            if info.st_uid == os.geteuid(): raise
+                            print(SKIPPED + path, file=sys.stderr)
+                            self.verify()
+                            return
                         try:
                             for name in os.listdir(directory):
                                 child = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
-                                try: self.add_reads(child, uid, groups)
+                                try: self.add_reads(child, uid, groups, path + '/' + name)
                                 finally: os.close(child)
                         finally: os.close(directory)
                     self.verify()
@@ -687,14 +727,14 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     homes = [os.path.realpath(pwd.getpwuid(value).pw_dir) for value in (os.geteuid(), uid)]
                     if any(os.path.commonpath([directory, home]) == directory for directory in (path, common_path) for home in homes): raise SystemExit(42)
                     access.verify()
-                    access.add_reads(source, uid, groups)
-                    access.add_reads(common, uid, groups)
+                    access.add_reads(source, uid, groups, path)
+                    access.add_reads(common, uid, groups, common_path)
                     command = ['sudo', '-n', '-u', worker, '-H', '--', 'env', 'GIT_OPTIONAL_LOCKS=0', 'git', '-c', 'safe.directory=' + path, *command[1:]]
                     result = subprocess.check_output(command, stderr=subprocess.DEVNULL, env=env)
                     access.verify()
                     return result
 
-            PYTHON;
+            PYTHON);
     }
 
     private static function inspectionScript(): string
