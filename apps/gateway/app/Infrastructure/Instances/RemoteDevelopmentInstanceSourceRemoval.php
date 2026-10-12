@@ -1776,6 +1776,12 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 rm -rf -- "$scratch"
                 trap - EXIT
             fi
+            # A rename keeps the checkout's device and inode only within one filesystem. Across a mount, such as a task
+            # VM workspace volume, mv copies and deletes, and the identity check below fails after the copy. Refuse first.
+            if [ "$physical" = "$checkout" ] && [ "$(stat -c '%d' -- "$checkout")" != "$(stat -c '%d' -- "$state")" ]; then
+                printf 'cross-device: the checkout [%s] and [%s] are on different filesystems; Orbit does not move a checkout across a mount.\n' "$checkout" "$state" >&2
+                exit 1
+            fi
             stop_tree_processes "$physical"
             if [ "$physical" = "$checkout" ]; then
                 case "$layout" in
