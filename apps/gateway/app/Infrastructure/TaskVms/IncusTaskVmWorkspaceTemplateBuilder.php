@@ -10,8 +10,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\LifecycleStep;
-use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -88,6 +87,9 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         git -C "$checkout" rev-parse --verify 'HEAD^{commit}'
         BASH;
 
+    /** Writes the step from stdin to a script file and runs it in a login Bash with stdin closed, as the check does. */
+    private const string RunStep = 'script=$(mktemp) && trap \'rm -f -- "$script"\' EXIT && cat > "$script" && bash -l "$script" < /dev/null';
+
     public function __construct(
         private IncusHost $incus,
         private TaskVmBaseImage $image,
@@ -100,7 +102,7 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
         private RemotePhpPackageManager $php,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
-        private TiaBaselineSetup $tia,
+        private GatewaySetupSteps $gatewaySteps,
     ) {}
 
     /**
@@ -314,9 +316,10 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
     }
 
     /**
-     * Runs one setup step as the baseline check does: a login Bash in the checkout with `VP_HOME` set, within the
-     * step's timeout and the build's budget. The `@orbit/tia-baseline` step becomes the same installer as in the
-     * check. A builder has no Instance, so no SSR port is set.
+     * Runs one setup step as the baseline check does: a login Bash runs the command from a script file in the checkout,
+     * with `VP_HOME` set and stdin closed, within the step's timeout and the build's budget. The command travels on
+     * stdin, so a long one, such as a {@see GatewaySetupSteps Gateway-owned operation} with its payload, fits. A
+     * Gateway-owned step becomes the same command as in the check. A builder has no Instance, so no SSR port is set.
      */
     private function runStep(TaskVmHost $host, Node $node, string $builder, Project $project, string $checkout, ProjectLifecycleStep $step, float $deadline): void
     {
@@ -325,15 +328,15 @@ final readonly class IncusTaskVmWorkspaceTemplateBuilder
             throw new TaskVmException(self::ErrorCode, 'The workspace template build ran out of its '.self::BudgetSeconds.'-second budget before setup step ['.$step->name.'].', 504);
         }
         $command = (string) $step->command;
-        if ($command === LifecycleStep::RestoreTiaBaseline) {
+        if (GatewaySetupSteps::owns($command)) {
             $started = microtime(true);
-            $command = $this->tia->command($project, $seconds);
+            $command = $this->gatewaySteps->command($project, $command, $seconds);
             $seconds = max(1, (int) floor($seconds - (microtime(true) - $started)));
         }
         $environment = 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n";
         $this->checked($builder, "setup step [{$step->name}]", $this->asManagedUser($host, $node, $builder, $checkout, [
-            'timeout', (string) $seconds, 'bash', '-l', '-c', $environment.$command,
-        ], null, $seconds + 30.0));
+            'timeout', (string) $seconds, 'bash', '-c', self::RunStep,
+        ], $environment.$command, $seconds + 30.0));
     }
 
     /** The setup steps may only add ignored files, so a claim's checkout of its branch starts from a clean tree. */

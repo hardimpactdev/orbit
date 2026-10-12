@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Projects\LifecycleStep;
-use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
@@ -108,7 +108,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(TiaBaselineSetup::class));
+    )), $vp, app(GatewaySetupSteps::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading

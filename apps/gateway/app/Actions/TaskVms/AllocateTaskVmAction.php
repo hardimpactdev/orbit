@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -13,6 +14,7 @@ use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Tasks\RefusingTopologyAdmission;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Jobs\TaskVms\EnsureWarmClaimReady;
@@ -31,13 +33,14 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Gives a group its task VM, of the size that the group's declared topology needs ({@see TaskVmSize}). For a
- * normal VM a warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`, and runs only the
+ * Gives a group its task VM, of the size that the group's declared topology and its Project need ({@see TaskVmSize}).
+ * A group with a declared topology waits without a VM while no lane can prepare one. For a normal VM a warm VM goes
+ * first: the claim sets its group, a new Pi token, and `claimed_at`, and runs only the
  * group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
  * `orbit-task-base` names now, read from the host at the claim. Without one, and always for a large VM, the claim
  * records a new row on the active host with the most free slots that has room for the size, and queues its creation.
  * When no host has room for a normal VM, an opted-in Project's group may overflow to an UpCloud VM
- * ({@see self::host()}); a large VM never does. A new row is named `tvm-<row id>`, so a retry after a destroyed VM
+ * ({@see self::host()}); a medium or large VM never does. A new row is named `tvm-<row id>`, so a retry after a destroyed VM
  * never reuses a name, and it holds its reserved WireGuard address from the start.
  *
  * One placement runs at a time under a cache lock, so two claims never take the same warm VM or both take a
@@ -53,6 +56,9 @@ final readonly class AllocateTaskVmAction
     /** No host has the free slots of a large VM, for a group with a declared topology. */
     public const string NoLargeCapacity = 'Task VM: no host has 3 free slots for a large VM.';
 
+    /** No host has the free slots of a medium VM, for a group of a Project in `task_vms.medium_projects`. */
+    public const string NoMediumCapacity = 'Task VM: no host has 2 free slots for a medium VM.';
+
     private const string PlacementLock = 'task-vms:placement';
 
     /** The image read at a claim runs in the scheduler tick, so it gets a short limit. */
@@ -66,16 +72,21 @@ final readonly class AllocateTaskVmAction
         private TaskVmSettings $settings,
         private WireGuardAddressAllocator $addresses,
         private IncusHost $incus,
+        private TaskTopologyAdmission $topology,
     ) {}
 
-    /** @throws TaskCapacityException when no warm VM qualifies and no host has a free slot */
+    /** @throws TaskCapacityException when no warm VM qualifies and no host has a free slot, or no lane prepares the group's topology */
     public function execute(Task $group): TaskVm
     {
         $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
         if ($existing instanceof TaskVm) {
             return $existing;
         }
-        $size = TaskVmSize::forGroup($group);
+        $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
+        // A large VM would hold three slots for a group that cannot start.
+        if ($size === TaskVmSize::Large && ! $this->topology->available()) {
+            throw new TaskCapacityException(false, RefusingTopologyAdmission::Unavailable);
+        }
         // A large VM is always new, so it needs no warm VM image.
         $images = $size === TaskVmSize::Normal ? $this->warmImages() : [];
 
@@ -312,8 +323,8 @@ final readonly class AllocateTaskVmAction
     /**
      * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
      * their config order. Without room for a normal VM, null places it at UpCloud: only while the overflow is on, the
-     * group's Project is opted in, and fewer than `max_vms` UpCloud VMs are live, failed and parked ones too. A large
-     * VM waits for an Incus host: UpCloud has a fixed plan and no nested virtualization that Orbit relies on.
+     * group's Project is opted in, and fewer than `max_vms` UpCloud VMs are live, failed and parked ones too. A medium
+     * or large VM waits for an Incus host: UpCloud has a fixed plan and no nested virtualization that Orbit relies on.
      *
      * @param  array<int, int>  $free
      */
@@ -330,7 +341,7 @@ final readonly class AllocateTaskVmAction
             return $best;
         }
         if ($size !== TaskVmSize::Normal) {
-            throw new TaskCapacityException(false, self::NoLargeCapacity);
+            throw new TaskCapacityException(false, $size === TaskVmSize::Large ? self::NoLargeCapacity : self::NoMediumCapacity);
         }
         $upcloud = $this->settings->upcloud;
         if ($upcloud?->allows($group->project_id) === true

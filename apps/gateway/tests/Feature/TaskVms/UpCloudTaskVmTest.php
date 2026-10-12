@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Tests\Support\AvailableTopologyAdmission;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
@@ -374,6 +376,7 @@ describe('placement', function (): void {
 
     it('never places a large VM at UpCloud', function (): void {
         tvm_up_settings(maxVms: 2);
+        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $group = tvm_up_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 

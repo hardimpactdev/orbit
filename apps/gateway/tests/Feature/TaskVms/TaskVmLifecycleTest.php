@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Tests\Support\AvailableTopologyAdmission;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
@@ -362,6 +363,7 @@ describe('allocation', function (): void {
     it('sizes a VM by the topology its subtasks declare at the claim, and counts its three slots', function (): void {
         Queue::fake();
         tvm_life_settings(maxVms: 4);
+        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $plain = tvm_life_group();
         Task::query()->create(['parent_id' => $plain->id, 'position' => 1, 'title' => 'Plain', 'brief' => 'No nodes', 'status' => TaskStatus::Todo]);
         Task::query()->create(['parent_id' => $plain->id, 'position' => 2, 'title' => 'Dropped', 'brief' => 'Cancelled', 'status' => TaskStatus::Cancelled, 'topology' => ['app-prod']]);
@@ -388,6 +390,36 @@ describe('allocation', function (): void {
         expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
             ->and(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->size)->toBe(TaskVmSize::Normal);
         Queue::assertPushed(ProvisionTaskVm::class, 3);
+    });
+
+    it('gives a group with a declared topology no VM while no lane can prepare it', function (): void {
+        Queue::fake();
+        $group = tvm_life_group();
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, RefusingTopologyAdmission::Unavailable)
+            ->and(TaskVm::query()->count())->toBe(0)
+            ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 2]);
+    });
+
+    it('gives a group of a medium Project a medium VM of two slots, and a large one for a topology', function (): void {
+        Queue::fake();
+        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(
+            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
+            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 3, 2, '4GiB', '20GiB')],
+            modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
+            mediumProjectIds: [$this->project->id],
+        ));
+        $topology = tvm_life_group();
+        Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+
+        $medium = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
+
+        expect($medium->refresh()->size)->toBe(TaskVmSize::Medium)
+            ->and(TaskVmSize::forGroup($topology, [$this->project->id]))->toBe(TaskVmSize::Large)
+            ->and(app(AllocateTaskVmAction::class)->freeSlots())->toBe([$this->host->id => 1])
+            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoMediumCapacity);
     });
 
     it('waits while another placement holds the lock and records nothing', function (): void {

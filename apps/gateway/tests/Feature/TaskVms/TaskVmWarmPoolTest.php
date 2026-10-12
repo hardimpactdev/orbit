@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Tests\Support\AvailableTopologyAdmission;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Actions\Doctor\NodeDoctorProbe;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
@@ -489,6 +491,7 @@ describe('claim', function (): void {
 
     it('gives a group with a declared topology a new large VM, never a warm one', function (): void {
         Queue::fake();
+        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $warm = tvm_pool_vm();
         tvm_pool_hosts([[$this->host, 4, 1]]);
         $group = tvm_pool_group();
@@ -501,6 +504,24 @@ describe('claim', function (): void {
             ->and($warm->refresh()->group_id)->toBeNull()
             ->and($warm->state)->toBe(TaskVmState::Warm);
         Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('gives a group of a medium Project a new medium VM, never a warm one', function (): void {
+        Queue::fake();
+        $warm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(
+            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
+            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', warmVms: 1)],
+            modelProxyOrigin: TVM_POOL_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
+            mediumProjectIds: [$group->project_id],
+        ));
+
+        $vm = app(AllocateTaskVmAction::class)->execute($group);
+
+        expect($vm->id)->not->toBe($warm->id)
+            ->and($vm->refresh()->size)->toBe(TaskVmSize::Medium)
+            ->and($warm->refresh()->state)->toBe(TaskVmState::Warm);
     });
 
     it('never gives one warm VM to two groups', function (): void {

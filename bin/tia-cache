@@ -49,6 +49,14 @@ echo json_encode([
 '''
 
 
+# import-ci exits with this code when an artifact does not fit the checkout. The project's tests then run cold.
+STALE_EXIT = 3
+
+
+class StaleBaseline(ValueError):
+    """The CI baseline is valid but does not fit this checkout: another test configuration, or another history."""
+
+
 class CommandFailure(RuntimeError):
     def __init__(self, message, exit_code=None):
         super().__init__(message)
@@ -268,7 +276,7 @@ def read_artifact(project, artifact, commit, inputs):
             or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))):
         raise ValueError('The CI baseline identity differs.')
     if not inputs or manifest.get('inputs') != inputs:
-        raise ValueError('The CI baseline test configuration differs.')
+        raise StaleBaseline('The CI baseline test configuration differs.')
     graph = artifact_file(artifact, 'graph.json')
     if manifest.get('graph_sha256') != digest(graph):
         raise ValueError('The CI baseline checksum differs.')
@@ -276,13 +284,16 @@ def read_artifact(project, artifact, commit, inputs):
 
 
 def import_ci(root, project, artifact, commit):
-    """Seed a checkout's private graph from an extracted main CI artifact, without publishing it."""
+    """Seed a checkout's private graph and quality caches from an extracted main CI artifact, without publishing it."""
     if project not in PROJECTS:
         raise ValueError('Unknown baseline project.')
-    require_ancestor(root, commit, git(root, 'rev-parse', 'HEAD'))
+    if not isinstance(commit, str) or not SHA.fullmatch(commit):
+        raise ValueError('Invalid baseline commit.')
+    if not is_ancestor(root, commit, 'HEAD'):
+        raise StaleBaseline(f'The CI commit {commit[:12]} is not in the history of HEAD.')
     inputs = {name: digest((root / project / name).read_bytes())
               for name in TEST_INPUTS if (root / project / name).is_file()}
-    _, graph = read_artifact(project, artifact, commit, inputs)
+    manifest, graph = read_artifact(project, artifact, commit, inputs)
     info = metadata(root, project)
     if validate_graph(root, graph.decode(), info, commit) != commit:
         raise ValueError('The CI graph does not describe the tested commit.')
@@ -292,11 +303,47 @@ def import_ci(root, project, artifact, commit):
     destination.mkdir(mode=0o700, exist_ok=True)
     try:
         atomic_write(destination / 'graph.json', graph, replace=False)
+        imported = True
+        print(f'[{project}] imported CI baseline {commit}', flush=True)
     except FileExistsError:
+        imported = False
         print(f'[{project}] kept existing private graph', flush=True)
-        return False
-    print(f'[{project}] imported CI baseline {commit}', flush=True)
-    return True
+    import_quality(root, project, artifact, manifest, commit)
+    return imported
+
+
+def import_quality(root, project, artifact, manifest, commit):
+    """Write the artifact's Pint and PHPStan caches where they are absent, under the rules of bin/worktree-cache:
+    the same lock file, tool configuration, and PHP minor version as the tested commit."""
+    quality = manifest.get('quality') or {}
+    php = manifest.get('php')
+    if not isinstance(quality, dict) or (quality and not (isinstance(php, str) and re.fullmatch(r'\d+\.\d+', php))):
+        raise ValueError('The CI quality caches are invalid.')
+    runtime = run(root, 'php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;') if quality else None
+    for tool, expected in sorted(quality.items()):
+        if tool not in QUALITY:
+            continue
+        configuration, cache = QUALITY[tool]
+        destination = root / project / cache
+        if os.path.lexists(destination):
+            print(f'[{project}] kept existing {tool} cache', flush=True)
+            continue
+        data = artifact_file(artifact, 'quality/' + tool)
+        if not data or digest(data) != expected:
+            raise ValueError(f'The CI {tool} cache checksum differs.')
+        differs = [name for name in ('composer.lock', configuration)
+                   if not (root / project / name).is_file()
+                   or blob(root, commit, f'{project}/{name}') != (root / project / name).read_bytes()]
+        if runtime != php:
+            differs.append(f'PHP {runtime} (CI ran {php})')
+        if differs:
+            print(f'[{project}] {tool} cache not imported, it runs cold: {", ".join(differs)} differs from CI', flush=True)
+            continue
+        try:
+            atomic_write(destination, data, replace=False)
+        except FileExistsError:
+            continue
+        print(f'[{project}] imported CI {tool} cache', flush=True)
 
 
 def read_publication(store, project):
@@ -850,7 +897,11 @@ def main():
         if args.artifact is None or args.commit is None or not args.project or len(args.project) != 1:
             parser.error('import-ci requires --artifact, --commit, and one --project')
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel')).resolve()
-        import_ci(root, args.project[0], args.artifact, args.commit)
+        try:
+            import_ci(root, args.project[0], args.artifact, args.commit)
+        except StaleBaseline as error:
+            print(f'[{args.project[0]}] CI baseline not imported, its tests run cold: {error}', flush=True)
+            return STALE_EXIT
         return 0
     if args.artifact is not None or args.commit is not None:
         parser.error('--artifact and --commit require import-ci')

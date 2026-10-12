@@ -206,6 +206,55 @@ class MainCacheTest(CacheFixture):
             self.assertEqual(destination.read_text(), 'newer private results')
         self.assertFalse(self.store.exists())
 
+    def test_ci_baseline_import_writes_absent_quality_caches_that_fit_the_checkout(self):
+        artifact = self.artifact(self.commit, quality={'pint': b'pint result', 'phpstan': b'phpstan result'})
+        project = self.root / self.project
+        (project / 'vendor').mkdir()
+        (project / 'vendor/pint.cache').write_text('local pint')
+        with patch.object(cache, 'metadata', return_value=self.info):
+            self.assertTrue(cache.import_ci(self.root, self.project, artifact, self.commit))
+        self.assertEqual((project / 'vendor/pint.cache').read_text(), 'local pint')
+        self.assertEqual((project / 'vendor/phpstan/cache/resultCache.php').read_bytes(), b'phpstan result')
+        self.assertFalse(self.store.exists())
+
+    def test_ci_quality_caches_that_do_not_fit_run_cold_and_corrupt_ones_fail(self):
+        project = self.root / self.project
+        cached = project / 'vendor/phpstan/cache/resultCache.php'
+        (project / 'phpstan.neon').write_text('parameters:\n    level: 9\n')
+        artifact = self.artifact(self.commit, quality={'phpstan': b'phpstan result'})
+        with patch.object(cache, 'metadata', return_value=self.info):
+            cache.import_ci(self.root, self.project, artifact, self.commit)
+        self.assertFalse(cached.exists())
+        cache.git(self.root, 'checkout', '--', '.')
+        artifact = self.artifact(self.commit, quality={'phpstan': b'phpstan result'}, php='7.4')
+        with patch.object(cache, 'metadata', return_value=self.info):
+            cache.import_ci(self.root, self.project, artifact, self.commit)
+        self.assertFalse(cached.exists())
+        artifact = self.artifact(self.commit, quality={'phpstan': b'phpstan result'})
+        (artifact / 'quality/phpstan').write_bytes(b'tampered')
+        with patch.object(cache, 'metadata', return_value=self.info), self.assertRaises(ValueError):
+            cache.import_ci(self.root, self.project, artifact, self.commit)
+        self.assertFalse(cached.exists())
+
+    def test_ci_baseline_that_does_not_fit_the_checkout_exits_stale_without_writing(self):
+        artifact = self.artifact(self.commit)
+        (self.root / self.project / 'composer.lock').write_text('{"packages":[{"name":"new"}]}')
+        newer = self.commit_change('lock')
+
+        def import_ci(artifact, commit):
+            return subprocess.run([sys.executable, str(self.root / 'bin/tia-cache'), 'import-ci',
+                                   '--repository', str(self.root), '--project', self.project,
+                                   '--artifact', str(artifact), '--commit', commit], capture_output=True, text=True)
+
+        result = import_ci(artifact, self.commit)
+        self.assertEqual(cache.STALE_EXIT, result.returncode, result.stdout + result.stderr)
+        self.assertIn('its tests run cold: The CI baseline test configuration differs.', result.stdout)
+        cache.git(self.root, 'checkout', '--detach', 'HEAD~1')
+        result = import_ci(self.artifact(newer), newer)
+        self.assertEqual(cache.STALE_EXIT, result.returncode, result.stdout + result.stderr)
+        self.assertIn('is not in the history of HEAD', result.stdout)
+        self.assertFalse((self.root / self.project / '.orbit-tia').exists())
+
     def test_ci_baseline_rejects_tampering_and_configuration_drift_before_writing(self):
         artifact, manifest = self.ci_artifact()
         for field, value in [('project', 'apps/gateway'), ('commit', 'a' * 40),
