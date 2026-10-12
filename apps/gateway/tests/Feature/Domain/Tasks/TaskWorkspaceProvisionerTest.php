@@ -398,6 +398,20 @@ it('skips an excluded app-dev Node before choosing the least loaded node', funct
     expect($instance?->node_id)->toBe($allowed->id);
 });
 
+it('skips an app-dev Node that opts out of the task worker, even with Pi and the lower id', function (): void {
+    $project = provisioner_app('orbit');
+    $optedOut = provisioner_node('services', '10.44.0.122');
+    $optedOut->update(['settings' => ['apps' => ['path' => '/srv/orbit/apps'], 'tasks' => ['worker' => 'none']]]);
+    $allowed = provisioner_node('shark', '10.44.0.123');
+    $group = provisioner_group($project);
+    bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->node_id)->toBe($allowed->id);
+    $this->assertDatabaseMissing('instances', ['node_id' => $optedOut->id]);
+});
+
 it('skips a non-Pi app-dev Node even when it has the lower id', function (): void {
     $project = provisioner_app('placement');
     $incapable = provisioner_node('no-pi', '10.44.0.110');

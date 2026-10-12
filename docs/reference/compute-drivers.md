@@ -329,6 +329,8 @@ Other Projects get their template at their next claim. A Project without a valid
 
 Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. A template is rebuilt when the base image changes, which the nightly build does each night it succeeds. So the template of an active Project is at most a day old while the nightly build succeeds. The template of another Project is as old as its last build.
 
+A change to a Project's setup steps or lockfile does not rebuild its templates. The refresh and the build job skip a current template, so the change reaches a template only at the next base image change. When nightly builds fail, that can be days later. Until then each workspace stays correct, because the setup steps in its baseline check run the change, but it saves less time. To rebuild the template of one Project on one host at once, run `php artisan task-vms:build-workspace-template NODE PROJECT` on the Gateway. The command calls the builder directly, so it builds even when the template is current.
+
 Template jobs run on their own queue, `task-vm-templates`, with their own worker, so a build never delays a task VM job. See [Jobs](#jobs).
 
 The build runs these stages on the host over SSH, with `sudo -n incus --project <project> …`:

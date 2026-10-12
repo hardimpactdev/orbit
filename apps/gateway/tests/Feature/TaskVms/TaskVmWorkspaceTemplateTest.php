@@ -768,9 +768,9 @@ describe('refresh order', function (): void {
      * Runs the template worker until its queue is empty, as the scheduler would. The memory limit is above the test
      * process's own use: at the default of 128 MB the worker stops after its first job in a large parallel run.
      */
-    function tvm_template_worker(string $queue = TaskVmWorkspaceTemplates::Queue): void
+    function tvm_template_worker(): void
     {
-        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => $queue, '--stop-when-empty' => true, '--memory' => 4096]);
+        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => TaskVmWorkspaceTemplates::Queue, '--stop-when-empty' => true, '--memory' => 4096]);
     }
 
     /** @return int the builder VMs that were launched */
@@ -827,15 +827,5 @@ describe('refresh order', function (): void {
         (new RefreshTaskVmBaseImages)->failed(null);
         expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue])
             ->and(Cache::has(TaskVmBaseImage::RefreshDeferredKey))->toBeFalse();
-    });
-
-    it('moves template jobs queued on the task VM queue before the split to the template queue', function (): void {
-        Queue::connection('task-vms')->pushOn('task-vms', new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id));
-        Queue::connection('task-vms')->pushOn('task-vms', new RefreshTaskVmWorkspaceTemplates);
-
-        tvm_template_worker('task-vms');
-
-        expect(tvm_builds($this->incus))->toBe(0)
-            ->and(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue, TaskVmWorkspaceTemplates::Queue]);
     });
 });

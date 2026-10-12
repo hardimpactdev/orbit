@@ -16,7 +16,6 @@ use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Queue;
 use Throwable;
 
 /**
@@ -49,12 +48,6 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
     {
-        // A job queued on the task VM queue before templates had their own queue moves there.
-        if ($this->job?->getQueue() === 'task-vms') {
-            Queue::connection('task-vms')->pushOn(TaskVmWorkspaceTemplates::Queue, new self);
-
-            return;
-        }
         $projects = Project::query()->orderBy('id')->get()->filter(TaskVmWorkspaceTemplates::serves(...))->values();
         $buildable = [];
         foreach ($projects as $project) {

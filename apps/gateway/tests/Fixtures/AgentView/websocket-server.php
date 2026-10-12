@@ -260,7 +260,6 @@ for ($connection = 1; $connection <= $connections; $connection++) {
                 // Let the client read the snapshot, then drop the connection like a Reverb restart.
                 usleep(1_500_000);
                 fwrite($client, frame(0x8, pack('n', 1001)));
-                say('dropped='.microtime(true));
                 break;
             }
 
