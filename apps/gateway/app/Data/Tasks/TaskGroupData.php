@@ -136,6 +136,7 @@ final class TaskGroupData extends Data
                 default => null,
             };
         }
+
         return null;
     }
 }

@@ -19,10 +19,10 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Symfony\Component\Process\Process;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
-use Symfony\Component\Process\Process;
 use Tests\Support\Fleet\ScriptedSshExecutor;
 
 describe('footprint digests', function (): void {
