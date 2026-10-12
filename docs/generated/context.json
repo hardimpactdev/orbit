@@ -1673,8 +1673,7 @@
             "components": [
                 "apps/docs",
                 "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
+                "apps/web"
             ],
             "concepts": [
                 "Deployment",
@@ -1685,6 +1684,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Route",
                 "Subtask",
                 "Task",
                 "Task check",
