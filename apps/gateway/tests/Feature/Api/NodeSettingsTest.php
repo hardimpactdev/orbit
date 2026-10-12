@@ -139,6 +139,30 @@ describe('node storage settings', function (): void {
         expect($node->refresh()->settings)->toBe(['apps' => ['path' => '/srv/orbit/apps']]);
     });
 
+    it('keeps settings keys it does not manage, such as the T3 connection', function (): void {
+        $t3 = ['token' => 't3-secret', 'url' => 'http://10.44.0.20:3773'];
+        $node = Node::query()->create([
+            'name' => 'beast',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.20',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.20',
+            'settings' => ['t3' => $t3, 'apps' => ['path' => '/srv/orbit/apps'], 'tasks' => ['other' => 'kept']],
+        ]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => '/srv/orbit/work']])
+            ->assertOk()
+            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/work')
+            ->assertJsonMissingPath('data.settings.t3');
+        expect($node->refresh()->settings)->toBe(['t3' => $t3, 'apps' => ['path' => '/srv/orbit/work'], 'tasks' => ['other' => 'kept']]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => null, 'tasks' => ['worker' => 'none']])->assertOk();
+        expect($node->refresh()->settings)->toBe(['t3' => $t3, 'tasks' => ['other' => 'kept', 'worker' => 'none']]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => null])->assertOk();
+        expect($node->refresh()->settings)->toBe(['t3' => $t3, 'tasks' => ['other' => 'kept']]);
+    });
+
     it('refuses the task worker opt-out on a Node with task work', function (Closure $taskWork): void {
         $node = Node::query()->create([
             'name' => 'beast',

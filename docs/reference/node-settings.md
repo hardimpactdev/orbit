@@ -38,7 +38,7 @@ The CLI splits each option at its first colon, so a value can contain more colon
 { "apps": { "path": "/mnt/apps" } }
 ```
 
-The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs at least one of `apps` and `tasks`; a nested member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs at least one of `apps` and `tasks`; a nested member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. A patch changes only the members it names. Other stored keys stay, such as the [`t3` connection](/reference/tasks#opsbot-direction-webhook) that annotations use. The API never returns them. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Opt out of the task worker
 
