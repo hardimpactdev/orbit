@@ -108,8 +108,7 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
 
     private static function inVmGroup(Instance $workspace): bool
     {
-        return $workspace->task_sandbox_id !== null
-            || Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists();
+        return Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists();
     }
 
     private function run(Instance $workspace, int $groupId, string $operation): CommandResult

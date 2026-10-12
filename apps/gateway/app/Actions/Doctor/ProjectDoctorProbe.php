@@ -121,7 +121,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
     {
         $query = Instance::query()
             ->with(['project', 'tasks'])
-            ->whereNull('task_sandbox_id')->where('node_id', $nodeId)
+            ->where('node_id', $nodeId)
             ->where('status', '!=', InstanceState::Removing);
         if ($projectId !== null) {
             $query->where('project_id', $projectId);

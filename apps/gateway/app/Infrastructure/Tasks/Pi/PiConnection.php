@@ -17,11 +17,8 @@ use SensitiveParameter;
  */
 final readonly class PiConnection
 {
-    public function baseUrl(Node|PiEndpoint $node): string
+    public function baseUrl(Node $node): string
     {
-        if ($node instanceof PiEndpoint) {
-            return $node->url;
-        }
         $url = $this->settings($node)['url'];
         if ($url !== null) {
             return rtrim($url, '/');
@@ -43,11 +40,8 @@ final readonly class PiConnection
         return $port > 0 && $port <= 65535 ? $port : 3774;
     }
 
-    public function token(Node|PiEndpoint $node): string
+    public function token(Node $node): string
     {
-        if ($node instanceof PiEndpoint) {
-            return $node->token();
-        }
         $vm = TaskVmPlacement::forNode($node);
         if ($vm instanceof TaskVm) {
             // A warm VM has no token until a claim: it never falls back to Node settings or the Gateway-wide token.
@@ -62,11 +56,8 @@ final readonly class PiConnection
      *
      * @return list<string>
      */
-    public function secrets(Node|PiEndpoint $node): array
+    public function secrets(Node $node): array
     {
-        if ($node instanceof PiEndpoint) {
-            return $node->secrets();
-        }
         $vm = TaskVmPlacement::forNode($node);
         if ($vm instanceof TaskVm) {
             return array_values(array_filter([$vm->pi_token ?? '', $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));

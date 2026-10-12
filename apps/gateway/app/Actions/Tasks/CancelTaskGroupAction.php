@@ -124,7 +124,7 @@ final readonly class CancelTaskGroupAction
     private function removeWorkspace(Task $group, Instance $instance): void
     {
         try {
-            $this->workspace->remove($instance, $group);
+            $this->workspace->remove($instance);
         } catch (Throwable $exception) {
             $this->workspace->recordFailure($group, $exception);
 

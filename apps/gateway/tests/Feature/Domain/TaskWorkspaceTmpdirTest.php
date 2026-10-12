@@ -6,7 +6,6 @@ use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -14,7 +13,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
@@ -72,7 +70,7 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
+    )), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor

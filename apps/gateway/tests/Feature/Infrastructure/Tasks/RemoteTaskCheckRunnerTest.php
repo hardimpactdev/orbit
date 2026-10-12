@@ -20,7 +20,6 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManagerException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -28,7 +27,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
@@ -110,7 +108,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)), $vp, app(TiaBaselineSetup::class));
+    )), $vp, app(TiaBaselineSetup::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading

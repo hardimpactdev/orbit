@@ -63,7 +63,7 @@ The operator stays a roleless node, registered with the test gateway. It becomes
 
 A **compute driver** provides Orbit sandboxes. Its interface is `provision(image, size, network)`, `park`, `resume`, `destroy`, and `capacity`. A `vm` group counts against the driver's VM budget, not `TaskCeilings::PerNode`.
 
-The trusted Incus host installs a fixed root-owned network helper, selected projects, and a boot dependency before enabling new Orbit sandboxes. The helper derives ownership and network identity from local Incus and accepts no caller-supplied rules or host commands. It persists one policy per bridge and checks it before guests start or resume. Dedicated filter chains enforce the complete boundary before permitting traffic through the host firewall. See [Durable firewall policy](/reference/compute-drivers#durable-firewall-policy-on-an-incus-host).
+The trusted Incus host installs a fixed root-owned network helper, selected projects, and a boot dependency before enabling new Orbit sandboxes. The helper derives ownership and network identity from local Incus and accepts no caller-supplied rules or host commands. It persists one policy per bridge and checks it before guests start or resume. Dedicated filter chains enforce the complete boundary before permitting traffic through the host firewall.
 
 **Declared topology.** A subtask declares the nodes it needs, for example `topology: ["app-dev"]`. Orbit adds them before that subtask starts. A workload node always joins the group's test gateway. `topology_requested` stays as a fallback for discovery.
 

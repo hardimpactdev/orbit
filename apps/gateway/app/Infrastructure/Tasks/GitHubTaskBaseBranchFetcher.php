@@ -52,8 +52,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $instance = $group->taskable;
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
-            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))) {
+            || ! TaskVmPlacement::allowsWorkspace($group, $instance)) {
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
@@ -244,8 +243,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $default = $group->project->default_branch;
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
-            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))
+            || ! TaskVmPlacement::allowsWorkspace($group, $instance)
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
         }
@@ -255,9 +253,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         try {
-            $environment = $instance->task_sandbox_id !== null
-                ? GitReadEnvironment::forGitHubToken($this->access->readToken($repository))
-                : $this->reads->for((string) $group->project->repository_url, $group->project->source_access);
+            $environment = $this->reads->for((string) $group->project->repository_url, $group->project->source_access);
         } catch (ResourceOperationException $exception) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
         }

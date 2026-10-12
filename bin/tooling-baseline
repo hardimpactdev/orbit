@@ -78,7 +78,6 @@ const TOOLING_BASELINE_PROJECTS = [
         ],
         'check' => [
             '@annotator:check' => 'The Gateway serves the built annotator bundle.',
-            '@compute-guests:check' => 'The Gateway ships the compute guest build inputs.',
         ],
     ],
     'apps/docs' => [

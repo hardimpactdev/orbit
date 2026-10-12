@@ -128,8 +128,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         $instance = $group->taskable;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
-            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))) {
+            || ! TaskVmPlacement::allowsWorkspace($group, $instance)) {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 

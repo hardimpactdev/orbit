@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -13,7 +12,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use Symfony\Component\Process\Process;
 
@@ -88,7 +86,7 @@ final class DeliverablePathWorkspace
 
                 public function put(string $host, int $port, HostKey $key): void {}
             },
-        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class));
+        ));
     }
 
     /** @param list<string> $arguments */

@@ -181,12 +181,9 @@ def perform(checkout, operation, payload):
             path = tempfile.mkdtemp(prefix=f'orbit-check-{os.geteuid()}-', dir='/tmp')
             directory = metadata.keep(os.open(path, DIRECTORY_FLAGS))
             metadata.require_owner(directory)
-            if payload.get('sandbox') is True:
-                os.fchmod(directory, 0o700)
-            else:
-                subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
-                               pass_fds=(directory,), check=True)
-                os.fchmod(directory, 0o711)
+            subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
+                           pass_fds=(directory,), check=True)
+            os.fchmod(directory, 0o711)
             return os.readlink(f'/proc/self/fd/{directory}')
         if operation in {'check', 'snapshot', 'turn'}:
             orbit = metadata.orbit(create=True)
