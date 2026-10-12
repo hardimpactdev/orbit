@@ -16,7 +16,7 @@ covers:
 
 `orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads. To build and check the agent, see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
-The agent service observes and listens on no port. The separate `orbit-agent sandbox` command controls task-owned Incus resources through a closed protocol. The Gateway invokes that command over SSH; the service does not accept remote execution requests.
+The agent service observes and listens on no port, and it does not accept remote execution requests.
 
 ## Where it runs
 
@@ -173,20 +173,6 @@ The agent bounds each step, so a peer that stops answering never holds it.
 After a drop, the agent reconnects with a backoff from 2 to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
-
-The separate `orbit-agent sandbox` command accepts a bounded JSON request on
-standard input for task sandbox provisioning, observation, capacity, parking,
-resume, destruction, and read-only Project SSH identity verification. The Gateway invokes it over pinned SSH on an Incus
-host. It runs the controller embedded in the binary and accepts no host shell
-command. It does not load the live agent secret or join the realtime channel.
-The controller checks the sandbox UUID, project ownership, VM budget, image
-fingerprints, and external network policy before changing resources.
-
-Local Project bootstrap and SSH identity operations require agent 0.4.2 or later. Install the pinned release so fleet convergence keeps the required protocol.
-
-The sandbox protocol uses the exact roles `operator`, `gateway`, `app-dev`, `app-prod`, and `app-prod-2` in image keys and guest commands. Requests with `app-prod2` are invalid. A guest command targets only a running guest in the sandbox’s recorded, owned inventory. Expanded park, resume, and destruction include every recorded role.
-
-Sandbox hosts require Agent 0.4.0 or later. The opt-in durable Incus host firewall policy requires Agent 0.4.1 and its fixed root helper. Release and deploy the required version before enabling VM claims.
 
 ## Agent secret
 

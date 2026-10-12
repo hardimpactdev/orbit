@@ -1,6 +1,6 @@
 # Orbit Node agent
 
-`orbit-agent` is a Rust service that runs on every managed Linux Node. It reports presence, Process state, task checkout Git state, and live log tails to the Gateway over a Reverb WebSocket. The service only observes: it listens on no port and accepts no remote commands. The separate `orbit-agent sandbox` command, which the Gateway runs over SSH, controls task sandbox VMs through a closed protocol.
+`orbit-agent` is a Rust service that runs on every managed Linux Node. It reports presence, Process state, task checkout Git state, and live log tails to the Gateway over a Reverb WebSocket. The service only observes: it listens on no port and accepts no remote commands.
 
 The [Node agent reference](../../docs/reference/node-agent.md) covers what it observes, how it connects, how the Gateway installs it, and how a tag releases it.
 
@@ -10,7 +10,6 @@ The [Node agent reference](../../docs/reference/node-agent.md) covers what it ob
 - `src/lib.rs`: configuration, the agent secret, frames, retry timing, and the shared types.
 - `src/workspace.rs`: Git state of task checkouts.
 - `src/logs`: live log streams.
-- `src/sandbox.rs` and `resources/`: the `orbit-agent sandbox` command and its Incus controller.
 - `tests/`: fixtures for log parsing and redaction.
 - `scripts/node-agent-viewer.ts`: joins a Node's presence channel and prints what its agent sends.
 - `scripts/check-release-tag.sh`: checks that a release tag matches `Cargo.toml`.

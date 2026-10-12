@@ -40,7 +40,7 @@ UNRELATED = {
 # Files under an unrelated path that a project's tests read anyway.
 READ_ANYWAY = {
     'apps/cli': ('apps/gateway/routes/', 'docs/reference/cli-command-vocabulary.md'),
-    'apps/gateway': ('apps/agent/resources/', 'apps/agent/tests/', 'docs/openapi.json', 'packages/php-sdk/fixtures/',
+    'apps/gateway': ('apps/agent/tests/', 'docs/openapi.json', 'packages/php-sdk/fixtures/',
                      'packages/php-sdk/src/Responses/Tasks/'),
 }
 # A pull request whose selection has more test classes than this runs its Gateway tests in shards. The full suite of
