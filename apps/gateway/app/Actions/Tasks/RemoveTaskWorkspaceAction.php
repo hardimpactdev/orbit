@@ -88,7 +88,7 @@ final readonly class RemoveTaskWorkspaceAction
         $instance = $this->find($group);
 
         if ($instance instanceof Instance) {
-            $this->remove($instance, $group);
+            $this->remove($instance);
         }
 
         return $instance;

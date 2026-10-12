@@ -915,7 +915,7 @@ describe(DestroyTaskVm::class, function (): void {
         app()->instance(ProjectLifecycleRunner::class, $runner);
         Queue::fake();
 
-        $removal->remove($instance, $group);
+        $removal->remove($instance);
 
         expect($runs->getArrayCopy())->toBe([[$instance->id, LifecyclePhase::Teardown, []]])
             ->and($this->provider->calls)->toBe(['destroy'])
