@@ -493,6 +493,15 @@ describe('volumes', function (): void {
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, fn (BuildTaskVmWorkspaceTemplate $job): bool => $job->projectId === $this->project->id);
     });
 
+    it('serves the Orbit Project like every Project whose groups run on task VMs', function (): void {
+        $orbit = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/nckrtl/orbit.git', 'default_branch' => 'main', 'task_compute' => TaskCompute::Vm]);
+
+        expect(TaskVmWorkspaceTemplates::serves($orbit))->toBeTrue();
+
+        $orbit->update(['task_compute' => TaskCompute::Shared]);
+        expect(TaskVmWorkspaceTemplates::serves($orbit))->toBeFalse();
+    });
+
     it('has no clock of its own: the base image refresh and every promote queue the template refresh', function (): void {
         Artisan::call('schedule:list');
         $events = collect(app(Schedule::class)->events())->filter(static fn ($event): bool => $event instanceof CallbackEvent);
