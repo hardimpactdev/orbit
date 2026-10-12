@@ -220,8 +220,8 @@ final readonly class TaskVmWorkspaceTemplates
      */
     public function attach(TaskVm $vm, Project $project, string $directory): ?string
     {
-        $host = $this->settings->host($vm->host_node_id);
-        $hostNode = $vm->hostNode;
+        $host = $this->settings->host((int) $vm->host_node_id);
+        $hostNode = $vm->incusHostNode();
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no Node yet.");
         $clone = self::cloneName($vm);
         $volumes = $this->volumes($host, $hostNode);

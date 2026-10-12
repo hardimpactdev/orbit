@@ -50,7 +50,7 @@ final readonly class TaskVmRuntime
 
     public const int InlineLockSeconds = 10;
 
-    /** Shared with `SandboxModelKeys`, so one anchor key guards each CLIProxyAPI. */
+    /** Shared with every caller of `HttpSandboxModelKeys`, so one anchor key guards each CLIProxyAPI. */
     private const string ModelKeyLock = 'orbit:compute:model-keys';
 
     /** The Pi executable of the managed user. The base image holds the Gateway's pinned build there. */

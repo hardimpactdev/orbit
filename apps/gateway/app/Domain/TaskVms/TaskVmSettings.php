@@ -53,6 +53,7 @@ final readonly class TaskVmSettings
         public ?string $piArtifactSha256,
         public array $piModels,
         public int $parkAfterMinutes = 30,
+        public ?TaskVmUpCloud $upcloud = null,
     ) {}
 
     public static function fromConfig(): self
@@ -89,6 +90,7 @@ final readonly class TaskVmSettings
             piArtifactSha256: $artifactSha256,
             piModels: self::models(Config::get('task_vms.pi.models')),
             parkAfterMinutes: self::parkAfterMinutes(Config::get('task_vms.park_after_minutes')),
+            upcloud: self::upcloud($enabled),
         );
     }
 
@@ -275,6 +277,53 @@ final readonly class TaskVmSettings
         }
 
         return array_values(array_unique($value));
+    }
+
+    /**
+     * The UpCloud overflow, or null while its token file is unset. Its switch needs task VMs enabled, the token file,
+     * and `max_vms`: the cost guard has no default.
+     */
+    private static function upcloud(bool $taskVmsEnabled): ?TaskVmUpCloud
+    {
+        $enabled = Config::get('task_vms.upcloud.enabled') === true;
+        $tokenFile = self::filled(Config::get('task_vms.upcloud.token_file'));
+        if ($tokenFile === null) {
+            if ($enabled) {
+                throw self::invalid('upcloud.token_file is required while the UpCloud overflow is enabled.');
+            }
+
+            return null;
+        }
+        if (! is_string($tokenFile) || ! str_starts_with($tokenFile, '/') || str_contains($tokenFile, "\0")) {
+            throw self::invalid('upcloud.token_file must be an absolute path.');
+        }
+        if ($enabled && ! $taskVmsEnabled) {
+            throw self::invalid('the UpCloud overflow needs task VMs enabled.');
+        }
+        $projects = Config::get('task_vms.upcloud.projects');
+        if (! is_array($projects) || ! array_is_list($projects) || array_any($projects, static fn (mixed $id): bool => ! is_int($id) || $id < 1)) {
+            throw self::invalid('upcloud.projects must be a JSON list of Project ids.');
+        }
+        $maxVms = self::filled(Config::get('task_vms.upcloud.max_vms'));
+        $maxVms = is_int($maxVms) || is_string($maxVms) ? filter_var($maxVms, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 16]]) : false;
+        if (! is_int($maxVms)) {
+            throw self::invalid('upcloud.max_vms must be a whole number from 1 to 16.');
+        }
+        $diskGb = filter_var(self::filled(Config::get('task_vms.upcloud.disk_gb')) ?? 25, FILTER_VALIDATE_INT, ['options' => ['min_range' => 10, 'max_range' => 200]]);
+        if (! is_int($diskGb)) {
+            throw self::invalid('upcloud.disk_gb must be a whole number of GB from 10 to 200.');
+        }
+
+        return new TaskVmUpCloud(
+            enabled: $enabled,
+            projectIds: array_values(array_unique($projects)),
+            tokenFile: $tokenFile,
+            maxVms: $maxVms,
+            zone: self::name(self::filled(Config::get('task_vms.upcloud.zone')) ?? 'nl-ams1', '/\A[a-z]{2}-[a-z]{3}[1-9]\z/D', 'upcloud.zone'),
+            plan: self::name(self::filled(Config::get('task_vms.upcloud.plan')) ?? '2xCPU-4GB', '/\A[A-Za-z0-9][A-Za-z0-9-]{0,63}\z/D', 'upcloud.plan'),
+            diskGb: $diskGb,
+            sourceTemplate: self::name(self::filled(Config::get('task_vms.upcloud.source_template')) ?? '01000000-0000-4000-8000-000030260200', '/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', 'upcloud.source_template'),
+        );
     }
 
     /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */

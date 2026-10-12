@@ -7,7 +7,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
@@ -113,10 +112,6 @@ beforeEach(function (): void {
         $this->ssh->results = $results;
     };
     $this->argv = fn (): array => array_map(static fn (array $call): array => $call[1]->arguments, $this->ssh->calls);
-});
-
-it('is the bound task VM provider', function (): void {
-    expect(app(TaskVmProvider::class))->toBeInstanceOf(IncusTaskVmProvider::class);
 });
 
 it('launches an absent VM on the configured bridge with the user-data on stdin', function (): void {

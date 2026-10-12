@@ -120,8 +120,6 @@ pest()->tia()->watch([
     'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
     'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
     'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
-    // Sandbox programs, each with the tests that run it or read it. A new program stays unwatched until it is listed.
-    'resources/compute/sandbox-hub-network.py' => 'tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php',
 ]);
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */

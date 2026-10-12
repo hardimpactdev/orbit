@@ -29,4 +29,18 @@ return [
          */
         'hosts' => json_decode((string) (env('ORBIT_TASK_VMS_INCUS_HOSTS') ?: '[]'), true),
     ],
+    /*
+     * UpCloud overflow: a `vm` group of an opted-in Project gets an UpCloud task VM when no Incus host has a free
+     * slot. Off by default. Unset token_file means not configured; enabled needs it, max_vms, and task VMs enabled.
+     */
+    'upcloud' => [
+        'enabled' => (bool) env('ORBIT_TASK_VMS_UPCLOUD_ENABLED', false),
+        'projects' => json_decode((string) (env('ORBIT_TASK_VMS_UPCLOUD_PROJECTS') ?: '[]'), true),
+        'token_file' => env('ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE'),
+        'max_vms' => env('ORBIT_TASK_VMS_UPCLOUD_MAX_VMS'),
+        'zone' => env('ORBIT_TASK_VMS_UPCLOUD_ZONE'),
+        'plan' => env('ORBIT_TASK_VMS_UPCLOUD_PLAN'),
+        'disk_gb' => env('ORBIT_TASK_VMS_UPCLOUD_DISK_GB'),
+        'source_template' => env('ORBIT_TASK_VMS_UPCLOUD_SOURCE_TEMPLATE'),
+    ],
 ];

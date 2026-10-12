@@ -4,22 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\Instances\InstancePhpVersionCatalog;
-use App\Domain\Nodes\MachineArchitecture;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\RoleName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
-use App\Infrastructure\Nodes\RemotePhpPackageManager;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use Closure;
 use stdClass;
@@ -39,10 +29,6 @@ use Throwable;
  */
 final readonly class IncusTaskVmImageBuilder
 {
-    private const string CleanScript = 'task-vms/base-image-clean.sh';
-
-    private const string Confirmation = '{"ok":true}';
-
     /** The Incus templates that write the NoCloud seed. Each one makes the Incus agent reboot a new VM. */
     private const string SeedTemplates = '/var/lib/cloud/seed/';
 
@@ -66,16 +52,6 @@ final readonly class IncusTaskVmImageBuilder
         install -d -m 0755 /etc/systemd/system/systemd-networkd-wait-online.service.d
         printf '%s\n' '[Service]' 'ExecStart=' 'ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --any --ipv4 --dns --operational-state=routable' \
             > /etc/systemd/system/systemd-networkd-wait-online.service.d/zz-orbit-ipv4.conf
-        systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service
-        BASH;
-
-    private const string InstallAgent = <<<'BASH'
-        candidate=/usr/local/bin/orbit-agent.orbit-candidate
-        curl --fail --location --silent --show-error --connect-timeout 10 --max-time 300 --output "$candidate" -- "$1"
-        printf '%s  %s\n' "$2" "$candidate" | sha256sum --check --status
-        chown root:root -- "$candidate"
-        chmod 0755 -- "$candidate"
-        mv -fT -- "$candidate" /usr/local/bin/orbit-agent
         BASH;
 
     private const string LeanBootCheck = <<<'BASH'
@@ -87,20 +63,13 @@ final readonly class IncusTaskVmImageBuilder
         test "$(id -u orbit):$(id -g orbit)" = "$2"
         BASH;
 
-    private const string OwnerCheck = 'test "$(id -u orbit):$(id -g orbit)" = "$1"';
-
     public function __construct(
         private IncusHost $incus,
         private TaskVmBaseImage $image,
         private TaskVmCloudInit $cloudInit,
         private SshKeyProvider $keys,
-        private NodeBootstrapCommandFactory $bootstrap,
-        private NodeRolePrerequisiteCommandFactory $roles,
         private TaskVmSettings $settings,
-        private VpToolManager $vp,
-        private ComposerToolManager $composer,
-        private RemotePhpPackageManager $php,
-        private InstancePhpVersionCatalog $phpVersions,
+        private TaskVmImageRecipe $recipe,
     ) {}
 
     /** Whether the host's project has a base image. */
@@ -129,11 +98,11 @@ final readonly class IncusTaskVmImageBuilder
         $unused = null;
 
         try {
-            $programs = $this->stage($node, $progress, 'render', fn (): array => $this->enrollmentPrograms());
+            $programs = $this->stage($node, $progress, 'render', fn (): array => $this->recipe->programs());
             $this->stage($node, $progress, 'sweep', fn () => $this->image->sweep($host, $node));
             $this->stage($node, $progress, 'launch', fn () => $this->image->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $this->stage($node, $progress, 'cloud-init', fn () => $this->image->awaitCloudInit($host, $node, $builder));
-            $this->stage($node, $progress, 'orbit-user', fn () => $this->image->checked($builder, 'exec orbit-user', $this->image->exec($host, $node, $builder, ['sh', '-euc', self::OwnerCheck, 'sh', TaskVmCloudInit::Owner])));
+            $this->stage($node, $progress, 'orbit-user', fn () => $this->image->checked($builder, 'exec orbit-user', $this->image->exec($host, $node, $builder, ['sh', '-euc', TaskVmImageRecipe::OwnerCheck, 'sh', TaskVmCloudInit::Owner])));
             foreach ($programs as $name => $program) {
                 $this->stage($node, $progress, $name, fn () => $this->runProgram($host, $node, $builder, $name, $program));
             }
@@ -142,7 +111,7 @@ final readonly class IncusTaskVmImageBuilder
                 $this->stage($node, $progress, 'pi-artifact', fn () => $this->installPi($host, $node, $builder, (string) $this->settings->piArtifactPath, (string) $this->settings->piArtifactSha256));
             }
             $this->stage($node, $progress, 'single-boot', fn () => $this->singleBoot($host, $node, $builder));
-            $this->stage($node, $progress, 'lean-boot', fn () => $this->image->checked($builder, 'exec lean-boot', $this->image->exec($host, $node, $builder, ['bash', '-ceu', self::LeanBoot])));
+            $this->stage($node, $progress, 'lean-boot', fn () => $this->image->checked($builder, 'exec lean-boot', $this->image->exec($host, $node, $builder, ['bash', '-ceu', self::LeanBoot."\n".TaskVmImageRecipe::Masks])));
             $this->stage($node, $progress, 'manifest', fn () => $this->image->checked($builder, 'exec manifest', $this->image->exec($host, $node, $builder, [
                 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', TaskVmBakedPrograms::ManifestPath,
             ], TaskVmBakedPrograms::manifest($programs))));
@@ -178,32 +147,6 @@ final readonly class IncusTaskVmImageBuilder
     }
 
     /**
-     * The programs that enrollment runs on an `app-dev` Node, in its order, rendered by the same code. The
-     * image manifest records each one, so enrollment skips the ones it renders the same. Then the `app-dev` PHP
-     * packages of every PHP version an Instance can select, which the Instance's route installs on a Node: on a
-     * task VM it finds them in place, and its source step skips the refresh.
-     *
-     * @return array<string, RemoteCommand>
-     */
-    private function enrollmentPrograms(): array
-    {
-        $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
-        $programs = [TaskVmBakedPrograms::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, 'orbit')];
-        $caddy = $this->roles->caddyPackage($node, RoleName::AppDev);
-        if ($caddy instanceof RemoteCommand) {
-            $programs[TaskVmBakedPrograms::CaddyPackage] = $caddy;
-        }
-        $programs[TaskVmBakedPrograms::AppDevPrerequisites] = $this->roles->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
-        $programs[TaskVmBakedPrograms::VpManager] = $this->vp->materializeCommand($node);
-        $programs[TaskVmBakedPrograms::ComposerManager] = $this->composer->materializeCommand($node);
-        foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
-            $programs[TaskVmBakedPrograms::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
-        }
-
-        return $programs;
-    }
-
-    /**
      * Runs one enrollment program as `orbit` from its home, as enrollment does over SSH: each program
      * starts with `sudo`, and the Vite+ installer needs a working directory that `orbit` can read.
      */
@@ -221,13 +164,8 @@ final readonly class IncusTaskVmImageBuilder
     /** Installs the pinned Node agent binary for the VM's architecture. The agent itself is configured at enrollment. */
     private function installAgent(TaskVmHost $host, Node $node, string $name): void
     {
-        $architecture = trim($this->image->checked($name, 'exec uname', $this->image->exec($host, $node, $name, ['uname', '-m']))->stdout);
-        if (! MachineArchitecture::isValid($architecture) || ! in_array($architecture, NodeAgentFootprint::Architectures, true)) {
-            throw IncusHost::invalid("the base image build VM [{$name}]", 'the machine architecture is not a Node agent architecture');
-        }
-        $this->image->checked($name, 'exec agent-binary', $this->image->exec($host, $node, $name, [
-            'bash', '-ceu', self::InstallAgent, '--', NodeAgentFootprint::downloadUrl($architecture), NodeAgentFootprint::checksum($architecture),
-        ]));
+        $architecture = $this->image->checked($name, 'exec uname', $this->image->exec($host, $node, $name, ['uname', '-m']))->stdout;
+        $this->image->checked($name, 'exec agent-binary', $this->image->exec($host, $node, $name, $this->recipe->installAgent($architecture, "the base image build VM [{$name}]")));
     }
 
     /**
@@ -288,9 +226,8 @@ final readonly class IncusTaskVmImageBuilder
 
     private function clean(TaskVmHost $host, Node $node, string $name): void
     {
-        $script = file_get_contents(resource_path(self::CleanScript));
-        $result = $this->image->exec($host, $node, $name, ['bash', '-s'], is_string($script) ? $script : throw new TaskVmException('task_vm.setup_unavailable', 'The base image clean script is missing.'));
-        if (! $result->succeeded() || trim($result->stdout) !== self::Confirmation) {
+        $result = $this->image->exec($host, $node, $name, ['bash', '-s'], $this->recipe->cleanScript());
+        if (! $result->succeeded() || trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
             throw IncusHost::failed("the base image build VM [{$name}]", 'exec base-image-clean.sh', $result);
         }
     }

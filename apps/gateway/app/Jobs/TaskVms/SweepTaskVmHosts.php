@@ -10,13 +10,17 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
+use App\Infrastructure\TaskVms\UpCloudServers;
+use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -28,8 +32,9 @@ use Throwable;
  * `warm`, `ready`, or `parked` rows whose VM is gone on two sweeps in a row, so their groups ask for assistance. A
  * failed warm VM has no group: the pool refill destroys it. The
  * first sweep that misses a VM only marks it in the cache; a sweep that finds the VM clears the mark. It reads and changes only the
- * host's configured project. The worker runs one job at a time, so no task VM job creates or deletes a VM while
- * the sweep runs. A failed host is logged, and the other hosts still run.
+ * host's configured project. While UpCloud is configured, it does the same for the servers with the task VM label
+ * there, and deletes base image build servers and unverified templates older than two hours. The worker runs one job at a time, so no task VM job creates or deletes a VM while the sweep runs. A failed
+ * host is logged, and the other hosts still run.
  */
 final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
 {
@@ -48,7 +53,7 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
         $this->onConnection('task-vms')->onQueue('task-vms');
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates): void
+    public function handle(TaskVmSettings $settings, TaskVmHostAudit $audit, TaskVmWorkspaceTemplates $templates, UpCloudServers $servers, UpCloudTaskVmImageBuilder $images): void
     {
         $failures = [];
         foreach ($settings->hosts as $host) {
@@ -65,27 +70,70 @@ final class SweepTaskVmHosts implements ShouldBeUnique, ShouldQueue
                 foreach ($templates->sweepClones($host, $node) as $name) {
                     Log::warning('Deleted an orphaned task VM workspace clone.', ['node_id' => $node->id, 'volume' => $name]);
                 }
-                $missing = array_map(static fn (TaskVm $vm): int => $vm->id, $found['missing']);
-                foreach (TaskVm::query()->live()->where('host_node_id', $node->id)->whereNotIn('id', $missing)->get(['id']) as $present) {
-                    Cache::forget(self::missingKey($present->id));
-                }
-                foreach ($found['missing'] as $vm) {
-                    if (Cache::has(self::missingKey($vm->id))) {
-                        $this->fail($vm);
-                        Cache::forget(self::missingKey($vm->id));
-                    } else {
-                        Cache::put(self::missingKey($vm->id), now()->getTimestamp(), 3600);
-                        Log::warning('A task VM was not found on its host; the next sweep fails it if it is still gone.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
-                    }
-                }
+                $this->misses(TaskVm::query()->live()->where('host_node_id', $node->id), $found['missing']);
             } catch (Throwable $exception) {
                 Log::error('The task VM host sweep failed.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
                 $failures[] = "Node [{$node->name}]: ".TaskVmException::codeOf($exception);
             }
         }
+        if ($settings->upcloud !== null) {
+            try {
+                $this->sweepUpCloud($servers);
+                // A build that was killed leaves billed servers; a build holds its lock for at most an hour.
+                $images->sweep(2 * 3600);
+            } catch (Throwable $exception) {
+                Log::error('The UpCloud task VM sweep failed.', ['error' => $exception->getMessage()]);
+                $failures[] = 'UpCloud: '.TaskVmException::codeOf($exception);
+            }
+        }
 
         if ($failures !== []) {
             throw new TaskVmException('task_vm.host_command_failed', 'The task VM host sweep failed on '.implode(', ', $failures).'.', 502);
+        }
+    }
+
+    /**
+     * Deletes each server with the task VM label whose name is `tvm-<label value>` and whose row is not live, and
+     * counts the misses of live UpCloud rows whose server is gone. It runs while UpCloud is configured, also with the
+     * overflow switched off, so no server that Orbit created keeps costing money.
+     */
+    private function sweepUpCloud(UpCloudServers $servers): void
+    {
+        $labelled = $servers->labelled(TaskVmUpCloud::Label);
+        $live = TaskVm::query()->live()->where('provider', TaskVm::UpCloud)->pluck('name')->all();
+        foreach ($labelled as $server) {
+            if ($server['title'] === 'tvm-'.$server['value'] && preg_match('/\Atvm-[0-9]+\z/D', $server['title']) === 1 && ! in_array($server['title'], $live, true)) {
+                $servers->delete($server['title'], TaskVmUpCloud::Label, $server['value'], $server['uuid']);
+                Log::warning('Deleted an orphaned UpCloud task VM.', ['name' => $server['title'], 'server' => $server['uuid']]);
+            }
+        }
+        $names = array_column($labelled, 'title');
+        $rows = TaskVm::query()->live()->where('provider', TaskVm::UpCloud);
+        $this->misses($rows, array_values((clone $rows)->get()->filter(
+            static fn (TaskVm $vm): bool => in_array($vm->state, [TaskVmState::Warm, TaskVmState::Ready, TaskVmState::Parked], true) && ! in_array($vm->name, $names, true),
+        )->all()));
+    }
+
+    /**
+     * Fails a missing VM on its second sweep in a row; the first only marks it. A VM that is found clears its mark.
+     *
+     * @param  Builder<TaskVm>  $live  the live rows the sweep looked at
+     * @param  list<TaskVm>  $missing
+     */
+    private function misses(Builder $live, array $missing): void
+    {
+        $ids = array_map(static fn (TaskVm $vm): int => $vm->id, $missing);
+        foreach ($live->whereNotIn('id', $ids)->get(['id']) as $present) {
+            Cache::forget(self::missingKey($present->id));
+        }
+        foreach ($missing as $vm) {
+            if (Cache::has(self::missingKey($vm->id))) {
+                $this->fail($vm);
+                Cache::forget(self::missingKey($vm->id));
+            } else {
+                Cache::put(self::missingKey($vm->id), now()->getTimestamp(), 3600);
+                Log::warning('A task VM was not found on its host; the next sweep fails it if it is still gone.', ['task_vm_id' => $vm->id, 'name' => $vm->name]);
+            }
         }
     }
 
