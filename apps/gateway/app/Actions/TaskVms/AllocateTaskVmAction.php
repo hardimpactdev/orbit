@@ -176,7 +176,8 @@ final readonly class AllocateTaskVmAction
             ->where('status', LifecycleStatus::Active)->pluck('id')->all();
         $used = [];
         foreach (TaskVm::query()->live()->whereNotNull('host_node_id')->get(['host_node_id', 'size']) as $vm) {
-            $used[$vm->host_node_id] = ($used[$vm->host_node_id] ?? 0) + $vm->size->slots();
+            $host = (int) $vm->host_node_id;
+            $used[$host] = ($used[$host] ?? 0) + $vm->size->slots();
         }
         $free = [];
         foreach ($this->settings->hosts as $host) {
