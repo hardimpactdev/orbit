@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -15,6 +17,7 @@ use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\TaskVm;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -30,6 +33,9 @@ use Throwable;
  * in well under a second, attaches it to the running VM as the disk `workspace`, and mounts it at the Project's
  * apps directory. Source preparation then renames the template checkout to the workspace checkout. The clone goes
  * with the VM. Without a template, or when a step fails, the workspace starts from a fresh clone, as before.
+ *
+ * Templates are built on demand: a claim that finds no template for its VM's base image queues a build, and the
+ * refresh after a promote builds ahead only for recently active Projects. Builds run on their own queue.
  */
 final readonly class TaskVmWorkspaceTemplates
 {
@@ -61,6 +67,15 @@ final readonly class TaskVmWorkspaceTemplates
 
     /** How long a host waits before a claim asks for another build of a Project whose build failed. */
     public const int FailureBackoffSeconds = 21600;
+
+    /**
+     * The queue of the template jobs, on the `task-vms` connection. Its own worker takes them, so a build never
+     * delays the jobs of task VMs on the `task-vms` queue.
+     */
+    public const string Queue = 'task-vm-templates';
+
+    /** A refresh builds templates ahead only for Projects with a group created within this many days. */
+    public const int ActiveDays = 7;
 
     /**
      * Mounts the attached disk at the Project's apps directory. It refuses before it mounts when the managed user's
@@ -163,6 +178,20 @@ final readonly class TaskVmWorkspaceTemplates
     public static function serves(Project $project): bool
     {
         return $project->task_compute === TaskCompute::Vm && $project->slug !== 'orbit';
+    }
+
+    /**
+     * Why the Project cannot have a template, or null when it can. A build clones the default branch from the
+     * repository, so it needs both. A Project without them gets no build, and no retry: only a change of the Project
+     * helps.
+     */
+    public static function unbuildable(Project $project): ?string
+    {
+        if (! is_string($project->default_branch) || ! GitBranchName::isValid($project->default_branch)) {
+            return 'the Project has no valid default branch';
+        }
+
+        return GitRepositoryOrigin::isValid($project->repository_url) ? null : 'the Project has no valid repository URL';
     }
 
     /** The clone volume of a task VM. */
@@ -324,26 +353,52 @@ final readonly class TaskVmWorkspaceTemplates
     }
 
     /**
-     * Deletes ready templates of the host other than `$keep`: the other templates of `$projectId`, and, with
-     * `$projects`, the templates of every Project not in that list. A template whose build has not finished stays:
-     * only a build, under the host's template lock, deletes those. Incus keeps the data of a deleted template until
-     * its last clone is gone, so a running group never loses its workspace.
+     * Deletes the ready templates of `$projectId` on the host other than `$keep`, the template a build just published.
+     * A template whose build has not finished stays: only a build, under the host's template lock, deletes those.
+     * Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its
+     * workspace.
      *
-     * @param  list<int>|null  $projects
      * @return list<string> the deleted templates
      */
-    public function prune(TaskVmHost $host, Node $hostNode, ?int $projectId = null, ?string $keep = null, ?array $projects = null): array
+    public function prune(TaskVmHost $host, Node $hostNode, int $projectId, string $keep): array
+    {
+        return $this->deleteReady($host, $hostNode, static fn (string $name, int $owner): bool => $owner === $projectId && $name !== $keep);
+    }
+
+    /**
+     * Deletes every ready template of the host that no claim can take: the templates of Projects that are not in
+     * `$repositories`, and of each Project there all but its newest template from that repository on `$image`, the
+     * host's current base image. With no current image it keeps the newest template of the repository. So after a
+     * promote, the host keeps at most one template for each Project, and none from the old image.
+     *
+     * Projects without a valid default branch or repository URL are not in `$repositories`, so their templates go too.
+     *
+     * @param  array<int, string>  $repositories  the repository URL of each Project that can have a template, by Project id
+     * @param  array<string, array<string, string>>|null  $volumes  the host's volumes, when the caller has read them
+     * @return list<string> the deleted templates
+     */
+    public function pruneStale(TaskVmHost $host, Node $hostNode, array $repositories, ?string $image, ?array $volumes = null): array
+    {
+        $volumes ??= $this->volumes($host, $hostNode);
+        $keep = [];
+        foreach ($repositories as $projectId => $repository) {
+            $keep[] = self::current($volumes, $projectId, $repository, $image);
+        }
+
+        return $this->deleteReady($host, $hostNode, static fn (string $name): bool => ! in_array($name, $keep, true), $volumes);
+    }
+
+    /**
+     * @param  Closure(string, int): bool  $delete  whether to delete a ready template, by name and Project id
+     * @param  array<string, array<string, string>>|null  $volumes
+     * @return list<string>
+     */
+    private function deleteReady(TaskVmHost $host, Node $hostNode, Closure $delete, ?array $volumes = null): array
     {
         $deleted = [];
-        foreach ($this->volumes($host, $hostNode) as $name => $config) {
+        foreach ($volumes ?? $this->volumes($host, $hostNode) as $name => $config) {
             $owner = self::projectOf($name);
-            if ($owner === null || $name === $keep) {
-                continue;
-            }
-            if (($config[self::Ready] ?? null) !== 'true') {
-                continue;
-            }
-            if ($owner === $projectId || ($projects !== null && ! in_array($owner, $projects, true))) {
+            if ($owner !== null && ($config[self::Ready] ?? null) === 'true' && $delete($name, $owner)) {
                 $this->deleteVolume($host, $hostNode, $name);
                 $deleted[] = $name;
             }
@@ -390,10 +445,21 @@ final readonly class TaskVmWorkspaceTemplates
         }
     }
 
-    /** Queues a build of the Project's template on the host, unless its last build failed within the backoff. */
+    /**
+     * Queues a build of the Project's template on the host, unless its last build failed within the backoff. A
+     * Project that cannot have a template gets a warning instead.
+     */
     public function requestBuild(TaskVmHost $host, Project $project): void
     {
         if (Cache::has(self::backoffKey($host->nodeId, $project->id))) {
+            return;
+        }
+        $reason = self::unbuildable($project);
+        if ($reason !== null) {
+            Log::warning('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', [
+                'project_id' => $project->id, 'host_node_id' => $host->nodeId, 'reason' => $reason,
+            ]);
+
             return;
         }
         BuildTaskVmWorkspaceTemplate::dispatch($host->nodeId, $project->id);
@@ -408,6 +474,23 @@ final readonly class TaskVmWorkspaceTemplates
     public static function projectOf(string $name): ?int
     {
         return preg_match('/\A'.preg_quote(self::VolumePrefix, '/').'([1-9][0-9]*)-[0-9]{14}\z/D', $name, $match) === 1 ? (int) $match[1] : null;
+    }
+
+    /**
+     * Whether `$volumes` hold a ready template of the Project from its repository, built on `$image` by the base image's
+     * user. A build would make the same template again, so the refresh and the build job skip it. Without a current
+     * image nothing is current.
+     *
+     * @param  array<string, array<string, string>>  $volumes
+     */
+    public static function isCurrent(array $volumes, Project $project, ?string $image): bool
+    {
+        if ($image === null) {
+            return false;
+        }
+        $template = self::current($volumes, $project->id, $project->repository_url, $image);
+
+        return $template !== null && ($volumes[$template][self::OwnerKey] ?? null) === TaskVmCloudInit::Owner;
     }
 
     /**

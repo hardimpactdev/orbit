@@ -6,7 +6,9 @@ namespace App\Jobs\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Node;
@@ -16,13 +18,17 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Throwable;
 
 /**
- * Builds the workspace template of one Project on one task VM host. The nightly refresh queues it for every `vm`
- * Project on every host, and a claim queues it when the Project has no template on the VM's host. While another
- * template build runs on the host, the job waits a minute and tries again. A failed build logs an error, and claims
- * ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
+ * Builds the workspace template of one Project on one task VM host. A claim queues it when the Project has no
+ * template for the VM's base image, and the template refresh queues it for each recently active `vm` Project on
+ * every host. It runs on the template queue, whose own worker takes one job at a time, so a build never delays task
+ * VM jobs. A host that already has a ready template of the Project on its current base image, from the Project's
+ * repository and owned by the image's user, gets no build. While another template build runs on the host, the job waits a minute and tries again. A Project without
+ * a valid default branch or repository is logged and skipped, without a retry. A failed build logs an error, and
+ * claims ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
  */
 final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 {
@@ -39,7 +45,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $hostNodeId, public int $projectId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmWorkspaceTemplates::Queue);
     }
 
     public function uniqueId(): string
@@ -47,16 +53,40 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
         return "{$this->hostNodeId}:{$this->projectId}";
     }
 
-    public function handle(TaskVmSettings $settings, IncusTaskVmWorkspaceTemplateBuilder $builder): void
+    public function handle(TaskVmSettings $settings, IncusTaskVmWorkspaceTemplateBuilder $builder, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
     {
+        // A job queued on the task VM queue before templates had their own queue moves there, unbuilt.
+        if ($this->job?->getQueue() === 'task-vms') {
+            Queue::connection('task-vms')->pushOn(TaskVmWorkspaceTemplates::Queue, new self($this->hostNodeId, $this->projectId));
+
+            return;
+        }
         $project = Project::query()->find($this->projectId);
         $node = Node::query()->whereKey($this->hostNodeId)->where('status', LifecycleStatus::Active)->first();
         if (! $project instanceof Project || ! $node instanceof Node || ! TaskVmWorkspaceTemplates::serves($project)) {
             return;
         }
+        $reason = TaskVmWorkspaceTemplates::unbuildable($project);
+        if ($reason !== null) {
+            Log::warning('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', [
+                'project_id' => $project->id, 'host_node_id' => $node->id, 'reason' => $reason,
+            ]);
 
+            return;
+        }
+
+        $host = $settings->host($node->id);
         try {
-            $volume = $builder->build($settings->host($node->id), $node, $project, owner: $this->owner());
+            if (TaskVmWorkspaceTemplates::isCurrent($templates->volumes($host, $node), $project, $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0))) {
+                Log::info('Task VM workspace template is current; no build.', ['host_node_id' => $node->id, 'project_id' => $project->id]);
+
+                return;
+            }
+        } catch (Throwable) {
+            // The build reads the host again and fails loudly when it cannot.
+        }
+        try {
+            $volume = $builder->build($host, $node, $project, owner: $this->owner());
         } catch (TaskVmException $exception) {
             if ($exception->errorCode === 'task_vm.workspace_template_running') {
                 $this->release(60);

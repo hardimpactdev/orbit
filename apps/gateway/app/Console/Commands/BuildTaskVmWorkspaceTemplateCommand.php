@@ -67,6 +67,10 @@ final class BuildTaskVmWorkspaceTemplateCommand extends Command
         if (! $project instanceof Project || ! TaskVmWorkspaceTemplates::serves($project)) {
             throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] does not run its groups on task VMs.", 422);
         }
+        $reason = TaskVmWorkspaceTemplates::unbuildable($project);
+        if ($reason !== null) {
+            throw new TaskVmException('task_vm.invalid_config', "Project [{$reference}] cannot have a workspace template: {$reason}.", 422);
+        }
 
         return $project;
     }
