@@ -57,8 +57,14 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $fingerprint = $builder->build($host, $node, owner: self::LockOwner);
-        $results = $sync->distribute($host, $node, $fingerprint, owner: self::LockOwner);
+        // The templates refresh every night, also when the build fails. A promote has queued the refresh already,
+        // and the queued job absorbs this one.
+        try {
+            $fingerprint = $builder->build($host, $node, owner: self::LockOwner);
+            $results = $sync->distribute($host, $node, $fingerprint, owner: self::LockOwner);
+        } finally {
+            RefreshTaskVmWorkspaceTemplates::dispatch();
+        }
         foreach ($results as $result) {
             Log::info('Task VM base image sync.', ['result' => $result->summary()]);
         }

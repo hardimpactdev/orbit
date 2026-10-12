@@ -27,10 +27,17 @@ it('renders only the orbit user and the Gateway key for a task VM, which boots f
         YAML);
 });
 
-it('adds a package upgrade, openssh-server and Chromium\'s libraries for the base image builder', function (): void {
+it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server and Chromium\'s libraries for the base image builder', function (): void {
     expect(new TaskVmCloudInit()->renderImageBuilder(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
+            "bootcmd": [
+                [
+                    "sh",
+                    "-c",
+                    "getent group orbit >/dev/null || groupadd --gid 1000 orbit"
+                ]
+            ],
             "users": [
                 {
                     "name": "orbit",
@@ -39,7 +46,10 @@ it('adds a package upgrade, openssh-server and Chromium\'s libraries for the bas
                     "sudo": "ALL=(ALL) NOPASSWD:ALL",
                     "ssh_authorized_keys": [
                         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeGatewayPublicKeyMaterial0123456789abcd orbit@gateway"
-                    ]
+                    ],
+                    "uid": 1000,
+                    "primary_group": "orbit",
+                    "no_user_group": true
                 }
             ],
             "package_update": true,

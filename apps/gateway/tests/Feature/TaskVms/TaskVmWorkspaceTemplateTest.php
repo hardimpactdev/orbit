@@ -25,10 +25,12 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmWorkspaceTemplateBuilder;
+use App\Infrastructure\TaskVms\TaskVmBaseImage;
 use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
+use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
@@ -71,13 +73,33 @@ final class TaskVmTemplateIncus implements SshExecutor
     /** What `git status --porcelain` prints in the builder. */
     public string $status = '';
 
+    /** The base image every VM booted, and the one `orbit-task-base` names. */
+    public string $image = TVM_IMAGE;
+
+    public string $alias = TVM_IMAGE;
+
+    /** @var list<string> the guest scripts that ran over the task VM Node's SSH connection: `mount` or `unmount` */
+    public array $guest = [];
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $argv = $command->arguments;
         $this->calls[] = [$connection->host, $argv];
         if (array_slice($argv, 0, 3) !== ['sudo', '-n', 'incus']) {
-            // A command over the task VM Node's own SSH connection: the mount script.
-            return $this->fail === 'mount' ? new CommandResult(1, '', "mount failed\n", 1, false) : new CommandResult(0, $this->mounted, '', 1, false);
+            // A command over the task VM Node's own SSH connection: the mount or the unmount script.
+            $script = $argv[2] === TaskVmWorkspaceTemplates::UnmountScript ? 'unmount' : 'mount';
+            $this->guest[] = $script;
+            if ($this->fail === $script) {
+                return new CommandResult(1, '', "{$script} failed\n", 1, false);
+            }
+
+            return new CommandResult(0, $script === 'mount' ? $this->mounted : '', '', 1, false);
+        }
+        if ($argv[3] === 'query') {
+            // The alias move: `incus query -X PATCH --data {"target": …} -- /1.0/images/aliases/…`.
+            return $this->answer('query', function () use ($argv): void {
+                $this->alias = json_decode($argv[7], true)['target'];
+            });
         }
         $operation = array_slice($argv, 5);
 
@@ -87,8 +109,9 @@ final class TaskVmTemplateIncus implements SshExecutor
                 array_keys($this->volumes),
                 $this->volumes,
             ) + [count($this->volumes) => ['name' => 'tvm-1', 'type' => 'virtual-machine', 'config' => []]])),
+            // Incus copies the volume's config with it.
             array_slice($operation, 0, 3) === ['storage', 'volume', 'copy'] => $this->answer('storage volume copy', function () use ($operation): void {
-                $this->volumes[explode('/', $operation[5])[1]] = [];
+                $this->volumes[explode('/', $operation[5])[1]] = $this->volumes[explode('/', $operation[4])[1]] ?? [];
             }),
             array_slice($operation, 0, 3) === ['storage', 'volume', 'create'] => $this->answer('storage volume create', function () use ($operation): void {
                 $this->volumes[$operation[6]] = [];
@@ -112,12 +135,14 @@ final class TaskVmTemplateIncus implements SshExecutor
             array_slice($operation, 0, 3) === ['config', 'device', 'remove'] => $this->answer('config device remove', function () use ($operation): void {
                 unset($this->devices[$operation[4]][$operation[5]]);
             }),
+            array_slice($operation, 0, 2) === ['config', 'get'] => $this->answer('config get', fn (): string => $this->image."\n"),
+            array_slice($operation, 0, 2) === ['image', 'list'] => $this->answer('image list', fn (): string => json_encode([['fingerprint' => $this->alias, 'aliases' => [['name' => TaskVmHost::BaseImage]]]])),
             $operation[0] === 'launch' => $this->answer('launch', function () use ($operation): void {
                 $this->instances[] = end($operation);
             }),
             $operation[0] === 'project' => $this->answer('project show', static fn (): string => "name: orbit-tasks\n"),
             $operation[0] === 'list' && in_array('csv', $operation, true) => $this->answer('list', fn (): string => implode('', array_map(static fn (string $name): string => $name."\n", $this->instances))),
-            $operation[0] === 'list' => $this->answer('list', fn (): string => json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances))),
+            $operation[0] === 'list' => $this->answer('list', fn (): string => json_encode(array_map(fn (string $name): array => ['name' => $name, 'config' => ['volatile.base_image' => $this->image]], $this->instances))),
             $operation[0] === 'delete' => $this->answer('delete', function () use ($operation): void {
                 $this->instances = array_values(array_diff($this->instances, [end($operation)]));
                 unset($this->devices[end($operation)]);
@@ -149,6 +174,7 @@ final class TaskVmTemplateIncus implements SshExecutor
             $user[0] === 'timeout' => $this->answer('setup step ['.substr($user[5], strrpos($user[5], "\n") + 1).']'),
             $user[0] === 'git' => $this->answer('git status', fn (): string => $this->status),
             $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', static fn (): string => 'absent'),
+            $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             $user[0] === 'bash' && $user[1] === '-seu' => $this->answer('clone', static fn (): string => str_repeat('a', 40)."\n"),
             default => $this->answer($user[0] === 'bash' && str_contains($user[2], 'mkfs.ext4') ? 'format' : 'exec '.$user[0]),
         };
@@ -170,6 +196,20 @@ final class TaskVmTemplateIncus implements SshExecutor
 }
 
 const REPO = 'https://github.com/acme/mealou.git';
+
+const TVM_IMAGE = 'c962685c88c2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+const TVM_NEW_IMAGE = '2d91037503adbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+/**
+ * The config of a ready template of the Project's repository, built on `$image` by a user with uid and gid 1000.
+ *
+ * @return array<string, string>
+ */
+function tvm_ready(string $repository = REPO, string $image = TVM_IMAGE): array
+{
+    return ['user.orbit.ready' => 'true', 'user.orbit.repository' => $repository, 'user.orbit.image' => $image, 'user.orbit.owner' => '1000:1000'];
+}
 
 function tvm_template_vm(Task $group, string $name = 'tvm-1'): TaskVm
 {
@@ -232,10 +272,10 @@ describe('claim', function (): void {
     it('clones the newest ready template of the Project, attaches it, and mounts it at the apps directory', function (): void {
         $vm = tvm_template_vm($this->group);
         $this->incus->volumes = [
-            'tvm-template-'.$this->project->id.'-20261010040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO],
-            'tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO],
+            'tvm-template-'.$this->project->id.'-20261010040000' => tvm_ready(),
+            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
             'tvm-template-'.$this->project->id.'-20261011050000' => [],
-            'tvm-template-999-20261012040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO],
+            'tvm-template-999-20261012040000' => tvm_ready(),
         ];
 
         $template = app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
@@ -246,30 +286,70 @@ describe('claim', function (): void {
                 ['storage', 'volume', 'copy', '--', 'orbit-tasks/tvm-template-'.$this->project->id.'-20261011040000', 'orbit-tasks/tvm-1-workspace'],
                 ['config', 'device', 'add', '--', 'tvm-1', 'workspace', 'disk', 'pool=orbit-tasks', 'source=tvm-1-workspace'],
             )
-            ->and(array_slice($mount[1], 3))->toBe(['--', 'workspace', '/home/orbit/apps/mealou', 'orbit', 'orbit', '.orbit-workspace-template', '.orbit-cache', 'ms-playwright', 'composer'])
+            ->and(array_slice($mount[1], 3))->toBe(['--', 'workspace', '/home/orbit/apps/mealou', '1000:1000', '.orbit-workspace-template', '.orbit-cache', 'ms-playwright', 'composer'])
             ->and($mount[1][2])->toContain('/etc/fstab')->toContain('x-systemd.before=multi-user.target');
     });
 
     it('takes no template of an earlier repository, and asks for a build', function (): void {
         Queue::fake();
         $vm = tvm_template_vm($this->group);
-        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => 'https://github.com/old/mealou.git']];
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready('https://github.com/old/mealou.git')];
 
         expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
             ->and(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse();
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class);
     });
 
-    it('writes the fstab line only after the mount', function (): void {
+    it('writes the fstab line only after the mount and the owner checks', function (): void {
         $script = TaskVmWorkspaceTemplates::MountScript;
 
-        expect(strpos($script, 'mount -o noatime'))->toBeLessThan(strpos($script, '/etc/fstab'))
-            ->and(strpos($script, 'findmnt'))->toBeLessThan(strpos($script, '/etc/fstab'));
+        expect(strpos($script, '"$(id -u):$(id -g)" != "$owner"'))->toBeLessThan(strpos($script, 'mount -o noatime'))
+            ->and(strpos($script, 'mount -o noatime'))->toBeLessThan(strpos($script, '/etc/fstab'))
+            ->and(strpos($script, 'findmnt'))->toBeLessThan(strpos($script, '/etc/fstab'))
+            ->and(strrpos($script, "stat -c '%u:%g' -- \"\$directory/\$template\""))->toBeLessThan(strpos($script, '/etc/fstab'))
+            ->and(strpos($script, '/etc/fstab'))->toBeLessThan(strpos($script, 'ln -sfn'));
+    });
+
+    it('takes no template built on another base image: it asks for a build when the VM runs the current image', function (): void {
+        Queue::fake();
+        Log::spy();
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040223' => tvm_ready()];
+        $this->incus->image = $this->incus->alias = TVM_NEW_IMAGE;
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
+            ->and(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse()
+            ->and($this->incus->guest)->toBe([]);
+        Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class);
+        Log::shouldHaveReceived('warning')->with('Task VM workspace template was built on another base image; it starts from a fresh clone, and a new build is queued.', Mockery::any());
+    });
+
+    it('asks for no build for a VM from an older base image than the template', function (): void {
+        Queue::fake();
+        Log::spy();
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012090000' => tvm_ready(image: TVM_NEW_IMAGE)];
+        $this->incus->alias = TVM_NEW_IMAGE;
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull();
+        Queue::assertNothingPushed();
+        Log::shouldHaveReceived('warning')->with('Task VM runs an older base image than the workspace templates; it starts from a fresh clone.', Mockery::any());
+    });
+
+    it('takes the template built on the VM image over a newer one built on another image', function (): void {
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = [
+            'tvm-template-'.$this->project->id.'-20261012040000' => tvm_ready(),
+            'tvm-template-'.$this->project->id.'-20261012090000' => tvm_ready(image: TVM_NEW_IMAGE),
+        ];
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBe('/home/orbit/apps/mealou/.orbit-workspace-template')
+            ->and($this->incus->operations())->toContain(['storage', 'volume', 'copy', '--', 'orbit-tasks/tvm-template-'.$this->project->id.'-20261012040000', 'orbit-tasks/tvm-1-workspace']);
     });
 
     it('finds the clone, the disk, and the mount in place when the claim runs again', function (): void {
         $vm = tvm_template_vm($this->group);
-        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO]];
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()];
         app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
         $this->incus->calls = [];
 
@@ -293,10 +373,53 @@ describe('claim', function (): void {
         Queue::assertNothingPushed();
     });
 
+    it('detaches a volume whose mount failed, so the fresh clone lands on the VM disk', function (): void {
+        Log::spy();
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()];
+        $this->incus->fail = 'mount';
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
+            ->and($this->incus->guest)->toBe(['mount', 'unmount'])
+            ->and($this->incus->devices['tvm-1'] ?? [])->toBe([])
+            ->and(array_keys($this->incus->volumes))->toBe(['tvm-template-'.$this->project->id.'-20261011040000'])
+            ->and($this->incus->operations())->toContain(['config', 'device', 'remove', '--', 'tvm-1', 'workspace']);
+        Log::shouldHaveReceived('warning')->with('Task VM workspace template could not be attached; the workspace starts from a fresh clone.', Mockery::any());
+    });
+
+    it('stops the claim when a failed mount cannot be undone, so no clone lands on the volume', function (): void {
+        $vm = tvm_template_vm($this->group);
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()];
+        $this->incus->fail = 'mount';
+        $this->incus->guest = [];
+        // The mount fails, and so does the unmount after it.
+        $incus = $this->incus;
+        app()->instance(SshExecutor::class, new class($incus) implements SshExecutor
+        {
+            public function __construct(private readonly TaskVmTemplateIncus $incus) {}
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                if ($command->arguments[2] === TaskVmWorkspaceTemplates::UnmountScript) {
+                    $this->incus->guest[] = 'unmount';
+
+                    return new CommandResult(32, '', "umount: target is busy\n", 1, false);
+                }
+
+                return $this->incus->execute($connection, $command);
+            }
+        });
+
+        expect(fn () => app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))
+            ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.workspace_template_detach_failed'));
+        expect($this->incus->guest)->toBe(['mount', 'unmount'])
+            ->and($this->incus->volumes)->toHaveKey('tvm-1-workspace');
+    });
+
     it('starts from a fresh clone and logs a warning when a step fails or the volume holds no template', function (string $failure): void {
         Log::spy();
         $vm = tvm_template_vm($this->group);
-        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO]];
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready()];
         $failure === 'empty' ? $this->incus->mounted = '' : $this->incus->fail = $failure;
 
         expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull();
@@ -319,7 +442,7 @@ describe('volumes', function (): void {
     it('sweeps clones whose task VM has no live row', function (): void {
         $vm = tvm_template_vm($this->group);
         $this->incus->volumes = [
-            'tvm-1-workspace' => [], 'tvm-77-workspace' => [], 'tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO], 'other' => [],
+            'tvm-1-workspace' => [], 'tvm-77-workspace' => [], 'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(), 'other' => [],
         ];
 
         app()->call([new SweepTaskVmHosts, 'handle']);
@@ -332,8 +455,8 @@ describe('volumes', function (): void {
         Queue::fake();
         $shared = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
         $this->incus->volumes = [
-            'tvm-template-'.$this->project->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO],
-            'tvm-template-'.$shared->id.'-20261011040000' => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO],
+            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
+            'tvm-template-'.$shared->id.'-20261011040000' => tvm_ready(),
             'tvm-template-'.$shared->id.'-20261011050000' => [],
         ];
 
@@ -344,14 +467,17 @@ describe('volumes', function (): void {
         Queue::assertPushed(BuildTaskVmWorkspaceTemplate::class, fn (BuildTaskVmWorkspaceTemplate $job): bool => $job->projectId === $this->project->id);
     });
 
-    it('schedules the template refresh nightly after the base image refresh while task VMs are enabled', function (): void {
+    it('has no clock of its own: the base image refresh and every promote queue the template refresh', function (): void {
         Artisan::call('schedule:list');
-        $event = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshTaskVmWorkspaceTemplates::class);
+        $events = collect(app(Schedule::class)->events())->filter(static fn ($event): bool => $event instanceof CallbackEvent);
 
-        config()->set('task_vms.enabled', false);
-        expect($event)->not->toBeNull()->and($event->expression)->toBe('0 4 * * *')->and($event->filtersPass(app()))->toBeFalse();
-        config()->set('task_vms.enabled', true);
-        expect($event->filtersPass(app()))->toBeTrue();
+        expect($events->contains(static fn (CallbackEvent $event): bool => $event->description === RefreshTaskVmWorkspaceTemplates::class))->toBeFalse()
+            ->and($events->contains(static fn (CallbackEvent $event): bool => $event->description === RefreshTaskVmBaseImages::class && $event->expression === '0 3 * * *'))->toBeTrue();
+
+        Queue::fake();
+        $this->incus->alias = TVM_NEW_IMAGE;
+        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_IMAGE);
+        Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
     });
 });
 
@@ -365,7 +491,7 @@ describe('build', function (): void {
     it('builds the template in a builder VM, marks it ready, and deletes the older ones', function (): void {
         $this->travelTo(now()->setDate(2026, 10, 12)->setTime(4, 0));
         $old = 'tvm-template-'.$this->project->id.'-20261011040000';
-        $this->incus->volumes = [$old => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO], 'tvm-template-'.$this->project->id.'-20261011043000' => []];
+        $this->incus->volumes = [$old => tvm_ready(), 'tvm-template-'.$this->project->id.'-20261011043000' => []];
         $this->incus->instances = ['tvm-template-20261011043000', 'tvm-5'];
         $stages = [];
 
@@ -374,8 +500,11 @@ describe('build', function (): void {
         });
 
         expect($volume)->toBe('tvm-template-'.$this->project->id.'-20261012040000')
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
-            ->and($this->incus->volumes)->toBe([$volume => ['user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.repository' => REPO, 'user.orbit.ready' => 'true']])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
+            ->and($this->incus->volumes)->toBe([$volume => [
+                'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.repository' => REPO,
+                'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.ready' => 'true',
+            ]])
             ->and($this->incus->instances)->toBe(['tvm-5'])
             ->and($this->incus->operations())->toContain(
                 ['launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=40GiB', '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', TaskVmHost::BaseImage, 'tvm-template-20261012040000'],
@@ -387,13 +516,13 @@ describe('build', function (): void {
 
     it('deletes its builder and volume and keeps the current template when a step fails', function (string $failure, string $stage): void {
         $current = 'tvm-template-'.$this->project->id.'-20261011040000';
-        $this->incus->volumes = [$current => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO]];
+        $this->incus->volumes = [$current => tvm_ready()];
         $failure === 'dirty' ? $this->incus->status = " M composer.lock\n" : $this->incus->fail = $failure;
 
         expect(fn () => app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project))
             ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.workspace_template_failed')->and($exception->getMessage())->toContain("stage [{$stage}]"));
 
-        expect($this->incus->volumes)->toBe([$current => ['user.orbit.ready' => 'true', 'user.orbit.repository' => REPO]])
+        expect($this->incus->volumes)->toBe([$current => tvm_ready()])
             ->and($this->incus->instances)->toBe([])
             ->and(Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 10)->get())->toBeTrue();
     })->with([
