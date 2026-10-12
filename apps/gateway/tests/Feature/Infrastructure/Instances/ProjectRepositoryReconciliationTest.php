@@ -84,7 +84,7 @@ describe('TaskCheckWorkerUser', function (): void {
     })->with([
         'worker-shared checkout runs Git as the worker' => [false],
         'opted-out Node runs Git as the managed user' => [true],
-    ]);
+    ])->group('privileged');
 });
 
 function orb101_repository_data(string $url): UpdateProjectData
