@@ -85,10 +85,16 @@ final class TaskVmTemplateIncus implements SshExecutor
     /** @var list<string> the guest scripts that ran over the task VM Node's SSH connection: `mount` or `unmount` */
     public array $guest = [];
 
+    /** @var list<string> the setup step scripts the builder received on stdin, in order */
+    public array $steps = [];
+
+    private ?string $input = null;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $argv = $command->arguments;
         $this->calls[] = [$connection->host, $argv];
+        $this->input = $command->input;
         if (array_slice($argv, 0, 3) !== ['sudo', '-n', 'incus']) {
             // A command over the task VM Node's own SSH connection: the mount or the unmount script.
             $script = $argv[2] === TaskVmWorkspaceTemplates::UnmountScript ? 'unmount' : 'mount';
@@ -174,14 +180,21 @@ final class TaskVmTemplateIncus implements SshExecutor
         $user = $command[0] === 'runuser' ? array_slice($command, 4) : $command;
 
         return match (true) {
-            // The step command follows the line that sets VP_HOME.
-            $user[0] === 'timeout' => $this->answer('setup step ['.substr($user[5], strrpos($user[5], "\n") + 1).']'),
+            // The step script arrives on stdin. Its command follows the line that sets VP_HOME.
+            $user[0] === 'timeout' => $this->answer('setup step ['.$this->step().']'),
             $user[0] === 'git' => $this->answer('git status', fn (): string => $this->status),
             $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', static fn (): string => 'absent'),
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
             $user[0] === 'bash' && $user[1] === '-seu' => $this->answer('clone', static fn (): string => str_repeat('a', 40)."\n"),
             default => $this->answer($user[0] === 'bash' && str_contains($user[2], 'mkfs.ext4') ? 'format' : 'exec '.$user[0]),
         };
+    }
+
+    private function step(): string
+    {
+        $this->steps[] = (string) $this->input;
+
+        return substr((string) $this->input, strpos((string) $this->input, "\n") + 1);
     }
 
     private function answer(string $operation, ?Closure $effect = null): CommandResult
@@ -667,8 +680,12 @@ describe('build', function (): void {
             ->and($this->incus->operations())->toContain(
                 ['launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=40GiB', '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', TaskVmHost::BaseImage, 'tvm-template-20261012040000'],
                 ['storage', 'volume', 'create', '--type=block', '--', 'orbit-tasks', $volume, 'size=40GiB'],
-                ['exec', '--cwd', '/home/orbit/apps/mealou/.orbit-workspace-template', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-template-20261012040000', 'runuser', '-u', 'orbit', '--', 'timeout', '120', 'bash', '-l', '-c', 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n".'vp build'],
+                ['exec', '--cwd', '/home/orbit/apps/mealou/.orbit-workspace-template', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-template-20261012040000', 'runuser', '-u', 'orbit', '--', 'timeout', '120', 'bash', '-c', 'script=$(mktemp) && trap \'rm -f -- "$script"\' EXIT && cat > "$script" && bash -l "$script" < /dev/null'],
             )
+            ->and($this->incus->steps)->toBe([
+                'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n".'composer install --no-interaction',
+                'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n".'vp build',
+            ])
             ->and(Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 10)->get())->toBeTrue();
     });
 
@@ -716,7 +733,7 @@ describe('build', function (): void {
         app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project);
 
         $steps = collect($this->incus->operations())->filter(static fn (array $operation): bool => in_array('timeout', $operation, true))->values();
-        expect(last($steps[0]))->toContain('export VP_HOME=')->toContain('python3 -c')->not->toContain(LifecycleStep::RestoreTiaBaseline)
+        expect($this->incus->steps[0])->toContain('export VP_HOME=')->toContain('python3 -c')->not->toContain(LifecycleStep::RestoreTiaBaseline)
             ->and((int) $steps[1][array_search('timeout', $steps[1], true) + 1])->toBeLessThanOrEqual(120);
     });
 

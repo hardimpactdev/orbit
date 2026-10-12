@@ -42,8 +42,9 @@ final readonly class TaskVmImageRecipe
 
     /**
      * Installs the stable Rust toolchain for `orbit` with rustup's minimal profile, plus clippy and rustfmt, as CI
-     * checks the Node agent. rustup adds `~/.cargo/bin` to the login shell's `PATH`. Each image build takes the
-     * stable release of its day.
+     * checks the Node agent. rustup adds `~/.cargo/bin` only to the login shell's `PATH`, so each of its tools also
+     * gets a link in `/usr/local/bin`, which every shell finds: an agent's commands and a check's non-login shells
+     * too. Each link runs `orbit`'s toolchain. Each image build takes the stable release of its day.
      */
     public const string InstallRust = <<<'BASH'
         installer=$(mktemp)
@@ -51,6 +52,9 @@ final readonly class TaskVmImageRecipe
         curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 10 --max-time 300 --output "$installer" -- https://sh.rustup.rs
         sh "$installer" -y -q --profile minimal --component clippy,rustfmt
         "$HOME/.cargo/bin/cargo" --version
+        for tool in "$HOME"/.cargo/bin/*; do
+            sudo ln -sfn -- "$tool" "/usr/local/bin/${tool##*/}"
+        done
         BASH;
 
     public const string CleanConfirmation = '{"ok":true}';

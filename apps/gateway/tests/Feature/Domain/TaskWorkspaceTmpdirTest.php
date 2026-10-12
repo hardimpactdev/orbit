@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -70,7 +70,7 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), ResolvedVp::manager(), app(TiaBaselineSetup::class));
+    )), ResolvedVp::manager(), app(GatewaySetupSteps::class));
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor

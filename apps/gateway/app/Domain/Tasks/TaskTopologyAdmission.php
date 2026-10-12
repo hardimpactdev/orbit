@@ -11,4 +11,10 @@ interface TaskTopologyAdmission
 {
     /** @throws TaskCapacityException when preparation must wait and retry */
     public function prepare(Task $group, Task $task): void;
+
+    /**
+     * Whether any lane can prepare declared workload nodes. While it cannot, a `vm` group whose subtasks declare a
+     * topology gets no large task VM: it waits without holding slots.
+     */
+    public function available(): bool;
 }

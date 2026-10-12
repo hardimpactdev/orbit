@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
@@ -65,6 +66,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -489,6 +491,7 @@ describe('claim', function (): void {
 
     it('gives a group with a declared topology a new large VM, never a warm one', function (): void {
         Queue::fake();
+        app()->instance(TaskTopologyAdmission::class, new AvailableTopologyAdmission);
         $warm = tvm_pool_vm();
         tvm_pool_hosts([[$this->host, 4, 1]]);
         $group = tvm_pool_group();
@@ -501,6 +504,24 @@ describe('claim', function (): void {
             ->and($warm->refresh()->group_id)->toBeNull()
             ->and($warm->state)->toBe(TaskVmState::Warm);
         Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('gives a group of a medium Project a new medium VM, never a warm one', function (): void {
+        Queue::fake();
+        $warm = tvm_pool_vm();
+        $group = tvm_pool_group();
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(
+            enabled: true, devClusterId: null, wireguardRange: '10.44.0.128/25',
+            hosts: [new TaskVmHost($this->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', warmVms: 1)],
+            modelProxyOrigin: TVM_POOL_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
+            mediumProjectIds: [$group->project_id],
+        ));
+
+        $vm = app(AllocateTaskVmAction::class)->execute($group);
+
+        expect($vm->id)->not->toBe($warm->id)
+            ->and($vm->refresh()->size)->toBe(TaskVmSize::Medium)
+            ->and($warm->refresh()->state)->toBe(TaskVmState::Warm);
     });
 
     it('never gives one warm VM to two groups', function (): void {

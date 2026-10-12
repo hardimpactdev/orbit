@@ -183,7 +183,15 @@ describe('off but configured', function (): void {
         'range outside the VPN subnet' => [['wireguard_range' => '10.45.0.128/25', 'dev_cluster_id' => 4], 'inside the VPN subnet [10.44.0.0/24]'],
         'range as large as the VPN subnet' => [['wireguard_range' => '10.44.0.0/24', 'model_proxy_origin' => 'http://10.44.0.3:8317'], 'inside the VPN subnet'],
         'bridge overlapping the VPN subnet' => [task_vm_hosts(['cidr' => '10.44.0.0/16']), 'must not overlap the VPN subnet [10.44.0.0/24]'],
+        'malformed medium projects JSON' => [['medium_projects' => null], 'medium_projects must be a JSON list of Project ids'],
+        'medium project not an id' => [['medium_projects' => ['46']], 'medium_projects must be a JSON list of Project ids'],
     ]);
+
+    it('reads the medium Projects once, without duplicates', function (): void {
+        task_vms_off(['medium_projects' => [46, 46, 3]]);
+
+        expect(TaskVmSettings::fromConfig()->mediumProjectIds)->toBe([46, 3]);
+    });
 });
 
 describe('enabled', function (): void {

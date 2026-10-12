@@ -47,23 +47,28 @@ final readonly class IncusHost
 
     /**
      * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC. A normal VM gets the
-     * host's size. A large VM gets {@see TaskVmSize::LargeCpus}, its memory and disk, and free page reporting on its
-     * memory balloon, which Incus can set only before the VM first starts. `incus launch` reads instance config as
+     * host's size. A medium VM gets {@see TaskVmSize::MediumCpus}, its memory, and the host's disk. A large VM gets
+     * {@see TaskVmSize::LargeCpus}, its memory and disk, and free page reporting on its memory balloon, which Incus can
+     * set only before the VM first starts. `incus launch` reads instance config as
      * YAML from a stdin that is not a terminal. JSON is YAML, but YAML knows no `\/` escape.
      */
     public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal): CommandResult
     {
-        $large = $size === TaskVmSize::Large;
         $config = ['cloud-init.user-data' => $userData];
-        if ($large) {
+        if ($size === TaskVmSize::Large) {
             $config['raw.qemu.conf'] = TaskVmSize::LargeQemuConfig;
         }
+        [$cpus, $memory, $disk] = match ($size) {
+            TaskVmSize::Normal => [$host->cpus, $host->memory, $host->disk],
+            TaskVmSize::Medium => [TaskVmSize::MediumCpus, TaskVmSize::MediumMemory, $host->disk],
+            TaskVmSize::Large => [TaskVmSize::LargeCpus, TaskVmSize::LargeMemory, TaskVmSize::LargeDisk],
+        };
 
         return $this->run($host, $node, [
             'launch', '--vm',
-            '--config', 'limits.cpu='.($large ? TaskVmSize::LargeCpus : $host->cpus),
-            '--config', 'limits.memory='.($large ? TaskVmSize::LargeMemory : $host->memory),
-            '--device', 'root,size='.($large ? TaskVmSize::LargeDisk : $host->disk),
+            '--config', 'limits.cpu='.$cpus,
+            '--config', 'limits.memory='.$memory,
+            '--device', 'root,size='.$disk,
             '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
             '--', $image, $name,
         ], json_encode(['config' => $config], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));

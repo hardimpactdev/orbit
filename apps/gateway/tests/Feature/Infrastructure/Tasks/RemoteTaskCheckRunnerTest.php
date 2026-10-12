@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
-use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
@@ -108,7 +108,7 @@ function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    )), $vp, app(TiaBaselineSetup::class));
+    )), $vp, app(GatewaySetupSteps::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -860,7 +860,9 @@ it('runs setup payloads larger than the operating system argument limit', functi
         ->and($reading->failedStep)->toBeNull()
         ->and(file_get_contents($checkout.'/ignored/baseline'))->toBe($payload."\n")
         ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
-        ->and($reading->output)->toContain('checked');
+        ->and($reading->output)->toContain('checked')
+        ->and(file_get_contents($checkout.'/.git/orbit/check.log'))->toContain('more characters of the command are not shown]')
+        ->and(filesize($checkout.'/.git/orbit/check.log'))->toBeLessThan(16 * 1024);
 });
 
 it('removes setup scripts after failure or timeout and skips later work', function (string $command, int $exit): void {

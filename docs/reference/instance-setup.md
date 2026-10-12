@@ -419,6 +419,10 @@ ssh MANAGED_USER@NODE 'rm -f -- "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 
 If the destroy response is lost, list again. Retry destroy only when the step is still present. The list is empty when the rollback of the step finished. If the new Gateway is already deployed, keep the helper and the step until the previous Gateway is restored. The new Gateway has no built-in bridge hook, so removing them leaves task bridges behind. Restore the previous Gateway first, re-read the teardown list, and only then destroy the step and delete the file.
 
+## Gateway-owned setup steps
+
+A setup step whose command is `@orbit/tia-baseline` or `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. The Gateway renders its command right before the step runs, within the step's timeout. Development Instance setup, the task baseline setup list, and a [task VM workspace template](/reference/compute-drivers#build-a-template) build run it the same way. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
+
 ## Restore a CI TIA baseline
 
 Add an opt-in setup step after dependency installation and asset builds:
@@ -436,6 +440,31 @@ Only `graph.json` and the optional `js-module-graph.cache.json` travel to the No
 The restore runs as the managed user, as do setup and the task candidate check. It asks the installed Pest for its cache directory without running tests. The directory must be inside that user's home or this checkout, with no symlink components. It stages files under a cache lock and publishes a new directory atomically. A nonempty cache stays unchanged, so retries and later subtasks keep their own results. Remove an obsolete cache explicitly before requesting a fresh import. Pest remains responsible for rejecting an incompatible runtime fingerprint and recording a new local baseline when needed.
 
 This step does not provision a VM or change the CI publication policy. It follows the same setup ordering, time budget, and failure cleanup as other steps. The list's total timeout must still fit the Project setup limits.
+
+## Import CI main caches
+
+Add this step after the install steps of a monorepo whose CI publishes main caches the way Orbit's `ci.yml` does:
+
+```bash
+orbit instance:setup-step:create ci-caches --project=PROJECT --command='@orbit/ci-caches' --timeout=120 --json
+```
+
+The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` for this one repository. It reads the newest 20 successful runs of `ci.yml` on the Project's default branch from a push, a schedule, or a manual dispatch. It takes the newest run that has unexpired `sandbox-tia-<job>-<commit>` artifacts, and downloads them all: one archive per Composer project, each at most 16 MiB and 32 MiB together. The archives travel to the checkout inside the step's command. The checkout receives no GitHub credential.
+
+In the checkout, the step runs `bin/tia-cache import-ci` for each archive. It checks the archive's manifest, checksums, project, tested commit, and test configuration. It writes the project's Pest TIA graph to `.orbit-tia/graph.json`, and the Pint and PHPStan caches into `vendor/`, each only where none exists. So a retry or a later baseline keeps the workspace's own results.
+
+The step decides between a loud failure and a cold run like this:
+
+| Situation | Result |
+| --- | --- |
+| No App, no Actions read, or GitHub unreadable | The step fails with `instance.ci_caches_unavailable` |
+| No successful run among the newest 20 has unexpired main caches | The step fails with `instance.ci_caches_missing` |
+| An archive fails its checksums, its graph is invalid, or `bin/tia-cache` is missing | The step fails |
+| The archive's test configuration differs from the checkout's, or its commit is not in the checkout's history | The step goes on. That project's tests run cold, and the log names the project and the reason |
+| A quality cache's lock file, tool configuration, or PHP minor version differs | The step goes on without that cache, and the log names the reason |
+| A Pest project gets no graph | The log prints `[<project>] has no Pest TIA graph: its tests run cold.` |
+
+A cold run only happens in the minutes after a change to a project's test configuration lands on `main`, until CI on `main` publishes new caches. Each baseline runs the step again, so a workspace from a template that stayed cold imports the graph once the caches fit.
 
 ## Failure codes
 

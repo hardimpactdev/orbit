@@ -6,8 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppDev\SsrEndpoint;
-use App\Domain\Projects\LifecycleStep;
-use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
@@ -32,7 +31,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     public function __construct(
         private TaskWorkspaceExecutor $ssh,
         private VpToolManager $vp,
-        private TiaBaselineSetup $tia,
+        private GatewaySetupSteps $gatewaySteps,
     ) {}
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
@@ -43,11 +42,11 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
         foreach ($setup as &$step) {
-            if ($step['command'] === LifecycleStep::RestoreTiaBaseline) {
+            if (GatewaySetupSteps::owns($step['command'])) {
                 try {
                     $instance->loadMissing('project');
                     $started = microtime(true);
-                    $step['command'] = $this->tia->command($instance->project, $step['timeout_seconds']);
+                    $step['command'] = $this->gatewaySteps->command($instance->project, $step['command'], $step['timeout_seconds']);
                     $step['timeout_seconds'] = max(1, (int) floor($step['timeout_seconds'] - (microtime(true) - $started)));
                 } catch (ResourceOperationException $exception) {
                     throw new TaskCheckException('Setup step ['.$step['name'].']: '.$exception->getMessage());

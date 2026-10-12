@@ -42,6 +42,7 @@ final readonly class TaskVmSettings
     /**
      * @param  list<TaskVmHost>  $hosts
      * @param  list<string>  $piModels
+     * @param  list<int>  $mediumProjectIds
      */
     public function __construct(
         public bool $enabled,
@@ -54,6 +55,7 @@ final readonly class TaskVmSettings
         public array $piModels,
         public int $parkAfterMinutes = 30,
         public ?TaskVmUpCloud $upcloud = null,
+        public array $mediumProjectIds = [],
     ) {}
 
     public static function fromConfig(): self
@@ -91,6 +93,7 @@ final readonly class TaskVmSettings
             piModels: self::models(Config::get('task_vms.pi.models')),
             parkAfterMinutes: self::parkAfterMinutes(Config::get('task_vms.park_after_minutes')),
             upcloud: self::upcloud($enabled),
+            mediumProjectIds: self::projectIds(Config::get('task_vms.medium_projects', []), 'medium_projects'),
         );
     }
 
@@ -300,10 +303,7 @@ final readonly class TaskVmSettings
         if ($enabled && ! $taskVmsEnabled) {
             throw self::invalid('the UpCloud overflow needs task VMs enabled.');
         }
-        $projects = Config::get('task_vms.upcloud.projects');
-        if (! is_array($projects) || ! array_is_list($projects) || array_any($projects, static fn (mixed $id): bool => ! is_int($id) || $id < 1)) {
-            throw self::invalid('upcloud.projects must be a JSON list of Project ids.');
-        }
+        $projects = self::projectIds(Config::get('task_vms.upcloud.projects'), 'upcloud.projects');
         $maxVms = self::filled(Config::get('task_vms.upcloud.max_vms'));
         $maxVms = is_int($maxVms) || is_string($maxVms) ? filter_var($maxVms, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 16]]) : false;
         if (! is_int($maxVms)) {
@@ -316,7 +316,7 @@ final readonly class TaskVmSettings
 
         return new TaskVmUpCloud(
             enabled: $enabled,
-            projectIds: array_values(array_unique($projects)),
+            projectIds: $projects,
             tokenFile: $tokenFile,
             maxVms: $maxVms,
             zone: self::name(self::filled(Config::get('task_vms.upcloud.zone')) ?? 'nl-ams1', '/\A[a-z]{2}-[a-z]{3}[1-9]\z/D', 'upcloud.zone'),
@@ -324,6 +324,16 @@ final readonly class TaskVmSettings
             diskGb: $diskGb,
             sourceTemplate: self::name(self::filled(Config::get('task_vms.upcloud.source_template')) ?? '01000000-0000-4000-8000-000030260200', '/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', 'upcloud.source_template'),
         );
+    }
+
+    /** @return list<int> */
+    private static function projectIds(mixed $value, string $key): array
+    {
+        if (! is_array($value) || ! array_is_list($value) || array_any($value, static fn (mixed $id): bool => ! is_int($id) || $id < 1)) {
+            throw self::invalid("{$key} must be a JSON list of Project ids.");
+        }
+
+        return array_values(array_unique($value));
     }
 
     /** Unset or empty means 30; 0 is an error. The environment gives a string, so a whole number in a string counts. */
