@@ -45,7 +45,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host((int) $vm->host_node_id);
-        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, TaskVmHost::BaseImage, $userData);
+        $result = $this->incus->launch($host, $vm->incusHostNode(), $vm->name, TaskVmHost::BaseImage, $userData, $vm->size);
 
         // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {

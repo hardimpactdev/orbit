@@ -18,11 +18,13 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -483,6 +485,22 @@ describe('claim', function (): void {
 
         $vm->refresh()->update(['state' => TaskVmState::Ready]);
         expect(app(TaskVmWorkspace::class)->node($group)->id)->toBe($vm->node_id);
+    });
+
+    it('gives a group with a declared topology a new large VM, never a warm one', function (): void {
+        Queue::fake();
+        $warm = tvm_pool_vm();
+        tvm_pool_hosts([[$this->host, 4, 1]]);
+        $group = tvm_pool_group();
+        Task::query()->create(['parent_id' => $group->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+
+        $vm = app(AllocateTaskVmAction::class)->execute($group);
+
+        expect($vm->id)->not->toBe($warm->id)
+            ->and($vm->refresh()->size)->toBe(TaskVmSize::Large)
+            ->and($warm->refresh()->group_id)->toBeNull()
+            ->and($warm->state)->toBe(TaskVmState::Warm);
+        Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
     });
 
     it('never gives one warm VM to two groups', function (): void {

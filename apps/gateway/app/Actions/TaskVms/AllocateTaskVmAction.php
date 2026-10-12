@@ -9,6 +9,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -30,12 +31,14 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Gives a group its task VM. A warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`,
- * and runs only the group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
- * `orbit-task-base` names now, read from the host at the claim. Without one, the claim records a new row on
- * the active host with the most free slots and queues its creation. When no host has a free slot, an opted-in
- * Project's group may overflow to an UpCloud VM ({@see self::host()}). A new row is named `tvm-<row id>`, so a
- * retry after a destroyed VM never reuses a name, and it holds its reserved WireGuard address from the start.
+ * Gives a group its task VM, of the size that the group's declared topology needs ({@see TaskVmSize}). For a
+ * normal VM a warm VM goes first: the claim sets its group, a new Pi token, and `claimed_at`, and runs only the
+ * group's steps, in the claim. A warm VM qualifies only while it launched the image that its host's
+ * `orbit-task-base` names now, read from the host at the claim. Without one, and always for a large VM, the claim
+ * records a new row on the active host with the most free slots that has room for the size, and queues its creation.
+ * When no host has room for a normal VM, an opted-in Project's group may overflow to an UpCloud VM
+ * ({@see self::host()}); a large VM never does. A new row is named `tvm-<row id>`, so a retry after a destroyed VM
+ * never reuses a name, and it holds its reserved WireGuard address from the start.
  *
  * One placement runs at a time under a cache lock, so two claims never take the same warm VM or both take a
  * host's last slot. The pool refill takes the same lock.
@@ -46,6 +49,9 @@ final readonly class AllocateTaskVmAction
 
     /** Every slot is taken, and at least one of them is a warm VM that is still starting. */
     public const string WarmStarting = 'Task VM: waiting for a warm VM.';
+
+    /** No host has the free slots of a large VM, for a group with a declared topology. */
+    public const string NoLargeCapacity = 'Task VM: no host has 3 free slots for a large VM.';
 
     private const string PlacementLock = 'task-vms:placement';
 
@@ -69,10 +75,12 @@ final readonly class AllocateTaskVmAction
         if ($existing instanceof TaskVm) {
             return $existing;
         }
-        $images = $this->warmImages();
+        $size = TaskVmSize::forGroup($group);
+        // A large VM is always new, so it needs no warm VM image.
+        $images = $size === TaskVmSize::Normal ? $this->warmImages() : [];
 
         try {
-            [$vm, $warm] = self::locked(fn (): array => $this->place($group, $images));
+            [$vm, $warm] = self::locked(fn (): array => $this->place($group, $images, $size));
         } catch (LockTimeoutException) {
             throw new TaskCapacityException(false, 'Task VM: another placement is running.');
         }
@@ -134,12 +142,13 @@ final readonly class AllocateTaskVmAction
      * gets no Pi token; a claim gives it one. A row without a host is an UpCloud VM. Call it under the placement
      * lock, inside a transaction.
      */
-    public function record(?Task $group, ?int $hostNodeId): TaskVm
+    public function record(?Task $group, ?int $hostNodeId, TaskVmSize $size = TaskVmSize::Normal): TaskVm
     {
         $vm = TaskVm::query()->create([
             'group_id' => $group?->id,
             'host_node_id' => $hostNodeId,
             'provider' => $hostNodeId === null ? TaskVm::UpCloud : TaskVm::Incus,
+            'size' => $size,
             'name' => 'tvm-pending-'.Str::uuid(),
             'state' => TaskVmState::Provisioning,
             'wireguard_ip' => $this->addresses->nextIn(
@@ -155,8 +164,9 @@ final readonly class AllocateTaskVmAction
     }
 
     /**
-     * The free slots of each configured host that is an active Node, in config order: `max_vms` minus every task VM
-     * on the host that is not destroyed, warm, parked and failed ones too. A host over its budget has 0.
+     * The free slots of each configured host that is an active Node, in config order: `max_vms` minus the slots of
+     * every task VM on the host that is not destroyed, warm, parked and failed ones too. A normal VM takes one slot and
+     * a large VM three. A host over its budget has 0.
      *
      * @return array<int, int> host Node id => free slots
      */
@@ -164,7 +174,10 @@ final readonly class AllocateTaskVmAction
     {
         $active = Node::query()->whereKey(array_map(static fn (TaskVmHost $host): int => $host->nodeId, $this->settings->hosts))
             ->where('status', LifecycleStatus::Active)->pluck('id')->all();
-        $used = TaskVm::query()->live()->get(['host_node_id'])->countBy('host_node_id')->all();
+        $used = [];
+        foreach (TaskVm::query()->live()->whereNotNull('host_node_id')->get(['host_node_id', 'size']) as $vm) {
+            $used[$vm->host_node_id] = ($used[$vm->host_node_id] ?? 0) + $vm->size->slots();
+        }
         $free = [];
         foreach ($this->settings->hosts as $host) {
             if (in_array($host->nodeId, $active, true)) {
@@ -240,21 +253,21 @@ final readonly class AllocateTaskVmAction
      * @param  array<int, string>  $images
      * @return array{TaskVm, bool} the row, and whether it is a warm VM this claim took
      */
-    private function place(Task $group, array $images): array
+    private function place(Task $group, array $images, TaskVmSize $size): array
     {
-        return DB::transaction(function () use ($group, $images): array {
+        return DB::transaction(function () use ($group, $images, $size): array {
             $existing = TaskVm::query()->live()->where('group_id', $group->id)->first();
             if ($existing instanceof TaskVm) {
                 return [$existing, false];
             }
 
             $free = $this->freeSlots();
-            $warm = $this->takeWarm($group, $images, $free);
+            $warm = $size === TaskVmSize::Normal ? $this->takeWarm($group, $images, $free) : null;
             if ($warm instanceof TaskVm) {
                 return [$warm, true];
             }
 
-            return [$this->record($group, $this->host($free, $group)), false];
+            return [$this->record($group, $this->host($free, $group, $size), $size), false];
         });
     }
 
@@ -296,16 +309,17 @@ final readonly class AllocateTaskVmAction
     }
 
     /**
-     * The active host with the most free slots. Hosts with as many free slots keep their config order. With no free
-     * slot, null places the VM at UpCloud: only while the overflow is on, the group's Project is opted in, and fewer
-     * than `max_vms` UpCloud VMs are live, failed and parked ones too.
+     * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
+     * their config order. Without room for a normal VM, null places it at UpCloud: only while the overflow is on, the
+     * group's Project is opted in, and fewer than `max_vms` UpCloud VMs are live, failed and parked ones too. A large
+     * VM waits for an Incus host: UpCloud has a fixed plan and no nested virtualization that Orbit relies on.
      *
      * @param  array<int, int>  $free
      */
-    private function host(array $free, Task $group): ?int
+    private function host(array $free, Task $group, TaskVmSize $size): ?int
     {
         $best = null;
-        $bestFree = 0;
+        $bestFree = $size->slots() - 1;
         foreach ($free as $hostId => $slots) {
             if ($slots > $bestFree) {
                 [$best, $bestFree] = [$hostId, $slots];
@@ -313,6 +327,9 @@ final readonly class AllocateTaskVmAction
         }
         if ($best !== null) {
             return $best;
+        }
+        if ($size !== TaskVmSize::Normal) {
+            throw new TaskCapacityException(false, self::NoLargeCapacity);
         }
         $upcloud = $this->settings->upcloud;
         if ($upcloud?->allows($group->project_id) === true

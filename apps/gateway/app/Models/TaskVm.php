@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $host_node_id
  * @property int|null $node_id
  * @property string $provider
+ * @property TaskVmSize $size
  * @property string|null $provider_id
  * @property string|null $ssh_host_key
  * @property string $name
@@ -54,7 +56,7 @@ final class TaskVm extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'group_id', 'host_node_id', 'node_id', 'provider', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
+        'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'provider_id', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
         'pi_token', 'model_key', 'model_proxy_origin', 'claimed_at', 'warmed_at', 'image_fingerprint',
         'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
@@ -63,12 +65,17 @@ final class TaskVm extends Model
     #[\Override]
     protected $hidden = ['pi_token', 'model_key'];
 
+    /** @var array<string, string> */
+    #[\Override]
+    protected $attributes = ['size' => 'normal'];
+
     /** @return array<string, string> */
     #[\Override]
     protected function casts(): array
     {
         return [
             'state' => TaskVmState::class,
+            'size' => TaskVmSize::class,
             'pi_token' => 'encrypted',
             'model_key' => 'encrypted',
             'claimed_at' => 'datetime',
