@@ -8,6 +8,8 @@ use App\Domain\Vault\VaultCredentials;
 use App\Domain\Vault\VaultException;
 use App\Infrastructure\Vault\BitwardenCrypto;
 use App\Infrastructure\Vault\HttpVaultClient;
+use GuzzleHttp\Handler\StreamHandler;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -43,6 +45,7 @@ function vault_account(BitwardenCrypto $crypto, string $password, int $kdf = 0, 
         'https://vault.test/identity/accounts/prelogin' => Http::response(['kdf' => $kdf, 'kdfIterations' => $iterations]),
         'https://vault.test/api/sync*' => Http::response([
             'profile' => [
+                'id' => 'user-1',
                 'email' => $email,
                 'key' => $crypto->encrypt($userKey, $crypto->masterKey($password, $email, 5000)),
                 'privateKey' => $crypto->encrypt($der, $userKey),
@@ -171,6 +174,12 @@ describe('HttpVaultClient', function (): void {
             ->and(array_unique($verify))->toBe([$this->rootPath]);
     });
 
+    it('sends through the stream handler, because cURL keeps the system CA directory beside the CA file', function (): void {
+        $request = (fn (): PendingRequest => $this->http())->call($this->client);
+
+        expect((fn (): mixed => $this->handler)->call($request))->toBeInstanceOf(StreamHandler::class);
+    });
+
     it('never trusts a CA file another account planted in the temporary directory', function (): void {
         $planted = sys_get_temp_dir().'/orbit-vault-root-ca-'.hash('sha256', $this->root).'.pem';
         file_put_contents($planted, "-----BEGIN CERTIFICATE-----\nATTACKER\n-----END CERTIFICATE-----\n");
@@ -248,6 +257,8 @@ describe('HttpVaultClient', function (): void {
                 ->and($request['collectionIds'])->toBe(['col-1'])
                 ->and($cipher['type'])->toBe(2)
                 ->and($cipher['organizationId'])->toBe('org-1')
+                ->and($cipher['encryptedFor'])->toBe('user-1')
+                ->and($request->hasHeader('Bitwarden-Client-Version'))->toBeTrue()
                 ->and($cipher['secureNote'])->toBe(['type' => 0])
                 ->and($decrypt($cipher['name']))->toBe('ohdear')
                 ->and($decrypt($cipher['notes']))->toBe('Managed by Orbit.')

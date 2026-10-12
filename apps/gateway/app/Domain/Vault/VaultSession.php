@@ -22,6 +22,8 @@ final readonly class VaultSession
         public string $url,
         #[SensitiveParameter] public string $accessToken,
         public string $email,
+        /** The account's user ID. Vaultwarden requires it as `encryptedFor` on every item write. */
+        public string $userId,
         public array $organizations,
         public array $collections,
         public array $ciphers,

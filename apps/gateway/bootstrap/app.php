@@ -32,6 +32,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -77,7 +78,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // The nightly task VM base image refresh, a job on the task VM queue below.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
             ->when(static fn (): bool => config('task_vms.enabled') === true);
-        // The task VM host sweep: orphaned VMs and live rows whose VM is gone.
+        // The nightly workspace templates of task VM Projects, built from the base image of the night.
+        $schedule->job(new RefreshTaskVmWorkspaceTemplates)->dailyAt('04:00')
+            ->when(static fn (): bool => config('task_vms.enabled') === true);
+        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
             ->when(static fn (): bool => config('task_vms.enabled') === true);
         // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no

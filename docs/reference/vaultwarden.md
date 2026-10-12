@@ -42,7 +42,7 @@ The Gateway publishes one item for each of these:
 
 Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault#orbit-vaultstatus).
 
-Each item is a Secure Note in the configured collection. Its custom fields follow schema version 1 of Vault's Database item:
+Each item is a Secure Note in the configured collection. Every write names the Gateway account as `encryptedFor`, which Vaultwarden 1.37 requires, and sends a Bitwarden client version header. Its custom fields follow schema version 1 of Vault's Database item:
 
 | Field | Value |
 | --- | --- |
@@ -153,6 +153,8 @@ The Gateway writes the standard Bitwarden format itself instead of driving the B
 The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
 
 The Gateway reads the CA from `root.pem` in its state directory, next to the root key, and checks it before each request. It never copies the CA to a shared temporary directory, where another local account could plant its own CA under the expected name.
+
+That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The client sends through PHP's OpenSSL streams, which load only the CA file they are given. It does not use cURL, because libcurl keeps its own CA directory beside any CA file.
 
 ### Removed credentials are deleted
 

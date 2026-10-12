@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
@@ -10,6 +11,7 @@ use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -19,6 +21,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -85,7 +88,7 @@ beforeEach(function (): void {
             return array_shift($this->results) ?? throw new RuntimeException('Unexpected SSH command: '.$command->shellCommand());
         }
     };
-    $this->provider = new IncusTaskVmProvider(new IncusHost($this->ssh, new class implements SshKeyProvider
+    $incus = new IncusHost($this->ssh, new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
         {
@@ -104,7 +107,8 @@ beforeEach(function (): void {
         }
 
         public function put(string $host, int $port, HostKey $key): void {}
-    }), $settings);
+    });
+    $this->provider = new IncusTaskVmProvider($incus, $settings, new TaskVmWorkspaceTemplates($incus, $settings, app(DevelopmentSshExecutor::class), app(ManagedUserAccountResolver::class)));
     $this->answer = function (CommandResult ...$results): void {
         $this->ssh->results = $results;
     };
@@ -280,12 +284,12 @@ it('refuses an invalid fingerprint', function (CommandResult $result, string $co
     'no key' => [incusResult(exitCode: 1, stderr: 'No such file'), 'task_vm.host_command_failed'],
 ]);
 
-it('deletes the VM and accepts an absent one', function (): void {
-    ($this->answer)(incusResult());
+it('deletes the VM and its workspace clone, and accepts an absent one', function (): void {
+    ($this->answer)(incusResult(), incusResult());
     $this->provider->destroy($this->vm);
-    expect(($this->argv)())->toBe([[...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1']]);
+    expect(($this->argv)())->toBe([[...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1'], [...INCUS_PREFIX, 'storage', 'volume', 'delete', '--', 'tank', 'tvm-1-workspace']]);
 
-    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList());
+    ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList(), incusResult(exitCode: 1, stderr: 'Error: Storage volume not found'), incusResult('[]'));
     $this->provider->destroy($this->vm);
 
     ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: busy'), incusList(incusInstance()));

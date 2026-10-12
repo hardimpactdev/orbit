@@ -16,6 +16,8 @@ use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * The claim side of a web-lane `vm` group: the Node of its ready task VM. Until the VM is ready, the
@@ -56,5 +58,32 @@ final readonly class TaskVmWorkspace
             TaskVmState::Parked => WakeTaskVmAction::Resuming,
             default => 'Task VM: provisioning.',
         });
+    }
+
+    /** The group's task VM that is not destroyed, or null for a group without one. */
+    public function vm(Task $group): ?TaskVm
+    {
+        return TaskVmPlacement::forGroup($group);
+    }
+
+    /**
+     * Gives the group's task VM a clone of its Project's workspace template, mounted at `$directory`, the Project's
+     * apps directory on the VM, and returns the template checkout. Without a template, or when a step fails, it logs a
+     * warning and returns null, and the workspace starts from a fresh clone: a template only makes a claim faster.
+     */
+    public function template(TaskVm $vm, Task $group, string $directory): ?string
+    {
+        try {
+            return app(TaskVmWorkspaceTemplates::class)->attach($vm, $group->project, $directory);
+        } catch (Throwable $exception) {
+            Log::warning('Task VM workspace template could not be attached; the workspace starts from a fresh clone.', [
+                'task_vm' => $vm->name,
+                'project_id' => $group->project_id,
+                'error_code' => TaskVmException::codeOf($exception),
+                'error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+
+            return null;
+        }
     }
 }

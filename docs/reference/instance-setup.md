@@ -101,6 +101,8 @@ Orbit reads them again before each step. Project steps own the [dependency copy]
 
 When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
+A task VM has no `default` Instance, so its workspace has no seed. Instead, source preparation can take a [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template): a prepared checkout of the default branch next to the new checkout, on the same filesystem. Preparation checks that the template is a repository of the managed user with the Project's origin, and renames it to the checkout instead of cloning. Its ignored files, such as `vendor` and `node_modules`, stay. Without a template it clones as usual.
+
 A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url).
 
 Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.

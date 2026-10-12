@@ -129,6 +129,9 @@ final class FakeIncusFleetHost
             $operation[0] === 'image' && $operation[1] === 'delete' => $this->answer('image delete', function () use ($operation): void {
                 unset($this->images[end($operation)]);
             }),
+            // A host without workspace templates or clones.
+            $operation[0] === 'storage' && $operation[1] === 'volume' && $operation[2] === 'list' => $this->answer('storage volume list', static fn (): string => '[]'),
+            $operation[0] === 'storage' && $operation[1] === 'volume' && $operation[2] === 'delete' => $this->answer('storage volume delete'),
             default => throw new RuntimeException('Unexpected incus command: '.implode(' ', $operation)),
         };
     }

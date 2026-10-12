@@ -61,6 +61,9 @@ final class TaskVmSweepIncus implements SshExecutor
 
             return new CommandResult(0, $this->projectMissing ? '' : implode("\n", $this->instances[$connection->host] ?? []).($this->instances[$connection->host] ?? [] ? "\n" : ''), '', 1, false);
         }
+        if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
+            return new CommandResult(0, '[]', '', 1, false);
+        }
         if (($arguments[0] ?? null) === 'delete') {
             $name = end($arguments);
             $this->instances[$connection->host] = array_values(array_diff($this->instances[$connection->host] ?? [], [$name]));

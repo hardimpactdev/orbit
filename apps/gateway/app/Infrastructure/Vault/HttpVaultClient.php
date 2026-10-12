@@ -13,6 +13,7 @@ use App\Domain\Vault\VaultException;
 use App\Domain\Vault\VaultOrganization;
 use App\Domain\Vault\VaultRemoteCipher;
 use App\Domain\Vault\VaultSession;
+use GuzzleHttp\Handler\StreamHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -44,6 +45,13 @@ final readonly class HttpVaultClient implements VaultClient
 
     private const string SourceField = 'orbit.source';
 
+    /** Vaultwarden logs requests without a client version as unauthorized clients. */
+    private const array ClientHeaders = [
+        'Bitwarden-Client-Name' => 'cli',
+        'Bitwarden-Client-Version' => '2026.6.0',
+        'Device-Type' => '25',
+    ];
+
     public function __construct(
         private BitwardenCrypto $crypto,
         private LeafCertificateSigner $certificates,
@@ -72,10 +80,11 @@ final readonly class HttpVaultClient implements VaultClient
         $sync = $this->send(fn (): Response => $this->http()->withToken($accessToken)->get($url.'/api/sync', ['excludeDomains' => 'true']));
         $profile = $this->array($sync, 'profile') ?? [];
         $email = $this->string($profile, 'email');
+        $userId = $this->string($profile, 'id');
         $encryptedUserKey = $this->string($profile, 'key');
         $encryptedPrivateKey = $this->string($profile, 'privateKey');
 
-        if ($email === null || $encryptedUserKey === null || $encryptedPrivateKey === null) {
+        if ($email === null || $userId === null || $encryptedUserKey === null || $encryptedPrivateKey === null) {
             throw $this->unexpected();
         }
 
@@ -154,7 +163,7 @@ final readonly class HttpVaultClient implements VaultClient
             }
         }
 
-        return new VaultSession($url, $accessToken, $email, $organizations, $collections, $ciphers, $organizationKeys);
+        return new VaultSession($url, $accessToken, $email, $userId, $organizations, $collections, $ciphers, $organizationKeys);
     }
 
     public function create(VaultSession $session, string $organizationId, string $collectionId, VaultCipher $cipher): VaultRemoteCipher
@@ -218,6 +227,8 @@ final readonly class HttpVaultClient implements VaultClient
                 'linkedId' => null,
             ], $cipher->fields),
             'lastKnownRevisionDate' => null,
+            // Vaultwarden 1.37 refuses a write that does not name the account that encrypted it.
+            'encryptedFor' => $session->userId,
         ];
     }
 
@@ -309,7 +320,15 @@ final readonly class HttpVaultClient implements VaultClient
 
     private function http(): PendingRequest
     {
-        return Http::timeout(15)->connectTimeout(5)->acceptJson()->withOptions(['verify' => $this->trustFile()]);
+        // The stream handler gives PHP OpenSSL only the CA file, so the system store stays out. The cURL
+        // handler cannot: Guzzle maps `verify` to CURLOPT_CAINFO, libcurl keeps its compiled-in CA directory
+        // (`/etc/ssl/certs` on Ubuntu) beside it, and Guzzle refuses CURLOPT_CAPATH in the `curl` option.
+        // The stream handler has no connect timeout; the 15-second limit covers connecting too.
+        return Http::setHandler(new StreamHandler)
+            ->timeout(15)
+            ->acceptJson()
+            ->withHeaders(self::ClientHeaders)
+            ->withOptions(['verify' => $this->trustFile()]);
     }
 
     /**

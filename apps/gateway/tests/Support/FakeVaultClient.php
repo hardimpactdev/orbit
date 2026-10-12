@@ -82,6 +82,7 @@ final class FakeVaultClient implements VaultClient
             $credentials->url,
             'token',
             'gateway@example.test',
+            'user-gateway',
             [new VaultOrganization(self::OrganizationId, 'Orbit'), new VaultOrganization('org-2', 'Other')],
             $this->collections,
             $ciphers,
