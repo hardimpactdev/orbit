@@ -30,6 +30,7 @@ use App\Infrastructure\TaskVms\TaskVmBuilderShell;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\BuildTaskVmWorkspaceTemplate;
+use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
@@ -39,9 +40,11 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\CallbackEvent;
+use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
@@ -222,6 +225,28 @@ function tvm_template_vm(Task $group, string $name = 'tvm-1'): TaskVm
         'group_id' => $group->id, 'host_node_id' => test()->hostNode->id, 'node_id' => $node->id, 'provider' => 'incus', 'name' => $name,
         'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130', 'pi_token' => str_repeat('p', 64),
     ]);
+}
+
+/**
+ * `$count` more `vm` Projects. Every fifth has no default branch, and the first `$active` have a group from today.
+ *
+ * @return list<Project>
+ */
+function tvm_projects(int $count, int $active): array
+{
+    $projects = [];
+    for ($i = 1; $i <= $count; $i++) {
+        $project = Project::query()->create([
+            'name' => "App {$i}", 'slug' => "app-{$i}", 'repository_url' => "https://github.com/acme/app-{$i}.git",
+            'default_branch' => $i % 5 === 0 ? null : 'main', 'task_compute' => TaskCompute::Vm,
+        ]);
+        if ($i <= $active) {
+            Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm]);
+        }
+        $projects[] = $project;
+    }
+
+    return $projects;
 }
 
 beforeEach(function (): void {
@@ -451,7 +476,7 @@ describe('volumes', function (): void {
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
-    it('deletes the templates of Projects that no longer run task VMs and queues a build for each one that does', function (): void {
+    it('deletes the templates of Projects that no longer run task VMs and queues a build for an active one that does', function (): void {
         Queue::fake();
         $shared = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
         $this->incus->volumes = [
@@ -478,6 +503,128 @@ describe('volumes', function (): void {
         $this->incus->alias = TVM_NEW_IMAGE;
         app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_IMAGE);
         Queue::assertPushed(RefreshTaskVmWorkspaceTemplates::class, 1);
+    });
+});
+
+describe('scale', function (): void {
+    it('after a promote, deletes the old templates and builds ahead only for active Projects, on the template queue', function (): void {
+        Log::spy();
+        $shark = Node::query()->create([
+            'name' => 'shark', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
+            'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:shark',
+        ]);
+        $sharkHost = new TaskVmHost($shark->id, 'orbit-tasks', 'orbittask0', '10.251.78.0/24', 4, 2, '4GiB', '40GiB');
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(true, 4, '10.44.0.128/25', [$this->host, $sharkHost], 'http://10.44.0.3:8317', null, null, []));
+        // Mealou is active through the group of the setup; its old group does not count.
+        $projects = tvm_projects(25, active: 6);
+        Task::topLevel()->create(['project_id' => $projects[10]->id, 'title' => 'Old', 'brief' => 'Old', 'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm])
+            ->forceFill(['created_at' => now()->subDays(TaskVmWorkspaceTemplates::ActiveDays + 1)])->save();
+        $this->incus->volumes = [
+            'tvm-template-'.$this->project->id.'-20261011040000' => tvm_ready(),
+            'tvm-template-'.$projects[0]->id.'-20261011040000' => tvm_ready($projects[0]->repository_url),
+            'tvm-template-'.$projects[1]->id.'-20261011040000' => tvm_ready($projects[1]->repository_url, TVM_NEW_IMAGE),
+            'tvm-template-'.$projects[1]->id.'-20261011050000' => tvm_ready($projects[1]->repository_url, TVM_NEW_IMAGE),
+            'tvm-template-'.$projects[2]->id.'-20261011040000' => tvm_ready('https://github.com/old/app-3.git', TVM_NEW_IMAGE),
+            'tvm-template-'.$projects[3]->id.'-20261011060000' => [],
+        ];
+
+        app(TaskVmBaseImage::class)->promote($this->host, $this->hostNode, TVM_NEW_IMAGE);
+        app(TaskVmBaseImage::class)->promote($sharkHost, $shark, TVM_NEW_IMAGE);
+
+        // Both promotes queue one refresh, on the template queue, and nothing on the task VM queue.
+        expect(DB::table('jobs')->pluck('queue')->all())->toBe([TaskVmWorkspaceTemplates::Queue]);
+
+        app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
+
+        // One template per Project, none from the old image or an old repository; an unfinished build stays.
+        expect(array_keys($this->incus->volumes))->toBe([
+            'tvm-template-'.$projects[1]->id.'-20261011050000',
+            'tvm-template-'.$projects[3]->id.'-20261011060000',
+        ]);
+        // Mealou and app-1..app-6 are active; app-5 has no default branch. 6 Projects on 2 hosts.
+        $builds = DB::table('jobs')->where('payload', 'like', '%BuildTaskVmWorkspaceTemplate%')->get();
+        $built = $builds->map(static fn (object $job): array => [unserialize(json_decode($job->payload, true)['data']['command'])->hostNodeId, unserialize(json_decode($job->payload, true)['data']['command'])->projectId])->all();
+        $expected = [];
+        foreach ([$this->hostNode->id, $shark->id] as $host) {
+            foreach ([$this->project, ...array_slice($projects, 0, 6)] as $project) {
+                if ($project->default_branch !== null) {
+                    $expected[] = [$host, $project->id];
+                }
+            }
+        }
+        expect($built)->toBe($expected)
+            ->and($builds->pluck('queue')->unique()->all())->toBe([TaskVmWorkspaceTemplates::Queue])
+            ->and(DB::table('jobs')->where('queue', 'task-vms')->count())->toBe(0);
+        Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
+            static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
+        ))->times(5);
+    });
+
+    it('keeps task VM jobs ahead of template builds: each queue has its own worker', function (): void {
+        $this->travelTo(now()->setTime(4, 0, 10));
+        tvm_projects(25, active: 25);
+        app()->call([new RefreshTaskVmWorkspaceTemplates, 'handle']);
+        DestroyTaskVm::dispatch(tvm_template_vm($this->group)->id);
+
+        Artisan::call('schedule:list');
+        $events = app(Schedule::class)->events();
+        $workers = collect($events)->filter(static fn (Event $event): bool => str_contains((string) $event->command, 'queue:work'))->values();
+        [$vms, $templates] = [$workers[0], $workers[1]];
+
+        expect(DB::table('jobs')->where('queue', TaskVmWorkspaceTemplates::Queue)->count())->toBe(21)
+            ->and($vms->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=120 --timeout=1500")
+            ->and($templates->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700")
+            ->and($templates)->toBe(end($events))
+            ->and([$templates->repeatSeconds, $templates->withoutOverlapping, $templates->expiresAt, $templates->runInBackground])->toBe([1, true, 30, false])
+            // The task VM worker takes the destroy at once, behind no build.
+            ->and($vms->filtersPass(app()))->toBeTrue()
+            // The template worker starts only in the last two seconds of a minute, so the run it holds ends soon.
+            ->and($templates->filtersPass(app()))->toBeFalse();
+
+        $this->travelTo(now()->setTime(4, 0, 58));
+        expect($templates->filtersPass(app()))->toBeTrue();
+
+        DB::table('jobs')->where('queue', 'task-vms')->delete();
+        expect($vms->filtersPass(app()))->toBeFalse();
+    });
+
+    it('starts a claim from a fresh clone while its template builds, and queues no second build', function (): void {
+        Log::spy();
+        BuildTaskVmWorkspaceTemplate::dispatch($this->hostNode->id, $this->project->id);
+        // The running build holds the host and has an unfinished volume; the old image's template is gone.
+        Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 60)->get();
+        $this->incus->volumes = ['tvm-template-'.$this->project->id.'-20261012040000' => []];
+        $vm = tvm_template_vm($this->group);
+
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
+            ->and(collect($this->incus->operations())->contains(static fn (array $operation): bool => ($operation[2] ?? null) === 'copy'))->toBeFalse()
+            ->and(DB::table('jobs')->count())->toBe(1);
+        Log::shouldHaveReceived('warning')->with('Task VM workspace has no template; it starts from a fresh clone.', Mockery::any());
+    });
+
+    it('skips a Project without a default branch loudly, with no build, retry, or backoff', function (): void {
+        Log::spy();
+        $this->project->update(['default_branch' => null]);
+        $vm = tvm_template_vm($this->group);
+
+        // A claim asks for no build.
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBeNull()
+            ->and(DB::table('jobs')->count())->toBe(0);
+
+        // A queued build launches nothing, and neither fails nor waits.
+        $this->incus->calls = [];
+        $job = (new BuildTaskVmWorkspaceTemplate($this->hostNode->id, $this->project->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+        $job->assertNotFailed();
+        $job->assertNotReleased();
+        expect($this->incus->calls)->toBe([])
+            ->and(Cache::has(TaskVmWorkspaceTemplates::backoffKey($this->hostNode->id, $this->project->id)))->toBeFalse();
+        Log::shouldHaveReceived('warning')->with('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', Mockery::on(
+            static fn (array $context): bool => $context['reason'] === 'the Project has no valid default branch',
+        ))->twice();
+
+        expect(Artisan::call('task-vms:build-workspace-template', ['node' => 'beast', 'project' => 'mealou']))->toBe(1)
+            ->and(Artisan::output())->toContain('cannot have a workspace template: the Project has no valid default branch');
     });
 });
 
