@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\TaskVms\TaskVmState;
+use App\Models\TaskVm;
 use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
@@ -268,6 +270,7 @@ it('starts a task VM workspace from the template checkout next to it, with its i
 it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
     config()->set('orbit.tasks.worker_user', null);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
+    orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
     $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
     $this->files->makeDirectory(dirname($checkout), 0o755, true);
@@ -291,6 +294,7 @@ it('takes a task VM template built at the checkout path in place, and the prepar
 it('fails instead of cloning over a template in place that fails its source checks', function (): void {
     config()->set('orbit.tasks.worker_user', null);
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
+    orb76_task_vm($this->node);
     $checkout = dirname($workspace->checkout_path).'/workspace';
     $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
     $this->files->makeDirectory(dirname($checkout), 0o755, true);
@@ -299,6 +303,13 @@ it('fails instead of cloning over a template in place that fails its source chec
 
     expect(fn () => $this->source->prepare($workspace, false, $checkout))->toThrow(RuntimeConvergenceException::class);
     expect(is_file($checkout.'/.git/orbit-source-prepare'))->toBeFalse();
+});
+
+it('refuses the fixed workspace checkout on a Node that is not a task VM', function (): void {
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-6', 'task-6');
+    $workspace->update(['checkout_path' => dirname($workspace->checkout_path).'/workspace', 'source_prepare_id' => (string) Str::uuid()]);
+
+    expect(fn () => $this->source->prepare($workspace, false))->toThrow(RuntimeConvergenceException::class, 'unsafe checkout path');
 });
 
 it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
@@ -3923,6 +3934,13 @@ function orb76_source_instance(
             'status' => InstanceState::Reserved,
         ])
         ->load(['project', 'node']);
+}
+
+/** Makes the Node the Node of a live task VM, whose one workspace lives at the fixed checkout path. */
+function orb76_task_vm(Node $node): TaskVm
+{
+    return TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'provider' => TaskVm::Incus, 'name' => 'tvm-7',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.200']);
 }
 
 function orb76_create_remote_repository(string $sandbox, string $repository): void
