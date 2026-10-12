@@ -36,9 +36,18 @@ final readonly class NodeFirewallRuleCatalog
     public function forNode(Node $node): array
     {
         return [
-            $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
+            $this->publicSshRecovery($node),
             $this->wireguardMemberTrust($node),
         ];
+    }
+
+    /**
+     * Public SSH to the Node's SSH port, which bootstrap opens and the first active role closes. The UpCloud task VM
+     * template bakes this exact rule, so enrollment finds it in place.
+     */
+    public function publicSshRecovery(Node $node): UfwManagedRule
+    {
+        return $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port);
     }
 
     /**
@@ -58,7 +67,7 @@ final readonly class NodeFirewallRuleCatalog
         }
 
         return [
-            $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
+            $this->publicSshRecovery($node),
             $wireguard,
         ];
     }

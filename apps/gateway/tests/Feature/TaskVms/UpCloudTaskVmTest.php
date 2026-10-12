@@ -27,13 +27,17 @@ use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Infrastructure\TaskVms\UpCloudTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\UpCloudTaskVmProvider;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmTemplate;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Console\Scheduling\CallbackEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
@@ -220,6 +224,7 @@ class FakeUpCloudSsh implements SshExecutor
             $command->arguments === ['uname', '-m'] => new CommandResult(0, "x86_64\n", '', 1, false),
             str_contains($line, 'bash -s') => new CommandResult(0, "{\"ok\":true}\n", '', 1, false),
             str_contains($line, 'printf absent') => new CommandResult(0, $this->manifest ?? 'absent', '', 1, false),
+            $command->arguments === ['sudo', '-n', 'ufw', 'status'] => new CommandResult(0, "Status: active\n", '', 1, false),
             default => new CommandResult(0, '', '', 1, false),
         };
     }
@@ -572,6 +577,35 @@ describe('sweep', function (): void {
         app()->call([new SweepTaskVmHosts, 'handle']);
         expect($this->upcloud->requests)->toBe([]);
     });
+
+    it('sweeps UpCloud while task VMs are off and only the token file is set', function (): void {
+        $settings = app(TaskVmSettings::class);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '10.44.0.128/25', $settings->hosts, null, null, null, [], upcloud: new TaskVmUpCloud(...[...get_object_vars($settings->upcloud), 'enabled' => false])));
+        $this->host->update(['status' => LifecycleStatus::Active]);
+        $orphan = $this->upcloud->server('tvm-777', [['key' => 'orbit-task-vm', 'value' => '777']]);
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+
+        expect($this->upcloud->servers)->not->toHaveKey($orphan)
+            ->and($this->ssh->calls)->toBe([]);
+    });
+
+    it('never deletes the servers or the template of a build that is marked as running', function (): void {
+        $this->travelTo(now()->addHours(3));
+        $running = now()->subHours(3)->format('YmdHis');
+        $stale = now()->subHours(3)->subMinute()->format('YmdHis');
+        Cache::put('task-vms:upcloud-image-build:running:'.$running, true, 60);
+        $builder = $this->upcloud->server('tvm-image-'.$running, [['key' => 'orbit-task-image', 'value' => $running]]);
+        $template = $this->upcloud->template('orbit-task-base-'.$running.'-unverified');
+        $leftover = $this->upcloud->server('tvm-image-'.$stale, [['key' => 'orbit-task-image', 'value' => $stale]]);
+        $leftoverTemplate = $this->upcloud->template('orbit-task-base-'.$stale.'-unverified');
+
+        app()->call([new SweepTaskVmHosts, 'handle']);
+        app(UpCloudTaskVmImageBuilder::class)->sweep();
+
+        expect($this->upcloud->servers)->toHaveKey($builder)->not->toHaveKey($leftover)
+            ->and($this->upcloud->storages)->toHaveKey($template)->not->toHaveKey($leftoverTemplate);
+    });
 });
 
 describe('image build', function (): void {
@@ -586,7 +620,7 @@ describe('image build', function (): void {
 
         $commands = array_map(static fn (array $call): string => implode(' ', $call[1]), $this->ssh->calls);
         $programs = array_keys(app(TaskVmImageRecipe::class)->programs());
-        expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', ...$programs, 'agent-binary', 'masks', 'manifest', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
+        expect($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', ...$programs, 'agent-binary', 'masks', 'firewall', 'manifest', 'clean', 'templatize', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and($programs)->toContain('bootstrap', 'app-dev-prerequisites')
             ->and($this->upcloud->storages[$template]['title'])->toStartWith('orbit-task-base-')->not->toEndWith('-unverified')
             ->and($this->upcloud->storages)->not->toHaveKey($old)
@@ -596,6 +630,16 @@ describe('image build', function (): void {
             ->and($this->upcloud->created[1]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
             ->and($this->upcloud->created[0]['labels']['label'][0]['key'])->toBe('orbit-task-image')
             ->and($commands)->toContain('uname -m', 'sudo -n sh -c '.TaskVmImageRecipe::Masks, 'sudo -n bash -s')
+            // ufw is on before the identity goes, with only the public SSH rule that enrollment opens and closes.
+            ->and(array_slice($commands, (int) array_search('sudo -n ufw default deny incoming', $commands, true), 4))->toBe([
+                'sudo -n ufw default deny incoming',
+                'sudo ufw allow in proto tcp to any port 22 comment orbit:public-ssh-recovery',
+                'sudo -n ufw --force enable',
+                'sudo -n ufw status',
+            ])
+            ->and(array_search('sudo -n ufw --force enable', $commands, true))->toBeLessThan(array_search('sudo -n bash -s', $commands, true))
+            ->and(end($commands))->toContain('ufw status | grep -qx "Status: active"')
+            ->and(Cache::get('task-vms:upcloud-image-build:running:'.substr((string) $this->upcloud->storages[$template]['title'], -14)))->toBeNull()
             ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'sudo -n bash -ceu '.TaskVmImageRecipe::InstallAgent)))->toHaveCount(1)
             ->and(json_decode(substr($this->upcloud->created[0]['user_data'], 14), true)['packages'])->toContain('openssh-server');
     });
@@ -620,5 +664,59 @@ describe('image build', function (): void {
             ->and($this->upcloud->servers)->toBe([])
             ->and(array_keys($this->upcloud->storages))->toBe([$kept])
             ->and(Cache::lock('task-vms:upcloud-image-build', 10)->get())->toBeTrue();
+    });
+
+    it('fails the build when ufw does not turn on', function (): void {
+        $this->ssh = new class extends FakeUpCloudSsh
+        {
+            #[Override]
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                return $command->arguments === ['sudo', '-n', 'ufw', 'status'] ? new CommandResult(0, "Status: inactive\n", '', 1, false) : parent::execute($connection, $command);
+            }
+        };
+        app()->instance(SshExecutor::class, $this->ssh);
+
+        expect(fn () => app(UpCloudTaskVmImageBuilder::class)->build())->toThrow(TaskVmException::class, 'stage [firewall]')
+            ->and($this->upcloud->servers)->toBe([])
+            ->and($this->upcloud->storages)->toBe([]);
+    });
+});
+
+describe('nightly template refresh', function (): void {
+    it('builds a new template on the template queue and keeps the two newest', function (): void {
+        $old = $this->upcloud->template('orbit-task-base-20261001000000');
+        $previous = $this->upcloud->template('orbit-task-base-20261002000000');
+
+        app()->call([new RefreshUpCloudTaskVmTemplate, 'handle']);
+
+        $verified = array_filter($this->upcloud->storages, static fn (array $storage): bool => ! str_ends_with($storage['title'], '-unverified'));
+        expect($verified)->toHaveCount(2)->toHaveKey($previous)->not->toHaveKey($old)
+            ->and($this->upcloud->servers)->toBe([])
+            ->and([new RefreshUpCloudTaskVmTemplate()->connection, new RefreshUpCloudTaskVmTemplate()->queue])->toBe(['task-vms', 'task-vm-templates']);
+    });
+
+    it('builds nothing before the first template or without the token file', function (?array $upcloud): void {
+        tvm_up_settings($upcloud);
+
+        app()->call([new RefreshUpCloudTaskVmTemplate, 'handle']);
+
+        expect($this->upcloud->created)->toBe([]);
+    })->with([
+        'no verified template yet' => [[]],
+        'not configured' => [null],
+    ]);
+
+    it('is queued every night at 02:00 while the UpCloud token file is set', function (): void {
+        Artisan::call('schedule:list');
+        $refresh = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event instanceof CallbackEvent && $event->description === RefreshUpCloudTaskVmTemplate::class);
+
+        config(['task_vms.enabled' => true, 'task_vms.upcloud.token_file' => null]);
+        expect($refresh)->not->toBeNull()
+            ->and($refresh->expression)->toBe('0 2 * * *')
+            ->and($refresh->filtersPass(app()))->toBeFalse();
+
+        config(['task_vms.enabled' => false, 'task_vms.upcloud.token_file' => '/home/orbit/upcloud.yaml']);
+        expect($refresh->filtersPass(app()))->toBeTrue();
     });
 });

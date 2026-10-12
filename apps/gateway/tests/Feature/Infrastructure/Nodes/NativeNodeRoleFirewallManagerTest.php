@@ -57,6 +57,26 @@ it('preserves public SSH before enabling inactive UFW and opens nothing else', f
         ->each->toBe('nckrtl');
 });
 
+it('finds the public SSH rule that the UpCloud task VM template bakes, and its role closes it', function (): void {
+    $ssh = new RoleFirewallSshExecutor(active: false);
+    $node = role_firewall_node();
+    // What UpCloudTaskVmImageBuilder runs before the template is made.
+    $builder = new SshConnection('192.0.2.10', 'orbit', 22, '/tmp/orbit-test-key', '/tmp/known_hosts');
+    $ssh->execute($builder, new RemoteCommand(new NodeFirewallRuleCatalog()->publicSshRecovery($node)->arguments));
+    $ssh->execute($builder, new RemoteCommand(['sudo', 'ufw', '--force', 'enable']));
+    $ssh->calls = [];
+    $manager = role_firewall_manager($ssh);
+
+    $manager->convergeBase($node, 'nckrtl');
+
+    expect(array_map(static fn (array $call): array => $call['command']->arguments, $ssh->calls))->each->toBe(['sudo', 'ufw', 'status', 'numbered'])
+        ->and($ssh->comments())->toBe(['orbit:public-ssh-recovery']);
+
+    $manager->converge($node, RoleName::AppDev, 'nckrtl');
+
+    expect($ssh->comments())->toBe(['orbit:wireguard-members']);
+});
+
 it('trusts WireGuard membership and removes public recovery after VPN convergence', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $manager = role_firewall_manager($ssh);
