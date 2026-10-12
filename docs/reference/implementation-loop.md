@@ -321,6 +321,8 @@ Each failure names the file and line.
 
 The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when at least one command ran, every command passed, and the commit and the working tree did not change during the run. When `test:affected` selects no tests for a changed project, the full suite with `--no-tia` is one of those commands. A warning does not replace that run.
 
+Before it writes, the gate removes the `review-*` directories its own Unix user wrote more than a day ago, and `<HEAD>` directories that stayed empty for a day. It cannot remove another user's reports, so the managed user and the task worker each clean up on their next run.
+
 ### Gateway test databases
 
 The Gateway test bootstrap keeps tests away from real databases. Before Laravel loads its configuration, it sets `APP_ENV=testing`, the SQLite driver, and the test database in the process environment and in the PHP environment and server variables. After Laravel loads its configuration, a guard checks the effective connection, including a connection URL and cached configuration.
