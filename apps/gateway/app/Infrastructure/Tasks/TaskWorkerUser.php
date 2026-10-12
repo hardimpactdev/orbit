@@ -69,14 +69,14 @@ final readonly class TaskWorkerUser
             return null;
         }
         $node = $instance->node;
-        if ($node instanceof Node && TaskVmPlacement::forNode($node) instanceof TaskVm) {
+        if (TaskVmPlacement::forNode($node) instanceof TaskVm) {
             return null;
         }
         if ($instance->worker_shared) {
             return self::name();
         }
 
-        return $node instanceof Node ? self::forNode($node) : null;
+        return self::forNode($node);
     }
 
     public static function optedOut(Node $node): bool

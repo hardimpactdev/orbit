@@ -129,8 +129,8 @@ final class Instance extends Model
             if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
                 TaskVmPlacement::assertInstance($instance);
             }
-            if (! $instance->worker_shared && (! $instance->exists || $instance->isDirty('node_id')) && is_numeric($instance->node_id)) {
-                $node = Node::query()->find((int) $instance->node_id);
+            if (! $instance->worker_shared && (! $instance->exists || $instance->isDirty('node_id'))) {
+                $node = Node::query()->find($instance->node_id);
                 $instance->worker_shared = $node instanceof Node && TaskWorkerUser::sharesCheckouts($node);
             }
         });

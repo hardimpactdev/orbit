@@ -29,7 +29,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
     expect($input['additionalProperties'])->toBeFalse();
 
     $ruleFields = array_map(fn (string $key): string => explode('.', $key)[0], array_keys(new $requestClass()->rules()));
-    expect(array_unique($ruleFields))->toEqualCanonicalizing(array_keys($types));
+    expect(array_values(array_unique($ruleFields)))->toEqualCanonicalizing(array_keys($types));
 
     foreach ($types as $field => $type) {
         expect($body['properties'][$field]['type'])->toBe($type);
