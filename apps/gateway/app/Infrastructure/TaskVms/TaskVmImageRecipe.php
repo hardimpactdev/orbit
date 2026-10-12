@@ -4,19 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\MachineArchitecture;
-use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
-use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
-use App\Infrastructure\Nodes\RemotePhpPackageManager;
-use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\NodeEnrollmentPrograms;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tools\ComposerToolManager;
-use App\Infrastructure\Tools\VpToolManager;
-use App\Models\Node;
 
 /**
  * What every task VM base image holds, whatever builds it: the Incus base image ({@see IncusTaskVmImageBuilder})
@@ -62,12 +55,7 @@ final readonly class TaskVmImageRecipe
     private const string CleanScript = 'task-vms/base-image-clean.sh';
 
     public function __construct(
-        private NodeBootstrapCommandFactory $bootstrap,
-        private NodeRolePrerequisiteCommandFactory $roles,
-        private VpToolManager $vp,
-        private ComposerToolManager $composer,
-        private RemotePhpPackageManager $php,
-        private InstancePhpVersionCatalog $phpVersions,
+        private NodeEnrollmentPrograms $enrollment,
     ) {}
 
     /**
@@ -82,18 +70,7 @@ final readonly class TaskVmImageRecipe
      */
     public function programs(): array
     {
-        $node = new Node(['name' => 'task-vm-base-image', 'platform' => 'linux', 'user' => 'orbit']);
-        $programs = [TaskVmBakedPrograms::Bootstrap => $this->bootstrap->makeWithPasswordlessSudo($node, 'orbit')];
-        $caddy = $this->roles->caddyPackage($node, RoleName::AppDev);
-        if ($caddy instanceof RemoteCommand) {
-            $programs[TaskVmBakedPrograms::CaddyPackage] = $caddy;
-        }
-        $programs[TaskVmBakedPrograms::AppDevPrerequisites] = $this->roles->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
-        $programs[TaskVmBakedPrograms::VpManager] = $this->vp->materializeCommand($node);
-        $programs[TaskVmBakedPrograms::ComposerManager] = $this->composer->materializeCommand($node);
-        foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
-            $programs[TaskVmBakedPrograms::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
-        }
+        $programs = $this->enrollment->render([RoleName::AppDev]);
         $programs[TaskVmBakedPrograms::RustToolchain] = new RemoteCommand(['bash', '-ceu', self::InstallRust]);
 
         return $programs;
