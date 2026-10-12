@@ -1,12 +1,12 @@
 ---
 title: "Compute drivers"
-description: "Task VMs for web Projects, the UpCloud driver, and the Incus sandboxes of the Orbit lane."
+description: "Task VMs for web Projects, their UpCloud overflow, and the Incus sandboxes of the Orbit lane."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute,Infrastructure/Compute,Actions/Compute}/**
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
   - apps/gateway/config/{task_vms,compute,queue}.php
   - apps/gateway/resources/{task-vms,compute}/**
-  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -915,37 +915,82 @@ These alternatives were rejected:
 | A record of the current image on the Gateway | It can drift from the host's alias. The claim reads the alias, which is the fact |
 | Stopped warm VMs, saved with a stateful stop | It may follow as a hot pool. A running warm VM uses little and needs no restore |
 
-## UpCloud driver
+## UpCloud overflow
 
-The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. It stays in the code for Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm), which moves UpCloud to the [task VM](#task-vms) path. No claim, command, or job calls it now, so Orbit creates no UpCloud VM and its settings have no effect. Leave `ORBIT_UPCLOUD_ENABLED` and `ORBIT_UPCLOUD_ENROLLMENT_ENABLED` at `false`.
+When beast and shark have no free slot, a `vm` group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before. `shared` stays the default task compute.
 
-`ProvisionTaskSandboxAction` reserves one VM with the pinned Ubuntu image and the `starter-small` size. The reservation records its UUID, image, plan, network, and the Gateway's public SSH key before the request. Cloud-init creates the `orbit` user with only the Gateway's key. It carries no provider, GitHub, Pi, or model credential.
+An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it. It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a template built with the same recipe as the [base image](#build-the-base-image). So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim starts the workspace from a fresh clone: [workspace templates](#start-the-workspace-from-a-template) are volumes on an Incus host.
 
-The driver sends a create request at most once for each reservation. After a lost response it looks for one exact match by hostname, title, and ownership label, and never sends a second create. It installs a provider firewall before it reports a VM as running: public SSH only from the Gateway, WireGuard only from the hub, and outbound HTTP(S), DNS, and the hub. `destroy` deletes only the recorded server and disk, and confirms both are gone before it releases capacity.
+### Place a VM at UpCloud
 
-### Gateway configuration
+Placement first takes a current warm VM, then a new VM on the Incus host with the most free slots, as in [Place task VMs](#place-task-vms). Only when no host has a free slot does a new VM go to UpCloud, and only while the switch is on, the group's Project is opted in, and fewer than `max_vms` UpCloud VMs are not `destroyed`. Parked and failed UpCloud VMs count. UpCloud keeps no warm VMs. A VM never moves to another provider.
 
-Set these values in the Gateway environment.
+### Create and reach an UpCloud server
+
+The server is named `tvm-<id>` in its title and hostname, and carries the label `orbit-task-vm=<id>`. Orbit records its UUID. A create whose answer was lost is found again by its label, so Orbit never sends a second create. Before each create, Orbit counts the account's servers with the `orbit-task-vm` label and refuses at `max_vms` with `task_vm.upcloud_budget_full`. A server that lost its row counts too.
+
+The server clones the newest verified template, has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too. Enrollment gives the VM the same managed firewall as any public `app-dev` Node.
+
+UpCloud has no trusted host that can read the guest's SSH host key, as Incus does. So the Gateway generates an ed25519 host key for each server, adds it to the user-data, and pins its fingerprint. No connection trusts a key on first use. Root login stays off. The Gateway reads cloud-init and the image manifest over SSH as `orbit` at the public address, and enrollment needs no jump Node.
+
+A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
+
+### Build the UpCloud template
+
+`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build runs these stages and prints each one with its time:
+
+1. Delete the build servers and unverified templates that an interrupted build left.
+2. Boot a builder server from the stock Ubuntu 26.04 template with the base image builder user-data.
+3. Wait for cloud-init over SSH, and check the pinned `orbit` uid and gid.
+4. Run the same enrollment programs as the Incus base image, then install the pinned agent binary and Pi executable, mask the first-boot and apt timers, write the image manifest, and run `base-image-clean.sh`.
+5. Stop the builder, turn its disk into the template `orbit-task-base-<time>-unverified`, and delete the builder.
+6. Boot a smoke server from the template with the task VM user-data. Cloud-init must finish, `orbit` must have the Gateway's key and the pinned uid and gid, and the manifest must be there.
+7. Rename the template to `orbit-task-base-<time>`, and delete all but the two newest verified templates.
+
+A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`. No nightly refresh runs yet: run the command again to refresh the template. One build runs at a time.
+
+### Sweep UpCloud
+
+While UpCloud is configured, also with the switch off, the [host sweep](#sweep-task-vm-hosts) lists the servers with the `orbit-task-vm` label. It deletes each server named `tvm-<label value>` without a row that is not `destroyed`. A `warm`, `ready`, or `parked` UpCloud row whose server is gone on two sweeps in a row becomes `failed`, and its group asks for assistance. It also deletes build servers and unverified templates older than two hours, which a killed build leaves. The sweep runs only while task VMs are enabled, so destroy the UpCloud VMs before you turn task VMs off.
+
+### Configure UpCloud
+
+Set these values in the Gateway environment. `TaskVmSettings` validates them once, with the other [task VM settings](#configure-task-vms). While the token file is unset, the overflow is not configured, and Orbit sends no UpCloud request.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `ORBIT_UPCLOUD_ENABLED` | Permit new VM provisioning | `false` |
-| `ORBIT_UPCLOUD_TOKEN_FILE` | Absolute path to the provider credential file, mode `0600`, owned by the Gateway user | Unset |
-| `ORBIT_UPCLOUD_MAX_VMS` | Maximum outstanding reservations | `0` |
-| `ORBIT_UPCLOUD_ZONE` | UpCloud zone for new reservations | `nl-ams1` |
-| `ORBIT_UPCLOUD_GATEWAY_ADDRESS` | Public IPv4 address allowed to SSH into the VM | Unset |
-| `ORBIT_UPCLOUD_WIREGUARD_ADDRESS` | Public IPv4 address of the WireGuard hub | Unset |
-| `ORBIT_UPCLOUD_WIREGUARD_PORT` | WireGuard UDP port | `51820` |
+| `ORBIT_TASK_VMS_UPCLOUD_ENABLED` | The Gateway-wide switch. It needs task VMs enabled, the token file, and `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS` | `false` |
+| `ORBIT_TASK_VMS_UPCLOUD_PROJECTS` | A JSON list of the IDs of the Projects that may overflow | `[]` |
+| `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE` | The absolute path of the token file: a regular file of the Gateway user with mode `0600` and one `token: ucat_…` line | Unset |
+| `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS` | The most UpCloud task VMs, from 1 to 16. Required once the token file is set | Unset |
+| `ORBIT_TASK_VMS_UPCLOUD_ZONE` | The UpCloud zone | `nl-ams1` |
+| `ORBIT_TASK_VMS_UPCLOUD_PLAN` | The server plan | `2xCPU-4GB` |
+| `ORBIT_TASK_VMS_UPCLOUD_DISK_GB` | The root disk in GB, from 10 to 200 | `25` |
+| `ORBIT_TASK_VMS_UPCLOUD_SOURCE_TEMPLATE` | The UUID of the stock Ubuntu 26.04 template that the build boots | `01000000-0000-4000-8000-000030260200` |
 
-The token goes only to `https://api.upcloud.com/1.3`. The sandbox sweep refuses an UpCloud reservation with `compute.unknown_provider`, so a leftover UpCloud VM needs manual cleanup.
+The token goes only to `https://api.upcloud.com/1.3`. The Gateway reads it from the file for each request.
 
-### UpCloud enrollment
+| Error | Meaning |
+| --- | --- |
+| `task_vm.upcloud_budget_full` (409) | The account already runs `max_vms` task VM servers |
+| `task_vm.upcloud_failed` (502) | An UpCloud request failed or did not answer |
+| `task_vm.upcloud_invalid` (502) | UpCloud answered with data that does not match what Orbit created |
+| `task_vm.upcloud_timeout` (504) | A server or template did not reach the expected state in time |
+| `task_vm.upcloud_token_unavailable` (500) | The token file is missing, not private, or has no token |
+| `task_vm.upcloud_not_configured` (409) | An UpCloud command ran while the token file is unset |
+| `task_vm.host_key_failed` (500) | The Gateway could not generate or read the pinned host key |
 
-`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default, nothing calls it, and it starts no agent. A Node that a reservation owns stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Orbit cannot destroy an UpCloud reservation yet: every destroy path refuses it with `compute.unknown_provider`. Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) brings UpCloud back on the task VM path.
+### Why the UpCloud overflow works this way
 
-### Why the UpCloud driver works this way
+One path for every provider keeps the security boundary and the code the same: only the provider API differs. Two switches keep billed VMs off unless the operator chose them for the fleet and for the Project. The Project list lives in the Gateway environment next to the switch, so no Project field, API, or CLI change is needed. A count of the account's labelled servers backs the count of rows, so a lost row cannot raise the bill. A pinned host key that the Gateway generates replaces the trusted host that UpCloud lacks. A rename after the smoke boot marks a template as verified, so no VM clones an untested one.
 
-A started cloud server does not prove that a task can run, so provider state and task state stay separate. Ownership recorded before each request lets cleanup find the VM after a Gateway restart. Refusing a second create when a response is lost prevents duplicate billed VMs.
+| Alternative | Why not |
+| --- | --- |
+| A Project field for the opt-in | It needs a migration, API, CLI, SDK, and MCP changes for a switch that only the operator sets |
+| The UpCloud firewall | It is stateless. Reply traffic needs source-port rules, which also let anyone reach other ports from those source ports |
+| Trust on first use for the host key | The first connection could reach another machine at a reused address |
+| The stock template with a full enrollment | Each VM would install the `app-dev` software, and its image would differ from the Incus base image |
+| Warm VMs at UpCloud | They cost money while they wait, and overflow is rare |
 
 ## Local Incus control
 

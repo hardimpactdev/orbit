@@ -759,7 +759,7 @@ The rollout visits a Node when all of these hold:
 
 Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#upcloud-enrollment) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI. Orbit creates no UpCloud reservation now.
+A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) owns, on an Incus host or at [UpCloud](/reference/compute-drivers#upcloud-overflow). The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
 
 The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
 
