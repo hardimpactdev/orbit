@@ -32,6 +32,7 @@ use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
@@ -43,7 +44,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
+final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, TaskWorkspaceRoute
 {
     public function __construct(
         private ManagedUserAccountResolver $accounts,
@@ -129,7 +130,9 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
     /**
      * `$vm` is the group's task VM. A new workspace there starts from the Project's workspace template, and each part
-     * of the creation logs its seconds as a task VM step.
+     * of the creation logs its seconds as a task VM step. A routed workspace there stops before its Route: it gets its
+     * source profile, `.env`, and PHP packages, which the baseline check needs, and stays `source_resolved`. The
+     * scheduler starts the check and then finishes the Route through {@see self::complete()}.
      */
     private function createWorkspace(Task $group, Node $node, bool $visitable, ?TaskVm $vm = null): Instance
     {
@@ -189,7 +192,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable, $existing, $template): Instance {
+            function () use ($instance, $visitable, $existing, $template, $vm): Instance {
                 $resolved = $this->prepareSource($instance, $existing instanceof Instance, $template);
                 $this->source->inspectPrepared($resolved);
                 $this->clock->step('workspace-source');
@@ -199,12 +202,63 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 }
 
                 $this->development->reserve($resolved, null);
+                if ($vm instanceof TaskVm) {
+                    $prepared = $this->development->prepare($resolved, null);
+                    $this->clock->step('workspace-prepare');
+
+                    return $prepared;
+                }
                 $completed = $this->development->complete($resolved, null);
                 $this->clock->step('workspace-route');
 
                 return $completed;
             },
         );
+    }
+
+    public function pending(Task $group): bool
+    {
+        $instance = $group->taskable;
+
+        return $instance instanceof Instance
+            && $instance->task_workspace_routed === true
+            && $instance->status === InstanceState::SourceResolved;
+    }
+
+    /**
+     * Projects the Route under the Node's source lock, as creation does, and logs `workspace-route` for a task VM. A
+     * failure leaves the workspace `source_resolved` with its Route pending, so the next call tries again.
+     */
+    public function complete(Task $group): ?InstanceProvisionFailure
+    {
+        $group = $group->fresh(['project', 'taskable']) ?? $group;
+        if (! $this->pending($group)) {
+            return null;
+        }
+        $instance = $group->taskable;
+        assert($instance instanceof Instance);
+        $vm = $this->taskVms->vm($group);
+        if ($vm instanceof TaskVm) {
+            $this->clock->start($vm);
+        }
+        try {
+            // Removal holds the same lock, so a workspace it removed meanwhile is gone here and needs nothing.
+            $this->sourceLock->synchronized($instance->node_id, function () use ($instance): void {
+                $current = Instance::query()->find($instance->id);
+                if ($current instanceof Instance && $current->status === InstanceState::SourceResolved) {
+                    $this->development->complete($current, null);
+                }
+            });
+            $this->clock->step('workspace-route');
+
+            return null;
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            report($exception);
+
+            return InstanceProvisionFailure::fromException($exception);
+        } finally {
+            $this->clock->stop();
+        }
     }
 
     /**

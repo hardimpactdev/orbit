@@ -16,6 +16,7 @@ use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
         private DevelopmentInstanceConfigurator $configuration,
         private DevelopmentRouteProjector $projection,
         private ?DevelopmentProjectionOperationLock $projectionOwner = null,
+        private ?RemoteAppDevPhpFpmManager $php = null,
     ) {}
 
     public function reserve(Instance $instance, ?string $domain): void
@@ -43,6 +45,29 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
         if ($route->status === RouteStatus::Failed) {
             $route->update(['status' => RouteStatus::Pending, 'failed_step' => null, 'error_code' => null]);
         }
+    }
+
+    /**
+     * Runs outside the projection lock: it changes only the Instance's checkout and the Node's PHP packages, and the
+     * caller holds the Node's source lock.
+     */
+    public function prepare(Instance $instance, ?string $domain): Instance
+    {
+        if (! $instance->requiresRoute()) {
+            return $instance;
+        }
+        $route = $this->routes->ensureForInstance($instance, $domain);
+        $instance = Instance::query()->with('node')->findOrFail($instance->id);
+        if ($instance->status === InstanceState::Active) {
+            return $instance;
+        }
+        $this->configure($instance, $route);
+        $version = $instance->refresh()->selected_php_version;
+        if (is_string($version) && $version !== '') {
+            ($this->php ?? app(RemoteAppDevPhpFpmManager::class))->installPackages($instance->node, $version);
+        }
+
+        return $instance->refresh();
     }
 
     public function complete(
@@ -115,6 +140,34 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
             return $instance->load('routes.targets');
         }
 
+        $this->configure($instance, $route);
+        $this->projection->converge($instance->refresh(), $route->refresh());
+
+        DB::transaction(static function () use ($instance, $route, $setupPending): void {
+            $lockedInstance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $lockedRoute->update([
+                'status' => RouteStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+            $lockedInstance->update([
+                'status' => InstanceState::Active,
+                'provisioning_step' => 'active',
+                'failed_step' => $setupPending ? 'setup' : null,
+                'error_code' => null,
+            ]);
+        });
+
+        return $instance->refresh()->load('routes.targets');
+    }
+
+    /**
+     * Records the source profile once, and writes the Laravel URL once. A later run accepts only the same profile, so
+     * a source that changed between {@see self::prepare()} and {@see self::complete()} fails.
+     */
+    private function configure(Instance $instance, Route $route): void
+    {
         if (
             $instance->provisioning_step !== null
             && ! in_array($instance->provisioning_step, ['php-selected', 'url-configured'], strict: true)
@@ -144,25 +197,6 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
 
             $instance->update(['provisioning_step' => 'url-configured']);
         }
-        $this->projection->converge($instance->refresh(), $route->refresh());
-
-        DB::transaction(static function () use ($instance, $route, $setupPending): void {
-            $lockedInstance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
-            $lockedRoute->update([
-                'status' => RouteStatus::Active,
-                'failed_step' => null,
-                'error_code' => null,
-            ]);
-            $lockedInstance->update([
-                'status' => InstanceState::Active,
-                'provisioning_step' => 'active',
-                'failed_step' => $setupPending ? 'setup' : null,
-                'error_code' => null,
-            ]);
-        });
-
-        return $instance->refresh()->load('routes.targets');
     }
 
     private function owner(): DevelopmentProjectionOperationLock
