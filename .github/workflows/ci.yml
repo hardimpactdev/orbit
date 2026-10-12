@@ -475,8 +475,8 @@ jobs:
     name: Gateway shards
     needs: gateway-plan
     if: needs.gateway-plan.outputs.sharded == 'true'
-    # The orbit-shard runners on Beast and Shark serve this repository's pull requests under the same condition as the
-    # Gateway job on Sabre. A fork's pull request uses a hosted runner.
+    # The orbit-shard runner containers on Beast and Shark serve this repository's pull requests under the same
+    # condition as the Gateway job on Sabre. A fork's pull request uses a hosted runner.
     runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && github.event.pull_request.head.repo.full_name == github.repository && fromJSON('["self-hosted", "orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
@@ -508,8 +508,8 @@ jobs:
         with:
           node-version: '24'
 
-      # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. Beast and Shark
-      # serve Instances with their own PHP CLI, so the job sets it only for its own processes and Pest's workers.
+      # Sabre's PHP CLI sets this in 99-github-actions.ini, and setup-php sets it on a hosted runner. The shard runner
+      # containers keep their PHP CLI default, so the job sets it only for its own processes and Pest's workers.
       - name: Keep exception arguments in traces
         if: runner.environment == 'self-hosted'
         run: |
