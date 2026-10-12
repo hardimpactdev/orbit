@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
-use App\Domain\Projects\GatewaySetupSteps;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;

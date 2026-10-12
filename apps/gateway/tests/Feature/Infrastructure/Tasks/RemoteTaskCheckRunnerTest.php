@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\GatewaySetupSteps;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;

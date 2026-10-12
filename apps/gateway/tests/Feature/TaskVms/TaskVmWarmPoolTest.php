@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Tests\Support\AvailableTopologyAdmission;
-use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Actions\Doctor\NodeDoctorProbe;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
@@ -21,6 +19,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmPlacement;
@@ -67,6 +66,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeIncusFleet;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Tests\Support\AvailableTopologyAdmission;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
@@ -83,6 +82,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
+use Tests\Support\AvailableTopologyAdmission;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeToolManagerMaterializer;
 

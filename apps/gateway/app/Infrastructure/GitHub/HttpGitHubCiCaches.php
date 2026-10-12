@@ -34,7 +34,7 @@ final readonly class HttpGitHubCiCaches implements CiCacheSource
         try {
             return $this->download($repository, $branch) ?? throw new ResourceOperationException(
                 'instance.ci_caches_missing',
-                'No successful '.self::Workflow." run among the newest ".self::Runs." on {$branch} has unexpired main caches.",
+                'No successful '.self::Workflow.' run among the newest '.self::Runs." on {$branch} has unexpired main caches.",
                 422,
             );
         } catch (GitHubActionsUnavailable) {
