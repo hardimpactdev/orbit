@@ -13,9 +13,7 @@ use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessEnvironmentProjection;
-use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -162,21 +160,20 @@ function store_deploy_steps(Instance $instance, array $steps): void
     );
 }
 
-/** Makes a Node host shared task work: an active app-dev role and a running `pi-server` Process. */
+/** A Node with an app-dev role uses the task worker unless it opts out. */
 function orbit_test_task_work_host(Node $node): Node
 {
     orbit_test_set_app_placement_role($node, production: false);
-    $node->processes()->firstOrCreate(['name' => 'pi-server'], [
-        'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve']],
-        'restart_policy' => 'always',
-        'keep_alive' => true,
-        'desired_state' => DesiredProcessState::Running,
-        'status' => LifecycleStatus::Active,
-    ]);
 
     return $node;
+}
+
+/** Records the explicit opt-out: the Node hosts no task work, so its Gateway Git runs as the managed user. */
+function orbit_test_opt_out_task_worker(Node $node): Node
+{
+    $node->update(['settings' => [...($node->settings ?? []), 'tasks' => ['worker' => 'none']]]);
+
+    return $node->refresh();
 }
 
 /** @return list<array{name: string, phase: string, command: string, timeout_seconds: int}> */

@@ -136,9 +136,9 @@ describe('TaskCheckWorkerUser', function (): void {
         }
     })->with(['symlink', 'hardlink']);
 
-    it('inspects registration content as the managed user on a Node without task work and without the worker account', function (): void {
+    it('inspects registration content as the managed user on an opted-out Node without the worker account', function (): void {
         $fixture = orb105_relocation_fixture(false);
-        $fixture['node']->processes()->delete();
+        orbit_test_opt_out_task_worker($fixture['node']);
 
         try {
             $log = orb105_worker_filter($fixture, 'clean');

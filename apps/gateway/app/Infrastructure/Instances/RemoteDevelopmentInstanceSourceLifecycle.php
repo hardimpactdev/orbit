@@ -317,7 +317,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     /** Only a Node that hosts shared task work shares checkouts with the worker. */
     private function workerUser(Instance $instance): string
     {
-        return TaskWorkerUser::forNode($instance->node) ?? '';
+        return TaskWorkerUser::forCheckout($instance) ?? '';
     }
 
     private function defaultBranch(Instance $instance): string

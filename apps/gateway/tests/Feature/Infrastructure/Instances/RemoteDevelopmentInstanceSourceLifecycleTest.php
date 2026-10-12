@@ -772,10 +772,10 @@ describe('TaskWorkspaceAcl', function (): void {
         expect($this->removal->finalize($member))->toBe($receipt);
     });
 
-    it('shares nothing when the worker is unset or the Node hosts no task work', function (?string $worker, bool $taskHost): void {
+    it('shares nothing when the worker is unset or the Node opts out of the task worker', function (?string $worker, bool $taskHost): void {
         config()->set('orbit.tasks.worker_user', $worker);
         if (! $taskHost) {
-            $this->node->processes()->delete();
+            orbit_test_opt_out_task_worker($this->node);
         }
         $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-no-acl');
 
@@ -786,9 +786,20 @@ describe('TaskWorkspaceAcl', function (): void {
             ->and(is_dir($instance->checkout_path.'/.git/orbit'))->toBeFalse();
     })->with([
         'worker unset' => [null, true],
-        'Node without task work and without the account' => ['orbit-absent-task-worker', false],
-        'Node without task work, account present' => ['nobody', false],
+        'opted-out Node without the account' => ['orbit-absent-task-worker', false],
+        'opted-out Node, account present' => ['nobody', false],
     ]);
+
+    it('keeps the worker for a checkout shared with it, even on an opted-out Node', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-shared-moved');
+        $instance->update(['worker_shared' => true]);
+        orbit_test_opt_out_task_worker($this->node);
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+
+        expect(fn () => $this->removal->inspect($instance->refresh(), false))->toThrow(RuntimeConvergenceException::class)
+            ->and(is_dir($instance->checkout_path))->toBeTrue();
+    });
 
     it('fails loudly when a task Node lacks the configured worker account', function (): void {
         config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');

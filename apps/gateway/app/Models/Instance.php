@@ -10,6 +10,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\TaskVms\TaskVmPlacement;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $project_id
+ * @property bool $worker_shared
  * @property int|null $vite_port
  * @property int|null $ssr_port
  * @property int|null $annotator_port
@@ -117,12 +119,19 @@ final class Instance extends Model
         'status' => 'reserved',
     ];
 
-    /** A task VM Node serves only its group's workspace, whichever path places the Instance there. */
+    /**
+     * A task VM Node serves only its group's workspace, whichever path places the Instance there.
+     * A checkout placed on a Node that uses the task worker is shared with it from then on, also after a transfer.
+     */
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
             if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
                 TaskVmPlacement::assertInstance($instance);
+            }
+            if (! $instance->worker_shared && (! $instance->exists || $instance->isDirty('node_id')) && is_numeric($instance->node_id)) {
+                $node = Node::query()->find((int) $instance->node_id);
+                $instance->worker_shared = $node instanceof Node && TaskWorkerUser::forNode($node) !== null;
             }
         });
     }
@@ -193,6 +202,7 @@ final class Instance extends Model
         'task_workspace_routed',
         'development_release_layout',
         'development_projection_pending',
+        'worker_shared',
     ];
 
     public const string MorphAlias = 'instance';
@@ -462,6 +472,7 @@ final class Instance extends Model
             'task_workspace_routed' => 'boolean',
             'development_release_layout' => 'boolean',
             'development_projection_pending' => 'boolean',
+            'worker_shared' => 'boolean',
             'seed_selected' => 'boolean',
             'first_setup_pending' => 'boolean',
             'environment_owned_keys' => 'array',

@@ -154,7 +154,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     $instance->project->repository_url,
                     $instance->source_prepare_id ?? '',
                 ],
-                input: self::inspectionScript(TaskWorkerUser::forNode($instance->node)),
+                input: self::inspectionScript(TaskWorkerUser::forCheckout($instance)),
             ),
             step: 'app-instance-source-removal-inspect',
             force: $force,
@@ -298,7 +298,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->value;
         $script = GitReadScript::for(
             $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(TaskWorkerUser::forNode($instance->node)),
+            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(TaskWorkerUser::forCheckout($instance)),
         );
         $this->executeRefusable(
             $instance,
@@ -443,7 +443,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 && ($inventory->sourceIdentity === 'absent'
                     || $instance->registration_request_id === null
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript(TaskWorkerUser::forNode($node));
+            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript(TaskWorkerUser::forCheckout($instance));
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 $input,

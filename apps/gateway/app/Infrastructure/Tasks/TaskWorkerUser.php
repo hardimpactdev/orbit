@@ -6,8 +6,6 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Instance;
 use App\Models\Node;
@@ -17,8 +15,8 @@ use App\Models\TaskVm;
  * The task account is optional during rollout, but a configured account never falls back to SSH's user.
  * A task VM has no task account: its managed user `orbit` runs the agents and the checks.
  *
- * Only a Node that hosts shared task work runs filter-capable Git as the worker, because only there can a task
- * agent write a checkout. That Node must have the account. Every other Node runs that Git as its managed user.
+ * Filter-capable Gateway Git on a development checkout runs as the worker on every app-dev Node that does not opt
+ * out, and on every checkout ever shared with the worker. That Node must have the account.
  */
 final readonly class TaskWorkerUser
 {
@@ -47,29 +45,48 @@ final readonly class TaskWorkerUser
 
     /**
      * The worker for Gateway Git that can start checkout filters on a Node, or null to use the Node's managed user.
-     * A Node hosts shared task work when it is an active app-dev Node that an agent driver allows (today: a running
-     * `pi-server` Process), or when it still holds a task workspace. A task VM Node never has a worker.
+     * Configuration decides, never Process state: every Node with an app-dev role uses the worker unless its
+     * settings opt out with `tasks.worker = none`. A task VM Node never has a worker.
      */
     public static function forNode(Node $node): ?string
     {
-        if (self::configured() === null || TaskVmPlacement::forNode($node) instanceof TaskVm || ! self::hostsTaskWork($node)) {
+        if (self::configured() === null || ! self::usesWorker($node)) {
             return null;
         }
 
         return self::name();
     }
 
-    private static function hostsTaskWork(Node $node): bool
+    /**
+     * A checkout that was ever shared with the worker keeps the worker, wherever it is now. A missing account then
+     * fails the caller instead of running a planted filter as the managed user.
+     */
+    public static function forCheckout(Instance $instance): ?string
     {
-        if (Instance::query()->where('node_id', $node->id)->whereHas('tasks')->exists()) {
-            return true;
+        if (self::configured() === null || $instance->task_sandbox_id !== null) {
+            return null;
+        }
+        $node = $instance->node;
+        if ($node instanceof Node && TaskVmPlacement::forNode($node) instanceof TaskVm) {
+            return null;
+        }
+        if ($instance->worker_shared) {
+            return self::name();
         }
 
-        return $node->roles()
-            ->where('role', RoleName::AppDev)
-            ->where('status', LifecycleStatus::Active)
-            ->exists()
-            && app(AgentDriverRegistry::class)->anyAllows($node);
+        return $node instanceof Node ? self::forNode($node) : null;
+    }
+
+    public static function optedOut(Node $node): bool
+    {
+        return data_get($node->settings, 'tasks.worker') === 'none';
+    }
+
+    private static function usesWorker(Node $node): bool
+    {
+        return ! self::optedOut($node)
+            && $node->roles()->where('role', RoleName::AppDev)->exists()
+            && ! (TaskVmPlacement::forNode($node) instanceof TaskVm);
     }
 
     private static function configured(): mixed

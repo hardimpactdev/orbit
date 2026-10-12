@@ -82,7 +82,6 @@ describe('TaskCheckWorkerUser', function (): void {
         (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
         file_put_contents($checkout.'/readme', 'dirty');
         $candidate = orb198_clone_candidate();
-        orbit_test_task_work_host($candidate->node);
         $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
         $candidate->update(['checkout_path' => $checkout]);
         $transport = TaskWorkerSshExecutor::forCheckout($checkout);
@@ -98,24 +97,25 @@ describe('TaskCheckWorkerUser', function (): void {
 });
 
 describe('CloneCandidateWorkerNode', function (): void {
-    it('inspects a candidate on a Node without task work as the runtime user when the worker account is missing', function (): void {
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+    it('inspects a candidate on an opted-out Node as the runtime user when the worker account is missing', function (): void {
         [$root, $checkout, $candidate] = orb198_clean_local_candidate();
+        orbit_test_opt_out_task_worker($candidate->node);
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
 
         try {
-            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main');
+            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate->refresh(), 'main');
 
-            expect($source->basePath)->toBe($checkout)
+            expect($candidate->worker_shared)->toBeFalse()
+                ->and($source->basePath)->toBe($checkout)
                 ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe((string) posix_geteuid());
         } finally {
             File::deleteDirectory($root);
         }
     });
 
-    it('refuses a task Node without the worker account with a specific code and its stderr', function (): void {
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+    it('refuses an app-dev Node without the worker account with a specific code and its stderr', function (): void {
         [$root, , $candidate] = orb198_clean_local_candidate();
-        orbit_test_task_work_host($candidate->node);
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
 
         try {
             expect(fn () => orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main'))
@@ -125,6 +125,21 @@ describe('CloneCandidateWorkerNode', function (): void {
                         ->and($exception->getMessage())->toContain('The task worker cannot read the candidate checkout on Node [clone-candidate-development].')
                         ->and($exception->details['stderr'] ?? '')->toContain('orbit-absent-task-worker');
                 });
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+
+    it('keeps the worker for a checkout shared with it after it moved to an opted-out Node', function (): void {
+        [$root, $checkout, $candidate] = orb198_clean_local_candidate();
+        $candidate->update(['worker_shared' => true]);
+        orbit_test_opt_out_task_worker($candidate->node);
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+
+        try {
+            expect(fn () => orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate->refresh(), 'main'))
+                ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access'))
+                ->and(file_exists($checkout.'/.git/filter-user'))->toBeFalse();
         } finally {
             File::deleteDirectory($root);
         }
@@ -244,6 +259,22 @@ it('reports repository and selected branch failures without changing their error
     'target branch missing' => 'instance.clone_target_branch_missing',
     'configured branch changed' => 'instance.clone_candidate_branch_invalid',
 ]);
+
+it('redacts URL credentials and token-shaped words from stderr', function (): void {
+    $candidate = orb198_clone_candidate();
+    $token = 'ghp_'.str_repeat('a', 36);
+    $ssh = new Orb198CloneCandidateSshExecutor([
+        orb198_clone_candidate_result('', exitCode: 128, stderr: "fatal: unable to access 'https://nick:{$token}@example.test/acme.git/'\nbearer ".str_repeat('Q', 48)."\n"),
+    ]);
+
+    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
+        ->toThrow(function (ResourceOperationException $exception) use ($token): void {
+            expect($exception->errorCode)->toBe('instance.clone_candidate_unavailable')
+                ->and($exception->details['stderr'])->toBe("fatal: unable to access 'https://[REDACTED]@example.test/acme.git/'\nbearer [REDACTED]")
+                ->and($exception->getMessage())->not->toContain($token)
+                ->and($exception->getMessage())->not->toContain('nick:');
+        });
+});
 
 it('reads a refusal before stderr and keeps the stderr', function (): void {
     $candidate = orb198_clone_candidate();

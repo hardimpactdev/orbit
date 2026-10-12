@@ -12,10 +12,15 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use Illuminate\Support\Str;
 use Tests\Support\FakeToolManagerMaterializer;
 
@@ -112,6 +117,79 @@ describe('node storage settings', function (): void {
             ->assertJsonPath('data.settings', null);
 
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
+    });
+
+    it('records and clears the task worker opt-out without touching the apps root', function (): void {
+        $node = Node::query()->create([
+            'name' => 'services',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.17',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.17',
+            'settings' => ['apps' => ['path' => '/srv/orbit/apps']],
+        ]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => ['worker' => 'none']])
+            ->assertOk()
+            ->assertJsonPath('data.settings.tasks.worker', 'none')
+            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/apps');
+        expect($node->refresh()->settings)->toBe(['apps' => ['path' => '/srv/orbit/apps'], 'tasks' => ['worker' => 'none']]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => null])->assertOk();
+        expect($node->refresh()->settings)->toBe(['apps' => ['path' => '/srv/orbit/apps']]);
+    });
+
+    it('refuses the task worker opt-out on a Node with task work', function (Closure $taskWork): void {
+        $node = Node::query()->create([
+            'name' => 'beast',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.9',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.9',
+        ]);
+        $taskWork($node);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => ['worker' => 'none']])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'node.task_work_present');
+        expect($node->refresh()->settings)->toBeNull();
+    })->with([
+        'a pi-server Process in any state' => [function (Node $node): void {
+            $node->processes()->create([
+                'name' => 'pi-server',
+                'runtime' => ProcessRuntime::Systemd,
+                'working_directory' => '/home/orbit',
+                'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve']],
+                'restart_policy' => 'always',
+                'desired_state' => DesiredProcessState::Stopped,
+                'status' => LifecycleStatus::Failed,
+            ]);
+        }],
+        'a checkout shared with the worker' => [function (Node $node): void {
+            $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git']);
+            Instance::query()->create([
+                'project_id' => $project->id,
+                'node_id' => $node->id,
+                'name' => 'web',
+                'checkout_path' => '/srv/shop/web',
+                'status' => InstanceState::Active,
+                'worker_shared' => true,
+            ]);
+        }],
+    ]);
+
+    it('rejects a task worker value other than none', function (): void {
+        $node = Node::query()->create([
+            'name' => 'services',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.17',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.17',
+        ]);
+
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['tasks' => ['worker' => 'orbit']])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_invalid');
     });
 
     it('rejects unknown settings keys without persisting', function (): void {

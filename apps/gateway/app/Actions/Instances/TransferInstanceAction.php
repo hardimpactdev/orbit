@@ -44,6 +44,7 @@ use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
@@ -352,6 +353,13 @@ final readonly class TransferInstanceAction
         }
 
         $this->assertActiveAppDevCluster($destination, 'destination');
+        // The checkout and its `.git` travel as they are. A checkout the worker could write must stay with the worker.
+        if (TaskWorkerUser::forCheckout($instance) !== null && TaskWorkerUser::forNode($destination) === null) {
+            throw $this->conflict(
+                'instance.transfer_worker_shared',
+                "The checkout was shared with the task worker; Node [{$destination->name}] opts out of the task worker.",
+            );
+        }
         $instance->loadMissing('project');
         app(DevelopmentNodeExclusion::class)->assertAvailable($instance->project, $destination);
     }

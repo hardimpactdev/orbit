@@ -45,7 +45,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         $node = $candidate->node;
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
-        $worker = $candidate->placedOnAppDev() ? TaskWorkerUser::forNode($node) : null;
+        $worker = $candidate->placedOnAppDev() ? TaskWorkerUser::forCheckout($candidate) : null;
 
         $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), WorkspaceGit::workerPreamble($worker).'source_worker='.escapeshellarg($worker ?? '')."\n".<<<'BASH'
                         environment=$1
@@ -186,7 +186,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         }
 
         $parts = explode("\t", trim($result->stdout));
-        $stderr = mb_substr(trim($result->stderr), -2000);
+        $stderr = self::redacted($result->stderr);
 
         if (! $result->truncated && count($parts) === 2 && $parts[0] === 'REFUSED' && preg_match('/\Ainstance\.clone_[a-z_]+\z/D', $parts[1]) === 1) {
             throw $this->conflict(
@@ -292,6 +292,18 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
     private function conflict(string $errorCode, string $message, string $stderr = ''): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409, details: $stderr === '' ? [] : ['stderr' => $stderr]);
+    }
+
+    /** Keeps the last 1,000 characters, without URL credentials or token-shaped words. */
+    private static function redacted(string $stderr): string
+    {
+        $text = (string) preg_replace(
+            ['#(://)[^/\s@]+@#', '/\b(?:gh[opsur]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[A-Za-z0-9+_-]{40,}={0,2})/'],
+            ['$1[REDACTED]@', '[REDACTED]'],
+            trim($stderr),
+        );
+
+        return mb_substr($text, -1000);
     }
 
     private function stderrSuffix(string $stderr): string
