@@ -174,10 +174,10 @@ final readonly class TaskVmWorkspaceTemplates
         private DevelopmentSshExecutor $ssh,
     ) {}
 
-    /** Whether the Project's groups run on task VMs of the web lane, which use workspace templates. */
+    /** Whether the Project's groups run on task VMs, which use workspace templates. */
     public static function serves(Project $project): bool
     {
-        return $project->task_compute === TaskCompute::Vm && $project->slug !== 'orbit';
+        return $project->task_compute === TaskCompute::Vm;
     }
 
     /**

@@ -71,9 +71,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
         $group = $intent->group->loadMissing(['project', 'taskable']);
         $taskVmNode = null;
         if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
-            if ($group->project->slug === 'orbit') {
-                return new InstanceProvisionFailure('The Orbit Project has no task VM lane yet. Run its groups in shared mode.');
-            }
             $taskVmNode = $this->taskVms->node($group);
         }
         $existing = $group->taskable;
@@ -486,7 +483,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
     }
 
     /**
-     * A web-lane `vm` group works on its own task VM Node, when every driver of the group allows it.
+     * A `vm` group works on its own task VM Node, when every driver of the group allows it.
      *
      * @param  list<string>  $drivers
      */

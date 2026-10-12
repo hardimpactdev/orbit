@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The claim side of a web-lane `vm` group: the Node of its ready task VM. Until the VM is ready, the
+ * The claim side of a `vm` group: the Node of its ready task VM. Until the VM is ready, the
  * claim waits with a `Task VM:` reason and tries again on the next tick. The first wait allocates the VM.
  *
  * It reads `TaskVmSettings` only here, never when the scheduler is built, so an invalid task VM value

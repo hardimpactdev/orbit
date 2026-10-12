@@ -1,17 +1,17 @@
 ---
 title: "Compute drivers"
-description: "Task VMs for web Projects and their UpCloud overflow."
+description: "Task VMs for every Project and their UpCloud overflow."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute,Infrastructure/Compute,Actions/Compute}/**
   - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Console/Commands/BuildUpCloudTaskVmImageCommand.php,Console/Commands/BuildTaskVmWorkspaceTemplateCommand.php,Console/Commands/SyncTaskVmImageCommand.php,Console/Commands/RetireTaskVmHostCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
   - apps/gateway/config/{task_vms,compute,queue}.php
   - apps/gateway/resources/{task-vms,compute}/**
-  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,add_warm_pool_to_task_vms,add_upcloud_to_task_vms,add_size_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
 ---
 
 # Compute drivers
 
-A task group of a Project with `task_compute: vm` runs in its own VM. The **web lane** serves every Project except `orbit`. Each group gets one [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. The `orbit` Project has no VM lane: a VM group of it fails to claim a workspace, so it runs in shared mode.
+A task group of a Project with `task_compute: vm` runs in its own [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster. This holds for every Project, `orbit` included. See [Orbit Project](#orbit-project).
 
 Task VMs are off until you [configure them](#configure-task-vms), and `task_compute` defaults to `shared`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
 
@@ -23,12 +23,12 @@ A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the [base image]
 
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs). When the host keeps [warm VMs](#keep-warm-vms), the claim takes one and runs step 5 itself, and step 6 follows in the same claim.
 
-1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` takes a warm VM, or records a `provisioning` row and queues `ProvisionTaskVm`.
+1. The scheduler claims a `vm` group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It takes a warm VM or records a new `provisioning` row, and queues `ProvisionTaskVm` for a new row.
 2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
 3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, its ed25519 host key fingerprint, and the [image manifest](#skip-what-the-image-holds) from the host through `incus`.
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
-6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
+6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
 A workspace starts from the Project's [workspace template](#start-the-workspace-from-a-template) when the host has one.
@@ -53,7 +53,7 @@ Shared groups keep the earlier order: their workspace is `active` before the che
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the software of the `app-dev` role, the Node agent, and Pi. Enrollment skips the programs that the image already ran, and finds the rest of that software installed. The Project's setup steps install the rest, for example its Playwright browsers.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the stable Rust toolchain, the Node agent, and Pi. Enrollment skips the programs that the image already ran, and finds the rest of that software installed. The Project's setup steps install the rest, for example its Playwright browsers.
 
 `EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. Once the Incus agent in the guest runs, one check waits in the guest for up to 30 seconds with `cloud-init status --wait`, so the job hears at once when cloud-init is done.
 
@@ -74,6 +74,8 @@ An image without a manifest, such as one built before manifests, or with a manif
 A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
 
 The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
+
+Last, the image runs `rust-toolchain`. It installs the stable Rust toolchain for `orbit` with rustup's minimal profile, plus clippy and rustfmt, as CI checks the Node agent. Each build takes the stable release of its day. Enrollment never runs it either.
 
 Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, as commands to a Node over WireGuard do. Its name hashes the jump host, the target address, and the target's pinned host key. So the next VM at a reused address never gets the old VM's connection.
 
@@ -132,13 +134,26 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 ### Place task VMs
 
-Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` takes one slot, also a `warm`, `parked`, or `failed` one. The free slots of a host are `max_vms` minus those VMs.
+Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` takes the slots of its [size](#size-by-declared-topology), also a `warm`, `parked`, or `failed` one: one for a normal VM, three for a large VM. The free slots of a host are `max_vms` minus those slots.
 
 A claim first takes a current [warm VM](#keep-warm-vms). It looks at the active hosts that have one, the host with the most free slots first, and takes that host's oldest warm VM. A warm VM already holds its slot, so a claim can take one on a full host.
 
-Without a warm VM, `AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots keep their order in `task_vms.incus.hosts`. A host that is not an active Node, or that has no free slot, gets no VM. When no host has a free slot, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. The group waits until a VM is destroyed or you add a slot.
+Without a warm VM, `AllocateTaskVmAction` places a new VM on the active host with the most free slots. Hosts with the same number of free slots keep their order in `task_vms.incus.hosts`. A host that is not an active Node, or that has fewer free slots than the VM takes, gets no VM. When no host has room for a normal VM, the claim returns the group to `todo` with the reason `Task VM: no capacity.` and tries again on the next tick. For a large VM the reason is `Task VM: no host has 3 free slots for a large VM.` The group waits until VMs are destroyed or you add slots.
 
-A full fleet does not make every group wait. When the group's Project is opted in to the [UpCloud overflow](#upcloud-overflow) and the overflow is on, the new VM goes to UpCloud instead, within its own budget.
+A full fleet does not make every group wait. When the group's Project is opted in to the [UpCloud overflow](#upcloud-overflow) and the overflow is on, a new normal VM goes to UpCloud instead, within its own budget. A large VM never goes to UpCloud.
+
+#### Size by declared topology
+
+At the claim, Orbit decides the size of the group's VM once. It takes the union of the `topology` fields of the group's subtasks that are not cancelled. The row stores the size in `size`, and it never changes while the VM exists.
+
+| Size | When | VM | Slots | Warm VM |
+| --- | --- | --- | --- | --- |
+| `normal` | No subtask declares a topology | The host's `cpus`, `memory`, and `disk` | 1 | Taken when one is ready |
+| `large` | A subtask declares a topology | 6 vCPU, 12 GiB of memory, and a 60 GiB disk, with free page reporting on its memory balloon | 3 | Never: always a new VM, and never at UpCloud |
+
+The sizes are caps, not reservations. Incus does not pin the vCPUs, and the guest takes host memory only when it first uses it. Free page reporting gives the host back the memory that the guest frees, but not the guest's page cache. Plan for a large VM that runs a topology to use all of its 12 GiB on the host. Warm VMs hold their slots, so a host fits a large VM only when `max_vms` minus its other VMs, warm VMs included, leaves three slots.
+
+A subtask that declares a topology after its group got a normal VM waits before it starts, with the reason `Task VM: this subtask declares a topology, but the group's task VM was sized without one, and Orbit does not resize it.` Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. On a large VM, a subtask that declares a topology waits with `Declared topology is not available.`, because no topology runs in a task VM yet. See [Orbit Project](#orbit-project).
 
 Placement never puts more VMs on a host than its `max_vms`. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
 
@@ -239,7 +254,7 @@ The Gateway connects to Pi on a task VM only with the row's own token, and a war
 
 A new task VM has empty caches, so a Project's setup steps download everything again. For mealou on beast they took about 36 seconds: `composer install`, `vp install`, a Playwright download of Chromium, and `vp build`. A workspace template holds their result, so the same steps find little to do.
 
-Each host keeps one template for each Project whose groups run on task VMs. Orbit uses it for every such Project other than `orbit`. There is no setting: a Project without a template works as before. A template is an Incus block volume `tvm-template-<project id>-<time>` in the host's project and pool. Its ext4 filesystem holds the Project's apps directory on a task VM, such as `/home/orbit/apps/mealou`:
+Each host keeps one template for each Project whose groups run on task VMs, `orbit` included. There is no setting: a Project without a template works as before. A template is an Incus block volume `tvm-template-<project id>-<time>` in the host's project and pool. Its ext4 filesystem holds the Project's apps directory on a task VM, such as `/home/orbit/apps/mealou`:
 
 | Path in the volume | What it holds |
 | --- | --- |
@@ -465,6 +480,8 @@ When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm
 
 `IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the image alias `orbit-task-base` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
+A [large VM](#size-by-declared-topology) gets `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk instead. Its config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
+
 When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Sync the image](#sync-the-base-image) to the host, or [build](#build-the-base-image) it. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
 Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
@@ -566,6 +583,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | `orbit-user` | Requires `orbit` to have uid and gid 1000 |
 | `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
 | `app-dev-php-source`, `app-dev-php-8-5`, `app-dev-php-8-4` | Adds the pinned Sury PHP source and installs the `app-dev` PHP packages of each PHP version an Instance can select, with the program that installs them for an Instance |
+| `rust-toolchain` | Installs the stable Rust toolchain with clippy and rustfmt for `orbit`, with rustup's minimal profile |
 | `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
 | `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
 | `single-boot` | Makes a VM from the image boot once, as described below |
@@ -595,7 +613,9 @@ Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It 
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
-The builder's user-data adds four things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, and Chromium's system libraries. A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
+The builder's user-data adds five things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, Chromium's system libraries, and the workspace tools. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with.
+
+A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
 
 Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
@@ -727,14 +747,14 @@ Each host is a JSON object with these snake_case keys. Other keys are an error.
 | --- | --- | --- | --- |
 | `node_id` | Yes | | The ID of the host Node. List each host once |
 | `cidr` | Yes | | The task bridge network, such as `10.251.77.0/24`: a private network from `/16` to `/28`, not a host address. The bridge gets the first usable address and VMs get the others |
-| `max_vms` | Yes | | The slots of the host: the most task VMs on it that are not `destroyed`, from 1 to 64 |
+| `max_vms` | Yes | | The slots of the host, from 1 to 64. Each task VM on it that is not `destroyed` takes one slot, or three for a [large VM](#size-by-declared-topology) |
 | `project` | No | `orbit-tasks` | The Incus project |
 | `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
 | `pool` | No | `orbit-tasks` | The Incus storage pool for the base image and the VM root disks. It must use the `zfs` driver |
 | `zfs_dataset` | No | | The ZFS dataset from which `task-vms:prepare-host` creates `pool` when it is missing, such as `fast/orbit-tasks`. A new dataset below a ZFS pool: not the pool itself, and not a dataset that exists |
-| `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
-| `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
-| `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |
+| `cpus` | No | `2` | The vCPUs of each normal VM, from 1 to 64 |
+| `memory` | No | `4GiB` | The memory of each normal VM, in `MiB` or `GiB` |
+| `disk` | No | `20GiB` | The root disk of each normal VM, and the size of each workspace template, in `MiB` or `GiB` |
 | `warm_vms` | No | `0` | How many [warm VMs](#keep-warm-vms) the host keeps for claims, from 0 to `max_vms`. They take slots of `max_vms` |
 
 For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4,"warm_vms":1}]'`.
@@ -973,15 +993,15 @@ The Project list lives in the Gateway environment next to the switch, so no Proj
 
 A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit removes it as it removes a shared workspace.
 
-## Declared workload nodes
+## Orbit Project
 
-A subtask can declare `topology: ["app-dev", "app-prod", "app-prod-2"]`. Subtask creation, group creation, and stored task definitions preserve this declaration. Only a subtask that has not started can change it.
+A group of the `orbit` Project runs on a normal task VM, like the group of any other Project. Set the Project's `task_compute` to `vm`. Its workspace is the Instance `task-<group id>` without a Route, and its template holds a checkout of `main` with the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
 
-No lane prepares declared workload nodes. A subtask that declares them waits before dispatch with `Declared topology is not available.` A reviewer's `topology_requested` fallback in a VM group is refused, and the reviewer continues in its workspace.
+The Project's setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead. A task VM has no E2E task bridge and no installed [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper). So the Project's teardown step must exit 0 when the helper is absent, for example `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`. Otherwise the workspace removal fails, and the group asks for assistance.
 
-## Saved pair identity
+A subtask can declare the test nodes it needs: `topology: ["app-dev", "app-prod", "app-prod-2"]`. Subtask creation, group creation, and stored task definitions keep this declaration. Only a subtask that has not started can change it. The declarations of a group decide its [VM size](#size-by-declared-topology) at the claim.
 
-The saved Orbit pair needs its network identity updated after cloning. The guest helper accepts either the existing four-Node topology or exactly a Gateway and a roleless operator. For the pair, it refuses additional Nodes or operator roles before changing addresses. It preserves private addresses, keys, DNS policy, and other settings while replacing the stored SSH addresses and Gateway endpoints.
+No task VM runs a topology yet. A subtask that declares one waits before it starts, with `Declared topology is not available.` A reviewer's `topology_requested` fallback in a VM group is refused, and the reviewer goes on in its workspace.
 
 ## Sandbox power
 

@@ -11,8 +11,8 @@ use App\Domain\TaskVms\TaskVmException;
  * SSH key. A task VM boots from the host's base image, which already holds everything else, so its
  * user-data installs nothing. The base image builder gets the same user, created with the pinned uid and
  * gid {@see self::Owner}, plus a package upgrade,
- * `openssh-server`, which the stock linuxcontainers Ubuntu cloud image lacks, and Chromium's system
- * libraries, so a Project's Playwright browser tests run.
+ * `openssh-server`, which the stock linuxcontainers Ubuntu cloud image lacks, Chromium's system
+ * libraries, so a Project's Playwright browser tests run, and the {@see self::WorkspaceTools}.
  *
  * It sets no SSH option such as `ssh_pwauth`: on that image cloud-init applies it before
  * `openssh-server` exists, writes a one-line `sshd_config` with `UsePAM no`, and sshd then
@@ -44,6 +44,14 @@ final readonly class TaskVmCloudInit
         'libxfixes3', 'libxkbcommon0', 'libxrandr2',
     ];
 
+    /**
+     * Tools that Project checks use beyond the `app-dev` role: `rsync` and `dig`, which Orbit's own test suites
+     * call, and a C compiler with the C library headers, which Rust crates such as `ring` build with.
+     *
+     * @var list<string>
+     */
+    public const array WorkspaceTools = ['rsync', 'bind9-dnsutils', 'gcc', 'libc6-dev'];
+
     /** The user-data of a task VM, which boots from the base image. */
     public function render(string $gatewayPublicKey): string
     {
@@ -60,7 +68,7 @@ final readonly class TaskVmCloudInit
             'users' => [[...$this->user($gatewayPublicKey), 'uid' => self::Uid, 'primary_group' => 'orbit', 'no_user_group' => true]],
             'package_update' => true,
             'package_upgrade' => true,
-            'packages' => ['openssh-server', ...self::ChromiumLibraries],
+            'packages' => ['openssh-server', ...self::ChromiumLibraries, ...self::WorkspaceTools],
         ]);
     }
 

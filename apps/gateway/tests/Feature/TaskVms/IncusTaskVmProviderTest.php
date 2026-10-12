@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -128,6 +129,20 @@ it('launches an absent VM on the configured bridge with the user-data on stdin',
         ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\nshell: /bin/bash\n"}}')
         ->and([$connection->host, $connection->user, $connection->port, $connection->identityFile, $connection->knownHostsFile])
         ->toBe(['10.44.0.7', 'orbit', 22, '/keys/id_ed25519', '/keys/known_hosts']);
+});
+
+it('launches a large VM with its own size and free page reporting on its memory balloon', function (): void {
+    $this->vm->update(['size' => TaskVmSize::Large]);
+    ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
+
+    $this->provider->create($this->vm, "#cloud-config\n");
+
+    expect(($this->argv)()[1])->toBe([...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=6', '--config', 'limits.memory=12GiB', '--device', 'root,size=60GiB',
+        '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'orbit-task-base', 'tvm-1'])
+        ->and(json_decode($this->ssh->calls[1][1]->input ?? '', true))->toBe(['config' => [
+            'cloud-init.user-data' => "#cloud-config\n",
+            'raw.qemu.conf' => "[device \"qemu_balloon\"]\nfree-page-reporting = \"on\"\n",
+        ]]);
 });
 
 it('does not launch a VM that runs', function (): void {

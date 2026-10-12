@@ -6,6 +6,7 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -45,19 +46,27 @@ final readonly class IncusHost
     }
 
     /**
-     * Launches `$image` as the VM `$name` with the host's size and bridge, and port isolation on its NIC.
-     * `incus launch` reads instance config as YAML from a stdin that is not a terminal. JSON is YAML, but
-     * YAML knows no `\/` escape.
+     * Launches `$image` as the VM `$name` on the host's bridge, with port isolation on its NIC. A normal VM gets the
+     * host's size. A large VM gets {@see TaskVmSize::LargeCpus}, its memory and disk, and free page reporting on its
+     * memory balloon, which Incus can set only before the VM first starts. `incus launch` reads instance config as
+     * YAML from a stdin that is not a terminal. JSON is YAML, but YAML knows no `\/` escape.
      */
-    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData): CommandResult
+    public function launch(TaskVmHost $host, Node $node, string $name, string $image, string $userData, TaskVmSize $size = TaskVmSize::Normal): CommandResult
     {
+        $large = $size === TaskVmSize::Large;
+        $config = ['cloud-init.user-data' => $userData];
+        if ($large) {
+            $config['raw.qemu.conf'] = TaskVmSize::LargeQemuConfig;
+        }
+
         return $this->run($host, $node, [
             'launch', '--vm',
-            '--config', "limits.cpu={$host->cpus}", '--config', "limits.memory={$host->memory}",
-            '--device', "root,size={$host->disk}",
+            '--config', 'limits.cpu='.($large ? TaskVmSize::LargeCpus : $host->cpus),
+            '--config', 'limits.memory='.($large ? TaskVmSize::LargeMemory : $host->memory),
+            '--device', 'root,size='.($large ? TaskVmSize::LargeDisk : $host->disk),
             '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
             '--', $image, $name,
-        ], json_encode(['config' => ['cloud-init.user-data' => $userData]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ], json_encode(['config' => $config], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
     /**

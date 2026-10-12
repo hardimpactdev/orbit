@@ -6,10 +6,12 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\Processes\CommandResult;
@@ -368,6 +370,16 @@ describe('placement', function (): void {
             ->and($vm->name)->toBe('tvm-'.$vm->id)
             ->and($vm->state)->toBe(TaskVmState::Provisioning);
         Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('never places a large VM at UpCloud', function (): void {
+        tvm_up_settings(maxVms: 2);
+        $group = tvm_up_group();
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+
+        expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
+            ->and(TaskVm::query()->where('provider', TaskVm::UpCloud)->count())->toBe(0)
+            ->and(TaskVmSize::forGroup($group))->toBe(TaskVmSize::Large);
     });
 
     it('prefers a free Incus slot', function (): void {

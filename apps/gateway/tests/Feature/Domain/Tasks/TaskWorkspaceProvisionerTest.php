@@ -893,17 +893,22 @@ describe('task VMs', function (): void {
             ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
     });
 
-    it('refuses a vm group of the Orbit Project, which has no task VM lane', function (): void {
-        provisioner_node('beast', '10.44.0.7');
-        $group = provisioner_group(provisioner_app('orbit', '.', ProjectType::Monorepo));
+    it('creates the unrouted workspace of an Orbit vm group on its ready task VM Node, like any Project', function (): void {
+        $project = provisioner_app('orbit', '.', ProjectType::Monorepo);
+        $host = provisioner_node('beast', '10.44.0.7');
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $group = provisioner_group($project);
         $group->update(['task_compute' => TaskCompute::Vm]);
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
         bind_task_workspace_fakes();
 
-        $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false));
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false));
 
-        expect($result)->toBeInstanceOf(InstanceProvisionFailure::class)
-            ->and($result->cause)->toBe('The Orbit Project has no task VM lane yet. Run its groups in shared mode.')
-            ->and(Instance::query()->count())->toBe(0);
+        expect($instance)->toBeInstanceOf(Instance::class)
+            ->and($instance?->node_id)->toBe($vmNode->id)
+            ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->task_workspace_routed)->toBeFalse();
     });
 
     it('never places a shared group on a task VM Node', function (): void {
