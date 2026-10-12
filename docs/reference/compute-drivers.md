@@ -592,7 +592,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | `single-boot` | Makes a VM from the image boot once, as described below |
 | `lean-boot` | Keeps work off the boot, as described below |
 | `manifest` | Writes the fingerprints of the programs it ran to `/var/lib/orbit-task-vm/image.json`. See [Skip what the image holds](#skip-what-the-image-holds) |
-| `clean` | Runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity |
+| `clean` | Runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity. The [E2E role image](/reference/incus-topologies#role-images) build runs the same script. |
 | `publish` | Stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>` |
 | `smoke` | Boots a smoke VM from the new image with the task VM user-data |
 | `promote` | Points the alias `orbit-task-base` at the new image in one step |

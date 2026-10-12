@@ -10,17 +10,17 @@ covers:
 
 ## Problem
 
-An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has three workload VMs plus a small operator system container; an extended topology adds one workload VM. The operator container is separate from the VM counts and memory measurements below. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
+An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has the declared workload VMs plus a Gateway VM and a small operator system container. The operator container is separate from the VM counts and memory measurements below. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
 
 ## Cause
 
-Incus clones the prepared snapshots with native ZFS clones. The test pool already uses LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
+Incus creates each guest from its role image with a native ZFS clone. The test pool already uses LZ4 compression and sparse 16 GiB root volumes, with no space reservation. Copying another VM does not copy every disk block. The guest root filesystem is ext4, which does not support file reflinks. A [dependency copy](/domains/applications#dependency-copy) inside the guest writes the copied data again.
 
 The original prepared Gateway and app-prod guests held Docker images despite running no Docker containers. Each Node had the same 2 GiB memory budget, although their workloads differ.
 
 ## Improvements, in priority order
 
-The harness cleans caches at the end of convergence and uses fixed memory limits when it creates or clones Nodes. The filesystem change remains a candidate for follow-up work.
+The role image build cleans caches before it publishes an image, and the harness uses fixed memory limits when it creates Nodes. The filesystem change remains a candidate for follow-up work.
 
 | Priority | Candidate | Measured benefit | Added complexity |
 | --- | --- | --- | --- |
@@ -32,9 +32,9 @@ The harness cleans caches at the end of convergence and uses fixed memory limits
 
 The Gateway and app-prod experiments removed unused Docker images and ran `apt-get clean`, then `fstrim /`. They kept the installed tools, service configuration, application data, and running services. Together, their referenced disk data fell by about 9.2 GiB. Docker's logical reclaimed-space report differed from the ZFS result, so measure the ZFS volume too.
 
-The `compact.storage` convergence step does this during preparation of an owned guest, before the next snapshot. Nodes with `app-dev`, `database`, or `metrics` keep their Docker images. Other Nodes prune images that no container references. Every Node clears cached APT archives, flushes root filesystem deletions with `sync -f /`, and trims its root, skipping unsupported discard. The flush lets discard reach blocks whose deletions were still pending. Removing an image makes a later use of that image download it again.
+The [role image build](/reference/incus-topologies#role-images) does this before it publishes an image: it clears cached APT archives, flushes root filesystem deletions with `sync -f /`, and trims the root of a VM. Role images start from the stock image, so they hold no Docker images that a role does not pull itself. The flush lets discard reach blocks whose deletions were still pending.
 
-Trimming a clone does not free blocks that its parent snapshot still references. The experiment reduced the clone's referenced data. It did not remove the promoted generation or prove an equal reduction in total pool usage. Keep the existing generation retention and lease checks when adopting a smaller prepared generation.
+Trimming a clone does not free blocks that its parent image still references. The experiment reduced the clone's referenced data. It did not prove an equal reduction in total pool usage.
 
 ### Keep memory headroom
 

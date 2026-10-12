@@ -5,7 +5,7 @@ description: Use when exploring or checking behavior on a task group's Incus top
 
 # Using Incus topologies
 
-A task group's topology is a disposable fleet with three workload VMs (`gateway`, `app-dev`, and `app-prod`) and a roleless `operator` container. It is for discovery. The implementer uses it to explore and check behavior while building, and the reviewer reproduces the feature on it. Subtasks do not carry proofs or proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
+A task group's topology is a disposable fleet composed from the declared Nodes: a `gateway` VM, a roleless `operator` container, and the workload VMs the work needs (`app-dev`, `app-prod`, `app-prod-2`; Orbit's default is `app-dev` and `app-prod`). It is for discovery. The implementer uses it to explore and check behavior while building, and the reviewer reproduces the feature on it. Subtasks do not carry proofs or proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
 ## Use the allocated topology
 
@@ -21,7 +21,7 @@ Leave the topology allocated while you wait for help and when you finish. Orbit 
 
 When the group holds a topology, check web UI changes against that fleet as well as the demo-mode layout checks in [verifying-web-ui](../verifying-web-ui/SKILL.md). Run `bin/e2e-topology web TASK-<group>` in a foreground terminal. It runs `vp dev` as a systemd unit in the operator, installs the mounted web dependencies, and prints the beast-loopback URL and Mac SSH forwarding command after readiness. Keep it running during the check. Ctrl-C stops the unit and removes the publication, not the topology. Do not start a separate dev server against a live profile.
 
-Drive the page from `operator` at `http://127.0.0.1:5173` using the repository's Playwright dependency in `apps/web`. Install its browser prerequisites once in this disposable container with `vp exec playwright install --with-deps webkit chromium` from that directory through `exec`. Use `vp exec node --input-type=module -e '...'` to import `chromium` or `webkit` from `playwright`, launch the browser, open that URL, and drive the actual page. Read IDs from this topology, not the demo fixtures. Confirm the sample fleet appears, edit a mounted source file and observe live reload, and exercise the changed action. Check the resulting state with the CLI on `gateway`; it must change only this topology. The operator's Gateway URL, CA, realtime, and metrics discovery are pinned; do not override them.
+Drive the page from `operator` at `http://127.0.0.1:5173` using the repository's Playwright dependency in `apps/web`. Install its browser prerequisites once in this disposable container with `vp exec playwright install --with-deps webkit chromium` from that directory through `exec`. Use `vp exec node --input-type=module -e '...'` to import `chromium` or `webkit` from `playwright`, launch the browser, open that URL, and drive the actual page. Read IDs from this topology, not the demo fixtures. A composed topology has its Nodes but no sample workloads; create what the check needs with the CLI on `gateway` and record it. Confirm the fleet appears, edit a mounted source file and observe live reload, and exercise the changed action. Check the resulting state with the CLI on `gateway`; it must change only this topology. The operator's Gateway URL, CA, realtime, and metrics discovery are pinned; do not override them.
 
 For example, with web running, install the browser and read the rendered fleet from Chromium:
 
@@ -60,6 +60,10 @@ bin/e2e-topology kill TASK-58 app-dev viewer
 The worktree is mounted read-write into `gateway`, `app-dev`, and `operator`, so an edited file is live there at once. Run `sync` only after a migration or when a guest helper script changed. A full `sync` runs the readiness check and takes minutes. After a migration, run `sync ISSUE --quick` when you do not need full verification: it proves the mount, installs the guest helpers, and applies the migrations without the readiness probes. Run a full `sync` before you rely on `verify`.
 
 A task workspace clone reaches the Nodes through its bridge worktree, and every harness command copies the clone's changes into the bridge first. Run any command, such as `status`, to push an edit.
+
+## Add what the task needs
+
+The topology has only the base roles of its Nodes: `gateway` and `vpn` on `gateway`, `app-dev` on `app-dev`, and `app-prod` on the production Nodes. It has no Cluster, extra roles, or sample Projects. Add them through the CLI on `gateway`, for example `orbit node:role:add NODE ingress --converge` or `orbit project:create`, and record each step with `--record=LABEL`. That is part of the evidence that the deliverable works on these Nodes.
 
 ## Converge instead of reprovisioning
 

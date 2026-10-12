@@ -38,11 +38,11 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | Record | Decision | Now in |
 | --- | --- | --- |
 | 0001 | Adopt the closed Tool Management contract | [Tools: Why it works this way](/reference/tools#why-it-works-this-way) |
-| 0002 | Keep proof resources task-owned and production separate | [Incus topology registry: Exact ownership](/reference/incus-topologies#exact-ownership) |
+| 0002 | Keep proof resources task-owned and production separate | [Incus topologies: Exact ownership](/reference/incus-topologies#exact-ownership) |
 | 0003 | Adopt the singleton Metrics role contract | [Metrics role](/reference/metrics) |
 | 0004 | Define the verify-only Doctor boundary | [doctor: Why it works this way](/cli/doctor#why-it-works-this-way) |
-| 0005 | Adopt a rolling Incus development topology | [Topology snapshot: Why it works this way](/reference/topology-snapshot#why-it-works-this-way) |
-| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topology registry: A live mount](/reference/incus-topologies#a-live-mount) |
+| 0005 | Adopt a rolling Incus development topology (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
+| 0006 | Separate disposable discovery from immutable proof (superseded in part) | [Incus topologies: A live mount](/reference/incus-topologies#a-live-mount) |
 | 0008 | Define typed app-dev node storage settings | [Node settings](/reference/node-settings) |
 | 0009 | Adopt clustered Instance routing | [Routes: Set up private traffic](/reference/routes#set-up-private-traffic) |
 | 0010 | Record decisions before implementation issues (superseded) | [Contributor guide: Decisions ship with their feature](/contributor-guide#decisions-ship-with-their-feature) |
@@ -54,7 +54,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0016 | Reconcile App identity and source-default updates | [Projects: Update a Project](/reference/projects#update-a-project) |
 | 0017 | Make Cluster placement optional | [cluster: Placement and TLDs](/cli/cluster#placement-and-tlds) |
 | 0018 | Register caller-local development worktrees as Instances | [Applications: Registration takes ownership (superseded by 0027)](/domains/applications#registration-takes-ownership) |
-| 0019 | Run disposable Incus scenario lanes | [Incus topology registry: On-demand scenarios](/reference/incus-topologies#on-demand-scenarios) |
+| 0019 | Run disposable Incus scenario lanes (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
 | 0021 | Pin Sury PHP-FPM with OPcache profiles per role | [PHP runtimes: Why it works this way](/reference/php-runtime#why-it-works-this-way) |
 | 0022 | Track the issue workspace and delete it before merge (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0023 | Separate hostname selection from Cluster routing | [Routes: Why it works this way](/reference/routes#routes-own-domains-and-cluster-membership-owns-scope) |
@@ -69,12 +69,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0032 | Preserve explicit Instance branch selection | [Applications: An explicit branch stays explicit](/domains/applications#an-explicit-branch-stays-explicit) |
 | 0033 | Trust WireGuard members for private Node traffic | [Routes: Private network trust](/reference/routes#private-network-trust) |
 | 0034 | Select Instance PHP from Composer constraints | [PHP runtimes: Select the PHP version](/reference/php-runtime#select-the-php-version) |
-| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Topology snapshot: Refresh](/reference/topology-snapshot#refresh) |
+| 0035 | Close out mutating proofs by refreshing the topology snapshot (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
 | 0036 | Support only Instances | [Applications: One application model](/domains/applications#one-application-model) |
-| 0037 | Promote fresh three-node topology snapshots (superseded) | [Topology snapshot: Rebuild and recover](/reference/topology-snapshot#rebuild-and-recover) |
+| 0037 | Promote fresh three-node topology snapshots (superseded) | [Incus topologies: Composed from role images](/reference/incus-topologies#composed-from-role-images) |
 | 0038 | Cascade Instance removal through processes and schedules | [Instance removal: Processes and Schedules](/reference/instance-removal#processes-and-schedules) |
 | 0039 | Use round-robin for production Route pools | [Routes: Serve a production pool](/reference/routes#serve-a-production-pool) |
-| 0040 | Extend issue proof with one app-prod Node | [Incus topology registry: The app-prod-2 extension](/reference/incus-topologies#the-app-prod-2-extension) |
+| 0040 | Extend issue proof with one app-prod Node (superseded) | [Incus topologies: Declared Nodes](/reference/incus-topologies#declared-nodes) |
 | 0041 | Delete an empty Route during Instance removal | [Routes: Remove a Route](/reference/routes#remove-a-route) |
 | 0042 | Provision Tool Managers on demand | [Tools: Managers on demand](/reference/tools#managers-on-demand-independent-of-roles) |
 | 0043 | Manage Homebrew Core formulae | [Tools: Homebrew formulae](/reference/tools#homebrew-formulae) |
@@ -148,7 +148,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
 | 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
-| 0114 | Expand the three-node Incus Cluster | [Incus topology registry: Three Nodes](/reference/incus-topologies#three-nodes) |
+| 0114 | Expand the three-node Incus Cluster (superseded) | [Incus topologies: Declared roles only](/reference/incus-topologies#declared-roles-only) |
 | 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
 | 0116 | Run task implementers on Pi | [Tasks: Drivers](/reference/tasks#drivers) |
@@ -170,15 +170,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0132 | Pause a task only for its acting thread or a real question | [Tasks: Session routing](/reference/tasks#session-routing) |
 | 0133 | Verify typed subtask deliverables at handoff | [Tasks: Deliverables](/reference/tasks#deliverables) |
 | 0134 | Resume Pi agent streams from a cursor | [Tasks: Agent viewer](/reference/tasks#agent-viewer) |
-| 0135 | Run Incus topologies for task workspace clones through a bridge worktree | [Incus topology registry: Task workspace clones](/reference/incus-topologies#task-workspace-clones) |
-| 0136 | Run long-lived topology processes as transient units | [Incus topology registry: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
+| 0135 | Run Incus topologies for task workspace clones through a bridge worktree | [Incus topologies: Task workspace clones](/reference/incus-topologies#task-workspace-clones) |
+| 0136 | Run long-lived topology processes as transient units | [Incus topologies: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
 | 0138 | Opt public Ingress sites into Caddy certificate automation | [Caddy configuration: Public Ingress certificates](/reference/caddy-configuration#public-ingress-certificates) |
 | 0139 | Collect Caddy HTTP metrics on every Node | [Caddy configuration: Published layout](/reference/caddy-configuration#published-layout) |
 | 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
 | 0141 | Build each Node's Caddyfile on the Gateway | [Caddy configuration: Node Caddy build](/reference/caddy-configuration#node-caddy-build) |
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
-| 0143 | Record topology evidence and sync without verification | [Incus topology registry: Evidence log](/reference/incus-topologies#evidence-log) |
+| 0143 | Record topology evidence and sync without verification | [Incus topologies: Evidence log](/reference/incus-topologies#evidence-log) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
 | 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [proxycli: A reserved name, not a Route](/reference/proxycli#a-reserved-name-not-a-route) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
