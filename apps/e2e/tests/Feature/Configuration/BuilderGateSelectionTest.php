@@ -303,6 +303,29 @@ PHP);
 }
 
 describe('Builder gate', function (): void {
+    it('removes its own reports older than a day from the shared Git directory before it writes a new one', function (): void {
+        $fixture = orb277_gate_fixture();
+        $checks = $fixture['root'].'/.git/orbit-checks';
+        $old = $checks.'/'.str_repeat('a', 40);
+        $recent = $checks.'/'.str_repeat('b', 40);
+        $empty = $checks.'/'.str_repeat('c', 40);
+        mkdir($old.'/review-old/tia', 0o700, true);
+        file_put_contents($old.'/review-old/result.json', '{}');
+        mkdir($recent.'/review-recent', 0o750, true);
+        mkdir($empty, 0o750, true);
+        $dayAgo = time() - 25 * 60 * 60;
+        foreach ([$old.'/review-old/tia', $old.'/review-old', $old, $empty] as $path) {
+            touch($path, $dayAgo);
+        }
+
+        expect(orb277_run_gate($fixture, '')['receipt']['passed'])->toBeTrue()
+            ->and(file_exists($old.'/review-old'))->toBeFalse()
+            ->and(is_dir($recent.'/review-recent'))->toBeTrue()
+            ->and(file_exists($empty))->toBeFalse()
+            // Removing the old report touches its HEAD directory, so that directory goes on a later run.
+            ->and(is_dir($old))->toBeTrue();
+    });
+
     it('selects the web profile for web changes', function (): void {
         $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
         $receipt = orb277_run_gate($fixture, '')['receipt'];
