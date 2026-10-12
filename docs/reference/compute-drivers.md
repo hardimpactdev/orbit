@@ -889,7 +889,7 @@ Placement first takes a current warm VM, then a new VM on the Incus host with th
 
 The server is named `tvm-<id>` in its title and hostname, and carries the label `orbit-task-vm=<id>`. Orbit records its UUID. A create whose answer was lost is found again by its label, so Orbit never sends a second create. Before each create, Orbit counts the account's servers with the `orbit-task-vm` label and refuses at `max_vms` with `task_vm.upcloud_budget_full`. A server that lost its row counts too.
 
-The server clones the newest verified template, has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
+The server clones the newest verified template onto a disk with the storage tier of its plan, such as `standard` for a Starter plan. The default plan includes 30 GB of that storage, so the default disk costs nothing extra. It has one public IPv4 interface, and no utility or private network, so it reaches no private address of the account. Fleet traffic goes only through WireGuard and the hub filter. Console access is off. The UpCloud firewall stays off: it is stateless, so reply traffic needs source-port rules that open other ports too.
 
 The server boots with ufw on, from the template. ufw denies all incoming traffic except public SSH on port 22, so Caddy and the other services in the image are not public before enrollment. The template holds the exact rule `orbit:public-ssh-recovery` that enrollment opens on a new Node. Enrollment finds it in place and changes nothing, then the `app-dev` role adds WireGuard trust and closes public SSH, as on any public `app-dev` Node.
 
@@ -939,8 +939,8 @@ Set these values in the Gateway environment. `TaskVmSettings` validates them onc
 | `ORBIT_TASK_VMS_UPCLOUD_TOKEN_FILE` | The absolute path of the token file: a regular file of the Gateway user with mode `0600` and one `token: ucat_…` line | Unset |
 | `ORBIT_TASK_VMS_UPCLOUD_MAX_VMS` | The most UpCloud task VMs, from 1 to 16. Required once the token file is set | Unset |
 | `ORBIT_TASK_VMS_UPCLOUD_ZONE` | The UpCloud zone | `nl-ams1` |
-| `ORBIT_TASK_VMS_UPCLOUD_PLAN` | The server plan | `2xCPU-4GB` |
-| `ORBIT_TASK_VMS_UPCLOUD_DISK_GB` | The root disk in GB, from 10 to 200 | `25` |
+| `ORBIT_TASK_VMS_UPCLOUD_PLAN` | The server plan. UpCloud must list it | `STARTER-2xCPU-4GB` |
+| `ORBIT_TASK_VMS_UPCLOUD_DISK_GB` | The root disk in GB, from 10 to 200 | `30` |
 | `ORBIT_TASK_VMS_UPCLOUD_SOURCE_TEMPLATE` | The UUID of the stock Ubuntu 26.04 template that the build boots | `01000000-0000-4000-8000-000030260200` |
 
 The token goes only to `https://api.upcloud.com/1.3`. The Gateway reads it from the file for each request.

@@ -92,11 +92,17 @@ final readonly class UpCloudServers
 
     /**
      * Creates an owned server from a template with the user-data, and returns its UUID. It has one public IPv4
-     * interface only, so it reaches no private network of the account, and no console access.
+     * interface only, so it reaches no private network of the account, and no console access. Its disk has the storage
+     * tier of the plan, so a disk within the plan's storage costs nothing extra.
      */
     public function create(string $name, string $labelKey, string $labelValue, string $template, string $userData, string $gatewayPublicKey): string
     {
         $upcloud = $this->upcloud();
+        $disk = ['action' => 'clone', 'storage' => $template, 'title' => $name.'-disk', 'size' => $upcloud->diskGb];
+        $tier = $this->storageTier($upcloud->plan);
+        if ($tier !== null) {
+            $disk['tier'] = $tier;
+        }
         $answer = $this->api->request('POST', 'server', ['server' => [
             'zone' => $upcloud->zone,
             'title' => $name,
@@ -107,7 +113,7 @@ final readonly class UpCloudServers
             'remote_access_enabled' => 'no',
             'labels' => ['label' => [['key' => $labelKey, 'value' => $labelValue]]],
             'networking' => ['interfaces' => ['interface' => [['type' => 'public', 'ip_addresses' => ['ip_address' => [['family' => 'IPv4']]]]]]],
-            'storage_devices' => ['storage_device' => [['action' => 'clone', 'storage' => $template, 'title' => $name.'-disk', 'size' => $upcloud->diskGb, 'tier' => 'maxiops']]],
+            'storage_devices' => ['storage_device' => [$disk]],
             // A cloud-init template needs a login key. Root gets the Gateway's key, and the user-data disables root login.
             'login_user' => ['username' => 'root', 'ssh_keys' => ['ssh_key' => [$gatewayPublicKey]]],
             'user_data' => $userData,
@@ -115,6 +121,24 @@ final readonly class UpCloudServers
         $uuid = data_get($answer, 'server.uuid');
 
         return is_string($uuid) && Str::isUuid($uuid) ? $uuid : throw self::invalid($name, 'the create answer has no server UUID');
+    }
+
+    /**
+     * The storage tier that the plan includes, such as `standard` for a Starter plan, or null for a plan without
+     * included storage. A plan that UpCloud does not list fails, so a mistyped plan creates nothing.
+     */
+    public function storageTier(string $plan): ?string
+    {
+        $plans = data_get($this->api->request('GET', 'plan'), 'plans.plan');
+        foreach (is_array($plans) ? $plans : [] as $listed) {
+            if (is_array($listed) && ($listed['name'] ?? null) === $plan) {
+                $tier = $listed['storage_tier'] ?? null;
+
+                return is_string($tier) && preg_match('/\A[a-z]{1,16}\z/D', $tier) === 1 ? $tier : null;
+            }
+        }
+
+        throw self::invalid($plan, 'UpCloud lists no such plan');
     }
 
     /** Waits until the server is in `$state`, up to `$seconds`. */

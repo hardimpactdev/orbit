@@ -166,6 +166,12 @@ final class FakeUpCloud
                 return Http::response('', 204);
             }
         }
+        if ($method === 'GET' && $path === 'plan') {
+            return Http::response(['plans' => ['plan' => [
+                ['name' => 'STARTER-2xCPU-4GB', 'core_number' => 2, 'memory_amount' => 4096, 'storage_size' => 30, 'storage_tier' => 'standard'],
+                ['name' => 'CLOUDNATIVE-2xCPU-4GB', 'core_number' => 2, 'memory_amount' => 4096, 'storage_size' => 0],
+            ]]]);
+        }
         if ($method === 'GET' && $path === 'storage/template') {
             return Http::response(['storages' => ['storage' => array_values($this->storages)]]);
         }
@@ -239,7 +245,7 @@ function tvm_up_settings(?array $upcloud = [], int $maxVms = 1, ?int $hostId = n
         modelProxyOrigin: 'http://10.44.0.3:8317', piArtifactPath: null, piArtifactSha256: null, piModels: [],
         upcloud: $upcloud === null ? null : new TaskVmUpCloud(...[
             'enabled' => true, 'projectIds' => [test()->project->id], 'tokenFile' => test()->tokenFile, 'maxVms' => 2,
-            'zone' => 'nl-ams1', 'plan' => '2xCPU-4GB', 'diskGb' => 25, 'sourceTemplate' => '01000000-0000-4000-8000-000030260200',
+            'zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'diskGb' => 30, 'sourceTemplate' => '01000000-0000-4000-8000-000030260200',
             ...$upcloud,
         ]),
     ));
@@ -317,7 +323,7 @@ describe('settings', function (): void {
     it('reads the overflow with its defaults', function (): void {
         tvm_up_config(['enabled' => true, 'projects' => [12, 12, 4], 'token_file' => '/home/orbit/upcloud.yaml', 'max_vms' => '3']);
 
-        expect(TaskVmSettings::fromConfig()->upcloud)->toEqual(new TaskVmUpCloud(true, [12, 4], '/home/orbit/upcloud.yaml', 3, 'nl-ams1', '2xCPU-4GB', 25, '01000000-0000-4000-8000-000030260200'))
+        expect(TaskVmSettings::fromConfig()->upcloud)->toEqual(new TaskVmUpCloud(true, [12, 4], '/home/orbit/upcloud.yaml', 3, 'nl-ams1', 'STARTER-2xCPU-4GB', 30, '01000000-0000-4000-8000-000030260200'))
             ->and(TaskVmSettings::fromConfig()->upcloud?->allows(4))->toBeTrue()
             ->and(TaskVmSettings::fromConfig()->upcloud?->allows(5))->toBeFalse();
     });
@@ -424,8 +430,8 @@ describe('provider', function (): void {
             ->and($request['hostname'])->toBe($vm->name)
             ->and($request['labels'])->toBe(['label' => [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]])
             ->and($request['networking'])->toBe(['interfaces' => ['interface' => [['type' => 'public', 'ip_addresses' => ['ip_address' => [['family' => 'IPv4']]]]]]])
-            ->and($request['storage_devices']['storage_device'][0])->toMatchArray(['action' => 'clone', 'storage' => $current, 'size' => 25])
-            ->and($request)->toMatchArray(['zone' => 'nl-ams1', 'plan' => '2xCPU-4GB', 'metadata' => 'yes', 'remote_access_enabled' => 'no'])
+            ->and($request['storage_devices']['storage_device'][0])->toMatchArray(['action' => 'clone', 'storage' => $current, 'size' => 30, 'tier' => 'standard'])
+            ->and($request)->toMatchArray(['zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'metadata' => 'yes', 'remote_access_enabled' => 'no'])
             ->and($request['login_user'])->toBe(['username' => 'root', 'ssh_keys' => ['ssh_key' => [TVM_UP_GATEWAY_KEY]]])
             ->and($userData['users'])->toBe([])
             ->and($userData['disable_root'])->toBeTrue()
@@ -464,6 +470,18 @@ describe('provider', function (): void {
         expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n"))
             ->toThrow(TaskVmException::class, 'UpCloud already runs 2 task VM servers, the limit of 2.')
             ->and($this->upcloud->created)->toBe([]);
+    });
+
+    it('gives the disk the storage tier of the plan, none for a plan without storage, and refuses an unknown plan', function (): void {
+        $this->upcloud->template('orbit-task-base-20261011000000');
+        tvm_up_settings(['plan' => 'CLOUDNATIVE-2xCPU-4GB']);
+        app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n");
+
+        expect($this->upcloud->created[0]['storage_devices']['storage_device'][0])->not->toHaveKey('tier');
+
+        tvm_up_settings(['plan' => '2xCPU-4GB']);
+        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), "#cloud-config\n{}\n"))->toThrow(TaskVmException::class, 'UpCloud lists no such plan')
+            ->and($this->upcloud->created)->toHaveCount(1);
     });
 
     it('refuses a create without a verified template', function (): void {
