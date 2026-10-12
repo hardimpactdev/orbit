@@ -51,6 +51,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -139,6 +140,7 @@ beforeEach(function (): void {
         $accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
+        app(TaskVmGit::class),
     );
     $this->removal = new RemoteDevelopmentInstanceSourceRemoval(
         $ssh,
@@ -1460,6 +1462,7 @@ it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected 
         $this->accounts,
         $this->boundary,
         app(RepositoryReadAccess::class),
+        app(TaskVmGit::class),
     );
     $this->orbitApp->update([
         'repository_url' => 'git@github.com:acme/private.git',

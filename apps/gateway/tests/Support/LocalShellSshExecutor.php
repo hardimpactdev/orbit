@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessOutput;
+use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -12,7 +14,8 @@ use App\Infrastructure\Ssh\SshExecutor;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs each remote command in a local shell, so tests exercise the real remote program.
+ * Runs each remote command in a local shell, so tests exercise the real remote program. A command that streams its
+ * output gets its standard output once, at the end.
  */
 final class LocalShellSshExecutor implements SshExecutor
 {
@@ -22,6 +25,9 @@ final class LocalShellSshExecutor implements SshExecutor
         HostPathGuardedProcessRunner::assertSafe($command->arguments, is_string($input) ? $input : null);
         $process = new Process($command->arguments, null, null, $input);
         $process->run();
+        if ($command->output !== null && $process->getOutput() !== '') {
+            ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, $process->getOutput()));
+        }
 
         return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
     }

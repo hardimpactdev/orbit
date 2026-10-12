@@ -193,6 +193,11 @@ final readonly class IncusHost
     /** @param  list<string>  $arguments */
     private function execute(Node $node, array $arguments, string|ProtectedInput|null $input, float $timeout): CommandResult
     {
+        // `incus exec` would hand the credential to a task VM or a template builder, and the host itself needs none.
+        if ($input instanceof ProtectedInput && $input->carriesGitCredential()) {
+            throw TaskVmCredentialGuard::refused();
+        }
+
         return $this->ssh->execute(
             new SshConnection(
                 host: $node->wireguard_ip ?? throw new TaskVmException('task_vm.unknown_host', "Host Node [{$node->name}] has no WireGuard address."),
