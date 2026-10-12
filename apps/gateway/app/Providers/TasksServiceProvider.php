@@ -34,6 +34,7 @@ use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
@@ -79,6 +80,7 @@ final class TasksServiceProvider extends ServiceProvider
         SandboxNodeBootstrap::class => UpCloudSandboxNodeBootstrap::class,
         SandboxNetworkPolicy::class => SandboxHubNetwork::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
+        TaskWorkspaceRoute::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
         TaskTopologyAdmission::class => SandboxTopologyAdmission::class,
         AgentSpawner::class => TaskAgentSpawner::class,

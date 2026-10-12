@@ -108,6 +108,9 @@ final readonly class TaskScheduler
     /** The check script sets this when an unexpected error still leaves a result. */
     private const string CHECK_ERROR_STEP = 'check_error';
 
+    /** Starts the assistance reason when the workspace Route still fails before the implementer or the final review. */
+    public const string WorkspaceRouteFailedReason = 'The task workspace Route could not be finished, so no agent started.';
+
     public function __construct(
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
@@ -146,6 +149,7 @@ final readonly class TaskScheduler
         private TaskPullRequestMerger $merger,
         private DeliverablePathChecker $deliverablePaths,
         private ResumeDeliverableCorrectionAction $correctionResume,
+        private TaskWorkspaceRoute $workspaceRoute,
     ) {}
 
     /**
@@ -1134,7 +1138,7 @@ final readonly class TaskScheduler
      */
     private function startFinalReview(Task $group, Task $task, bool $alreadyFetched): void
     {
-        if ($task->status !== TaskStatus::Running) {
+        if ($task->status !== TaskStatus::Running || ! $this->workspaceRouteReady($group, $task)) {
             return;
         }
         try {
@@ -1879,6 +1883,40 @@ final readonly class TaskScheduler
         if ($task->communication_failures > 0) {
             $task->update(['communication_failures' => 0]);
         }
+    }
+
+    /**
+     * Finishes the group's pending workspace Route and returns why it failed, or null. Only a routed task VM workspace
+     * is pending: its baseline check starts before its Route.
+     */
+    private function finishWorkspaceRoute(Task $group): ?string
+    {
+        $group = $group->fresh(['project', 'taskable']) ?? $group;
+        if (! $this->workspaceRoute->pending($group)) {
+            return null;
+        }
+        try {
+            return $this->workspaceRoute->complete($group)?->cause;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return InstanceProvisionFailure::fromException($exception)->cause;
+        }
+    }
+
+    /**
+     * Work that uses the workspace Route waits for it. A failure counts as a communication failure, so Orbit tries
+     * again on the next ticks and asks for assistance after the fifth.
+     */
+    private function workspaceRouteReady(Task $group, Task $task): bool
+    {
+        $failure = $this->finishWorkspaceRoute($group);
+        if ($failure === null) {
+            return true;
+        }
+        $this->recordCommunicationFailure($task, $group, self::WorkspaceRouteFailedReason.' '.$failure);
+
+        return false;
     }
 
     private function recordCommunicationFailure(Task $task, Task $group, string $reason): void
@@ -2696,6 +2734,15 @@ final readonly class TaskScheduler
         }
 
         $this->startFirstTask($started);
+        // A task VM workspace started its baseline check before its Route. The Route finishes now, while the check
+        // runs. A failure waits for the next try, before the implementer or the final review starts.
+        $routeFailure = $this->finishWorkspaceRoute($started);
+        if ($routeFailure !== null) {
+            Log::warning('The task workspace Route failed after the baseline check started; Orbit tries again before the implementer starts.', [
+                'group_id' => $started->id,
+                'failure' => $routeFailure,
+            ]);
+        }
 
         return $started->fresh(['tasks', 'project', 'taskable']) ?? $started;
     }
@@ -4737,6 +4784,9 @@ final readonly class TaskScheduler
 
         $status = $check?->status;
         if ($status === TaskCheckStatus::Passed) {
+            if (! $this->workspaceRouteReady($group, $task)) {
+                return;
+            }
             $this->clearCommunicationFailures($task);
             if ($task->isFinalReview()) {
                 $this->startFinalReview($group, $task, false);
@@ -4959,6 +5009,9 @@ final readonly class TaskScheduler
 
         $this->recordSubtaskStart($task);
         $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->workspaceRouteReady($group, $task)) {
+            return;
+        }
         if ($group instanceof Task && ! $this->validateImplementerDeliverablePaths($task, $group)) {
             return;
         }

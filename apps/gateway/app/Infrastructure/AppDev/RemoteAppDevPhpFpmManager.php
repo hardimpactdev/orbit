@@ -48,6 +48,22 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
     }
 
     /**
+     * Installs the `app-dev` PHP packages of `$version` without publishing a pool, so a check can run PHP before the
+     * Instance's site exists. {@see self::converge()} installs them again, which then finds them in place.
+     */
+    public function installPackages(Node $node, string $version): void
+    {
+        if (! SupportedPhpVersion::isSupported($version)) {
+            throw new RuntimeConvergenceException(
+                step: 'php-version',
+                errorCode: 'app-dev.php_version_unsupported',
+                message: "PHP version [{$version}] is not supported.",
+            );
+        }
+        $this->packages->installForInstance($node->loadMissing('roles'), collect([$version]), $this->ssh, RoleName::AppDev);
+    }
+
+    /**
      * The Orbit-rendered pools on the Node that name a missing working directory: installed pools, which
      * stop PHP-FPM from starting, and desired pools, which converge skips.
      *

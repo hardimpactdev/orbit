@@ -103,7 +103,7 @@ When the default has not deployed at source preparation, Orbit records an empty 
 
 A task VM has no `default` Instance, so its workspace has no seed. Instead, source preparation can take a [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template): a prepared checkout of the default branch next to the new checkout, on the same filesystem. Preparation checks that the template is a repository of the managed user with the Project's origin, and renames it to the checkout instead of cloning. Its ignored files, such as `vendor` and `node_modules`, stay. Without a template it clones as usual.
 
-A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url).
+A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url). A routed task VM workspace gets that `.env` and its PHP packages before the baseline check, and its Route after the check started. Its setup steps must not need the Route. See [Start the baseline check before the Route](/reference/compute-drivers#start-the-baseline-check-before-the-route).
 
 Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 

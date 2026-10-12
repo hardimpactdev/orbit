@@ -251,6 +251,101 @@ it('restores what it grants and keeps the source denied, or retains its snapshot
     'shared Git failed recovery' => [true, true],
 ]);
 
+it('finishes its walk while setup removes and replaces files under the checkout and the Web root', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+    $churn = null;
+
+    try {
+        $checkout = "$root/checkout";
+        foreach (range(1, 40) as $directory) {
+            mkdir("$checkout/web/site/build/d$directory", 0o700, true);
+            mkdir("$checkout/vendor/p$directory", 0o700, true);
+            foreach (range(1, 20) as $file) {
+                file_put_contents("$checkout/web/site/build/d$directory/f$file.js", 'asset');
+                file_put_contents("$checkout/vendor/p$directory/f$file.php", 'source');
+            }
+        }
+        // Like `vp build` and Composer during the baseline setup: directories and files vanish and come back.
+        $churn = new Process(['bash', '-c', <<<'BASH'
+            while :; do
+                for directory in "$1"/web/site/build/d* "$1"/vendor/p*; do
+                    rm -rf -- "$directory"
+                    mkdir -p -- "$directory"
+                    for file in 1 2 3 4 5; do printf x > "$directory/f$file.js"; done
+                done
+            done
+            BASH, 'churn', $checkout]);
+        $churn->start();
+        usleep(200_000);
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+        $failures = [];
+        foreach (range(1, 10) as $run) {
+            $process = new Process($command->arguments)->setInput($command->input);
+            if ($process->run() !== 0) {
+                $failures[] = $process->getErrorOutput();
+            }
+        }
+        $churn->stop(0);
+
+        expect($failures)->toBe([]);
+        // A build after the walk creates its output with the usual modes; the default ACLs make it readable.
+        mkdir("$checkout/web/site/build/late", 0o755, true);
+        file_put_contents("$checkout/web/site/build/late/app.js", 'late asset');
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/build/late/app.js"])->mustRun()->getOutput())->toBe('late asset')
+            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
+        foreach (['.env', 'source.txt', 'web/private.txt'] as $private) {
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/$private"])->run())->toBe(1);
+        }
+        mkdir("$checkout/vendor/late", 0o700, true);
+        file_put_contents("$checkout/vendor/late/new.php", 'new source');
+        expect(new Process(['getfacl', '-cp', "$checkout/vendor/late/new.php"])->mustRun()->getOutput())->toContain('user:caddy:---');
+    } finally {
+        $churn?->stop(0);
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('treats only a vanished entry as harmless, and fails on any other walk error', function (string $error, bool $succeeds): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        mkdir("$root/bin");
+        // A recursive walk applies its change and then reports one entry, as a walk that races setup does.
+        file_put_contents("$root/bin/setfacl", <<<BASH
+            #!/bin/bash
+            /usr/bin/setfacl "\$@" || exit
+            for argument in "\$@"; do
+                if [ "\$argument" = -R ]; then printf 'setfacl: %s/web/site/gone.js: {$error}\\n' "$root/checkout" >&2; exit 1; fi
+            done
+            BASH);
+        chmod("$root/bin/setfacl", 0o700);
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
+        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
+        $process->setInput($command->input)->run();
+
+        expect($process->getExitCode() === 0)->toBe($succeeds, $process->getErrorOutput());
+        if ($succeeds) {
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())->toBe('first page')
+                ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/source.txt"])->run())->toBe(1);
+        } else {
+            expect($process->getErrorOutput())->toContain($error);
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'a vanished entry' => ['No such file or directory', true],
+    'a refused entry' => ['Operation not permitted', false],
+]);
+
 function development_caddy_access_fixture(): string
 {
     $root = sys_get_temp_dir().'/orbit-caddy-access-'.Str::uuid();

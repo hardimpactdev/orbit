@@ -2044,6 +2044,11 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
             $this->native->reserve($instance, $domain);
         }
 
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            return $this->native->prepare($instance, $domain);
+        }
+
         public function complete(
             Instance $instance,
             ?string $domain,
@@ -2128,6 +2133,11 @@ it('persists unexpected provisioning failures when guarded cleanup cannot comple
             $this->native->reserve($instance, $domain);
         }
 
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            return $this->native->prepare($instance, $domain);
+        }
+
         public function complete(
             Instance $instance,
             ?string $domain,
@@ -2169,6 +2179,11 @@ it('keeps reserved recovery state when both source acquisition and cleanup are u
         public function reserve(Instance $instance, ?string $domain): void
         {
             $this->reservations++;
+        }
+
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            return $instance;
         }
 
         public function complete(
@@ -2248,6 +2263,11 @@ it('persists reservation conflicts before releasing the lease when cleanup canno
             $this->reservedWhileHeld = $this->lock->held;
 
             throw new ResourceOperationException('route.hostname_taken', 'The hostname is unavailable.', 409);
+        }
+
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            return $instance;
         }
 
         public function complete(
@@ -3341,6 +3361,11 @@ it('keeps setup pending when create is interrupted after activation before the b
         public function reserve(Instance $instance, ?string $domain): void
         {
             $this->native->reserve($instance, $domain);
+        }
+
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            return $this->native->prepare($instance, $domain);
         }
 
         public function complete(

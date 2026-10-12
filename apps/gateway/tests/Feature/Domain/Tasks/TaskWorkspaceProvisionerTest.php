@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -176,11 +177,20 @@ function bind_task_workspace_fakes(): object
     {
         public int $reserves = 0;
 
+        public int $prepares = 0;
+
         public int $completes = 0;
 
         public function reserve(Instance $instance, ?string $domain): void
         {
             $this->reserves++;
+        }
+
+        public function prepare(Instance $instance, ?string $domain): Instance
+        {
+            $this->prepares++;
+
+            return $instance;
         }
 
         public function complete(
@@ -902,7 +912,72 @@ describe('task VMs', function (): void {
         expect($instance?->node_id)->toBe($vmNode->id)
             ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
             ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/'.TaskWorkspaceName::for($group))
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($fakes->development->prepares)->toBe(1)
+            ->and($fakes->development->completes)->toBe(0);
+    });
+
+    it('stops a routed task VM workspace before its Route, and completes the Route later', function (): void {
+        $project = provisioner_app('dlf');
+        $host = provisioner_node('beast', '10.44.0.7');
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $group = provisioner_group($project);
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+        $fakes = bind_task_workspace_fakes();
+        $provisioner = app(TaskWorkspaceProvisioner::class);
+        $instance = $provisioner->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+        expect($instance)->toBeInstanceOf(Instance::class);
+        assert($instance instanceof Instance);
+
+        expect($provisioner->pending($group->fresh(['taskable']) ?? $group))->toBeFalse();
+        $group->taskable()->associate($instance)->save();
+        $attached = $group->fresh(['taskable']) ?? $group;
+
+        expect($provisioner->pending($attached))->toBeTrue()
+            ->and($provisioner->complete($attached))->toBeNull()
             ->and($fakes->development->completes)->toBe(1);
+
+        // An unrouted workspace never waits for a Route.
+        $instance->update(['task_workspace_routed' => false]);
+        expect($provisioner->pending($group->fresh(['taskable']) ?? $group))->toBeFalse()
+            ->and($provisioner->complete($group->fresh(['taskable']) ?? $group))->toBeNull()
+            ->and($fakes->development->completes)->toBe(1);
+    });
+
+    it('returns a failed Route as a failure and leaves the workspace pending', function (): void {
+        $project = provisioner_app('dlf');
+        $host = provisioner_node('beast', '10.44.0.7');
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $group = provisioner_group($project);
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+        bind_task_workspace_fakes();
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+        assert($instance instanceof Instance);
+        $group->taskable()->associate($instance)->save();
+        app()->instance(DevelopmentInstanceProvisioner::class, new class implements DevelopmentInstanceProvisioner
+        {
+            public function reserve(Instance $instance, ?string $domain): void {}
+
+            public function prepare(Instance $instance, ?string $domain): Instance
+            {
+                return $instance;
+            }
+
+            public function complete(Instance $instance, ?string $domain, bool $setupPending = false): Instance
+            {
+                throw new RuntimeConvergenceException('router', 'app-dev.projection_busy', 'Another development projection operation is active.');
+            }
+        });
+        app()->forgetInstance(TaskWorkspaceProvisioner::class);
+        $provisioner = app(TaskWorkspaceProvisioner::class);
+        $attached = $group->fresh(['taskable']) ?? $group;
+
+        expect($provisioner->complete($attached)?->cause)->toContain('[router]', 'Another development projection operation is active.')
+            ->and($provisioner->pending($group->fresh(['taskable']) ?? $group))->toBeTrue();
     });
 
     it('starts the workspace of a vm group from its template and logs each part as a task VM step', function (bool $ready): void {
@@ -932,10 +1007,13 @@ describe('task VMs', function (): void {
         });
         $fakes = bind_task_workspace_fakes();
 
-        app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+        assert($instance instanceof Instance);
+        $group->taskable()->associate($instance)->save();
+        app(TaskWorkspaceProvisioner::class)->complete($group->fresh(['taskable']) ?? $group);
 
         expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/.orbit-workspace-template' : null]);
-        foreach (['workspace-template', 'workspace-source', 'workspace-route', 'workspace'] as $step) {
+        foreach (['workspace-template', 'workspace-source', 'workspace-prepare', 'workspace', 'workspace-route'] as $step) {
             Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === 'tvm-1' && $context['step'] === $step));
         }
     })->with(['a template' => true, 'no template' => false]);

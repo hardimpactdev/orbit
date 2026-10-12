@@ -39,6 +39,28 @@ final readonly class DevelopmentCaddyAccessCommand
             arguments: $arguments,
             input: <<<'BASH'
                 set -o pipefail
+                # Setup can run while this walk does, for a task VM workspace whose Route follows its baseline
+                # start: `vp build` rewrites the build output, and Composer republishes assets. An entry that
+                # vanishes between a directory read and its own call needs no ACL, and an entry created in its
+                # place inherits the default ACL of its directory. So a walk fails only for an error other than a
+                # vanished entry. Each walk sets the default ACLs before the access ACLs, so a file created at any
+                # point of the walk ends up with the right entry.
+                walk() {
+                    walk_errors=$(mktemp)
+                    if "$@" 2> "$walk_errors"; then
+                        rm -f -- "$walk_errors"
+                        return 0
+                    else
+                        walk_status=$?
+                    fi
+                    if [ -s "$walk_errors" ] && ! grep -qv -e ': No such file or directory$' -- "$walk_errors"; then
+                        rm -f -- "$walk_errors"
+                        return 0
+                    fi
+                    cat -- "$walk_errors" >&2
+                    rm -f -- "$walk_errors"
+                    return "$walk_status"
+                }
                 checkouts=()
                 roots=()
                 applications=()
@@ -85,7 +107,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     test "$(realpath -e -- "$document_root")" = "$document_root"
 
                     storage_target=
-                    links=$(find -P "$document_root" -type l -print0 | base64 -w0)
+                    links=$(walk find -P "$document_root" -type l -print0 | base64 -w0)
                     while IFS= read -r -d '' link; do
                         expected_target="$application/storage/app/public"
                         test "$document_root" = "$application/public"
@@ -124,7 +146,7 @@ final readonly class DevelopmentCaddyAccessCommand
                 trap finish EXIT
                 for index in "${!checkouts[@]}"; do
                     document_root=${roots[$index]}
-                    getfacl -R -P -p -- "$document_root" >> "$snapshot"
+                    walk getfacl -R -P -p -- "$document_root" >> "$snapshot"
                     ancestor=$document_root
                     while [ "$ancestor" != / ]; do
                         ancestor=$(dirname -- "$ancestor")
@@ -132,7 +154,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     done
                     if [ -n "${storage[$index]}" ]; then
                         getfacl -p -- "${applications[$index]}/storage" "${applications[$index]}/storage/app" >> "$snapshot"
-                        getfacl -R -P -p -- "${storage[$index]}" >> "$snapshot"
+                        walk getfacl -R -P -p -- "${storage[$index]}" >> "$snapshot"
                     fi
                 done
                 # Linked worktrees keep shared Git metadata outside their checkout trees.
@@ -148,8 +170,8 @@ final readonly class DevelopmentCaddyAccessCommand
                 # Keep source, Git metadata, and environment files outside the Web root private.
                 # Apply every deny before grants so nested Git worktrees retain their own Web roots.
                 for checkout in "${checkouts[@]}"; do
-                    setfacl -n -P -R -m u:caddy:--- "$checkout"
-                    find -P "$checkout" -type d -exec setfacl -m d:u:caddy:--- -- {} +
+                    walk find -P "$checkout" -type d -exec setfacl -m d:u:caddy:--- -- {} +
+                    walk setfacl -n -P -R -m u:caddy:--- "$checkout"
                 done
 
                 for index in "${!checkouts[@]}"; do
@@ -173,12 +195,12 @@ final readonly class DevelopmentCaddyAccessCommand
                         sudo -n setfacl -n -m "u:caddy:${caddy_acl%?}x,m::${mask%?}x" -- "$ancestor"
                     done
 
-                    setfacl -P -R -m u:caddy:r-X "$document_root"
-                    find -P "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    walk find -P "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    walk setfacl -P -R -m u:caddy:r-X "$document_root"
                     if [ -n "$storage_target" ]; then
                         setfacl -m u:caddy:--x "$application/storage" "$application/storage/app"
-                        setfacl -P -R -m u:caddy:r-X "$storage_target"
-                        find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                        walk find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                        walk setfacl -P -R -m u:caddy:r-X "$storage_target"
                     fi
                     sudo -n -u caddy python3 -c 'import os, sys; sys.exit(not os.access(sys.argv[1], os.R_OK | os.X_OK))' "$document_root"
                 done

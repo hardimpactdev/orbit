@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
+use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
@@ -12,6 +13,7 @@ use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -94,6 +96,8 @@ final readonly class IncusTaskVmImageBuilder
         private TaskVmSettings $settings,
         private VpToolManager $vp,
         private ComposerToolManager $composer,
+        private RemotePhpPackageManager $php,
+        private InstancePhpVersionCatalog $phpVersions,
     ) {}
 
     /** Whether the host's project has a base image. */
@@ -171,7 +175,9 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * The programs that enrollment runs on an `app-dev` Node, in its order, rendered by the same code. The
-     * image manifest records each one, so enrollment skips the ones it renders the same.
+     * image manifest records each one, so enrollment skips the ones it renders the same. Then the `app-dev` PHP
+     * packages of every PHP version an Instance can select, which the Instance's route installs on a Node: on a
+     * task VM it finds them in place, and its source step skips the refresh.
      *
      * @return array<string, RemoteCommand>
      */
@@ -186,6 +192,9 @@ final readonly class IncusTaskVmImageBuilder
         $programs[TaskVmBakedPrograms::AppDevPrerequisites] = $this->roles->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
         $programs[TaskVmBakedPrograms::VpManager] = $this->vp->materializeCommand($node);
         $programs[TaskVmBakedPrograms::ComposerManager] = $this->composer->materializeCommand($node);
+        foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
+            $programs[TaskVmBakedPrograms::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
+        }
 
         return $programs;
     }

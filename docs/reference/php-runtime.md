@@ -59,6 +59,8 @@ One PHP-FPM convergence runs these steps:
 7. If the service fails with the new file, it restores the previous file and reloads again. A version that changed earlier in the same convergence also gets its previous file back.
 8. A convergence that skipped a pool fails with `app-dev.php_pool_directory_missing` after it publishes every version. The error names the pool.
 
+Step 3 skips the refresh of the [Sury source](/reference/node-provisioning#package-sources) when every package is already installed and the source is current.
+
 A restored file leaves out a pool whose working directory is gone, because that file could never pass `php-fpm -t` again. The final error makes Instance creation, deployment, transfer, and a Project root change report the missing directory. Without it, they would succeed and leave a site that answers `502`.
 
 PHP-FPM refuses to start while any pool names a missing `chdir`, so one such pool would stop every site of that version. That is why convergence skips such a pool and still publishes the others.

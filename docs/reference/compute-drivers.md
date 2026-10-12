@@ -32,8 +32,27 @@ A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs)
 4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
+7. The claim starts the baseline check. Then the same claim projects the Route.
 
 A workspace starts from the Project's [workspace template](#start-the-workspace-from-a-template) when the host has one.
+
+#### Start the baseline check before the Route
+
+The baseline check needs the checkout, its `.env`, and the PHP packages of the Instance's PHP version. It does not need the Route. Measured on beast (12 October 2026), mealou's setup steps and `composer check`, its browser tests included, passed in a task VM with no Caddy site and no PHP-FPM pool for the workspace. Pest's browser tests serve the application from their own server.
+
+So a routed workspace on a task VM stops before its Route. After the source, workspace creation runs these steps, in about 1.5 seconds with the current base image:
+
+1. It classifies the source and records the PHP version.
+2. It writes `APP_URL`, and for a new `.env` the application key and name, as it does for every development Instance.
+3. It installs the `app-dev` PHP packages of that version. On a task VM they are in the [base image](#build-the-base-image), so the step only checks them.
+
+The workspace stays `source_resolved`, and its Route stays `pending`. The claim attaches it to the group and starts the baseline check. Then, in the same claim, it projects the Route as Instance creation does: the certificates, Caddy, PHP-FPM, the Router, and DNS, under the projection lock. The workspace becomes `active`.
+
+The setup steps of the check can change files while the Route grants Caddy access to the checkout: `vp build` rewrites the build output, and Composer republishes assets. So the access walk ignores an entry that vanishes during the walk, and fails on any other error. It sets each directory's default ACL before its access ACLs, so a file that setup creates during or after the walk inherits the right entry: readable by Caddy in the Web root, denied elsewhere. On beast the walk failed 10 of 10 times under such changes before this, and passed 10 of 10 times after.
+
+A Route that fails at the claim logs `The task workspace Route failed after the baseline check started; Orbit tries again before the implementer starts.` Work that uses the Route waits for it: before the first implementer or the final review starts, Orbit tries the Route again. Each failure there counts as a communication failure. After the fifth, the subtask asks for assistance with `The task workspace Route could not be finished, so no agent started.` and the error. So no agent, reviewer, preview, or pull request ever uses a workspace whose Route failed. Cancelling the group removes the workspace with its pending Route.
+
+Shared groups keep the earlier order: their workspace is `active` before the check starts.
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
@@ -45,17 +64,19 @@ The job goes on when cloud-init reports `done` with no errors and the host repor
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI. It never hosts a [Metrics exporter](/reference/metrics#exporter-selection), because the [hub filter](#limit-fleet-traffic-on-the-hub) keeps the Metrics Node out. So its enrollment skips the fleet Metrics reconcile, which converges exporters on every Node and took about 80 seconds on the live fleet.
 
-Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. A warm VM logs other first and last lines, as [Keep warm VMs](#keep-warm-vms) describes. The workspace creation then logs `workspace-template`, `workspace-source`, `workspace-route` for a routed workspace, and `workspace`, which has the seconds of the whole creation.
+Each step of the jobs logs one line `Task VM step done.` in the Gateway log, with the VM name, the step, and its seconds. The steps are `create`, which counts from the claim, `boot`, `node-converge`, `apt-tool-manager`, `roles`, `router-lan-ingress`, `dns-selection`, `activate`, `agent`, `enrolled`, `model-key`, `pi-current` or `pi-upload`, `pi-files`, and `pi-server`. The last line, `claim-to-ready`, has the seconds from the claim to `ready`. A warm VM logs other first and last lines, as [Keep warm VMs](#keep-warm-vms) describes. The workspace creation then logs `workspace-template`, `workspace-source`, `workspace-prepare` for a routed workspace, and `workspace`, which has the seconds of the whole creation. The baseline check starts after `workspace`. The Route then logs `workspace-route`, with the seconds of its projection, which runs while the check runs.
 
 #### Skip what the image holds
 
-The [image build](#build-the-base-image) runs the programs that enrollment runs on an `app-dev` Node: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It records the fingerprint of each one, the SHA-256 of its exact arguments and input, in `/var/lib/orbit-task-vm/image.json` in the image. `EnrollTaskVm` reads that manifest through the host before enrollment. Enrollment then skips a program when it renders the same fingerprint under the same name, because the image ran that exact program and each program is idempotent. It logs `Task VM program skipped: its image ran it.` for each one.
+The [image build](#build-the-base-image) runs the programs that enrollment runs on an `app-dev` Node: `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, and `composer-manager`. It also runs the `app-dev` PHP programs that an Instance's Route runs, as described below. It records the fingerprint of each one, the SHA-256 of its exact arguments and input, in `/var/lib/orbit-task-vm/image.json` in the image. `EnrollTaskVm` reads that manifest through the host before enrollment. Enrollment then skips a program when it renders the same fingerprint under the same name, because the image ran that exact program and each program is idempotent. It logs `Task VM program skipped: its image ran it.` for each one.
 
 Every other program runs, with the warning `Task VM image did not run this program; enrollment runs it.` and its reason. That happens when the Gateway's code or its SSH key changed the program since the build.
 
 An image without a manifest, such as one built before manifests, or with a manifest the Gateway cannot read, makes enrollment run every program, with the warning `Task VM image has no usable manifest; enrollment runs every program.` So an older image is never wrong, only slower.
 
 A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
+
+The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes. On beast that step took 1.2 seconds on a VM from the new image, against 33.8 seconds on a VM from the image before.
 
 Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, as commands to a Node over WireGuard do. Its name hashes the jump host, the target address, and the target's pinned host key. So the next VM at a reused address never gets the old VM's connection.
 
@@ -280,7 +301,7 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `volume` | Creates the block volume with the host's `disk` size, and attaches it |
 | `mount` | Formats the volume as ext4, gives its root to `orbit`, and mounts it with the same script as a claim |
 | `clone` | Clones the default branch into `.orbit-workspace-template`, with the Project's repository access, as `orbit` |
-| `php` | Installs the `app-dev` PHP packages of the PHP version that the Project's `composer.json` selects, with the same program that the Instance runs on a task VM |
+| `php` | Installs the `app-dev` PHP packages of the version that `composer.json` selects, with the Instance's program. With the base image, it only checks them |
 | `setup:<step>` | Runs each Project setup step as `orbit` in a login Bash in the checkout, with `VP_HOME` set, as the baseline check does. See below |
 | `verify` | Requires a clean tree. The setup steps may only add ignored files |
 | `detach` | Unmounts the volume and detaches it |
@@ -292,7 +313,7 @@ The `@orbit/tia-baseline` step becomes the same installer as in the check. A bui
 
 A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock.
 
-A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build of the mealou template took 92 seconds. The PHP packages took 37 seconds of that, and the setup steps 36 seconds.
+A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. A build runs on the `task-vms` queue, so it delays other task VM jobs for a few minutes. Warm claims run their steps in the claim and do not wait for it. On beast a build of the mealou template took 92 seconds from a base image without the PHP packages. The PHP packages took 37 seconds of that, and the setup steps 36 seconds. A base image that holds the packages saves most of those 37 seconds.
 
 #### Template failures
 
@@ -504,6 +525,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | --- | --- |
 | `launch`, `cloud-init` | Launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge, and waits for cloud-init |
 | `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
+| `app-dev-php-source`, `app-dev-php-8-5`, `app-dev-php-8-4` | Adds the pinned Sury PHP source and installs the `app-dev` PHP packages of each PHP version an Instance can select, with the program that installs them for an Instance |
 | `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
 | `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
 | `single-boot` | Makes a VM from the image boot once, as described below |
@@ -756,11 +778,15 @@ Workspace templates have these limits:
 
 An ignored file that no setup step rewrites keeps its state from the template's commit, up to a day old. Examples are a SQLite database from a migration, a config cache, or a `.env` that a step copies only while it is missing. Such a file can make a check pass in the workspace that fails from scratch. Orbit does not remove ignored files, because `vendor` and `node_modules` are ignored files too. A step that creates such a file should rewrite it. No current `vm` Project has one.
 
-The template also leaves the step before the baseline check as it is:
+Before the baseline check starts:
 
-- The template shortens the baseline check, not the step before it.
-- In group 1428 the step before the baseline check took 44 seconds.
-- The Instance's PHP package install takes about 25 seconds on a fresh VM. Source preparation and the route took the rest. The `workspace-*` step lines show the split.
+- In group 1430 (11 October 2026), the workspace took 46.4 seconds before the check started.
+- The Route took 43.5 seconds of that time. The PHP packages took about 25 seconds of the Route.
+- The base image now holds the PHP packages.
+- The Route runs while the check runs.
+
+The step before the check then takes the template, the source, and the preparation. The live template and source steps took 2.9 seconds, and the preparation took 1.5 seconds on beast. So the step takes an estimated 4 to 5 seconds. The Route still runs in the claim, so the next claim of the same tick waits for it, as it did before.
+- A VM from an image built before the PHP packages still installs them before the check, in about 30 seconds.
 
 Parking has these limits:
 
