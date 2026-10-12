@@ -992,6 +992,8 @@ A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit remove
 
 A group of the `orbit` Project runs on a normal task VM, like the group of any other Project. Set the Project's `task_compute` to `vm`. Its workspace is the Instance `task-<group id>` without a Route, and its template holds a checkout of `main` with the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
 
+The Project's setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead. A task VM has no E2E task bridge and no installed [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper). So the Project's teardown step must exit 0 when the helper is absent, for example `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`. Otherwise the workspace removal fails, and the group asks for assistance.
+
 A subtask can declare the test nodes it needs: `topology: ["app-dev", "app-prod", "app-prod-2"]`. Subtask creation, group creation, and stored task definitions keep this declaration. Only a subtask that has not started can change it. The declarations of a group decide its [VM size](#size-by-declared-topology) at the claim.
 
 No task VM runs a topology yet. A subtask that declares one waits before it starts, with `Declared topology is not available.` A reviewer's `topology_requested` fallback in a VM group is refused, and the reviewer goes on in its workspace.
