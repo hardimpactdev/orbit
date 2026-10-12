@@ -2021,6 +2021,7 @@
                 "Activity",
                 "Cluster",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
