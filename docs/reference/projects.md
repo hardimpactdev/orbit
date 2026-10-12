@@ -196,7 +196,9 @@ When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c c
 
 Branch switch and rollback checkout commands write the work tree, so they can start a filter from `.git/config`. On a checkout that is [shared with the task worker](/reference/instance-setup#task-work-nodes), they run as the worker, without a credential environment. The worker can change `.git/config` on such a checkout: it has write access to `.git`, so a read-only ACL on the file does not stop a replacement. A filter it plants therefore runs only as the worker.
 
-Root then gives the work tree entries the worker wrote back to the managed user, outside `.git` and without following symlinks, so later ACL grants such as Caddy access still work. When the worker account is missing, the switch fails with `project.source_switch_failed` and never falls back to the managed user. On a Node that opts out of the worker, these commands run as the managed user. Origin changes read no content and stay with the managed user. Preflight fetches use the Project repository URL and never read the checkout's configuration; see [credentialed Git](/reference/instance-setup#credentialed-git).
+The worker then owns the files it wrote. Their inherited ACL gives the managed user the same access; see [task work Nodes](/reference/instance-setup#task-work-nodes). A switch checks out with `--no-track`, and the managed user then records the branch's upstream, so the worker never rewrites `.git/config`.
+
+When the worker account is missing, the switch fails with `project.source_switch_failed` and never falls back to the managed user. On a Node that opts out of the worker, these commands run as the managed user. Origin changes read no content and stay with the managed user. Preflight fetches use the Project repository URL and never read the checkout's configuration; see [credentialed Git](/reference/instance-setup#credentialed-git).
 
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 

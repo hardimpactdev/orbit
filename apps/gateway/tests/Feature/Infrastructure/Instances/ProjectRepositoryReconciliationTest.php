@@ -67,7 +67,11 @@ describe('TaskCheckWorkerUser', function (): void {
 
         try {
             $mutator->switchDefaultBranch($this->fixture->defaultInstance->refresh(), 'other');
-            expect(file_get_contents($checkout.'/readme'))->toBe('other');
+            expect(file_get_contents($checkout.'/readme'))->toBe('other')
+                ->and(trim($git(['config', '--get', 'branch.other.merge'])))->toBe('refs/heads/other')
+                ->and(trim($git(['config', '--get', 'branch.other.remote'])))->toBe('origin')
+                // The worker never rewrites `.git/config`, so a later share still finds it owned by the managed user.
+                ->and(fileowner($checkout.'/.git/config'))->toBe(posix_geteuid());
             $mutator->restoreDefaultBranch($this->fixture->defaultInstance, 'main');
             expect(file_get_contents($checkout.'/readme'))->toBe('main');
             $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
@@ -75,8 +79,9 @@ describe('TaskCheckWorkerUser', function (): void {
             foreach ($users as $user) {
                 expect($user)->toBe($expected.':absent');
             }
-            // The managed user owns the files again, so later ACL grants such as Caddy access still work.
-            expect(fileowner($checkout.'/readme'))->toBe(posix_geteuid())
+            // The account that ran the checkout owns what it wrote. The inherited ACL lets the managed user change it.
+            expect(fileowner($checkout.'/readme'))->toBe($expected)
+                ->and(file_put_contents($checkout.'/readme', 'edited'))->toBe(6)
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse();
         } finally {
             new Filesystem()->deleteDirectory($checkout);

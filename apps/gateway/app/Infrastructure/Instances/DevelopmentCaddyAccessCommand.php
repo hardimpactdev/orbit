@@ -25,10 +25,18 @@ final readonly class DevelopmentCaddyAccessCommand
             ->values();
     }
 
-    /** @param Collection<int, DevelopmentSite> $sites */
-    public function command(Collection $sites): RemoteCommand
+    /**
+     * Only an entry's owner may change its ACL. On a checkout shared with the task worker, the worker owns what its
+     * Git and its agents wrote, so the walk changes each entry's ACL as its owner: the managed user's entries as the
+     * managed user, the worker's as the worker through `sudo -u`. Neither account gains anything, since each changes
+     * only its own entries, and no pass runs as root or follows a symlink. An entry that neither account owns stops
+     * the walk, so no entry keeps access the walk meant to deny.
+     *
+     * @param  Collection<int, DevelopmentSite>  $sites
+     */
+    public function command(Collection $sites, ?string $worker = null): RemoteCommand
     {
-        $arguments = ['bash', '-seu', '--'];
+        $arguments = ['bash', '-seu', '--', $worker ?? ''];
         foreach ($this->walkedSites($sites) as $site) {
             $arguments[] = StoragePath::parse($site->checkoutPath)->value;
             $arguments[] = RelativeWebRoot::validate($site->documentRoot);
@@ -39,6 +47,13 @@ final readonly class DevelopmentCaddyAccessCommand
             arguments: $arguments,
             input: <<<'BASH'
                 set -o pipefail
+                worker=$1
+                shift
+                me=$(id -un)
+                if [ -n "$worker" ]; then
+                    worker_uid=$(id -u "$worker")
+                    test "$worker_uid" != 0 && test "$worker_uid" != "$(id -u)"
+                fi
                 # Setup can run while this walk does, for a task VM workspace whose Route follows its baseline
                 # start: `vp build` rewrites the build output, and Composer republishes assets. An entry that
                 # vanishes between a directory read and its own call needs no ACL, and an entry created in its
@@ -60,6 +75,63 @@ final readonly class DevelopmentCaddyAccessCommand
                     cat -- "$walk_errors" >&2
                     rm -f -- "$walk_errors"
                     return "$walk_status"
+                }
+                # `acl_pass <root> <d|a> <setfacl arguments>...` changes the ACL of every directory (d) or every entry
+                # but a symlink (a) below the root, each as its owner. Each account skips a directory it cannot list
+                # that the other account owns; that account walks it. The worker walks only when the managed user's
+                # walk met an entry the worker owns. Any entry that neither account owns fails the walk.
+                acl_pass() {
+                    local root=$1 kind=$2 foreign seen entry entry_owner status=0
+                    shift 2
+                    local type=(! -type l)
+                    if [ "$kind" = d ]; then type=(-type d); fi
+                    local strangers=(! -user "$me")
+                    local count=()
+                    foreign=$(mktemp)
+                    seen=$(mktemp)
+                    if [ -n "$worker" ]; then
+                        strangers+=(! -user "$worker")
+                        count=(-o \( -user "$worker" -fprintf "$seen" x -false \))
+                    fi
+                    walk find -P "$root" \
+                        \( -user "$me" "${type[@]}" -exec setfacl "$@" -- {} + \) "${count[@]}" \
+                        -o \( "${type[@]}" "${strangers[@]}" -print0 \) \
+                        -o \( -type d ! \( -readable -executable \) -prune \) >> "$foreign" || status=$?
+                    if [ "$status" = 0 ] && [ -s "$seen" ]; then
+                        (cd / && walk sudo -n -u "$worker" -- find -P "$root" \
+                            \( -user "$worker" "${type[@]}" -exec setfacl "$@" -- {} + \) \
+                            -o \( "${type[@]}" "${strangers[@]}" -print0 \) \
+                            -o \( -type d ! \( -readable -executable \) -prune \)) >> "$foreign" || status=$?
+                    fi
+                    # find cannot tell an entry's owner once the entry vanished, so it lists such an entry too.
+                    # Only an entry that still exists under an owner other than the two accounts fails the walk.
+                    if [ "$status" = 0 ] && [ -s "$foreign" ]; then
+                        while IFS= read -r -d '' entry; do
+                            if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then continue; fi
+                            entry_owner=$(stat -c %U -- "$entry") || { [ -e "$entry" ] || [ -L "$entry" ] || continue; status=1; break; }
+                            if [ "$entry_owner" = "$me" ] || { [ -n "$worker" ] && [ "$entry_owner" = "$worker" ]; }; then continue; fi
+                            printf 'An entry that neither %s nor the task worker owns: %s\n' "$me" "$entry" >&2
+                            status=1
+                            break
+                        done < "$foreign"
+                    fi
+                    rm -f -- "$foreign" "$seen"
+                    return "$status"
+                }
+                # `acl_entry <path> <setfacl arguments>...` changes one directory's ACL as its owner.
+                acl_entry() {
+                    local entry=$1 owner
+                    shift
+                    test -d "$entry" && test ! -L "$entry"
+                    owner=$(stat -c %U -- "$entry")
+                    if [ "$owner" = "$me" ]; then
+                        setfacl "$@" -- "$entry"
+                    elif [ -n "$worker" ] && [ "$owner" = "$worker" ]; then
+                        (cd / && sudo -n -u "$worker" -- setfacl "$@" -- "$entry")
+                    else
+                        printf 'An entry that neither %s nor the task worker owns: %s\n' "$me" "$entry" >&2
+                        return 1
+                    fi
                 }
                 checkouts=()
                 roots=()
@@ -170,8 +242,8 @@ final readonly class DevelopmentCaddyAccessCommand
                 # Keep source, Git metadata, and environment files outside the Web root private.
                 # Apply every deny before grants so nested Git worktrees retain their own Web roots.
                 for checkout in "${checkouts[@]}"; do
-                    walk find -P "$checkout" -type d -exec setfacl -m d:u:caddy:--- -- {} +
-                    walk setfacl -n -P -R -m u:caddy:--- "$checkout"
+                    acl_pass "$checkout" d -m d:u:caddy:---
+                    acl_pass "$checkout" a -n -m u:caddy:---
                 done
 
                 for index in "${!checkouts[@]}"; do
@@ -195,12 +267,13 @@ final readonly class DevelopmentCaddyAccessCommand
                         sudo -n setfacl -n -m "u:caddy:${caddy_acl%?}x,m::${mask%?}x" -- "$ancestor"
                     done
 
-                    walk find -P "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                    walk setfacl -P -R -m u:caddy:r-X "$document_root"
+                    acl_pass "$document_root" d -m d:u:caddy:r-x
+                    acl_pass "$document_root" a -m u:caddy:r-X
                     if [ -n "$storage_target" ]; then
-                        setfacl -m u:caddy:--x "$application/storage" "$application/storage/app"
-                        walk find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                        walk setfacl -P -R -m u:caddy:r-X "$storage_target"
+                        acl_entry "$application/storage" -m u:caddy:--x
+                        acl_entry "$application/storage/app" -m u:caddy:--x
+                        acl_pass "$storage_target" d -m d:u:caddy:r-x
+                        acl_pass "$storage_target" a -m u:caddy:r-X
                     fi
                     sudo -n -u caddy python3 -c 'import os, sys; sys.exit(not os.access(sys.argv[1], os.R_OK | os.X_OK))' "$document_root"
                 done

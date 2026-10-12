@@ -147,11 +147,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             branch=$2
             commit=$3
             repository=$4
-            isolated_push "$checkout" "$repository" "$commit:refs/heads/$branch"
+            common=$5
+            isolated_push "$common" "$repository" "$commit:refs/heads/$branch"
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit, (string) $instance->loadMissing('project')->project->repository_url],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit, (string) $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-pull-request-push', 'tasks.push_failed');

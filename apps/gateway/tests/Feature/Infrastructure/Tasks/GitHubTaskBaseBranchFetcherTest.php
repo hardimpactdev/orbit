@@ -204,10 +204,10 @@ it('passes the base ref as one argument and the token only on standard input', f
     fetcher($transport)->fetch($group, 'feature/main');
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main', 'git@github.com:acme/shop.git'])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_fetch "$checkout" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_fetch "$checkout" "$common" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"');
 });
 
 it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {
@@ -303,13 +303,13 @@ it('fetches the turn refs with explicit refspecs, --no-tags, and the read token 
     $command = $transport->commands[0];
     $script = (string) stream_get_contents($command->protectedInput?->stream());
     expect($transport->commands)->toHaveCount(1)
-        ->and($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, '', 'git@github.com:acme/shop.git'])
+        ->and($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, '', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($command->input)->toBeNull()
         ->and(implode(' ', $command->arguments))->not->toContain('ghs_read')
         ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
         ->and($script)->not->toContain('ghs_read')
         ->and($script)->toContain('-C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch"')
-        ->and($script)->toContain('isolated_fetch "$checkout" "$repository" 0 "${refspecs[@]}"')
+        ->and($script)->toContain('isolated_fetch "$checkout" "$common" "$repository" 0 "${refspecs[@]}"')
         ->and($script)->toContain('+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}')
         ->and($script)->toContain('+refs/heads/${task_branch}:refs/remotes/origin/${task_branch}')
         ->and($script)->not->toContain('merge')
@@ -335,7 +335,7 @@ it('asks for a different pull request base as its own refspec and keeps the writ
 
     $command = $transport->commands[0];
     $script = (string) stream_get_contents($command->protectedInput?->stream());
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, 'develop', 'git@github.com:acme/shop.git'])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'task-'.$group->id, 'develop', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($command->input)->toBeNull()
         ->and(implode(' ', $command->arguments))->not->toContain('ghs_')
         ->and($script)->toContain(base64_encode('x-access-token:ghs_read'))
@@ -529,7 +529,7 @@ it('fetches and fast-forwards an incoming pull request branch instead of task-{i
     $fetcher->fetchForTurn($group);
     $fetcher->fastForward($group);
 
-    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', '', 'git@github.com:acme/shop.git'])
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', '', 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($transport->commands[1]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle']);
 });
 

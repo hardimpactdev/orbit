@@ -267,6 +267,8 @@ Before the Gateway publishes a development Route, it gives Caddy read access to 
 
 This preparation walks only the Instance's checkout and served checkouts nested in it. Other checkouts on the Node keep the access their own Route granted.
 
+Only an entry's owner may change its ACL. On a checkout [shared with the task worker](/reference/instance-setup#task-work-nodes), the worker owns what its Git and its agent wrote. So the walk changes each entry as its owner: the managed user's entries as the managed user, and the worker's entries as the worker through `sudo -n -u`. The worker walks only when the managed user's walk found an entry the worker owns. An entry that neither account owns fails the preparation, so no entry keeps access the walk meant to deny.
+
 ### Cluster scope
 
 Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets.

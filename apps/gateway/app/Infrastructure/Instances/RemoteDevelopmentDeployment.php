@@ -157,7 +157,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         try {
             return $this->ssh->execute(
                 $instance->node,
-                new RemoteCommand(arguments: [...$this->arguments($instance), ...$extra], input: $program, output: $output, maxOutputBytes: 8192),
+                new RemoteCommand(arguments: [...$this->arguments($instance), ...$extra], input: WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance->loadMissing('node'))).$program, output: $output, maxOutputBytes: 8192),
                 'development-deployment-'.$step,
                 'deployment.'.$step.'_failed',
             );

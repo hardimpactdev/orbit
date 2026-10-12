@@ -126,14 +126,15 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
     {
         $this->run(
             $instance,
-            [$instance->checkout_path, $newBranch, $instance->loadMissing('project')->project->repository_url],
+            [$instance->checkout_path, $newBranch, $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
             WorkspaceGit::networkPreamble().<<<'BASH'
                 path=$1
                 branch=$2
                 repository=$3
+                common=$4
                 test -d "$path"
                 git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                isolated_fetch "$path" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
+                isolated_fetch "$path" "$common" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
                 git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
                 BASH,
             'app-update-default-branch-preflight',
@@ -154,8 +155,10 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                workspace_git -C "$path" checkout --track -B "$branch" "origin/$branch"
-                workspace_reclaim "$path"
+                workspace_git -C "$path" checkout --no-track -B "$branch" "origin/$branch"
+                # The managed user records the upstream, so the worker never rewrites `.git/config`.
+                git -C "$path" config "branch.$branch.remote" origin
+                git -C "$path" config "branch.$branch.merge" "refs/heads/$branch"
                 BASH,
             'app-update-default-branch-switch',
             'project.source_switch_failed',
@@ -172,7 +175,6 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 path=$1
                 branch=$2
                 workspace_git -C "$path" checkout "$branch" --
-                workspace_reclaim "$path"
                 BASH,
             'app-update-default-branch-restore',
             'project.source_switch_failed',
@@ -197,8 +199,8 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
 
     /**
      * A branch switch writes the work tree, so it can start checkout filters. On a checkout shared with the task
-     * worker it runs as the worker, never as the managed user, and the managed user then owns the files again.
-     * Hooks never run: every Git call sets core.hooksPath.
+     * worker it runs as the worker, never as the managed user. The worker then owns the files it wrote; their
+     * inherited ACL gives the managed user the same access. Hooks never run: every Git call sets core.hooksPath.
      *
      * @param  list<string>  $arguments
      */

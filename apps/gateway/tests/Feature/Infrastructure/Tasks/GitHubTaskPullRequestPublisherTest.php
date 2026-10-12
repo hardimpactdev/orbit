@@ -179,10 +179,10 @@ it('sends the token only on the standard input of the push', function (): void {
     publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', $commit);
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit, 'git@github.com:acme/shop.git'])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit, 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_publish'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_push "$checkout" "$repository" "$commit:refs/heads/$branch"')
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('isolated_push "$common" "$repository" "$commit:refs/heads/$branch"')
         ->and(stream_get_contents($command->protectedInput?->stream()))->not->toContain('HEAD:refs/heads');
 });
 
@@ -358,7 +358,7 @@ it('pushes a reviewed commit to an incoming pull request branch, never to task-{
 
     publisher($transport)->push($group, $commit);
 
-    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle', $commit, 'git@github.com:acme/shop.git']);
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle', $commit, 'git@github.com:acme/shop.git', '/srv/orbit/apps/shop/task-7/.git']);
 });
 
 it('refuses an incoming pull request branch that is not a valid branch name', function (): void {

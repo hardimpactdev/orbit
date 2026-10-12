@@ -308,6 +308,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             task_branch=$3
             pull_base=$4
             repository=$5
+            common=$6
             status=0
             git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --exit-code --heads -- "$repository" "refs/heads/$task_branch" >/dev/null || status=$?
             if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
@@ -320,14 +321,14 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             if [ -n "$pull_base" ]; then
                 refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
             fi
-            isolated_fetch "$checkout" "$repository" 0 "${refspecs[@]}"
+            isolated_fetch "$checkout" "$common" "$repository" 0 "${refspecs[@]}"
             if [ "$status" -eq 2 ]; then
                 git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
             fi
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? '', (string) $instance->project->repository_url],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? '', (string) $instance->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-turn-fetch', 'tasks.fetch_failed');
@@ -343,11 +344,12 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             checkout=$1
             base=$2
             repository=$3
-            isolated_fetch "$checkout" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"
+            common=$4
+            isolated_fetch "$checkout" "$common" "$repository" 0 "+refs/heads/$base:refs/remotes/origin/$base"
             BASH);
         try {
             $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $base, (string) $instance->loadMissing('project')->project->repository_url],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $base, (string) $instance->loadMissing('project')->project->repository_url, WorkspaceGit::commonDirectory($instance)],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ), 'task-base-fetch', 'tasks.fetch_failed');

@@ -621,12 +621,16 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(is_dir($instance->checkout_path))->toBeFalse();
     })->with(['root', 'worker:rwX', '-R']);
 
-    it('checks out tracked files as the managed user while a worker is configured', function (): void {
+    it('leaves tracked files with the worker that checked them out, writable by the managed user', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-owner');
         clearstatcache();
 
-        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_geteuid());
+        // No root process hands the files back. Their inherited ACL gives the managed user the same access.
+        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_getpwnam('nobody')['uid'])
+            ->and(fileowner($instance->checkout_path))->toBe(posix_geteuid())
+            ->and(fileowner($instance->checkout_path.'/.git'))->toBe(posix_geteuid())
+            ->and(file_put_contents($instance->checkout_path.'/README.md', 'edited'))->toBe(6);
     });
 
     it('grants checkout access and inherited write access without changing the owner', function (): void {

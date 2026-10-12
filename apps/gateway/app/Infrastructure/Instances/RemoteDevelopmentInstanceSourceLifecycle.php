@@ -162,7 +162,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    isolated_fetch "$checkout" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
+                    isolated_fetch "$checkout" "$common_directory" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
 
                     branch=${branch_override:-$instance_name}
                     if [ -n "$seed_commit" ]; then
@@ -180,7 +180,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
                     workspace_git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
-                    workspace_reclaim "$checkout"
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
