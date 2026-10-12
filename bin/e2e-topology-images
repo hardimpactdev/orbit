@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if [[ $# -lt 1 ]]; then
+    cat >&2 <<'USAGE'
+usage: bin/e2e-topology-images <action> [options]
+
+  build [--role=ROLE ...] [--json]  build the role images (gateway, app-dev, app-prod, operator); default all four
+  status [--json]                   show each role image and whether it is current, stale, or missing
+USAGE
+    exit 64
+fi
+
+action=$1
+shift
+
+case "$action" in
+    build|status)
+        # Role images belong to the host's Incus project, not to a checkout, so this never bridges.
+        exec php "$root/apps/e2e/artisan" "topology-images:$action" "$@"
+        ;;
+    *)
+        echo "unknown topology images action: $action" >&2
+        exit 64
+        ;;
+esac

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
-use App\E2E\Value\ProofStatus;
 
 describe('AttemptId', function (): void {
     it('generates exactly 32 lowercase hexadecimal characters', function (): void {
@@ -32,26 +31,9 @@ describe('AttemptId', function (): void {
     });
 });
 
-describe('attempt lifecycle enums', function (): void {
-    it('names the two attempt purposes', function (): void {
-        expect(AttemptPurpose::Discovery->value)
-            ->toBe('discovery')
-            ->and(AttemptPurpose::Proof->value)
-            ->toBe('proof')
-            ->and(AttemptPurpose::cases())
-            ->toBe([
-                AttemptPurpose::Discovery,
-                AttemptPurpose::Proof,
-                AttemptPurpose::CandidateConvergence,
-            ]);
-    });
-
-    it('names the two proof statuses', function (): void {
-        expect(ProofStatus::Proved->value)
-            ->toBe('proved')
-            ->and(ProofStatus::Diagnosis->value)
-            ->toBe('diagnosis')
-            ->and(ProofStatus::cases())
-            ->toBe([ProofStatus::Proved, ProofStatus::Diagnosis]);
+describe('attempt purpose', function (): void {
+    it('names discovery as the only purpose', function (): void {
+        expect(AttemptPurpose::cases())->toBe([AttemptPurpose::Discovery])
+            ->and(AttemptPurpose::Discovery->value)->toBe('discovery');
     });
 });

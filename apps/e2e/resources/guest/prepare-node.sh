@@ -32,13 +32,6 @@ case "$mode" in
     mv -f "$candidate" /home/orbit/.ssh/authorized_keys
     chown orbit:orbit /home/orbit/.ssh
     ;;
-  permissions)
-    [[ $# -eq 1 ]]
-    install -d -o orbit -g orbit -m 0755 /home/orbit
-    for path in /home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e; do
-      [[ ! -e "$path" ]] || chown -R orbit:orbit "$path"
-    done
-    ;;
   align-identity)
     [[ $# -eq 1 ]]
     # Caddy from the Caddy project's own package is built without cgo, so it reads /etc/resolv.conf

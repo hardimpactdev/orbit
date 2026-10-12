@@ -5,8 +5,6 @@ paths:
   - 'phpstan.neon'
   - 'boost.json'
   - 'phpunit.guidance.xml'
-  - 'phpunit.scenario-cold.xml'
-  - 'phpunit.scenario-snapshot.xml'
 ---
 
 # Tooling rules

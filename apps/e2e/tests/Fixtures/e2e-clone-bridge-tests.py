@@ -62,9 +62,6 @@ class CloneBridgeTest(unittest.TestCase):
         git(base, 'clone', '-q', str(self.origin), str(self.primary))
         self.worktrees = base / 'worktrees'
         git(self.primary, 'config', 'orbit.worktreeRoot', str(self.worktrees))
-        promoted = self.primary / '.e2e/topology-snapshot/promoted.json'
-        promoted.parent.mkdir(parents=True)
-        promoted.write_text('{}')
 
         self.clone = base / 'task-7'
         git(base, 'clone', '-q', str(self.origin), str(self.clone))
@@ -108,12 +105,20 @@ class CloneBridgeTest(unittest.TestCase):
         with patch.object(bridge.Path, 'home', return_value=home):
             self.assertEqual(bridge.bridge_primary(self.clone), self.primary)
 
-    def test_registers_only_a_checkout_that_holds_a_promoted_generation(self):
-        with self.assertRaisesRegex(bridge.BridgeFailure, 'no promoted topology snapshot'):
-            bridge.register(self.clone)
+    def test_a_non_linked_checkout_registers_without_any_marker(self):
+        self.assertFalse((self.primary / '.e2e').exists())
         self.assertTrue(bridge.register(self.primary))
         self.assertEqual(bridge.registered_primary(self.key()), self.primary)
         self.assertFalse(bridge.register(self.primary))
+
+    def test_a_registration_that_points_at_a_linked_worktree_is_not_live(self):
+        linked = Path(self.temporary.name) / 'linked'
+        git(self.primary, 'worktree', 'add', '-q', '-b', 'task-9', str(linked))
+        link = bridge.registry_path(self.key())
+        link.parent.mkdir(parents=True)
+        link.symlink_to(linked)
+        self.assertIsNone(bridge.registered_primary(self.key()))
+        self.assertIsNone(bridge.bridge_primary(self.clone))
 
     def test_a_linked_worktree_registers_its_primary(self):
         linked = Path(self.temporary.name) / 'linked'
@@ -124,15 +129,13 @@ class CloneBridgeTest(unittest.TestCase):
     def test_first_live_primary_keeps_the_registration_until_forced_or_gone(self):
         other = Path(self.temporary.name) / 'other-primary'
         git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(other))
-        (other / '.e2e/topology-snapshot').mkdir(parents=True)
-        (other / '.e2e/topology-snapshot/promoted.json').write_text('{}')
         self.assertTrue(bridge.register(self.primary))
         self.assertFalse(bridge.register(other))
         self.assertEqual(bridge.registered_primary(self.key()), self.primary)
         self.assertTrue(bridge.register(other, force=True))
         self.assertEqual(bridge.registered_primary(self.key()), other.resolve())
-        # A primary that no longer holds a promoted generation is no longer live.
-        (other / '.e2e/topology-snapshot/promoted.json').unlink()
+        # A primary that is gone is no longer live.
+        shutil.rmtree(other)
         self.assertIsNone(bridge.registered_primary(self.key()))
         self.assertTrue(bridge.register(self.primary))
 
@@ -153,7 +156,7 @@ class CloneBridgeTest(unittest.TestCase):
         self.assertIsNone(bridge.bridge_primary(self.clone))
 
     def test_a_linked_worktree_of_another_repository_bridges_through_the_primary(self):
-        # Task workspaces are linked worktrees of the default Instance, which holds no topology snapshot.
+        # Task workspaces are linked worktrees of the default Instance, which is not the registered primary.
         bridge.register(self.primary)
         default = Path(self.temporary.name) / 'default'
         git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(default))
@@ -281,6 +284,22 @@ class CloneBridgeTest(unittest.TestCase):
         with self.assertRaisesRegex(bridge.BridgeFailure, 'not on a branch'):
             bridge.prepare(self.clone, self.primary)
 
+    def test_register_accepts_only_force_and_json(self):
+        for option in ('--if-primary', '--quiet'):
+            with self.subTest(option=option):
+                result = run(self.primary, 'bin/e2e-topology', 'register', option, '--json', check=False)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(json.loads(result.stdout),
+                                 {'state': 'failed', 'error': f'unknown register option: {option}'})
+                self.assertIsNone(bridge.registered_primary(self.key()))
+        other = Path(self.temporary.name) / 'other-primary'
+        git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(other))
+        run(self.primary, 'bin/e2e-topology', 'register')
+        kept = run(other, 'bin/e2e-topology', 'register', '--json')
+        self.assertEqual(json.loads(kept.stdout), {'state': 'registered', 'primary': str(self.primary), 'changed': False})
+        forced = run(other, 'bin/e2e-topology', 'register', '--force', '--json')
+        self.assertEqual(json.loads(forced.stdout), {'state': 'registered', 'primary': str(other.resolve()), 'changed': True})
+
     def test_rewrites_clone_paths_to_the_bridge(self):
         arguments, has_worktree = bridge.rewrite(
             ['TASK-7', '.', f'--worktree={self.clone}', '--json', 'kept.php'], self.clone, self.bridge, self.clone,
@@ -364,10 +383,19 @@ while True:
         in_place = run(self.clone, 'bin/e2e-topology', 'status', 'TASK-7', env=environment)
         self.assertIn(f'php {self.clone}/apps/e2e/artisan topology:status TASK-7', in_place.stdout)
 
+        # Commands never register a primary; they run in place until one is registered.
         linked = Path(self.temporary.name) / 'linked'
         git(self.primary, 'worktree', 'add', '-q', '-b', 'task-1', str(linked))
-        run(linked, 'bin/e2e-topology', 'status', 'TASK-1', env=environment)
-        self.assertEqual(bridge.registered_primary(self.key()), self.primary)
+        linked_status = run(linked, 'bin/e2e-topology', 'status', 'TASK-1', env=environment)
+        self.assertIn(f'php {linked}/apps/e2e/artisan topology:status TASK-1', linked_status.stdout)
+        self.assertIsNone(bridge.registered_primary(self.key()))
+        still_in_place = run(self.clone, 'bin/e2e-topology', 'status', 'TASK-7', env=environment)
+        self.assertIn(f'php {self.clone}/apps/e2e/artisan topology:status TASK-7', still_in_place.stdout)
+        self.assertFalse(self.bridge.exists())
+
+        registered = run(linked, 'bin/e2e-topology', 'register', '--json', env=environment)
+        self.assertEqual(json.loads(registered.stdout),
+                         {'state': 'registered', 'primary': str(self.primary), 'changed': True})
 
         default = Path(self.temporary.name) / 'default'
         git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(default))

@@ -13,7 +13,7 @@ use Throwable;
 final class KillCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:kill {issue} {role} {name} '.self::WORKTREE_OPTION.' {--json}';
+    protected $signature = 'topology:kill {issue} {node} {name} '.self::WORKTREE_OPTION.' {--json}';
 
     #[\Override]
     protected $description = 'Stop a spawned process; its journal stays readable';
@@ -23,7 +23,7 @@ final class KillCommand extends E2ECommand
         try {
             $process = new GuestProcess((string) $this->argument('name'));
             $request = $this->request();
-            $role = (string) $this->argument('role');
+            $role = (string) $this->argument('node');
             $result = $acquirer->execute($request, $role, $process->killArgv());
             $this->log($request, "role={$role} kill={$process->name} exit={$result->exitCode}");
             if (! $result->successful()) {

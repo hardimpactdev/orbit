@@ -4,175 +4,75 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\ApplicationEndpoint;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyTarget;
-use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
 use InvalidArgumentException;
 use JsonException;
-use RuntimeException;
 
+/**
+ * Runs the readiness probes of the Nodes a topology has, retrying failed probes until the readiness window
+ * ends. Each probe runs `verify-topology.sh` on one Node and must print passing evidence for the source.
+ */
 final readonly class TopologyVerifier
 {
-    private const array PROBES = [
-        'vm.gateway.running' => 'gateway',
-        'vm.app-dev.running' => 'app-dev',
-        'vm.app-prod.running' => 'app-prod',
-        'role.gateway' => 'gateway',
-        'role.app-dev' => 'app-dev',
-        'role.app-prod' => 'app-prod',
-        'role.assignments' => 'gateway',
-        'appinstance.routes' => 'gateway',
-        'metrics.publication' => 'gateway',
-        'service.gateway' => 'gateway',
-        'service.vpn' => 'gateway',
-        'wireguard.reachability' => 'gateway',
-        'operator.app-dev' => 'app-dev',
-        'operator.container' => 'operator',
-        'source.operator' => 'operator',
-        'https.gateway-internal' => 'app-dev',
-        'php-fpm.app-dev' => 'app-dev',
-        'caddy.app-dev' => 'app-dev',
-        'laravel.dev' => 'app-dev',
-        'workspace.app-dev' => 'app-dev',
-        'php-fpm.app-prod' => 'app-prod',
-        'caddy.app-prod' => 'app-prod',
-        'laravel.prod' => 'app-prod',
-        'source.gateway' => 'gateway',
-        'source.app-dev' => 'app-dev',
-        'source.manifest' => 'gateway',
-        'cluster.shared' => 'app-dev',
-        'sample.fixtures' => 'app-dev',
-    ];
-
-    private const array EXTENDED_APP_PROD_PROBES = [
-        'vm.app-prod-2.running' => 'app-prod-2',
-        'role.app-prod-2' => 'app-prod-2',
-        'php.app-prod-2' => 'app-prod-2',
-        'php-fpm.app-prod-2' => 'app-prod-2',
-        'caddy.app-prod-2' => 'app-prod-2',
-    ];
+    private const int PROBE_SECONDS = 120;
 
     public function __construct(
         private IncusHost $host,
-        private int $readinessTimeoutSeconds = 120,
-        private int $readinessPollIntervalMicroseconds = 1_000_000,
-    ) {
-        if ($readinessTimeoutSeconds < 1 || $readinessPollIntervalMicroseconds < 0) {
-            throw new InvalidArgumentException('Topology readiness timing must be bounded and non-negative.');
-        }
-    }
+        private int $readinessTimeoutSeconds = 600,
+        private int $readinessPollIntervalMicroseconds = 2_000_000,
+    ) {}
 
     /**
-     * The probes one declared end state runs: Node probes and the remaining fleet checks.
+     * The probes of a topology, keyed by name, with the Node each runs on and its extra arguments.
      *
-     * A probe runs on exactly one node, so a node the plan declares gone takes
-     * its own probes with it. The shared Cluster probe requires all three base
-     * Nodes. The fleet probes still run:
-     * they are told which nodes to expect, so `role.assignments` is what fails
-     * when a node declared absent is still registered, and
-     * `wireguard.reachability` still proves every node that stayed. Only a
-     * declaration that keeps the gateway alone leaves it nothing to reach.
-     *
-     * @return array<string, string> Probe name to the role that runs it.
+     * @return array<string, array{node:string,arguments:list<string>}>
      */
-    public static function probesFor(TopologyEndState $endState): array
+    public static function probes(TopologyTarget $target, SourceState $source): array
     {
-        $probes = [];
-        foreach (self::probes($endState) as $name => $role) {
-            if (! $endState->keeps($role)) {
-                continue;
+        $recipe = $target->recipe;
+        $probes = [
+            'nodes.registered' => [
+                'node' => 'gateway',
+                'arguments' => [base64_encode(json_encode($recipe->assignments(), JSON_THROW_ON_ERROR))],
+            ],
+            'service.gateway' => ['node' => 'gateway', 'arguments' => []],
+            'service.vpn' => ['node' => 'gateway', 'arguments' => []],
+            'wireguard.reachability' => [
+                'node' => 'gateway',
+                'arguments' => array_values(array_filter($recipe->nodeKeys(), static fn (string $node): bool => $node !== 'gateway')),
+            ],
+        ];
+        foreach ($recipe->workloadNodes() as $node) {
+            $probes['caddy.'.$node->key] = ['node' => $node->key, 'arguments' => []];
+            if (in_array('app-prod', $node->roles, true)) {
+                $probes['php-fpm.'.$node->key] = ['node' => $node->key, 'arguments' => []];
             }
-            if (in_array($name, ['cluster.shared', 'sample.fixtures'], true) && (! $endState->keeps('app-dev') || ! $endState->keeps('app-prod'))) {
-                continue;
+        }
+        $probes['operator.gateway'] = ['node' => 'operator', 'arguments' => []];
+        if ($source->mounted) {
+            foreach ($recipe->checkoutNodeKeys() as $node) {
+                $probes['source.'.$node] = ['node' => $node, 'arguments' => [(string) $source->mountTokenHash]];
             }
-            if ($name === 'wireguard.reachability' && $endState->peers() === []) {
-                continue;
-            }
-            $probes[$name] = $role;
         }
 
         return $probes;
     }
 
-    /**
-     * The probes one declared end state does not run, for the record a
-     * reviewer reads.
-     *
-     * @return list<string>
-     */
-    public static function skippedProbes(TopologyEndState $endState): array
+    public function verify(TopologyTarget $target, SourceState $source): VerificationReport
     {
-        return array_values(array_diff(array_keys(self::probes($endState)), array_keys(self::probesFor($endState))));
-    }
-
-    /** @return array<string, string> */
-    private static function probes(TopologyEndState $endState): array
-    {
-        return
-            in_array('app-prod-2', $endState->recipeNodes(), true)
-                ? [...self::PROBES, ...self::EXTENDED_APP_PROD_PROBES]
-                : self::PROBES;
-    }
-
-    /** @param array<string, list<string>>|null $requiredAssignments */
-    public function verify(
-        TopologyTarget $target,
-        VerificationMode $mode,
-        SourceState $source,
-        ?TopologyEndState $endState = null,
-        ?array $requiredAssignments = null,
-        bool $nativeSamplesOnly = false,
-    ): VerificationReport {
-        $declared = $endState ?? TopologyEndState::complete($target->recipe);
-        $requiredAssignments ??= $target->recipe->assignments();
-        $declaredNodes = array_map(
-            fn (string $node): string => $target->recipe->resolveNode($node)->key,
-            $declared->nodes,
-        );
-        $assignmentNodes = $endState === null ? $target->recipe->nodeKeys() : $declaredNodes;
-        $assignments = array_intersect_key($requiredAssignments, array_flip($assignmentNodes));
-        if (array_keys($assignments) !== $assignmentNodes) {
-            throw new InvalidArgumentException('The required topology assignment map is incomplete.');
-        }
-        $peerNodes = array_map(
-            fn (string $node): string => $target->recipe->resolveNode($node)->key,
-            $declared->peers(),
-        );
-        $probes = self::probesFor($declared);
-        $instances = [];
-        foreach ($target->recipe->nodeKeys() as $node) {
-            $instances[$node] = $target->instance($node);
-        }
-        $inventory = [];
-        foreach ($target->recipe->nodeKeys() as $node) {
-            $inventory[$node] = $target->instance($node);
-        }
-        $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
-        $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
-        $sample = $this->sampleState($instances[$appDevNode], $nativeSamplesOnly);
-        $typedCheckoutPath = $sample['checkout_path'];
-        $productionPlacement = $sample['production'];
-        if ($typedCheckoutPath !== null && $productionPlacement === null) {
-            throw new RuntimeException('Native sample production placement is missing; run sample convergence.');
-        } elseif ($typedCheckoutPath !== null) {
-            unset($probes['workspace.app-dev']);
-        }
-
-        if (! in_array('router', $assignments[$target->recipe->nodeForRole('gateway')->key] ?? [], true)) {
-            unset($probes['cluster.shared'], $probes['sample.fixtures']);
-        }
+        $this->host->assertTopologyNetworkIdentity($target, requireRunning: true);
+        $probes = self::probes($target, $source);
 
         $results = [];
-        foreach ($probes as $name => $role) {
+        foreach ($probes as $name => $probe) {
             $results[$name] = $this->failedProbe(
                 $name,
-                $target->instance($role),
-                'valid passing evidence for source '.$source->guestSha,
+                $target->instance($probe['node']),
+                'passing evidence for source '.$source->guestSha,
                 'no evidence received',
             );
         }
@@ -183,90 +83,46 @@ final readonly class TopologyVerifier
         do {
             $remainingSeconds = max(1, (int) ceil($deadline - microtime(true)));
             $commands = [];
-            foreach ($pending as $name => $role) {
-                $arguments = [
-                    $name === 'cluster.shared' && $source->mounted
-                        ? '/home/orbit/orbit/apps/e2e/resources/guest/verify-topology.sh'
-                        : '/usr/local/bin/verify-topology.sh',
-                    $name,
-                    $mode->value,
-                    $source->guestSha,
-                    $target->instance($role),
-                ];
-                if ($name === 'cluster.shared') {
-                    array_push($arguments, $target->recipe->nodeForRole('gateway')->key, $appDevNode, $target->recipe->nodeForRole('ingress')->key);
-                } elseif ($name === 'wireguard.reachability') {
-                    array_push($arguments, ...$peerNodes);
-                } elseif (in_array($name, ['role.assignments', 'metrics.publication'], true)) {
-                    $arguments[] = base64_encode(json_encode($assignments, JSON_THROW_ON_ERROR));
-                } elseif ($name === 'source.manifest') {
-                    $arguments[] = $source->treeHash ?? '-';
-                    $arguments[] = base64_encode(
-                        $source->overlayPaths === [] ? '' : implode("\0", $source->overlayPaths)."\0",
-                    );
-                }
-                if ($typedCheckoutPath !== null && in_array($name, ['role.app-dev', 'laravel.dev'], true)) {
-                    $arguments[] = $typedCheckoutPath;
-                }
-                if (
-                    $productionPlacement !== null
-                    && in_array(
-                        $name,
-                        ['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'],
-                        true,
-                    )
-                ) {
-                    $arguments[] = base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR));
-                }
-                // A mounted source adds the expected `.git` pointer hash: the guest
-                // must hash the pointer file it sees through the mount itself.
-                if ($source->pointerHash !== null && str_starts_with($name, 'source.')) {
-                    $arguments[] = $source->pointerHash;
-                }
+            foreach ($pending as $name => $probe) {
+                $instance = $target->instance($probe['node']);
                 $commands[$name] = [
-                    'instance' => $target->instance($role),
-                    'command' => new GuestCommand($arguments, min($name === 'sample.fixtures' ? 90 : 30, $remainingSeconds)),
+                    'instance' => $instance,
+                    'command' => new GuestCommand(
+                        ['/usr/local/bin/verify-topology.sh', $name, $source->guestSha, $instance, ...$probe['arguments']],
+                        min(self::PROBE_SECONDS, $remainingSeconds),
+                    ),
                 ];
             }
 
             $probeResults = $this->host->execAll($commands);
-            foreach ($pending as $name => $_role) {
+            foreach ($pending as $name => $probe) {
                 $result = $probeResults[$name] ?? null;
-                $instance = $target->instance($probes[$name]);
-                if ($result instanceof GuestCommandResult) {
-                    $evidence = $this->probe($name, $result, $source->guestSha, $instance);
-                    if ($evidence !== null) {
-                        $results[$name] = $evidence;
-                        unset($pending[$name]);
+                $instance = $target->instance($probe['node']);
+                if (! $result instanceof GuestCommandResult) {
+                    $results[$name] = $this->failedProbe($name, $instance, 'passing evidence for source '.$source->guestSha, 'missing batch result');
 
-                        continue;
-                    }
-                    $observed = (new GuestFailureDetail)->append(
-                        $result->successful() ? 'malformed evidence' : 'guest exit '.$result->exitCode,
-                        $result->stderr,
-                    );
-                    if ($result->exitCode !== 124) {
-                        $lastNonTimeoutFailures[$name] = $observed;
-                    } elseif (isset($lastNonTimeoutFailures[$name])) {
-                        $observed .= '; last non-timeout failure: '.$lastNonTimeoutFailures[$name];
-                    }
-                    $results[$name] = $this->failedProbe(
-                        $name,
-                        $instance,
-                        'valid passing evidence for source '.$source->guestSha,
-                        $observed,
-                    );
-                } else {
-                    $results[$name] = $this->failedProbe(
-                        $name,
-                        $instance,
-                        'valid passing evidence for source '.$source->guestSha,
-                        'missing batch result',
-                    );
+                    continue;
                 }
+                $evidence = $this->evidence($name, $result, $source->guestSha, $instance);
+                if ($evidence !== null) {
+                    $results[$name] = $evidence;
+                    unset($pending[$name]);
+
+                    continue;
+                }
+                $observed = (new GuestFailureDetail)->append(
+                    $result->successful() ? 'malformed evidence' : 'guest exit '.$result->exitCode,
+                    $result->stderr,
+                );
+                if ($result->exitCode !== 124) {
+                    $lastNonTimeoutFailures[$name] = $observed;
+                } elseif (isset($lastNonTimeoutFailures[$name])) {
+                    $observed .= '; last non-timeout failure: '.$lastNonTimeoutFailures[$name];
+                }
+                $results[$name] = $this->failedProbe($name, $instance, 'passing evidence for source '.$source->guestSha, $observed);
             }
 
-            if ($pending === [] || $mode === VerificationMode::Proof || microtime(true) >= $deadline) {
+            if ($pending === [] || microtime(true) >= $deadline) {
                 break;
             }
 
@@ -280,200 +136,9 @@ final readonly class TopologyVerifier
         return new VerificationReport($passed, $results);
     }
 
-    /**
-     * @return array{
-     *     checkout_path: ?string,
-     *     production: null|array{
-     *         layout:string,
-     *         instance_id:int,
-     *         user:string,
-     *         home:string,
-     *         checkout_path:string,
-     *         effective_root:string,
-     *         environment_path:string,
-     *         database_path:?string,
-     *         service:string,
-     *         socket:string,
-     *         current_target:?string,
-     *         domain:string
-     *     }
-     * }
-     */
-    private function sampleState(string $appDevInstance, bool $nativeSamplesOnly): array
-    {
-        $arguments = ['/usr/local/bin/converge-sample-app.sh', 'inspect-state'];
-        if ($nativeSamplesOnly) {
-            $arguments[] = 'native';
-        }
-        $results = $this->host->execAll([
-            'sample-app-state' => [
-                'instance' => $appDevInstance,
-                'command' => new GuestCommand($arguments, 30),
-            ],
-        ]);
-        $result = $results['sample-app-state'] ?? null;
-        if (! $result instanceof GuestCommandResult || ! $result->successful()) {
-            throw new RuntimeException($this->sampleStateFailure($appDevInstance, $result));
-        }
-
-        if (trim($result->stdout) === '') {
-            if ($nativeSamplesOnly) {
-                throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
-            }
-
-            return ['checkout_path' => null, 'production' => null];
-        }
-
-        try {
-            $state = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
-        }
-
-        $keys = array_keys(is_array($state) ? $state : []);
-        $baseKeys = ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
-        if (
-            ! is_array($state)
-            || ! in_array($keys, [$baseKeys, [...$baseKeys, 'production']], true)
-            || ($state['shape'] ?? null) !== 'instances'
-            || ! is_int($state['project_id'] ?? null)
-            || ! is_int($state['node_id'] ?? null)
-            || ($state['name'] ?? null) !== 'e2e-dev'
-            || ! is_string($state['checkout_path'] ?? null)
-            || ! str_starts_with($state['checkout_path'], '/')
-            || ($state['effective_root'] ?? null) !== 'public'
-        ) {
-            throw new RuntimeException('Sample App convergence state is invalid.');
-        }
-
-        $production = $state['production'] ?? null;
-        if ($production !== null) {
-            $production = $this->productionPlacement($production);
-        }
-
-        return ['checkout_path' => $state['checkout_path'], 'production' => $production];
-    }
-
-    private function sampleStateFailure(string $instance, ?GuestCommandResult $result): string
-    {
-        $script = 'converge-sample-app.sh';
-        if (! $result instanceof GuestCommandResult) {
-            return 'Failed to inspect the sample App convergence state. '
-                ."Guest convergence script {$script} on {$instance} returned no result.";
-        }
-
-        return (new GuestFailureDetail)->append(
-            'Failed to inspect the sample App convergence state. '
-            ."Guest convergence script {$script} failed on {$instance} with exit code {$result->exitCode}.",
-            $result->stderr,
-        );
-    }
-
-    /**
-     * @return array{
-     *     layout:string,
-     *     instance_id:int,
-     *     user:string,
-     *     home:string,
-     *     checkout_path:string,
-     *     effective_root:string,
-     *     environment_path:string,
-     *     database_path:?string,
-     *     service:string,
-     *     socket:string,
-     *     current_target:?string,
-     *     domain:string
-     * }
-     */
-    private function productionPlacement(mixed $placement): array
-    {
-        $baseKeys = [
-            'layout',
-            'instance_id',
-            'user',
-            'home',
-            'checkout_path',
-            'effective_root',
-            'environment_path',
-            'database_path',
-            'service',
-            'socket',
-            'current_target',
-        ];
-
-        try {
-            $endpoint = is_array($placement) ? ApplicationEndpoint::fromRecord($placement) : null;
-        } catch (InvalidArgumentException) {
-            $endpoint = null;
-        }
-
-        if (
-            ! is_array($placement)
-            || ! ApplicationEndpoint::placementKeysMatch($baseKeys, $placement)
-            || $endpoint === null
-            || ! in_array($placement['layout'] ?? null, ['flat', 'release'], true)
-            || ! is_int($placement['instance_id'] ?? null)
-            || $placement['instance_id'] < 1
-            || ! is_string($placement['user'] ?? null)
-            || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $placement['user']) !== 1
-            || ! is_string($placement['home'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['home'])
-            || ! is_string($placement['checkout_path'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['checkout_path'])
-            || ! is_string($placement['effective_root'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['effective_root'])
-            || ! is_string($placement['environment_path'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['environment_path'])
-            || $placement['database_path'] !== null
-            && (! is_string($placement['database_path'])
-            || ! $this->isAbsolutePlacementPath($placement['database_path']))
-            || ! is_string($placement['service'] ?? null)
-            || preg_match('/\A[a-zA-Z0-9@_.-]{1,128}\z/D', $placement['service']) !== 1
-            || ! is_string($placement['socket'] ?? null)
-            || ! $this->isAbsolutePlacementPath($placement['socket'])
-            || $placement['current_target'] !== null
-            && (! is_string($placement['current_target'])
-            || ! $this->isAbsolutePlacementPath($placement['current_target']))
-            || $placement['layout'] === 'flat'
-            && $placement['current_target'] !== null
-            || $placement['layout'] === 'release'
-            && $placement['current_target'] === null
-        ) {
-            throw new RuntimeException('Sample production placement is invalid.');
-        }
-
-        return [
-            'layout' => $placement['layout'],
-            'instance_id' => $placement['instance_id'],
-            'user' => $placement['user'],
-            'home' => $placement['home'],
-            'checkout_path' => $placement['checkout_path'],
-            'effective_root' => $placement['effective_root'],
-            'environment_path' => $placement['environment_path'],
-            'database_path' => $placement['database_path'],
-            'service' => $placement['service'],
-            'socket' => $placement['socket'],
-            'current_target' => $placement['current_target'],
-            'domain' => $endpoint,
-        ];
-    }
-
-    private function isAbsolutePlacementPath(mixed $path): bool
-    {
-        return
-            is_string($path)
-            && str_starts_with($path, '/')
-            && ! str_contains($path, '//')
-            && preg_match('#(?:\A|/)\.\.?(/|\z)#D', $path) !== 1;
-    }
-
     /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string}|null */
-    private function probe(
-        string $name,
-        GuestCommandResult $result,
-        string $identity,
-        string $instance,
-    ): ?array {
+    private function evidence(string $name, GuestCommandResult $result, string $identity, string $instance): ?array
+    {
         try {
             if (! $result->successful()) {
                 return null;
@@ -486,29 +151,20 @@ final readonly class TopologyVerifier
 
         if (
             ! is_array($evidence)
-            || array_keys($evidence) !== [
-                'probe',
-                'passed',
-                'identity',
-                'checked_at',
-                'expected',
-                'observed',
-                'evidence_ref',
-            ]
-            || ($evidence['probe'] ?? null) !== $name
-            || ($evidence['passed'] ?? null) !== true
-            || ! is_string($evidence['checked_at'] ?? null)
-            || ! is_string($evidence['expected'] ?? null)
-            || ! is_string($evidence['observed'] ?? null)
-            || ! is_string($evidence['evidence_ref'] ?? null)
-            || ($evidence['identity'] ?? null) !== $identity
+            || array_keys($evidence) !== ['probe', 'passed', 'identity', 'checked_at', 'expected', 'observed', 'evidence_ref']
+            || $evidence['probe'] !== $name
+            || $evidence['passed'] !== true
+            || ! is_string($evidence['checked_at'])
+            || ! is_string($evidence['expected'])
+            || ! is_string($evidence['observed'])
+            || $evidence['identity'] !== $identity
             || $evidence['evidence_ref'] !== "incus://{$instance}/{$name}"
         ) {
             return null;
         }
 
         $probe = [
-            'passed' => $evidence['passed'],
+            'passed' => true,
             'checked_at' => $evidence['checked_at'],
             'expected' => $evidence['expected'],
             'observed' => $evidence['observed'],

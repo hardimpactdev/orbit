@@ -6,189 +6,73 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
+/**
+ * What one composition created: the declared Nodes, the network slot, the role image fingerprint each
+ * guest started from, and every guest's names and addresses.
+ */
 final readonly class TopologyConstructionInputs
 {
-    public const int SCHEMA = 3;
-
-    public const int PRE_OPERATOR_SCHEMA = 2;
-
-    public const int LEGACY_SCHEMA = 1;
-
-    public const string GENERIC_BASE = 'generic-base';
+    public const int SCHEMA = 4;
 
     /**
-     * @param  array<string, array{source:string,instance:string,incus_address:string,wireguard_address:string}>  $nodes
+     * @param  array<string, string>  $images  role image value => fingerprint
+     * @param  array<string, array{image:string,instance:string,incus_address:string,wireguard_address:string}>  $nodes
      */
     private function __construct(
         public TopologyTarget $target,
-        public string $sourceGeneration,
         public int $slot,
-        public ?TopologyExtension $extension,
-        public bool $snapshotReplacement,
-        public ?string $imageAlias,
-        public ?string $imageFingerprint,
+        public array $images,
         public array $nodes,
-        public int $schema,
-        public ?string $operatorBaseImageFingerprint = null,
     ) {
-        if (! in_array($schema, [self::LEGACY_SCHEMA, self::PRE_OPERATOR_SCHEMA, self::SCHEMA], true)) {
-            throw new InvalidArgumentException('The topology construction input schema is invalid.');
-        }
-        if ($snapshotReplacement && $schema === self::LEGACY_SCHEMA) {
-            throw new InvalidArgumentException('Legacy construction inputs cannot declare snapshot replacement.');
-        }
-        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $sourceGeneration) !== 1) {
-            throw new InvalidArgumentException('The topology construction source generation is invalid.');
-        }
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology construction slot is invalid.');
         }
-        if ($schema === self::SCHEMA && $snapshotReplacement && preg_match('/\A[a-f0-9]{64}\z/D', $operatorBaseImageFingerprint ?? '') !== 1) {
-            throw new InvalidArgumentException('The operator base image fingerprint is invalid.');
+        $expectedImages = array_map(static fn (RoleImage $image): string => $image->value, $target->recipe->images());
+        if (array_keys($images) !== $expectedImages) {
+            throw new InvalidArgumentException('The topology construction role images do not match its Nodes.');
         }
-        $usesBaseImage = $extension !== null || $snapshotReplacement;
-        if ($usesBaseImage !== ($imageAlias !== null) || $usesBaseImage !== ($imageFingerprint !== null)) {
-            throw new InvalidArgumentException('The topology construction image inputs are incomplete.');
+        foreach ($images as $fingerprint) {
+            if (preg_match('/\A[a-f0-9]{64}\z/D', $fingerprint) !== 1) {
+                throw new InvalidArgumentException('A topology construction role image fingerprint is invalid.');
+            }
         }
-        if (
-            $usesBaseImage
-            && preg_match('/\A[a-f0-9]{64}\z/D', (string) $imageFingerprint) !== 1
-        ) {
-            throw new InvalidArgumentException('The topology construction image input is invalid.');
+        if (array_keys($nodes) !== $target->recipe->nodeKeys()) {
+            throw new InvalidArgumentException('The topology construction Node inventory is incomplete.');
         }
-        if (
-            ($extension !== null && $imageAlias !== TopologyRecipe::BASE_IMAGE)
-            || ($snapshotReplacement
-                && preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/D', (string) $imageAlias) !== 1)
-        ) {
-            throw new InvalidArgumentException('The topology construction image input is invalid.');
+        foreach ($nodes as $key => $node) {
+            $recipeNode = $target->recipe->node($key);
+            if ($node !== self::node($target, $slot, $recipeNode)) {
+                throw new InvalidArgumentException("Topology construction Node [{$key}] is invalid.");
+            }
         }
-        if (
-            $snapshotReplacement
-            && ($extension !== null
-            || $sourceGeneration !== self::GENERIC_BASE
-            || $target->recipe->id !== TopologyProfile::NAME
-            || $target->recipe->nodeKeys() !== ($schema === self::SCHEMA ? TopologyProfile::ROLES : ['gateway', 'app-dev', 'app-prod'])
-            || ! array_all(
-                $target->recipe->nodes,
-                static fn (TopologyNode $node): bool => $node->image === ($node->key === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $imageAlias),
-            ))
-        ) {
-            throw new InvalidArgumentException('The snapshot replacement construction declaration is invalid.');
-        }
-        if (! $snapshotReplacement && $sourceGeneration === self::GENERIC_BASE) {
-            throw new InvalidArgumentException('Generic-base construction requires a snapshot replacement declaration.');
-        }
-        $expectedKeys = ($extension?->recipe() ?? TopologyRecipe::registered())->nodeKeys();
-        if ($schema !== self::SCHEMA) {
-            $expectedKeys = array_values(array_diff($expectedKeys, ['operator']));
-        }
-        if ($target->recipe->nodeKeys() !== $expectedKeys) {
-            throw new InvalidArgumentException('The topology construction recipe does not match its schema.');
-        }
-        $this->assertNodes($target, $slot, $nodes);
     }
 
-    public static function create(
-        TopologyTarget $target,
-        TopologySnapshotGeneration $generation,
-        int $slot,
-        ?TopologyExtension $extension = null,
-        ?string $imageFingerprint = null,
-    ): self {
-        return self::forGeneration(
-            $target,
-            $generation->id,
-            $slot,
-            $extension,
-            $imageFingerprint,
-            $generation->operatorBaseImageFingerprint,
-        );
-    }
-
-    public static function forGeneration(
-        TopologyTarget $target,
-        string $generationId,
-        int $slot,
-        ?TopologyExtension $extension = null,
-        ?string $imageFingerprint = null,
-        ?string $operatorBaseImageFingerprint = null,
-    ): self {
+    /** @param array<string, string> $images role image value => fingerprint */
+    public static function create(TopologyTarget $target, int $slot, array $images): self
+    {
         $nodes = [];
         foreach ($target->recipe->nodes as $node) {
-            $nodes[$node->key] = [
-                'source' => $node->key === 'app-prod-2' ? 'image' : 'snapshot',
-                'instance' => $target->instance($node->key),
-                'incus_address' => TopologyTarget::ipv4For($slot, $node->address),
-                'wireguard_address' => $node->wireGuardAddress(),
-            ];
+            $nodes[$node->key] = self::node($target, $slot, $node);
+        }
+        $ordered = [];
+        foreach ($target->recipe->images() as $image) {
+            $ordered[$image->value] = $images[$image->value]
+                ?? throw new InvalidArgumentException("The role image [{$image->value}] has no fingerprint.");
         }
 
-        return new self(
-            $target,
-            $generationId,
-            $slot,
-            $extension,
-            false,
-            $extension === null ? null : TopologyRecipe::BASE_IMAGE,
-            $imageFingerprint,
-            $nodes,
-            self::SCHEMA,
-            $operatorBaseImageFingerprint,
-        );
-    }
-
-    public static function forSnapshotReplacement(
-        TopologyTarget $target,
-        int $slot,
-        string $imageAlias,
-        string $imageFingerprint,
-        string $operatorBaseImageFingerprint,
-    ): self {
-        $nodes = [];
-        foreach ($target->recipe->nodes as $node) {
-            $nodes[$node->key] = [
-                'source' => 'image',
-                'instance' => $target->instance($node->key),
-                'incus_address' => TopologyTarget::ipv4For($slot, $node->address),
-                'wireguard_address' => $node->wireGuardAddress(),
-            ];
-        }
-
-        return new self(
-            $target,
-            self::GENERIC_BASE,
-            $slot,
-            null,
-            true,
-            $imageAlias,
-            $imageFingerprint,
-            $nodes,
-            self::SCHEMA,
-            $operatorBaseImageFingerprint,
-        );
+        return new self($target, $slot, $ordered, $nodes);
     }
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        $value = [
-            'schema' => $this->schema,
-            'issue' => $this->target->issue,
-            'attempt_id' => $this->target->requireAttempt()->value,
-            'extension' => $this->extension?->value,
-        ];
-        if ($this->schema !== self::LEGACY_SCHEMA) {
-            $value['snapshot_replacement'] = $this->snapshotReplacement;
-        }
-
         return [
-            ...$value,
-            'source_generation' => $this->sourceGeneration,
+            'schema' => self::SCHEMA,
+            'issue' => $this->target->issue,
+            'attempt_id' => $this->target->attempt->value,
+            'recipe' => $this->target->recipe->toArray(),
             'slot' => $this->slot,
-            'image_alias' => $this->imageAlias,
-            'image_fingerprint' => $this->imageFingerprint,
-            ...($this->schema === self::SCHEMA ? ['operator_base_image' => ['alias' => TopologyRecipe::OPERATOR_IMAGE, 'fingerprint' => $this->operatorBaseImageFingerprint]] : []),
+            'images' => $this->images,
             'nodes' => $this->nodes,
         ];
     }
@@ -196,112 +80,59 @@ final readonly class TopologyConstructionInputs
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
-        $schema = $value['schema'] ?? null;
-        $expectedKeys = $schema === self::LEGACY_SCHEMA
-            ? [
-                'schema',
-                'issue',
-                'attempt_id',
-                'extension',
-                'source_generation',
-                'slot',
-                'image_alias',
-                'image_fingerprint',
-                'nodes',
-            ]
-            : [
-                'schema',
-                'issue',
-                'attempt_id',
-                'extension',
-                'snapshot_replacement',
-                'source_generation',
-                'slot',
-                'image_alias',
-                'image_fingerprint',
-                ...($schema === self::SCHEMA ? ['operator_base_image'] : []),
-                'nodes',
-            ];
+        if (($value['schema'] ?? null) !== self::SCHEMA) {
+            throw new InvalidArgumentException(
+                'The topology construction schema is not supported; release it with the harness that created it.',
+            );
+        }
         if (
-            array_keys($value) !== $expectedKeys
-            || ! in_array($schema, [self::LEGACY_SCHEMA, self::PRE_OPERATOR_SCHEMA, self::SCHEMA], true)
+            array_keys($value) !== ['schema', 'issue', 'attempt_id', 'recipe', 'slot', 'images', 'nodes']
             || ! is_string($value['issue'])
             || ! is_string($value['attempt_id'])
-            || $value['extension'] !== null
-            && ! is_string($value['extension'])
-            || $schema !== self::LEGACY_SCHEMA
-            && ! is_bool($value['snapshot_replacement'])
-            || ! is_string($value['source_generation'])
+            || ! is_array($value['recipe'])
             || ! is_int($value['slot'])
-            || $value['image_alias'] !== null
-            && ! is_string($value['image_alias'])
-            || $value['image_fingerprint'] !== null
-            && ! is_string($value['image_fingerprint'])
-            || ($schema === self::SCHEMA && (! is_array($value['operator_base_image'] ?? null)
-                || array_keys($value['operator_base_image']) !== ['alias', 'fingerprint']
-                || $value['operator_base_image']['alias'] !== TopologyRecipe::OPERATOR_IMAGE
-                || ($value['operator_base_image']['fingerprint'] !== null && ! is_string($value['operator_base_image']['fingerprint']))))
+            || ! is_array($value['images'])
             || ! is_array($value['nodes'])
         ) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
         }
-        $extension = is_string($value['extension']) ? TopologyExtension::tryFrom($value['extension']) : null;
-        if ($value['extension'] !== null && $extension === null) {
-            throw new InvalidArgumentException('The topology construction extension is invalid.');
-        }
-        $snapshotReplacement = $schema !== self::LEGACY_SCHEMA && $value['snapshot_replacement'];
-        $recipe = $extension?->recipe()
-            ?? ($snapshotReplacement && is_string($value['image_alias'])
-                ? TopologyRecipe::registered($value['image_alias'])
-                : TopologyRecipe::registered());
-        if ($schema !== self::SCHEMA) {
-            // Historical records authorize only their exact pre-operator inventory.
-            $recipeNodes = array_values(array_filter(
-                $recipe->nodes,
-                static fn (TopologyNode $node): bool => $node->key !== 'operator',
-            ));
-            if ($recipeNodes === []) {
-                throw new InvalidArgumentException('The topology construction recipe is empty.');
-            }
-            $recipe = new TopologyRecipe($recipe->id, $recipeNodes);
-        }
         $target = TopologyTarget::feature(
             $value['issue'],
             new AttemptId($value['attempt_id']),
-            $recipe,
+            TopologyRecipe::fromArray($value['recipe']),
         );
-
-        $nodes = self::decodeNodes($value['nodes']);
 
         return new self(
             $target,
-            $value['source_generation'],
             $value['slot'],
-            $extension,
-            $snapshotReplacement,
-            $value['image_alias'],
-            $value['image_fingerprint'],
-            $nodes,
-            $schema,
-            $schema === self::SCHEMA ? $value['operator_base_image']['fingerprint'] : null,
+            SerializedArrays::stringMap($value['images']),
+            self::decodeNodes($value['nodes']),
         );
+    }
+
+    /** @return array{image:string,instance:string,incus_address:string,wireguard_address:string} */
+    private static function node(TopologyTarget $target, int $slot, TopologyNode $node): array
+    {
+        return [
+            'image' => $node->image->value,
+            'instance' => $target->instance($node->key),
+            'incus_address' => TopologyTarget::ipv4For($slot, $node->address),
+            'wireguard_address' => $node->wireGuardAddress(),
+        ];
     }
 
     /**
      * @param  array<array-key, mixed>  $nodes
-     * @return array<string, array{source: string, instance: string, incus_address: string, wireguard_address: string}>
+     * @return array<string, array{image:string,instance:string,incus_address:string,wireguard_address:string}>
      */
     private static function decodeNodes(array $nodes): array
     {
         $decoded = [];
         foreach (SerializedArrays::stringKeyed($nodes) as $key => $node) {
-            if (! is_array($node)) {
-                throw new InvalidArgumentException('The topology construction Node inventory is invalid.');
-            }
-            $node = SerializedArrays::stringKeyed($node);
             if (
-                array_keys($node) !== ['source', 'instance', 'incus_address', 'wireguard_address']
-                || ! is_string($node['source'])
+                ! is_array($node)
+                || array_keys($node) !== ['image', 'instance', 'incus_address', 'wireguard_address']
+                || ! is_string($node['image'])
                 || ! is_string($node['instance'])
                 || ! is_string($node['incus_address'])
                 || ! is_string($node['wireguard_address'])
@@ -309,7 +140,7 @@ final readonly class TopologyConstructionInputs
                 throw new InvalidArgumentException('The topology construction Node inventory is invalid.');
             }
             $decoded[$key] = [
-                'source' => $node['source'],
+                'image' => $node['image'],
                 'instance' => $node['instance'],
                 'incus_address' => $node['incus_address'],
                 'wireguard_address' => $node['wireguard_address'],
@@ -317,26 +148,5 @@ final readonly class TopologyConstructionInputs
         }
 
         return $decoded;
-    }
-
-    /** @param array<string, array<array-key, mixed>> $nodes */
-    private function assertNodes(TopologyTarget $target, int $slot, array $nodes): void
-    {
-        if (array_keys($nodes) !== $target->recipe->nodeKeys()) {
-            throw new InvalidArgumentException('The topology construction Node inventory is incomplete.');
-        }
-        foreach ($nodes as $key => $node) {
-            $recipeNode = $target->recipe->node($key);
-            if (
-                array_keys($node) !== ['source', 'instance', 'incus_address', 'wireguard_address']
-                || ! in_array($node['source'], ['snapshot', 'image'], true)
-                || $node['source'] !== ($this->snapshotReplacement || $key === 'app-prod-2' ? 'image' : 'snapshot')
-                || $node['instance'] !== $target->instance($key)
-                || $node['incus_address'] !== TopologyTarget::ipv4For($slot, $recipeNode->address)
-                || $node['wireguard_address'] !== $recipeNode->wireGuardAddress()
-            ) {
-                throw new InvalidArgumentException("Topology construction Node [{$key}] is invalid.");
-            }
-        }
     }
 }

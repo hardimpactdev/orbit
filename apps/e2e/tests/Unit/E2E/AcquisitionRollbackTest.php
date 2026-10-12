@@ -14,7 +14,7 @@ it('uses one inventory and parallel mutation batches before deleting the network
     $metadata = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
         'user.orbit.e2e.issue' => 'TST-123',
-        'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+        'user.orbit.e2e.attempt' => $target->attempt->value,
         'user.orbit.e2e.operation' => $operation->value,
     ];
     $inventory = [
@@ -102,7 +102,7 @@ it('retains the network and every VM result when a VM batch mutation fails', fun
     $metadata = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
         'user.orbit.e2e.issue' => $target->issue,
-        'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+        'user.orbit.e2e.attempt' => $target->attempt->value,
         'user.orbit.e2e.operation' => $operation->value,
     ];
     $inventory = [

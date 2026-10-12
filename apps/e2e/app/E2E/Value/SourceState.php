@@ -17,7 +17,7 @@ final readonly class SourceState
         public array $overlayPaths = [],
         public ?string $operationId = null,
         public bool $mounted = false,
-        public ?string $pointerHash = null,
+        public ?string $mountTokenHash = null,
     ) {
         foreach ([$hostSha, $guestSha] as $sha) {
             if (preg_match('/\A[a-f0-9]{40}\z/D', $sha) !== 1) {
@@ -43,20 +43,20 @@ final readonly class SourceState
             throw new InvalidArgumentException('The source operation ID is invalid.');
         }
 
-        if ($pointerHash !== null && preg_match('/\A[a-f0-9]{64}\z/D', $pointerHash) !== 1) {
-            throw new InvalidArgumentException('The source git pointer hash is invalid.');
+        if ($mountTokenHash !== null && preg_match('/\A[a-f0-9]{64}\z/D', $mountTokenHash) !== 1) {
+            throw new InvalidArgumentException('The source mount token hash is invalid.');
         }
 
-        if ($mounted !== ($pointerHash !== null)) {
-            throw new InvalidArgumentException('A mounted source must record exactly one git pointer hash.');
+        if ($mounted !== ($mountTokenHash !== null)) {
+            throw new InvalidArgumentException('A mounted source must record exactly one mount token hash.');
         }
     }
 
     /**
-     * The `git_pointer_sha256` is the SHA-256 of the worktree `.git` pointer file
-     * content; guests prove the mount by hashing the file they see.
+     * The `mount_token_sha256` is the SHA-256 of the worktree's `.e2e/mount-token`;
+     * guests prove the mount by hashing the file they see.
      *
-     * @return array{host_sha:string,guest_sha:string,dirty:bool,tree_hash:?string,overlay_paths:list<string>,operation_id:?string,mounted:bool,git_pointer_sha256:?string}
+     * @return array{host_sha:string,guest_sha:string,dirty:bool,tree_hash:?string,overlay_paths:list<string>,operation_id:?string,mounted:bool,mount_token_sha256:?string}
      */
     public function toArray(): array
     {
@@ -68,7 +68,7 @@ final readonly class SourceState
             'overlay_paths' => $this->overlayPaths,
             'operation_id' => $this->operationId,
             'mounted' => $this->mounted,
-            'git_pointer_sha256' => $this->pointerHash,
+            'mount_token_sha256' => $this->mountTokenHash,
         ];
     }
 
@@ -84,7 +84,7 @@ final readonly class SourceState
                 'overlay_paths',
                 'operation_id',
                 'mounted',
-                'git_pointer_sha256',
+                'mount_token_sha256',
             ]
             || ! is_string($value['host_sha'])
             || ! is_string($value['guest_sha'])
@@ -95,8 +95,8 @@ final readonly class SourceState
             || $value['operation_id'] !== null
             && ! is_string($value['operation_id'])
             || ! is_bool($value['mounted'])
-            || $value['git_pointer_sha256'] !== null
-            && ! is_string($value['git_pointer_sha256'])
+            || $value['mount_token_sha256'] !== null
+            && ! is_string($value['mount_token_sha256'])
         ) {
             throw new InvalidArgumentException('The source state schema is invalid.');
         }
@@ -117,7 +117,7 @@ final readonly class SourceState
             $overlayPaths,
             $value['operation_id'],
             $value['mounted'],
-            $value['git_pointer_sha256'],
+            $value['mount_token_sha256'],
         );
     }
 }

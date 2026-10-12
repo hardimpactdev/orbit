@@ -13,19 +13,13 @@ final readonly class TopologyNode
      */
     public function __construct(
         public string $key,
-        public string $image,
+        public RoleImage $image,
         public TopologyNodePurpose $purpose,
         public int $address,
         public bool $checkout,
         public array $roles,
     ) {
         self::assertKey($key);
-        if (
-            mb_strlen($image) > 63
-            || preg_match('/\Aorbit-base(?:-[A-Za-z0-9._-]+)?\z/D', $image) !== 1
-        ) {
-            throw new InvalidArgumentException('The topology Node base image is invalid.');
-        }
         if ($address < 10 || $address > 254) {
             throw new InvalidArgumentException('The topology Node address position is invalid.');
         }
@@ -42,6 +36,11 @@ final readonly class TopologyNode
     public function wireGuardAddress(): string
     {
         return '10.44.0.'.($this->address - 9);
+    }
+
+    public function isContainer(): bool
+    {
+        return $this->image->isContainer();
     }
 
     /** @param array<array-key, string> $roles */

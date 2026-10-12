@@ -8,33 +8,17 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologySnapshotIdentity;
 use RuntimeException;
 
 /**
  * Remove harness-owned Incus networks that no topology uses any more.
  *
- * A network is an orphan when its name carries a harness prefix (`oe-` for the
- * current harness, `orbit-e2e-` for the legacy one), Incus reports no user, and
- * it is not a current or retired topology snapshot network. The sweep holds the host creation lock, so an
- * acquisition between network creation and its first VM is never swept.
+ * A network is an orphan when its name carries the harness prefix `oe-` and Incus reports no user. The sweep
+ * holds the host creation lock, so an acquisition between network creation and its first guest is never swept.
  */
 final readonly class OrphanNetworkSweep
 {
-    public const array HARNESS_PREFIXES = ['oe-', 'orbit-e2e-'];
-
-    /**
-     * The current and retired topology snapshot networks are never orphans.
-     *
-     * @return list<string>
-     */
-    public static function topologySnapshotNetworks(): array
-    {
-        return [
-            TopologySnapshotIdentity::primary()->network(),
-            TopologySnapshotIdentity::retired()->network(),
-        ];
-    }
+    public const array HARNESS_PREFIXES = ['oe-'];
 
     /** The lock every topology creation holds from network creation until its VMs exist. */
     public const string CREATION_LOCK = 'topology-create';
@@ -65,7 +49,6 @@ final readonly class OrphanNetworkSweep
             $name = $network->name;
             if (
                 ! self::isHarnessNetworkName($name)
-                || in_array($name, self::topologySnapshotNetworks(), true)
                 || $network->usedBy !== []
                 || in_array($name, $protected, true)
             ) {

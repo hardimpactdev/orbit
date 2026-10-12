@@ -7,11 +7,8 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
-use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologySnapshotIdentity;
-use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
@@ -73,13 +70,12 @@ function sweep(StatePaths $paths): OrphanNetworkSweep
 }
 
 describe('orphan network filter', function () {
-    it('selects unused harness networks of both prefixes and nothing else', function () {
+    it('selects unused oe- networks and nothing else', function () {
         $networks = [
             'oe-orphan' => sweepNetwork('oe-orphan'),
+            'oe-standby' => sweepNetwork('oe-standby'),
             'orbit-e2e-n-legacy' => sweepNetwork('orbit-e2e-n-legacy'),
-            'orbit-e2e-p-n-legacy' => sweepNetwork('orbit-e2e-p-n-legacy'),
             'oe-used' => sweepNetwork('oe-used', ['/1.0/instances/orbit-e2e-tst-12-aaaaaaaa-gateway']),
-            'oe-topo-snap' => sweepNetwork('oe-topo-snap'),
             'incusbr0' => sweepNetwork('incusbr0'),
             'control-unused' => sweepNetwork('control-unused'),
             'docker0' => sweepNetwork('docker0'),
@@ -87,34 +83,11 @@ describe('orphan network filter', function () {
             'xoe-orphan' => sweepNetwork('xoe-orphan'),
         ];
 
-        expect(OrphanNetworkSweep::orphans($networks))
-            ->toBe(['oe-orphan', 'orbit-e2e-n-legacy', 'orbit-e2e-p-n-legacy']);
-    });
-
-    it('never selects the topology snapshot network even when it has no users', function () {
-        expect(OrphanNetworkSweep::orphans(['oe-topo-snap' => sweepNetwork('oe-topo-snap')]))->toBe([]);
-    });
-
-    it('never selects the current or retired topology snapshot network even when it has no users', function () {
-        foreach ([TopologySnapshotIdentity::primary(), TopologySnapshotIdentity::retired()] as $identity) {
-            $network = $identity->network();
-
-            expect(OrphanNetworkSweep::orphans([$network => sweepNetwork($network)]))->toBe([]);
-        }
-    });
-
-    it('protects retired topology snapshot networks until explicit migration removes them', function () {
-        $networks = [
-            'oe-standby' => sweepNetwork('oe-standby'),
-            'oe-live-standby' => sweepNetwork('oe-live-standby'),
-            'oe-orphan' => sweepNetwork('oe-orphan'),
-        ];
-
-        expect(OrphanNetworkSweep::orphans($networks))->toBe(['oe-live-standby', 'oe-orphan']);
+        expect(OrphanNetworkSweep::orphans($networks))->toBe(['oe-orphan', 'oe-standby']);
     });
 
     it('never selects an explicitly protected network', function () {
-        $protected = TopologyTarget::feature('TST-12', new AttemptId(str_repeat('a', 32)))->network();
+        $protected = featureTarget('TST-12')->network();
 
         expect(OrphanNetworkSweep::orphans([
             $protected => sweepNetwork($protected),
@@ -122,16 +95,14 @@ describe('orphan network filter', function () {
         ], [$protected]))->toBe(['oe-orphan']);
     });
 
-    it('recognizes harness network names by exact prefix', function () {
+    it('recognizes harness network names by the exact oe- prefix', function () {
         expect(OrphanNetworkSweep::isHarnessNetworkName('oe-abc'))
             ->toBeTrue()
             ->and(OrphanNetworkSweep::isHarnessNetworkName('orbit-e2e-n-1'))
-            ->toBeTrue()
+            ->toBeFalse()
             ->and(OrphanNetworkSweep::isHarnessNetworkName('oe'))
             ->toBeFalse()
             ->and(OrphanNetworkSweep::isHarnessNetworkName('incusbr0'))
-            ->toBeFalse()
-            ->and(OrphanNetworkSweep::isHarnessNetworkName('orbit-e2e'))
             ->toBeFalse();
     });
 });
@@ -140,8 +111,8 @@ describe('orphan network sweep', function () {
     it('deletes only orphans and removes their firewall rules', function () {
         $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
         $networks = [
-            ['name' => 'oe-topo-snap', 'used_by' => []],
             ['name' => 'oe-orphan', 'used_by' => []],
+            ['name' => 'oe-standby', 'used_by' => []],
             ['name' => 'orbit-e2e-n-legacy', 'used_by' => []],
             ['name' => 'oe-used', 'used_by' => ['/1.0/instances/x']],
             ['name' => 'control-unused', 'used_by' => []],
@@ -164,13 +135,13 @@ describe('orphan network sweep', function () {
             static fn (array $command): bool => ($command[0] ?? null) === 'python3',
         ));
         expect($reaped)
-            ->toBe(['oe-orphan', 'orbit-e2e-n-legacy'])
+            ->toBe(['oe-orphan', 'oe-standby'])
             ->and(array_map(static fn (array $command): string => $command[5], $deletes))
-            ->toBe(['local:oe-orphan', 'local:orbit-e2e-n-legacy'])
+            ->toBe(['local:oe-orphan', 'local:oe-standby'])
             ->and($firewall)
-            ->toHaveCount(1)
+            ->toHaveCount(2)
             ->and(array_column($networks, 'name'))
-            ->toBe(['oe-topo-snap', 'oe-used', 'control-unused', 'incusbr0']);
+            ->toBe(['orbit-e2e-n-legacy', 'oe-used', 'control-unused', 'incusbr0']);
     });
 
     it('waits for the topology creation lock before sweeping', function () {
@@ -193,7 +164,7 @@ describe('orphan network sweep', function () {
 
     it('reports nothing and deletes nothing when no orphan exists', function () {
         $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
-        $networks = [['name' => 'oe-topo-snap', 'used_by' => []], ['name' => 'incusbr0', 'used_by' => []]];
+        $networks = [['name' => 'orbit-e2e-n-legacy', 'used_by' => []], ['name' => 'incusbr0', 'used_by' => []]];
         $commands = [];
         fakeSweepIncus($networks, $commands);
 

@@ -651,7 +651,6 @@ PHP);
         ]],
         ['apps/e2e', [
             'tests/Unit/E2E/ProofFixtureContractTest.php',
-            'tests/Unit/E2E/ProofFixtureShellContractTest.php',
         ]],
         ['packages/php-sdk', [
             'tests/Unit/SuccessRequestIdBoundaryTest.php',

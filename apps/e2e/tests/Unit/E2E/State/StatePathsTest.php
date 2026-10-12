@@ -3,9 +3,6 @@
 declare(strict_types=1);
 
 use App\E2E\State\StatePaths;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\TopologyProfile;
-use App\E2E\Value\TopologyTarget;
 use Symfony\Component\Process\Process;
 
 describe('StatePaths', function () {
@@ -88,25 +85,5 @@ describe('StatePaths', function () {
         ] as $unsafe) {
             expect(fn () => $paths->path($unsafe))->toThrow(InvalidArgumentException::class);
         }
-    });
-
-    it('provides stable exact profile roles and target names', function () {
-        $target = TopologyTarget::feature('TST-321', new AttemptId(str_repeat('a', 32)));
-
-        expect(TopologyProfile::ROLES)
-            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator'])
-            ->and(TopologyProfile::CHECKOUT_ROLES)
-            ->toBe(['gateway', 'app-dev', 'operator'])
-            ->and(TopologyProfile::ASSIGNMENTS)
-            ->toBe([
-                'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
-                'app-dev' => ['app-dev', 'metrics', 'database'],
-                'app-prod' => ['app-prod', 'ingress'],
-                'operator' => [],
-            ])
-            ->and($target->network())
-            ->toBe('oe-9498fa889742')
-            ->and($target->instance('app-prod'))
-            ->toBe('orbit-e2e-tst-321-aaaaaaaa-app-prod');
     });
 });

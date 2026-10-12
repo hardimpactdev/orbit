@@ -3,810 +3,340 @@
 declare(strict_types=1);
 
 use App\E2E\DiscoveryGuestPreparer;
-use App\E2E\Git\GitRepository;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
-use App\E2E\PreparedStateFingerprint;
-use App\E2E\PromotedTopologySnapshotResolver;
-use App\E2E\State\AtomicJsonStore;
+use App\E2E\OrphanNetworkSweep;
+use App\E2E\RoleImagePrograms;
+use App\E2E\RoleImages;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
-use App\E2E\TopologyConverger;
-use App\E2E\TopologySnapshotAvailability;
-use App\E2E\TopologySnapshotManifestStore;
-use App\E2E\TopologySnapshotReplacementStore;
+use App\E2E\TopologyComposer;
+use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
-use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\RoleImage;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
-use App\E2E\Value\TopologySnapshotGeneration;
-use App\E2E\Value\TopologySnapshotIdentity;
-use App\E2E\Value\TopologySnapshotReplacementInstallation;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
-use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
-use Illuminate\Support\Facades\Process;
+use Tests\Support\FakeIncus;
 
-require_once __DIR__.'/Support/TopologyFixtures.php';
-
-beforeEach(function () {
-    $container = new Container;
-    $container->instance(ProcessFactory::class, new ProcessFactory);
-    Facade::clearResolvedInstances();
-    Facade::setFacadeApplication($container);
-});
-
-it('builds the topology fixtures without an identity in the shared repository configuration', function (): void {
-    $root = preparedTopologyRepository();
-    $worktree = pinnedFeatureWorktree($root, 'identity-configuration');
-
-    expect(Process::run(['git', '-C', $worktree, 'config', '--local', '--get-regexp', '^user\\.'])->exitCode())->toBe(1)
-        ->and(trim(Process::run(['git', '-C', $worktree, 'log', '-1', '--format=%an <%ae>'])->output()))
-        ->toBe('Orbit Developer <developer@example.com>');
-});
-
-/** @return array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} */
-function legacyAcquisitionWorktree(): array
+/** A bootstrapped checkout on the issue's branch, with the real guest scripts. */
+function acquirerWorktree(): string
 {
-    $sourceRoot = dirname(__DIR__, 5);
-    $worktree = temporaryPath('orbit-legacy-acquisition-', 4);
-    $branch = 'aux-4-legacy-acquisition-'.bin2hex(random_bytes(6));
-    $processes = new ProcessFactory;
-
-    expect(
-        $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $worktree, 'HEAD'])->successful(),
-    )->toBeTrue();
-    expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
-
-    return compact('sourceRoot', 'worktree', 'branch', 'processes');
-}
-
-/** @param array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} $fixture */
-function removeLegacyAcquisitionWorktree(array $fixture): void
-{
-    $fixture['processes']->run([
-        'git',
-        '-C',
-        $fixture['sourceRoot'],
-        'worktree',
-        'remove',
-        '--force',
-        $fixture['worktree'],
-    ]);
-    $fixture['processes']->run([
-        'git',
-        '-C',
-        $fixture['sourceRoot'],
-        'branch',
-        '-D',
-        $fixture['branch'],
-    ]);
-}
-
-function legacyAcquisitionGeneration(): TopologySnapshotGeneration
-{
-    return new TopologySnapshotGeneration(
-        'legacy-generation',
-        str_repeat('a', 40),
-        [
-            'gateway' => 'main-legacy-gateway',
-            'app-dev' => 'main-legacy-app-dev',
-            'app-prod' => 'main-legacy-app-prod', 'operator' => 'main-legacy-operator',
-        ],
-        str_repeat('b', 64),
-        str_repeat('c', 64),
-        new LaravelRelease('v13.10.1', str_repeat('d', 40)),
-        str_repeat('e', 64),
-        1,
-        'ubuntu-26.04-amd64-v1',
-        'orbit-base-ubuntu-26.04-runtime',
-        'gateway_app-dev_app-prod',
-        TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
-        topologyAssignments: null,
-        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA, operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
-}
-
-function topologyAcquirerWithLegacyGeneration(
-    string $repositoryRoot,
-    StatePaths $paths,
-    TopologySnapshotManifestStore $manifests,
-): TopologyAcquirer {
-    $host = new IncusHost(pool: 'orbit-e2e');
-    $operation = new OperationId(str_repeat('f', 32));
-
-    return new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
-        $manifests,
-        new WorktreeSynchronizer($host, $repositoryRoot, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $repositoryRoot,
-        fn () => attemptId(),
-    );
-}
-
-function preparedTopologyAcquirer(
-    string $repositoryRoot,
-    StatePaths $paths,
-    IncusHost $host,
-    OperationId $operation,
-): TopologyAcquirer {
-    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
-
-    return new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
-        $manifests,
-        new WorktreeSynchronizer($host, $repositoryRoot, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $repositoryRoot,
-        fn () => attemptId(),
-    );
-}
-
-function acquirerConflictingReplacementInstallation(
-    TopologySnapshotGeneration $requested,
-): TopologySnapshotReplacementInstallation {
-    $oldValue = $requested->toArray();
-    $oldValue['id'] = 'replacement-old-generation';
-    $old = TopologySnapshotGeneration::fromArray($oldValue);
-    $new = new TopologySnapshotGeneration(
-        'replacement-new-generation',
-        str_repeat('6', 40),
-        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod', 'operator' => 'main-replacement-operator'],
-        str_repeat('7', 64),
-        $old->baseImageFingerprint,
-        $old->laravel,
-        str_repeat('8', 64),
-        2,
-        $old->coldEpoch,
-        $old->baseImageAlias,
-        TopologyProfile::NAME,
-        TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
-        $old->id, operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
-
-    return new TopologySnapshotReplacementInstallation(
-        'AUX-231',
-        new AttemptId(str_repeat('a', 32)),
-        new AttemptId(str_repeat('b', 32)),
-        new OperationId(str_repeat('c', 32)),
-        str_repeat('d', 40),
-        str_repeat('e', 40),
-        str_repeat('f', 40),
-        $new->mainSha,
-        str_repeat('a', 64),
-        str_repeat('b', 64),
-        $old,
-        $new,
-        $new->baseImageAlias,
-        $new->baseImageFingerprint,
-        'oe-replacement',
-        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator'],
-        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator'],
-        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next'],
-        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old'],
-    );
-}
-
-it('refuses acquisition from a schema 4 generation before creating an attempt', function () {
-    $fixture = legacyAcquisitionWorktree();
-
-    try {
-        $paths = new StatePaths(temporaryPath('orbit-legacy-acquisition-state-', 4));
-        $state = new AtomicJsonStore($paths);
-        $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
-        $manifests->promote(legacyAcquisitionGeneration());
-        $request = new TopologyRequest('AUX-4', $fixture['worktree']);
-
-        expect(
-            fn () => topologyAcquirerWithLegacyGeneration(
-                $fixture['sourceRoot'],
-                $paths,
-                $manifests,
-            )->acquire($request),
-        )
-            ->toThrow(RuntimeException::class, 'legacy; refresh it before acquisition')
-            ->and(IssueState::forWorktree('AUX-4', $fixture['worktree'])->hasAttempt())
-            ->toBeFalse();
-    } finally {
-        removeLegacyAcquisitionWorktree($fixture);
+    $root = temporaryPath('orbit-acquire-', 5);
+    foreach (['apps/gateway/vendor', 'apps/cli/vendor', 'packages/php-sdk/vendor', 'apps/e2e/resources/guest'] as $directory) {
+        mkdir($root.'/'.$directory, 0755, true);
     }
-});
+    foreach (['apps/gateway/vendor/autoload.php', 'apps/cli/vendor/autoload.php', 'packages/php-sdk/vendor/autoload.php'] as $file) {
+        file_put_contents($root.'/'.$file, "<?php\n");
+    }
+    file_put_contents($root.'/apps/gateway/.env', "APP_KEY=base64:fixture\n");
+    file_put_contents($root.'/.gitignore', "/.e2e/\n/apps/gateway/.env\nvendor/\n");
+    foreach (WorktreeSynchronizer::GUEST_SCRIPTS as $script) {
+        copy(dirname(__DIR__, 3).'/resources/guest/'.$script, $root.'/apps/e2e/resources/guest/'.$script);
+        chmod($root.'/apps/e2e/resources/guest/'.$script, 0755);
+    }
+    exec('git -C '.escapeshellarg($root).' init -q -b task-tst-9 && git -C '.escapeshellarg($root).' add . && git -C '.escapeshellarg($root).' -c user.name=Test -c user.email=test@example.test commit -q -m fixture', result_code: $status);
+    expect($status)->toBe(0);
 
-it('refuses acquisition before Incus mutation when an active replacement conflicts with the promoted generation', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-replacement-acquisition-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'replacement-acquisition');
-    $host = new IncusHost(pool: 'default');
-    $state = new AtomicJsonStore($paths);
-    $manifests = new TopologySnapshotManifestStore($state, $paths, $host);
-    $generation = $manifests->promoted();
-    assert($generation !== null);
-    $replacements = new TopologySnapshotReplacementStore($state);
-    $replacements->start(acquirerConflictingReplacementInstallation($generation), '2026-09-10T10:00:00Z');
-    $events = [];
-    fakePinnedWorktreeProcesses(featureTarget('TST-123'), $events);
-    $operation = new OperationId(str_repeat('f', 32));
-    $request = new TopologyRequest('TST-123', $worktree);
-    $acquirer = new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($root)),
-        $manifests,
-        new WorktreeSynchronizer($host, $root, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $root,
-        fn () => attemptId(),
-        snapshotResolver: new PromotedTopologySnapshotResolver(
-            new PreparedStateFingerprint(new GitRepository($root)),
-            $manifests,
-            new TopologySnapshotAvailability(
-                $host,
-                TopologySnapshotIdentity::primary(),
-                $replacements,
-            ),
-        ),
-    );
+    return $root;
+}
 
-    expect(fn () => $acquirer->acquire($request))
-        ->toThrow(RuntimeException::class, 'replacement recovery is incomplete')
-        ->and($events)->toBeEmpty()
-        ->and(IssueState::forWorktree('TST-123', $worktree)->hasAttempt())->toBeFalse();
-});
+/**
+ * Answers every guest command of a healthy composition; `$override` answers first.
+ *
+ * @param  list<string>  $steps  the composition and readiness scripts in the order they ran
+ */
+function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override = null): Closure
+{
+    return function (string $instance, array $argv, ?string $stdin) use ($incus, &$steps, $override): ?array {
+        $script = str_starts_with($argv[0], '/usr/local/bin/') ? substr($argv[0], 15) : null;
+        if ($script !== null && $script !== 'verify-topology.sh') {
+            $steps[] = $script.' '.implode(' ', array_slice($argv, 1, 1)).' @'.substr($instance, strrpos($instance, '-aaaaaaaa-') + 10);
+        }
+        $answer = $override === null ? null : $override($instance, $argv, $stdin);
+        if ($answer !== null) {
+            return $answer;
+        }
+        if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'ip -4 -o addr show')) {
+            $address = $incus->instances[$instance]['devices']['eth0']['ipv4.address'];
 
-it('constructs an extended discovery without adopting proof resources or sharing attempt identities', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-extended-acquisition-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'extended-acquisition');
-    $planPath = $worktree.'/.loop/proof';
-    mkdir($planPath, 0o700, true);
-    file_put_contents($planPath.'/TST-123.json', json_encode([
-        'setup' => [],
-        'acceptance' => [[
-            'id' => 'extended-ready',
-            'node' => 'app-prod-2',
-            'argv' => ['true'],
-            'timeout_seconds' => 30,
-        ]],
-        'extension' => 'app-prod',
-    ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)
-        ."\n");
-    $processes = new ProcessFactory;
-    expect($processes->run(['git', '-C', $worktree, 'add', '.loop/proof/TST-123.json'])->successful())
-        ->toBeTrue()
-        ->and($processes->run(['git', '-C', $worktree, 'commit', '-q', '-m', 'Add extended plan'])->successful())
-        ->toBeTrue();
-
-    $recipe = TopologyRecipe::extendedAppProd();
-    $discoveryTarget = featureTarget('TST-123', 'a', $recipe);
-    $proofTarget = featureTarget('TST-123', 'b', $recipe);
-    $events = [];
-    $leaseAtNetworkCreation = null;
-    fakePinnedWorktreeProcesses(
-        $discoveryTarget,
-        $events,
-        observe: static function (array $command) use ($worktree, &$leaseAtNetworkCreation): void {
-            if (($command[3] ?? null) !== 'network' || ($command[4] ?? null) !== 'create') {
-                return;
-            }
-            $leaseAtNetworkCreation = json_decode(
-                (string) file_get_contents($worktree.'/.e2e/'.IssueState::ATTEMPT),
-                true,
-                8,
-                JSON_THROW_ON_ERROR,
-            );
-        },
-    );
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
-    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
-    $topology = new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($root)),
-        $manifests,
-        new WorktreeSynchronizer($host, $root, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $root,
-        fn () => attemptId('a'),
-        new TopologyConverger($host),
-    )->acquire(new TopologyRequest('TST-123', $worktree));
-
-    $commands = array_map(
-        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
-        $events,
-    );
-    expect($topology->purpose)
-        ->toBe(AttemptPurpose::Discovery)
-        ->and($leaseAtNetworkCreation['extension'] ?? null)
-        ->toBe('app-prod')
-        ->and($leaseAtNetworkCreation['attempt_id'] ?? null)
-        ->toBe($discoveryTarget->requireAttempt()->value)
-        ->and($topology->target->recipe->nodeKeys())
-        ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
-        ->and(array_keys($topology->instances))
-        ->toBe($topology->target->recipe->nodeKeys())
-        ->and($topology->construction->extension?->value)
-        ->toBe('app-prod')
-        ->and($topology->construction->imageAlias)
-        ->toBe(TopologyRecipe::BASE_IMAGE)
-        ->and($topology->construction->imageFingerprint)
-        ->toBe(str_repeat('b', 64))
-        ->and($topology->construction->slot)
-        ->toBe(2)
-        ->and($topology->construction->nodes['app-prod-2']['incus_address'])
-        ->toBe('10.232.2.13')
-        ->and($topology->construction->nodes['app-prod-2']['wireguard_address'])
-        ->toBe('10.44.0.4')
-        ->and($topology->target->requireAttempt()->value)
-        ->not->toBe($proofTarget->requireAttempt()->value)->and($topology->target->network())
-        ->not->toBe($proofTarget->network())->and($topology->instances)
-        ->not->toBe(array_combine($recipe->nodeKeys(), array_map(
-            $proofTarget->instance(...),
-            $recipe->nodeKeys(),
-        )))->and(implode("\n", $commands))->toContain(
-            'copy local:orbit-e2e-topology-snapshot-gateway/main-gateway',
-            'copy local:orbit-e2e-topology-snapshot-app-dev/main-app-dev',
-            'copy local:orbit-e2e-topology-snapshot-app-prod/main-app-prod',
-            'init local:orbit-base-ubuntu-26.04-runtime',
-            $discoveryTarget->instance('app-prod-2'),
-            $discoveryTarget->instance('app-prod').' -- bash -s -- 10.44.0.10 10.44.0.10:51820',
-        )
-        ->not->toContain(
-            $proofTarget->network(),
-            $proofTarget->instance('app-prod-2'),
-            $discoveryTarget->instance('app-prod-2').' -- /usr/local/bin/retarget-vpn.sh',
-            $discoveryTarget->instance('app-prod-2').' -- bash -s --',
-        );
-
-    $state = IssueState::forWorktree('TST-123', $worktree);
-    expect($state->requireTopology(AttemptPurpose::Discovery)->toArray())
-        ->toBe($topology->toArray())
-        ->and($state->attempt(AttemptPurpose::Discovery)['extension'])
-        ->toBe('app-prod')
-        ->and($state->hasAttempt(AttemptPurpose::Proof))
-        ->toBeFalse();
-});
-
-it('rolls back only its acquired clones without publishing readiness when Gateway identity fails', function (int $exitCode, string $output): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-identity-acquisition-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'identity-failure');
-    $target = featureTarget('TST-123');
-    $events = [];
-    fakePinnedWorktreeProcesses($target, $events, guestOverride: static function (array $guest) use ($exitCode, $output) {
-        if (in_array('/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', $guest, true)) {
-            return Process::result($output, '', $exitCode);
+            return ["2: eth0    inet {$address}/24 scope global eth0\n", '', 0];
+        }
+        if ($argv[0] === 'cat' || $argv[0] === 'sha256sum') {
+            return ['', 'missing', 1];
+        }
+        if ($argv[0] === 'ssh-keygen') {
+            return ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixtureGatewayKeyForTopologyTests0000000000 orbit@gateway\n", '', 0];
+        }
+        if ($argv[0] === 'uname') {
+            return ["x86_64\n", '', 0];
+        }
+        if ($script === 'verify-topology.sh') {
+            return [json_encode([
+                'probe' => $argv[1], 'passed' => true, 'identity' => $argv[2], 'checked_at' => '2026-10-12T12:00:00Z',
+                'expected' => 'ready', 'observed' => 'ready', 'evidence_ref' => "incus://{$argv[3]}/{$argv[1]}",
+            ], JSON_THROW_ON_ERROR)."\n", '', 0];
         }
 
         return null;
+    };
+}
+
+/** @return array{acquirer:TopologyAcquirer, releaser:TopologyReleaser, incus:FakeIncus, worktree:string, request:TopologyRequest, images:array<string,string>} */
+function acquirerFixture(?Closure $override = null, array &$steps = [], bool $images = true): array
+{
+    $incus = new FakeIncus()->install();
+    $incus->respond(acquirerResponder($incus, $steps, $override));
+    $fingerprints = [];
+    if ($images) {
+        foreach (RoleImage::cases() as $image) {
+            $fingerprints[$image->value] = $incus->addImage($image->alias(), $image->instanceType());
+        }
+    }
+    $worktree = acquirerWorktree();
+    $paths = StatePaths::forPrimary($worktree);
+    $operation = new OperationId(str_repeat('c', 32));
+    $host = new IncusHost(pool: 'orbit-e2e');
+    $networks = new IncusNetworkLifecycle($host);
+    $guests = new DiscoveryGuestPreparer($host);
+
+    return [
+        'acquirer' => new TopologyAcquirer(
+            host: $host,
+            networks: $networks,
+            images: new RoleImages($host, new RoleImagePrograms($worktree)),
+            composer: new TopologyComposer($host, $guests),
+            synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
+            verifier: new TopologyVerifier($host, 1, 0),
+            guests: $guests,
+            capacity: new HostCapacity($host, 24),
+            hostPaths: $paths,
+            operation: $operation,
+            repositoryRoot: $worktree,
+            attempts: static fn (): AttemptId => attemptId(),
+        ),
+        'releaser' => new TopologyReleaser($host, $networks, $paths, $operation, new OrphanNetworkSweep($host, $networks, $paths, $operation)),
+        'incus' => $incus,
+        'worktree' => $worktree,
+        'request' => new TopologyRequest('TST-9', $worktree),
+        'images' => $fingerprints,
+    ];
+}
+
+describe('TopologyAcquirer', function () {
+    beforeEach(function () {
+        $container = new Container;
+        $container->instance(ProcessFactory::class, new ProcessFactory);
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication($container);
     });
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
-    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
-    $acquirer = new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($root)),
-        $manifests,
-        new WorktreeSynchronizer($host, $root, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $root,
-        fn () => attemptId(),
-    );
 
-    expect(fn () => $acquirer->acquire(new TopologyRequest('TST-123', $worktree)))
-        ->toThrow(RuntimeException::class, 'Topology acquisition failed: Gateway clone identity preparation');
+    it('composes the declared Nodes from their role images and records the topology', function () {
+        $steps = [];
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request, 'images' => $images] = acquirerFixture(steps: $steps);
+        $timings = [];
 
-    $state = IssueState::forWorktree('TST-123', $worktree);
-    expect($state->hasAttempt())->toBeFalse();
-    expect(file_exists($worktree.'/.e2e/topology.json'))->toBeFalse();
-    $deletions = array_values(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'));
-    expect(array_column($deletions, 4))->toEqualCanonicalizing(array_map(
-        static fn (string $role): string => 'local:'.$target->instance($role), TopologyProfile::ROLES,
-    ));
-    $networks = array_values(array_filter($events, static fn (array $command): bool => array_slice($command, 3, 2) === ['network', 'delete']));
-    expect(array_column($networks, 5))->toBe(['local:'.$target->network()]);
-    $commands = implode("\n", array_map(static fn (array $event): string => implode(' ', $event), $events));
-    expect($commands)->not->toContain(' -- bash -s --', '/usr/local/bin/verify-topology.sh', 'converge-gateway.sh');
-})->with([
-    'failed publication' => [65, ''],
-    'malformed publication' => [0, '{"app-dev":"10.44.0.10:51820"}'],
-]);
+        $topology = $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']), function (string $step, float $seconds) use (&$timings): void {
+            $timings[] = $step;
+        });
 
-it('prepares the mounted Gateway schema before standard discovery readiness without converging product state', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-schema-acquisition-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'schema-acquisition');
-    $target = featureTarget('TST-123');
-    $events = [];
-    fakePinnedWorktreeProcesses($target, $events);
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
+        $guests = [];
+        foreach ($incus->instances as $name => $guest) {
+            $guests[substr($name, strlen('orbit-e2e-tst-9-aaaaaaaa-'))] = [$guest['type'], $guest['config']['volatile.base_image'], isset($guest['devices']['orbit-source'])];
+        }
+        expect($guests)->toBe([
+            'gateway' => ['virtual-machine', $images['gateway'], true],
+            'app-dev' => ['virtual-machine', $images['app-dev'], true],
+            'operator' => ['container', $images['operator'], true],
+        ])
+            ->and($incus->instances['orbit-e2e-tst-9-aaaaaaaa-operator']['devices']['orbit-source'])
+            ->toMatchArray(['source' => realpath($worktree), 'path' => '/home/orbit/orbit', 'shift' => 'true'])
+            ->and($steps)->toBe([
+                'converge-gateway.sh prerequisites @gateway',
+                'converge-gateway.sh bootstrap @gateway',
+                'prepare-node.sh gateway-authorize @app-dev',
+                'prepare-node.sh gateway-authorize @operator',
+                'converge-app-dev.sh app-dev @gateway',
+                'converge-operator.sh provision @gateway',
+                'converge-operator.sh grant @gateway',
+                'converge-operator.sh configure-cli @operator',
+            ])
+            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'bootstrap.gateway', 'enroll.app-dev', 'enroll.operator', 'compose', 'readiness'])
+            ->and($topology->toArray()['nodes'])->toBe(['gateway', 'app-dev', 'operator'])
+            ->and($topology->construction->images)->toBe(['gateway' => $images['gateway'], 'app-dev' => $images['app-dev'], 'operator' => $images['operator']])
+            ->and(IssueState::forWorktree('TST-9', $worktree)->requireTopology()->toArray())->toBe($topology->toArray())
+            ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure']);
+    });
 
-    $topology = preparedTopologyAcquirer($root, $paths, $host, $operation)
-        ->acquire(new TopologyRequest('TST-123', $worktree));
+    it('enrolls every declared production Node with its own WireGuard address', function () {
+        $steps = [];
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);
 
-    $commands = array_map(
-        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
-        $events,
-    );
-    $sourceMarker = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        WorktreeSynchronizer::SOURCE_STATE_MARKER,
-    ));
-    $migration = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        $target->instance('gateway').' -- runuser -u orbit -- env -C /home/orbit '
-            .'HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite '
-            .'env -C /home/orbit/orbit/apps/gateway ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway '
-            .'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php artisan migrate --force --no-interaction',
-    ));
-    $verification = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        ' -- /usr/local/bin/verify-topology.sh ',
-    ));
+        $acquirer->acquire($request, TopologyRecipe::compose(TopologyRecipe::WORKLOADS));
+        $enrollments = array_values(array_filter($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][0], 'converge-app-')));
 
-    expect($topology->target->recipe->node('operator')->roles)->toBe([])
-        ->and($topology->instances['operator'])->toBe($target->instance('operator'))
-        ->and($topology->mounts['operator'])->toBe(['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'])
-        ->and($topology->generation->snapshots)->toHaveKey('operator')
-        ->and(implode("\n", $commands))->toContain('orbit-source,shift=true', 'operator.container', 'retarget-vpn.sh')
-        ->and($topology->source->mounted)
-        ->toBeTrue()
-        ->and($sourceMarker)
-        ->toBeInt()
-        ->and($migration)
-        ->toBeInt()
-        ->toBeGreaterThan($sourceMarker)
-        ->and($verification)
-        ->toBeInt()
-        ->toBeGreaterThan($migration)
-        ->and(implode("\n", $commands))
-        ->not->toContain(' -- /usr/local/bin/converge-gateway.sh ', 'orbit:bootstrap', 'converge-sample-app.sh create-resources', 'converge-sample-app.sh reproject');
-});
+        expect(array_map(static fn (array $exec): array => [basename($exec['argv'][0]), $exec['argv'][1], $exec['argv'][4] ?? null], $enrollments))
+            ->toBe([
+                ['converge-app-dev.sh', 'app-dev', null],
+                ['converge-app-prod.sh', 'app-prod', '10.44.0.3'],
+                ['converge-app-prod.sh', 'app-prod-2', '10.44.0.4'],
+            ])
+            ->and(array_keys($incus->instances))->toHaveCount(5);
+    });
 
-it('retains the old successful source after failed sync and accepts a corrected retry at the same HEAD', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-schema-sync-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'schema-sync');
-    $target = featureTarget('TST-123');
-    $events = [];
-    $failMigration = false;
-    $migrationCalls = 0;
-    fakePinnedWorktreeProcesses(
-        $target,
-        $events,
-        guestOverride: static function (array $guest) use (&$failMigration, &$migrationCalls) {
-            if (in_array('artisan', $guest, true) && in_array('migrate', $guest, true)) {
-                $migrationCalls++;
+    it('fails before creating anything when a role image is missing and names the build command', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(images: false);
 
-                return $failMigration
-                    ? Process::result('private migration output', 'private migration error', 73)
-                    : Process::result();
-            }
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
+            ->toThrow(RuntimeException::class, 'Step reserve failed: The role image [orbit-e2e-gateway] is missing; run bin/e2e-topology-images build --role=gateway.')
+            ->and($incus->instances)->toBe([])
+            ->and($incus->networks)->toBe([])
+            ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
+    });
 
-            return null;
-        },
-    );
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
-    $acquirer = preparedTopologyAcquirer($root, $paths, $host, $operation);
-    $request = new TopologyRequest('TST-123', $worktree);
-    $ready = $acquirer->acquire($request);
-    expect($ready->source->dirty)->toBeFalse()->and($ready->source->treeHash)->toBeNull();
-    $readyRecord = $ready->toArray();
-    $readyAttempt = $ready->attempt->value;
-    $migrationDirectory = $worktree.'/apps/gateway/database/migrations';
-    if (! is_dir($migrationDirectory)) {
-        mkdir($migrationDirectory, 0700, true);
-    }
-    $migration = $migrationDirectory.'/2099_01_01_000000_schema_failure.php';
-    file_put_contents($migration, "<?php\nthrow new RuntimeException('fixture');\n");
-    $failMigration = true;
-
-    expect(fn () => $acquirer->sync($request))
-        ->toThrow(RuntimeException::class, 'Gateway schema preparation failed with exit code 73.');
-
-    $state = IssueState::forWorktree('TST-123', $worktree);
-    expect($state->attemptId(AttemptPurpose::Discovery)->value)
-        ->toBe($readyAttempt)
-        ->and($state->requireTopology(AttemptPurpose::Discovery)->toArray())
-        ->toBe($readyRecord)
-        ->and(fn () => $acquirer->verify($request))
-        ->toThrow(
-            RuntimeException::class,
-            'The mounted source differs from the last successful readiness record; run topology sync.',
+    it('rolls back every resource and names the step and Orbit error when enrollment fails', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(
+            fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-app-dev.sh'
+                ? ["Node provisioning failed at step [wireguard-peer-install] with error [vpn.peer_config_failed].\n", "wg-quick failed\n", 1]
+                : null,
         );
 
-    file_put_contents($migration, "<?php\n// corrected fixture\n");
-    $failMigration = false;
-    $retried = $acquirer->sync($request);
-    $repeated = $acquirer->sync($request);
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
+            ->toThrow(RuntimeException::class, 'Step enroll.app-dev failed: guest script converge-app-dev.sh exited 1 on orbit-e2e-tst-9-aaaaaaaa-gateway at Orbit step wireguard-peer-install (vpn.peer_config_failed).')
+            ->and($incus->instances)->toBe([])
+            ->and($incus->networks)->toBe([])
+            ->and(array_column($incus->firewall, 'operation'))->toBe(['ensure', 'remove'])
+            ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
+    });
 
-    expect($retried->attempt->value)
-        ->toBe($readyAttempt)
-        ->and($retried->source->dirty)
-        ->toBeTrue()
-        ->and($retried->source->overlayPaths)
-        ->toContain('apps/gateway/database/migrations/2099_01_01_000000_schema_failure.php')
-        ->and($repeated->source->toArray())
-        ->toBe($retried->source->toArray())
-        ->and($migrationCalls)
-        ->toBe(4);
-});
-
-it('quick sync proves the mount, installs guest helpers, and migrates without readiness verification or a new binding', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-quick-sync-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'quick-sync');
-    $target = featureTarget('TST-123');
-    $events = [];
-    fakePinnedWorktreeProcesses($target, $events);
-    $acquirer = preparedTopologyAcquirer($root, $paths, new IncusHost(pool: 'default'), new OperationId(str_repeat('f', 32)));
-    $request = new TopologyRequest('TST-123', $worktree);
-    $ready = $acquirer->acquire($request);
-    $readyRecord = $ready->toArray();
-    $migrationDirectory = $worktree.'/apps/gateway/database/migrations';
-    if (! is_dir($migrationDirectory)) {
-        mkdir($migrationDirectory, 0700, true);
-    }
-    file_put_contents($migrationDirectory.'/2099_01_01_000000_quick_sync.php', "<?php\n// quick sync fixture\n");
-    $events = [];
-
-    $synced = $acquirer->sync($request, quick: true);
-
-    $commands = array_map(
-        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
-        $events,
-    );
-    $mount = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        ' -- mountpoint -q -- /home/orbit/orbit',
-    ));
-    $helpers = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        '/usr/local/bin/verify-topology.sh',
-    ) && str_contains($command, ' -- install -o root -g root -m 0755 '));
-    $migration = array_find_key($commands, static fn (string $command): bool => str_contains(
-        $command,
-        'php artisan migrate --force --no-interaction',
-    ));
-    expect($mount)
-        ->toBeInt()
-        ->and($helpers)
-        ->toBeInt()
-        ->toBeGreaterThan($mount)
-        ->and($migration)
-        ->toBeInt()
-        ->toBeGreaterThan($helpers)
-        ->and(implode("\n", $commands))
-        ->not->toContain(' -- /usr/local/bin/verify-topology.sh ', WorktreeSynchronizer::SOURCE_STATE_MARKER, 'converge-gateway.sh')
-        ->and($synced->toArray())
-        ->toBe($readyRecord)
-        ->and(IssueState::forWorktree('TST-123', $worktree)->requireTopology(AttemptPurpose::Discovery)->toArray())
-        ->toBe($readyRecord)
-        ->and(fn () => $acquirer->verify($request))
-        ->toThrow(
-            RuntimeException::class,
-            'The mounted source differs from the last successful readiness record; run topology sync.',
+    it('rolls back when readiness never passes and lists the failed probes', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(
+            fn (string $instance, array $argv): ?array => ($argv[1] ?? null) === 'nodes.registered' ? ['', "registered Nodes differ\n", 1] : null,
         );
 
-    $events = [];
-    $full = $acquirer->sync($request);
-    expect($full->source->overlayPaths)
-        ->toContain('apps/gateway/database/migrations/2099_01_01_000000_quick_sync.php')
-        ->and(implode("\n", array_map(
-            static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
-            $events,
-        )))
-        ->toContain(' -- /usr/local/bin/verify-topology.sh ', WorktreeSynchronizer::SOURCE_STATE_MARKER);
-});
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
+            ->toThrow(RuntimeException::class, 'Step readiness failed: Topology readiness verification failed. Failed probes: nodes.registered')
+            ->and($incus->instances)->toBe([]);
+    });
 
-it('rolls back its exact attempt without publishing readiness when Gateway migration fails', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-schema-failure-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'schema-failure');
-    $target = featureTarget('TST-123');
-    $events = [];
-    fakePinnedWorktreeProcesses(
-        $target,
-        $events,
-        guestOverride: static fn (array $guest) => in_array('artisan', $guest, true) && in_array('migrate', $guest, true)
-            ? Process::result('private migration output', 'private migration error', 73)
-            : null,
-    );
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
+    it('refuses a second acquisition while the issue holds a topology', function () {
+        ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture();
+        $acquirer->acquire($request, TopologyRecipe::compose([]));
 
-    expect(fn () => preparedTopologyAcquirer($root, $paths, $host, $operation)->acquire(
-        new TopologyRequest('TST-123', $worktree),
-    ))
-        ->toThrow(
-            RuntimeException::class,
-            'Topology acquisition failed: Gateway schema preparation failed with exit code 73.',
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
+            ->toThrow(RuntimeException::class, 'TST-9 already has discovery attempt '.str_repeat('a', 32).'; release it first.');
+    });
+
+    it('refuses a worktree that bin/bootstrap has not prepared', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        unlink($worktree.'/apps/gateway/.env');
+
+        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose([])))
+            ->toThrow(RuntimeException::class, 'The worktree is missing apps/gateway/.env; run bin/bootstrap in the worktree before discovery.')
+            ->and($incus->instances)->toBe([]);
+    });
+
+    it('runs one command on an exact Node and refuses an undeclared Node', function () {
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(
+            fn (string $instance, array $argv): ?array => in_array('node:list', $argv, true) ? ["{\"nodes\":[]}\n", '', 0] : null,
         );
+        $acquirer->acquire($request, TopologyRecipe::compose([]));
 
-    $state = IssueState::forWorktree('TST-123', $worktree);
-    expect($state->hasAttempt())
-        ->toBeFalse()
-        ->and(file_exists($worktree.'/.e2e/topology.json'))
-        ->toBeFalse();
-    $deletions = array_values(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'));
-    expect(array_column($deletions, 4))->toEqualCanonicalizing(array_map(
-        static fn (string $role): string => 'local:'.$target->instance($role),
-        TopologyProfile::ROLES,
-    ));
-});
+        $result = $acquirer->execute($request, 'operator', ['orbit', 'node:list', '--json']);
 
-it('retains the exact lease and resources when migration-failure cleanup ownership drifts', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-schema-refusal-state-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'schema-refusal');
-    $target = featureTarget('TST-123');
-    $events = [];
-    $migrationFailed = false;
-    $rollbackInventories = 0;
-    fakePinnedWorktreeProcesses(
-        $target,
-        $events,
-        guestOverride: static function (array $guest) use (&$migrationFailed) {
-            if (in_array('artisan', $guest, true) && in_array('migrate', $guest, true)) {
-                $migrationFailed = true;
+        expect($result->stdout)->toBe("{\"nodes\":[]}\n")
+            ->and(array_slice(end($incus->execs)['argv'], -3))->toBe(['orbit', 'node:list', '--json'])
+            ->and(fn () => $acquirer->execute($request, 'app-dev', ['true']))
+            ->toThrow(InvalidArgumentException::class, 'The topology has no Node [app-dev]; it has gateway, operator.');
+    });
 
-                return Process::result('', '', 73);
-            }
+    it('syncs, verifies, and refuses a mount that changed since the last readiness', function () {
+        ['acquirer' => $acquirer, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $first = $acquirer->acquire($request, TopologyRecipe::compose([]));
 
-            return null;
-        },
-        inventoryOverride: static function (array $command, ProcessResult $result) use (
-            &$migrationFailed,
-            &$rollbackInventories,
-            $target,
-        ): ?ProcessResult {
-            if (! $migrationFailed || ($command[3] ?? null) !== 'list' || ($command[4] ?? null) !== 'local:') {
-                return null;
-            }
-            $rollbackInventories++;
-            if ($rollbackInventories < 2) {
-                return null;
-            }
-            $inventory = json_decode($result->output(), true, 512, JSON_THROW_ON_ERROR);
-            foreach ($inventory as &$instance) {
-                if (($instance['name'] ?? null) === $target->instance('gateway')) {
-                    $instance['config']['user.orbit.e2e.operation'] = str_repeat('0', 32);
-                }
-            }
-            unset($instance);
+        $verified = $acquirer->verify($request);
+        file_put_contents($worktree.'/notes.txt', "untracked\n");
 
-            return Process::result(json_encode($inventory, JSON_THROW_ON_ERROR));
-        },
-    );
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
+        expect($verified->source->toArray())->toBe($first->source->toArray())
+            ->and(fn () => $acquirer->verify($request))
+            ->toThrow(RuntimeException::class, 'differs from the last successful readiness record; run topology sync');
 
-    expect(fn () => preparedTopologyAcquirer($root, $paths, $host, $operation)->acquire(
-        new TopologyRequest('TST-123', $worktree),
-    ))
-        ->toThrow(RuntimeException::class, 'rollback was refused');
+        $synced = $acquirer->sync($request);
+        expect($synced->source->dirty)->toBeTrue()
+            ->and($acquirer->verify($request)->source->toArray())->toBe($synced->source->toArray());
+    });
 
-    $state = IssueState::forWorktree('TST-123', $worktree);
-    expect($state->hasAttempt(AttemptPurpose::Discovery))
-        ->toBeTrue()
-        ->and($state->attemptId(AttemptPurpose::Discovery)->value)
-        ->toBe($target->requireAttempt()->value)
-        ->and(file_exists($worktree.'/.e2e/topology.json'))
-        ->toBeFalse()
-        ->and(array_filter($events, static fn (array $command): bool => ($command[3] ?? null) === 'delete'))
-        ->toBeEmpty();
-});
+    it('releases every guest and the network, then forgets the lease', function () {
+        ['acquirer' => $acquirer, 'releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $acquirer->acquire($request, TopologyRecipe::compose(['app-dev']));
 
-it('uses the acquired generation for discovery sync after main and promotion change while proof requires freshness', function (): void {
-    $root = preparedTopologyRepository();
-    $paths = new StatePaths(temporaryPath('orbit-flow-acquisition-', 4));
-    promoteDiscoveryGeneration($root, $paths);
-    $worktree = pinnedFeatureWorktree($root, 'discovery-flow');
-    $processes = new ProcessFactory;
-    $manifest = $root.'/apps/e2e/resources/prepared-state.json';
-    $data = json_decode((string) file_get_contents($manifest), true, 512, JSON_THROW_ON_ERROR);
-    $data['cold_epoch'] = 'ubuntu-26.04-amd64-v99';
-    file_put_contents($manifest, json_encode($data, JSON_THROW_ON_ERROR));
-    expect(
-        $processes->run(['git', '-C', $root, 'commit', '-am', 'Main changes cold contract'])->successful(),
-    )->toBeTrue();
-    expect($processes->run(['git', '-C', $root, 'branch', '-f', 'main', 'HEAD'])->successful())->toBeTrue();
-    $events = [];
-    fakePinnedWorktreeProcesses(featureTarget('TST-123'), $events);
-    $host = new IncusHost(pool: 'default');
-    $operation = new OperationId(str_repeat('f', 32));
-    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
-    $acquirer = new TopologyAcquirer(
-        $host,
-        new IncusNetworkLifecycle($host),
-        new PreparedStateFingerprint(new GitRepository($root)),
-        $manifests,
-        new WorktreeSynchronizer($host, $root, $operation),
-        new TopologyVerifier($host, 1, 0),
-        new DiscoveryGuestPreparer($host),
-        new HostCapacity($host, 24),
-        $paths,
-        $operation,
-        TopologySnapshotIdentity::primary(),
-        $root,
-        fn () => attemptId(),
-    );
-    $request = new TopologyRequest('TST-123', $worktree);
-    mkdir($worktree.'/.loop', 0700, true);
-    file_put_contents($worktree.'/.loop/flow.json', '{"schema":1,"flow":"proof"}');
-    expect(fn () => $acquirer->acquire($request))->toThrow(RuntimeException::class, 'snapshot is stale');
-    expect($events)->toBeEmpty();
-    unlink($worktree.'/.loop/flow.json');
+        $result = $releaser->release($request);
 
-    $topology = $acquirer->acquire($request);
-    $featureManifest = $worktree.'/apps/e2e/resources/prepared-state.json';
-    $originalFeatureManifest = (string) file_get_contents($featureManifest);
-    $changedFeatureManifest = json_decode($originalFeatureManifest, true, 512, JSON_THROW_ON_ERROR);
-    $changedFeatureManifest['cold_epoch'] = 'ubuntu-26.04-amd64-v98';
-    file_put_contents($featureManifest, json_encode($changedFeatureManifest, JSON_THROW_ON_ERROR));
-    expect($processes->run(['git', '-C', $worktree, 'commit', '-am', 'Change feature cold contract'])->successful())
-        ->toBeTrue();
-    expect(fn () => $acquirer->sync($request))
-        ->toThrow(RuntimeException::class, 'The feature prepared state changes the cold base contract.');
-    file_put_contents($featureManifest, $originalFeatureManifest);
-    expect($processes->run(['git', '-C', $worktree, 'commit', '-am', 'Restore feature cold contract'])->successful())
-        ->toBeTrue();
-    $manifests->promote(legacyAcquisitionGeneration());
-    $synced = $acquirer->sync($request);
+        expect($result['released'])->toBe([
+            'stopped:orbit-e2e-tst-9-aaaaaaaa-operator',
+            'stopped:orbit-e2e-tst-9-aaaaaaaa-app-dev',
+            'stopped:orbit-e2e-tst-9-aaaaaaaa-gateway',
+            'deleted:orbit-e2e-tst-9-aaaaaaaa-operator',
+            'deleted:orbit-e2e-tst-9-aaaaaaaa-app-dev',
+            'deleted:orbit-e2e-tst-9-aaaaaaaa-gateway',
+            'deleted:'.featureTarget('TST-9', 'a', TopologyRecipe::compose(['app-dev']))->network(),
+        ])
+            ->and($incus->instances)->toBe([])
+            ->and($incus->networks)->toBe([])
+            ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse()
+            ->and(fn () => $releaser->release($request))->toThrow(RuntimeException::class, 'TST-9 has no active attempt.');
+    });
 
-    expect($topology->purpose)->toBe(AttemptPurpose::Discovery);
-    expect($synced->generation->id)->toBe($topology->generation->id);
-    expect(IssueState::forWorktree('TST-123', $worktree)->hasAttempt(AttemptPurpose::Proof))->toBeFalse();
-    expect(file_exists($worktree.'/.loop/proof/TST-123.json'))->toBeFalse();
+    it('releases the exact guests of a lease that has no topology record', function () {
+        ['releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $recipe = TopologyRecipe::compose(['app-dev']);
+        IssueState::forWorktree('TST-9', $worktree)->writeAttempt(attemptId(), new OperationId(str_repeat('c', 32)), $recipe);
+        $target = featureTarget('TST-9', 'a', $recipe);
+        $incus->instances[$target->instance('app-dev')] = [
+            'type' => 'virtual-machine',
+            'status' => 'Stopped',
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => 'TST-9', 'user.orbit.e2e.attempt' => str_repeat('a', 32)],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/']],
+        ];
+        $incus->instances['orbit-e2e-tst-9-bbbbbbbb-app-dev'] = $incus->instances[$target->instance('app-dev')];
+
+        $result = $releaser->release($request);
+
+        expect($result['released'])->toBe(['deleted:'.$target->instance('app-dev')])
+            ->and($result['already_absent'])->toBe([$target->instance('operator'), $target->instance('gateway'), $target->network()])
+            ->and(array_keys($incus->instances))->toBe(['orbit-e2e-tst-9-bbbbbbbb-app-dev']);
+    });
+
+    it('refuses to release a guest that another attempt owns', function () {
+        ['releaser' => $releaser, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture();
+        $recipe = TopologyRecipe::compose([]);
+        IssueState::forWorktree('TST-9', $worktree)->writeAttempt(attemptId(), new OperationId(str_repeat('c', 32)), $recipe);
+        $incus->instances[featureTarget('TST-9', 'a', $recipe)->instance('gateway')] = [
+            'type' => 'virtual-machine',
+            'status' => 'Running',
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.issue' => 'TST-9', 'user.orbit.e2e.attempt' => str_repeat('b', 32)],
+            'devices' => ['root' => ['type' => 'disk', 'pool' => 'orbit-e2e', 'path' => '/']],
+        ];
+
+        expect(fn () => $releaser->release($request))
+            ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt')
+            ->and($incus->instances)->toHaveCount(1)
+            ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeTrue();
+    });
+
+    it('keeps the feature topology schema the Gateway reads for its acquisition state', function () {
+        ['acquirer' => $acquirer, 'request' => $request] = acquirerFixture();
+        $topology = $acquirer->acquire($request, TopologyRecipe::compose([]));
+
+        expect($topology->toArray()['purpose'])->toBe('discovery')
+            ->and(FeatureTopology::SCHEMA)->toBe(5);
+    });
 });
