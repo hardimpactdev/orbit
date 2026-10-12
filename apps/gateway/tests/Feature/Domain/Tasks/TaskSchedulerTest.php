@@ -17,7 +17,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
@@ -2063,7 +2063,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
             app(KnownHostsStore::class),
         )),
         ResolvedVp::manager(probe: $probe),
-        app(TiaBaselineSetup::class),
+        app(GatewaySetupSteps::class),
     ));
 
     app(TaskScheduler::class)->claimNext();

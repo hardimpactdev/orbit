@@ -117,6 +117,7 @@ pest()->tia()->watch([
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',
     'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
     'resources/instances/tia-baseline.py' => 'tests/Feature/Domain/TiaBaselineSetupTest.php',
+    'resources/instances/ci-caches.sh' => 'tests/Feature/Domain/CiCacheSetupTest.php',
     'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
     'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
     'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
