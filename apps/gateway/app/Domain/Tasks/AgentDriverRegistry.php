@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Node;
+
 final readonly class AgentDriverRegistry
 {
     /** @var array<string, AgentDriver> */
@@ -25,5 +27,10 @@ final readonly class AgentDriverRegistry
     public function get(string $key): AgentDriver
     {
         return $this->drivers[$key] ?? throw new AgentDriverException('The recorded agent driver is unavailable.');
+    }
+
+    public function anyAllows(Node $node): bool
+    {
+        return array_any($this->drivers, static fn (AgentDriver $driver): bool => $driver->allows($node));
     }
 }

@@ -155,6 +155,8 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'user' => $user,
     ]);
+    // Worker tests below need a Node that hosts shared task work. Without a worker config this changes nothing.
+    orbit_test_task_work_host($this->node);
     $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -770,8 +772,11 @@ describe('TaskWorkspaceAcl', function (): void {
         expect($this->removal->finalize($member))->toBe($receipt);
     });
 
-    it('keeps existing behavior when the worker is unset or absent', function (?string $worker): void {
+    it('shares nothing when the worker is unset or the Node hosts no task work', function (?string $worker, bool $taskHost): void {
         config()->set('orbit.tasks.worker_user', $worker);
+        if (! $taskHost) {
+            $this->node->processes()->delete();
+        }
         $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-no-acl');
 
         $this->source->prepare($instance, false);
@@ -779,7 +784,20 @@ describe('TaskWorkspaceAcl', function (): void {
 
         expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)->not->toContain('default:user:')
             ->and(is_dir($instance->checkout_path.'/.git/orbit'))->toBeFalse();
-    })->with([null, 'orbit-absent-task-worker']);
+    })->with([
+        'worker unset' => [null, true],
+        'Node without task work and without the account' => ['orbit-absent-task-worker', false],
+        'Node without task work, account present' => ['nobody', false],
+    ]);
+
+    it('fails loudly when a task Node lacks the configured worker account', function (): void {
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-absent-worker');
+
+        expect(fn () => $this->source->prepare($instance, false))->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->result?->stderr)->toContain('The task worker account orbit-absent-task-worker does not exist on this task Node.');
+        });
+    });
 
     it('restores inherited ACLs on an existing checkout during inspection', function (): void {
         config()->set('orbit.tasks.worker_user', null);

@@ -82,6 +82,7 @@ describe('TaskCheckWorkerUser', function (): void {
         (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
         file_put_contents($checkout.'/readme', 'dirty');
         $candidate = orb198_clone_candidate();
+        orbit_test_task_work_host($candidate->node);
         $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
         $candidate->update(['checkout_path' => $checkout]);
         $transport = TaskWorkerSshExecutor::forCheckout($checkout);
@@ -90,6 +91,40 @@ describe('TaskCheckWorkerUser', function (): void {
         try {
             expect(fn () => orb198_clone_candidate_inspector($transport)->inspect($candidate, 'main'))->toThrow(ResourceOperationException::class)
                 ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe('65534');
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+});
+
+describe('CloneCandidateWorkerNode', function (): void {
+    it('inspects a candidate on a Node without task work as the runtime user when the worker account is missing', function (): void {
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+        [$root, $checkout, $candidate] = orb198_clean_local_candidate();
+
+        try {
+            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main');
+
+            expect($source->basePath)->toBe($checkout)
+                ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe((string) posix_geteuid());
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+
+    it('refuses a task Node without the worker account with a specific code and its stderr', function (): void {
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+        [$root, , $candidate] = orb198_clean_local_candidate();
+        orbit_test_task_work_host($candidate->node);
+
+        try {
+            expect(fn () => orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main'))
+                ->toThrow(function (ResourceOperationException $exception): void {
+                    expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access')
+                        ->and($exception->status)->toBe(409)
+                        ->and($exception->getMessage())->toContain('The task worker cannot read the candidate checkout on Node [clone-candidate-development].')
+                        ->and($exception->details['stderr'] ?? '')->toContain('orbit-absent-task-worker');
+                });
         } finally {
             File::deleteDirectory($root);
         }
@@ -209,6 +244,20 @@ it('reports repository and selected branch failures without changing their error
     'target branch missing' => 'instance.clone_target_branch_missing',
     'configured branch changed' => 'instance.clone_candidate_branch_invalid',
 ]);
+
+it('reads a refusal before stderr and keeps the stderr', function (): void {
+    $candidate = orb198_clone_candidate();
+    $ssh = new Orb198CloneCandidateSshExecutor([
+        orb198_clone_candidate_result("REFUSED\tinstance.clone_candidate_worker_access\n", stderr: "id: 'orbit-worker': no such user\n"),
+    ]);
+
+    expect(fn () => orb198_clone_candidate_inspector($ssh)->inspect($candidate, 'main'))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.clone_candidate_worker_access')
+                ->and($exception->getMessage())->toBe("The task worker cannot read the candidate checkout on Node [clone-candidate-development]. id: 'orbit-worker': no such user")
+                ->and($exception->details)->toBe(['stderr' => "id: 'orbit-worker': no such user"]);
+        });
+});
 
 it('refuses unsuccessful truncated stderr and thrown SSH inspections as unavailable', function (
     Orb198CloneCandidateSshExecutor $ssh,
@@ -392,6 +441,28 @@ function orb198_clone_candidate(string $environment = 'development'): Instance
         'provisioning_step' => 'active',
         'status' => InstanceState::Active,
     ]);
+}
+
+/** @return array{string, string, Instance} A clean local candidate whose clean filter records its user. */
+function orb198_clean_local_candidate(): array
+{
+    $root = sys_get_temp_dir().'/orbit-clone-runtime-'.bin2hex(random_bytes(6));
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
+    file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
+    file_put_contents($checkout.'/readme', 'clean');
+    (new Process(['git', '-C', $checkout, 'add', '.']))->mustRun();
+    (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'parent']))->mustRun();
+    (new Process(['git', 'clone', '-q', '--bare', $checkout, $root.'/origin.git']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
+    // Make the index stale so status runs the clean filter.
+    touch($checkout.'/readme', time() + 5);
+    $candidate = orb198_clone_candidate();
+    $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
+    $candidate->update(['checkout_path' => $checkout]);
+    $candidate->project->update(['repository_url' => $root.'/origin.git']);
+
+    return [$root, $checkout, $candidate];
 }
 
 function orb198_clone_candidate_inspector(

@@ -72,7 +72,13 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 The Gateway prepares a development checkout as the Node's managed user. The checkout directory stays owned by that user and group. Production releases are unchanged.
 
-When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, prepare grants recursive access and default ACLs on the checkout, including `.git`. Both ACLs name the worker and the managed user with `rwX`. Prepare and inspect finish the default ACLs before granting worker write access. A partial access grant then still lets the managed user write and remove entries the worker creates. Execute is granted on directories and on files that already have it. Other write stays off.
+### Task work Nodes
+
+`ORBIT_TASKS_WORKER_USER`, normally `orbit-worker`, applies only on a Node that hosts shared task work. Such a Node has an active `app-dev` role and an agent driver allows it, which today means a running `pi-server` Process. A Node that still holds a task workspace counts too. A task VM Node never uses the worker.
+
+Only on such a Node can a task agent write a checkout, so only there does Gateway Git that can start checkout filters run as the worker. That covers checkout sharing, registration, candidate inspection for cloning, transfer, and removal checks. The Node must have the account. When it is missing, these operations fail and name it; they never fall back to the managed user. Every other Node runs that Git as its managed user, whether or not the account exists there. Removal still cleans up worker-owned files and trust entries on any Node that has the account.
+
+When the worker applies to the Node, prepare grants recursive access and default ACLs on the checkout, including `.git`. Both ACLs name the worker and the managed user with `rwX`. Prepare and inspect finish the default ACLs before granting worker write access. A partial access grant then still lets the managed user write and remove entries the worker creates. Execute is granted on directories and on files that already have it. Other write stays off.
 
 Inspection and retries repair entries the managed user owns; entries the worker owns keep their inherited ACLs. They exclude [task temp directories](/reference/tasks#project-check) from all grants, including populated caches in the common repository and other linked-worktree administration directories. A pruned traversal replaces the recursive access-grant fast path so private caches never acquire sharing ACLs during reinspection. Linked worktrees also grant access to their administration directory and the shared repository's refs and objects, while its configuration and hooks remain read-only for the worker. The Gateway creates `.git/orbit` during prepare with mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker. See the [beast checkout grant](/reference/pi-server#roll-out-orbit-worker-on-beast).
 
@@ -139,7 +145,7 @@ Orbit keeps the Instance, with its setup marked failed, in three cases:
 
 Incomplete or unconfirmed cleanup keeps the setup error's classification and details. When setup was unavailable, the error also keeps its step, Node, and not-found diagnostic alongside the cleanup annotation. Inspect the Instance before you retry.
 
-With `ORBIT_TASKS_WORKER_USER` configured, registration inspection, in-place adoption, and relocation verification run Git content-status checks as that worker. Clean and process filters receive no Gateway credential environment. The managed account checks ownership and moves the source only when its path differs from the managed destination.
+On a [task work Node](#task-work-nodes), registration inspection, in-place adoption, and relocation verification run Git content-status checks as the worker. Clean and process filters receive no Gateway credential environment. The managed account checks ownership and moves the source only when its path differs from the managed destination.
 
 [Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity and recursive checkout ACLs keep their repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
 

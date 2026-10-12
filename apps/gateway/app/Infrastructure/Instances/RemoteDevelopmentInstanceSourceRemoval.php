@@ -154,7 +154,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     $instance->project->repository_url,
                     $instance->source_prepare_id ?? '',
                 ],
-                input: self::inspectionScript(),
+                input: self::inspectionScript(TaskWorkerUser::forNode($instance->node)),
             ),
             step: 'app-instance-source-removal-inspect',
             force: $force,
@@ -298,7 +298,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->value;
         $script = GitReadScript::for(
             $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
-            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(),
+            self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::removalScript(TaskWorkerUser::forNode($instance->node)),
         );
         $this->executeRefusable(
             $instance,
@@ -443,7 +443,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 && ($inventory->sourceIdentity === 'absent'
                     || $instance->registration_request_id === null
                     && InstanceCreationRecovery::isPreActivation($instance, removing: true));
-            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript();
+            $input = self::releaseEmptyGroupingDirectoryFunction(self::stopsCheckoutProcesses($instance)).self::finalizationScript(TaskWorkerUser::forNode($node));
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 $input,
@@ -1615,9 +1615,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             BASH;
     }
 
-    private static function finalizationScript(): string
+    private static function finalizationScript(?string $worker): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble($worker).<<<'BASH'
             checkout=$1
             root=$2
             common_repository=$3
@@ -1858,9 +1858,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             BASH;
     }
 
-    private static function inspectionScript(): string
+    private static function inspectionScript(?string $worker): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble($worker).<<<'BASH'
             checkout=$1
             root=$2
             managed_user=$3
@@ -1998,9 +1998,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             BASH;
     }
 
-    private static function removalScript(): string
+    private static function removalScript(?string $worker): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble($worker).<<<'BASH'
             checkout=$1
             root=$2
             grouping_directory=$3
@@ -2191,6 +2191,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function releaseEmptyGroupingDirectoryFunction(bool $stopProcesses = false): string
     {
+        // Not Node-aware: this only cleans up what the worker left. It runs no Git and skips a Node without the account.
         $worker = TaskWorkerUser::name() ?? '';
 
         return 'trust_worker='.escapeshellarg($worker)."\n".'stop_processes='.($stopProcesses ? '1' : '0')."\n".<<<'SHELL'
