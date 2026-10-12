@@ -138,6 +138,8 @@ if ! echo "${COMPOSER_SHA256}  /usr/local/bin/composer" | sha256sum -c - >/dev/n
   echo "${COMPOSER_SHA256}  /tmp/composer.phar" | sha256sum -c - >/dev/null
   install -m 0755 /tmp/composer.phar /usr/local/bin/composer && rm /tmp/composer.phar
 fi
+# The Composer update program runs /usr/bin/composer, the path on Nodes, and its tests run that program.
+ln -sfn /usr/local/bin/composer /usr/bin/composer
 
 # The runner user owns nothing outside its home and has no sudo. Remove the image's default user if it has one.
 id ubuntu >/dev/null 2>&1 && userdel -r ubuntu 2>/dev/null || true
