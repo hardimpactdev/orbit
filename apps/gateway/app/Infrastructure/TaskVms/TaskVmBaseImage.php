@@ -173,8 +173,8 @@ final readonly class TaskVmBaseImage
 
     /**
      * Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. Workspace
-     * templates belong to the image they were built on, so a moved alias queues the template refresh, which runs on
-     * the task VM queue after the build or sync that moved it.
+     * templates belong to the image they were built on, so a moved alias queues the template refresh on the template
+     * queue. It deletes the templates of the old image, and builds ahead only for active Projects.
      */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {

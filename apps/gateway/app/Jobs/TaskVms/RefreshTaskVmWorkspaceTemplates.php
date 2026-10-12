@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Jobs\TaskVms;
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Models\Node;
 use App\Models\Project;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use App\Models\Task;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -17,11 +20,17 @@ use Throwable;
 
 /**
  * The template refresh. Every base image promote queues it, and so does the end of the nightly base image refresh,
- * so templates follow the image and the default branch. On every configured host whose Node is active, it
- * deletes the templates of Projects that no longer run task VMs, and queues one template build for each Project
- * that does. A host that fails is logged, and the other hosts still run.
+ * so templates follow the image. It runs on the template queue, so it never delays task VM jobs. On every configured
+ * host whose Node is active, it deletes each ready template that no claim can take any more: templates of Projects
+ * that no longer run task VMs, from an earlier repository, or built on another base image than the host's current
+ * one, and all but the newest template of each Project. Then it queues one build for each Project that had a group
+ * created within {@see TaskVmWorkspaceTemplates::ActiveDays} days. Other Projects get their template at their
+ * next claim. A Project that cannot have a template is logged and skipped. A host that fails is logged, and the
+ * other hosts still run.
+ *
+ * It is unique until it starts, so a promote during a running refresh queues one more, which sees the new alias.
  */
-final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUnique, ShouldQueue
+final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Queueable;
 
@@ -33,28 +42,51 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUnique, ShouldQue
 
     public function __construct()
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmWorkspaceTemplates::Queue);
     }
 
-    public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates): void
+    public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
     {
         $projects = Project::query()->orderBy('id')->get()->filter(TaskVmWorkspaceTemplates::serves(...))->values();
-        $ids = array_values($projects->map(static fn (Project $project): int => $project->id)->all());
+        $buildable = [];
+        foreach ($projects as $project) {
+            $reason = TaskVmWorkspaceTemplates::unbuildable($project);
+            if ($reason === null) {
+                $buildable[] = $project;
+            } else {
+                Log::warning('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', ['project_id' => $project->id, 'reason' => $reason]);
+            }
+        }
+        $repositories = [];
+        foreach ($buildable as $project) {
+            $repositories[$project->id] = $project->repository_url;
+        }
+        $active = Task::topLevel()
+            ->whereIn('project_id', array_keys($repositories))
+            ->where('created_at', '>=', now()->subDays(TaskVmWorkspaceTemplates::ActiveDays))
+            ->distinct()
+            ->pluck('project_id')
+            ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
+            ->all();
+
         foreach ($settings->hosts as $host) {
             $node = Node::query()->whereKey($host->nodeId)->where('status', LifecycleStatus::Active)->first();
             if (! $node instanceof Node) {
                 continue;
             }
             try {
-                $deleted = $templates->prune($host, $node, projects: $ids);
+                $image = $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0);
+                $deleted = $templates->pruneStale($host, $node, $repositories, $image);
                 if ($deleted !== []) {
-                    Log::info('Deleted the workspace templates of Projects without task VMs.', ['host_node_id' => $node->id, 'volumes' => $deleted]);
+                    Log::info('Deleted the workspace templates that no claim can take.', ['host_node_id' => $node->id, 'image' => $image, 'volumes' => $deleted]);
                 }
             } catch (Throwable $exception) {
                 Log::error('The workspace template prune failed.', ['host_node_id' => $node->id, 'error' => $exception->getMessage()]);
             }
-            foreach ($projects as $project) {
-                BuildTaskVmWorkspaceTemplate::dispatch($host->nodeId, $project->id);
+            foreach ($buildable as $project) {
+                if (in_array($project->id, $active, true)) {
+                    BuildTaskVmWorkspaceTemplate::dispatch($host->nodeId, $project->id);
+                }
             }
         }
     }

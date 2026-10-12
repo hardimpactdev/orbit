@@ -19,10 +19,12 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Builds the workspace template of one Project on one task VM host. The nightly refresh queues it for every `vm`
- * Project on every host, and a claim queues it when the Project has no template on the VM's host. While another
- * template build runs on the host, the job waits a minute and tries again. A failed build logs an error, and claims
- * ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
+ * Builds the workspace template of one Project on one task VM host. A claim queues it when the Project has no
+ * template for the VM's base image, and the template refresh queues it for each recently active `vm` Project on
+ * every host. It runs on the template queue, whose own worker takes one job at a time, so a build never delays task
+ * VM jobs. While another template build runs on the host, the job waits a minute and tries again. A Project without
+ * a valid default branch or repository is logged and skipped, without a retry. A failed build logs an error, and
+ * claims ask for no new build of that Project on that host for 6 hours; their workspaces start from a fresh clone.
  */
 final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 {
@@ -39,7 +41,7 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $hostNodeId, public int $projectId)
     {
-        $this->onConnection('task-vms')->onQueue('task-vms');
+        $this->onConnection('task-vms')->onQueue(TaskVmWorkspaceTemplates::Queue);
     }
 
     public function uniqueId(): string
@@ -52,6 +54,14 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
         $project = Project::query()->find($this->projectId);
         $node = Node::query()->whereKey($this->hostNodeId)->where('status', LifecycleStatus::Active)->first();
         if (! $project instanceof Project || ! $node instanceof Node || ! TaskVmWorkspaceTemplates::serves($project)) {
+            return;
+        }
+        $reason = TaskVmWorkspaceTemplates::unbuildable($project);
+        if ($reason !== null) {
+            Log::warning('Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.', [
+                'project_id' => $project->id, 'host_node_id' => $node->id, 'reason' => $reason,
+            ]);
+
             return;
         }
 
