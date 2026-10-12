@@ -492,7 +492,7 @@ describe('claim', function (): void {
         $warm = tvm_pool_vm();
         tvm_pool_hosts([[$this->host, 4, 1]]);
         $group = tvm_pool_group();
-        Task::query()->create(['parent_id' => $group->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         $vm = app(AllocateTaskVmAction::class)->execute($group);
 

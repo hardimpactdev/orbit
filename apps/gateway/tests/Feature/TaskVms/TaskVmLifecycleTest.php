@@ -363,11 +363,11 @@ describe('allocation', function (): void {
         Queue::fake();
         tvm_life_settings(maxVms: 4);
         $plain = tvm_life_group();
-        Task::query()->create(['parent_id' => $plain->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Plain', 'brief' => 'No nodes', 'status' => TaskStatus::Todo]);
-        Task::query()->create(['parent_id' => $plain->id, 'project_id' => $this->project->id, 'position' => 2, 'title' => 'Dropped', 'brief' => 'Cancelled', 'status' => TaskStatus::Cancelled, 'topology' => ['app-prod']]);
+        Task::query()->create(['parent_id' => $plain->id, 'position' => 1, 'title' => 'Plain', 'brief' => 'No nodes', 'status' => TaskStatus::Todo]);
+        Task::query()->create(['parent_id' => $plain->id, 'position' => 2, 'title' => 'Dropped', 'brief' => 'Cancelled', 'status' => TaskStatus::Cancelled, 'topology' => ['app-prod']]);
         $topology = tvm_life_group();
-        Task::query()->create(['parent_id' => $topology->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod', 'app-dev']]);
-        Task::query()->create(['parent_id' => $topology->id, 'project_id' => $this->project->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Prod', 'brief' => 'Prod', 'status' => TaskStatus::Todo, 'topology' => ['app-prod', 'app-dev']]);
+        Task::query()->create(['parent_id' => $topology->id, 'position' => 2, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         expect(TaskVmSize::topology($plain))->toBe([])
             ->and(TaskVmSize::topology($topology))->toBe(['app-dev', 'app-prod']);
@@ -382,7 +382,7 @@ describe('allocation', function (): void {
 
         $normal->update(['state' => TaskVmState::Destroyed]);
         $again = tvm_life_group();
-        Task::query()->create(['parent_id' => $again->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        Task::query()->create(['parent_id' => $again->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         // One slot is free, so a second large VM waits, while a normal one still fits.
         expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, AllocateTaskVmAction::NoLargeCapacity)
@@ -426,7 +426,7 @@ describe('claim', function (): void {
     it('makes a subtask that declares a topology wait with its cause when the group got a normal VM', function (): void {
         $group = tvm_life_group(TaskGroupStatus::Running);
         $vm = tvm_life_vm($group, TaskVmState::Ready);
-        $subtask = Task::query()->create(['parent_id' => $group->id, 'project_id' => $this->project->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
+        $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
         $admission = app(TaskTopologyAdmission::class);
 
         expect(fn () => $admission->prepare($group, $subtask))->toThrow(TaskCapacityException::class, RefusingTopologyAdmission::TooSmall);
