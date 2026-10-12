@@ -10,10 +10,10 @@ use Orbit\Sdk\Responses\Nodes\NodeSettings;
 final readonly class NodeSettingOptions
 {
     /** @var list<string> */
-    private const array KNOWN = ['apps.path'];
+    private const array KNOWN = ['apps.path', 'tasks.worker'];
 
     /**
-     * @return array{ok: true, provided: bool, body: array{apps?: array{path: string}|null}}|array{ok: false, code: string, message: string}
+     * @return array{ok: true, provided: bool, body: array{apps?: array{path: string}|null, tasks?: array{worker: string}|null}}|array{ok: false, code: string, message: string}
      */
     public static function parse(mixed $options): array
     {
@@ -55,20 +55,33 @@ final readonly class NodeSettingOptions
             }
 
             $seen[$key] = true;
-            $nested = $value === '' ? null : ['path' => $value];
 
-            $body['apps'] = $nested;
+            if ($key === 'tasks.worker') {
+                $body['tasks'] = $value === '' ? null : ['worker' => $value];
+
+                continue;
+            }
+
+            $body['apps'] = $value === '' ? null : ['path' => $value];
         }
 
         return ['ok' => true, 'provided' => true, 'body' => $body];
     }
 
-    /** @param array{apps?: array{path: string}|null} $body */
+    /** @param array{apps?: array{path: string}|null, tasks?: array{worker: string}|null} $body */
     public static function settings(array $body): NodeSettings
     {
         return new NodeSettings(
             apps: array_key_exists('apps', $body) ? self::apps($body['apps']) : null,
+            taskWorker: self::taskWorker($body['tasks'] ?? null),
         );
+    }
+
+    public static function taskWorker(mixed $value): ?string
+    {
+        $worker = is_array($value) ? ($value['worker'] ?? null) : null;
+
+        return is_string($worker) ? $worker : null;
     }
 
     public static function apps(mixed $value): ?AppsSettings

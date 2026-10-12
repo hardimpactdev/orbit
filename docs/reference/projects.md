@@ -194,7 +194,7 @@ A slug change synchronizes the stored environment of each development Instance t
 
 When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
 
-Branch switch and rollback checkout commands run as the managed user without a credential environment, so the managed user owns the files they write. A filter can only come from `.git/config`, which the worker cannot write.
+Branch switch and rollback checkout commands run as the managed user without a credential environment, so the managed user owns the files they write. These commands can start a filter from `.git/config`. The worker can change that file on a shared checkout: it has write access to `.git`, so a read-only ACL on the file does not stop a replacement. The managed user's protection here is the absent credential environment, not the config ACL.
 
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 

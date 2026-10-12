@@ -13,7 +13,6 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
@@ -197,7 +196,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         string $errorCode,
         ?GitReadEnvironment $read = null,
     ): void {
-        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).$script;
+        $script = WorkspaceGit::bashPreamble().$script;
         $readScript = $read instanceof GitReadEnvironment
             ? GitReadScript::for($read, $script)
             : null;

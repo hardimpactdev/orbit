@@ -104,7 +104,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser($instance), $instance->seed_repository ?? '', $instance->seed_commit ?? '', $template ?? ''],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
@@ -122,7 +122,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $this->workerUser()],
+                arguments: [...$this->arguments($instance, $context), $this->workerUser($instance)],
                 input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
@@ -314,21 +314,10 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         ];
     }
 
-    private function workerUser(): string
+    /** Only a Node that hosts shared task work shares checkouts with the worker. */
+    private function workerUser(Instance $instance): string
     {
-        $worker = config('orbit.tasks.worker_user');
-        if ($worker === null || $worker === '') {
-            return '';
-        }
-        if (! is_string($worker) || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $worker) !== 1 || $worker === 'root') {
-            throw new RuntimeConvergenceException(
-                step: 'app-instance-source-access',
-                errorCode: 'instance.source_identity_invalid',
-                message: 'The task worker user is invalid.',
-            );
-        }
-
-        return $worker;
+        return TaskWorkerUser::forCheckout($instance) ?? '';
     }
 
     private function defaultBranch(Instance $instance): string
@@ -410,7 +399,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     private static function preparedRepositoryGuard(?string $prepareId = null, ?string $seedRepository = null): string
     {
-        return 'expected_common='.escapeshellarg($seedRepository === null ? '' : $seedRepository.'/.git')."\n".'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return 'expected_common='.escapeshellarg($seedRepository === null ? '' : $seedRepository.'/.git')."\n".'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().<<<'BASH'
             guard_parent_chain() {
                 parent=$1
                 root=$2
@@ -446,8 +435,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 install -d -m 0755 -- "$1"
             }
             share_checkout() {
-                if [ -z "$worker_user" ] || ! id "$worker_user" >/dev/null 2>&1; then
+                if [ -z "$worker_user" ]; then
                     return 0
+                fi
+                if ! id "$worker_user" >/dev/null 2>&1; then
+                    printf 'The task worker account %s does not exist on this task Node.\n' "$worker_user" >&2
+                    return 1
                 fi
                 test "$(id -u "$worker_user")" != 0
                 test "$worker_user" != "$managed_user"

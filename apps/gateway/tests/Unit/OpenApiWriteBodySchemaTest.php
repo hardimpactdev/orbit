@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use App\Http\Requests\Instances\StoreInstanceDeployStepRequest;
 use App\Http\Requests\Instances\UpdateInstanceDeployStepRequest;
@@ -28,7 +29,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
     expect($input['additionalProperties'])->toBeFalse();
 
     $ruleFields = array_map(fn (string $key): string => explode('.', $key)[0], array_keys(new $requestClass()->rules()));
-    expect(array_unique($ruleFields))->toEqualCanonicalizing(array_keys($types));
+    expect(array_values(array_unique($ruleFields)))->toEqualCanonicalizing(array_keys($types));
 
     foreach ($types as $field => $type) {
         expect($body['properties'][$field]['type'])->toBe($type);
@@ -50,6 +51,8 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         expect(array_keys($body['properties']['apps']['properties']))->toBe(['path']);
         expect($body['properties']['apps']['required'] ?? [])->toBe([]);
         expect($body['properties']['apps']['minProperties'] ?? 0)->toBe(0);
+        expect(array_keys($body['properties']['tasks']['properties']))->toBe(['worker']);
+        expect($body['properties']['tasks']['properties']['worker']['enum'])->toBe(['none']);
     }
 
     if ($operationId === 'database-update') {
@@ -78,7 +81,7 @@ it('publishes validated write body fields in OpenAPI and MCP', function (string 
         'driver' => 'string', 'node_id' => ['integer', 'null'], 'host' => ['string', 'null'], 'port' => ['integer', 'null'],
         'database' => ['string', 'null'], 'path' => ['string', 'null'], 'username' => ['string', 'null'], 'password' => ['string', 'null'],
     ], []],
-    'node storage settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null']], ['apps']],
+    'node settings' => ['node-settings', UpdateNodeSettingsRequest::class, ['apps' => ['object', 'null'], 'tasks' => ['object', 'null']], []],
 ]);
 
 it('publishes database patterns that enforce the runtime field constraints', function (string $field, string $value, bool $valid): void {
@@ -114,11 +117,12 @@ it('publishes database patterns that enforce the runtime field constraints', fun
     'username with trailing newline' => ['username', "orbit-user\n", false],
 ]);
 
-it('requires the Node settings member while accepting all clearing forms', function (): void {
+it('requires a Node settings member while accepting all clearing forms', function (): void {
     $rules = new UpdateNodeSettingsRequest()->rules();
     $factory = new Factory(new Translator(new ArrayLoader, 'en'));
 
-    expect($factory->make([], $rules)->fails())->toBeTrue();
+    expect(fn () => UpdateNodeSettingsRequest::create('/api/v1/nodes/1/settings', 'PATCH', content: '{}')->payload())
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.settings_invalid'));
 
     foreach (['{"apps":null}', '{"apps":{}}', '{"apps":{"path":null}}'] as $json) {
         $request = UpdateNodeSettingsRequest::create('/api/v1/nodes/1/settings', 'PATCH', content: $json);

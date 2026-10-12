@@ -520,7 +520,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             ->orderBy('id')
             ->get();
 
-        $eligible = $nodes->filter(fn (Node $node): bool => ! $node->projectNodeExclusions->contains('project_id', $project->id));
+        // A Node that opts out of the task worker runs its Gateway Git as the managed user, so agents never work there.
+        $eligible = $nodes->filter(fn (Node $node): bool => ! TaskWorkerUser::optedOut($node) && ! $node->projectNodeExclusions->contains('project_id', $project->id));
         $pinned = $eligible->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId);
         $fitting = $pinned->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
 

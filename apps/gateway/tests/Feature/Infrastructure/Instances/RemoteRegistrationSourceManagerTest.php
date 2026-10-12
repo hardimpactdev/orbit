@@ -136,6 +136,26 @@ describe('TaskCheckWorkerUser', function (): void {
         }
     })->with(['symlink', 'hardlink']);
 
+    it('inspects registration content as the managed user on an opted-out Node without the worker account', function (): void {
+        $fixture = orb105_relocation_fixture(false);
+        orbit_test_opt_out_task_worker($fixture['node']);
+
+        try {
+            $log = orb105_worker_filter($fixture, 'clean');
+            config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+            expect($facts->path)->toBe($fixture['source']);
+            $users = file($log, FILE_IGNORE_NEW_LINES) ?: [];
+            expect($users)->not->toBeEmpty();
+            foreach ($users as $user) {
+                expect($user)->toBe(posix_geteuid().':absent');
+            }
+        } finally {
+            orb105_remove_relocation_fixture($fixture);
+        }
+    });
+
     it('refuses registration inspection when the configured worker is unavailable', function (): void {
         $fixture = orb105_relocation_fixture(false);
 
@@ -1116,6 +1136,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'user' => orb105_effective_user(),
         'settings' => ['apps' => ['path' => $destinationRoot.'/managed']],
     ]);
+    orbit_test_task_work_host($node);
     $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',

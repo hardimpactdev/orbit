@@ -6,6 +6,7 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
+use App\Data\Nodes\NodeTaskSettingsData;
 
 final readonly class NodeSettingsNormalizer
 {
@@ -17,6 +18,7 @@ final readonly class NodeSettingsNormalizer
 
         $normalized = new NodeSettingsData(
             apps: $this->nested($settings->appsPath()),
+            tasks: $settings->taskWorker() === null ? null : new NodeTaskSettingsData($settings->taskWorker()),
         );
 
         return $normalized->isEmpty() ? null : $normalized;
@@ -31,7 +33,10 @@ final readonly class NodeSettingsNormalizer
             return null;
         }
 
-        return ['apps' => ['path' => $normalized->appsPath()]];
+        return array_filter([
+            'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
+            'tasks' => $normalized->taskWorker() === null ? null : ['worker' => $normalized->taskWorker()],
+        ], static fn (?array $member): bool => $member !== null);
     }
 
     public function fromStored(mixed $value): ?NodeSettingsData
@@ -40,7 +45,12 @@ final readonly class NodeSettingsNormalizer
             return null;
         }
 
-        return $this->normalize(new NodeSettingsData(apps: $this->nestedFromStored($value['apps'] ?? null)));
+        $worker = data_get($value, 'tasks.worker');
+
+        return $this->normalize(new NodeSettingsData(
+            apps: $this->nestedFromStored($value['apps'] ?? null),
+            tasks: is_string($worker) ? new NodeTaskSettingsData($worker) : null,
+        ));
     }
 
     private function nested(?string $path): ?NodeStorageAppsData

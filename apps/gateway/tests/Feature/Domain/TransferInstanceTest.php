@@ -454,6 +454,11 @@ it('refuses ineligible sources and destinations before source mutation', functio
     'standalone destination' => [function (object $test): void {
         $test->destinationNode->update(['cluster_id' => null]);
     }, 'instance.standalone_unsupported'],
+    'worker-shared checkout to an opted-out destination' => [function (object $test): void {
+        config()->set('orbit.tasks.worker_user', 'orbit-worker');
+        $test->instance->update(['worker_shared' => true]);
+        orbit_test_opt_out_task_worker($test->destinationNode);
+    }, 'instance.transfer_worker_shared'],
 ]);
 
 it('refuses an occupied destination path with a rename hint before source mutation', function (): void {
