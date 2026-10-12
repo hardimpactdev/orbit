@@ -53,7 +53,7 @@ Shared groups keep the earlier order: their workspace is `active` before the che
 
 `AllocateTaskVmAction` [places](#place-task-vms) the VM on a host. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. It also records `claimed_at`, the moment of the claim.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the software of the `app-dev` role, the Node agent, and Pi. Enrollment skips the programs that the image already ran, and finds the rest of that software installed. The Project's setup steps install the rest, for example its Playwright browsers.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, the workspace tools, the software of the `app-dev` role, the stable Rust toolchain, the Node agent, and Pi. Enrollment skips the programs that the image already ran, and finds the rest of that software installed. The Project's setup steps install the rest, for example its Playwright browsers.
 
 `EnrollTaskVm` checks the VM every second, for up to 2 minutes in one run, and then again 15 seconds later. Once the Incus agent in the guest runs, one check waits in the guest for up to 30 seconds with `cloud-init status --wait`, so the job hears at once when cloud-init is done.
 
@@ -74,6 +74,8 @@ An image without a manifest, such as one built before manifests, or with a manif
 A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
 
 The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
+
+Last, the image runs `rust-toolchain`. It installs the stable Rust toolchain for `orbit` with rustup's minimal profile, plus clippy and rustfmt, as CI checks the Node agent. Each build takes the stable release of its day. Enrollment never runs it either.
 
 Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, as commands to a Node over WireGuard do. Its name hashes the jump host, the target address, and the target's pinned host key. So the next VM at a reused address never gets the old VM's connection.
 
@@ -581,6 +583,7 @@ Run `task-vms:build-image {node}` to build the base image on one host. It prints
 | `orbit-user` | Requires `orbit` to have uid and gid 1000 |
 | `bootstrap`, `caddy-package`, `app-dev-prerequisites`, `vp-manager`, `composer-manager` | Runs the Node bootstrap, the Caddy package, the `app-dev` role prerequisites, and the Vite+ and Composer manager programs as `orbit` through `incus exec`, in enrollment's order |
 | `app-dev-php-source`, `app-dev-php-8-5`, `app-dev-php-8-4` | Adds the pinned Sury PHP source and installs the `app-dev` PHP packages of each PHP version an Instance can select, with the program that installs them for an Instance |
+| `rust-toolchain` | Installs the stable Rust toolchain with clippy and rustfmt for `orbit`, with rustup's minimal profile |
 | `agent-binary` | Installs the pinned [Node agent](/reference/node-agent) binary |
 | `pi-artifact` | Streams the pinned Pi executable to the VM. The VM checks its digest and installs it for `orbit` as `~/.local/bin/pi-server`. The stage runs only when the Gateway pins a Pi executable |
 | `single-boot` | Makes a VM from the image boot once, as described below |
@@ -610,7 +613,9 @@ Docker stays enabled at boot. Doctor expects it active on an `app-dev` Node. It 
 
 The agent binary and the Pi executable are the Gateway's pins at build time. The nightly refresh picks up new pins. Enrollment still checks both digests and installs the pinned build when the image has another one.
 
-The builder's user-data adds four things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, and Chromium's system libraries. A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
+The builder's user-data adds five things to the task VM user-data: `orbit` with uid and gid 1000, a package upgrade, `openssh-server`, Chromium's system libraries, and the workspace tools. The workspace tools are `rsync` and `dig` from `bind9-dnsutils`, which Orbit's own test suites call, and `gcc` with `libc6-dev`, which Rust crates such as `ring` build with.
+
+A `bootcmd` creates the group `orbit` with gid 1000 before cloud-init creates the user, and the user gets uid 1000 with that group. The ids are pinned because workspace templates hold files that `orbit` owns: before, a stock image or package that added a user first moved `orbit` to uid 1001. A uid or gid that is taken makes cloud-init fail, and with it the build.
 
 Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
