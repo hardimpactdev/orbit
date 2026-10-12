@@ -27,6 +27,9 @@ final readonly class TaskVmBaseImage
 {
     public const string WorkPrefix = 'tvm-image-';
 
+    /** While set, a promote queues no template refresh: the nightly refresh queues one after all hosts. */
+    public const string RefreshDeferredKey = 'task-vms:template-refresh-deferred';
+
     private const string FingerprintPattern = '/\A256 SHA256:[A-Za-z0-9+\/]{43} .* \(ED25519\)\n?\z/D';
 
     private const int BootSeconds = 600;
@@ -174,7 +177,8 @@ final readonly class TaskVmBaseImage
     /**
      * Points `orbit-task-base` at `$fingerprint` in one request, or creates the alias on the first image. Workspace
      * templates belong to the image they were built on, so a moved alias queues the template refresh on the template
-     * queue. It deletes the templates of the old image, and builds ahead only for active Projects.
+     * queue, unless the nightly base image refresh runs: that one queues it after every host. The refresh deletes the
+     * templates of the old image, and builds ahead only for active Projects.
      */
     public function promote(TaskVmHost $host, Node $node, string $fingerprint): void
     {
@@ -185,7 +189,9 @@ final readonly class TaskVmBaseImage
             if (! $result->succeeded()) {
                 throw IncusHost::failed("the base image of Node [{$node->name}]", 'image alias', $result);
             }
-            RefreshTaskVmWorkspaceTemplates::dispatch();
+            if (! Cache::has(self::RefreshDeferredKey)) {
+                RefreshTaskVmWorkspaceTemplates::dispatch();
+            }
         } finally {
             // A claim reads the alias again, also when the reply to the move was lost.
             AllocateTaskVmAction::forgetImage($node->id);

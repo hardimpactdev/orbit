@@ -105,8 +105,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Workspace template jobs, with their own worker, so a template build never delays a task VM job. One build
         // runs at a time. A foreground command holds its scheduler run until it ends, so this worker starts only in
         // the last two seconds of a minute: the next minute's run then polls the task VM queue every second again.
+        // Its overlap lock of 32 minutes outlasts a run: 120 seconds of jobs, then at most one more job of 1700.
         $schedule->command('queue:work task-vms --queue='.TaskVmWorkspaceTemplates::Queue.' --stop-when-empty --max-time=120 --timeout=1700')
-            ->everySecond()->withoutOverlapping(30)
+            ->everySecond()->withoutOverlapping(32)
             ->when(static fn (): bool => now()->second >= 58 && $due(TaskVmWorkspaceTemplates::Queue));
     })
     ->withCommands()

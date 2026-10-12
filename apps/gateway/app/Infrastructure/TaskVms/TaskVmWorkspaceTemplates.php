@@ -371,12 +371,15 @@ final readonly class TaskVmWorkspaceTemplates
      * host's current base image. With no current image it keeps the newest template of the repository. So after a
      * promote, the host keeps at most one template for each Project, and none from the old image.
      *
-     * @param  array<int, string>  $repositories  the repository URL of each Project that runs task VMs, by Project id
+     * Projects without a valid default branch or repository URL are not in `$repositories`, so their templates go too.
+     *
+     * @param  array<int, string>  $repositories  the repository URL of each Project that can have a template, by Project id
+     * @param  array<string, array<string, string>>|null  $volumes  the host's volumes, when the caller has read them
      * @return list<string> the deleted templates
      */
-    public function pruneStale(TaskVmHost $host, Node $hostNode, array $repositories, ?string $image): array
+    public function pruneStale(TaskVmHost $host, Node $hostNode, array $repositories, ?string $image, ?array $volumes = null): array
     {
-        $volumes = $this->volumes($host, $hostNode);
+        $volumes ??= $this->volumes($host, $hostNode);
         $keep = [];
         foreach ($repositories as $projectId => $repository) {
             $keep[] = self::current($volumes, $projectId, $repository, $image);
@@ -471,6 +474,23 @@ final readonly class TaskVmWorkspaceTemplates
     public static function projectOf(string $name): ?int
     {
         return preg_match('/\A'.preg_quote(self::VolumePrefix, '/').'([1-9][0-9]*)-[0-9]{14}\z/D', $name, $match) === 1 ? (int) $match[1] : null;
+    }
+
+    /**
+     * Whether `$volumes` hold a ready template of the Project from its repository, built on `$image` by the base image's
+     * user. A build would make the same template again, so the refresh and the build job skip it. Without a current
+     * image nothing is current.
+     *
+     * @param  array<string, array<string, string>>  $volumes
+     */
+    public static function isCurrent(array $volumes, Project $project, ?string $image): bool
+    {
+        if ($image === null) {
+            return false;
+        }
+        $template = self::current($volumes, $project->id, $project->repository_url, $image);
+
+        return $template !== null && ($volumes[$template][self::OwnerKey] ?? null) === TaskVmCloudInit::Owner;
     }
 
     /**

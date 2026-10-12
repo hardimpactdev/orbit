@@ -16,6 +16,7 @@ use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Throwable;
 
 /**
@@ -24,11 +25,12 @@ use Throwable;
  * host whose Node is active, it deletes each ready template that no claim can take any more: templates of Projects
  * that no longer run task VMs, from an earlier repository, or built on another base image than the host's current
  * one, and all but the newest template of each Project. Then it queues one build for each Project that had a group
- * created within {@see TaskVmWorkspaceTemplates::ActiveDays} days. Other Projects get their template at their
- * next claim. A Project that cannot have a template is logged and skipped. A host that fails is logged, and the
- * other hosts still run.
+ * created within {@see TaskVmWorkspaceTemplates::ActiveDays} days and has no current template on the host. Other
+ * Projects get their template at their next claim. A Project that cannot have a template is logged and skipped, and
+ * its templates are deleted. A host that fails is logged, and the other hosts still run.
  *
  * It is unique until it starts, so a promote during a running refresh queues one more, which sees the new alias.
+ * That one skips every template that is already current, so it builds only for the hosts whose alias moved.
  */
 final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
@@ -47,6 +49,12 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
 
     public function handle(TaskVmSettings $settings, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
     {
+        // A job queued on the task VM queue before templates had their own queue moves there.
+        if ($this->job?->getQueue() === 'task-vms') {
+            Queue::connection('task-vms')->pushOn(TaskVmWorkspaceTemplates::Queue, new self);
+
+            return;
+        }
         $projects = Project::query()->orderBy('id')->get()->filter(TaskVmWorkspaceTemplates::serves(...))->values();
         $buildable = [];
         foreach ($projects as $project) {
@@ -74,9 +82,12 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
             if (! $node instanceof Node) {
                 continue;
             }
+            $image = null;
+            $volumes = [];
             try {
                 $image = $incus->aliasTarget($host, $node, TaskVmHost::BaseImage, 60.0);
-                $deleted = $templates->pruneStale($host, $node, $repositories, $image);
+                $volumes = $templates->volumes($host, $node);
+                $deleted = $templates->pruneStale($host, $node, $repositories, $image, $volumes);
                 if ($deleted !== []) {
                     Log::info('Deleted the workspace templates that no claim can take.', ['host_node_id' => $node->id, 'image' => $image, 'volumes' => $deleted]);
                 }
@@ -84,7 +95,7 @@ final class RefreshTaskVmWorkspaceTemplates implements ShouldBeUniqueUntilProces
                 Log::error('The workspace template prune failed.', ['host_node_id' => $node->id, 'error' => $exception->getMessage()]);
             }
             foreach ($buildable as $project) {
-                if (in_array($project->id, $active, true)) {
+                if (in_array($project->id, $active, true) && ! TaskVmWorkspaceTemplates::isCurrent($volumes, $project, $image)) {
                     BuildTaskVmWorkspaceTemplate::dispatch($host->nodeId, $project->id);
                 }
             }

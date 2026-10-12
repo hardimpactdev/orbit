@@ -15,6 +15,7 @@ use App\Models\Node;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -57,12 +58,14 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // The templates refresh every night, also when the build fails. A promote has queued the refresh already,
-        // and the queued job absorbs this one.
+        // The templates refresh once, after the build and the sync to every host, also when the build fails. The
+        // promotes on the way queue no refresh of their own, so no refresh sees one host moved and another not.
+        Cache::put(TaskVmBaseImage::RefreshDeferredKey, true, $this->timeout + 60);
         try {
             $fingerprint = $builder->build($host, $node, owner: self::LockOwner);
             $results = $sync->distribute($host, $node, $fingerprint, owner: self::LockOwner);
         } finally {
+            Cache::forget(TaskVmBaseImage::RefreshDeferredKey);
             RefreshTaskVmWorkspaceTemplates::dispatch();
         }
         foreach ($results as $result) {
@@ -91,6 +94,10 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
             if ($node instanceof Node) {
                 $image->abandon($host, $node, self::LockOwner);
             }
+        }
+        // A job stopped at its timeout never reached its `finally`.
+        if (Cache::pull(TaskVmBaseImage::RefreshDeferredKey) !== null) {
+            RefreshTaskVmWorkspaceTemplates::dispatch();
         }
     }
 }
