@@ -274,7 +274,9 @@ When Orbit creates the workspace on a task VM, it runs these steps before source
 3. It attaches the clone to the running VM as the disk `workspace`.
 4. Over the Node's SSH connection, it mounts the disk at the Project's apps directory and adds it to `/etc/fstab`. It points `~/.cache/ms-playwright` and `~/.cache/composer` at the volume.
 
-5. Source preparation checks the owner and the origin of `workspace`, and takes it in place: a task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. Preparation writes its receipt as for a clone. A template in place that fails these checks fails the preparation, because a fresh clone cannot go to its path.
+5. Source preparation checks the owner and the origin of `workspace`, and takes it in place. Preparation writes its receipt as for a clone.
+
+A task VM workspace's checkout is always `<apps directory>/workspace`, the path where the template was built. A template in place that fails the source checks fails the preparation, because a fresh clone cannot go to its path.
 
 The mount never goes over a directory with content. Before it mounts, it checks that `orbit` has the `uid:gid` that the template recorded. After it mounts, it checks that the volume root and `workspace` belong to that `uid:gid`.
 
@@ -284,7 +286,9 @@ When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it r
 
 Then the workspace fetches and checks out the group's branch, as usual. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
 
-A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm. Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
+A task VM holds one workspace, so its checkout path is fixed, unlike the `task-<id>` checkout on a shared Node. Caches that record absolute paths, such as Rector's, still match at the claim, so the baseline check finds them warm.
+
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
 
 On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
