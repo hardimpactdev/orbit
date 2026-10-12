@@ -5,11 +5,16 @@
 #
 #   tools/ci-runners/setup.sh host SUBNET            # 10.253.1.1/24 on Beast, 10.253.2.1/24 on Shark
 #   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-beast-2, ci-shark-1
-#   tools/ci-runners/setup.sh register NAME [TOKEN]  # TOKEN, or ORBIT_RUNNER_TOKEN in the environment
+#   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
 # A registration token comes from `gh api -X POST repos/nckrtl/orbit/actions/runners/registration-token --jq .token`
-# and expires after an hour. The script never stores it.
+# and expires after an hour. The script never stores or prints it. Prefer ORBIT_RUNNER_TOKEN: an argument shows in
+# the host's process list. The script hands the token to the container on stdin, but config.sh takes it as an
+# argument, so it shows in the host's process list for the seconds that config.sh runs.
+#
+# `container` installs missing packages without upgrading installed ones, and sets raw.apparmor on an existing
+# container; a changed raw.apparmor applies at the next restart. Run it only while the runner is idle.
 set -euo pipefail
 
 PROJECT=orbit-ci
@@ -19,6 +24,8 @@ POOL=default
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
+COMPOSER_VERSION=2.10.3
+COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/nckrtl/orbit
 LABELS=self-hosted,Linux,X64,orbit-shard
 # systemd 259 (Ubuntu 26.04) hangs at boot in (sd-mkuserns) without nesting: AppArmor denies PID 1 and udevd
@@ -94,13 +101,18 @@ in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 container() {
   local name=$1
   incus info "$name" --project "$PROJECT" >/dev/null 2>&1 || incus launch "$IMAGE" "$name" --project "$PROJECT" -c raw.apparmor="$APPARMOR"
+  if [ "$(incus config get "$name" raw.apparmor --project "$PROJECT")" != "$APPARMOR" ]; then
+    incus config set "$name" raw.apparmor="$APPARMOR" --project "$PROJECT"
+    echo "$name: raw.apparmor repaired; restart the container while its runner is idle to apply it" >&2
+  fi
   [ "$(incus list "$name" --project "$PROJECT" -c s -f csv)" = RUNNING ] || incus start "$name" --project "$PROJECT"
   for _ in $(seq 90); do in_ct "$name" getent hosts archive.ubuntu.com >/dev/null 2>&1 && break; sleep 1; done
 
   incus file push /usr/share/keyrings/orbit-sury-php.gpg "$name/usr/share/keyrings/orbit-sury-php.gpg" --project "$PROJECT"
   incus file push /etc/apt/sources.list.d/orbit-php.sources "$name/etc/apt/sources.list.d/orbit-php.sources" --project "$PROJECT"
 
-  in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" bash -euo pipefail <<'SH'
+  in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
+    COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" bash -euo pipefail <<'SH'
 export DEBIAN_FRONTEND=noninteractive
 caddy_key=/usr/share/keyrings/caddy-stable-archive-keyring.gpg
 if [ ! -s "$caddy_key" ]; then
@@ -112,7 +124,7 @@ fi
 echo "deb [signed-by=$caddy_key] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" \
   > /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends \
+apt-get install -y -qq --no-install-recommends --no-upgrade \
   php8.5-cli php8.5-bcmath php8.5-curl php8.5-gd php8.5-igbinary php8.5-intl php8.5-mbstring php8.5-mysql \
   php8.5-pcov php8.5-pgsql php8.5-readline php8.5-redis php8.5-sqlite3 php8.5-xml php8.5-zip \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
@@ -121,16 +133,17 @@ apt-get install -y -qq --no-install-recommends \
 # installdependencies.sh only knows libicu names up to 76.
 systemctl disable --now caddy >/dev/null 2>&1 || true
 
-if ! command -v composer >/dev/null; then
-  curl -fsSLo /tmp/composer.phar https://getcomposer.org/download/latest-2.x/composer.phar
-  echo "$(curl -fsSL https://getcomposer.org/download/latest-2.x/composer.phar.sha256sum | cut -d' ' -f1)  /tmp/composer.phar" | sha256sum -c - >/dev/null
+if ! echo "${COMPOSER_SHA256}  /usr/local/bin/composer" | sha256sum -c - >/dev/null 2>&1; then
+  curl -fsSLo /tmp/composer.phar "https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
+  echo "${COMPOSER_SHA256}  /tmp/composer.phar" | sha256sum -c - >/dev/null
   install -m 0755 /tmp/composer.phar /usr/local/bin/composer && rm /tmp/composer.phar
 fi
 
 # The runner user owns nothing outside its home and has no sudo. Remove the image's default user if it has one.
 id ubuntu >/dev/null 2>&1 && userdel -r ubuntu 2>/dev/null || true
 id runner >/dev/null 2>&1 || useradd -m -U -s /bin/bash runner
-rm -f /etc/sudoers.d/runner
+# The image grants its default user passwordless sudo in 90-incus.
+rm -f /etc/sudoers.d/runner /etc/sudoers.d/90-incus
 install -d -o runner -g runner /home/runner/work
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
@@ -148,12 +161,12 @@ register() {
   if ! in_ct "$name" test -f /home/runner/actions-runner/.runner; then
     [ -n "$token" ] || { echo 'register needs TOKEN or ORBIT_RUNNER_TOKEN' >&2; exit 2; }
     in_ct "$name" chown -R runner:runner /home/runner/actions-runner
-    # The token travels in the environment of incus exec, so it stays out of the host's process list.
+    # The token reaches the container on stdin, not in the argv of incus. config.sh still takes it as an argument.
     local uid gid
     uid=$(in_ct "$name" id -u runner) gid=$(in_ct "$name" id -g runner)
-    incus exec "$name" --project "$PROJECT" --env RUNNER_TOKEN="$token" --user "$uid" --group "$gid" \
+    printf '%s\n' "$token" | incus exec "$name" --project "$PROJECT" --user "$uid" --group "$gid" \
       --env HOME=/home/runner --cwd /home/runner/actions-runner -- \
-      sh -c './config.sh --unattended --url "$1" --token "$RUNNER_TOKEN" --name "$2" --labels "$3" --work /home/runner/work --replace' \
+      sh -c 'IFS= read -r token; exec ./config.sh --unattended --url "$1" --token "$token" --name "$2" --labels "$3" --work /home/runner/work --replace' \
       config "$REPO_URL" "$name" "$LABELS" >/dev/null
   fi
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
@@ -162,7 +175,7 @@ register() {
 verify() {
   local name=$1 targets=() ip
   for ip in $(ip -4 -o addr show | awk '$2 != "lo" {split($4,a,"/"); print a[1]}'); do
-    targets+=("$ip:22" "$ip:2019" "$ip:5432" "$ip:6379" "$ip:443")
+    targets+=("$ip:22" "$ip:53" "$ip:2019" "$ip:5432" "$ip:6379" "$ip:443")
   done
   targets+=(10.44.0.2:443 192.168.6.1:80)
   in_ct "$name" su runner -c "
@@ -170,6 +183,7 @@ verify() {
     for t in ${targets[*]}; do probe \$t; done
     gw=\$(ip -4 route show default | awk '{print \$3}')
     probe \$gw:22; probe \$gw:2019
+    echo 'note    port 53 on host addresses is a known gap: Incus accepts DNS from the bridge before the ACL' 
     getent hosts github.com >/dev/null && echo 'dns     ok' || echo 'dns     FAILED'
     curl -fsS -o /dev/null -w 'https   github.com %{http_code}\n' https://github.com
     timeout 3 curl -6 -fsS -o /dev/null https://github.com 2>/dev/null && echo 'OPEN    ipv6' || echo 'blocked ipv6'
@@ -180,5 +194,5 @@ verify() {
 
 case "${1:-}" in
   host | container | register | verify) "$@" ;;
-  *) sed -n '2,13p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac
