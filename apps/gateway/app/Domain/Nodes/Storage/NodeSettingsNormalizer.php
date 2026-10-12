@@ -48,13 +48,17 @@ final readonly class NodeSettingsNormalizer
     public function storedOver(mixed $existing, ?NodeSettingsData $settings): ?array
     {
         $result = is_array($existing) ? $existing : [];
-        $managed = $this->stored($settings) ?? [];
+        $normalized = $this->normalize($settings);
+        $managed = [
+            'apps' => ['path', $normalized?->appsPath()],
+            'tasks' => ['worker', $normalized?->taskWorker()],
+        ];
 
-        foreach (['apps' => 'path', 'tasks' => 'worker'] as $member => $key) {
+        foreach ($managed as $member => [$key, $set]) {
             $value = is_array($result[$member] ?? null) ? $result[$member] : [];
             unset($value[$key]);
-            if (isset($managed[$member][$key])) {
-                $value[$key] = $managed[$member][$key];
+            if ($set !== null) {
+                $value[$key] = $set;
             }
             if ($value === []) {
                 unset($result[$member]);
