@@ -77,7 +77,13 @@ An existing directory must be a real directory, not a symlink, owned by the mana
 
 Caddy runs as its own user and must reach each development site's document root, also when the apps root lies outside the managed user's home. When a development site publishes, the Gateway adds execute access for the `caddy` user on each ancestor directory of the document root that Caddy cannot enter yet. It adds no read access to those directories, so Caddy can pass through them but cannot list them. Inside the checkout, Caddy can read only the document root and the public storage target.
 
-Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves them in the checkout's Git directory, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. When the publication fails, it restores what it saved, so the site keeps the access it had. The rest of the checkout stays closed to Caddy. When the restore also fails, the saved file stays in the Git directory and the error names it.
+Each entry's access list changes as the entry's owner: the managed user's entries as the managed user, and the task worker's entries as the worker. Root changes only a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent that Caddy cannot enter. Root never changes anything at or below a checkout. A directory that Caddy must pass but that none of these owners may change stops the publication.
+
+No change follows a symlink. Each change opens its path one directory at a time without following a symlink and checks the owner of what it opened. A symlink that the worker swaps in during the walk makes the walk fail instead of redirecting a change.
+
+Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves them in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory, so neither the worker nor Caddy can read or replace the saved lists.
+
+When the publication fails, each account restores its own saved entries, and root restores only the root-owned directories it changed. A restore changes access lists only, never an owner. An entry that another entry replaced keeps its new access list. The site keeps the access it had, and the rest of the checkout stays closed to Caddy. When the restore also fails, the saved directory stays and the error names it.
 
 ## Failure codes
 

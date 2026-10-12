@@ -27,10 +27,17 @@ final readonly class DevelopmentCaddyAccessCommand
 
     /**
      * Only an entry's owner may change its ACL. On a checkout shared with the task worker, the worker owns what its
-     * Git and its agents wrote, so the walk changes each entry's ACL as its owner: the managed user's entries as the
-     * managed user, the worker's as the worker through `sudo -u`. Neither account gains anything, since each changes
-     * only its own entries, and no pass runs as root or follows a symlink. An entry that neither account owns stops
-     * the walk, so no entry keeps access the walk meant to deny.
+     * Git and its agents wrote, and it can replace any entry it can write with a symlink at any moment. So the walk
+     * changes each entry's ACL as its owner: the managed user's entries as the managed user, the worker's as the
+     * worker through `sudo -u`. An entry that neither account owns stops the walk, so no entry keeps access the walk
+     * meant to deny.
+     *
+     * No change follows a symlink. Every change, and every restore after a failed walk, goes through one helper that
+     * opens the path one component at a time from `/` without following a symlink, checks that the account it runs
+     * as owns the entry, and changes the ACL through `/proc/self/fd`. A restore never changes an owner. Root acts
+     * only on a directory above every checkout: one that root owns, on a path that root owns from `/` down, which
+     * the helper checks again on each component. Root never acts at or below a checkout, which the managed user
+     * owns. The snapshots live in a private directory under `/var/tmp`, which neither the worker nor Caddy can enter.
      *
      * @param  Collection<int, DevelopmentSite>  $sites
      */
@@ -54,6 +61,155 @@ final readonly class DevelopmentCaddyAccessCommand
                     worker_uid=$(id -u "$worker")
                     test "$worker_uid" != 0 && test "$worker_uid" != "$(id -u)"
                 fi
+                # `fd_acl set <a|d|D> <setfacl arguments>... -- <path>...` changes the ACL of each path, and
+                # `fd_acl restore` restores the account's own entries of a `getfacl -p` snapshot on standard input.
+                # It opens each path one component at a time from / and never follows a symlink, so a swap anywhere
+                # on the path fails instead of redirecting the change. It changes only an entry that the account it
+                # runs as owns, through /proc/self/fd, so the entry it checked is the entry it changes. As root, every
+                # component from / down must belong to root, so root never acts at or below a checkout. A restore
+                # drops the owner and group lines, so it never changes an owner. `a` skips a symlink, `d` skips what
+                # is not a directory, and `D` requires a directory. A vanished entry reports "No such file or
+                # directory", which the walk treats as harmless.
+                fd_acl=$(cat <<'PYTHON'
+                import errno, os, pwd, stat, subprocess, sys
+
+                me = os.geteuid()
+                batch_size = 200
+
+                def report(path, message):
+                    sys.stderr.buffer.write(path + b': ' + message.encode() + b'\n')
+                    sys.stderr.flush()
+
+                def owned(fd):
+                    if me == 0 and os.fstat(fd).st_uid != 0:
+                        raise OSError(errno.EPERM, 'Root acts only on a path that root owns from / down')
+
+                def resolve(path):
+                    parts = [] if path == b'/' else path[1:].split(b'/')
+                    if not path.startswith(b'/') or any(part in (b'', b'.', b'..') for part in parts):
+                        raise OSError(errno.EINVAL, 'Not a canonical absolute path')
+                    fd = os.open(b'/', os.O_PATH | os.O_DIRECTORY)
+                    try:
+                        owned(fd)
+                        for index, part in enumerate(parts):
+                            flags = os.O_PATH | os.O_NOFOLLOW
+                            if index < len(parts) - 1:
+                                flags |= os.O_DIRECTORY
+                            child = os.open(part, flags, dir_fd=fd)
+                            os.close(fd)
+                            fd = child
+                            owned(fd)
+                        return fd
+                    except BaseException:
+                        os.close(fd)
+                        raise
+
+                def run(arguments, fds, data=None):
+                    names = ['/proc/self/fd/%d' % fd for fd in fds]
+                    try:
+                        return subprocess.run(['setfacl', *arguments, *([] if data is not None else ['--', *names])], input=data, pass_fds=fds).returncode == 0
+                    finally:
+                        for fd in fds:
+                            os.close(fd)
+
+                def change(kind, arguments, paths):
+                    status, fds = 0, []
+                    for path in paths:
+                        try:
+                            fd = resolve(path)
+                        except OSError as error:
+                            report(path, error.strerror)
+                            status = 1
+                            continue
+                        mode = os.fstat(fd)
+                        if kind == 'D' and not stat.S_ISDIR(mode.st_mode):
+                            os.close(fd)
+                            report(path, 'Not a directory')
+                            status = 1
+                        elif stat.S_ISLNK(mode.st_mode) or (kind == 'd' and not stat.S_ISDIR(mode.st_mode)):
+                            os.close(fd)
+                        elif mode.st_uid != me:
+                            os.close(fd)
+                            report(path, 'Owned by another account')
+                            status = 1
+                        else:
+                            fds.append(fd)
+                        if len(fds) >= batch_size:
+                            status |= not run(arguments, fds)
+                            fds = []
+                    if fds:
+                        status |= not run(arguments, fds)
+                    return status
+
+                def unquote(value):
+                    result, index = bytearray(), 0
+                    while index < len(value):
+                        digits = value[index + 1:index + 4]
+                        if value[index] == 0x5c and len(digits) == 3 and all(0x30 <= digit <= 0x37 for digit in digits):
+                            result.append(int(digits, 8))
+                            index += 4
+                        else:
+                            result.append(value[index])
+                            index += 1
+                    return bytes(result)
+
+                def restore():
+                    owners = {pwd.getpwuid(me).pw_name.encode(), str(me).encode()}
+                    status, fds, text = 0, [], []
+                    for block in sys.stdin.buffer.read().split(b'\n\n'):
+                        lines = [line for line in block.split(b'\n') if line]
+                        if not lines:
+                            continue
+                        header = dict(line[2:].partition(b': ')[::2] for line in lines if line.startswith(b'# '))
+                        entries = [line for line in lines if not line.startswith(b'#')]
+                        if b'file' not in header or b'owner' not in header or not entries:
+                            sys.stderr.write('The ACL snapshot holds a malformed entry.\n')
+                            status = 1
+                            continue
+                        if header[b'owner'] not in owners:
+                            continue
+                        path = unquote(header[b'file'])
+                        try:
+                            fd = resolve(path)
+                        except OSError as error:
+                            if error.errno != errno.ENOENT:
+                                report(path, error.strerror)
+                                status = 1
+                            continue
+                        mode = os.fstat(fd)
+                        defaults = any(entry.startswith(b'default:') for entry in entries)
+                        # Another entry now holds the path: the snapshot's entry vanished, and its ACL with it.
+                        if stat.S_ISLNK(mode.st_mode) or mode.st_uid != me or (defaults and not stat.S_ISDIR(mode.st_mode)):
+                            os.close(fd)
+                            continue
+                        fds.append(fd)
+                        flags = b'# flags: ' + header[b'flags'] + b'\n' if b'flags' in header else b''
+                        text.append(b'# file: /proc/self/fd/%d\n' % fd + flags + b'\n'.join(entries) + b'\n\n')
+                        if len(fds) >= batch_size:
+                            status |= not run(['--restore=-'], fds, b''.join(text))
+                            fds, text = [], []
+                    if fds:
+                        status |= not run(['--restore=-'], fds, b''.join(text))
+                    return status
+
+                if sys.argv[1:2] == ['restore'] and len(sys.argv) == 2:
+                    sys.exit(restore())
+                if sys.argv[1:2] == ['set'] and len(sys.argv) > 3 and sys.argv[2] in ('a', 'd', 'D') and '--' in sys.argv:
+                    split = sys.argv.index('--')
+                    sys.exit(change(sys.argv[2], sys.argv[3:split], [os.fsencode(path) for path in sys.argv[split + 1:]]))
+                sys.exit('Usage: fd_acl set <a|d|D> <setfacl arguments>... -- <path>... | fd_acl restore')
+                PYTHON
+                )
+                # `root_owned <path>` succeeds when root owns the path and every directory above it. Only such a
+                # directory is above every checkout, which the managed user owns, so only there may root act.
+                root_owned() {
+                    local path=$1
+                    while :; do
+                        test "$(stat -c %u -- "$path")" = 0 || return 1
+                        if [ "$path" = / ]; then return 0; fi
+                        path=$(dirname -- "$path")
+                    done
+                }
                 # Setup can run while this walk does, for a task VM workspace whose Route follows its baseline
                 # start: `vp build` rewrites the build output, and Composer republishes assets. An entry that
                 # vanishes between a directory read and its own call needs no ACL, and an entry created in its
@@ -94,12 +250,12 @@ final readonly class DevelopmentCaddyAccessCommand
                         count=(-o \( -user "$worker" -fprintf "$seen" x -false \))
                     fi
                     walk find -P "$root" \
-                        \( -user "$me" "${type[@]}" -exec setfacl "$@" -- {} + \) "${count[@]}" \
+                        \( -user "$me" "${type[@]}" -exec python3 -I -c "$fd_acl" set "$kind" "$@" -- {} + \) "${count[@]}" \
                         -o \( "${type[@]}" "${strangers[@]}" -print0 \) \
                         -o \( -type d ! \( -readable -executable \) -prune \) >> "$foreign" || status=$?
                     if [ "$status" = 0 ] && [ -s "$seen" ]; then
                         (cd / && walk sudo -n -u "$worker" -- find -P "$root" \
-                            \( -user "$worker" "${type[@]}" -exec setfacl "$@" -- {} + \) \
+                            \( -user "$worker" "${type[@]}" -exec python3 -I -c "$fd_acl" set "$kind" "$@" -- {} + \) \
                             -o \( "${type[@]}" "${strangers[@]}" -print0 \) \
                             -o \( -type d ! \( -readable -executable \) -prune \)) >> "$foreign" || status=$?
                     fi
@@ -122,12 +278,11 @@ final readonly class DevelopmentCaddyAccessCommand
                 acl_entry() {
                     local entry=$1 owner
                     shift
-                    test -d "$entry" && test ! -L "$entry"
                     owner=$(stat -c %U -- "$entry")
                     if [ "$owner" = "$me" ]; then
-                        setfacl "$@" -- "$entry"
+                        python3 -I -c "$fd_acl" set D "$@" -- "$entry"
                     elif [ -n "$worker" ] && [ "$owner" = "$worker" ]; then
-                        (cd / && sudo -n -u "$worker" -- setfacl "$@" -- "$entry")
+                        (cd / && sudo -n -u "$worker" -- python3 -I -c "$fd_acl" set D "$@" -- "$entry")
                     else
                         printf 'An entry that neither %s nor the task worker owns: %s\n' "$me" "$entry" >&2
                         return 1
@@ -198,45 +353,66 @@ final readonly class DevelopmentCaddyAccessCommand
                 done
 
                 # The snapshot holds only what the walk grants. A failed walk restores those grants, and the deny on
-                # the rest of each checkout stays, so the failure never widens access. The Git directory is on disk,
-                # unlike a tmpfs /tmp, and a snapshot that recovery could not apply stays next to the checkout.
-                snapshot=$(mktemp -p "${git_directories[0]}" orbit-caddy-acl.XXXXXX)
-                chmod 0600 "$snapshot"
+                # the rest of each checkout stays, so the failure never widens access. The snapshots live in a private
+                # directory under /var/tmp, on disk unlike a tmpfs /tmp, where neither the worker nor Caddy can read
+                # or replace them. A snapshot that recovery could not apply stays there. `ancestors` holds only the
+                # root-owned directories above the checkouts that root grants, and only root restores it. `entries`
+                # holds everything else, and each account restores only its own entries from it.
+                snapshots=$(mktemp -d -p /var/tmp orbit-caddy-acl.XXXXXX)
+                test "$(stat -c '%U %a' -- "$snapshots")" = "$me 700"
+                : > "$snapshots/entries"
+                : > "$snapshots/ancestors"
                 changed=0
                 finish() {
                     result=$?
                     trap - EXIT
                     if [ "$result" != 0 ] && [ "$changed" = 1 ]; then
-                        if ! sudo -n setfacl --restore="$snapshot"; then
-                            printf 'Caddy access recovery failed; retained ACL snapshot: %s\n' "$snapshot" >&2
+                        recovered=1
+                        python3 -I -c "$fd_acl" restore < "$snapshots/entries" || recovered=0
+                        if [ -n "$worker" ]; then
+                            (cd / && sudo -n -u "$worker" -- python3 -I -c "$fd_acl" restore) < "$snapshots/entries" || recovered=0
+                        fi
+                        if [ -s "$snapshots/ancestors" ]; then
+                            (cd / && sudo -n python3 -I -c "$fd_acl" restore) < "$snapshots/ancestors" || recovered=0
+                        fi
+                        if [ "$recovered" = 0 ]; then
+                            printf 'Caddy access recovery failed; retained ACL snapshots: %s\n' "$snapshots" >&2
                             exit 1
                         fi
                     fi
-                    rm -f -- "$snapshot"
+                    rm -rf -- "$snapshots"
                     exit "$result"
                 }
                 trap finish EXIT
+                # Root grants Caddy passage through a root-owned directory above the checkouts only when Caddy cannot
+                # pass yet, and only such a directory that it saved first.
+                root_grants=
                 for index in "${!checkouts[@]}"; do
                     document_root=${roots[$index]}
-                    walk getfacl -R -P -p -- "$document_root" >> "$snapshot"
+                    walk getfacl -R -P -p -- "$document_root" >> "$snapshots/entries"
                     ancestor=$document_root
                     while [ "$ancestor" != / ]; do
                         ancestor=$(dirname -- "$ancestor")
-                        sudo -n getfacl -p -- "$ancestor" >> "$snapshot"
+                        if ! root_owned "$ancestor"; then
+                            getfacl -p -- "$ancestor" >> "$snapshots/entries"
+                        elif ! sudo -n -u caddy python3 -c 'import os, sys; sys.exit(not os.access(sys.argv[1], os.X_OK))' "$ancestor"; then
+                            getfacl -p -- "$ancestor" >> "$snapshots/ancestors"
+                            root_grants+="$ancestor"$'\n'
+                        fi
                     done
                     if [ -n "${storage[$index]}" ]; then
-                        getfacl -p -- "${applications[$index]}/storage" "${applications[$index]}/storage/app" >> "$snapshot"
-                        walk getfacl -R -P -p -- "${storage[$index]}" >> "$snapshot"
+                        getfacl -p -- "${applications[$index]}/storage" "${applications[$index]}/storage/app" >> "$snapshots/entries"
+                        walk getfacl -R -P -p -- "${storage[$index]}" >> "$snapshots/entries"
                     fi
                 done
                 # Linked worktrees keep shared Git metadata outside their checkout trees.
                 # Snapshot its directory ACL before denying traversal; never mutate sibling worktrees.
                 for git_directory in "${git_directories[@]}"; do
-                    getfacl -p -- "$git_directory" >> "$snapshot"
+                    getfacl -p -- "$git_directory" >> "$snapshots/entries"
                 done
                 changed=1
                 for git_directory in "${git_directories[@]}"; do
-                    setfacl -n -m u:caddy:--- -- "$git_directory"
+                    acl_entry "$git_directory" -n -m u:caddy:---
                 done
 
                 # Keep source, Git metadata, and environment files outside the Web root private.
@@ -257,14 +433,28 @@ final readonly class DevelopmentCaddyAccessCommand
                         if sudo -n -u caddy python3 -c 'import os, sys; sys.exit(not os.access(sys.argv[1], os.X_OK))' "$ancestor"; then
                             continue
                         fi
-                        current_acl=$(sudo -n getfacl -cp -- "$ancestor")
+                        current_acl=$(getfacl -cp -- "$ancestor")
                         caddy_acl=$(printf '%s\n' "$current_acl" | sed -n 's/^user:caddy:\([rwx-]\{3\}\).*$/\1/p')
                         caddy_acl=${caddy_acl:----}
                         mask=$(printf '%s\n' "$current_acl" | sed -n 's/^mask::\([rwx-]\{3\}\).*$/\1/p')
                         if [ -z "$mask" ]; then
                             mask=$(printf '%s\n' "$current_acl" | sed -n 's/^group::\([rwx-]\{3\}\).*$/\1/p')
                         fi
-                        sudo -n setfacl -n -m "u:caddy:${caddy_acl%?}x,m::${mask%?}x" -- "$ancestor"
+                        grant="u:caddy:${caddy_acl%?}x,m::${mask%?}x"
+                        if ! root_owned "$ancestor"; then
+                            # The checkout, the directories between it and the Web root, and the managed user's own
+                            # directories above it: each changes as its owner.
+                            acl_entry "$ancestor" -n -m "$grant"
+                        else
+                            case $'\n'"$root_grants" in
+                                *$'\n'"$ancestor"$'\n'*) ;;
+                                *)
+                                    printf 'Caddy cannot pass %s, which was not saved before the walk.\n' "$ancestor" >&2
+                                    exit 1
+                                    ;;
+                            esac
+                            (cd / && sudo -n python3 -I -c "$fd_acl" set D -n -m "$grant" -- "$ancestor")
+                        fi
                     done
 
                     acl_pass "$document_root" d -m d:u:caddy:r-x
