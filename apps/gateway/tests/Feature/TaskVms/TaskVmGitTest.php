@@ -13,7 +13,7 @@ use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Project;
 use Symfony\Component\Process\Process;
 use Tests\Support\GitRemoteRedirect;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
 const TVM_GIT_REPOSITORY = 'https://github.com/acme/shop.git';
@@ -40,7 +40,7 @@ function tvm_git_vm(): Closure
 {
     return function (RemoteCommand $command): CommandResult {
         test()->sent->append($command);
-        $result = (new LocalShellSshExecutor)->execute(new SshConnection('10.44.0.130', 'orbit', 22, '/keys/id', '/keys/known_hosts'), $command);
+        $result = (new StreamingLocalShellSshExecutor)->execute(new SshConnection('10.44.0.130', 'orbit', 22, '/keys/id', '/keys/known_hosts'), $command);
         if (! $result->succeeded()) {
             throw new RuntimeConvergenceException('vm', 'tasks.fetch_failed', 'The VM command failed: '.$result->stderr, result: $result);
         }

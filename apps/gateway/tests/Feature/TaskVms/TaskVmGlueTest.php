@@ -12,10 +12,8 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
@@ -36,7 +34,7 @@ use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\GitRemoteRedirect;
-use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\StreamingLocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
 use function Pest\Laravel\mock;
@@ -162,18 +160,7 @@ describe('publish and fetch', function (): void {
         $group = tvm_glue_group();
         tvm_glue_workspace($group)->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
         $group = $group->fresh() ?? $group;
-        $transport = new class implements SshExecutor
-        {
-            /** @var list<array{SshConnection, RemoteCommand}> */
-            public array $sent = [];
-
-            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-            {
-                $this->sent[] = [$connection, $command];
-
-                return (new LocalShellSshExecutor)->execute($connection, $command);
-            }
-        };
+        $transport = new StreamingLocalShellSshExecutor;
         app()->instance(SshExecutor::class, $transport);
 
         try {

@@ -17,6 +17,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Project;
 use Closure;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -41,7 +42,7 @@ final readonly class TaskVmGit
 
     private const int LockSeconds = 1800;
 
-    private const int LockWaitSeconds = 600;
+    private const int LockWaitSeconds = 300;
 
     /** Prints the commit IDs of the checkout's refs. */
     private const string ReadRefs = <<<'BASH'
@@ -109,7 +110,7 @@ final readonly class TaskVmGit
         }
         $url = GitRepositoryOrigin::validate($project->repository_url);
 
-        return $this->locked($project, function () use ($project, $branches, $access, $url, $errorCode): array {
+        return $this->locked($project, $errorCode, function () use ($project, $branches, $access, $url, $errorCode): array {
             $mirror = $this->mirror($project, $errorCode);
             $advertised = $this->checked('task-vm-git-ls-remote', $errorCode, $this->git($mirror, [
                 'ls-remote', '--heads', '--', $url, ...array_map(static fn (string $branch): string => 'refs/heads/'.$branch, $branches),
@@ -155,7 +156,7 @@ final readonly class TaskVmGit
         $haves = $this->commitIds($run(new RemoteCommand(['bash', '-c', self::ReadRefs, '--', $checkout]))->stdout);
         $scratch = $this->scratch($errorCode);
         try {
-            $pack = $this->locked($project, fn (): string => $this->pack($this->mirror($project, $errorCode), array_values(array_filter($tips, is_string(...))), $haves, $scratch, $errorCode));
+            $pack = $this->locked($project, $errorCode, fn (): string => $this->pack($this->mirror($project, $errorCode), array_values(array_filter($tips, is_string(...))), $haves, $scratch, $errorCode));
             $updates = [];
             foreach ($tips as $branch => $commit) {
                 $updates[] = 'refs/remotes/origin/'.$branch;
@@ -186,7 +187,7 @@ final readonly class TaskVmGit
         try {
             $pack = $scratch.'/receive.pack';
             $this->receive($checkout, $commit, $haves, $pack, $run, $errorCode);
-            $this->locked($project, function () use ($project, $commit, $branch, $write, $url, $pack, $errorCode): void {
+            $this->locked($project, $errorCode, function () use ($project, $commit, $branch, $write, $url, $pack, $errorCode): void {
                 $mirror = $this->mirror($project, $errorCode);
                 $this->checked('task-vm-git-index-pack', $errorCode, $this->git($mirror, [
                     'index-pack', '--strict', '--fix-thin', '--stdin', '--max-input-size='.self::MaxPackBytes,
@@ -333,9 +334,13 @@ final readonly class TaskVmGit
      * @param  Closure(): T  $work
      * @return T
      */
-    private function locked(Project $project, Closure $work): mixed
+    private function locked(Project $project, string $errorCode, Closure $work): mixed
     {
-        return Cache::lock('task-vm-git:'.$project->id, self::LockSeconds)->block(self::LockWaitSeconds, $work);
+        try {
+            return Cache::lock('task-vm-git:'.$project->id, self::LockSeconds)->block(self::LockWaitSeconds, $work);
+        } catch (LockTimeoutException $exception) {
+            throw new RuntimeConvergenceException('task-vm-git-lock', $errorCode, "The task VM Git mirror of Project [{$project->id}] stayed busy for ".self::LockWaitSeconds.' seconds.', $exception);
+        }
     }
 
     /** @param  list<string>  $arguments */

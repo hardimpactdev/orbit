@@ -905,6 +905,8 @@ Parking has these limits:
 Git on a task VM has these limits:
 
 - The Gateway keeps a mirror of each Project with task VM work, about the size of its repository.
+- A task VM checkout has only the branches that [Send branches to the VM](#send-branches-to-the-vm) lists, and no tags.
+- The mirror of a Project serves one fetch, pack, or push at a time. A waiting operation fails after 300 seconds.
 - A workspace without a template gets the whole history of its branches from the Gateway once. The Gateway packs it, and the pack goes through the Gateway's storage on its way to the VM.
 - The operations that [refuse a credential](#what-the-gateway-trusts) on a task VM need the workspace's group to end first, or a Project without task VM workspaces.
 
