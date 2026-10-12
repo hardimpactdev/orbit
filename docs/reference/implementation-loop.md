@@ -206,9 +206,13 @@ Three more runners take the Gateway shards after the first: `ci-beast-1` and `ci
 Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](../../tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
 
 - `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
-- `container NAME` launches the container, sets its `raw.apparmor` line, and installs missing parts of its toolchain and the runner. It upgrades no installed package. Run it only while the runner is idle: a repaired `raw.apparmor` line applies at the next restart.
-- `register NAME [TOKEN]` registers the runner and starts its service. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so it shows in the host's process list for a few seconds.
+- `container NAME` launches the container, sets its `raw.apparmor` line, and installs what is missing.
+- `register NAME [TOKEN]` registers the runner and starts its service.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
+
+`container` upgrades no installed package. Run it only while the runner is idle, because a repaired `raw.apparmor` line applies at the next restart.
+
+The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so the token shows in the host's process list for a few seconds.
 
 The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
 
