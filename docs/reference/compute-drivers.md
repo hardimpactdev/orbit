@@ -411,7 +411,7 @@ Only the commit ID that the Gateway approved names what it pushes. The VM's bran
 
 #### What the Gateway trusts
 
-From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `transfer.fsckObjects=true`, `protocol.allow=never`, and `protocol.https.allow=always`.
+From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
 The Gateway refuses to send a command that carries a GitHub credential to a task VM. The command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace, `instance:clone` from one, and `project:update` with a new repository URL while one exists. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
 

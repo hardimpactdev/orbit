@@ -30,7 +30,8 @@ use Illuminate\Support\Str;
  *
  * The VM is untrusted. The Gateway takes only commit IDs and pack data from it, never a path, ref name, or config.
  * Mirror Git runs with the Gateway's own config and the settings in `git()`. A commit ID from the VM only shrinks a
- * pack, and `index-pack --strict` checks every object that comes back.
+ * pack, and `index-pack --strict` checks every object that comes back, as `transfer.fsckObjects` would for a fetch.
+ * Fetches from GitHub skip those checks: an old commit in a real repository can fail them.
  */
 final readonly class TaskVmGit
 {
@@ -348,7 +349,7 @@ final readonly class TaskVmGit
     {
         $settings = [
             'core.hooksPath=/dev/null', 'core.fsmonitor=false', 'credential.helper=', 'http.followRedirects=false',
-            'transfer.fsckObjects=true', 'gc.autoDetach=false', 'protocol.allow=never',
+            'gc.autoDetach=false', 'protocol.allow=never',
             ...array_map(static fn (string $protocol): string => "protocol.{$protocol}.allow=always", $this->protocols),
         ];
         $options = [];
