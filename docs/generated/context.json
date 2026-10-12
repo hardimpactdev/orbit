@@ -2068,8 +2068,10 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },

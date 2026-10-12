@@ -2276,7 +2276,7 @@ export interface paths {
         head?: never;
         /**
          * Update Node settings
-         * @description Update typed storage settings on a node.
+         * @description Update typed storage and task worker settings on a node.
          */
         patch: operations["node-settings"];
         trace?: never;
@@ -4483,9 +4483,13 @@ export interface components {
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
+            tasks?: components["schemas"]["NodeTaskSettings"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeTaskSettings: {
+            worker?: string | null;
         };
         NodeUpdating: {
             /** @enum {string} */
@@ -13391,11 +13395,15 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": {
-                    apps: {
+                    apps?: {
                         path?: string | null;
+                    } | null;
+                    tasks?: {
+                        /** @enum {string|null} */
+                        worker?: "none" | null;
                     } | null;
                 };
             };

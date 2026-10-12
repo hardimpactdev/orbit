@@ -14,6 +14,8 @@ The Gateway serves a Model Context Protocol (MCP) server, so an agent can operat
 
 The Project's [development deploy steps](/reference/deployments#development-deploy-steps) are available as `project-dev-deploy-step-list`, `project-dev-deploy-step-create`, `project-dev-deploy-step-update`, and `project-dev-deploy-step-destroy`. Supply the numeric `project`; updates and removal also take the step name as `step`. Create and update accept `required` as a JSON boolean, so `false` stays false through MCP dispatch.
 
+`node-settings` takes `apps` and `tasks`, and needs at least one. `{"node": 17, "tasks": {"worker": "none"}}` records the [task worker opt-out](/reference/node-settings#opt-out-of-the-task-worker).
+
 ## Endpoints
 
 Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.
