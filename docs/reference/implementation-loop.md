@@ -141,7 +141,7 @@ On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dis
 
 The nightly run tests the newest `main` commit again, with every project's full suite. It adds a `Required checks` run to that commit. An automatic release needs every such run to pass, so a failed nightly run keeps that commit from shipping. Later pushes then run their full suites, so they ship only when the failure is fixed.
 
-The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish the [sandbox test baselines](/reference/compute-drivers#image-test-baselines).
+The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish the [test baselines](#ci-artifacts).
 
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 
@@ -378,7 +378,7 @@ Each publication records the tested commit, the CI run, a checksum, and the inpu
 
 ### CI artifacts
 
-After a project job passes on `main`, CI uploads the artifact `sandbox-tia-<index>-<commit>` and keeps it for 14 days. Pull request runs upload none. The worker and [sandbox images](/reference/compute-drivers#image-test-baselines) import the same artifact.
+After a project job passes on `main`, CI uploads the artifact `sandbox-tia-<index>-<commit>` and keeps it for 14 days. Pull request runs upload none. The worker imports this artifact.
 
 | File | Content |
 | --- | --- |
@@ -442,7 +442,7 @@ For Orbit, the store lives under the stable `default` repository's `.git/orbit-t
 | `bin/tia-cache status` | Prints the publications and the maintenance state |
 | `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
 | `bin/tia-cache register` | Registers this repository's store for its origin |
-| `bin/tia-cache import-ci` | Seeds one private graph from an extracted artifact, without publishing it, as [sandbox images](/reference/compute-drivers#image-test-baselines) do |
+| `bin/tia-cache import-ci` | Seeds one private graph from an extracted artifact, without publishing it |
 
 Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept repeatable `--project=apps/docs` options, and they cover all five projects by default.
 
