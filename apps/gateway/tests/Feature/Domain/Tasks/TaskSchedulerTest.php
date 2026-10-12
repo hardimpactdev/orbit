@@ -71,6 +71,7 @@ use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -828,7 +829,7 @@ it('provisioning failures raise assistance that clears on a capacity wait or bac
         {
             public function provision(InstanceProvisionIntent $intent): ?Instance
             {
-                throw new TaskCapacityException(fleetFull: true);
+                throw new TaskCapacityException(TaskWait::Capacity, fleetFull: true);
             }
         });
         expect(app(TaskScheduler::class)->claimAvailable())->toBe(0);
@@ -3269,7 +3270,7 @@ it('waits for topology before baseline and retries without failed spawns or comm
     $state = (object) ['ready' => false];
     mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
         if (! $state->ready) {
-            throw new TaskCapacityException(false, 'Declared topology is waiting for capacity.');
+            throw new TaskCapacityException(TaskWait::Topology, 'Declared topology is waiting for capacity.');
         }
     });
 
@@ -3304,7 +3305,7 @@ it('polls a running baseline without mutating topology and rechecks readiness af
     mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
         $state->calls++;
         if (! $state->ready) {
-            throw new TaskCapacityException(false, 'The branch runtime is waiting.');
+            throw new TaskCapacityException(TaskWait::Topology, 'The branch runtime is waiting.');
         }
     });
 

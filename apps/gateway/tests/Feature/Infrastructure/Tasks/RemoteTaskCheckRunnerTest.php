@@ -906,6 +906,41 @@ it('reports a check that writes its result and exits while status looks it up as
         ->and($status['result']['exit_code'])->toBe(5);
 });
 
+it('keeps a check running while the wall-clock start time of its process moves, as on a freshly booted VM', function (): void {
+    $script = test()->directory.'/script/check';
+    File::ensureDirectoryExists(dirname($script));
+    File::copy(resource_path('tasks/check'), $script);
+    $status = new Process(['python3', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, json, subprocess, sys
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        child = subprocess.Popen(['sleep', '30'])
+        try:
+            started = check.process_started(child.pid)
+            with open(f'/proc/{child.pid}/stat') as source:
+                ticks = source.read().rsplit(')', 1)[1].split()[19]
+            # The boot time settles: ps now derives a start time one second later for the same process.
+            real = subprocess.run
+            def run(arguments, *rest, **options):
+                if arguments[:1] == ['ps']:
+                    return subprocess.CompletedProcess(arguments, 0, 'Mon Oct 12 22:34:02 2026\n', '')
+                return real(arguments, *rest, **options)
+            check.subprocess.run = run
+            check.status(child.pid, started)
+            print(json.dumps({'started': started, 'ticks': ticks}))
+        finally:
+            child.kill()
+            child.wait()
+        check.status(child.pid, started)
+        PYTHON, $script]);
+    $lines = array_map(static fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($status->mustRun()->getOutput())));
+
+    expect($lines[0]['state'])->toBe('running')
+        ->and($lines[1]['started'])->toBe($lines[1]['ticks'])
+        ->and($lines[2]['state'])->toBe('lost');
+});
+
 it('reports a live check without a result as running, and a gone check without a result as lost', function (): void {
     expect(check_runner_status(alive: true)['state'])->toBe('running')
         ->and(check_runner_status(alive: false)['state'])->toBe('lost');

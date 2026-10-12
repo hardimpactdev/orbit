@@ -992,7 +992,7 @@ Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `
 | `lost` | The process was killed from outside and left no result. The check runs again once. A second loss asks for assistance. |
 | `cancelled` | An operator cancelled it. The reminder says so. |
 
-The scheduler identifies the process by its id and its start time, so a reused process id does not count. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
+The scheduler identifies the process by its id and its start time, so a reused process id does not count. The start time is the kernel's count of clock ticks after boot, from `/proc/<pid>/stat`. A wall-clock start time would move while the clock of a freshly booted task VM settles, and a running check would look lost. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 

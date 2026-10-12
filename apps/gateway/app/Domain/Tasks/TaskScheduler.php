@@ -18,6 +18,7 @@ use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -2685,6 +2686,12 @@ final readonly class TaskScheduler
                 $skipped[] = $reserved->id;
 
                 continue;
+            } catch (TaskVmFailedException $exception) {
+                $this->releaseFailedTaskVm($reserved, $exception->getMessage());
+                $this->endClaim($reserved, null);
+                $skipped[] = $reserved->id;
+
+                continue;
             } catch (Throwable $exception) {
                 report($exception);
                 $instance = InstanceProvisionFailure::fromException($exception);
@@ -2875,6 +2882,34 @@ final readonly class TaskScheduler
                 if (! $wasAsking && $applied) {
                     DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
                 }
+            }
+        });
+    }
+
+    /**
+     * Returns a group whose task VM failed to todo and makes it ask for assistance at once: a failed VM never
+     * recovers, so this is no wait and counts no retry. Each later claim finds the same VM and keeps the request, until
+     * a cancel destroys the VM. A request that already has this reason is left as it is.
+     */
+    private function releaseFailedTaskVm(Task $reserved, string $reason): void
+    {
+        DB::transaction(function () use ($reserved, $reason): void {
+            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
+                return;
+            }
+
+            $group->capacity_wait_reason = null;
+            $group->status = TaskGroupStatus::Todo;
+            $group->save();
+            if ($group->assistance_requested && $group->assistance_reason === $reason) {
+                return;
+            }
+            $wasAsking = $group->assistance_requested;
+            $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+            Log::warning('A task group asks for assistance: its task VM failed.', ['group_id' => $group->id, 'reason' => $reason]);
+            if (! $wasAsking && $applied) {
+                DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
             }
         });
     }

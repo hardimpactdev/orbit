@@ -88,9 +88,10 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | `Task VM: waiting for a warm VM.` | Every host is full, and at least one of its VMs is a [warm VM](#keep-warm-vms) that is still starting. The claim takes it once it is `warm` |
 | `Task VM: another placement is running.` | Another claim held the placement lock for 15 seconds |
 | `Task VM: provisioning.` | The jobs are still running |
-| `Task VM: failed: <code>: <message>` | A job failed. The group also asks for assistance. Cancel the group to destroy the VM |
 | `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid. Shared groups keep working, because only `vm` claims read these settings |
 | `Task VM: destroying.` | Cleanup has started |
+
+These reasons are waits: the group asks for no assistance. A `failed` task VM is no wait. The claim returns the group to `todo` without a wait reason, and the group asks for assistance at once with `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.` Every later claim finds the same VM and keeps the request. The group gets no other VM: cancel it to destroy the VM.
 
 The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address. Shared groups never get a workspace on a task VM Node: their Node selection leaves out every Node of a task VM that is not `destroyed`.
 
@@ -134,7 +135,7 @@ Then it removes the Node and marks the row `destroyed`, as above. A removal jour
 
 ### Place task VMs
 
-Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` takes the slots of its [size](#size-by-declared-topology), also a `warm`, `parked`, or `failed` one: one for a normal VM, two for a medium VM, three for a large VM. The free slots of a host are `max_vms` minus those slots.
+Each host in `task_vms.incus.hosts` has `max_vms` slots. Every task VM on the host that is not `destroyed` or `failed` takes the slots of its [size](#size-by-declared-topology), also a `warm` or `parked` one: one for a normal VM, two for a medium VM, three for a large VM. The free slots of a host are `max_vms` minus those slots. A `failed` VM holds no slot, so it never blocks placement: its group asks for assistance, and the pool refill destroys a failed pool VM before it counts the free slots. A failed VM of a group can still run on its host until the group is cancelled.
 
 A claim first takes a current [warm VM](#keep-warm-vms). It looks at the active hosts that have one, the host with the most free slots first, and takes that host's oldest warm VM. A warm VM already holds its slot, so a claim can take one on a full host.
 
@@ -156,7 +157,7 @@ The sizes are caps, not reservations. Incus does not pin the vCPUs, and the gues
 
 A subtask that declares a topology after its group got a normal VM waits before it starts, with the reason `Task VM: this subtask declares a topology, but the group's task VM was sized without one, and Orbit does not resize it.` Orbit never runs it without its nodes, and never moves the group to another VM. To go on, cancel that subtask, or cancel the group and create it again with the topology declared. No lane prepares a topology in a task VM yet. So a group whose subtasks declare one gets no large VM: the claim waits with `Declared topology is not available.` and holds no slots. See [Orbit Project](#orbit-project).
 
-Placement never puts more VMs on a host than its `max_vms`. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
+Placement never puts more VMs on a host than its `max_vms`, not counting `failed` ones. One placement runs at a time on the Gateway, under a cache lock, so two claims cannot both take the last slot or the same warm VM. The pool refill takes the same lock. Lowering `max_vms` below the number of VMs on a host removes no VM. The host gets no new VM until enough VMs are destroyed.
 
 With one host, placement is the same as before: the host takes VMs until it is full. To add a host, see [Add a task VM host](#add-a-task-vm-host).
 
@@ -347,6 +348,8 @@ The build runs these stages on the host over SSH, with `sudo -n incus --project 
 | `delete-builder` | Deletes the builder VM |
 | `prune` | Deletes the older templates of the Project on the host |
 
+A monorepo whose task workspaces have no Route, such as `orbit`, skips the `php` stage, as its Instance does: the checkout is not one PHP application.
+
 The step travels on stdin to a script file, so a long command fits. A [Gateway-owned step](/reference/instance-setup#gateway-owned-setup-steps), such as `@orbit/tia-baseline` or `@orbit/ci-caches`, becomes the same command as in the check. A builder has no Instance, so no SSR port is set. Each step gets its own timeout, but at most what the build's budget has left.
 
 A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock.
@@ -361,7 +364,7 @@ A build that fails before `publish` deletes its builder VM and its volume, and t
 
 #### Disk use and pruning
 
-A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB. Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
+A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB, and the orbit template, with the dependencies of all five Composer projects and the web app, 1.3 GiB. Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
 
 A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. No GitHub token reaches the builder: it gets the default branch from the Gateway's [mirror](#git-on-a-task-vm).
 
@@ -518,7 +521,7 @@ A builder VM has the size of a task VM and does not count against `max_vms`. It 
 
 The jobs log each step with its seconds as `Task VM step done.`. The wait for the worker is a step of its own, apart from the work: `queue` before `create` in `ProvisionTaskVm`, and `enroll-queue` before `boot` in `EnrollTaskVm`. The guest boots during `enroll-queue`. A `boot` after a released try counts from the launch.
 
-When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
+When `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, or `ResumeTaskVm` has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. A pool row then makes its host [wait](#warm-vm-failures). Otherwise the group asks for assistance, so `tasks:status` lists it. After `ProvisionTaskVm`, `EnrollTaskVm`, or `PrepareTaskVmRuntime` the reason is `Task VM failed: tvm-<id>: <code>: <message> Cancel the group to destroy the VM.`, the same reason that a [claim](#from-claim-to-workspace) sets; after `ResumeTaskVm` it is `Task VM failed: <code>: <message>`. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 
 ### Incus provider
 

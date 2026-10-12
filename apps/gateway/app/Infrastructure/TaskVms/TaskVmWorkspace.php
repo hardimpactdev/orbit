@@ -8,7 +8,9 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmFailedException;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
@@ -21,28 +23,35 @@ use Throwable;
 
 /**
  * The claim side of a `vm` group: the Node of its ready task VM. Until the VM is ready, the
- * claim waits with a `Task VM:` reason and tries again on the next tick. The first wait allocates the VM.
+ * claim waits with a `Task VM:` reason and tries again on the next tick. The first wait allocates the VM. A `failed`
+ * VM is not a wait: the claim asks for assistance, and the group keeps that VM until it is cancelled.
  *
  * It reads `TaskVmSettings` only here, never when the scheduler is built, so an invalid task VM value
  * makes `vm` groups wait and leaves shared groups alone.
  */
 final readonly class TaskVmWorkspace
 {
-    /** @throws TaskCapacityException while the group's task VM is not ready */
+    /**
+     * @throws TaskCapacityException while the group's task VM is not ready
+     * @throws TaskVmFailedException when the group's task VM failed
+     */
     public function node(Task $group): Node
     {
         $vm = TaskVmPlacement::forGroup($group);
         if (! $vm instanceof TaskVm) {
             try {
                 if (! app(TaskVmSettings::class)->enabled) {
-                    throw new TaskCapacityException(false, 'Task VM: task VMs are not enabled on this Gateway.');
+                    throw new TaskCapacityException(TaskWait::TaskVm, 'Task VM: task VMs are not enabled on this Gateway.');
                 }
                 $vm = app(AllocateTaskVmAction::class)->execute($group);
             } catch (TaskVmException $exception) {
-                throw new TaskCapacityException(false, "Task VM: {$exception->errorCode}: {$exception->getMessage()}");
+                throw new TaskCapacityException(TaskWait::TaskVm, "Task VM: {$exception->errorCode}: {$exception->getMessage()}");
             }
         }
 
+        if ($vm->state === TaskVmState::Failed) {
+            throw new TaskVmFailedException($vm);
+        }
         $node = $vm->node;
         if ($vm->state === TaskVmState::Ready && $node instanceof Node && $node->status === LifecycleStatus::Active) {
             return $node;
@@ -52,8 +61,7 @@ final readonly class TaskVmWorkspace
             ResumeTaskVm::dispatch($vm->id);
         }
 
-        throw new TaskCapacityException(false, match ($vm->state) {
-            TaskVmState::Failed => "Task VM: failed: {$vm->error_code}: {$vm->error_message}",
+        throw new TaskCapacityException(TaskWait::TaskVm, match ($vm->state) {
             TaskVmState::Destroying => 'Task VM: destroying.',
             TaskVmState::Parked => WakeTaskVmAction::Resuming,
             default => 'Task VM: provisioning.',
