@@ -359,6 +359,32 @@ describe('TaskCheckWorkerUser', function (): void {
         }
     });
 
+    it('checks out a resolved branch as the worker so a planted filter never runs as the managed user', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-resolve');
+        $checkout = $instance->checkout_path;
+        file_put_contents($checkout.'/.gitattributes', "README.md filter=uid\n");
+        file_put_contents($checkout.'/README.md', "filtered\n", FILE_APPEND);
+        orb76_run(['git', '-C', $checkout, 'add', '.gitattributes', 'README.md']);
+        orb76_run(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'filter attributes']);
+        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/filtered']);
+        orb76_run(['git', '-C', $checkout, 'reset', '-q', '--hard', 'HEAD~1']);
+        $users = $this->sandbox.'/worker-users';
+        file_put_contents($users, '');
+        (new Process(['setfacl', '-m', 'u:nobody:rw', $users]))->mustRun();
+        orb76_run(['git', '-C', $checkout, 'config', 'filter.uid.smudge', 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> '.escapeshellarg($users).'; cat']);
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $this->source->inspectPrepared($instance);
+        $instance->update(['branch_override' => 'filtered']);
+
+        expect($this->source->resolve($instance->refresh())->branch)->toBe('filtered');
+        $records = file($users, FILE_IGNORE_NEW_LINES) ?: [];
+        expect($records)->not->toBeEmpty();
+        foreach ($records as $record) {
+            expect($record)->toBe('65534:absent');
+        }
+    });
+
     it('refuses removal content inspection when the configured worker cannot run', function (): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-missing-worker');
