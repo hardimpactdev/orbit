@@ -309,7 +309,7 @@ final readonly class TaskVmSettings
         if (! is_int($maxVms)) {
             throw self::invalid('upcloud.max_vms must be a whole number from 1 to 16.');
         }
-        $diskGb = filter_var(self::filled(Config::get('task_vms.upcloud.disk_gb')) ?? 25, FILTER_VALIDATE_INT, ['options' => ['min_range' => 10, 'max_range' => 200]]);
+        $diskGb = filter_var(self::filled(Config::get('task_vms.upcloud.disk_gb')) ?? 30, FILTER_VALIDATE_INT, ['options' => ['min_range' => 10, 'max_range' => 200]]);
         if (! is_int($diskGb)) {
             throw self::invalid('upcloud.disk_gb must be a whole number of GB from 10 to 200.');
         }
@@ -320,7 +320,7 @@ final readonly class TaskVmSettings
             tokenFile: $tokenFile,
             maxVms: $maxVms,
             zone: self::name(self::filled(Config::get('task_vms.upcloud.zone')) ?? 'nl-ams1', '/\A[a-z]{2}-[a-z]{3}[1-9]\z/D', 'upcloud.zone'),
-            plan: self::name(self::filled(Config::get('task_vms.upcloud.plan')) ?? '2xCPU-4GB', '/\A[A-Za-z0-9][A-Za-z0-9-]{0,63}\z/D', 'upcloud.plan'),
+            plan: self::name(self::filled(Config::get('task_vms.upcloud.plan')) ?? 'STARTER-2xCPU-4GB', '/\A[A-Za-z0-9][A-Za-z0-9-]{0,63}\z/D', 'upcloud.plan'),
             diskGb: $diskGb,
             sourceTemplate: self::name(self::filled(Config::get('task_vms.upcloud.source_template')) ?? '01000000-0000-4000-8000-000030260200', '/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/D', 'upcloud.source_template'),
         );
