@@ -72,6 +72,13 @@ final readonly class UpCloudServers
         foreach ($servers as $server) {
             $uuid = is_array($server) ? $server['uuid'] ?? null : null;
             $title = is_array($server) ? $server['title'] ?? null : null;
+            // The list carries each server's labels; a server without them there is read on its own.
+            if (is_array($server) && is_string($uuid) && Str::isUuid($uuid) && data_get($server, 'labels.label') === null) {
+                $server = $this->api->request('GET', 'server/'.$uuid, allowMissing: true)['server'] ?? null;
+                if ($server === null) {
+                    continue;
+                }
+            }
             $label = is_array($server) ? array_values(array_filter((array) data_get($server, 'labels.label', []), static fn (mixed $label): bool => is_array($label) && ($label['key'] ?? null) === $labelKey)) : [];
             $value = $label[0]['value'] ?? null;
             if (! is_string($uuid) || ! Str::isUuid($uuid) || ! is_string($title) || ! is_string($value)) {

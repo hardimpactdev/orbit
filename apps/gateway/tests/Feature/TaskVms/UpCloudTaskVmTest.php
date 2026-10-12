@@ -60,6 +60,9 @@ final class FakeUpCloud
     /** @var list<array<string, mixed>> */
     public array $created = [];
 
+    /** List servers without their labels, as the list may. */
+    public bool $listWithoutLabels = false;
+
     private int $addresses = 10;
 
     public function install(): void
@@ -110,6 +113,10 @@ final class FakeUpCloud
             $key = $params['label'] ?? null;
             $servers = array_values(array_filter($this->servers, static fn (array $server): bool => $key === null
                 || array_any($server['labels']['label'], static fn (array $label): bool => $label['key'] === $key)));
+
+            if ($this->listWithoutLabels) {
+                $servers = array_map(static fn (array $server): array => array_diff_key($server, ['labels' => true]), $servers);
+            }
 
             return Http::response(['servers' => ['server' => $servers]]);
         }
@@ -500,6 +507,13 @@ describe('provider', function (): void {
         expect($this->upcloud->servers)->toBe([])
             ->and($this->upcloud->count("DELETE server/{$uuid}?storages=1"))->toBe(1)
             ->and($provider->observe($vm))->toBeNull();
+    });
+
+    it('reads the label of a server that the list shows without labels', function (): void {
+        $this->upcloud->listWithoutLabels = true;
+        $uuid = $this->upcloud->server('tvm-901', [['key' => 'orbit-task-vm', 'value' => '901']]);
+
+        expect(app(UpCloudServers::class)->labelled(TaskVmUpCloud::Label))->toBe([['uuid' => $uuid, 'title' => 'tvm-901', 'value' => '901']]);
     });
 
     it('refuses a server that does not carry its label', function (): void {
