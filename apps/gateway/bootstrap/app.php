@@ -33,6 +33,7 @@ use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Jobs\TaskVms\RefillTaskVmPool;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Jobs\TaskVms\RefreshUpCloudTaskVmTemplate;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -79,9 +80,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // refresh when it ends, and every base image promote does too, so templates always follow the image.
         $schedule->job(new RefreshTaskVmBaseImages)->dailyAt('03:00')
             ->when(static fn (): bool => config('task_vms.enabled') === true);
-        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone.
+        // The nightly UpCloud template refresh, on the template queue, so its build of about 20 minutes holds up no
+        // task VM job. It runs while the UpCloud token file is set, also with the overflow off.
+        $schedule->job(new RefreshUpCloudTaskVmTemplate)->dailyAt('02:00')
+            ->when(static fn (): bool => filled(config('task_vms.upcloud.token_file')));
+        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
+        // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
         $schedule->job(new SweepTaskVmHosts)->everyTenMinutes()
-            ->when(static fn (): bool => config('task_vms.enabled') === true);
+            ->when(static fn (): bool => config('task_vms.enabled') === true || filled(config('task_vms.upcloud.token_file')));
         // The task VM pool: warm VMs up to each host's warm_vms, and a drain while task VMs are off. Inert while no
         // host has warm_vms and no pool VM exists.
         $schedule->job(new RefillTaskVmPool)->everyMinute()
