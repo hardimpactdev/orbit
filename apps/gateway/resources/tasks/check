@@ -49,6 +49,8 @@ RESULT = os.path.join(DIRECTORY, 'check.json')
 LOG = os.path.join(DIRECTORY, 'check.log')
 OUTPUT_TAIL = 16384
 COMMAND_OUTPUT_TAIL = 4096
+# The log shows at most this much of a setup step's command: a Gateway-owned step carries its payload in the command.
+SETUP_COMMAND_LOG = 4096
 DELIVERABLE_RESULTS = os.path.join(DIRECTORY, 'deliverables')
 # The Gateway reads these failed_step values. invalid_deliverable asks for assistance with the log's messages.
 INVALID_DELIVERABLE = 'invalid_deliverable'
@@ -211,7 +213,10 @@ def run_setup(checkout, setup, log):
     """Run each setup step in order. Return the name and exit code of the first step that fails."""
     with open(setup) as steps:
         for step in json.load(steps):
-            log.write(f"$ {step['command']}\n".encode())
+            command = step['command']
+            if len(command) > SETUP_COMMAND_LOG:
+                command = command[:SETUP_COMMAND_LOG] + f'\n[{len(command) - SETUP_COMMAND_LOG} more characters of the command are not shown]'
+            log.write(f"$ {command}\n".encode())
             log.flush()
             try:
                 with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as script:
