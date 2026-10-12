@@ -179,7 +179,7 @@ The Gateway job fails when the plan job fails, or when the plan does not end wit
 
 "Re-run failed jobs" copies the finished plan job and keeps its artifact, so a re-run of the Gateway job or a shard reads the same plan. A re-run of the Gateway job checks out `refs/pull/N/merge` again. When `main` moved since the first attempt, the merge ref names a new commit, and the job fails with an error that asks for "Re-run all jobs". A full re-run plans again and replaces the artifact.
 
-A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. On the pull request that added the shard runners, a touched boot file selected 604 classes. They ran as 201, 135, 134, and 134 classes, and the Gateway tests ended about 3.5 minutes after the Gateway job started. One job runs the full suite of about 760 classes in about 13.5 minutes. At that rate, the same 604 classes would take about 11 minutes in one job.
+A sharded pull request holds one Sabre runner and up to three [shard runners](#self-hosted-shard-runners) on Beast and Shark. Two Sabre runners stay free for other runs, and only one shard uses Sabre's CPU. On the pull request that added the shard runners, a touched boot file selected 604 classes. They ran as 201, 135, 134, and 134 classes, and the Gateway tests ended about 3.5 minutes after the Gateway job started. On the shard runner containers, 609 classes took about 4 minutes. One job runs the full suite of about 760 classes in about 13.5 minutes. At that rate, the same 604 classes would take about 11 minutes in one job.
 
 Runs on `main` never shard. A push or a full run there keeps one Gateway job, because Pest writes the whole graph in one run, and the graph and the main cache artifact must describe the tested commit. A full Gateway run on `main` still takes about 13 minutes.
 
@@ -201,45 +201,42 @@ The `github-runner-egress` systemd unit loads an nftables rule that rejects traf
 
 ### Self-hosted shard runners
 
-Three more runners take the Gateway shards after the first: `beast-1` and `beast-2` on Beast, and `shark-1` on Shark. They have the labels `self-hosted`, `Linux`, `X64`, and `orbit-shard`, and not `sabre`, so no other job lands on them. Each one is set up like a runner on Sabre: a `github-runner` system user, a runner service that mounts its work directory at `/home/runner/work`, and the same `github-runner-egress` rule. The user has no `sudo` and no group beyond its own, so a shard leaves out the `privileged` group.
+Three more runners take the Gateway shards after the first: `ci-beast-1` and `ci-beast-2` on Beast, and `ci-shark-1` on Shark. They have the labels `self-hosted`, `Linux`, `X64`, and `orbit-shard`, and not `sabre`, so no other job lands on them. The workflow selects them by label, not by name.
 
-Beast and Shark are app-dev Nodes, so the runners share them with Instances and tasks. Each shard runs at most 4 Pest processes. The job uses the Nodes' own PHP 8.5 with PCOV and Composer from the `orbit-php` apt source, and installs Node 24 with the Node setup step. The Nodes' PHP CLI keeps `zend.exception_ignore_args` on for their Instances, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
+Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](../../tools/ci-runners/setup.sh) creates and repairs every part, and each of its steps is idempotent:
 
-Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
+- `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
+- `container NAME` launches the container and installs its toolchain and the runner.
+- `register NAME [TOKEN]` registers the runner and starts its service. The registration token comes from the argument or from `ORBIT_RUNNER_TOKEN`, and the script never stores it.
+- `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
 
-Each Composer project job caches three sets of files in GitHub Actions cache.
+The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
 
-| Cache | Key inputs |
-| --- | --- |
-| PHPStan result cache, `vendor/phpstan/cache/resultCache.php` | `composer.lock`, `phpstan.neon` |
-| Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
-| Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
+Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nesting. AppArmor denies its PID 1 and udevd the signals and traces to their own processes, whose labels are stacked. So each container sets one `raw.apparmor` line: `signal peer=@{profile_name}//&*, ptrace peer=@{profile_name}//&*,`. It allows signals and traces only to processes that carry the container's own profile, so it reaches nothing outside the container. Nesting stays off. The project allows container low-level keys only for this line; only `incus-admin` members can set them.
 
-A run on `main` restores the newest cache for its branch, then any cache for the project. A pull request restores only `main` caches. For the test-impact graph, it first takes the graph of its base commit, then the newest `main` graph. GitHub tries every restore key in a pull request's own cache scope before it looks at `main`, so a pull request saves no cache.
+The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast, and reserved IPv4 ranges, and all IPv6. Its default for egress and ingress is reject. So a job reaches the public internet, but not the host's LAN, WireGuard, the Gateway, docker and task bridges, the other container, or the bridge gateway. A container's `127.0.0.1` is its own loopback, so the host's loopback services, such as the Caddy admin API, are out of reach.
 
-An older cache of the pull request would otherwise shadow `main`'s, and its graph would count every `main` change since it as changed. Runs outside pull requests save each cache only after their checks succeed. Each such run saves its test-impact graph under its own key, so a full run on a commit that already has a graph still replaces the newest one. On `main`, a graph restored from another cache prefix runs the full suite. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`. A passing project job on `main` also uploads the [artifact](#ci-artifacts) that the main caches import.
+Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has PHP 8.5 with PCOV and the Gateway's extensions from the `orbit-php` apt source, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 
-The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
+Two limits remain:
 
-## Local checks
+- The runners are not ephemeral. A job can leave files or processes in its container for the next job. The container is the boundary, and only approved code from this repository runs there.
+- Incus accepts DNS on port 53 from `orbitci0` to every host address, before the ACL applies. So a job can query each dnsmasq on the host, such as the task bridge's. It reveals task names and addresses that the job still cannot reach, and it cannot change anything. Closing it needs a host firewall rule.
 
-Run these commands in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Each project keeps its own dependencies, test configuration, and test-impact graph.
+To remove the runners from a host, run `config.sh remove` as `runner` in each container with a remove token, then delete the containers, the project, the bridge, the ACL, and the ufw rule:
 
-| Command | Result |
-| --- | --- |
-| `composer test:affected` | Runs the affected tests with test-impact analysis (TIA) and two parallel workers; the Gateway, with the largest suite, uses four |
-| `composer check` | Runs `guidance:check`, Rector, the Pint check, and PHPStan. It does not run the test suite. |
-| `composer test` | Runs the project suite with TIA in parallel |
-| `composer format` | Applies Pint's Laravel preset |
-| `composer analyse` | Runs PHPStan. The applications use Larastan. |
-
-In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph separate from the graph that `test:affected` reads. In every project, `bin/guidance-check` creates private temporary directories for the graph and Blade views before Pest starts, then removes them when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
-
-TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default. E2E scenario runs use the directory in `ORBIT_SCENARIO_TIA_DIRECTORY` instead, which must be under the primary checkout's `.e2e/scenarios/runs/`.
-
-Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
-
-Root `bin/test` runs all five project suites in parallel and splits the available processors between them.
+```bash
+token=$(gh api -X POST repos/nckrtl/orbit/actions/runners/remove-token --jq .token)
+for name in ci-beast-1 ci-beast-2; do
+  incus exec "$name" --project orbit-ci --env TOKEN="$token" -- su runner -c 'cd ~/actions-runner && ./svc.sh stop; ./config.sh remove --token "$TOKEN"'
+  incus delete --force "$name" --project orbit-ci
+done
+incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci
+incus project delete orbit-ci
+incus network delete orbitci0
+incus network acl delete orbit-ci-egress
+sudo ufw route delete allow in on orbitci0
+```
 
 ### The candidate gate
 
