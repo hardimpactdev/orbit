@@ -6,14 +6,13 @@ namespace App\Jobs\TaskVms;
 
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
-use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
+use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
-use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
@@ -26,7 +25,8 @@ use Throwable;
 
 /**
  * Destroys a task VM after its workspace is gone: `destroying`, model key revoked, VM deleted, the Node
- * removed offline, and only then `destroyed`. A row that is not `destroyed` keeps its Node a task VM
+ * removed offline, and only then `destroyed`. Workspace removal of a task VM group deletes the VM itself
+ * ({@see DeleteTaskVmAction}) and queues this job for the rest. A row that is not `destroyed` keeps its Node a task VM
  * Node, so Pi never falls back to the Gateway-wide token. A failed step stays on the row as its error,
  * and the job runs again until it succeeds.
  *
@@ -57,7 +57,7 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         return (string) $this->taskVmId;
     }
 
-    public function handle(TaskVmRuntime $runtime, TaskVmProvider $provider, RemoveNodeAction $nodes, ForgetTaskVmWorkspacesAction $workspaces, RemoveTaskWorkspaceAction $removal): void
+    public function handle(TaskVmProvider $provider, DeleteTaskVmAction $delete, RemoveNodeAction $nodes, RemoveTaskWorkspaceAction $removal): void
     {
         $vm = TaskVm::query()->find($this->taskVmId);
         if (! $vm instanceof TaskVm || $vm->state === TaskVmState::Destroyed) {
@@ -75,20 +75,17 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $delete->execute($vm);
+        if ($workspace && $vm->group instanceof Task) {
+            $removal->clearFailure($vm->group);
+        }
+
         try {
-            $vm->update(['state' => TaskVmState::Destroying, 'error_code' => null, 'error_message' => null]);
-            $runtime->release($vm);
-            $provider->destroy($vm);
-            if ($workspace) {
-                $workspaces->execute($vm);
-                if ($vm->group instanceof Task) {
-                    $removal->clearFailure($vm->group);
-                }
-            }
             $node = $vm->node()->first();
             if ($node instanceof Node) {
-                // The VM is gone, so the Node is unreachable: offline removal sheds its role and forgets its Processes.
-                $nodes->execute($node, $this->gateway(), offline: true, force: true);
+                // The VM is gone, so the Node is unreachable: offline removal sheds its role and forgets its Processes
+                // without probing the dead address.
+                $nodes->execute($node, $this->gateway(), offline: true, force: true, deleted: true);
             }
             $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now()]);
         } catch (Throwable $exception) {

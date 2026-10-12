@@ -773,7 +773,7 @@ Inside the VM, everything runs as the managed user `orbit`, which has passwordle
 
 A task that waits for review stops its VM after `ORBIT_TASK_VMS_PARK_AFTER_MINUTES`, and its next work starts the VM again with the same workspace. Meanwhile the task shows the reason `Task VM: resuming.` See [Park and resume](/reference/compute-drivers#park-and-resume).
 
-When the task ends, Orbit removes the workspace and then destroys the VM. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
+When the task ends, Orbit removes the workspace with the VM. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
 
 ### Request a topology
 

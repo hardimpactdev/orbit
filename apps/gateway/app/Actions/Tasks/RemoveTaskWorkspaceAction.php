@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCompute;
@@ -14,9 +18,12 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmState;
+use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
+use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -28,7 +35,8 @@ use Throwable;
  * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
  * when the group holds no Instance.
  *
- * Shared workspace removal uses the generic forced Instance remover. Sandbox removal uses its recorded compute ownership. It runs the Project's teardown steps, then deletes the
+ * Shared workspace removal uses the generic forced Instance remover. Sandbox removal uses its recorded compute ownership.
+ * A workspace on a task VM goes with its VM. The generic remover runs the Project's teardown steps, then deletes the
  * checkout and only then the Instance row. A refused teardown or source check leaves both in place. The
  * caller records assistance and returns the error, so the checkout stays named by a record.
  */
@@ -113,7 +121,30 @@ final readonly class RemoveTaskWorkspaceAction
             app(TaskWorkspaceTopology::class)->release($instance, $group->id);
         }
 
+        $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
+        if ($vm instanceof TaskVm) {
+            $this->removeWithTaskVm($instance, $vm);
+
+            return;
+        }
+
         $this->remover->execute($instance, true);
+    }
+
+    /**
+     * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
+     * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
+     * earlier removal attempt ran it, then the VM is deleted and the workspace records are forgotten offline. The
+     * queued `DestroyTaskVm` removes the Node.
+     */
+    private function removeWithTaskVm(Instance $instance, TaskVm $vm): void
+    {
+        $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
+        if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
+            app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
+        }
+        app(DeleteTaskVmAction::class)->execute($vm);
+        DestroyTaskVm::dispatch($vm->id);
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */

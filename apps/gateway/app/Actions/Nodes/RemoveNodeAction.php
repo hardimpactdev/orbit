@@ -12,6 +12,7 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningLock;
@@ -57,16 +58,22 @@ final readonly class RemoveNodeAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
+    /**
+     * `$deleted` states that the caller deleted the Node's machine itself, as `DestroyTaskVm` does after it deletes a
+     * task VM. An offline removal then skips the reachability probes, which would each wait out the SSH connect
+     * timeout against the dead address.
+     */
     public function execute(
         Node $node,
         Node $caller,
         bool $offline = false,
         bool $force = false,
+        bool $deleted = false,
     ): RemoveNodeData {
         try {
             return $this->provisioningLock->run(
                 $node->name,
-                fn (): RemoveNodeData => $this->remove($node, $caller, $offline, $force),
+                fn (): RemoveNodeData => $this->remove($node, $caller, $offline, $force, $deleted && $offline),
             );
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
@@ -78,6 +85,7 @@ final readonly class RemoveNodeAction
         Node $caller,
         bool $offline,
         bool $force,
+        bool $deleted,
     ): RemoveNodeData {
         try {
             $node->refresh();
@@ -94,7 +102,17 @@ final readonly class RemoveNodeAction
         $this->guardDatabaseServers($node);
         $this->guardProtected($node, $caller);
         $this->forgetTaskVmImageKey($node);
-        $shed = $offline ? $this->shedRoles($node, $force) : null;
+        // A task VM Node never hosts a Metrics exporter, so its removal changes nothing in Metrics. Its role removal
+        // holds the fleet Metrics reconcile back, and the Metrics retire below is skipped, as its enrollment skips it.
+        $taskVm = TaskVm::query()->where('node_id', $node->id)->exists();
+        $shed = null;
+        if ($offline && $taskVm) {
+            app(MetricsReconcileDeferral::class)->during(function () use ($node, $force, $deleted, &$shed): void {
+                $shed = $this->shedRoles($node, $force, $deleted);
+            });
+        } elseif ($offline) {
+            $shed = $this->shedRoles($node, $force, $deleted);
+        }
         $this->guardRemoval($node);
 
         if ($shed === null) {
@@ -141,7 +159,9 @@ final readonly class RemoveNodeAction
         }
 
         try {
-            $this->metrics->retire($node);
+            if (! $taskVm) {
+                $this->metrics->retire($node);
+            }
         } catch (Throwable $exception) {
             $node->update(['status' => $priorStatus]);
             $rollbackFailure = $this->restoreMetricsSelection();
@@ -412,9 +432,9 @@ final readonly class RemoveNodeAction
      *
      * @return list<string>|null the roles shed, or null when the node answered
      */
-    private function shedRoles(Node $node, bool $force): ?array
+    private function shedRoles(Node $node, bool $force, bool $deleted): ?array
     {
-        if ($this->reachability->degradation($node) === null) {
+        if (! $deleted && $this->reachability->degradation($node) === null) {
             return null;
         }
 
@@ -429,7 +449,7 @@ final readonly class RemoveNodeAction
         $shed = [];
 
         foreach ($node->roles()->orderBy('role')->get() as $assignment) {
-            $this->roles->execute($node, $assignment->role, force: true, purgeData: false, offline: true);
+            $this->roles->execute($node, $assignment->role, force: true, purgeData: false, offline: true, deleted: $deleted);
             $shed[] = $assignment->role->value;
         }
 
