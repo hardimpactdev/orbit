@@ -42,7 +42,8 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                     origin=$(git -C "$path" config --get remote.origin.url)
                     test "$origin" = "$current"
                     git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
-                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$path" ls-remote --heads -- "$proposed" >/dev/null
+                    # Outside the checkout: its config, which the worker can write, must not shape a credentialed call.
+                    git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C / ls-remote --heads -- "$proposed" >/dev/null
                     BASH,
                 'app-update-repository-preflight',
                 'project.repository_preflight_failed',
@@ -125,21 +126,23 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
     {
         $this->run(
             $instance,
-            [$instance->checkout_path, $newBranch],
-            <<<'BASH'
+            [$instance->checkout_path, $newBranch, $instance->loadMissing('project')->project->repository_url],
+            WorkspaceGit::networkPreamble().<<<'BASH'
                 path=$1
                 branch=$2
+                repository=$3
                 test -d "$path"
                 git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$path" fetch --prune -- origin
+                isolated_fetch "$path" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
                 git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
                 BASH,
             'app-update-default-branch-preflight',
             'project.source_switch_failed',
             read: $this->access->for(
-                $instance->loadMissing('project')->project->repository_url,
+                $instance->project->repository_url,
                 $instance->project->source_access,
             ),
+            worker: true,
         );
     }
 

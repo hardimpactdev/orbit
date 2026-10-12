@@ -110,7 +110,7 @@ final class DevelopmentCheckoutProgram
         return self::guard().<<<'BASH'
 
             branch=$1
-            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$home" fetch --no-tags -- origin "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
+            isolated_fetch "$home" "$repository" 0 "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null
             git -C "$home" rev-parse --verify "refs/remotes/origin/$branch^{commit}"
             if legacy; then printf 'LEGACY\n'; fi
             BASH;

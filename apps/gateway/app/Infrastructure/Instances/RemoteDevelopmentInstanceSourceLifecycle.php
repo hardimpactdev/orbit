@@ -148,7 +148,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
         // The checkout writes the work tree and can start filters. On a checkout shared with the worker it runs as the worker.
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance)).WorkspaceGit::networkPreamble().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -162,7 +162,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --prune -- origin
+                    isolated_fetch "$checkout" "$repository" 1 '+refs/heads/*:refs/remotes/origin/*'
 
                     branch=${branch_override:-$instance_name}
                     if [ -n "$seed_commit" ]; then

@@ -66,6 +66,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
+use Tests\Support\PlantedGitConfig;
 
 pest()->group('privileged');
 
@@ -384,6 +385,20 @@ describe('TaskCheckWorkerUser', function (): void {
             expect($record)->toBe('65534:absent');
         }
     });
+
+    it('fetches at resolve without running a command planted in the checkout config', function (?string $worker): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-planted-fetch');
+        $checkout = $instance->checkout_path;
+        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/planted']);
+        PlantedGitConfig::plant($checkout, $this->sandbox.'/markers', [$this->repository, $this->remoteOrigin]);
+        config()->set('orbit.tasks.worker_user', $worker);
+        $this->source->inspectPrepared($instance);
+        $instance->update(['branch_override' => 'planted']);
+
+        expect($this->source->resolve($instance->refresh())->branch)->toBe('planted')
+            ->and(PlantedGitConfig::markers($this->sandbox.'/markers'))->toBe([]);
+    })->with(['managed user' => null, 'worker' => 'nobody']);
 
     it('refuses removal content inspection when the configured worker cannot run', function (): void {
         config()->set('orbit.tasks.worker_user', null);

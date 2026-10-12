@@ -52,7 +52,7 @@ An unchanged tick creates no deployment history row.
 
 A deployment runs in the checkout itself, in two phases.
 
-**Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
+**Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. The fetch uses the Project repository URL and never reads the checkout's `.git/config`; see [credentialed Git](/reference/instance-setup#credentialed-git). Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
 
 The exception is a directory that the old commit has and the new commit removes, such as a package. Git would leave that directory's untracked and ignored files, for example its `node_modules`. Orbit deletes them before the checkout, so a [seed](#seeds) copy finds only directories that the commit has.
 
