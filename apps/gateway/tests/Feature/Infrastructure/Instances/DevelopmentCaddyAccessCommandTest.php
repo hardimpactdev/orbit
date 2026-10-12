@@ -672,6 +672,181 @@ it('fails and restores access when the mode of the Web root hides it from Caddy'
     }
 });
 
+it('never widens a private file that reuses the inode number of a saved entry', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+    $retained = null;
+
+    try {
+        $checkout = "$root/checkout";
+        development_caddy_access_share($root);
+        // After the snapshot saved index.html, at the first change, the worker removes it, waits until the managed
+        // user writes a mode 0600 file that reuses the freed inode number, and moves that file onto the saved name.
+        // Then the worker fails the walk.
+        mkdir("$root/bin");
+        file_put_contents("$root/bin/setfacl", <<<BASH
+            #!/bin/bash
+            if [ ! -e '$root/attempted' ]; then
+                touch '$root/attempted'
+                inode=\$(stat -c %i -- '$checkout/web/site/index.html')
+                sudo -n -u nobody rm -f -- '$checkout/web/site/index.html'
+                for attempt in \$(seq 1 200); do
+                    printf 'SECRET=value' > '$checkout/secret-'\$attempt
+                    chmod 0600 -- '$checkout/secret-'\$attempt
+                    if [ "\$(stat -c %i -- '$checkout/secret-'\$attempt)" = "\$inode" ]; then
+                        sudo -n -u nobody mv -f -- '$checkout/secret-'\$attempt '$checkout/web/site/index.html'
+                        touch '$root/reused'
+                        break
+                    fi
+                done
+            fi
+            for argument in "\$@"; do
+                if [ "\$argument" = u:caddy:r-X ]; then exit 1; fi
+            done
+            exec /usr/bin/setfacl "\$@"
+            BASH);
+        chmod("$root/bin/setfacl", 0o700);
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]), 'nobody');
+
+        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
+        expect($process->setInput($command->input)->run())->not->toBe(0);
+        $retained = development_caddy_access_retained($process);
+        $moved = "$checkout/web/site/index.html";
+        clearstatcache();
+        $acl = new Process(['getfacl', '-cp', $moved])->mustRun()->getOutput();
+
+        expect(file_exists("$root/reused"))->toBeTrue('The filesystem never reused the inode number.')
+            ->and(file_get_contents($moved))->toBe('SECRET=value')
+            ->and(fileperms($moved) & 0o777)->toBe(0o600)
+            ->and($acl)->toContain('mask::---')
+            ->and(new Process(['sudo', '-n', '-u', 'nobody', 'cat', $moved])->run())->not->toBe(0)
+            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', $moved])->run())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain("$moved: Replaced since the snapshot")
+            ->and($retained)->toStartWith('/var/tmp/orbit-caddy-acl.');
+    } finally {
+        if ($retained !== null) {
+            new Filesystem()->deleteDirectory($retained);
+        }
+        new Process(['sudo', '-n', 'rm', '-rf', '--', $root])->run();
+    }
+});
+
+it('restores nothing on a filesystem that reports no inode generation', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    // tmpfs reports no inode generation, so the restore cannot tell a reused inode number apart.
+    $root = '/dev/shm/orbit-caddy-access-'.Str::uuid();
+    mkdir("$root/snapshot", 0o700, true);
+
+    try {
+        file_put_contents("$root/page.html", 'page');
+        $helper = development_caddy_access_helper(new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')])));
+        new Process(['python3', '-I', '-c', $helper, 'save', "$root/snapshot", '-', "$root/page.html"])->mustRun();
+        $process = new Process(['python3', '-I', '-c', $helper, 'restore']);
+
+        expect($process->setInput(file_get_contents("$root/snapshot/".posix_geteuid()))->run())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain("$root/page.html: Replaced since the snapshot");
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('never restores a setuid bit that the entry lost during the walk', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        $tool = "$root/checkout/web/site/tool";
+        file_put_contents($tool, 'tool');
+        chmod($tool, 0o4755);
+        // After the snapshot saved the setuid file, a write clears its setuid bit, and the walk fails.
+        mkdir("$root/bin");
+        file_put_contents("$root/bin/setfacl", <<<BASH
+            #!/bin/bash
+            for argument in "\$@"; do
+                if [ "\$argument" = u:caddy:r-X ]; then
+                    chmod u-s -- '$tool'
+                    exit 1
+                fi
+            done
+            exec /usr/bin/setfacl "\$@"
+            BASH);
+        chmod("$root/bin/setfacl", 0o700);
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'web/site')]));
+
+        $process = new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')]);
+        expect($process->setInput($command->input)->run())->not->toBe(0)
+            ->and(development_caddy_access_retained($process))->toBeNull($process->getErrorOutput());
+        clearstatcache();
+        expect(fileperms($tool) & 0o7777)->toBe(0o755);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('names the served entries that Caddy cannot read', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        $checkout = "$root/checkout";
+        mkdir("$checkout/public", 0o755);
+        mkdir("$checkout/storage/app/public", 0o755, true);
+        symlink('../storage/app/public', "$checkout/public/storage");
+        file_put_contents("$checkout/public/index.html", 'page');
+        file_put_contents("$checkout/public/secret.txt", 'secret');
+        chmod("$checkout/public/secret.txt", 0o600);
+        file_put_contents("$checkout/storage/app/public/hidden.txt", 'hidden');
+        chmod("$checkout/storage/app/public/hidden.txt", 0o600);
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'public')]));
+
+        $process = new Process($command->arguments)->setInput($command->input);
+        expect($process->run())->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())->toContain('Warning: Caddy cannot read 2 of the entries it serves')
+            ->and($process->getErrorOutput())->toContain("$checkout/public/secret.txt")
+            ->and($process->getErrorOutput())->toContain("$checkout/storage/app/public/hidden.txt")
+            ->and(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$checkout/public/index.html"])->mustRun()->getOutput())->toBe('page');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('fails and restores access when the mode of the public storage hides it from Caddy', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        $checkout = "$root/checkout";
+        mkdir("$checkout/public", 0o755);
+        mkdir("$checkout/storage/app/public", 0o700, true);
+        symlink('../storage/app/public', "$checkout/public/storage");
+        $before = new Process(['getfacl', '-R', '-p', "$checkout/public", "$checkout/storage/app/public"])->mustRun()->getOutput();
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'public')]));
+
+        $process = new Process($command->arguments)->setInput($command->input);
+        expect($process->run())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain("Caddy cannot read the public storage $checkout/storage/app/public")
+            ->and(development_caddy_access_retained($process))->toBeNull()
+            ->and(new Process(['getfacl', '-R', '-p', "$checkout/public", "$checkout/storage/app/public"])->mustRun()->getOutput())->toBe($before);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
 /** The Python helper that makes every ACL change of the walk. */
 function development_caddy_access_helper(RemoteCommand $command): string
 {
@@ -695,7 +870,10 @@ function development_caddy_access_retained(Process $process): ?string
 
 function development_caddy_access_fixture(?string $parent = null): string
 {
-    $root = ($parent ?? sys_get_temp_dir()).'/orbit-caddy-access-'.Str::uuid();
+    // A restore needs inode generations, which tmpfs does not report, so a tmpfs temporary directory gives way to the
+    // on-disk /var/tmp.
+    $parent ??= trim(new Process(['stat', '-f', '-c', '%T', sys_get_temp_dir()])->mustRun()->getOutput()) === 'tmpfs' ? '/var/tmp' : sys_get_temp_dir();
+    $root = $parent.'/orbit-caddy-access-'.Str::uuid();
     // The directories above the Web root are closed, so the walk grants Caddy passage. Git creates the Web root
     // and what it serves with the usual modes.
     mkdir("$root/checkout/web/site", 0o700, true);

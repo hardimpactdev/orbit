@@ -34,9 +34,11 @@ final readonly class DevelopmentCaddyAccessCommand
      *
      * No change follows a symlink. Every change, and every restore after a failed walk, goes through one helper that
      * opens the path one component at a time from `/` without following a symlink, checks that the account it runs
-     * as owns the entry, and changes the ACL through `/proc/self/fd`. The snapshot records each entry's device and
-     * inode, and a restore applies a saved ACL only to that same inode, so a restore never moves an ACL to an entry
-     * that another entry replaced, and it never changes an owner. A read grant keeps each entry's mask; only the
+     * as owns the entry, and changes the ACL through `/proc/self/fd`. The snapshot records each entry's device, inode,
+     * type, and for a file or directory its inode generation, and a restore applies a saved ACL only to that same
+     * inode, so a restore never moves an ACL to an entry that another entry replaced, also when the new entry reuses
+     * the freed inode number, and it never changes an owner or adds a setuid or setgid bit. A read grant keeps each
+     * entry's mask; only the
      * passage grant on a directory adds execute to it. Root acts only on a directory above every checkout: one that
      * root owns, on a path that root owns from `/` down, which the helper checks again on each component. Root never
      * acts at or below a checkout, which the managed user owns. The snapshots live in a private directory under
@@ -72,17 +74,19 @@ final readonly class DevelopmentCaddyAccessCommand
                 # on the path fails instead of redirecting the change. It changes only an entry that the account it
                 # runs as owns, through /proc/self/fd, so the entry it checked is the entry it changes. As root, every
                 # component from / down must belong to root, so root never acts at or below a checkout. The snapshot
-                # holds each entry's device, inode, owner, mode, and raw ACLs, so a restore applies a saved entry only
-                # to that same inode and never changes an owner. A restore reports an entry that another entry
-                # replaced and fails. `a` skips a symlink, `d` skips what is not a directory, and `D` requires a
+                # holds each entry's device, inode, owner, type, mode, and raw ACLs, and for a file or directory its
+                # inode generation, so a restore applies a saved entry only to that same inode, also when a new entry
+                # reuses the freed inode number. A restore never changes an owner and never adds a setuid or setgid bit.
+                # A restore reports an entry that another entry replaced, or whose generation it cannot read, and fails. `a` skips a symlink, `d` skips what is not a directory, and `D` requires a
                 # directory. A vanished entry reports "No such file or directory", which the walk treats as harmless.
                 # `find -exec` passes the helper as an argument, so it must never hold an empty pair of braces.
                 fd_acl=$(cat <<'PYTHON'
-                import base64, errno, json, os, stat, subprocess, sys
+                import base64, errno, fcntl, json, os, stat, subprocess, sys
 
                 me = os.geteuid()
                 batch_size = 200
                 ACCESS, DEFAULT = 'system.posix_acl_access', 'system.posix_acl_default'
+                FS_IOC_GETVERSION = 0x80087601
 
                 def report(path, message):
                     sys.stderr.buffer.write(path + b': ' + message.encode() + b'\n')
@@ -159,6 +163,28 @@ final readonly class DevelopmentCaddyAccessCommand
                             return None
                         raise
 
+                def generation(fd, info):
+                    # The inode generation of a regular file or directory, which tells a new entry apart from the one
+                    # whose freed inode number it reuses. None for another type, or when the filesystem, such as
+                    # tmpfs, or the entry's mode does not let the account read it. The ioctl needs a descriptor that
+                    # is not O_PATH; reopening the O_PATH descriptor through /proc opens that same inode without
+                    # resolving a name, and the fstat below confirms it.
+                    if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+                        return None
+                    try:
+                        reader = os.open(proc(fd), os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
+                    except OSError:
+                        return None
+                    try:
+                        opened = os.fstat(reader)
+                        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                            return None
+                        return int.from_bytes(fcntl.ioctl(reader, FS_IOC_GETVERSION, bytes(8))[:4], sys.byteorder)
+                    except OSError:
+                        return None
+                    finally:
+                        os.close(reader)
+
                 def save(directory, recursive, paths):
                     status, outputs = 0, dict()
 
@@ -169,6 +195,7 @@ final readonly class DevelopmentCaddyAccessCommand
                         directory_entry = stat.S_ISDIR(info.st_mode)
                         outputs[info.st_uid].write(json.dumps({
                             'path': base64.b64encode(path).decode(), 'dev': info.st_dev, 'ino': info.st_ino, 'uid': info.st_uid,
+                            'type': stat.S_IFMT(info.st_mode), 'generation': generation(fd, info),
                             'mode': stat.S_IMODE(info.st_mode), 'access': read_acl(fd, ACCESS),
                             'default': read_acl(fd, DEFAULT) if directory_entry else None,
                         }) + '\n')
@@ -236,7 +263,8 @@ final readonly class DevelopmentCaddyAccessCommand
                         try:
                             saved = json.loads(line)
                             path = base64.b64decode(saved['path'], validate=True)
-                            identity = (int(saved['dev']), int(saved['ino']), int(saved['uid']))
+                            identity = (int(saved['dev']), int(saved['ino']), int(saved['uid']), int(saved['type']))
+                            saved_generation = None if saved['generation'] is None else int(saved['generation'])
                             mode = int(saved['mode'])
                             access, default = (None if saved[key] is None else base64.b64decode(saved[key], validate=True) for key in ('access', 'default'))
                         except (ValueError, KeyError, TypeError):
@@ -257,10 +285,15 @@ final readonly class DevelopmentCaddyAccessCommand
                             continue
                         try:
                             info = os.fstat(fd)
-                            if (info.st_dev, info.st_ino, info.st_uid) != identity:
+                            current_generation = generation(fd, info)
+                            # A file or directory matches only by a generation that both the snapshot and now read.
+                            readable = current_generation is not None or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode))
+                            if (info.st_dev, info.st_ino, info.st_uid, stat.S_IFMT(info.st_mode)) != identity or not readable or current_generation != saved_generation:
                                 report(path, 'Replaced since the snapshot, so its ACL stays as it is')
                                 status = 1
                                 continue
+                            # A restore never adds a setuid or setgid bit that the entry lost since the snapshot.
+                            mode &= ~((stat.S_ISUID | stat.S_ISGID) & ~info.st_mode)
                             target = proc(fd)
                             if access is None:
                                 remove_acl(target, ACCESS)
@@ -448,6 +481,8 @@ final readonly class DevelopmentCaddyAccessCommand
                 # or replace them. A snapshot that recovery could not apply stays there. `ancestors/0` holds only the
                 # root-owned directories above the checkouts that root grants, and only root restores it. `entries`
                 # holds everything else in one mode 0600 file per owner, and each account gets only its own file.
+                # A new walk removes the account's retained snapshots that are older than three days.
+                find /var/tmp -mindepth 1 -maxdepth 1 -type d -name 'orbit-caddy-acl.*' -user "$me" -mtime +3 -exec rm -rf -- '{}' + 2> /dev/null || true
                 snapshots=$(mktemp -d -p /var/tmp orbit-caddy-acl.XXXXXX)
                 test "$(stat -c '%U %a' -- "$snapshots")" = "$me 700"
                 mkdir -m 700 -- "$snapshots/entries" "$snapshots/ancestors"
@@ -575,6 +610,24 @@ final readonly class DevelopmentCaddyAccessCommand
                     if ! caddy_can R_OK "$document_root" || ! caddy_can X_OK "$document_root"; then
                         printf 'Caddy cannot read the Web root %s, whose mode hides it from the group class.\n' "$document_root" >&2
                         exit 1
+                    fi
+                    served=("$document_root")
+                    if [ -n "$storage_target" ]; then
+                        if ! caddy_can R_OK "$storage_target" || ! caddy_can X_OK "$storage_target"; then
+                            printf 'Caddy cannot read the public storage %s, whose mode hides it from the group class.\n' "$storage_target" >&2
+                            exit 1
+                        fi
+                        served+=("$storage_target")
+                    fi
+                    # An entry whose mode hides it from the group class stays hidden from Caddy. Name a few of them.
+                    unreadable=$( (cd / && sudo -n -u caddy find -P "${served[@]}" -mindepth 1 \
+                        \( -type d ! \( -readable -executable \) -print -prune \) \
+                        -o \( ! -type l ! -type d ! -readable -print \) 2> /dev/null) | head -n 101 || true)
+                    if [ -n "$unreadable" ]; then
+                        count=$(printf '%s\n' "$unreadable" | wc -l)
+                        if [ "$count" -gt 100 ]; then count='more than 100'; fi
+                        printf 'Warning: Caddy cannot read %s of the entries it serves, such as:\n' "$count" >&2
+                        printf '%s\n' "$unreadable" | head -n 5 | sed 's/^/  /' >&2
                     fi
                 done
                 BASH,
