@@ -607,7 +607,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
 
-A group of a web Project with `task_compute: vm` skips this selection. It gets its own task VM, and its workspace goes on that VM's Node. See [Task VM workspace](#task-vm-workspace).
+A group of a Project with `task_compute: vm` skips this selection. It gets its own task VM, and its workspace goes on that VM's Node. See [Task VM workspace](#task-vm-workspace).
 
 When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
 
@@ -761,7 +761,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
+A group of a Project with `task_compute: vm`, `orbit` included, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim sizes the VM by the topology its subtasks [declare](/reference/compute-drivers#size-by-declared-topology). For a normal VM it takes a [warm VM](/reference/compute-drivers#keep-warm-vms) when its host keeps one, or else it creates a VM. Then it waits until the VM is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
 The checkout starts from the Project's [workspace template](/reference/compute-drivers#start-the-workspace-from-a-template) when the VM's host has one, so the setup steps of the baseline check find the dependencies in place. Without a template, it starts from a fresh clone.
 
