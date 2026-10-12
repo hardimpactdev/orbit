@@ -18,7 +18,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Queue;
 use Throwable;
 
 /**
@@ -55,12 +54,6 @@ final class BuildTaskVmWorkspaceTemplate implements ShouldBeUnique, ShouldQueue
 
     public function handle(TaskVmSettings $settings, IncusTaskVmWorkspaceTemplateBuilder $builder, TaskVmWorkspaceTemplates $templates, IncusHost $incus): void
     {
-        // A job queued on the task VM queue before templates had their own queue moves there, unbuilt.
-        if ($this->job?->getQueue() === 'task-vms') {
-            Queue::connection('task-vms')->pushOn(TaskVmWorkspaceTemplates::Queue, new self($this->hostNodeId, $this->projectId));
-
-            return;
-        }
         $project = Project::query()->find($this->projectId);
         $node = Node::query()->whereKey($this->hostNodeId)->where('status', LifecycleStatus::Active)->first();
         if (! $project instanceof Project || ! $node instanceof Node || ! TaskVmWorkspaceTemplates::serves($project)) {
