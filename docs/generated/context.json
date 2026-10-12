@@ -1673,7 +1673,8 @@
             "components": [
                 "apps/docs",
                 "apps/gateway",
-                "apps/web"
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Deployment",
