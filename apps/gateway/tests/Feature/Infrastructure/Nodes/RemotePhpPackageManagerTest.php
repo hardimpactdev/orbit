@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
@@ -1164,6 +1165,109 @@ it('refreshes only the Sury source, so an unrelated source that fails cannot fai
     }
 });
 
+it('skips the key download, the refresh, and the candidate checks when the source and every package are in place', function (
+    string $change,
+    bool $current,
+): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = sys_get_temp_dir().'/orbit-php-source-'.bin2hex(random_bytes(6));
+    try {
+        mkdir($root.'/bin', 0777, true);
+        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
+        mkdir($root.'/usr/share/keyrings', 0777, true);
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
+        $replace = static fn (string $value): string => str_replace(
+            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+            $value,
+        );
+        $keyring = $root.'/usr/share/keyrings/orbit-sury-php.gpg';
+        $source = $root.'/etc/apt/sources.list.d/orbit-php.sources';
+        file_put_contents($keyring, 'pinned key');
+        file_put_contents($source, "Types: deb\nURIs: https://packages.sury.org/php/\nSuites: resolute\nComponents: main\nSigned-By: {$keyring}\n");
+        php_package_write_source_binaries($root, 'resolute', null);
+        $calls = $root.'/calls';
+        $fake = static function (string $name, string $body) use ($root): void {
+            file_put_contents($root.'/bin/'.$name, HostBinary::expand("#!/usr/bin/env bash\n{$body}\n"));
+            chmod($root.'/bin/'.$name, 0755);
+        };
+        // The managed files are root:root 0644, as the slow path writes them.
+        $fake('stat', 'case "$2" in %U:%G) printf "root:root\n";; %a) printf "644\n";; esac');
+        $fake('dpkg-query', $change === 'package missing' ? 'case "${@: -1}" in php8.5-zip) exit 1;; esac; printf "install ok installed"' : 'printf "install ok installed"');
+        // Only the installed keyring differs; the key the slow path downloads matches the pins.
+        $fake('sha256sum', $change === 'keyring changed' ? 'case "$(cat)" in *orbit-sury-php.gpg) exit 1;; esac' : 'exit 0');
+        $fake('gpg', $change === 'fingerprint changed'
+            ? 'case "${@: -1}" in *orbit-sury-php.gpg) printf "fpr:::::::::%s:\n" 45BEA3E529112086C622F8A4B214EAC28059B8AC; exit 0;; esac; printf "fpr:::::::::%s:\nfpr:::::::::%s:\n" 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC'
+            : 'printf "fpr:::::::::%s:\nfpr:::::::::%s:\n" 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC');
+        $fake('curl', 'printf "curl\n" >> '.escapeshellarg($calls).'; out=""; while [ "$#" -gt 0 ]; do [ "$1" = --output ] && { out="$2"; shift 2; continue; }; shift; done; : > "$out"');
+        $fake('apt-get', 'printf "apt-get %s\n" "${@: -1}" >> '.escapeshellarg($calls));
+        if ($change === 'source changed') {
+            file_put_contents($source, "Types: deb\nURIs: https://packages.sury.org/php/\nSuites: noble\nComponents: main\nSigned-By: {$keyring}\n");
+        }
+
+        $process = new Process(
+            ['bash', '-seu', '--', ...array_map($replace, array_slice($transport->commands[0]->arguments, 3))],
+            $root,
+            ['PATH' => $root.'/bin:'.getenv('PATH')],
+        );
+        $process->setInput($replace($transport->commands[0]->input ?? ''));
+        $process->run();
+        $ran = is_file($calls) ? (string) file_get_contents($calls) : '';
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+        if ($current) {
+            expect($process->getOutput())->toBe("orbit-php-source: current\n")
+                ->and($ran)->toBe('');
+        } else {
+            expect($process->getOutput())->not->toContain('orbit-php-source: current')
+                ->and($ran)->toContain('curl', 'apt-get update');
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'everything in place' => ['none', true],
+    'a package is missing' => ['package missing', false],
+    'the keyring is not the pinned key' => ['keyring changed', false],
+    'the keyring lacks a pinned fingerprint' => ['fingerprint changed', false],
+    'the source file differs' => ['source changed', false],
+]);
+
+it('still refuses a conflicting PHP source when everything else is in place', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+    $script = $transport->commands[0]->input ?? '';
+
+    expect(mb_strpos($script, 'A conflicting PHP package source is configured.'))->toBeLessThan(mb_strpos($script, 'source_current "$@"'))
+        ->and(mb_strpos($script, 'unsafe ownership or mode'))->toBeLessThan(mb_strpos($script, 'source_current "$@"'))
+        ->and(mb_strpos($script, 'source_current "$@"'))->toBeLessThan(mb_strpos($script, 'curl --fail'));
+});
+
+it('logs a skipped source refresh and still verifies each version', function (): void {
+    Log::spy();
+    $transport = new AppDevFakeSshExecutor([new CommandResult(0, "orbit-php-source: current\n", '', 1, false)]);
+
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    expect($transport->commands)->toHaveCount(2)
+        ->and($transport->commands[1]->arguments[3])->toBe('8.5');
+    Log::shouldHaveReceived('info')->once()->with('PHP packages are in place; skipped the package source refresh.', Mockery::on(static fn (array $context): bool => $context['packages'] === 16));
+});
+
 it('accepts an installed-only policy candidate when Sury publishes another version', function (): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(
@@ -1458,6 +1562,8 @@ function php_package_write_source_binaries(
         'if [ "${@: -1}" = update ]; then scoped=0; for arg in "$@"; do case "$arg" in Dir::Etc::SourceList=*/etc/apt/sources.list.d/orbit-php.sources|Dir::Etc::SourceParts=-|APT::Get::List-Cleanup=0) scoped=$((scoped + 1));; esac; done; if [ "$scoped" != 3 ]; then printf "E: Failed to fetch https://dl.cloudsmith.io/public/caddy/stable/deb/debian/dists/any-version/InRelease  402  Payment Required\\n" >&2; exit 100; fi; fi',
     );
     $write('dpkg', 'if [ "$1" = --print-architecture ]; then printf "amd64\\n"; fi');
+    // Nothing is installed, so the source script never takes its fast path unless a test says so.
+    $write('dpkg-query', 'exit 1');
     $write(
         'apt-cache',
         'package="${@: -1}"; case "$1" in policy) printf "Candidate: 8.5.0\\n";; madison) printf "%s | 8.5.0 | https://packages.sury.org/php '
