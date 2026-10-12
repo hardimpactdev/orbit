@@ -221,7 +221,9 @@ Inside each container, the `runner` user runs the runner service, with no `sudo`
 Two limits remain:
 
 - The runners are not ephemeral. A job can leave files or processes in its container for the next job. The container is the boundary, and only approved code from this repository runs there.
-- Incus accepts DNS on port 53 from `orbitci0` to every host address, before the ACL applies. So a job can query each dnsmasq on the host, such as the task bridge's. It reveals task names and addresses that the job still cannot reach, and it cannot change anything. Closing it needs a host firewall rule.
+- Incus accepts DNS on port 53 from `orbitci0` to every host address, before the ACL applies. Closing it needs a host firewall rule.
+
+So a job can query each dnsmasq on the host, such as the task bridge's. The answers reveal task names and addresses that the job still cannot reach, and a query changes nothing.
 
 To remove the runners from a host, run `config.sh remove` as `runner` in each container with a remove token, then delete the containers, the project, the bridge, the ACL, and the ufw rule:
 
