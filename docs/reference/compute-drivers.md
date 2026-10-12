@@ -997,11 +997,16 @@ A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit remove
 
 ## Orbit Project
 
-A group of the `orbit` Project runs on a task VM, like the group of any other Project. Set the Project's `task_compute` to `vm`, and list the Project in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its workspace is the Instance `task-<group id>` without a Route, and its template holds a checkout of `main` with the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`.
+A group of the `orbit` Project runs on a task VM, like the group of any other Project. Its workspace is the Instance `task-<group id>` without a Route, and its template holds a checkout of `main` with the dependencies of all five Composer projects and the web app. Its task check is root `composer check`, which runs `bin/review-check` on the VM as `orbit`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
 
-A task VM has no main cache store. Add the setup step `@orbit/ci-caches` after the install steps, so the template and a workspace from a fresh clone get the test-impact graphs and quality caches of CI. Then the check runs only the affected tests, as on beast. See [Import CI main caches](/reference/instance-setup#import-ci-main-caches). [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm#orbit-project) records the design.
+Configure the Project like this:
 
-The Project's setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead. A task VM has no E2E task bridge and no installed [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper). So the Project's teardown step must exit 0 when the helper is absent, for example `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`. Otherwise the workspace removal fails, and the group asks for assistance.
+- Set its `task_compute` to `vm`.
+- List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
+- Add the setup step `@orbit/ci-caches` after the install steps. A task VM has no main cache store, so without the step every check runs all tests. With it, the template and a workspace from a fresh clone get the test-impact graphs and quality caches of CI, and the check runs only the affected tests, as on beast. See [Import CI main caches](/reference/instance-setup#import-ci-main-caches).
+- Make the teardown step exit 0 when the [`e2e-task-cleanup` helper](/reference/instance-setup#install-the-helper) is absent, for example `[ -x "$HOME/.local/lib/orbit/e2e-task-cleanup" ] || exit 0; "$HOME/.local/lib/orbit/e2e-task-cleanup"`. A task VM has no E2E task bridge and no helper. Otherwise the workspace removal fails, and the group asks for assistance.
+
+The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` step does nothing there, because a task VM workspace has no `ORBIT_SEED_PATH`: the template brings the dependency trees instead.
 
 A subtask can declare the test nodes it needs: `topology: ["app-dev", "app-prod", "app-prod-2"]`. Subtask creation, group creation, and stored task definitions keep this declaration. Only a subtask that has not started can change it. The declarations of a group decide its [VM size](#size-by-declared-topology) at the claim.
 
