@@ -14,7 +14,9 @@ covers:
 A task group of a Project with `task_compute: vm` runs in its own VM. There are two lanes:
 
 - The **web lane** serves every Project except `orbit`. Each group gets one [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster.
-- The **Orbit lane** serves the `orbit` Project. Its claims are off by default, and Phase 4 of ADR 0200 designs it again. Until then, run the `orbit` Project `shared`. See [Local Incus control](#local-incus-control).
+- The **Orbit lane** serves the `orbit` Project. Its claims are off by default. See [Local Incus control](#local-incus-control).
+
+The `orbit` Project runs `shared` until Phase 4 of ADR 0200 designs the Orbit lane again.
 
 Task VMs are off until you [configure them](#configure-task-vms), and `task_compute` defaults to `shared`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
 
