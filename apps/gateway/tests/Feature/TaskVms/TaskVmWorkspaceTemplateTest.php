@@ -764,10 +764,13 @@ describe(BuildTaskVmWorkspaceTemplate::class, function (): void {
 });
 
 describe('refresh order', function (): void {
-    /** Runs the template worker until its queue is empty, as the scheduler would. */
+    /**
+     * Runs the template worker until its queue is empty, as the scheduler would. The memory limit is above the test
+     * process's own use: at the default of 128 MB the worker stops after its first job in a large parallel run.
+     */
     function tvm_template_worker(string $queue = TaskVmWorkspaceTemplates::Queue): void
     {
-        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => $queue, '--stop-when-empty' => true]);
+        Artisan::call('queue:work', ['connection' => 'task-vms', '--queue' => $queue, '--stop-when-empty' => true, '--memory' => 4096]);
     }
 
     /** @return int the builder VMs that were launched */
