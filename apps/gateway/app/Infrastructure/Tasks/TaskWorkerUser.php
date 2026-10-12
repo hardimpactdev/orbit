@@ -50,11 +50,13 @@ final readonly class TaskWorkerUser
      */
     public static function forNode(Node $node): ?string
     {
-        if (self::configured() === null || ! self::usesWorker($node)) {
-            return null;
-        }
+        return self::sharesCheckouts($node) ? self::name() : null;
+    }
 
-        return self::name();
+    /** Whether a checkout placed on the Node is shared with the worker. It does not validate the account name. */
+    public static function sharesCheckouts(Node $node): bool
+    {
+        return self::configured() !== null && self::usesWorker($node);
     }
 
     /**

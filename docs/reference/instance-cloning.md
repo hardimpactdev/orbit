@@ -52,7 +52,7 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
 
-Every Git invocation in the candidate inspection, including calls through `sudo` and checks inside submodules, passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. On a [task work Node](/reference/instance-setup#task-work-nodes), development candidate checks that inspect file contents run as the worker without a credential environment. First the worker must read the checkout. A missing account, sudo rule, or ACL returns `instance.clone_candidate_worker_access`. That error and `instance.clone_candidate_unavailable` carry the inspection's stderr in `details.stderr`. On any other Node, including one without the account, these checks run as the Node's managed user.
+Every Git invocation in the candidate inspection, including calls through `sudo` and checks inside submodules, passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. When the candidate's Node [uses the task worker](/reference/instance-setup#task-work-nodes), or its checkout is marked `worker_shared`, development candidate checks that inspect file contents run as the worker without a credential environment. First the worker must read the checkout. A missing account, sudo rule, or ACL returns `instance.clone_candidate_worker_access`. That error and `instance.clone_candidate_unavailable` carry the inspection's stderr in `details.stderr`, at most 1,000 characters, with URL credentials and token-shaped words replaced by `[REDACTED]`. On an opted-out Node, an unmarked checkout is checked as the Node's managed user, whether or not the account exists there.
 
 A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
 
@@ -117,7 +117,7 @@ The Gateway returns these codes for a clone. A failure after reservation records
 | `instance.clone_candidate_inactive`, `instance.clone_candidate_unavailable` | The candidate is not active, or Orbit cannot inspect it. |
 | `instance.clone_candidate_branch_invalid` | The candidate has no branch, or a development candidate is on another branch. |
 | `instance.clone_candidate_dirty` | The candidate source has changes. |
-| `instance.clone_candidate_worker_access` | The candidate's Node hosts task work, and the worker cannot read its checkout. |
+| `instance.clone_candidate_worker_access` | The candidate checkout needs the task worker, and the worker cannot read it. |
 | `instance.clone_candidate_commit_unavailable`, `instance.clone_candidate_repository_unavailable` | The repository does not have the candidate's commit, or Orbit cannot read it. |
 | `instance.clone_candidate_release_missing`, `instance.clone_candidate_release_changed` | A production candidate has no selected release, or it changed. |
 | `instance.clone_candidate_source_invalid`, `instance.clone_candidate_environment_invalid` | The candidate's source or environment does not match its record. |

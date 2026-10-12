@@ -131,7 +131,7 @@ final class Instance extends Model
             }
             if (! $instance->worker_shared && (! $instance->exists || $instance->isDirty('node_id')) && is_numeric($instance->node_id)) {
                 $node = Node::query()->find((int) $instance->node_id);
-                $instance->worker_shared = $node instanceof Node && TaskWorkerUser::forNode($node) !== null;
+                $instance->worker_shared = $node instanceof Node && TaskWorkerUser::sharesCheckouts($node);
             }
         });
     }

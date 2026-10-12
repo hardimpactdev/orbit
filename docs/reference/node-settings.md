@@ -1,11 +1,11 @@
 ---
 title: "Node settings"
-description: "The apps.path setting on a Node: input, the effective apps root, validation, preparation, and failure codes."
+description: "Node settings: the apps.path root and the tasks.worker opt-out. Input, the effective apps root, validation, preparation, and failure codes."
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/Actions/Nodes/UpdateNodeSettingsAction.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskSettingsData}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
@@ -13,11 +13,11 @@ covers:
 
 # Node settings
 
-A Node has one setting: `apps.path`, the apps root under which the Gateway creates development Instance checkouts. Set it with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands.
+A Node has two settings. `apps.path` is the apps root under which the Gateway creates development Instance checkouts. `tasks.worker` opts the Node out of the task worker. Set them with `node:add` or `node:settings`. [`node`](/cli/node#orbit-nodesettings) lists the commands.
 
 ## Set the apps root
 
-Both commands take repeatable `--setting=<setting-path>:<value>` options. `apps.path` is the only setting path.
+Both commands take repeatable `--setting=<setting-path>:<value>` options. The setting paths are `apps.path` and `tasks.worker`.
 
 ```bash
 orbit node:add app-dev app-dev.example --role=app-dev --setting=apps.path:/srv/orbit/apps
@@ -38,7 +38,19 @@ The CLI splits each option at its first colon, so a value can contain more colon
 { "apps": { "path": "/mnt/apps" } }
 ```
 
-The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs the `apps` member; its `path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. Node responses return the stored value only. They return `settings: null` when no path is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs at least one of `apps` and `tasks`; a nested member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. Node responses return the stored value only. They return `settings: null` when nothing is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+
+## Opt out of the task worker
+
+With `ORBIT_TASKS_WORKER_USER` set, every Node with an `app-dev` role runs filter-capable Gateway Git on its checkouts as that worker. [Task work Nodes](/reference/instance-setup#task-work-nodes) explains the rule. A Node where no agent runs, and which has no worker account, opts out:
+
+```bash
+orbit node:settings services --setting=tasks.worker:none
+```
+
+The API body is `{"tasks": {"worker": "none"}}`. `none` is the only value. `--setting=tasks.worker:` or `"tasks": null` removes the opt-out. The Gateway refuses the opt-out with `node.task_work_present` (HTTP 409) while the Node has a `pi-server` Process in any state, or holds a checkout marked `worker_shared`. Shared task groups never place a workspace on an opted-out Node.
+
+The migration that added the opt-out set it once on each `app-dev` Node without a `pi-server` Process, a marked checkout, or a task VM. On the live fleet that was `services`.
 
 ## Derive the effective root
 
@@ -73,7 +85,7 @@ The CLI refuses a bad option before it sends a request.
 
 | Code | Condition |
 | --- | --- |
-| `node.setting_unknown` | The setting path is not `apps.path`. |
+| `node.setting_unknown` | The setting path is not `apps.path` or `tasks.worker`. |
 | `node.setting_duplicate` | The same setting path appears twice. |
 | `node.setting_invalid` | An option has no colon or an empty setting path. |
 | `node.setting_required` | `node:settings` got no `--setting` option. |
