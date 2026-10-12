@@ -177,7 +177,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             checkout=$1
             sha=$2
             git -C "$checkout" cat-file -e "$sha^{commit}"
-            git -C "$checkout" diff --quiet HEAD --
+            workspace_git -C "$checkout" diff --quiet HEAD --
             workspace_git -C "$checkout" reset --hard --quiet "$sha"
             git -C "$checkout" rev-parse HEAD
             BASH;
