@@ -14,7 +14,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 
 /**
- * Removes the host network boundary of the retired Incus sandbox controller from an `app-dev` Node: its boot
+ * Removes the host network boundary of the deleted Incus sandbox controller from an `app-dev` Node: its boot
  * service, the Incus dependency on it, its root helper, its configuration, and its lock directory. It drops
  * the Incus dependency and reloads systemd before it disables the boot service, and it stops nothing, so
  * Incus keeps running. A Node without these files is left unchanged.
@@ -81,7 +81,7 @@ final readonly class SandboxResidueFootprintArtifact implements NodeFootprintArt
         ));
 
         if (! $result->succeeded()) {
-            throw new ResourceOperationException('node.footprint_sandbox_residue_failed', 'The retired sandbox host files could not be removed: '.trim($result->stderr), 502);
+            throw new ResourceOperationException('node.footprint_sandbox_residue_failed', 'The old sandbox host files could not be removed: '.trim($result->stderr), 502);
         }
 
         return str_contains($result->stdout, 'changed');
