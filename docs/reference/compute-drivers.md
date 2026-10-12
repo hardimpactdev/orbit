@@ -363,7 +363,7 @@ A build that fails before `publish` deletes its builder VM and its volume, and t
 
 #### Disk use and pruning
 
-A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB. Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
+A template takes the size of its files on the pool, compressed. The mealou template takes 1.1 GiB, and the orbit template, with the dependencies of all five Composer projects and the web app, 1.3 GiB. Each host holds at most one template for each Project, plus one clone for each task VM that has a workspace. After a promote, only Projects with a recent group or a new claim get a template again. A clone takes only the blocks that its group changes. The volume is sparse, so its size limit, the host's `disk`, reserves nothing.
 
 A new template replaces the older ones of its Project at once. Incus keeps the data of a deleted template until its last clone is gone, so a running group never loses its workspace. The refresh after each promote deletes the templates that no claim can take, as [Build a template](#build-a-template) lists. Destroy deletes a VM's clone after the VM, and the sweep deletes a clone whose VM has no row. A template holds no secret. The GitHub token reaches the builder only on standard input, as for a clone on a task VM.
 
