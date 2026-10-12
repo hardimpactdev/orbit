@@ -312,17 +312,22 @@ Run `task-vms:build-workspace-template {node} {project}` to build the template o
 
 Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most `vm` Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused. With 26 Projects on 2 hosts, that was 52 builds of about a minute each, every night.
 
-Templates belong to the base image they were built on, so they follow it. Every promote of a base image, by a build or a sync, queues `RefreshTaskVmWorkspaceTemplates`. The nightly base image refresh at 03:00 also queues it when it ends, also when its build fails. A refresh that is already queued absorbs another one. A promote while a refresh runs queues one more, which sees the new alias.
+Templates belong to the base image they were built on, so they follow it. Every promote of a base image, by a build or a sync, queues `RefreshTaskVmWorkspaceTemplates`. The nightly base image refresh at 03:00 is the exception: its promotes queue nothing, and it queues one refresh when it ends, after the build and the sync to every host, also when its build fails. A refresh that is already queued absorbs another one. A promote while a refresh runs queues one more, which sees the new alias.
 
 The refresh runs on every configured host whose Node is active. It reads the host's current `orbit-task-base` and deletes each ready template that no claim can take:
 
 - the templates of Projects whose `task_compute` is not `vm`;
+- the templates of Projects without a valid default branch or repository URL;
 - the templates from an earlier repository URL, or built on another base image;
 - all but the newest template of each Project.
 
-So after a promote, each host keeps at most one template for each Project, and none from the old image. Then the refresh queues one build on each host for each `vm` Project that had a group created in the last 7 days. Other Projects get their template at their next claim. A Project without a valid default branch or repository URL gets no build. The refresh logs the warning `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` for it each time.
+So after a promote, each host keeps at most one template for each Project, and none from the old image.
 
-Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. The nightly refresh keeps the template of an active Project at most a day old. The template of another Project is as old as its last build.
+Then the refresh queues one build on each host for each `vm` Project that had a group created in the last 7 days, unless the host already has a current template of it. A current template is ready, comes from the Project's repository, was built on the host's current base image, and belongs to uid and gid 1000. So a second refresh builds only what the first one did not, and the build job skips a current template too.
+
+Other Projects get their template at their next claim. A Project without a valid default branch or repository URL gets no build. The refresh logs the warning `Task VM workspace template cannot be built; workspaces of the Project start from a fresh clone.` for it each time.
+
+Orbit does not watch the default branch for pushes. A template that is behind the branch is still correct: the fetch and the setup steps bring the workspace up to date. A template is rebuilt when the base image changes, which the nightly build does each night it succeeds. So the template of an active Project is at most a day old while the nightly build succeeds. The template of another Project is as old as its last build.
 
 Template jobs run on their own queue, `task-vm-templates`, with their own worker, so a build never delays a task VM job. See [Jobs](#jobs).
 
@@ -446,9 +451,13 @@ The workspace template jobs, `RefreshTaskVmWorkspaceTemplates` and `BuildTaskVmW
 queue:work task-vms --queue=task-vm-templates --stop-when-empty --max-time=120 --timeout=1700
 ```
 
-So a template build, which takes about a minute and at most 1700 seconds, never holds up a task VM job. Only one template worker runs at a time, so one build runs in the fleet at a time. The host lock also allows one build per host.
+So a template build, which takes about a minute and at most 1700 seconds, never holds up a task VM job. Only one template worker runs at a time, so one build runs in the fleet at a time. The host lock also allows one build per host. The worker's overlap lock lasts 32 minutes, longer than its longest run: 120 seconds of jobs, then one more job of at most 1700 seconds.
 
-The template worker has the same due check, but starts only in the last two seconds of a minute. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long build holds a run that was about to end, and the next run starts the task VM worker each second again. Before this queue, the template builds after one nightly promote held the single worker for about 48 minutes, and warm VM refills, enrollments, parks, and destroys waited behind them.
+The template worker has the same due check, but starts only in the last two seconds of a minute. A scheduler run waits for a command that it starts in the foreground, and the scheduler starts a new run each minute. So a long build holds a run that was about to end, and the next run starts the task VM worker each second again. The worker stops after 120 seconds and starts again at the end of a minute, so it can idle up to a minute between runs.
+
+The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
+
+A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one builder runs in the fleet. Before this queue, the template builds after one nightly promote held the single worker for about 48 minutes, and warm VM refills, enrollments, parks, and destroys waited behind them.
 
 | Job | Retries |
 | --- | --- |
@@ -826,7 +835,9 @@ Workspace templates have these limits:
 - A template is as fresh as its last build. That is at most a day for an active Project. A claim fetches the rest, and the setup steps install what changed.
 - The builder installs the PHP packages of the version that `composer.json` selects. A setup step that needs more than the image and those packages fails the build, and the Project's workspaces start from a fresh clone.
 - One template build runs in the fleet at a time.
-- After a promote, the first claim of a Project without a recent group starts from a fresh clone. Its template follows a minute or two later.
+- After a promote, the first claim of a Project without a recent group starts from a fresh clone.
+- That claim's template follows after the builds already queued. After a nightly promote, that can take 20 to 60 minutes.
+- A builder VM is not counted in a host's `max_vms`.
 
 An ignored file that no setup step rewrites keeps its state from the template's commit, up to a day old. Examples are a SQLite database from a migration, a config cache, or a `.env` that a step copies only while it is missing. Such a file can make a check pass in the workspace that fails from scratch. Orbit does not remove ignored files, because `vendor` and `node_modules` are ignored files too. A step that creates such a file should rewrite it. No current `vm` Project has one.
 

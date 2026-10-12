@@ -129,7 +129,7 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - A single worker started by the scheduler runs the jobs one at a time. A release that stops the scheduler interrupts a running job, which runs again.
 - Task VM Nodes can appear in doctor while they exist.
 - Warm VMs use host memory while they wait. Each one takes a slot that a new VM then cannot use.
-- Each host keeps about 1 GiB for each Project's workspace template, plus the changed blocks of each clone. Template builds run one at a time on their own worker. The base image holds the PHP packages of both selectable PHP versions, which adds about 72 MiB to it (2,687 to 2,759 MiB on beast) and about a minute to its build.
+- Each host keeps about 1 GiB for each Project's workspace template, plus the changed blocks of each clone. Template builds run one at a time on their own worker. A builder VM has the size of a task VM, is not counted in `max_vms`, and can run beside image builds and new VMs on its host. The base image holds the PHP packages of both selectable PHP versions, which adds about 72 MiB to it (2,687 to 2,759 MiB on beast) and about a minute to its build.
 - A root agent can tamper with the in-sandbox check result. CI on the pushed commit stays the authoritative gate.
 - Nested virtualization is required wherever the Orbit lane adds VMs.
 
