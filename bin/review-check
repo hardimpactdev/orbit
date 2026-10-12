@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -41,6 +42,8 @@ ARCHITECTURE_TRIGGERS = {
     'apps/cli': ('docs/cli/',),
 }
 BASES = ('origin/main', 'main')
+# Reports older than this are removed by the next run of the user that wrote them.
+REPORT_RETENTION_SECONDS = 24 * 60 * 60
 NO_SELECTION = 'No affected tests found'
 FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
               '--fail-on-empty-test-suite', '--compact', '--colors=never')
@@ -200,6 +203,51 @@ def prepare_tia_directory(root, project, destination, test_base=None):
     (destination / 'affected.json').unlink(missing_ok=True)
 
 
+def prune_reports(checks):
+    """Remove this user's report directories older than a day, then HEAD directories that stayed empty for a day.
+
+    Reports live in the Git common directory that every worktree shares, and the managed user and the task worker
+    both write them. Only an owner can reliably remove its own report, so each run removes what its user left."""
+    cutoff = time.time() - REPORT_RETENTION_SECONDS
+    try:
+        heads = [entry for entry in checks.iterdir() if entry.is_dir() and not entry.is_symlink()]
+    except OSError:
+        return
+    for head in heads:
+        try:
+            reports = list(head.iterdir())
+        except OSError:
+            continue
+        for report in reports:
+            try:
+                info = report.lstat()
+            except OSError:
+                continue
+            if (not report.name.startswith('review-') or not stat.S_ISDIR(info.st_mode)
+                    or info.st_uid != os.geteuid() or info.st_mtime >= cutoff):
+                continue
+            try:
+                shutil.rmtree(report)
+            except OSError as error:
+                print(f'Could not remove the old check report {report}: {error}', file=sys.stderr, flush=True)
+        try:
+            if head.stat().st_mtime < cutoff:
+                head.rmdir()
+        except OSError:
+            pass
+
+
+def report_directory(reports):
+    """Create this run's report directory. Another run may remove an old, empty HEAD directory at the same time."""
+    for attempt in range(3):
+        reports.mkdir(parents=True, exist_ok=True)
+        try:
+            return Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+        except FileNotFoundError:
+            if attempt == 2:
+                raise
+
+
 def selected_test_files(tia_directory):
     """Return current-run selected tests only when TIA wrote valid evidence."""
     artifact = tia_directory / 'affected.json'
@@ -230,9 +278,8 @@ def main():
     committed = not git(root, 'status', '--porcelain')
     tree = working_tree(root)
     common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-    reports = common / 'orbit-checks' / head
-    reports.mkdir(parents=True, exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    prune_reports(common / 'orbit-checks')
+    directory = report_directory(common / 'orbit-checks' / head)
     # mkdtemp uses mode 0700. Under an inherited default ACL, the group bits become the ACL mask, so 0700 leaves
     # mask::--- and disables named entries such as orbit-worker's. 0750 keeps them readable; other stays closed.
     directory.chmod(0o750)

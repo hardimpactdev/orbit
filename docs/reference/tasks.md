@@ -975,7 +975,7 @@ A linked worktree's Git common directory is outside the checkout. There, the che
 
 Before setup and the command, the check does the reverse. It runs `find` and `setfacl` as the worker with `sudo -n -u orbit-worker -H`, because only an entry's owner can change its ACL. It grants the managed user `rwX` on every checkout entry the worker owns, and on the worker's entries in a linked worktree's `<git-common-dir>/orbit-checks`, with default ACLs on directories first. It skips `.git/config`, `.git/hooks`, and directories the worker cannot enter.
 
-Registration reads the whole common directory for its source digest, so a worker report directory with `mask::---` would otherwise block it. A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
+A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
 
 When sudo cannot switch, the check fails with `check_error` and the reason `The managed user cannot run commands as orbit-worker.` When the grant fails, the check fails with `check_error` and the log shows the error.
 

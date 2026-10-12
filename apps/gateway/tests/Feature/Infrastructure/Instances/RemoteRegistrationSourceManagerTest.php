@@ -23,6 +23,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\SeparateFilesystem;
@@ -267,37 +268,48 @@ describe('TaskCheckWorkerUser', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $reports = $fixture['source'].'/.git/orbit-checks/head';
         $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--'];
+        Log::spy();
 
         try {
             // As on a check host, inherited ACLs share the checkout and the Git common dir with both users.
             expect(orb105_run(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', '--', $fixture['source_root']])->succeeded())->toBeTrue();
             new Filesystem()->ensureDirectoryExists($reports, 0o777);
-            // bin/review-check run by the worker: mkdtemp gives mode 0700 and so mask::---. The fixed script then sets 0750.
-            $review = orb105_run([...$worker, 'python3', '-c', 'import os, sys, tempfile; d = tempfile.mkdtemp(prefix="review-", dir=sys.argv[1]); open(os.path.join(d, "check.log"), "w").write("worker"); sys.argv[2] == "fixed" and os.chmod(d, 0o750)', $reports, $state]);
+            // A review directory the worker created: mkdtemp gives mode 0700 and so mask::---, which the managed
+            // user cannot open (activity 655003). bin/review-check sets 0750; a private tool directory inside stays 0700.
+            $review = orb105_run([...$worker, 'python3', '-c', 'import os, sys, tempfile; d = tempfile.mkdtemp(prefix="review-", dir=sys.argv[1]); open(os.path.join(d, "check.log"), "w").write("worker"); sys.argv[2] == "readable" and os.chmod(d, 0o750); print(d)', $reports, $state]);
             expect($review->succeeded())->toBeTrue($review->stderr);
-            if ($state === 'repaired') {
-                // Activity 655003: the digest's read grant cannot enter the review directory.
-                expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false))
-                    ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->result?->stderr)->toContain('PermissionError'));
-                $repair = orb105_run(['python3', '-c', <<<'PYTHON'
-                    import importlib.machinery, importlib.util, sys
-                    loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
-                    check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
-                    loader.exec_module(check)
-                    check.claim_from_worker(sys.argv[2], 'nobody')
-                    PYTHON, resource_path('tasks/check'), $fixture['destination']]);
-                expect($repair->succeeded())->toBeTrue($repair->stderr);
-            }
+            $private = trim($review->stdout);
 
             $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
 
             expect($facts->path)->toBe($fixture['destination'])
                 ->and($facts->sourceDigest)->not->toBe('');
+            if ($state === 'private') {
+                Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context['step'] === 'registration-source-inspect'
+                    && $context['paths'] === [$private]);
+            } else {
+                Log::shouldNotHaveReceived('warning');
+            }
         } finally {
             orb105_run([...$worker, 'rm', '-rf', '--', $reports]);
             orb105_remove_relocation_fixture($fixture);
         }
-    })->with(['fixed', 'repaired']);
+    })->with(['readable', 'private']);
+
+    it('still fails on a directory in the common dir that the managed user owns but cannot open', function (): void {
+        $fixture = orb918_in_place_fixture();
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $locked = $fixture['source'].'/.git/orbit-locked';
+        mkdir($locked, 0o300);
+
+        try {
+            expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false))
+                ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->result?->stderr)->toContain('PermissionError'));
+        } finally {
+            chmod($locked, 0o700);
+            orb105_remove_relocation_fixture($fixture);
+        }
+    });
 });
 
 final readonly class Orb105DirectorySwapSshExecutor implements SshExecutor
