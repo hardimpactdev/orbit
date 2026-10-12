@@ -78,6 +78,9 @@ final class TaskVmTemplateIncus implements SshExecutor
     /** The `composer.json` of the builder's checkout, or null for none. */
     public ?string $composer = null;
 
+    /** The exit code of an operation that does not fail with 1, such as a timed-out step (124). */
+    public array $exitCodes = [];
+
     /** What `git status --porcelain` prints in the builder. */
     public string $status = '';
 
@@ -203,8 +206,8 @@ final class TaskVmTemplateIncus implements SshExecutor
 
     private function answer(string $operation, ?Closure $effect = null): CommandResult
     {
-        if ($this->fail === $operation) {
-            return new CommandResult(1, '', "Error: {$operation} failed\n", 1, false);
+        if ($this->fail === $operation || isset($this->exitCodes[$operation])) {
+            return new CommandResult($this->exitCodes[$operation] ?? 1, '', "Error: {$operation} failed\n", 1, false);
         }
         try {
             $output = $effect instanceof Closure ? $effect() : null;
@@ -324,12 +327,12 @@ describe('claim', function (): void {
         $template = app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
 
         $mount = collect($this->incus->calls)->first(static fn (array $call): bool => $call[0] === '10.44.0.130');
-        expect($template)->toBe('/home/orbit/apps/mealou/.orbit-workspace-template')
+        expect($template)->toBe('/home/orbit/apps/mealou/workspace')
             ->and($this->incus->operations())->toContain(
                 ['storage', 'volume', 'copy', '--', 'orbit-tasks/tvm-template-'.$this->project->id.'-20261011040000', 'orbit-tasks/tvm-1-workspace'],
                 ['config', 'device', 'add', '--', 'tvm-1', 'workspace', 'disk', 'pool=orbit-tasks', 'source=tvm-1-workspace'],
             )
-            ->and(array_slice($mount[1], 3))->toBe(['--', 'workspace', '/home/orbit/apps/mealou', '1000:1000', '.orbit-workspace-template', '.orbit-cache', 'ms-playwright', 'composer'])
+            ->and(array_slice($mount[1], 3))->toBe(['--', 'workspace', '/home/orbit/apps/mealou', '1000:1000', 'workspace', '.orbit-cache', 'ms-playwright', 'composer'])
             ->and($mount[1][2])->toContain('/etc/fstab')->toContain('x-systemd.before=multi-user.target');
     });
 
@@ -386,7 +389,7 @@ describe('claim', function (): void {
             'tvm-template-'.$this->project->id.'-20261012090000' => tvm_ready(image: TVM_NEW_IMAGE),
         ];
 
-        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBe('/home/orbit/apps/mealou/.orbit-workspace-template')
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBe('/home/orbit/apps/mealou/workspace')
             ->and($this->incus->operations())->toContain(['storage', 'volume', 'copy', '--', 'orbit-tasks/tvm-template-'.$this->project->id.'-20261012040000', 'orbit-tasks/tvm-1-workspace']);
     });
 
@@ -396,7 +399,7 @@ describe('claim', function (): void {
         app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou');
         $this->incus->calls = [];
 
-        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBe('/home/orbit/apps/mealou/.orbit-workspace-template')
+        expect(app(TaskVmWorkspace::class)->template($vm, $this->group, '/home/orbit/apps/mealou'))->toBe('/home/orbit/apps/mealou/workspace')
             ->and(collect($this->incus->operations())->contains(static fn (array $operation): bool => $operation[2] === 'copy'))->toBeFalse()
             ->and($this->incus->operations())->toContain(['config', 'device', 'get', '--', 'tvm-1', 'workspace', 'source']);
     });
@@ -675,7 +678,7 @@ describe('build', function (): void {
         });
 
         expect($volume)->toBe('tvm-template-'.$this->project->id.'-20261012040000')
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'warm-check', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
             ->and($this->incus->volumes)->toBe([$volume => [
                 'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.repository' => REPO,
                 'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.ready' => 'true',
@@ -684,7 +687,7 @@ describe('build', function (): void {
             ->and($this->incus->operations())->toContain(
                 ['launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=40GiB', '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', TaskVmHost::BaseImage, 'tvm-template-20261012040000'],
                 ['storage', 'volume', 'create', '--type=block', '--', 'orbit-tasks', $volume, 'size=40GiB'],
-                ['exec', '--cwd', '/home/orbit/apps/mealou/.orbit-workspace-template', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-template-20261012040000', 'runuser', '-u', 'orbit', '--', 'timeout', '120', 'bash', '-c', 'script=$(mktemp) && trap \'rm -f -- "$script"\' EXIT && cat > "$script" && bash -l "$script" < /dev/null'],
+                ['exec', '--cwd', '/home/orbit/apps/mealou/workspace', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-template-20261012040000', 'runuser', '-u', 'orbit', '--', 'timeout', '120', 'bash', '-c', 'script=$(mktemp) && trap \'rm -f -- "$script"\' EXIT && cat > "$script" && bash -l "$script" < /dev/null'],
             )
             ->and($this->incus->steps)->toBe([
                 'if vp=$(command -v vp); then export VP_HOME="$(dirname "$(dirname "$vp")")"; fi'."\n".'composer install --no-interaction',
@@ -755,6 +758,38 @@ describe('build', function (): void {
         }
         expect($build())->toStartWith('tvm-template-')->and($reads())->toBe(0);
     })->with(['unrouted' => false, 'routed' => true]);
+
+    it('warms the template with the task check once, and keeps the template when the check fails or runs out of budget', function (?int $exit, string $level, string $message): void {
+        Log::spy();
+        $this->project->update(['task_check' => 'composer check']);
+        if ($exit !== null) {
+            $this->incus->exitCodes['setup step [composer check]'] = $exit;
+        }
+        $stages = [];
+
+        $volume = app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project, function (string $stage) use (&$stages): void {
+            $stages[] = $stage;
+        });
+
+        expect($this->incus->volumes[$volume]['user.orbit.ready'])->toBe('true')
+            ->and(array_slice($stages, array_search('setup:build-assets', $stages, true), 3))->toBe(['setup:build-assets', 'warm-check', 'verify'])
+            ->and(last($this->incus->steps))->toEndWith("\ncomposer check");
+        $warm = collect($this->incus->operations())->first(static fn (array $operation): bool => in_array('timeout', $operation, true) && str_contains((string) end($operation), 'tail -c 2000'));
+        expect((int) $warm[array_search('timeout', $warm, true) + 1])->toBeGreaterThan(1000);
+        Log::shouldHaveReceived($level)->with(Mockery::on(static fn (string $text): bool => str_starts_with($text, $message)), Mockery::on(static fn (array $context): bool => $context['command'] === 'composer check' && is_float($context['seconds'])));
+    })->with([
+        'passes' => [null, 'info', 'Task VM workspace template warmed its caches with the task check.'],
+        'fails' => [1, 'warning', 'Task VM workspace template task check failed'],
+        'runs out of budget' => [124, 'warning', 'Task VM workspace template task check stopped at the build budget'],
+    ]);
+
+    it('fails the template when the warm-up check changes the tree', function (): void {
+        $this->project->update(['task_check' => 'composer check']);
+        $this->incus->status = " M composer.lock\n";
+
+        expect(fn () => app(IncusTaskVmWorkspaceTemplateBuilder::class)->build($this->host, $this->hostNode, $this->project))
+            ->toThrow(fn (TaskVmException $exception) => expect($exception->getMessage())->toContain('stage [verify]'));
+    });
 
     it('refuses a second build on the host while one runs', function (): void {
         Cache::lock('task-vms:workspace-template:'.$this->hostNode->id, 60)->get();

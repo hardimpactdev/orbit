@@ -265,6 +265,42 @@ it('starts a task VM workspace from the template checkout next to it, with its i
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
 });
 
+it('takes a task VM template built at the checkout path in place, and the prepared checkout on a retry', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-7', 'task-7');
+    $checkout = dirname($workspace->checkout_path).'/workspace';
+    $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
+    $this->files->makeDirectory(dirname($checkout), 0o755, true);
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
+    file_put_contents($checkout.'/.git/info/exclude', "vendor/\n");
+    $this->files->makeDirectory($checkout.'/vendor');
+    file_put_contents($checkout.'/vendor/cache.php', "<?php\n");
+    $inode = fileinode($checkout.'/vendor/cache.php');
+
+    $this->source->prepare($workspace, false, $checkout);
+    $this->source->prepare($workspace->refresh(), true, $checkout);
+    $resolved = $this->source->resolve($workspace);
+    $this->source->inspectPrepared($workspace);
+
+    expect(fileinode($checkout.'/vendor/cache.php'))->toBe($inode)
+        ->and(is_file($checkout.'/.git/orbit-source-prepare'))->toBeTrue()
+        ->and($resolved->branch)->toBe('task-7')
+        ->and(trim(orb76_run(['git', '-C', $checkout, 'status', '--porcelain'])->stdout))->toBe('');
+});
+
+it('fails instead of cloning over a template in place that fails its source checks', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-8', 'task-8');
+    $checkout = dirname($workspace->checkout_path).'/workspace';
+    $workspace->update(['checkout_path' => $checkout, 'source_prepare_id' => (string) Str::uuid()]);
+    $this->files->makeDirectory(dirname($checkout), 0o755, true);
+    orb76_run(['git', 'clone', '--quiet', $this->repository, $checkout]);
+    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
+
+    expect(fn () => $this->source->prepare($workspace, false, $checkout))->toThrow(RuntimeConvergenceException::class);
+    expect(is_file($checkout.'/.git/orbit-source-prepare'))->toBeFalse();
+});
+
 it('clones when the template is gone, and clones instead of taking a template of another repository', function (): void {
     Log::spy();
     config()->set('orbit.tasks.worker_user', null);

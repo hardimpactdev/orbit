@@ -33,6 +33,7 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Infrastructure\TaskVms\TaskVmWorkspaceTemplates;
 use App\Domain\Tasks\TaskWorkspaceRoute;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
@@ -168,7 +169,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
                 $this->nodeSettings->fromStored($node->settings),
                 $account,
             );
-            $checkout = $roots->append($group->project->slug, $name);
+            // A task VM holds one workspace at a fixed path, where its template was built; a shared Node holds many.
+            $checkout = $roots->append($group->project->slug, $vm instanceof TaskVm ? TaskVmWorkspaceTemplates::CheckoutDirectory : $name);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
             $template = $this->template($vm, $group, $checkout);

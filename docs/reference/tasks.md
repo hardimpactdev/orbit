@@ -646,7 +646,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Shared Instance
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance: at `<project>/task-{id}` on a shared Node, and at `<project>/workspace` on a [task VM](/reference/compute-drivers#claim-with-a-template), which holds only this workspace. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
 
 Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
 

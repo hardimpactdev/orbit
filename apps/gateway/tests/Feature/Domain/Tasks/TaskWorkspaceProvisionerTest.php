@@ -943,7 +943,8 @@ describe('task VMs', function (): void {
 
         expect($instance?->node_id)->toBe($vmNode->id)
             ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
-            ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/'.TaskWorkspaceName::for($group))
+            // A task VM holds one workspace, at the fixed path where its template was built.
+            ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/workspace')
             ->and($instance?->status)->toBe(InstanceState::SourceResolved)
             ->and($fakes->development->prepares)->toBe(1)
             ->and($fakes->development->completes)->toBe(0);
@@ -1051,7 +1052,7 @@ describe('task VMs', function (): void {
         $group->taskable()->associate($instance)->save();
         app(TaskWorkspaceProvisioner::class)->complete($group->fresh(['taskable']) ?? $group);
 
-        expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/.orbit-workspace-template' : null]);
+        expect($fakes->source->templates)->toBe([$ready ? '/srv/orbit/apps/dlf/workspace' : null]);
         foreach (['workspace-template', 'workspace-source', 'workspace-prepare', 'workspace', 'workspace-route'] as $step) {
             Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === 'tvm-1' && $context['step'] === $step));
         }
