@@ -21,7 +21,22 @@ final readonly class WorkspaceGit
 
             BASH.'if [ "${1:-}" = -C ]; then'."\n".
             $invoke.' -c core.hooksPath=/dev/null -c core.fsmonitor=false'.$trust.' "$@"'."\nelse\n".
-            $invoke.' -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"'."\nfi\n)\n";
+            $invoke.' -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"'."\nfi\n)\n".self::reclaim($worker);
+    }
+
+    /**
+     * `workspace_reclaim <checkout>` gives the work tree entries that the worker's Git wrote back to the managed user,
+     * who must own them for later ACL grants such as Caddy access. Root changes only worker-owned entries, never
+     * follows a symlink, and leaves `.git` alone, so the worker keeps its private check directories there.
+     */
+    private static function reclaim(?string $worker): string
+    {
+        if ($worker === null) {
+            return "workspace_reclaim() { :; }\n";
+        }
+
+        return "workspace_reclaim() {\n".
+            '    find -P "$1" -mindepth 1 -maxdepth 1 ! -name .git -exec sudo -n chown -h -R -P --from='.escapeshellarg($worker).' "$(id -un):$(id -gn)" -- {} +'."\n}\n";
     }
 
     public static function bashPreamble(?string $checkout = null): string

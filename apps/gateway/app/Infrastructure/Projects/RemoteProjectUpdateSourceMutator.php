@@ -13,6 +13,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
@@ -150,10 +151,12 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                git -C "$path" checkout --track -B "$branch" "origin/$branch"
+                workspace_git -C "$path" checkout --track -B "$branch" "origin/$branch"
+                workspace_reclaim "$path"
                 BASH,
             'app-update-default-branch-switch',
             'project.source_switch_failed',
+            worker: true,
         );
     }
 
@@ -165,10 +168,12 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                git -C "$path" checkout "$branch" --
+                workspace_git -C "$path" checkout "$branch" --
+                workspace_reclaim "$path"
                 BASH,
             'app-update-default-branch-restore',
             'project.source_switch_failed',
+            worker: true,
         );
     }
 
@@ -187,7 +192,13 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         return array_values($unique);
     }
 
-    /** @param list<string> $arguments */
+    /**
+     * A branch switch writes the work tree, so it can start checkout filters. On a checkout shared with the task
+     * worker it runs as the worker, never as the managed user, and the managed user then owns the files again.
+     * Hooks never run: every Git call sets core.hooksPath.
+     *
+     * @param  list<string>  $arguments
+     */
     private function run(
         Instance $instance,
         array $arguments,
@@ -195,8 +206,10 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         string $step,
         string $errorCode,
         ?GitReadEnvironment $read = null,
+        bool $worker = false,
     ): void {
-        $script = WorkspaceGit::bashPreamble().$script;
+        $preamble = $worker ? WorkspaceGit::workerPreamble(TaskWorkerUser::forCheckout($instance->loadMissing('node'))) : '';
+        $script = WorkspaceGit::bashPreamble().$preamble.$script;
         $readScript = $read instanceof GitReadEnvironment
             ? GitReadScript::for($read, $script)
             : null;
