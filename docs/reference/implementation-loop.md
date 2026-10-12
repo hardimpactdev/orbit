@@ -203,11 +203,11 @@ The `github-runner-egress` systemd unit loads an nftables rule that rejects traf
 
 Three more runners take the Gateway shards after the first: `ci-beast-1` and `ci-beast-2` on Beast, and `ci-shark-1` on Shark. They have the labels `self-hosted`, `Linux`, `X64`, and `orbit-shard`, and not `sabre`, so no other job lands on them. The workflow selects them by label, not by name.
 
-Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](../../tools/ci-runners/setup.sh) creates and repairs every part, and each of its steps is idempotent:
+Beast and Shark are app-dev Nodes with live Instances and task workspaces. So each runner runs inside an unprivileged Incus container, not on the host. [`tools/ci-runners/setup.sh`](../../tools/ci-runners/setup.sh) creates every part and repairs its configuration, and each of its steps is idempotent:
 
 - `host SUBNET` creates the Incus project `orbit-ci`, the bridge `orbitci0`, the network ACL `orbit-ci-egress`, the project's default profile, and a `ufw route allow in on orbitci0` rule. Beast uses `10.253.1.1/24` and Shark `10.253.2.1/24`.
-- `container NAME` launches the container and installs its toolchain and the runner.
-- `register NAME [TOKEN]` registers the runner and starts its service. The registration token comes from the argument or from `ORBIT_RUNNER_TOKEN`, and the script never stores it.
+- `container NAME` launches the container, sets its `raw.apparmor` line, and installs missing parts of its toolchain and the runner. It upgrades no installed package. Run it only while the runner is idle: a repaired `raw.apparmor` line applies at the next restart.
+- `register NAME [TOKEN]` registers the runner and starts its service. The registration token comes from `ORBIT_RUNNER_TOKEN` or the argument, and the script never stores or prints it. `config.sh` takes the token as an argument, so it shows in the host's process list for a few seconds.
 - `verify NAME` probes, as the runner user, the host addresses and ports that a job must not reach.
 
 The project is restricted: containers stay unprivileged, nesting is blocked, virtual machines are refused, and the only network is `orbitci0`. The profile gives each container 4 CPUs, 8 GiB of memory, and 8192 processes, with no devices beyond its network card and root disk.
@@ -225,12 +225,14 @@ Two limits remain:
 
 So a job can query each dnsmasq on the host, such as the task bridge's. The answers reveal task names and addresses that the job still cannot reach, and a query changes nothing.
 
-To remove the runners from a host, run `config.sh remove` as `runner` in each container with a remove token, then delete the containers, the project, the bridge, the ACL, and the ufw rule:
+To remove the runners from a host, stop and uninstall each runner service as root in its container, and run `config.sh remove` as `runner` with a remove token. Then delete the containers, the project, the bridge, the ACL, and the ufw rule:
 
 ```bash
 token=$(gh api -X POST repos/nckrtl/orbit/actions/runners/remove-token --jq .token)
-for name in ci-beast-1 ci-beast-2; do
-  incus exec "$name" --project orbit-ci --env TOKEN="$token" -- su runner -c 'cd ~/actions-runner && ./svc.sh stop; ./config.sh remove --token "$TOKEN"'
+for name in ci-beast-1 ci-beast-2; do  # ci-shark-1 on Shark
+  incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- sh -c './svc.sh stop && ./svc.sh uninstall'
+  printf '%s\n' "$token" | incus exec "$name" --project orbit-ci --cwd /home/runner/actions-runner -- \
+    su runner -c 'IFS= read -r token; ./config.sh remove --token "$token"'
   incus delete --force "$name" --project orbit-ci
 done
 incus image list --project orbit-ci -f csv -c f | xargs -r -n1 incus image delete --project orbit-ci
@@ -239,6 +241,42 @@ incus network delete orbitci0
 incus network acl delete orbit-ci-egress
 sudo ufw route delete allow in on orbitci0
 ```
+
+Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
+
+Each Composer project job caches three sets of files in GitHub Actions cache.
+
+| Cache | Key inputs |
+| --- | --- |
+| PHPStan result cache, `vendor/phpstan/cache/resultCache.php` | `composer.lock`, `phpstan.neon` |
+| Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
+| Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
+
+A run on `main` restores the newest cache for its branch, then any cache for the project. A pull request restores only `main` caches. For the test-impact graph, it first takes the graph of its base commit, then the newest `main` graph. GitHub tries every restore key in a pull request's own cache scope before it looks at `main`, so a pull request saves no cache.
+
+An older cache of the pull request would otherwise shadow `main`'s, and its graph would count every `main` change since it as changed. Runs outside pull requests save each cache only after their checks succeed. Each such run saves its test-impact graph under its own key, so a full run on a commit that already has a graph still replaces the newest one. On `main`, a graph restored from another cache prefix runs the full suite. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`. A passing project job on `main` also uploads the [artifact](#ci-artifacts) that the main caches import.
+
+The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
+
+## Local checks
+
+Run these commands in each changed project directory, such as `apps/gateway` or `packages/php-sdk`. Each project keeps its own dependencies, test configuration, and test-impact graph.
+
+| Command | Result |
+| --- | --- |
+| `composer test:affected` | Runs the affected tests with test-impact analysis (TIA) and two parallel workers; the Gateway, with the largest suite, uses four |
+| `composer check` | Runs `guidance:check`, Rector, the Pint check, and PHPStan. It does not run the test suite. |
+| `composer test` | Runs the project suite with TIA in parallel |
+| `composer format` | Applies Pint's Laravel preset |
+| `composer analyse` | Runs PHPStan. The applications use Larastan. |
+
+In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph separate from the graph that `test:affected` reads. In every project, `bin/guidance-check` creates private temporary directories for the graph and Blade views before Pest starts, then removes them when the command exits. The gate does not depend on `storage/framework/views` existing or on caches written by another user. The check still fails if Boost cannot render guidance or changes the markers required by the hard-stop transformation. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
+
+TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default. E2E scenario runs use the directory in `ORBIT_SCENARIO_TIA_DIRECTORY` instead, which must be under the primary checkout's `.e2e/scenarios/runs/`.
+
+Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
+
+Root `bin/test` runs all five project suites in parallel and splits the available processors between them.
 
 ### The candidate gate
 
