@@ -85,9 +85,9 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - **Topology VMs on the host beside the group's task VM.** Each group would need its own host network and rules, and the host would hold four or five VMs for one group. Nested, the topology is one VM to place, park, and delete.
 - **A snapshot of a whole topology, or one for each combination of roles.** Node identity, keys, and the enrolled Gateway database are baked into such a snapshot, and adding a node to one took 1190 seconds in the spike. Images for each role and enrollment at preparation compose any declared set.
 - **Stateful snapshots of a running topology.** The harness attaches the worktree as a virtiofs disk, which Incus cannot migrate statefully, and restored memory carries old addresses and a clock jump. Boot time is not the cost that matters.
-- **A topology on demand, requested by an agent during a turn.** The reviewer could not check that the setup matches the task, and the VM size would change while the group runs. A declaration before the claim decides the size and the nodes up front.
+- **A topology on demand, requested by an agent during a turn.** The reviewer has no declaration to check the setup against, and the VM size changes while the group runs. A declaration before the claim decides the size and the nodes up front.
 - **One size for every Orbit VM.** Most Orbit groups need no topology. A large VM for each would take three slots and skip the warm pool for nothing.
-- **Resize a running VM, or move the group to a larger VM, when a later subtask declares more.** It changes the environment under a running group without anyone deciding it. The subtask waits with a reason instead.
+- **Resize a running VM, or move the group to a larger VM, when a subtask added after the claim declares more.** It changes the environment under a running group without anyone deciding it. The subtask waits with a reason instead.
 - **Isolated sandboxes for every Project.** Project features need real routes, deployment, and a preview a human can open. Joining the fleet with no grants and hub-enforced limits keeps that and stays contained.
 - **Copy subscription sign-ins into each sandbox.** It exposes the subscriptions, and rotating OAuth refresh tokens break when many copies refresh.
 - **Fall back to `shared` silently when no sandbox is available.** It would mix environments again, which is the problem this decision removes.
@@ -142,6 +142,6 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
   - A task VM reaches public addresses, and cannot reach private, link-local, CGNAT, or multicast addresses, another task VM, or the fleet outside the hub filter.
   - A local check run by an agent and Orbit's handoff check give the same verdict on the same tree.
   - A one-subtask Orbit group without a topology runs end to end on a normal task VM: claim, workspace template, baseline `composer check`, implementer, handoff check, reviewer, pull request, green CI, and merge. After merge, nothing of it is left.
-  - A group whose subtasks declare a topology gets a new large VM with three slots, 6 vCPU, 12 GiB, a 60 GiB disk, and free page reporting. A full host makes it wait, and a later subtask that declares a topology on a normal VM waits with its reason.
+  - A group whose subtasks declare a topology gets a new large VM with three slots, 6 vCPU, 12 GiB, a 60 GiB disk, and free page reporting. A full host makes it wait, and a subtask that declares a topology on a normal VM waits with its reason.
   - A declared topology starts nested in the group's VM with only its declared nodes. Its test nodes cannot reach the live fleet, also with their own WireGuard down.
   - No App private key or provider credential enters a sandbox. No GitHub token enters a task VM. GitHub tokens never appear in argv, logs, stored origins, or Git configuration.

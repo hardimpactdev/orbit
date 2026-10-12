@@ -820,6 +820,7 @@
             ],
             "concepts": [
                 "Cluster",
+                "Deliverable",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -831,7 +832,6 @@
                 "Process",
                 "Project",
                 "Role",
-                "Roleless Node",
                 "Route",
                 "Subtask",
                 "Task",
@@ -1327,6 +1327,7 @@
                 "Schedule",
                 "Subtask",
                 "Task",
+                "Task check",
                 "Task workspace",
                 "Tool"
             ],
