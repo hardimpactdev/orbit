@@ -71,6 +71,12 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // `enroll-queue` is the wait from launch for the worker; the guest boots meanwhile. `boot` is the rest of the
+        // boot, or the whole boot from launch when an earlier try released the job.
+        $clock->start($vm, $this->launchedAt);
+        if ($this->attempts() <= 1) {
+            $clock->step('enroll-queue');
+        }
         try {
             $address = $this->bootstrappedAddress($vm, $provider);
             for ($poll = 0; $address === null && $poll < self::InlinePolls; $poll++) {
@@ -91,8 +97,6 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // The first step covers the boot from launch: the guest kernel, the Incus agent, and cloud-init.
-        $clock->start($vm, $this->launchedAt);
         $clock->step('boot');
         $fingerprint = $provider->sshHostFingerprint($vm);
         // Enrollment skips the programs that the base image ran as they render now.

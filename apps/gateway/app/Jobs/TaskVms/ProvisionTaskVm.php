@@ -34,8 +34,9 @@ final class ProvisionTaskVm implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        // From the claim that recorded the row, so the step includes the wait for the worker.
+        // From the claim or refill that recorded the row: `queue` is the wait for the worker, `create` the launch.
         $clock->start($vm, $vm->created_at?->getTimestamp());
+        $clock->step('queue');
         $provider->create($vm, $cloudInit->render($keys->publicKey()));
         $clock->step('create');
         EnrollTaskVm::dispatch($vm->id, now()->getTimestamp());
