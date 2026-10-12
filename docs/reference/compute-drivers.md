@@ -919,7 +919,9 @@ These alternatives were rejected:
 
 When beast and shark have no free slot, a `vm` group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before. `shared` stays the default task compute.
 
-An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it. It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a template built with the same recipe as the [base image](#build-the-base-image). So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim starts the workspace from a fresh clone: [workspace templates](#start-the-workspace-from-a-template) are volumes on an Incus host.
+An UpCloud task VM follows the same path as an Incus one. It is a `task_vms` row with the provider `upcloud` and no host Node. The same jobs create, enroll, park, resume, and destroy it.
+
+It gets the same task VM user-data, enrolls as the `app-dev` Node `tvm-<id>` of the dev Cluster with an address from the reserved WireGuard range, and starts from a template built with the same recipe as the [base image](#build-the-base-image). So the hub filter, the Caddy guard, the rollout exclusion, and the placement invariant apply unchanged. Each claim starts the workspace from a fresh clone: [workspace templates](#start-the-workspace-from-a-template) are volumes on an Incus host.
 
 ### Place a VM at UpCloud
 
@@ -937,15 +939,19 @@ A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCl
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build runs these stages and prints each one with its time:
+`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build prints each stage with its time:
 
-1. Delete the build servers and unverified templates that an interrupted build left.
-2. Boot a builder server from the stock Ubuntu 26.04 template with the base image builder user-data.
-3. Wait for cloud-init over SSH, and check the pinned `orbit` uid and gid.
-4. Run the same enrollment programs as the Incus base image, then install the pinned agent binary and Pi executable, mask the first-boot and apt timers, write the image manifest, and run `base-image-clean.sh`.
-5. Stop the builder, turn its disk into the template `orbit-task-base-<time>-unverified`, and delete the builder.
-6. Boot a smoke server from the template with the task VM user-data. Cloud-init must finish, `orbit` must have the Gateway's key and the pinned uid and gid, and the manifest must be there.
-7. Rename the template to `orbit-task-base-<time>`, and delete all but the two newest verified templates.
+| Stage | What it does |
+| --- | --- |
+| `sweep` | Deletes the build servers and unverified templates that an interrupted build left |
+| `launch` | Boots a builder server from the stock Ubuntu 26.04 template with the base image builder user-data |
+| `cloud-init`, `orbit-user` | Waits for cloud-init over SSH, and checks the pinned `orbit` uid and gid |
+| One stage for each enrollment program | Runs the same enrollment programs as the Incus base image |
+| `agent-binary`, `pi-artifact`, `masks` | Installs the pinned agent binary and Pi executable, and masks the first-boot and apt timers |
+| `manifest`, `clean` | Writes the image manifest, and runs `base-image-clean.sh` |
+| `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
+| `smoke` | Boots a server from the template with the task VM user-data. It must finish cloud-init, hold the manifest, and give `orbit` the Gateway's key and the pinned uid and gid |
+| `promote`, `prune` | Renames the template to `orbit-task-base-<time>`, and deletes all but the two newest verified templates |
 
 A failed build deletes its servers and its unverified template, and the previous template stays in use. Without a verified template, a create fails with `task_vm.base_image_missing`. No nightly refresh runs yet: run the command again to refresh the template. One build runs at a time.
 
@@ -982,7 +988,9 @@ The token goes only to `https://api.upcloud.com/1.3`. The Gateway reads it from 
 
 ### Why the UpCloud overflow works this way
 
-One path for every provider keeps the security boundary and the code the same: only the provider API differs. Two switches keep billed VMs off unless the operator chose them for the fleet and for the Project. The Project list lives in the Gateway environment next to the switch, so no Project field, API, or CLI change is needed. A count of the account's labelled servers backs the count of rows, so a lost row cannot raise the bill. A pinned host key that the Gateway generates replaces the trusted host that UpCloud lacks. A rename after the smoke boot marks a template as verified, so no VM clones an untested one.
+One path for every provider keeps the security boundary and the code the same: only the provider API differs. Two switches keep billed VMs off unless the operator chose them for the fleet and for the Project.
+
+The Project list lives in the Gateway environment next to the switch, so no Project field, API, or CLI change is needed. A count of the account's labelled servers backs the count of rows, so a lost row cannot raise the bill. A pinned host key that the Gateway generates replaces the trusted host that UpCloud lacks. A rename after the smoke boot marks a template as verified, so no VM clones an untested one.
 
 | Alternative | Why not |
 | --- | --- |
