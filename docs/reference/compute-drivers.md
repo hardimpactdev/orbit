@@ -14,9 +14,11 @@ covers:
 A task group of a Project with `task_compute: vm` runs in its own VM. There are two lanes:
 
 - The **web lane** serves every Project except `orbit`. Each group gets one [task VM](#task-vms), which is a normal `app-dev` Node of the dev Cluster.
-- The **Orbit lane** serves the `orbit` Project. Each group gets an isolated pair of Incus VMs that never joins the live fleet. See [Local Incus control](#local-incus-control).
+- The **Orbit lane** serves the `orbit` Project. Its claims are off by default. See [Local Incus control](#local-incus-control).
 
-Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
+The `orbit` Project runs `shared` until Phase 4 of ADR 0200 designs the Orbit lane again.
+
+Task VMs are off until you [configure them](#configure-task-vms), and `task_compute` defaults to `shared`. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records the design.
 
 ## Task VMs
 
@@ -38,7 +40,7 @@ A workspace starts from the Project's [workspace template](#start-the-workspace-
 
 #### Start the baseline check before the Route
 
-The baseline check needs the checkout, its `.env`, and the PHP packages of the Instance's PHP version. It does not need the Route. Measured on beast (12 October 2026), mealou's setup steps and `composer check`, its browser tests included, passed in a task VM with no Caddy site and no PHP-FPM pool for the workspace. Pest's browser tests serve the application from their own server.
+The baseline check needs the checkout, its `.env`, and the PHP packages of the Instance's PHP version. It does not need the Route: Pest's browser tests serve the application from their own server.
 
 So a routed workspace on a task VM stops before its Route. After the source, workspace creation runs these steps, in about 1.5 seconds with the current base image:
 
@@ -48,7 +50,7 @@ So a routed workspace on a task VM stops before its Route. After the source, wor
 
 The workspace stays `source_resolved`, and its Route stays `pending`. The claim attaches it to the group and starts the baseline check. Then, in the same claim, it projects the Route as Instance creation does: the certificates, Caddy, PHP-FPM, the Router, and DNS, under the projection lock. The workspace becomes `active`.
 
-The setup steps of the check can change files while the Route grants Caddy access to the checkout: `vp build` rewrites the build output, and Composer republishes assets. So the access walk ignores an entry that vanishes during the walk, and fails on any other error. It sets each directory's default ACL before its access ACLs, so a file that setup creates during or after the walk inherits the right entry: readable by Caddy in the Web root, denied elsewhere. On beast the walk failed 10 of 10 times under such changes before this, and passed 10 of 10 times after.
+The setup steps of the check can change files while the Route grants Caddy access to the checkout: `vp build` rewrites the build output, and Composer republishes assets. So the access walk ignores an entry that vanishes during the walk, and fails on any other error. It sets each directory's default ACL before its access ACLs, so a file that setup creates during or after the walk inherits the right entry: readable by Caddy in the Web root, denied elsewhere.
 
 A Route that fails at the claim logs `The task workspace Route failed after the baseline check started; Orbit tries again before the implementer starts.` Work that uses the Route waits for it: before the first implementer or the final review starts, Orbit tries the Route again. Each failure there counts as a communication failure. After the fifth, the subtask asks for assistance with `The task workspace Route could not be finished, so no agent started.` and the error. So no agent, reviewer, preview, or pull request ever uses a workspace whose Route failed. Cancelling the group removes the workspace with its pending Route.
 
@@ -76,19 +78,9 @@ An image without a manifest, such as one built before manifests, or with a manif
 
 A skipped program fetches nothing at enrollment. The apt packages, Bun, Vite+ and its Node, and Composer are the versions that the last image build fetched. The nightly build refreshes them. Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. Only task VM enrollment reads a manifest, so every other Node runs every program.
 
-The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes. On beast that step took 1.2 seconds on a VM from the new image, against 33.8 seconds on a VM from the image before.
+The image also runs `app-dev-php-source` and one `app-dev-php-<version>` program for each PHP version an Instance can select, now `8.5` and `8.4`. They add the pinned Sury source and install the `app-dev` PHP packages, with the same code that installs them for an Instance. Enrollment never runs these programs, so the manifest only records them. The Instance's own PHP step on the VM finds the source current and every package installed, and skips the source refresh, as [PHP runtimes](/reference/php-runtime#development-runtime) describes.
 
 Enrollment reaches the guest through the host as jump host until WireGuard is up. Those commands share one SSH connection, as commands to a Node over WireGuard do. Its name hashes the jump host, the target address, and the target's pinned host key. So the next VM at a reused address never gets the old VM's connection.
-
-Measured on beast in a throwaway project, from the same code (11 October 2026), with the Gateway on the same host:
-
-| Step | Before (seconds) | After (seconds) | What changed |
-| --- | --- | --- | --- |
-| `boot` | 11.2 | 10.3 to 10.5 | IPv4-only network online, cloud-init wait in the guest |
-| `node-converge` | 6.9 | 1.7 to 2.2 | bootstrap skipped, one shared SSH connection through the jump host |
-| `roles` | 5.8 | 1.0 to 1.2 | prerequisites, Vite+ and Composer programs skipped |
-
-On the live Gateway each SSH command crosses WireGuard to the host, so the live steps take longer than these.
 
 Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
 
@@ -123,9 +115,9 @@ Each `tasks:tick` also queues `DestroyTaskVm` for every task VM that is not `des
 3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
-Orbit deleted the VM itself, so the Node removal does not probe the Node's address first. It also runs no Metrics pass, because a task VM Node never hosts a Metrics exporter. Before this, each probe of the dead address waited out the 10-second SSH connect timeout, and each of two Metrics passes walked the whole fleet. Node removal took about 145 seconds on the live Gateway.
+Orbit deleted the VM itself, so the Node removal does not probe the Node's address first. It also runs no Metrics pass, because a task VM Node never hosts a Metrics exporter.
 
-The removal of other Instances, outside task VMs, moves a checkout into `.orbit-removals` below the apps directory before it deletes it. That move must keep the checkout's device and inode, so it works only on one filesystem. When the checkout is on another filesystem, for example a mounted volume, removal fails before it moves anything, with `cross-device` in the step's error output, and keeps the checkout in place.
+The removal of other Instances moves a checkout within one filesystem only. [Instance removal](/reference/instance-removal) refuses a checkout on a mounted volume with `cross-device:`.
 
 The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. A [parked](#park-and-resume) VM is deleted while it is stopped. Only its workspace removal starts it first.
 
@@ -278,18 +270,9 @@ When step 3 or 4 fails, the claim undoes the attach before the fresh clone: it r
 
 Then the workspace fetches and checks out the group's branch, as usual. The baseline check runs the setup steps on the workspace. Each step finds the dependencies in place and only installs what the branch changed.
 
-Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner: on 12 October 2026 a template from an older image, where `orbit` was uid 1001, made a claim fail.
+Every step is idempotent, so a claim that runs again finds the clone, the disk, and the mount in place. A warm VM gets its clone at the claim, so warm VMs stay the same for every Project. The base image creates `orbit` with uid and gid 1000, so the files of a template belong to `orbit` on every VM from that image. A template is still only taken on the image it was built on, and the mount checks the owner.
 
-Measured on beast in a throwaway project (11 October 2026), mealou on its default branch:
-
-| Step | Without a template | With a template |
-| --- | --- | --- |
-| Clone and checkout, in the guest | 1.2 seconds | 0.6 seconds for the fetch and checkout, after 0.5 seconds for steps 1 to 4 |
-| `composer install` | 9.8 seconds | 4.1 seconds |
-| `vp install` and the Playwright install | 21.9 seconds | 6.3 seconds |
-| `vp build` | 2.5 seconds | 2.9 seconds |
-
-The first run on a new VM reads the volume with a cold page cache. The setup steps take about 10 seconds once the cache is warm. `vp install` always runs `npm audit`, which reaches the network.
+On beast, mealou's setup steps took about 13 seconds on a new VM with a template, against about 36 seconds without one. `vp install` always runs `npm audit`, which reaches the network.
 
 #### Without a template
 
@@ -310,7 +293,7 @@ The group never waits because of a template, and fails only when Orbit cannot un
 
 Run `task-vms:build-workspace-template {node} {project}` to build the template of a Project on one host. It prints each stage with its time.
 
-Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most `vm` Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused. With 26 Projects on 2 hosts, that was 52 builds of about a minute each, every night.
+Templates are built on demand. A claim that finds no template for its VM's base image queues `BuildTaskVmWorkspaceTemplate`, and the refresh below builds ahead only for active Projects. Most `vm` Projects get few groups, so a build for every Project after each promote would mostly make templates that the next promote replaces unused.
 
 Templates belong to the base image they were built on, so they follow it. Every promote of a base image, by a build or a sync, queues `RefreshTaskVmWorkspaceTemplates`. The nightly base image refresh at 03:00 is the exception: its promotes queue nothing, and it queues one refresh when it ends, after the build and the sync to every host, also when its build fails. A refresh that is already queued absorbs another one. A promote while a refresh runs queues one more, which sees the new alias.
 
@@ -355,7 +338,7 @@ The `@orbit/tia-baseline` step becomes the same installer as in the check. A bui
 
 A build runs within a budget of 1500 seconds. The queued job's timeout of 1700 seconds and the host's lock of 1740 seconds outlast it, and both stay below the queue's `retry_after` of 1800 seconds, so no second worker takes a running build. One template build runs on a host at a time, under that lock.
 
-A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. The template worker takes one job at a time, so one build runs in the whole fleet at a time. On beast a build of the mealou template took 92 seconds from a base image without the PHP packages. The PHP packages took 37 seconds of that, and the setup steps 36 seconds. A base image that holds the packages saves most of those 37 seconds.
+A second one fails with `task_vm.workspace_template_running`, and the queued job waits a minute and tries again. The template worker takes one job at a time, so one build runs in the whole fleet at a time.
 
 #### Template failures
 
@@ -459,7 +442,7 @@ The template worker has the same due check, but starts only in the last two seco
 
 The template queue runs its jobs in the order they were queued. A claim's build waits behind the builds that a refresh queued. After a nightly promote with 10 active Projects on 2 hosts, that can be 20 to 60 minutes.
 
-A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one builder runs in the fleet. Before this queue, the template builds after one nightly promote held the single worker for about 48 minutes, and warm VM refills, enrollments, parks, and destroys waited behind them.
+A builder VM has the size of a task VM and does not count against `max_vms`. It can run beside a base image build, a smoke VM, and new task VMs on the same host. At most one builder runs in the fleet.
 
 | Job | Retries |
 | --- | --- |
@@ -640,7 +623,7 @@ Run `task-vms:sync-image {node}` to copy the current base image to one host. By 
 
 The source exports the image, and streams it with ssh and its [transfer key](#let-hosts-copy-the-image) to the receiver of the target, which imports it. The Gateway only starts the commands, and the image never passes through it. The source is only read. The target then gives the image the source's dated alias `orbit-task-base-<time>`.
 
-The export is a file, because `incus image export` writes no stream. The receiver writes the image once more into its staging file, because `incus image import` reads a file. ssh carries it between the two with no other copy. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN. On beast, a 1 GiB image took 0.9 seconds to export and 3.8 seconds to receive and import, without the network.
+The export is a file, because `incus image export` writes no stream. The receiver writes the image once more into its staging file, because `incus image import` reads a file. ssh carries it between the two with no other copy. An image of about 3 GiB takes about half a minute on a 1 Gbit/s LAN.
 
 | Stage | What it does |
 | --- | --- |
@@ -845,12 +828,8 @@ An ignored file that no setup step rewrites keeps its state from the template's 
 
 Before the baseline check starts:
 
-- In group 1430 (11 October 2026), the workspace took 46.4 seconds before the check started.
-- The Route took 43.5 seconds of that time. The PHP packages took about 25 seconds of the Route.
-- The base image now holds the PHP packages.
-- The Route runs while the check runs.
-
-The step before the check then takes the template, the source, and the preparation. The live template and source steps took 2.9 seconds, and the preparation took 1.5 seconds on beast. So the step takes an estimated 4 to 5 seconds. The Route still runs in the claim, so the next claim of the same tick waits for it, as it did before.
+- The workspace takes the template, the source, and the preparation: about 4 to 5 seconds.
+- The Route runs in the claim, so the next claim of the same tick waits for it.
 - A VM from an image built before the PHP packages still installs them before the check, in about 30 seconds.
 
 Parking has these limits:
@@ -866,13 +845,7 @@ The hub filter has these limits:
 
 ### Why task VMs work this way
 
-The VM edge is the security boundary. Inside it, one user runs the agents, Pi, and the check with sudo, so the check sees what CI sees. Enrolling the VM as a normal Node reuses enrollment, Instances, Routes, checks, and publication instead of a second path. Host output is validated once, and Gateway records are trusted after that, so seven states and no marker timestamps describe the whole lifecycle. `claimed_at` and `warmed_at` only time it. Parking reads the settle times the group already records.
-
-Public egress is open on every port. Limiting it to HTTP(S) adds no protection beyond the VM edge and the hub filter, and it broke clock sync, package sources, and key installs. CI on the pushed commit is the gate.
-
-The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs. Enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing.
-
-One build serves every host, so a group behaves the same on any host. Builds on each host differed: the same commit gave beast and shark different images, because packages and even the stock image changed between the builds. One build also saves about two minutes of build time for each other host. The hosts send the image over SSH to a forced command, so it stays on the LAN when the hosts share one, and no host opens its Incus API to the network.
+[ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records why the VM edge is the boundary, why egress is open, why one base image serves every host, and the alternatives it rejected. Host output is validated once, and Gateway records are trusted after that, so seven states and no marker timestamps describe the whole lifecycle. `claimed_at` and `warmed_at` only time it. Parking reads the settle times the group already records.
 
 Most of a new VM's 35 seconds go to its boot and its enrollment, and none of that depends on the group. So a warm VM does those steps before the claim, and the claim adds only what belongs to the group: its Pi token, its model key, Pi, and its workspace. A warm VM holds no secret of a group, so it can wait on the task network like any other VM. A VM serves one group only and is destroyed after it, so no state of one group can reach the next.
 
@@ -882,29 +855,16 @@ Most groups wait for review far longer than they work, so parking frees the host
 
 Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) aligns the UpCloud template with the same contract. The template is built from the stock image with its identity removed. Its cloud-init installs nothing. A smoke boot passes before use, and the previous image stays while a VM uses it.
 
-These alternatives were rejected:
+These alternatives were also rejected:
 
 | Alternative | Why not |
 | --- | --- |
-| WireGuard in cloud-init | It bypasses normal enrollment |
-| An Incus proxy device for SSH | Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host |
-| The Incus REST API with a restricted certificate, from the Gateway | It needs more host setup, and the Gateway already has root SSH to the host |
-| A build on each host | The same commit gave different images, and each host spent about two minutes on its build |
-| `incus image export` streamed over SSH through the Gateway | Each copy would cross the Gateway twice. The direct copy keeps the image on the LAN when it can |
-| `incus image copy` between the hosts' Incus APIs | Orbit used it first. It needed an Incus listener, certificate trust, and firewall rules. Masqueraded guests reached a peer's API, and a copy once failed after the image arrived |
 | rsync over SSH | Its forced command would have to check `rsync --server` arguments. Its resume and delta transfer do not help, because a new image is a new file |
 | `scp` into a staging directory, then a second command that imports | It needs two forced commands, or a key that can write files. One stream into one forced command needs neither |
 | Trust on first use for a peer's host key | The Gateway can read the key over SSH, which it already trusts |
-| A hub table for each VM | One static filter on a reserved range does the same work |
-| Installing the `app-dev` software on every VM | It added about 40 seconds of boot and package installs to each VM on beast, and each claim depended on package mirrors |
-| A base image for each Project | Each Project would need its own image, built and kept current. A [workspace template](#start-the-workspace-from-a-template) is a volume that a claim attaches to any VM |
-| A virtiofs filesystem volume for the workspace | It hot-plugs too, but the setup steps ran 10 to 18 times slower on it than on an ext4 block volume |
-| `cp --reflink` inside the VM | The guest root is ext4 on a ZFS volume, so a reflink copies nothing |
 | A template only for the caches | It saved almost as much on mealou, but every claim still clones and links `node_modules`. The checkout in the template also replaces the clone |
 | A setting that turns templates on for each Project | A Project without a template already falls back to a fresh clone. A template costs about 1 GiB on each host |
-| A copy of a finished task VM as the next image | An agent and the Project's install scripts ran on that disk, so no cleanup can prove it clean |
 | A fallback to the stock image | A VM from it cannot enroll, so the failure would come later and less clearly |
-| A GitHub token inside the VM | The Gateway already fetches and pushes over SSH |
 | A snapshot before each park | ZFS keeps the stopped disk, and a resume continues it. A snapshot adds a copy that nothing restores |
 | A parked VM frees its slot | A resume could then find its host full, and the group's work would wait behind new groups |
 | Placement in host order only | The first host fills before the second takes any VM |
@@ -1175,13 +1135,13 @@ The saved Orbit pair needs its network identity updated after cloning. The guest
 
 ## Sandbox power
 
-Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. For a [task VM](#task-vms), it is `running` while the VM is `ready` and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.
+Task group responses report `sandbox_power` separately from task status. For a [task VM](#task-vms), it is `running` while the VM is `ready`, `stopped` while it is [`parked`](#park-and-resume), and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. Shared groups return `null`. The CLI shows this value as **Sandbox power** for VM groups.
 
 ## Request a preview
 
-Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. Shared groups store the intent without changing shared-host power. Phase 1 does not park task VMs, so preview does not change them.
+Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. Shared groups store the intent without changing shared-host power. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
 
-Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent. A successful update stores intent. The next scheduler reconciliation changes compute, and `sandbox_power` reports the confirmed observation. Capacity and restore failures remain visible.
+Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
 
 ## Saved source templates
 
