@@ -14,15 +14,15 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
-use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\Task;
 use SensitiveParameter;
@@ -269,7 +269,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 
         $pullBase = $this->pullRequestBase($group, $repository, $default, $taskBranch);
         if ($group->task_compute === TaskCompute::Vm) {
-            $this->sendToVm($instance, array_values(array_filter([$default, $pullBase], is_string(...))), [$taskBranch], $environment, 'task-turn-fetch', 'The workspace refs could not be fetched.');
+            $this->sendToVm($instance, array_filter([$default, $pullBase], is_string(...)), [$taskBranch], $environment, 'task-turn-fetch', 'The workspace refs could not be fetched.');
 
             return;
         }

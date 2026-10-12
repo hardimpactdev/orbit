@@ -49,6 +49,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
+use Symfony\Component\Process\Process;
+use Tests\Support\GitRemoteRedirect;
+use Tests\Support\TestOrbitHome;
 
 /**
  * A task VM host with storage volumes, disk devices, and instances, and the guests behind it. Incus commands come
@@ -87,6 +90,9 @@ final class TaskVmTemplateIncus implements SshExecutor
 
     /** @var list<string> the setup step scripts the builder received on stdin, in order */
     public array $steps = [];
+
+    /** The commit that the Gateway sent to the builder from its mirror. */
+    public ?string $received = null;
 
     private ?string $input = null;
 
@@ -185,7 +191,11 @@ final class TaskVmTemplateIncus implements SshExecutor
             $user[0] === 'git' => $this->answer('git status', fn (): string => $this->status),
             $user[0] === 'sh' && str_contains($user[2], 'composer.json') => $this->answer('composer.json', static fn (): string => 'absent'),
             $user[0] === 'sh' && str_contains($user[2], 'id -u') => $this->answer('id', static fn (): string => '1000:1000'),
-            $user[0] === 'bash' && $user[1] === '-seu' => $this->answer('clone', static fn (): string => str_repeat('a', 40)."\n"),
+            // The Gateway sends the default branch from its mirror, and the checkout prints the commit it sent.
+            $user[0] === 'bash' && str_contains($user[2] ?? '', 'index-pack') => $this->answer('exec git receive', function () use ($user): void {
+                $this->received = $user[6] ?? null;
+            }),
+            $user[0] === 'bash' && str_contains($user[2] ?? '', 'checkout --quiet --force -B') => $this->answer('clone', fn (): string => $this->received."\n"),
             default => $this->answer($user[0] === 'bash' && str_contains($user[2], 'mkfs.ext4') ? 'format' : 'exec '.$user[0]),
         };
     }
@@ -263,8 +273,32 @@ function tvm_projects(int $count, int $active): array
     return $projects;
 }
 
+/**
+ * Points every `https://github.com/` repository of these tests at one local repository with a `main` branch, so a
+ * template build fetches into the Gateway's mirror without the network.
+ */
+function tvm_template_origins(): void
+{
+    $root = TestOrbitHome::scratch('tvm-template-origins');
+    (new Process(['git', 'init', '--quiet', '-b', 'main', $root.'/work']))->mustRun();
+    (new Process(['git', '-C', $root.'/work', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'Start']))->mustRun();
+    (new Process(['git', 'clone', '--quiet', '--bare', $root.'/work', $root.'/origin.git']))->mustRun();
+    $names = ['acme/mealou', 'acme/dlf', 'nckrtl/orbit', ...array_map(static fn (int $i): string => "acme/app-{$i}", range(1, 25))];
+    foreach ($names as $name) {
+        @mkdir(dirname($root.'/github/'.$name), 0700, true);
+        symlink($root.'/origin.git', $root.'/github/'.$name.'.git');
+    }
+    GitRemoteRedirect::global($root.'/github/', 'https://github.com/');
+}
+
+afterEach(function (): void {
+    GitRemoteRedirect::clear();
+    TestOrbitHome::clearScratch();
+});
+
 beforeEach(function (): void {
     Sleep::fake();
+    tvm_template_origins();
     $this->hostNode = Node::query()->create([
         'name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl', 'ssh_host_fingerprint' => 'SHA256:managed',
@@ -670,10 +704,12 @@ describe('build', function (): void {
             $stages[] = $stage;
         });
 
+        // The builder got the default branch from the Gateway's mirror, as a pack, never with a token.
+        expect($this->incus->received)->toMatch('/\A[0-9a-f]{40}\z/');
         expect($volume)->toBe('tvm-template-'.$this->project->id.'-20261012040000')
             ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'identity', 'volume', 'mount', 'clone', 'php', 'setup:composer-install', 'setup:build-assets', 'verify', 'detach', 'publish', 'delete-builder', 'prune'])
             ->and($this->incus->volumes)->toBe([$volume => [
-                'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => str_repeat('a', 40), 'user.orbit.repository' => REPO,
+                'user.orbit.project' => (string) $this->project->id, 'user.orbit.commit' => $this->incus->received, 'user.orbit.repository' => REPO,
                 'user.orbit.image' => TVM_IMAGE, 'user.orbit.owner' => '1000:1000', 'user.orbit.ready' => 'true',
             ]])
             ->and($this->incus->instances)->toBe(['tvm-5'])

@@ -53,10 +53,10 @@ abstract class TestCase extends BaseTestCase
             NativeProcessRunner::class,
             static fn (ProcessRunner $runner): ProcessRunner => new HostPathGuardedProcessRunner($runner),
         );
-        // Task VM mirrors live in the test's own ORBIT_HOME, and tests point GitHub URLs at local repositories.
-        $app->bind(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
+        // Each test gets its own task VM mirrors in the test's ORBIT_HOME, and tests point GitHub URLs at local repositories.
+        $app->singleton(TaskVmGit::class, static fn (Application $app): TaskVmGit => new TaskVmGit(
             $app->make(ProcessRunner::class),
-            rtrim(Config::string('orbit.home'), '/').'/task-vm-git',
+            rtrim(Config::string('orbit.home'), '/').'/task-vm-git/'.bin2hex(random_bytes(4)),
             ['https', 'file'],
         ));
 

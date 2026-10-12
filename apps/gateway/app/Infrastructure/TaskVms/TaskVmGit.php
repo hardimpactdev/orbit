@@ -220,25 +220,24 @@ final readonly class TaskVmGit
         if ($file === false) {
             throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The pack file could not be created.');
         }
-        $written = 0;
+        $size = 0;
         try {
             $run(new RemoteCommand(
                 arguments: ['bash', '-c', self::Emit, '--', $checkout, $commit, ...$haves],
                 maxOutputBytes: 65_536,
-                output: static function (ProcessOutput $output) use ($file, &$written): void {
-                    if ($output->stream === ProcessOutputStream::Stdout && $written <= self::MaxPackBytes) {
-                        $written += (int) fwrite($file, $output->value);
+                output: static function (ProcessOutput $output) use ($file): void {
+                    if ($output->stream === ProcessOutputStream::Stdout && ftell($file) <= self::MaxPackBytes) {
+                        fwrite($file, $output->value);
                     }
                 },
-                cancelled: static function () use (&$written): bool {
-                    return $written > self::MaxPackBytes;
-                },
+                cancelled: static fn (): bool => ftell($file) > self::MaxPackBytes,
                 timeout: 1800.0,
             ));
         } finally {
+            $size = (int) ftell($file);
             fclose($file);
         }
-        if ($written > self::MaxPackBytes) {
+        if ($size > self::MaxPackBytes) {
             throw new RuntimeConvergenceException('task-vm-git-receive', $errorCode, 'The task VM sent a pack over '.self::MaxPackBytes.' bytes.');
         }
     }
@@ -358,7 +357,7 @@ final readonly class TaskVmGit
             timeout: $timeout,
             input: $stdin,
             protectedInput: $input,
-            environment: [...($access?->variables ?? []), 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1'],
+            environment: [...($access->variables ?? []), 'GIT_TERMINAL_PROMPT' => '0', 'GIT_CONFIG_NOSYSTEM' => '1'],
         ));
     }
 

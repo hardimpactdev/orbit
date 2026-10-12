@@ -398,10 +398,11 @@ A workspace without a template starts from `git init`, with the Project reposito
 #### Publish from the VM
 
 1. The Gateway fetches the default branch and `task-<id>` into the mirror.
-2. It asks the VM for a pack of the approved commit, without the history of the mirror's commits of those branches. The VM writes the pack to standard output, and the Gateway writes it to a file. A pack over 2 GiB fails the push.
-3. It indexes the pack in the mirror with `git index-pack --strict`, which checks every object.
-4. It checks that the approved commit is a commit in the mirror, and that its history is complete.
-5. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
+2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
+3. The VM writes the pack to standard output, and the Gateway writes it to a file. A pack over 2 GiB fails the push.
+4. The Gateway indexes the pack in the mirror with `git index-pack --strict`, which checks every object.
+5. It checks that the approved commit is a commit in the mirror, and that its history is complete.
+6. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
 
 Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
 
@@ -920,7 +921,9 @@ Most of a new VM's 35 seconds go to its boot and its enrollment, and none of tha
 
 `warm_vms` is a setting of each host, next to its `max_vms`. Hosts differ in size, and setting a host's `warm_vms` to `0` drains only that host, which retiring a host needs. A claim reads the image itself, so a stale warm VM never serves a group, even before the refill replaces it.
 
-The agent in a task VM has root through sudo, so a token anywhere in the VM, even in another user's process, is the agent's token. The Gateway already holds the tokens and already reaches every task VM over SSH. So Git that talks to GitHub runs on the Gateway, and only objects cross the VM edge. Packs on the standard input and output of the existing SSH commands need no new transport, reach a template builder through its host as well, and keep the check that a command reaches only its group's workspace. The Gateway checks what comes back the way a fetch checks a remote: only the approved commit ID names what it pushes, and `index-pack --strict` checks every object.
+The agent in a task VM has root through sudo, so a token anywhere in the VM, even in another user's process, is the agent's token. The Gateway already holds the tokens and already reaches every task VM over SSH. So Git that talks to GitHub runs on the Gateway, and only objects cross the VM edge.
+
+Packs on the standard input and output of the existing SSH commands need no new transport, reach a template builder through its host as well, and keep the check that a command reaches only its group's workspace. The Gateway checks what comes back the way a fetch checks a remote: only the approved commit ID names what it pushes, and `index-pack --strict` checks every object.
 
 Most groups wait for review far longer than they work, so parking frees the host's CPU and memory for other groups. A stop keeps the disk, so a resume continues the same workspace in seconds instead of a new claim. Placement by free slots spreads VMs across hosts and keeps every host inside its budget. The sweep catches what a crash between two steps leaves, and it acts only on names and the project that Orbit owns.
 
@@ -945,8 +948,8 @@ These alternatives were also rejected:
 | A claim that takes a pool VM that is still starting | The row would need a group step in the middle of enrollment. The claim waits for it to become `warm` instead |
 | A record of the current image on the Gateway | It can drift from the host's alias. The claim reads the alias, which is the fact |
 | Stopped warm VMs, saved with a stateful stop | It may follow as a hot pool. A running warm VM uses little and needs no restore |
-| A short-lived token inside the VM for each fetch and push | The agent can read any process in the VM. A read token would expose every private branch of the repository, and the write token could push any commit |
-| `git push` and `git fetch` over SSH between the mirror and the VM | A template builder has no address of its own, so it would need a second transport. It would also bypass the check that a command reaches only its group's workspace |
+| A token in the VM for each fetch and push | The agent can read any process in the VM. A read token exposes every private branch, and the write token lets the agent push any commit |
+| `git push` and `git fetch` over SSH between the mirror and the VM | A template builder has no address of its own and needs a second transport. It also skips the check that a command reaches only its group's workspace |
 
 ## UpCloud overflow
 

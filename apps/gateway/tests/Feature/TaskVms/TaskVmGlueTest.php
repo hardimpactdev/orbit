@@ -161,6 +161,7 @@ describe('publish and fetch', function (): void {
         $git($root.'/vm', 'remote', 'add', 'origin', 'git@github.com:acme/shop.git');
         $group = tvm_glue_group();
         tvm_glue_workspace($group)->forceFill(['checkout_path' => $root.'/vm'])->saveQuietly();
+        $group = $group->fresh() ?? $group;
         $transport = new class implements SshExecutor
         {
             /** @var list<array{SshConnection, RemoteCommand}> */
@@ -180,7 +181,7 @@ describe('publish and fetch', function (): void {
             $git($root.'/vm', 'checkout', '--quiet', '-B', 'task-'.$group->id, 'refs/remotes/origin/main');
             $git($root.'/vm', 'commit', '--quiet', '--allow-empty', '-m', 'Export');
             $commit = $git($root.'/vm', 'rev-parse', 'HEAD');
-            app(GitHubTaskPullRequestPublisher::class)->push($group->fresh(), $commit);
+            app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);
 
             expect($git($root.'/origin.git', 'rev-parse', 'refs/heads/task-'.$group->id))->toBe($commit)
                 ->and($transport->sent)->not->toBeEmpty();

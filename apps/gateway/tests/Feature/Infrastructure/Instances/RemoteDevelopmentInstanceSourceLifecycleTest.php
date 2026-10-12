@@ -34,8 +34,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -60,12 +62,14 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Tests\Support\GitRemoteRedirect;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\PlantedGitConfig;
 
@@ -172,6 +176,41 @@ beforeEach(function (): void {
 afterEach(function (): void {
     chdir($this->previousDirectory);
     $this->files->deleteDirectory($this->sandbox);
+});
+
+it('creates a task VM workspace from the Gateway mirror, with no clone or fetch in the VM', function (): void {
+    GitRemoteRedirect::global($this->repository, $this->remoteOrigin);
+    $host = Node::query()->create(['name' => 'beast', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'nckrtl']);
+    $group = Task::topLevel()->create(['project_id' => $this->orbitApp->id, 'title' => 'Export', 'brief' => 'Add an export.', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
+    TaskVm::query()->create([
+        'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $this->node->id, 'provider' => 'incus', 'name' => 'tvm-1',
+        'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.130', 'pi_token' => str_repeat('p', 64),
+    ]);
+    $name = 'task-'.$group->id;
+
+    try {
+        $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+        $this->source->prepare($instance, false);
+        $resolution = $this->source->resolve($instance->refresh());
+    } finally {
+        GitRemoteRedirect::clear();
+    }
+
+    $checkout = $instance->checkout_path;
+    $main = trim(orb76_run(['git', '-C', $this->repository, 'rev-parse', 'refs/heads/main'])->stdout);
+    expect($resolution->branch)->toBe($name)
+        ->and($resolution->startingCommit)->toBe($main)
+        // Only the default branch and the task branch come from the mirror. The old in-VM fetch took every branch.
+        ->and(trim(orb76_run(['git', '-C', $checkout, 'for-each-ref', '--format=%(refname)', 'refs/remotes'])->stdout))->toBe('refs/remotes/origin/main');
+    $network = [];
+    foreach ($this->transport->commands as $command) {
+        expect($command->protectedInput?->carriesGitCredential())->not->toBeTrue();
+        if (str_contains((string) $command->input, 'allow_existing=$6') || str_contains((string) $command->input, 'instance_name=$6')) {
+            $network[] = $command->arguments[array_key_last($command->arguments)];
+        }
+    }
+    // Preparation runs `git init` instead of a clone, and resolution fetches nothing in the VM.
+    expect($network)->toBe(['0', '0']);
 });
 
 it('preserves a pre-existing same-origin checkout through the whole failed create and retry', function (): void {
@@ -4084,6 +4123,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         $result = new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: $arguments,
             input: $input,
+            protectedInput: $command->protectedInput,
             environment: $this->environment,
         ));
 

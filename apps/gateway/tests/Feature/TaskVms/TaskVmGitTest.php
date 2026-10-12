@@ -39,7 +39,7 @@ function tvm_git_commit(string $checkout, string $file): string
 function tvm_git_vm(): Closure
 {
     return function (RemoteCommand $command): CommandResult {
-        test()->sent[] = $command;
+        test()->sent->append($command);
         $result = (new LocalShellSshExecutor)->execute(new SshConnection('10.44.0.130', 'orbit', 22, '/keys/id', '/keys/known_hosts'), $command);
         if (! $result->succeeded()) {
             throw new RuntimeConvergenceException('vm', 'tasks.fetch_failed', 'The VM command failed: '.$result->stderr, result: $result);
@@ -50,7 +50,7 @@ function tvm_git_vm(): Closure
 }
 
 beforeEach(function (): void {
-    $this->sent = [];
+    $this->sent = new ArrayObject;
     $this->root = TestOrbitHome::scratch('tvm-git');
     mkdir($this->root, 0700, true);
     // The GitHub repository, and a clone that pushes to it.
@@ -100,7 +100,7 @@ describe('send branches to the VM', function (): void {
         $this->git->send($this->project, $this->root.'/vm', $this->git->fetch($this->project, ['main', 'task-7'], $this->access, 'tasks.fetch_failed'), tvm_git_vm(), 'tasks.fetch_failed');
         $next = tvm_git_commit($this->root.'/upstream', 'CHANGELOG');
         tvm_git($this->root.'/upstream', ['push', '--quiet', $this->root.'/origin.git', 'main', ':task-7']);
-        $this->sent = [];
+        $this->sent = new ArrayObject;
 
         $tips = $this->git->fetch($this->project, ['main', 'task-7'], $this->access, 'tasks.fetch_failed');
         $this->git->send($this->project, $this->root.'/vm', $tips, tvm_git_vm(), 'tasks.fetch_failed');
@@ -128,8 +128,9 @@ describe('send branches to the VM', function (): void {
     });
 
     it('fails loudly when GitHub cannot be read', function (): void {
-        GitRemoteRedirect::clear();
-        GitRemoteRedirect::global($this->root.'/missing.git', TVM_GIT_REPOSITORY);
+        mkdir($this->root.'/gone');
+        GitRemoteRedirect::global($this->root.'/gone/missing.git', 'https://github.com/acme/gone.git');
+        $this->project->update(['repository_url' => 'https://github.com/acme/gone.git']);
 
         expect(fn () => $this->git->fetch($this->project, ['main'], $this->access, 'tasks.fetch_failed'))
             ->toThrow(RuntimeConvergenceException::class, 'Task VM Git step [task-vm-git-ls-remote] failed on the Gateway.');
@@ -144,7 +145,7 @@ describe('publish from the VM', function (): void {
         $this->approved = tvm_git_commit($this->root.'/vm', 'export.php');
         // A later commit that nobody approved.
         tvm_git_commit($this->root.'/vm', 'unapproved.php');
-        $this->sent = [];
+        $this->sent = new ArrayObject;
     });
 
     it('takes the approved commit into the mirror and pushes exactly that commit to GitHub', function (): void {
@@ -173,7 +174,7 @@ describe('publish from the VM', function (): void {
     it('refuses an approved commit that is not a commit ID', function (): void {
         expect(fn () => $this->git->publish($this->project, $this->root.'/vm', 'HEAD', 'task-7', [], $this->access, tvm_git_vm(), 'tasks.push_failed'))
             ->toThrow(RuntimeConvergenceException::class, 'The approved commit or its branch is invalid.');
-        expect($this->sent)->toBe([]);
+        expect($this->sent)->toHaveCount(0);
     });
 
     it('reports GitHub refusing the push with the push result', function (): void {
