@@ -44,6 +44,9 @@ final class TaskVmBakedPrograms
      */
     public const string AppDevPhp = 'app-dev-php';
 
+    /** The stable Rust toolchain for `orbit`. Enrollment does not run it; it only serves Projects with Rust code. */
+    public const string RustToolchain = 'rust-toolchain';
+
     private ?string $node = null;
 
     /** @var array<string, string> program name => fingerprint */

@@ -40,6 +40,19 @@ final readonly class TaskVmImageRecipe
     /** `systemd-firstboot` runs on every first boot, and the apt timers would hold the dpkg lock while a task runs. */
     public const string Masks = 'systemctl mask systemd-firstboot.service apt-daily.timer apt-daily-upgrade.timer motd-news.timer unattended-upgrades.service';
 
+    /**
+     * Installs the stable Rust toolchain for `orbit` with rustup's minimal profile, plus clippy and rustfmt, as CI
+     * checks the Node agent. rustup adds `~/.cargo/bin` to the login shell's `PATH`. Each image build takes the
+     * stable release of its day.
+     */
+    public const string InstallRust = <<<'BASH'
+        installer=$(mktemp)
+        trap 'rm -f -- "$installer"' EXIT
+        curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 10 --max-time 300 --output "$installer" -- https://sh.rustup.rs
+        sh "$installer" -y -q --profile minimal --component clippy,rustfmt
+        "$HOME/.cargo/bin/cargo" --version
+        BASH;
+
     public const string CleanConfirmation = '{"ok":true}';
 
     private const string CleanScript = 'task-vms/base-image-clean.sh';
@@ -57,8 +70,9 @@ final readonly class TaskVmImageRecipe
      * The programs that enrollment runs on an `app-dev` Node, in its order, rendered by the same code. The
      * image manifest records each one, so enrollment skips the ones it renders the same. Then the `app-dev` PHP
      * packages of every PHP version an Instance can select, which the Instance's route installs on a Node: on a
-     * task VM it finds them in place, and its source step skips the refresh. Each program runs as `orbit` and
-     * starts with `sudo`.
+     * task VM it finds them in place, and its source step skips the refresh. Last the stable Rust toolchain for
+     * `orbit`, which enrollment never runs. Each program runs as `orbit`, and those that change the system start
+     * with `sudo`.
      *
      * @return array<string, RemoteCommand>
      */
@@ -76,6 +90,7 @@ final readonly class TaskVmImageRecipe
         foreach ($this->php->appDevPrograms($this->phpVersions->versions()) as $name => $program) {
             $programs[TaskVmBakedPrograms::AppDevPhp.'-'.str_replace('.', '-', (string) $name)] = $program;
         }
+        $programs[TaskVmBakedPrograms::RustToolchain] = new RemoteCommand(['bash', '-ceu', self::InstallRust]);
 
         return $programs;
     }

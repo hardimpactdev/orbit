@@ -27,7 +27,7 @@ it('renders only the orbit user and the Gateway key for a task VM, which boots f
         YAML);
 });
 
-it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server and Chromium\'s libraries for the base image builder', function (): void {
+it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server, Chromium\'s libraries, and the workspace tools for the base image builder', function (): void {
     expect(new TaskVmCloudInit()->renderImageBuilder(CLOUD_INIT_KEY))->toBe(<<<'YAML'
         #cloud-config
         {
@@ -76,7 +76,11 @@ it('pins orbit to uid and gid 1000 and adds a package upgrade, openssh-server an
                 "libxext6",
                 "libxfixes3",
                 "libxkbcommon0",
-                "libxrandr2"
+                "libxrandr2",
+                "rsync",
+                "bind9-dnsutils",
+                "gcc",
+                "libc6-dev"
             ]
         }
 

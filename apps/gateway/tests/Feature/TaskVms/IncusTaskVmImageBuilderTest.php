@@ -22,6 +22,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
 use App\Infrastructure\TaskVms\TaskVmBakedPrograms;
 use App\Infrastructure\TaskVms\TaskVmBaseImage;
+use App\Infrastructure\TaskVms\TaskVmImageRecipe;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\VpToolManager;
@@ -253,6 +254,7 @@ describe('a build', function (): void {
             app(VpToolManager::class)->materializeCommand($node),
             app(ComposerToolManager::class)->materializeCommand($node),
             ...array_values(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])),
+            new RemoteCommand(['bash', '-ceu', TaskVmImageRecipe::InstallRust]),
         ];
         $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 11) === [
             'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-20261010030000', 'runuser', '-u',
@@ -260,11 +262,11 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'orbit-user', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain', 'agent-binary', 'single-boot', 'lean-boot', 'manifest', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
-            ->and($launches[0]->input)->toContain('package_upgrade')->toContain('libnss3')->toContain('openssh-server')
+            ->and($launches[0]->input)->toContain('package_upgrade')->toContain('libnss3')->toContain('openssh-server')->toContain('bind9-dnsutils')
             ->and(array_slice($launches[1]->arguments, -3))->toBe(['--', 'orbit-task-base-20261010030000', 'tvm-image-20261010030000-smoke'])
             ->and($launches[1]->input)->not->toContain('packages')
             ->and(($this->argv)())->toContain(
@@ -333,7 +335,8 @@ describe('a build', function (): void {
         $programs = json_decode((string) $manifest->input, true);
 
         expect($programs['schema'])->toBe(1)
-            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4'])
+            ->and(array_keys($programs['programs']))->toBe(['bootstrap', 'caddy-package', 'app-dev-prerequisites', 'vp-manager', 'composer-manager', 'app-dev-php-source', 'app-dev-php-8-5', 'app-dev-php-8-4', 'rust-toolchain'])
+            ->and($programs['programs']['rust-toolchain'])->toBe(TaskVmBakedPrograms::fingerprint(new RemoteCommand(['bash', '-ceu', TaskVmImageRecipe::InstallRust])))
             ->and($programs['programs']['bootstrap'])->toBe(TaskVmBakedPrograms::fingerprint(app(NodeBootstrapCommandFactory::class)->makeWithPasswordlessSudo($node, 'orbit')))
             ->and($programs['programs']['composer-manager'])->toBe(TaskVmBakedPrograms::fingerprint(app(ComposerToolManager::class)->materializeCommand($node)))
             ->and($programs['programs']['app-dev-php-8-4'])->toBe(TaskVmBakedPrograms::fingerprint(app(RemotePhpPackageManager::class)->appDevPrograms(['8.5', '8.4'])['8.4']))
