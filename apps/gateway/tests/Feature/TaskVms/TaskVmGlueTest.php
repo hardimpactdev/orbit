@@ -229,14 +229,15 @@ describe('publish and fetch', function (): void {
     })->with([
         'failed' => [['publish_state' => 'failed', 'publish_error' => 'The task branch could not be pushed. rejected'], 'The task branch could not be pushed. rejected'],
         'lost' => [['publish_state' => 'queued', 'publish_queued_at' => now()->subHour(), 'publish_started_at' => now()->subHour()], 'the publish job did not finish within 2400 seconds of its start.'],
+        'never started' => [['publish_state' => 'queued', 'publish_queued_at' => now()->subHours(3)], 'the publish job did not start within 7200 seconds.'],
     ]);
 
-    it('keeps a push pending while its job waits in the queue, however long', function (): void {
+    it('keeps a push pending while its job waits in the queue, up to two hours', function (): void {
         tvm_glue_ssh();
         Queue::fake();
         $group = tvm_glue_group();
         $commit = str_repeat('a', 40);
-        TaskVm::query()->where('group_id', $group->id)->update(['publish_commit' => $commit, 'publish_branch' => 'task-'.$group->id, 'publish_state' => 'queued', 'publish_queued_at' => now()->subHours(3)]);
+        TaskVm::query()->where('group_id', $group->id)->update(['publish_commit' => $commit, 'publish_branch' => 'task-'.$group->id, 'publish_state' => 'queued', 'publish_queued_at' => now()->subMinutes(110)]);
 
         try {
             app(GitHubTaskPullRequestPublisher::class)->push($group, $commit);

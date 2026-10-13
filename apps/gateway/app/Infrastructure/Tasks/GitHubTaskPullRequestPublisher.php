@@ -54,6 +54,12 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      */
     private const int PublishStaleSeconds = 2400;
 
+    /**
+     * A push whose job has not started after this long is lost too, such as a job row that is gone or a worker that
+     * never starts. The limit is far above any wait behind other publishes, which run in seconds.
+     */
+    private const int PublishUnstartedSeconds = 7200;
+
     private const string WorkflowRefusal = 'GitHub refused a change under .github/workflows/: grant the Orbit GitHub App the Workflows (read and write) permission, or push the commit yourself.';
 
     public function __construct(
@@ -196,8 +202,14 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             if ($vm->publish_state === TaskVmPublishState::Pushed) {
                 return;
             }
-            $stale = $vm->publish_state === TaskVmPublishState::Queued
-                && $vm->publish_started_at?->isBefore(now()->subSeconds(self::PublishStaleSeconds)) === true;
+            $lost = match (true) {
+                $vm->publish_state !== TaskVmPublishState::Queued => null,
+                $vm->publish_started_at !== null => $vm->publish_started_at->isBefore(now()->subSeconds(self::PublishStaleSeconds))
+                    ? 'the publish job did not finish within '.self::PublishStaleSeconds.' seconds of its start.' : null,
+                default => ! ($vm->publish_queued_at?->isAfter(now()->subSeconds(self::PublishUnstartedSeconds)) ?? false)
+                    ? 'the publish job did not start within '.self::PublishUnstartedSeconds.' seconds.' : null,
+            };
+            $stale = $lost !== null;
             if ($vm->publish_state === TaskVmPublishState::Queued && ! $stale) {
                 throw TaskPullRequestException::pending("Orbit is pushing commit {$commit} to {$branch}.");
             }
@@ -206,7 +218,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
                 ->where('publish_state', $vm->publish_state)->update(['publish_state' => null]);
 
             throw new TaskPullRequestException($stale
-                ? 'The task branch could not be pushed: the publish job did not finish within '.self::PublishStaleSeconds.' seconds of its start.'
+                ? 'The task branch could not be pushed: '.$lost
                 : ($vm->publish_error ?? 'The task branch could not be pushed.'));
         }
         $vm->update([
