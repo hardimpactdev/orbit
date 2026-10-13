@@ -1883,7 +1883,6 @@
                 "Node",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -2492,7 +2491,6 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
