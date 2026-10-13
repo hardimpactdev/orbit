@@ -134,6 +134,32 @@ final readonly class IncusHost
         return $names;
     }
 
+    /**
+     * Every Incus instance in every project of the host, and every custom volume in every project and storage pool.
+     * It reads the API with `incus query`, which lists names as URLs; a URL without `?project=` is in `default`. The
+     * stray report reads it ({@see TaskVmHostAudit::strays()}).
+     *
+     * @return array{instances: list<array{project: string, name: string}>, volumes: list<array{project: string, pool: string, name: string}>}
+     */
+    public function inventory(Node $node): array
+    {
+        $instances = array_map(
+            fn (string $url): array => $this->resource($node, $url, '/1.0/instances/'),
+            $this->urls($node, '/1.0/instances?all-projects=true'),
+        );
+        $volumes = [];
+        foreach ($this->urls($node, '/1.0/storage-pools') as $poolUrl) {
+            $pool = $this->resource($node, $poolUrl, '/1.0/storage-pools/')['name'];
+            $prefix = '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom/';
+            foreach ($this->urls($node, '/1.0/storage-pools/'.rawurlencode($pool).'/volumes/custom?all-projects=true') as $url) {
+                ['project' => $project, 'name' => $name] = $this->resource($node, $url, $prefix);
+                $volumes[] = ['project' => $project, 'pool' => $pool, 'name' => $name];
+            }
+        }
+
+        return ['instances' => $instances, 'volumes' => $volumes];
+    }
+
     /** The fingerprint that `$alias` names in the host's project, or null when no image has it. */
     public function aliasTarget(TaskVmHost $host, Node $node, string $alias, float $timeout = 900.0): ?string
     {
@@ -183,6 +209,41 @@ final readonly class IncusHost
     public function root(Node $node, array $arguments, string|ProtectedInput|null $input = null, float $timeout = 120.0): CommandResult
     {
         return $this->execute($node, $arguments, $input, $timeout);
+    }
+
+    /**
+     * The URLs that one `incus query` GET of `$path` lists.
+     *
+     * @return list<string>
+     */
+    private function urls(Node $node, string $path): array
+    {
+        $subject = "the Incus resources of Node [{$node->name}]";
+        $result = $this->execute($node, ['incus', 'query', '--', $path], null, 120.0);
+        $list = self::json($subject, $result->succeeded() ? $result : throw self::failed($subject, 'query', $result));
+        if (! array_is_list($list) || ! array_all($list, static fn (mixed $url): bool => is_string($url))) {
+            throw self::invalid($subject, 'the answer is not a list of URLs');
+        }
+
+        return $list;
+    }
+
+    /**
+     * The project and name of the resource that `$url` names below `$prefix`.
+     *
+     * @return array{project: string, name: string}
+     */
+    private function resource(Node $node, string $url, string $prefix): array
+    {
+        $path = parse_url($url, PHP_URL_PATH);
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        $name = is_string($path) && str_starts_with($path, $prefix) ? rawurldecode(substr($path, strlen($prefix))) : '';
+        $project = $query['project'] ?? 'default';
+        if ($name === '' || str_contains($name, '/') || ! is_string($project) || $project === '') {
+            throw self::invalid("the Incus resources of Node [{$node->name}]", "the URL [{$url}] names no resource");
+        }
+
+        return ['project' => $project, 'name' => $name];
     }
 
     /** @param  list<string>  $arguments */

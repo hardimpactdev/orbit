@@ -88,6 +88,15 @@ final class FakeIncusFleet implements SshExecutor
     {
         $host = $this->host($address);
 
+        if ($argv[0] === 'query' && $argv[1] === '--') {
+            return $host->answer('inventory', static fn (): string => json_encode(match ($argv[2]) {
+                // The stray report's inventory: the instances of the task VM project, and no custom volume.
+                '/1.0/instances?all-projects=true' => array_map(static fn (string $name): string => '/1.0/instances/'.$name.'?project=orbit-tasks', array_keys($host->instances)),
+                '/1.0/storage-pools' => ['/1.0/storage-pools/orbit-tasks'],
+                default => [],
+            }, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        }
+
         return match (true) {
             $argv[0] === 'query' && $host->fail === 'query reply' => (function () use ($host, $argv): CommandResult {
                 $host->retarget(json_decode($argv[4], true)['target']);

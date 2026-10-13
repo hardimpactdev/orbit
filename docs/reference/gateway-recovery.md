@@ -817,7 +817,7 @@ After a Gateway rollback, the desired CLI release is older than the Nodes' CLI, 
 
 The verify fails when Doctor reports an issue that was not there in the baseline, or any issue the rollout owns: `node.ssh_unreachable`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_secret_mismatch`, `node.cli_foreign`, or `role.caddy_build_drift`. It checks Doctor three times, 10 seconds apart, before it fails, because a restarted agent or a reloaded Caddy settles within seconds. An older issue the rollout does not own, such as `node.disk_low`, is kept as evidence.
 
-The verify ignores the [task VM host](/reference/compute-drivers#sweep-task-vm-hosts) codes `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed`, and `node.task_vm_parked`, because task VMs come and go during a rollout. The presence check fails only when the agent reports another version. Without an active `websocket` role, or without any report from the Node's agent, Doctor's binary check stands in for it.
+The verify ignores the [task VM host](/reference/compute-drivers#sweep-task-vm-hosts) codes `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed`, `node.task_vm_parked`, and the [stray](/reference/compute-drivers#report-strays) codes `node.task_vm_stray_*`, because task VMs come and go during a rollout. The presence check fails only when the agent reports another version. Without an active `websocket` role, or without any report from the Node's agent, Doctor's binary check stands in for it.
 
 | Outcome | What the rollout does |
 | --- | --- |

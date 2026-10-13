@@ -300,6 +300,32 @@ describe('hosts', function (): void {
         expect_invalid_task_vm_config("incus.hosts.0.warm_vms must be an integer from 0 to the host's max_vms.");
     })->with(['above max_vms' => 5, 'negative' => -1, 'a string' => '1']);
 
+    it('defaults operator_owned to none and matches a name or a whole project', function (): void {
+        enable_task_vms();
+        expect(TaskVmSettings::fromConfig()->hosts[0]->operatorOwned)->toBe([]);
+
+        enable_task_vms(task_vm_hosts(['operator_owned' => ['orbit-ci/*', 'default/ow-exp-20261006', 'orbit-ci/*']]));
+        $host = TaskVmSettings::fromConfig()->hosts[0];
+
+        expect($host->operatorOwned)->toBe(['orbit-ci/*', 'default/ow-exp-20261006'])
+            ->and($host->operatorOwns('orbit-ci', 'ci-beast-1'))->toBeTrue()
+            ->and($host->operatorOwns('default', 'ow-exp-20261006'))->toBeTrue()
+            ->and($host->operatorOwns('default', 'renewed-ghost'))->toBeFalse()
+            ->and($host->operatorOwns('orbit-tasks', 'tvm-1'))->toBeFalse();
+    });
+
+    it('refuses an operator_owned entry that names no project and resource', function (mixed $value): void {
+        enable_task_vms(task_vm_hosts(['operator_owned' => $value]));
+
+        expect_invalid_task_vm_config('incus.hosts.0.operator_owned must be a JSON list of <project>/<name> or <project>/* entries.');
+    })->with([
+        'not a list' => [['orbit-ci' => '*']],
+        'no project' => [['ci-beast-1']],
+        'empty name' => [['orbit-ci/']],
+        'a pattern' => [['orbit-ci/ci-*']],
+        'a number' => [[7]],
+    ]);
+
     it('treats only non-bridge usable addresses as guest addresses', function (string $address, bool $guest): void {
         $host = new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB');
 

@@ -124,6 +124,14 @@ final class TaskVmTemplateIncus implements SshExecutor
 
             return new CommandResult(0, $script === 'mount' ? $this->mounted : '', '', 1, false);
         }
+        if ($argv[3] === 'query' && $argv[4] === '--') {
+            // The stray report's inventory: the task VM project's instances and the volumes of its pool.
+            return $this->answer('inventory', fn (): string => json_encode(match ($argv[5]) {
+                '/1.0/instances?all-projects=true' => array_map(static fn (string $name): string => '/1.0/instances/'.$name.'?project=orbit-tasks', $this->instances),
+                '/1.0/storage-pools' => ['/1.0/storage-pools/orbit-tasks'],
+                default => array_map(static fn (string $name): string => '/1.0/storage-pools/orbit-tasks/volumes/custom/'.$name.'?project=orbit-tasks', array_keys($this->volumes)),
+            }, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        }
         if ($argv[3] === 'query') {
             // The alias move: `incus query -X PATCH --data {"target": …} -- /1.0/images/aliases/…`.
             return $this->answer('query', function () use ($argv): void {
