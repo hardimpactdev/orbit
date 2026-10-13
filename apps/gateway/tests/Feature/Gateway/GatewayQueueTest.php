@@ -153,8 +153,8 @@ describe('Horizon', function (): void {
     it('works tasks with three processes and builds with one, below the connection retry_after', function (): void {
         expect(config('horizon.use'))->toBe(GatewayQueue::Connection)
             ->and(config('horizon.fast_termination'))->toBeTrue()
-            ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.processes')])->toBe([['tasks'], 3])
-            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.processes')])->toBe([['builds'], 1])
+            ->and([config('horizon.defaults.tasks.queue'), config('horizon.defaults.tasks.minProcesses'), config('horizon.defaults.tasks.maxProcesses')])->toBe([['tasks'], 3, 3])
+            ->and([config('horizon.defaults.builds.queue'), config('horizon.defaults.builds.minProcesses'), config('horizon.defaults.builds.maxProcesses')])->toBe([['builds'], 1, 1])
             ->and(config('horizon.defaults.builds.timeout'))->toBeLessThan(config('queue.connections.gateway.retry_after'))
             ->and(array_keys(config('horizon.environments')))->toBe(['*']);
     });
