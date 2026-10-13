@@ -227,10 +227,10 @@ The serving phase:
 
 The scheduler phase:
 
-1. moves [Laravel Horizon](/reference/gateway-queue#releases) to the new release;
-2. moves the scheduler to the new release without cutting off a scheduled command;
-3. restarts every other Gateway Node Process whose directory is in the Gateway application;
-4. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
+1. moves the scheduler to the new release without cutting off a scheduled command;
+2. restarts every other Gateway Node Process whose directory is in the Gateway application, except the `horizon` Process;
+3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
+4. runs `php artisan horizon:terminate`, so [Laravel Horizon](/reference/gateway-queue#releases) starts again on the new release, or creates the `horizon` Process when the Gateway has none;
 5. moves the jobs left in the old database queues to the [Gateway queue](/reference/gateway-queue#releases);
 6. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
 7. resets OPcache, described below.
@@ -460,7 +460,7 @@ The Gateway runs releases in systemd units, never in PHP-FPM or the scheduler. `
 | `orbit-gateway-release.service` | One `gateway:release:auto` tick |
 | `orbit-gateway-release-run@.service` | One [requested release](#deploy-through-the-api), with the record id as the instance |
 
-Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts from the release that is current. It sets `PATH`, `HOME`, and `LANG=C.UTF-8`, so `php`, `git`, and `composer` resolve as they do for the account. A unit may run for two hours, because prepare runs `composer install` and the handoff may wait up to 1560 seconds for the old [`task-vms` worker](/reference/gateway-queue#releases). A timer tick that comes while the service still runs starts nothing. After the main process exits, `ExecStopPost` runs `gateway:release:settle`: the run unit with its record id, the service without one.
+Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts from the release that is current. It sets `PATH`, `HOME`, and `LANG=C.UTF-8`, so `php`, `git`, and `composer` resolve as they do for the account. A unit may run for one hour, because prepare runs `composer install`. A timer tick that comes while the service still runs starts nothing. After the main process exits, `ExecStopPost` runs `gateway:release:settle`: the run unit with its record id, the service without one.
 
 ### What a tick does
 

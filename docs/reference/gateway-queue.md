@@ -3,7 +3,7 @@ title: "Gateway queue"
 description: "The Gateway's Redis queue, its two queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
-  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
+  - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
   - apps/gateway/config/{horizon,horizon-new-dawn,queue}.php
 ---
 
@@ -13,7 +13,7 @@ The Gateway scheduler only dispatches. Each scheduled command that does work, su
 
 ## Connection
 
-The queue connection `gateway` uses the Redis driver. Its Redis server is a [Redis Database connection](/reference/database-connections) that Orbit already has, such as the Valkey on the `services` Node (`services-valkey`). Set these keys in `/home/orbit/shared/gateway.env`, then [apply the env change](/reference/gateway-recovery#apply-an-env-change):
+The queue connection `gateway` uses the Redis driver. Its Redis server is a [Redis Database connection](/reference/database-connections) that Orbit already has, such as the Valkey on the `services` Node (`services-valkey`). Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
 
 | Key | Default | Effect |
 | --- | --- | --- |
@@ -64,19 +64,19 @@ The [document cleanup](/reference/project-documents) commands stay in the schedu
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and no Horizon unit is installed. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, the pool refill, or a nightly refresh fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the scheduler runs the commands above itself, with their overlap locks, as before, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, the pool refill, or a nightly refresh fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 ## Horizon
 
-`orbit-horizon.service` runs `php artisan horizon` as `orbit` from the stable path `/home/orbit/orbit/apps/gateway`. It has the scheduler's `PATH` and `NODE_USE_SYSTEM_CA=1`, restarts 5 seconds after any exit, and never gives up restarting.
+Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`.
 
-`php artisan orbit:gateway-web` and the scheduler phase of each release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) install it while `ORBIT_GATEWAY_QUEUE_CONNECTION` is set. While it is empty, they stop and remove the unit if it exists. The handoff records the outcome as `horizon`: `started`, `stopped`, or `none`. A failed step of the unit fails with `gateway.horizon_unit_failed`, and the handoff then fails with `gateway.release_units_failed`. A failed move of database jobs fails with `gateway.queue_move_failed` and fails the handoff the same way.
+The scheduler phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) creates the Process and starts it, when `ORBIT_GATEWAY_QUEUE_CONNECTION` is set and the Gateway Node has no `horizon` Process. So the first release after you set the key starts Horizon. A `horizon` Process with another configuration fails the handoff with `gateway.release_units_failed`, and so does a failed start. The Gateway never removes the Process. After you empty the key, destroy it with `orbit process:destroy <id>`.
 
 ## Dashboard
 
 Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGuard peer with Gateway access, the same access that the Orbit CLI needs for Gateway commands. The dashboard is [Horizon New Dawn](https://github.com/nckrtl/horizon-new-dawn), a React interface for Horizon. Any other address gets 403.
 
-The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. It takes no CSRF token, because the Gateway keeps no browser session. Instead, the Gateway refuses a dashboard request that comes from another site: the browser's `Origin` must be the Gateway's own, or `Sec-Fetch-Site` must be `same-origin` or `none`. Bulk actions run as jobs on the `tasks` queue.
+The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. The Gateway keeps no browser session, so the dashboard has no CSRF token. Laravel's request forgery check runs in origin-only mode instead: a request that changes something passes only when the browser sends `Sec-Fetch-Site: same-origin`. Any other such request gets 403. Bulk actions run as jobs on the `tasks` queue.
 
 Each release publishes the dashboard's compiled assets during `composer install` in [prepare](/reference/gateway-recovery#prepare-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. The scheduler runs `horizon:snapshot` every five minutes for the dashboard's metrics.
 
@@ -84,23 +84,24 @@ The Redis server needs `maxmemory-policy noeviction`, so that it never drops a q
 
 ## Releases
 
-A release moves the queue in the scheduler phase:
+A release moves the queue in the scheduler phase, after the scheduler's drain:
 
-1. Before the scheduler moves, it moves Horizon to the new release, as described below.
-2. It moves the scheduler, as described in the [runtime handoff](/reference/gateway-recovery#runtime-handoff).
-3. After the scheduler's drain, it moves the jobs left in the old database queues to the Gateway queue, as described below.
+1. It runs `php artisan horizon:terminate`, or creates the `horizon` Process when the Gateway has none.
+2. It moves the jobs left in the old database queues to the Gateway queue, as described below.
 
-To move Horizon, the handoff installs the unit and enables it. When Horizon already runs, it pauses the `task-vms` queue and sends SIGTERM to the running master, which is what `php artisan horizon:terminate` does. It waits for the old `task-vms` worker to finish its job, then lets the queue run again. The wait is 1560 seconds: the `task-vms` timeout of 1500 seconds, which is the longest task VM job, plus a minute for the worker to exit. The pause lasts two minutes longer than the wait. It reports Horizon started only once a new master is registered in Redis.
+`horizon:terminate` sends SIGTERM to the Horizon master. Horizon does not use fast termination: the master waits until each worker has finished its running job, on the release that job started on, and then exits. The Process's restart policy then starts Horizon again, on the new release. A new `task-vms` worker therefore never starts while an old one runs, and task VM jobs stay in order.
 
-Horizon reads only Redis, so step 1 never races a worker of an older release on the database queues. When step 1 fails, steps 2 and 3 still run, and the handoff then fails with `gateway.release_units_failed`. The handoff records step 1 as `horizon`, with `outcome` (`started`, `stopped`, or `none`) and `task_vm_wait_ms`. When the old worker still runs after the wait, the handoff fails, and the queue stays paused until the pause expires, so two task VM jobs never run at once.
+The cost is the wait. A release during a long job, such as a base image build of up to 25 minutes, starts the new Horizon only when that job ends. Until then, no new job starts on any queue, and `tasks:tick` waits too. The master waits at most the longest supervisor timeout, 1700 seconds, and then exits. Builds run at night or on demand, so a release seldom waits.
+
+The release does not wait for the new master. The handoff records the step as `horizon`: `terminated`, `created`, or `none` without the key. A failure fails the handoff with `gateway.release_units_failed`, and the jobs of step 2 then stay in the database for the next release.
+
+The scheduler phase restarts every other Gateway Process in the Gateway application with systemd, but never the `horizon` Process: systemd kills a job that still runs 90 seconds after a stop. For the same reason, restart Horizon with `horizon:terminate`, not with `orbit process:restart`.
 
 The old database queues are `task-vms`, whose jobs move to `task-vms`, `task-vm-git`, whose jobs move to `tasks`, and `task-vm-templates` and `task-vm-images`, whose jobs move to `builds`. A delayed job keeps its time, and a job keeps its unique lock. Its attempts count from zero again. No job is lost. The handoff records the count as `queue_moved`. When jobs wait there and `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the move fails with `gateway.queue_move_failed` and keeps them.
 
-Horizon uses fast termination, and the unit stops only the master. Each running job finishes in its old worker process, on the release it started on. systemd starts the master again at once, on the new release, so `tasks` and `builds` jobs start right away. For the length of a running build, two builds can run: the old one and a new one. The host locks still allow one build per host.
-
 ### Switch back to an older release
 
-The unit starts only while the current release has `config/horizon.php`. The Horizon master also checks the current release each second. When the stable path links to a release without `config/horizon.php`, it terminates itself, and the unit does not start again. A move to a release with Horizon is left to the handoff, which keeps the `task-vms` queue in order. The older release's scheduler then runs its own workers on the database queues. Jobs left in Redis wait for a later release.
+A release from before Horizon has no `horizon` command. After a switch back to it, the older release's handoff restarts the `horizon` Process, which then fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. When a release with Horizon is live again, start the Process with `orbit process:start <id>`, and Horizon works the jobs left in Redis.
 
 A job left in Redis keeps its unique lock in the Gateway cache. The older release then queues no second copy of that job, for example no second destroy of the same VM, until the lock expires; a lock without an expiry stays. To let the older release queue it again, remove the lock as `orbit` in `/home/orbit/orbit/apps/gateway`:
 
@@ -119,10 +120,11 @@ A job queued by one release can run on the next one, and during a release, on th
 The queue depends on its Redis server, but the Gateway keeps running without it:
 
 - The scheduler logs each failed dispatch as an error and frees the job's unique lock, so the next run dispatches it again. The scheduler keeps running.
-- Horizon exits. systemd starts it again every 5 seconds until Redis answers.
+- A running Horizon reports each failed read and keeps running. When Redis answers again, it works the queued jobs.
+- Horizon that starts while Redis is down exits. systemd starts it again after 2 seconds. After several failed starts in a row, systemd stops trying, and the Process shows the failure. Start it again with `orbit process:start <id>`.
 - A request that queues a job, such as a task VM claim, fails with an error.
 
-When Redis answers again, Horizon starts and works the queued jobs. A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
+A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
 
 ## Operations
 
@@ -130,7 +132,7 @@ These commands inspect and control Horizon on the Gateway.
 
 | Task | Command |
 | --- | --- |
-| See Horizon | `systemctl status orbit-horizon` and `journalctl -u orbit-horizon` |
+| See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
 | Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:builds` |
@@ -140,7 +142,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 ## Not built
 
-Doctor does not report a stopped Horizon or an old `last_tick_at` yet. Until it does, check `systemctl status orbit-horizon` and [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
+Doctor does not report a stopped Horizon or an old `last_tick_at` yet. Until it does, check the `horizon` Process and [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
 ## Why it works this way
 
