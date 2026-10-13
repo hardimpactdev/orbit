@@ -139,7 +139,7 @@ final readonly class IncusTaskVmImageBuilder
      * templates, cloud-init reads the user-data from the agent's socket through its `LXD` data source, so it
      * must wait for the agent. The other templates, such as `/etc/hostname`, stay.
      */
-    private function singleBoot(TaskVmHost $host, Node $node, IncusGuestShell $shell): void
+    public function singleBoot(TaskVmHost $host, Node $node, IncusGuestShell $shell): void
     {
         $this->checked($shell, 'cloud-init drop-in', $shell->asRoot([
             'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', self::CloudInitDropIn,
@@ -177,7 +177,7 @@ final readonly class IncusTaskVmImageBuilder
         }
     }
 
-    private function clean(IncusGuestShell $shell): void
+    public function clean(IncusGuestShell $shell): void
     {
         $result = $shell->asRoot(['bash', '-s'], $this->recipe->cleanScript());
         if (! $result->succeeded() || trim($result->stdout) !== TaskVmImageRecipe::CleanConfirmation) {
@@ -186,9 +186,18 @@ final readonly class IncusTaskVmImageBuilder
     }
 
     /** Stops the builder and publishes its disk under `$alias`. Returns the new fingerprint. */
-    private function publish(TaskVmHost $host, Node $node, string $name, string $alias): string
+    public function publish(TaskVmHost $host, Node $node, string $name, string $alias): string
     {
-        $this->image->checked($name, 'stop', $this->incus->run($host, $node, ['stop', '--', $name]));
+        $stopped = $this->incus->run($host, $node, ['stop', '--', $name]);
+        if (! $stopped->succeeded()) {
+            // An interrupted publish may already have stopped the VM. Only a confirmed stopped instance is safe.
+            $listed = $this->image->checked($name, 'list', $this->incus->run($host, $node, ['list', '--format', 'json']));
+            $instances = IncusHost::json($name, $listed);
+            $alreadyStopped = array_any($instances, static fn (mixed $instance): bool => is_array($instance) && ($instance['name'] ?? null) === $name && ($instance['status'] ?? null) === 'Stopped');
+            if (! $alreadyStopped) {
+                $this->image->checked($name, 'stop', $stopped);
+            }
+        }
         $this->image->checked($name, 'publish', $this->incus->run($host, $node, ['publish', '--compression', 'none', '--alias', $alias, '--', $name]));
 
         return $this->incus->aliasTarget($host, $node, $alias)

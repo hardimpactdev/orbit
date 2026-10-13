@@ -11,6 +11,8 @@ use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmImageBuildState;
+use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Processes\CommandResult;
@@ -20,14 +22,20 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\IncusTaskVmBaseImage;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
+use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
+use App\Jobs\TaskVms\ImageBuild\LaunchImageBuilder;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -54,7 +62,25 @@ final class TaskVmSweepIncus implements SshExecutor
 
     public bool $failInventory = false;
 
+    /** Deterministic overlap hooks around the remote operation, without mocking database arbitration. */
+    public ?Closure $beforeExecute = null;
+
+    public ?Closure $afterExecute = null;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        if ($this->beforeExecute !== null) {
+            ($this->beforeExecute)($command);
+        }
+        $result = $this->executeCommand($connection, $command);
+        if ($this->afterExecute !== null) {
+            ($this->afterExecute)($command);
+        }
+
+        return $result;
+    }
+
+    private function executeCommand(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->calls[] = [$connection->host, $command->arguments];
         if (array_slice($command->arguments, 0, 5) === ['sudo', '-n', 'incus', 'query', '--']) {
@@ -71,6 +97,9 @@ final class TaskVmSweepIncus implements SshExecutor
             }
 
             return new CommandResult(0, $this->projectMissing ? '' : implode("\n", $this->instances[$connection->host] ?? []).($this->instances[$connection->host] ?? [] ? "\n" : ''), '', 1, false);
+        }
+        if ($arguments === ['list', '--format', 'json']) {
+            return new CommandResult(0, json_encode(array_map(static fn (string $name): array => ['name' => $name, 'config' => []], $this->instances[$connection->host] ?? []), JSON_THROW_ON_ERROR), '', 1, false);
         }
         if (array_slice($arguments, 0, 3) === ['storage', 'volume', 'list']) {
             return new CommandResult(0, '[]', '', 1, false);
@@ -162,13 +191,38 @@ beforeEach(function (): void {
     });
 });
 
+describe('image build ownership', function (): void {
+    it('reports only running build VMs as owned on their recorded host, regardless of age', function (): void {
+        $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id]);
+        $failed = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed']);
+        $succeeded = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'succeeded']);
+        $this->travel(2)->hours();
+        $this->incus->instances = ['10.44.0.7' => [$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name, $succeeded->builder_vm_name, 'tvm-image-99999'], '10.44.0.8' => [$running->builder_vm_name]];
+        $settings = app(TaskVmSettings::class);
+        $audit = app(TaskVmHostAudit::class);
+        expect($audit->strays($settings->host($this->beast->id), $this->beast)['instances'])->toBe(['orbit-tasks/'.$failed->builder_vm_name, 'orbit-tasks/'.$succeeded->builder_vm_name, 'orbit-tasks/tvm-image-99999'])
+            ->and($audit->strays($settings->host($this->shark->id), $this->shark)['instances'])->toBe(['orbit-tasks/'.$running->builder_vm_name]);
+        app()->call([new SweepTaskVmHosts, 'handle']);
+        expect($this->incus->instances['10.44.0.7'])->toBe([$running->builder_vm_name, $running->builder_vm_name.'-smoke'])
+            ->and($this->incus->instances['10.44.0.8'])->toBe([]);
+    });
+
+    it('protects running builders and smoke VMs from the base image sweep used by sync', function (): void {
+        $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id]);
+        $failed = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed']);
+        $this->incus->instances = ['10.44.0.7' => [$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name, 'tvm-image-20261013133000-sync-smoke']];
+        app(IncusTaskVmBaseImage::class)->sweep(app(TaskVmSettings::class)->host($this->beast->id), $this->beast);
+        expect($this->incus->instances['10.44.0.7'])->toBe([$running->builder_vm_name, $running->builder_vm_name.'-smoke']);
+    });
+});
+
 describe(SweepTaskVmHosts::class, function (): void {
     it('deletes only tvm-<number> VMs without a live row, and only in each host project', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
         $provisioning = tvm_sweep_vm($this->shark, TaskVmState::Provisioning, '10.44.0.130');
         $destroyed = tvm_sweep_vm($this->beast, TaskVmState::Destroyed, '10.44.0.131');
         $this->incus->instances = [
-            '10.44.0.7' => [$ready->name, $destroyed->name, 'tvm-9999', 'tvm-image-20261010030000', 'dev-box', $provisioning->name],
+            '10.44.0.7' => [$ready->name, $destroyed->name, 'tvm-9999', 'tvm-image-20261010030000-sync-smoke', 'dev-box', $provisioning->name],
             '10.44.0.8' => [$provisioning->name, 'tvm-8888'],
         ];
 
@@ -176,7 +230,7 @@ describe(SweepTaskVmHosts::class, function (): void {
 
         // A VM recorded on another host is foreign to this one, so beast deletes it as an orphan too.
         expect($this->incus->instances)->toBe([
-            '10.44.0.7' => [$ready->name, 'tvm-image-20261010030000', 'dev-box'],
+            '10.44.0.7' => [$ready->name, 'tvm-image-20261010030000-sync-smoke', 'dev-box'],
             '10.44.0.8' => [$provisioning->name],
         ])
             ->and(collect($this->incus->calls)->every(static fn (array $call): bool => array_slice($call[1], 0, 5) === ['sudo', '-n', 'incus', '--project', 'orbit-tasks']
@@ -290,11 +344,11 @@ describe('Doctor', function (): void {
 
     it('reports orphaned and missing task VMs on the host without changing them', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $this->incus->instances = ['10.44.0.7' => ['tvm-9999', 'tvm-image-20261010030000']];
+        $this->incus->instances = ['10.44.0.7' => ['tvm-9999', 'tvm-image-20261010030000-sync-smoke']];
 
-        // The builder started long before the last hour, so it is a stray, reported and left in place.
-        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent'], ['node.task_vm_stray_instance', 'orbit-tasks/tvm-image-20261010030000']])
-            ->and($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999', 'tvm-image-20261010030000'])
+        // Sync smoke still uses the time rule. Doctor reports an old one without changing it.
+        expect(tvm_sweep_doctor($this->beast))->toBe([['node.task_vm_orphaned', 'tvm-9999'], ['node.task_vm_missing', 'absent'], ['node.task_vm_stray_instance', 'orbit-tasks/tvm-image-20261010030000-sync-smoke']])
+            ->and($this->incus->instances['10.44.0.7'])->toBe(['tvm-9999', 'tvm-image-20261010030000-sync-smoke'])
             ->and($ready->fresh()?->state)->toBe(TaskVmState::Ready);
     });
 
@@ -375,7 +429,7 @@ describe('strays', function (): void {
 
     it('reports instances and custom volumes that Orbit does not own, on every project and pool, and deletes none', function (): void {
         $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $this->incus->instances = ['10.44.0.7' => [$ready->name, 'tvm-image-20261013133000', 'tvm-image-20261013133000-smoke', 'tvm-template-20261013120000', 'dev-box']];
+        $this->incus->instances = ['10.44.0.7' => [$ready->name, 'tvm-image-20261013133000-sync-smoke', 'tvm-template-20261013120000', 'dev-box']];
         $this->incus->foreign = ['10.44.0.7' => ['orbit-ci/ci-beast-1', 'default/ow-exp-20261006', 'default/renewed-ghost', 'orbit-templates/orbit-template-agent-base']];
         $this->incus->volumes = ['10.44.0.7' => [
             'orbit-tasks/orbit-tasks/tvm-template-46-20261013083819', 'orbit-tasks/orbit-tasks/'.$ready->name.'-workspace',
@@ -457,3 +511,95 @@ describe('strays', function (): void {
             ->and(tvm_stray_doctor($this->beast))->toBe([['node.task_vm_inspection_failed', 'task_vm.host_command_failed']]);
     });
 });
+
+it('fences resume when sweep deletion wins while the builder still exists', function (string $path, string $suffix): void {
+    Bus::fake();
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    $name = $build->builder_vm_name.$suffix;
+    // Smoke first, so the builder is still present when a smoke deletion races resume.
+    $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
+    $host = app(TaskVmSettings::class)->host($this->beast->id);
+    $overlapped = false;
+    $this->incus->beforeExecute = function (RemoteCommand $command) use ($build, $name, &$overlapped): void {
+        if (($command->arguments[5] ?? null) !== 'delete' || $command->arguments[array_key_last($command->arguments)] !== $name) {
+            return;
+        }
+        $this->incus->beforeExecute = null;
+        $overlapped = true;
+        expect($this->incus->instances['10.44.0.7'])->toContain($build->builder_vm_name, $name);
+        expect(fn () => app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id))
+            ->toThrow(TaskVmException::class, 'unclaimed failed build');
+        expect($build->refresh()->cleanup_started_at)->not->toBeNull();
+    };
+    if ($path === 'base-image') {
+        app(IncusTaskVmBaseImage::class)->sweep($host, $this->beast);
+    } else {
+        app(TaskVmHostAudit::class)->deleteOrphan($host, $this->beast, $name);
+    }
+    expect($overlapped)->toBeTrue()->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($this->incus->instances['10.44.0.7'])->not->toContain($name);
+    Bus::assertNothingDispatched();
+})->with(['base-image', 'host-audit'])->with(['builder' => '', 'smoke' => '-smoke']);
+
+it('skips a stale sweep candidate when resume wins before deletion claims cleanup', function (string $path, string $suffix): void {
+    Bus::fake();
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    $name = $build->builder_vm_name.$suffix;
+    $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
+    $host = app(TaskVmSettings::class)->host($this->beast->id);
+    $overlapped = false;
+    if ($path === 'base-image') {
+        // The sweep captures an inventory containing the failed build, then resume wins before its claim.
+        $this->incus->afterExecute = function (RemoteCommand $command) use ($build, &$overlapped): void {
+            if (($command->arguments[5] ?? null) !== 'list') {
+                return;
+            }
+            $this->incus->afterExecute = null;
+            $overlapped = true;
+            app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
+        };
+        app(IncusTaskVmBaseImage::class)->sweep($host, $this->beast);
+    } else {
+        $audit = app(TaskVmHostAudit::class);
+        $candidates = $audit->audit($host, $this->beast)['orphaned'];
+        expect($candidates)->toContain($name);
+        app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
+        $overlapped = true;
+        foreach ($candidates as $candidate) {
+            $audit->deleteOrphan($host, $this->beast, $candidate);
+        }
+    }
+    expect($overlapped)->toBeTrue()->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Running)
+        ->and($build->cleanup_started_at)->toBeNull()
+        ->and($this->incus->instances['10.44.0.7'])->toContain($name, $build->builder_vm_name)
+        ->and(array_any($this->incus->calls, static fn (array $call): bool => ($call[1][5] ?? null) === 'delete'))->toBeFalse();
+    Bus::assertDispatched(LaunchImageBuilder::class, fn (LaunchImageBuilder $job): bool => $job->buildId === $build->id);
+})->with(['base-image', 'host-audit'])->with(['builder' => '', 'smoke' => '-smoke']);
+
+it('rejects a stale resume when a sweep wins after the builder existence result is captured', function (string $path, string $suffix): void {
+    Bus::fake();
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed', 'current_step' => TaskVmImageBuildStep::Launch]);
+    $name = $build->builder_vm_name.$suffix;
+    $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
+    $host = app(TaskVmSettings::class)->host($this->beast->id);
+    $overlapped = false;
+    $this->incus->afterExecute = function (RemoteCommand $command) use ($host, $name, $path, &$overlapped): void {
+        if (($command->arguments[5] ?? null) !== 'list') {
+            return;
+        }
+        // Resume now holds the old existence result. Sweep claims the row before resume's conditional write.
+        $this->incus->afterExecute = null;
+        $overlapped = true;
+        if ($path === 'base-image') {
+            app(IncusTaskVmBaseImage::class)->sweep($host, $this->beast);
+        } else {
+            app(TaskVmHostAudit::class)->deleteOrphan($host, $this->beast, $name);
+        }
+    };
+    expect(fn () => app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id))
+        ->toThrow(TaskVmException::class, 'already claimed');
+    expect($overlapped)->toBeTrue()->and($build->refresh()->state)->toBe(TaskVmImageBuildState::Failed)
+        ->and($build->cleanup_started_at)->not->toBeNull()
+        ->and($this->incus->instances['10.44.0.7'])->not->toContain($name);
+    Bus::assertNothingDispatched();
+})->with(['base-image', 'host-audit'])->with(['builder' => '', 'smoke' => '-smoke']);

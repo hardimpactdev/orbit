@@ -6,10 +6,12 @@ namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\TaskVms\RefreshTaskVmWorkspaceTemplates;
 use App\Models\Node;
+use App\Models\TaskVmImageBuild;
 use Closure;
 use Illuminate\Cache\Lock;
 use Illuminate\Contracts\Cache\Lock as CacheLock;
@@ -71,7 +73,7 @@ final readonly class IncusTaskVmBaseImage
     public function sweep(TaskVmHost $host, Node $node): void
     {
         foreach (array_keys($this->instances($host, $node)) as $name) {
-            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix)) {
+            if (str_starts_with($name, TaskVmImageRecipe::WorkPrefix) && TaskVmHostAudit::claimBuildCleanup($node, $name)) {
                 $this->delete($host, $node, $name);
             }
         }
@@ -111,6 +113,16 @@ final readonly class IncusTaskVmBaseImage
         $this->launch($host, $node, $name, $image, $this->cloudInit->render($this->keys->publicKey()));
         $this->awaitCloudInit($host, $node, $name);
         $shell = $this->shell($host, $node, $name);
+        $this->checkSmoke($shell);
+        if ($check instanceof Closure) {
+            $check($shell);
+        }
+        $this->delete($host, $node, $name);
+    }
+
+    public function checkSmoke(IncusGuestShell $shell): void
+    {
+        $name = $shell->vm;
         $result = $this->checked($name, 'exec ssh-keygen', $shell->asRoot(['ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']));
         if (preg_match(self::FingerprintPattern, $result->stdout) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it has no ed25519 SSH host key');
@@ -123,10 +135,6 @@ final readonly class IncusTaskVmBaseImage
         if (count(array_filter(explode("\n", trim($boots->stdout)), static fn (string $line): bool => trim($line) !== '')) !== 1) {
             throw IncusHost::invalid("the base image smoke VM [{$name}]", 'it rebooted during its first boot');
         }
-        if ($check instanceof Closure) {
-            $check($shell);
-        }
-        $this->delete($host, $node, $name);
     }
 
     /**
@@ -150,17 +158,24 @@ final readonly class IncusTaskVmBaseImage
     }
 
     /**
-     * Deletes every dated base image other than `$keep` that no instance in the project uses.
+     * Deletes dated base images other than `$keep` that neither an instance nor a running build owns.
      *
      * @return list<string> the deleted fingerprints
      */
     public function prune(TaskVmHost $host, Node $node, string $keep): array
     {
         $used = array_values($this->instances($host, $node));
+        $images = $this->incus->images($host, $node);
+        // Read after the remote inventory. Every published image already has a running row, even
+        // if publish's fingerprint write was interrupted or its builder has since been deleted.
+        $running = TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', TaskVmImageBuildState::Running)->get();
+        $protected = $running->pluck('image_fingerprint')->all();
+        $pendingAliases = $running->map(static fn (TaskVmImageBuild $build): string => TaskVmHost::BaseImage.'-'.$build->created_at?->format('YmdHis').'-'.$build->id)->all();
         $deleted = [];
-        foreach ($this->incus->images($host, $node) as $fingerprint => $aliases) {
+        foreach ($images as $fingerprint => $aliases) {
             $dated = array_filter($aliases, static fn (string $alias): bool => str_starts_with($alias, TaskVmHost::BaseImage.'-'));
-            if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)) {
+            if ($fingerprint === $keep || $dated === [] || in_array($fingerprint, $used, true)
+                || in_array($fingerprint, $protected, true) || array_intersect($aliases, $pendingAliases) !== []) {
                 continue;
             }
             $result = $this->incus->run($host, $node, ['image', 'delete', '--', $fingerprint]);

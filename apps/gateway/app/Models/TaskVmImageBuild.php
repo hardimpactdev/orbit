@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $current_program
  * @property TaskVmImageBuildState $state
  * @property list<array{step: string, program: string|null, started_at: string|null, seconds: float|null, error: string|null}> $steps
+ * @property string|null $submission_pending_at
+ * @property Carbon|null $cleanup_started_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Node $hostNode
@@ -37,7 +39,7 @@ final class TaskVmImageBuild extends Model
     #[\Override]
     protected $fillable = [
         'host_node_id', 'source_alias', 'source_fingerprint', 'from_stock', 'image_fingerprint',
-        'current_step', 'current_program', 'state', 'steps',
+        'current_step', 'current_program', 'state', 'steps', 'submission_pending_at',
     ];
 
     /** @var array<string, string> */
@@ -53,6 +55,7 @@ final class TaskVmImageBuild extends Model
             'current_step' => TaskVmImageBuildStep::class,
             'from_stock' => 'boolean',
             'steps' => 'array',
+            'cleanup_started_at' => 'datetime',
         ];
     }
 

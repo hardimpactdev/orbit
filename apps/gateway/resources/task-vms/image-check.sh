@@ -13,7 +13,10 @@ owner=$2
 manifest=$3
 shift 3
 test "$(id -u -- "$user"):$(id -g -- "$user")" = "$owner"
-test -s "$manifest"
+# Chain images have no manifest. Legacy providers still require theirs.
+if [ "$manifest" != '-' ]; then
+    test -s "$manifest"
+fi
 home=$(getent passwd -- "$user" | cut -d : -f 6)
 test -s "$home/.ssh/authorized_keys"
 for check in "$@"; do

@@ -46,7 +46,7 @@ A base image build is one Laravel job chain (`Bus::chain`) on the `builds` queue
 | `CleanImageBuilder` | Runs `base-image-clean.sh`, which removes the VM's identity |
 | `PublishImage` | Stops the builder, publishes it as `orbit-task-base-<time>`, and deletes the builder |
 | `SmokeImage` | Boots a VM from the new image with the task VM user-data and runs `image-check.sh` |
-| `PromoteImage` | Points `orbit-task-base` at the new image and deletes images that no VM uses |
+| `PromoteImage` | Points `orbit-task-base` at the new image and deletes images that no VM or running image build owns |
 
 The programs are the ones that enrollment renders today, rendered by the same code. A new tool or package is a new program and one new step in the chain. The build of a host's image never edits one shared script.
 
@@ -54,11 +54,15 @@ Each step is idempotent. A step that runs again finds its work done, so a step c
 
 ### The build row holds the state
 
-The table `task_vm_image_builds` has one row for each build. It holds the host, the source image, the builder VM name, the new image's fingerprint, the current step, the state (`running`, `succeeded`, or `failed`), and each step's start, seconds, and error. A partial unique index allows one `running` build for each host. That index replaces the host's image lock and its expiry time.
+The table `task_vm_image_builds` has one row for each build. It holds the host, the source image, the builder VM name, the new image's fingerprint, the current step, the state (`running`, `succeeded`, or `failed`), a pending queue submission, a cleanup claim, and each step's start, seconds, and error. A partial unique index allows one `running` build for each host. That index replaces the host's image lock and its expiry time.
 
-When a step fails after its retries, the row becomes `failed` with the step and the error, and a cleanup job deletes the builder and smoke VMs, and the new image when it never became the base image. `task-vms:build-image` prints the steps from the row as they finish. A command `task-vms:image-builds` lists recent builds with their steps and errors. A failed build can be continued from its failed step with `task-vms:build-image --resume <build id>`, while its builder VM still exists.
+When a step fails after its retries, the row becomes `failed` with the step and the error, and a cleanup job deletes the builder and smoke VMs, and the new image when it never became the base image. `task-vms:build-image` prints the steps from the row as they finish. A command `task-vms:image-builds` lists recent builds with their steps and errors. A failed build can be continued from its failed step with `task-vms:build-image --resume <build id>`, while its builder VM still exists and cleanup has not claimed it. Cleanup atomically claims the failed row before any remote deletion; resume atomically changes an unclaimed failed row to running. The database decides which wins, including on SQLite, without a host cache lock.
 
-The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is not `running`, and its stray report reads the same row. Neither reads a time from the VM's name, so the 60-minute grace for builders goes away.
+Start and resume persist a pending submission marker with the running state before enqueueing. The dispatcher clears the marker when enqueueing succeeds; a worker also clears it when it claims a running build. An enqueue exception fails a still-pending submission without changing a build already claimed by a worker. The host sweep and the next start or resume fail pending submissions older than ten minutes. This recovers a crash between the durable write and queue acknowledgement without guessing whether an image step ran or replaying an uncertain submission. The submission deadline does not limit a running build's lifetime.
+
+Pruning protects the fingerprints and dated aliases of running image build rows on that host, even between publish and smoke when no VM uses the new image. Alias protection also covers a publish whose fingerprint has not yet been saved.
+
+The [host sweep](/reference/compute-drivers#report-strays) deletes a `tvm-image-<build id>` VM whose build is not `running`, and its stray report reads the same row. Both the host sweep and the base image sweep atomically claim cleanup on a recorded non-running build before deleting either its builder or smoke VM. They share the cleanup job's durable fence against resume: if resume wins, deletion skips the VM; if deletion wins, resume refuses even while the builder still exists. Neither reads a time from the VM's name, so the 60-minute grace for builders goes away.
 
 ### Each build starts from the current image
 
