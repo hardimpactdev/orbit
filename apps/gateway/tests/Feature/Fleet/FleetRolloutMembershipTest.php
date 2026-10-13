@@ -41,17 +41,6 @@ describe('fleet rollout set', function (): void {
             ]);
     });
 
-    it('leaves out a disposable task sandbox, though it is an active, managed app-dev Node', function (): void {
-        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
-        $sandbox = FleetFixtures::sandbox();
-        $membership = app(FleetRolloutMembership::class);
-
-        expect(array_map(static fn (Node $node): string => $node->name, $membership->members()))->toBe(['dev'])
-            ->and($membership->includes($sandbox))->toBeFalse()
-            ->and($membership->exclusion($sandbox))->toBe('sandbox')
-            ->and($membership->exclusion($dev))->toBeNull();
-    });
-
     it('leaves out a live task VM Node, and takes it back once the task VM is destroyed', function (): void {
         $host = FleetFixtures::node('beast', [RoleName::AppDev]);
         $node = FleetFixtures::node('tvm-1', [RoleName::AppDev]);

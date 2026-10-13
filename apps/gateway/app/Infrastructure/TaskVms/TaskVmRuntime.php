@@ -16,7 +16,6 @@ use App\Domain\Settings\SettingValueProtection;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\HttpSandboxModelKeys;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -50,7 +49,7 @@ final readonly class TaskVmRuntime
 
     public const int InlineLockSeconds = 10;
 
-    /** Shared with every caller of `HttpSandboxModelKeys`, so one anchor key guards each CLIProxyAPI. */
+    /** One lock for every model key change, so one anchor key guards each CLIProxyAPI. */
     private const string ModelKeyLock = 'orbit:compute:model-keys';
 
     /** The Pi executable of the managed user. The base image holds the Gateway's pinned build there. */
@@ -92,7 +91,7 @@ final readonly class TaskVmRuntime
     public function __construct(
         private TaskVmSettings $settings,
         private DevelopmentSshExecutor $ssh,
-        private HttpSandboxModelKeys $keys,
+        private TaskVmModelKeys $keys,
         private ProxyCliState $proxy,
         private SettingRepository $gatewaySettings,
         private CreateProcessAction $processes,

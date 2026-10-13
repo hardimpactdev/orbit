@@ -91,13 +91,7 @@ final readonly class ProvisionNodeAction
     public function execute(ProvisionNodeData $data): Node
     {
         try {
-            return $this->provisioningLock->run($data->name, function () use ($data): Node {
-                if (Node::query()->where('name', $data->name)->whereNotNull('compute_sandbox_id')->exists()) {
-                    throw new ResourceOperationException('node.sandbox_managed', 'Manage sandbox Node provisioning through its reservation.', 409);
-                }
-
-                return $this->provision($data);
-            });
+            return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }

@@ -121,13 +121,15 @@ beforeEach(function (): void {
     test_bind_snapshot_driver();
 });
 
-function scheduler_app(string $slug): Project
+/** A Project whose groups run on task VMs, unless a test needs shared compute. */
+function scheduler_app(string $slug, TaskCompute $compute = TaskCompute::Vm): Project
 {
     return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
+        'task_compute' => $compute,
     ]);
 }
 
@@ -175,6 +177,7 @@ function queued_group(Project $project, string $title, ?Instance $instance = nul
     if ($instance instanceof Instance) {
         $group->taskable()->associate($instance);
         $group->save();
+        test_vm_workspace($group, $instance);
     }
 
     return $group->fresh(['tasks', 'taskable']) ?? $group;
@@ -229,7 +232,7 @@ function scheduler_bind_claim(Instance $instance, AgentSpawner $spawner): void
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
@@ -289,12 +292,12 @@ it('claims another group when three reserved groups already occupy the App', fun
 });
 
 it('applies the Node ceiling only after a Project instance is assigned', function (): void {
-    $project = scheduler_app('node-app');
+    $project = scheduler_app('node-app', TaskCompute::Shared);
     $node = scheduler_node('task-node', '10.44.0.90');
     $instance = scheduler_instance($project, $node, 'shared');
 
     foreach (range(1, TaskCeilings::PerNode) as $index) {
-        $owner = scheduler_app("node-owner-{$index}");
+        $owner = scheduler_app("node-owner-{$index}", TaskCompute::Shared);
         $placed = scheduler_instance($owner, $node, "slot-{$index}");
         $group = Task::topLevel()->create([
             'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -330,7 +333,7 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
                 ->and($intent->group->project->slug)->toBe('orbit')
                 ->and($intent->group->project->task_workspace_routed)->toBeTrue();
 
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -374,7 +377,7 @@ it('fails a group and its first task when the turn command cannot be installed',
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     $spawner = new class implements AgentSpawner
@@ -419,7 +422,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -461,7 +464,7 @@ it('fails a group and its first task when the implementer spawn returns no threa
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -510,7 +513,7 @@ it('fails the group when a later implementer spawn returns no thread id', functi
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -541,12 +544,12 @@ it('fails the group when a later implementer spawn returns no thread id', functi
 });
 
 it('returns a provisioned group to todo on its Instance when the Node is already at the ceiling', function (): void {
-    $project = scheduler_app('held-app');
+    $project = scheduler_app('held-app', TaskCompute::Shared);
     $node = scheduler_node('full-node', '10.44.0.92');
     $instance = scheduler_instance($project, $node, 'held');
 
     foreach (range(1, TaskCeilings::PerNode) as $index) {
-        $owner = scheduler_app("fill-owner-{$index}");
+        $owner = scheduler_app("fill-owner-{$index}", TaskCompute::Shared);
         $placed = scheduler_instance($owner, $node, "fill-{$index}");
         $group = Task::topLevel()->create([
             'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
@@ -566,7 +569,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
 
@@ -580,7 +583,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
 
 it('provisioning failures raise assistance with the reported checkout prepare step and message', function (): void {
     Exceptions::fake();
-    $project = scheduler_app('prepare-failure');
+    $project = scheduler_app('prepare-failure', TaskCompute::Shared);
     $project->update(['task_workspace_routed' => false]);
     $node = scheduler_node('prepare-node', '10.44.0.94');
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -625,7 +628,7 @@ it('provisioning failures raise assistance after three exceptions without blocki
                 throw new RuntimeException('node-7 unreachable');
             }
 
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
 
@@ -655,7 +658,7 @@ it('provisioning failures raise assistance only after the configured threshold a
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->succeed ? $this->instance : null;
+            return $this->succeed ? test_vm_workspace($intent->group, $this->instance) : null;
         }
     };
     app()->instance(InstanceProvisioning::class, $provisioner);
@@ -957,7 +960,7 @@ it('provisioning failures raise assistance from a new generation after a success
 })->with(['crash', 'false', 'exception']);
 
 it('provisioning failures raise assistance naming the driver constraint when no Node fits', function (): void {
-    $project = scheduler_app('no-fit');
+    $project = scheduler_app('no-fit', TaskCompute::Shared);
     $project->update(['task_workspace_routed' => false]);
     $node = scheduler_node('no-fit-node', '10.44.0.97');
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -975,7 +978,7 @@ it('provisioning failures raise assistance naming the driver constraint when no 
 });
 
 it('advances a claimed unrouted group to running when the real provisioner and agent spawner succeed', function (): void {
-    $project = scheduler_app('orbit');
+    $project = scheduler_app('orbit', TaskCompute::Shared);
     $project->update(['root' => 'public', 'task_workspace_routed' => false]);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
@@ -1173,7 +1176,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
@@ -1979,7 +1982,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            return $this->instance;
+            return test_vm_workspace($intent->group, $this->instance);
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -2005,7 +2008,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
     $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
-    expect($settled->status)->toBe(TaskGroupStatus::Settling)
+    expect($settled->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($settled->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543')
         ->and($settled->tokens)->toBe(40)
         ->and($settled->line_diff)->toBe(12)
@@ -2384,7 +2387,7 @@ it('pushes the last approved subtask and opens one pull request', function (): v
         ->and($signer->messages)->toHaveCount(1)
         ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
 });
 
@@ -2474,7 +2477,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
         ->and($coverage->calls)->toBe(0)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
         ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40))
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($group->fresh()?->pr_url)->toBe($url)
         ->and($group->fresh()?->tokens)->toBe(90)
         ->and($group->fresh()?->line_diff)->toBe(18)
@@ -2491,7 +2494,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     app(TaskScheduler::class)->tick();
 
     expect($watcher->urls)->toBe([$url, $url])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($group->fresh()?->pr_url)->toBe($url)
         ->and($notifier->settled)->toBe(0)
         ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(1);
@@ -2567,12 +2570,12 @@ it('asks for assistance at settle when the pull request merged before the fixup 
 
     $reason = TaskScheduler::OrphanedCommitPrefix.'Commit '.str_repeat('c', 40).' reached task-'.$group->id.' after '.$url.' merged at abc123. Open a pull request for task-'.$group->id.', or complete the group.';
     expect($publisher->pushes)->toBe([$group->id])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
 
     app(TaskScheduler::class)->tick();
 
-    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::WaitingForReview);
 });
 
 it('prepares a fixup review without pull request fields', function (): void {
@@ -2717,11 +2720,11 @@ it('does not run a baseline for a group whose implementers already started', fun
  * @param  list<string|null>  $receipts
  * @return array{Task, Task, FakeTaskTurnReceipts, object, FakeTaskCheckRunner, object, object}
  */
-function scheduler_review(array $receipts, bool $notified = true): array
+function scheduler_review(array $receipts, bool $notified = true, TaskCompute $compute = TaskCompute::Vm): array
 {
     static $octet = 30;
     $octet++;
-    $project = scheduler_app('review-ws-'.$octet);
+    $project = scheduler_app('review-ws-'.$octet, $compute);
     $node = scheduler_node('review-ws-node-'.$octet, '10.44.2.'.$octet);
     $instance = scheduler_instance($project, $node, 'workspace');
     $group = queued_group($project, 'Review workspace', $instance);
@@ -2841,7 +2844,7 @@ it('resumes a reviewer topology request with ready or the failure reason without
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('topology_requested', 'Discovery needs Nodes.'),
         FakeTaskTurnReceipts::contents('approved', 'Checked with available discovery.'),
-    ]);
+    ], compute: TaskCompute::Shared);
     $topology = new FakeTaskWorkspaceTopology;
     $topology->fails = $fails;
     app()->instance(TaskWorkspaceTopology::class, $topology);
@@ -2864,7 +2867,7 @@ it('resumes a reviewer topology request with ready or the failure reason without
 })->with([false, true]);
 
 it('reuses the recorded topology reply after receipt removal fails', function (): void {
-    [$group, $task, , , , $dispatcher] = scheduler_review([]);
+    [$group, $task, , , , $dispatcher] = scheduler_review([], compute: TaskCompute::Shared);
     $topology = new FakeTaskWorkspaceTopology;
     app()->instance(TaskWorkspaceTopology::class, $topology);
     $receipt = TaskTurnReceipt::parse(FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes.'))->withThread($group->reviewer_agent_thread_id);
@@ -2889,7 +2892,7 @@ it('answers a second reviewer topology request with already held', function (): 
     [$group, $task, , , , $dispatcher, $reader] = scheduler_review([
         FakeTaskTurnReceipts::contents('topology_requested', 'First request.'),
         FakeTaskTurnReceipts::contents('topology_requested', 'Second request.'),
-    ]);
+    ], compute: TaskCompute::Shared);
     $topology = new FakeTaskWorkspaceTopology;
     app()->instance(TaskWorkspaceTopology::class, $topology);
     app(TaskScheduler::class)->tick();
