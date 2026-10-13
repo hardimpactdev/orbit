@@ -57,11 +57,11 @@ describe('ProcessUser', function (): void {
     it('sends --user for a Node systemd Process', function (): void {
         $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
         $this->artisan('process:create', [
-            'name' => 'worker', '--node' => '4', '--command' => ['/usr/bin/sleep', '60'], '--user' => 'orbit-worker', '--json' => true,
+            'name' => 'worker', '--node' => '4', '--command' => ['/usr/bin/sleep', '60'], '--user' => 'svc-runner', '--json' => true,
         ])->assertExitCode(0);
         expect($mock->getLastRequest())->toBeInstanceOf(CreateProcessRequest::class)
             ->and($mock->getLastRequest()?->body()->all())->toMatchArray([
-                'target_type' => 'node', 'target_id' => 4, 'runtime' => 'systemd', 'user' => 'orbit-worker',
+                'target_type' => 'node', 'target_id' => 4, 'runtime' => 'systemd', 'user' => 'svc-runner',
             ]);
     });
 
@@ -74,7 +74,7 @@ describe('ProcessUser', function (): void {
     it('refuses unsupported --user combinations without a request', function (array $options): void {
         $mock = MockClient::global([]);
         [$exit, $output] = process_cli_display('process:create', [
-            'name' => 'worker', '--user' => 'orbit-worker', '--json' => true, ...$options,
+            'name' => 'worker', '--user' => 'svc-runner', '--json' => true, ...$options,
         ]);
         expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
         $mock->assertNothingSent();

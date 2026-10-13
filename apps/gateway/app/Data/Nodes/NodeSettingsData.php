@@ -10,15 +10,7 @@ final class NodeSettingsData extends Data
 {
     public function __construct(
         public ?NodeStorageAppsData $apps = null,
-        public ?NodeTaskSettingsData $tasks = null,
     ) {}
-
-    public function taskWorker(): ?string
-    {
-        $worker = $this->tasks?->worker;
-
-        return is_string($worker) ? $worker : null;
-    }
 
     public function appsPath(): ?string
     {
@@ -29,6 +21,6 @@ final class NodeSettingsData extends Data
 
     public function isEmpty(): bool
     {
-        return $this->appsPath() === null && $this->taskWorker() === null;
+        return $this->appsPath() === null;
     }
 }

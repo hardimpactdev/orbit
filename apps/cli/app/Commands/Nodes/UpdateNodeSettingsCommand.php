@@ -19,7 +19,7 @@ final class UpdateNodeSettingsCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update typed storage and task worker settings on a node.';
+    protected $description = 'Update typed storage settings on a node.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -56,8 +56,6 @@ final class UpdateNodeSettingsCommand extends NodeCommand
                 nodeId: $nodeId,
                 hasApps: array_key_exists('apps', $settings['body']),
                 apps: NodeSettingOptions::apps($settings['body']['apps'] ?? null),
-                hasTasks: array_key_exists('tasks', $settings['body']),
-                taskWorker: NodeSettingOptions::taskWorker($settings['body']['tasks'] ?? null),
             ),
             NodeResponse::class,
             ['Update Node settings', 'Updating Node settings', 'Updated Node settings'],
