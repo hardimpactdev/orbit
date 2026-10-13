@@ -70,8 +70,9 @@ function test_pass_baseline(): void
  */
 function test_tick_reporting(string $class, ?string $message = null): void
 {
-    Exceptions::fake();
+    $exceptions = Exceptions::fake();
     app(TaskScheduler::class)->tick();
-    Exceptions::assertReported(static fn (Throwable $exception): bool => $exception instanceof $class
+    $matches = array_filter($exceptions->reported(), static fn (Throwable $exception): bool => $exception instanceof $class
         && ($message === null || str_contains($exception->getMessage(), $message)));
+    expect($matches)->not->toBeEmpty();
 }

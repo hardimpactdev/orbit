@@ -3324,6 +3324,7 @@ it('prepares a failed topology again after a resolution on a subtask that has no
     $project->update(['task_check' => 'composer check']);
     $instance = scheduler_instance($project, scheduler_node('topology-resolution-node', '10.44.0.98'), 'baseline');
     $group = queued_group($project, 'Topology resolution', $instance);
+    $group->tasks()->sole()->update(['topology' => ['app-prod+ingress']]);
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]));
     $state = (object) ['calls' => 0];
@@ -3346,7 +3347,7 @@ it('prepares a failed topology again after a resolution on a subtask that has no
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($group->fresh()?->getRawOriginal('communication_failures'))->toBeNull()
         ->and(Activity::query()->where('subject_id', $task->id)->pluck('description')->all())
-        ->toContain('resolution queued subtask start')->not->toContain('resolution delivery failed');
+        ->toContain('resolution queued topology preparation')->not->toContain('resolution delivery failed');
     app(TaskScheduler::class)->tick();
     expect($state->calls)->toBe(2)
         ->and($group->fresh()?->capacity_wait_reason)->toBe('Task VM: preparing the topology app-prod+ingress.');

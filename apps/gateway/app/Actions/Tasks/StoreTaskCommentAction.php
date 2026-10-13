@@ -15,7 +15,11 @@ use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
+use App\Models\TaskCheck;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnFetcher;
 use App\Domain\Tasks\TaskTurnFetchNotice;
@@ -101,11 +105,10 @@ final readonly class StoreTaskCommentAction
                     $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                     $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
                     $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
-                    if ($deliverResolution && ! $retryBaselineQueued && $task->status === TaskStatus::Running && $task->implementer_agent_thread_id === null) {
-                        // No implementer exists to receive it, for example after a failed topology preparation.
-                        // The next tick starts the subtask's work again.
+                    if ($deliverResolution && ! $retryBaselineQueued && $this->awaitsTopology($task)) {
+                        // No implementer exists to receive it. The next tick prepares the topology again.
                         $this->clearForNextTick($group, $task);
-                        $this->log($task, $comment, 'resolution queued subtask start');
+                        $this->log($task, $comment, 'resolution queued topology preparation');
                         $deliverResolution = false;
                     }
                 }
@@ -333,6 +336,18 @@ final readonly class StoreTaskCommentAction
             TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });
+    }
+
+    /** A running subtask whose declared topology failed to prepare, before its implementer or a failed baseline. */
+    private function awaitsTopology(Task $task): bool
+    {
+        if ($task->status !== TaskStatus::Running || $task->implementer_agent_thread_id !== null
+            || TaskTopology::from($task->topology ?? []) === []) {
+            return false;
+        }
+        $baseline = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->latest('id')->first();
+
+        return ! $baseline instanceof TaskCheck || $baseline->status !== TaskCheckStatus::Failed;
     }
 
     /** Clears the subtask's request, and the group's once no other subtask asks, so the next tick acts again. */
