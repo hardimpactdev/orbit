@@ -47,6 +47,6 @@ final readonly class PiConnection
     {
         $vm = TaskVmPlacement::forNode($node);
 
-        return array_values(array_filter([$vm?->pi_token ?? '', $vm?->model_key ?? ''], static fn (string $value): bool => $value !== ''));
+        return array_values(array_filter([$vm->pi_token ?? '', $vm->model_key ?? ''], static fn (string $value): bool => $value !== ''));
     }
 }

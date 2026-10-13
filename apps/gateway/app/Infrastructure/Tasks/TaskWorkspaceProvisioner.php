@@ -69,7 +69,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning, T
             return $existing;
         }
 
-        $visitable = $this->existingWorkspace($group)?->task_workspace_routed ?? $intent->visitable;
+        $visitable = $this->existingWorkspace($group)->task_workspace_routed ?? $intent->visitable;
         $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
         if ($sourceFailure instanceof InstanceProvisionFailure) {
             return $sourceFailure;
