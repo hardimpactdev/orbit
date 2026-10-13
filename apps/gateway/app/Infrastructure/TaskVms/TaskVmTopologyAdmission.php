@@ -186,7 +186,7 @@ final readonly class TaskVmTopologyAdmission implements TaskTopologyAdmission
         }
         $vm->update(['topology_state' => null, 'topology_run' => null, 'topology_error' => $reason]);
 
-        throw new TaskTopologyFailedException('Task VM: '.$reason.' Post a resolution to prepare it again.');
+        throw new TaskTopologyFailedException($reason);
     }
 
     private function run(Node $node, RemoteCommand $command): CommandResult
