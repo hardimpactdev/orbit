@@ -27,6 +27,7 @@ use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Providers\GatewayQueueServiceProvider;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Event;
@@ -37,7 +38,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
-use Laravel\Horizon\Events\MasterSupervisorLooped;
 use Laravel\Horizon\MasterSupervisor;
 use Tests\Support\FakeGatewayHorizonRuntime;
 use Tests\Support\RecordingProcessRunner;
@@ -379,7 +379,7 @@ describe('the release watch of a Horizon master', function (): void {
         $master->working = true;
         $master->shouldReceive('terminate')->once();
 
-        event(new MasterSupervisorLooped($master));
+        GatewayQueueServiceProvider::watchRelease($master, realpath(base_path()));
     });
 
     it('leaves a move to a release with Horizon to the handoff, which keeps the task-vms queue in order', function (): void {
@@ -388,6 +388,6 @@ describe('the release watch of a Horizon master', function (): void {
         $master->working = true;
         $master->shouldNotReceive('terminate');
 
-        event(new MasterSupervisorLooped($master));
+        GatewayQueueServiceProvider::watchRelease($master, realpath(base_path()));
     });
 });

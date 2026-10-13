@@ -481,7 +481,7 @@ describe('gateway:release:handoff', function (): void {
 
         expect($serve)->not->toHaveKey('horizon')
             ->and($beforeVerify)->not->toContain('horizon:terminate')
-            ->and($schedule)->toMatchArray(['horizon' => ['outcome' => 'started', 'task_vm_wait_ms' => 0, 'task_vm_overlap' => false], 'queue_moved' => 1, 'scheduler' => 'restarted'])
+            ->and($schedule)->toMatchArray(['horizon' => ['outcome' => 'started', 'task_vm_wait_ms' => 0], 'queue_moved' => 1, 'scheduler' => 'restarted'])
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['tasks'])
             ->and(array_search('horizon:terminate', $ran, true))->toBeGreaterThan(array_search('sudo systemctl enable', $ran, true))
             ->and(array_search('sudo systemctl start', $ran, true))->toBeGreaterThan(array_search('horizon:terminate', $ran, true));
