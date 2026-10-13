@@ -60,6 +60,16 @@ describe('bin/e2e-topology-host-setup', function () {
             ->toContain('((idmap_changed == 0)) || systemctl restart incus.service');
     });
 
+    it('lets topology guests get DHCP and DNS and route out through an active UFW', function () {
+        $source = (string) file_get_contents(hostSetupScript());
+
+        expect($source)->toContain("if ufw status 2>/dev/null | grep -qx 'Status: active'; then")
+            ->toContain('for interface in "$bridge" \'oe+\'; do')
+            ->toContain('ufw allow in on "$interface" to any port 67 proto udp')
+            ->toContain('ufw allow in on "$interface" to any port 53')
+            ->toContain('ufw route allow in on "$interface"');
+    });
+
     it('writes an isolation table that drops topology traffic to the WireGuard network', function () {
         $source = (string) file_get_contents(hostSetupScript());
         expect(preg_match('/<<NFT\n(.*?)\nNFT\n/s', $source, $match))->toBe(1);
