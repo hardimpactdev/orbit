@@ -48,7 +48,7 @@ use Throwable;
  * @property string|null $image_fingerprint
  * @property string|null $error_code
  * @property string|null $error_message
- * @property Carbon|null $ready_at
+ * @property Carbon|null $ready_at when the VM last became `ready`: its first preparation, or its last resume
  * @property Carbon|null $destroyed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
